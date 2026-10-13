@@ -21,18 +21,28 @@ steps. Follow-on phase 1's identified tables/semantics and phase 2's parent-owne
 parsing are delivered. Phase 3 has delivered serialization, annotation, and
 forwarding/persistence and four nested multisig routes. Phases 4–7 remain incomplete despite their foundations.
 
-| Requirement                                  | Current implementation boundary                                                    | Owning planned PR                  | Evidence / completion gate                                                                                                                                     | Unresolved limitation                                                                                                                                           |
-| -------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Nested multisig                              | Four routes merged in #160; body/parsing extraction merged in #161                 | 3d / #160–161                      | Frozen route commitments, independent child proofs, approval ordering, dependencies, retry, duplicate, reopen, failed publication and cleanup                  | Only frozen `/icp`, `/rot`, `/ixn`, `/rpy` can be enabled; acceptance of a wrapper is not child acceptance                                                      |
-| Nested IPEX                                  | V1 workflows plus source/supplemental proofs merged in #162; nested routes guarded | 3e                                 | Real grant/admit workflows and credential/KEL/TEL dependency evidence                                                                                          | No silent evidence loss or legacy pathed v2 acceptance                                                                                                          |
-| V2 non-event admission                       | Direct dispatch bypasses consolidated reference policy                             | 3f                                 | Sender allow/deny and optional KRAM intake through actual processing                                                                                           | Frozen `processXip`, `processPro`, `processBar` are stubs; preserve unsupported processing claims                                                               |
-| ESSR recipient outcomes                      | Typed admission/verification outcomes implemented; dedicated refactor in review    | Dedicated ESSR refactor after #162 | Typed success/ownership transfer, separate admission and verification results, exhaustive callers, pre-read size checks, busy recovery and joined cancellation | No automatic scheduling or shared-runtime bound; resource integration remains phase 4                                                                           |
-| Shared admission before retention/allocation | Per-stream/tree/recipient limits exist                                             | 4                                  | Two streams, one global decryption, slow consumers, pre-read rejection, empty-item caps and exactly-once release                                               | Runtime byte reservations must include native copies, backing buffers, queues and descendants; they are not an exact RSS limit                                  |
-| Durable storage/recovery                     | #159 preserves interoperable `enst.` and ciphertext evidence                       | 5, with 4 admission                | Close/reopen, bounded replay, stage/finish/publication/cleanup crash probes                                                                                    | LMDB obtains a whole row before checking size; the finite 24 MiB ceiling does not close pre-allocation admission                                                |
-| Production path/backpressure                 | Streaming ingress, forwarding and replay foundations exist                         | 6                                  | HTTP/file/TCP through verification, storage and egress; slow sinks, abort, disconnect, EOF, failure and shutdown                                               | Demonstrate first verified usable independent GenericGroup child before enclosing transfer completion; parent-owned children remain dependent                   |
-| Reference environment inventory              | Tables use upstream927; declared runtime qualification uses mailbox fork b08ddeb   | 7                                  | Inspect macOS, ordinary/extended CI, local harnesses, and embedded DID Webs imports; qualify each applicable pin or explain a retained historical target       | Fork-on-main evidence is not unmodified-upstream parity; macOS historical pin requires reconciliation                                                           |
-| Full interoperability and memory envelope    | Structural and small-corpus correctness evidence only                              | 7                                  | Maintained full inventory plus repeated fresh-process 16 MiB/256 MiB/1 GiB/4 GiB end-to-end matrix, logical-message probes and variance                        | Measure parsed/verified latency separately and retained/native/mapped memory; failures/skips remain unqualified; extended jobs stay manual with a 15-minute cap |
-| Mapper claimed-SAID verification             | Standalone Mapper accepts the reproduced stale claim                               | Final Mapper PR                    | Independent valid/tampered CESR/JSON/CBOR/MGPK fixtures                                                                                                        | Preserve Aggor partial-disclosure and compactification semantics                                                                                                |
+The links below lead to the detailed gates and scope limits. PR numbers in this
+matrix refer to the follow-on sequence, except where a GitHub PR is named.
+
+| Requirement      | Boundary             | Owning PR  | Evidence gate                       | Open limit           |
+| ---------------- | -------------------- | ---------- | ----------------------------------- | -------------------- |
+| Multisig         | Merged #160–161      | 3d         | [Proofs/retry][nested-gates]        | Four routes          |
+| IPEX             | Proofs merged #162   | 3e         | [Grant/admit][nested-gates]         | DAG/VDR pending      |
+| v2 admission     | Direct dispatch      | 3f         | [Sender/KRAM][nested-gates]         | Reference stubs      |
+| ESSR outcomes    | Refactor in review   | After #162 | [Outcomes/cleanup][nested-gates]    | Local limits         |
+| Shared admission | Local guards         | 4          | [Concurrent load][resource-gates]   | Allocation gaps      |
+| Storage/recovery | Wire retained        | 5, with 4  | [Crash/reopen][storage-gates]       | Whole-row reads      |
+| Transport        | Streaming foundation | 6          | [Usable child][transport-gates]     | Paths incomplete     |
+| Reference pins   | Mixed targets        | 7          | [Imports/pins][qualification-gates] | Fork ≠ upstream      |
+| Qualification    | Small corpora        | 7          | [Full matrix][qualification-gates]  | Runtime unqualified  |
+| Mapper SAID      | Stale claim accepted | Final      | [Valid/tampered][mapper-gate]       | Disclosure semantics |
+
+[nested-gates]: #follow-on-pr-3-nested-consumers-split-by-ownership-boundary
+[resource-gates]: #follow-on-pr-4-shared-runtime-resource-policy
+[storage-gates]: #follow-on-pr-5-reconcile-durable-storage-and-reopenreplay
+[transport-gates]: #follow-on-pr-6-reconcile-transport-and-consumer-backpressure
+[qualification-gates]: #follow-on-pr-7-runtime-pins-and-final-qualification
+[mapper-gate]: #remaining-current-reference-primitive-and-serder-slices
 
 Final parity reporting must distinguish supported processing, unfinished work,
 intentional divergences, reference stubs, and unqualified claims. No structural
@@ -40,20 +50,58 @@ parser result closes the full runtime or bounded-memory gates.
 
 ## PR sequence
 
-| Phase | Cohesive change                                                      | Required evidence before completion                                                                | Status                                                      |
-| ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| 1     | Streaming benchmark source and untouched baseline; no parser changes | Immutable commit/runtime/corpus manifest; correctness oracle; bounded isolated runs                | Merged [#126](https://github.com/kentbull/keri-ts/pull/126) |
-| 2     | Large byte-to-text and base64 correctness; exact token decoding      | 1 MiB+ values, small-token/large-tail cases, both domains; decoding-fixed atomic baseline          | Merged [#127](https://github.com/kentbull/keri-ts/pull/127) |
-| 3     | Progressive contract, ownership, limits, and execution plan          | Accurate distinction between current behavior and accepted target                                  | Merged [#128](https://github.com/kentbull/keri-ts/pull/128) |
-| 4     | Segmented input cursor and bounded views                             | No accumulated suffix copying; bounds, split headers, cancellation; cursor checkpoint              | Merged [#129](https://github.com/kentbull/keri-ts/pull/129) |
-| 5     | Async generator frame traversal with `yield*`                        | Early GenericGroup children, exact single-frame enclosures, scopes, partial failure                | Merged [#130](https://github.com/kentbull/keri-ts/pull/130) |
-| 6     | Payload sinks, reopenable references, and bounded manifests          | Backpressure, stage ownership, finish/abort, runtime filesystem boundary                           | Merged [#131](https://github.com/kentbull/keri-ts/pull/131) |
-| 7     | Progressive ESSR attachment reads and incremental digest             | Both count models/domains; no retained raw envelope or unbounded item list                         | Merged [#132](https://github.com/kentbull/keri-ts/pull/132) |
-| 8     | Bounded recipient decryption and explicit ciphertext retention       | Logical-message limits, authentication before plaintext storage, unchanged crypto wire format      | Merged [#133](https://github.com/kentbull/keri-ts/pull/133) |
-| 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Merged [#137](https://github.com/kentbull/keri-ts/pull/137) |
-| 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | Merged [#138](https://github.com/kentbull/keri-ts/pull/138) |
-| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Consumers implemented; shared-policy follow-ons remain      |
-| 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Engine/API removal implemented; final qualification pending |
+This ledger covers the original migration. Its phase numbers are separate from
+the follow-on PR numbers in the acceptance matrix above.
+
+| Phase | Change               | Result                                |
+| ----- | -------------------- | ------------------------------------- |
+| 1     | Streaming baseline   | Merged [#126][pr126]                  |
+| 2     | Large-input decoding | Merged [#127][pr127]                  |
+| 3     | Progressive contract | Merged [#128][pr128]                  |
+| 4     | Segmented cursor     | Merged [#129][pr129]                  |
+| 5     | Generator traversal  | Merged [#130][pr130]                  |
+| 6     | Payload owners/sinks | Merged [#131][pr131]                  |
+| 7     | Incremental ESSR     | Merged [#132][pr132]                  |
+| 8     | Recipient decryption | Merged [#133][pr133]                  |
+| 9     | Durable payloads     | Merged [#137][pr137]                  |
+| 10    | Streaming ingress    | Merged [#138][pr138]                  |
+| 11    | Consumers/egress     | Shared policy pending                 |
+| 12    | Final qualification  | Engine removed; qualification pending |
+
+Required evidence by phase:
+
+1. Preserve the immutable commit/runtime/corpus manifest and correctness oracle;
+   run the untouched baseline in bounded isolation.
+2. Prove 1 MiB+ values and small-token/large-tail cases in both domains; preserve
+   the decoding-fixed atomic baseline.
+3. Distinguish implemented behavior from the accepted target.
+4. Prove bounded views, split headers, cancellation, cursor checkpoints, and no
+   accumulated suffix copying.
+5. Prove early GenericGroup children, exact single-frame enclosures, genus scopes,
+   and partial failure.
+6. Prove backpressure, stage ownership, finish/abort, and the filesystem boundary.
+7. Cover both count models/domains without retained raw envelopes or unbounded
+   item lists.
+8. Prove logical-message limits and authentication before plaintext storage;
+   preserve the crypto wire format.
+9. Prove `.essrs` compatibility, escrow/replay, file/DB crash recovery, and orphan cleanup.
+10. Prove streaming routes avoid whole-request reads; exercise cancellation/EOF
+    through real HTTP.
+11. Prove streamed serialization and KERIpy interoperability without hidden bulk
+    joins or arrays; finish shared resource policy.
+12. Complete the benchmark report and remove the old engine, aliases, and
+    compatibility-only tests; keep contracts current.
+
+[pr126]: https://github.com/kentbull/keri-ts/pull/126
+[pr127]: https://github.com/kentbull/keri-ts/pull/127
+[pr128]: https://github.com/kentbull/keri-ts/pull/128
+[pr129]: https://github.com/kentbull/keri-ts/pull/129
+[pr130]: https://github.com/kentbull/keri-ts/pull/130
+[pr131]: https://github.com/kentbull/keri-ts/pull/131
+[pr132]: https://github.com/kentbull/keri-ts/pull/132
+[pr133]: https://github.com/kentbull/keri-ts/pull/133
+[pr137]: https://github.com/kentbull/keri-ts/pull/137
+[pr138]: https://github.com/kentbull/keri-ts/pull/138
 
 Phase 9 builds on [#135](https://github.com/kentbull/keri-ts/pull/135), which makes
 dispatch/settlement and mailbox batch delivery yield through completion with
@@ -586,6 +634,9 @@ vetting/retry. Presentation-registry history additionally depends on the
 receiver-observed KRAM acceptance timestamp addressed with 3f. TS currently lacks
 that v2 registry processing and path-directed Compactor API; these are concrete
 dependencies inside 3e, not completed capabilities or parallel workstreams.
+Completion requires real grant/admit workflows with credential/KEL/TEL dependency
+evidence, no silent evidence loss, and continued rejection of legacy pathed v2
+input until its supported nested processing path is complete.
 
 The proof prerequisite [#162](https://github.com/kentbull/keri-ts/pull/162) adds independently checked sender source seals and
 route-selected supplemental signatures/source seals, persisted in KERIpy-shaped
@@ -689,6 +740,10 @@ replay paths; plaintext stays distinct. Private references never replace protoco
 wire rows with proprietary pointers. KERIpy-origin rows without private metadata
 remain readable with their actual insertion-order/deduplication semantics.
 
+LMDB currently obtains a complete nested row before its size check. The finite
+24 MiB wire-copy ceiling does not prove pre-allocation admission. Phases 4–5 must
+close that native allocation boundary and account for runtime-wide copies.
+
 Persist/reopen through streaming iteration or finite batches, remove bulk
 `getAll`/join operations from the selected large-transfer path, and bound staging,
 open handles, and pending metadata. Never publish a durable reference to missing
@@ -728,15 +783,37 @@ Reference inventory observed during #160 preparation (2026-10-13); pin changes
 and full qualification remain owned by this follow-on. A declared pin is not
 evidence of the modules a process actually imports.
 
-| Environment               | Declared target                                               | Observed import boundary / unresolved qualification                                                                                                                                                                                                                                           |
-| ------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ordinary PR table CI      | Upstream `927c0cb8` in `pr-stage-gate.yml`                    | Table generation checks the frozen checkout; retain upstream provenance separately from runtime fork results.                                                                                                                                                                                 |
-| Extended interoperability | Fork `b08ddeb0` in `keri-extended-interop.yml`                | Shared runtime probe verifies source and interpreter; retain manual dispatch and both 15-minute caps.                                                                                                                                                                                         |
-| Shared local CLI harness  | Fork `b08ddeb0` in `interop-test-helpers.ts`                  | Explicit `/work/keripy-mailbox` runtime remains separate from frozen source probes.                                                                                                                                                                                                           |
-| Frozen nested probes      | Upstream `927c0cb8`                                           | `PYTHONPATH=/work/keripy-main927/src`; multisig probe verifies loaded module bytes against Git. IPEX, registry and KRAM import paths also observed under this root.                                                                                                                           |
-| macOS compatibility       | Historical `450ae1c2` in `macos-compatibility.yml`            | Workflow installs an older CLI on PATH while shared test helpers select their own runtime; reconcile both selections and probe actual imports. Not executed in this slice.                                                                                                                    |
-| Standalone Sally harness  | Historical `98b88cf7` in `scripts/vlei-tufa-sally-interop.sh` | Separate installer/cache; not covered merely by changing the shared TypeScript helper. Not executed in this slice.                                                                                                                                                                            |
-| Embedded DID Webs         | Resolver `8395277f`; dependency `keri>=1.2.13,<1.3`           | Actual cached Python 3.13 environment imports released KERIpy 1.2.14 from its own site-packages with no commit provenance, and HIO 0.6.14. This is historical release compatibility, not frozen upstream or fork-on-main qualification; upgrade and qualify or explicitly retain that target. |
+| Environment         | Target                             |
+| ------------------- | ---------------------------------- |
+| Ordinary CI         | Upstream `927c0cb8`                |
+| Extended interop    | Fork `b08ddeb0`                    |
+| Local CLI harness   | Fork `b08ddeb0`                    |
+| Frozen probes       | Upstream `927c0cb8`                |
+| macOS compatibility | Historical `450ae1c2`              |
+| Sally harness       | Historical `98b88cf7`              |
+| Embedded DID Webs   | Resolver `8395277f`; KERIpy 1.2.14 |
+
+Import evidence and unresolved qualification:
+
+- **Ordinary PR table CI:** Upstream `927c0cb8` in `pr-stage-gate.yml`. Table generation checks the
+  frozen checkout; retain upstream provenance separately from runtime fork results.
+- **Extended interoperability:** Fork `b08ddeb0` in `keri-extended-interop.yml`. Shared runtime
+  probe verifies source and interpreter; retain manual dispatch and both 15-minute caps.
+- **Shared local CLI harness:** Fork `b08ddeb0` in `interop-test-helpers.ts`. Explicit
+  `/work/keripy-mailbox` runtime remains separate from frozen source probes.
+- **Frozen nested probes:** Upstream `927c0cb8`. `PYTHONPATH=/work/keripy-main927/src`; multisig
+  probe verifies loaded module bytes against Git. IPEX, registry and KRAM import paths also observed
+  under this root.
+- **macOS compatibility:** Historical `450ae1c2` in `macos-compatibility.yml`. Workflow installs an
+  older CLI on PATH while shared test helpers select their own runtime; reconcile both selections
+  and probe actual imports. Not executed in this slice.
+- **Standalone Sally harness:** Historical `98b88cf7` in `scripts/vlei-tufa-sally-interop.sh`.
+  Separate installer/cache; not covered merely by changing the shared TypeScript helper. Not
+  executed in this slice.
+- **Embedded DID Webs:** Resolver `8395277f`; dependency `keri>=1.2.13,<1.3`. Actual cached Python
+  3.13 environment imports released KERIpy 1.2.14 from its own site-packages with no commit
+  provenance, and HIO 0.6.14. This is historical release compatibility, not frozen upstream or
+  fork-on-main qualification; upgrade and qualify or explicitly retain that target.
 
 Run incrementally generated 16 MiB, 256 MiB, 1 GiB, and 4 GiB aggregates using
 fixed small messages and representative 1 MiB messages. Include flat and nested
