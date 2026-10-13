@@ -2,9 +2,9 @@
 
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
-import { Cigar, Diger } from "../../../../cesr/mod.ts";
+import { Cigar, concatBytes, Diger, parseBytes } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { dispatchEnvelope } from "../../../src/app/parsering.ts";
+import { dispatchEnvelope, envelopesFromFrames } from "../../../src/app/parsering.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
@@ -125,7 +125,7 @@ Deno.test("app/reactor - cloned events replay attached non-transferable receipt 
   });
 });
 
-Deno.test("app/reactor - cloned events replay attached transferable receipt quadruples into Kevery", async () => {
+Deno.test("app/reactor - cloned events replay stored transferable receipts into Kevery", async () => {
   await run(function*() {
     const source = yield* createHabery({
       name: `reactor-clone-trqs-src-${crypto.randomUUID()}`,
@@ -199,6 +199,95 @@ Deno.test("app/reactor - cloned events replay attached transferable receipt quad
     }
   });
 });
+
+// Exercise both already-known receipts and deferred validator establishment state.
+for (const known of [true, false]) {
+  Deno.test(`app/reactor - grouped receipt replay preserves evidence and OOBI replies (validator known=${known})`, async () => {
+    const headDirPath = await Deno.makeTempDir({ prefix: "receipt-replay-" });
+    try {
+      await run(function*() {
+        const source = yield* createHabery({ name: "source", headDirPath, skipConfig: true });
+        const remote = yield* createHabery({ name: "remote", headDirPath, skipConfig: true });
+        try {
+          const controller = source.makeHab("controller");
+          const validator = source.makeHab("validator", undefined, {
+            icount: 3,
+            isith: "2",
+            ncount: 3,
+            nsith: "2",
+            toad: 0,
+          });
+          const event = source.db.getEvtSerder(controller.pre, controller.kever!.said)!;
+          const key = dgKey(controller.pre, event.said!);
+          const recording = new Kevery(source.db, { local: true, lax: true });
+          // Two signatures share the inception seal; one after rotation is below its
+          // controller threshold, but remains a valid independent receipt.
+          const first = new TransIdxSigGroup(
+            validator.kever!.prefixer,
+            validator.kever!.sner,
+            new Diger({ qb64: validator.kever!.said }),
+            validator.sign(event.raw, true).slice(0, 2),
+          );
+          validator.rotate({ ncount: 3, nsith: "2" });
+          const second = new TransIdxSigGroup(
+            validator.kever!.prefixer,
+            validator.kever!.sner,
+            new Diger({ qb64: validator.kever!.said }),
+            validator.sign(event.raw, true).slice(0, 1),
+          );
+          recording.processAttachedReceiptGroups({ serder: event, tsgs: [first, second], local: true });
+          assertEquals(source.db.vrcs.get(key).length, 3);
+
+          const url = "http://127.0.0.1:9724/";
+          const provider = new Reactor(source);
+          yield* provider.processCompleteChunk(concatBytes(
+            controller.makeLocScheme(url, controller.pre, "http"),
+            controller.makeEndRole(controller.pre, EndpointRoles.controller, true),
+          ));
+          // Reopen only the durable event DB so replay cannot depend on live receipt arrays.
+          yield* source.db.close();
+          yield* source.db.reopen({ reuse: true });
+          const bundle = controller.replyToOobi(controller.pre, EndpointRoles.controller);
+          const [envelope] = envelopesFromFrames(parseBytes(bundle));
+          assertEquals(envelope.trqs.length, 0);
+          assertEquals(envelope.tsgs.map((group) => group.sigers.length), [2, 1]);
+          assertEquals(envelope.tsgs.map((group) => group.diger.qb64), [first.diger.qb64, second.diger.qb64]);
+
+          const reactor = new Reactor(remote);
+          if (known) {
+            for (const message of source.db.clonePreIter(validator.pre)) reactor.ingest(message);
+            yield* reactor.processOnce();
+          }
+          yield* reactor.processCompleteChunk(bundle);
+          // A receipt with unavailable validator state must not hide the following replies.
+          assertEquals(remote.db.locs.get([controller.pre, "http"])?.url, url);
+          assertEquals(remote.db.ends.get([controller.pre, EndpointRoles.controller, controller.pre])?.allowed, true);
+          if (!known) {
+            assertEquals(remote.db.vrcs.get(key).length, 0);
+            assertEquals(remote.db.vres.cnt(), 2); // The missing first group is escrowed as two signatures.
+            for (const message of source.db.clonePreIter(validator.pre)) reactor.ingest(message);
+            yield* reactor.processOnce();
+            reactor.kevery.processEscrowUnverTrans();
+            assertEquals(remote.db.vrcs.get(key).length, 2);
+            assertEquals(remote.db.vres.cnt(), 0);
+            // A duplicate replay then admits the second establishment group, without duplicates.
+            yield* reactor.processCompleteChunk(bundle);
+          }
+          assertEquals(
+            remote.db.vrcs.get(key).map((receipt) => receipt[3].qb64),
+            [...first.sigers, ...second.sigers].map((siger) => siger.qb64),
+          );
+          assertEquals(remote.db.vrcs.get(key).length, 3);
+        } finally {
+          yield* remote.close(true);
+          yield* source.close(true);
+        }
+      });
+    } finally {
+      await Deno.remove(headDirPath, { recursive: true });
+    }
+  });
+}
 
 Deno.test("app/reactor - query parsing keeps non-transferable endorsements as runtime cigars", async () => {
   await run(function*() {
