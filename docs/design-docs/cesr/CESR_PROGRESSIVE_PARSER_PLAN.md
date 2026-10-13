@@ -72,7 +72,7 @@ coverage. Keep production behavior unchanged in that PR.
 Run the complete maintained test inventory, including all manual and long-running
 targets. Preserve the frozen upstream-main baseline at
 `927c0cb8794d7c84fc17143c67df64aab9deda6c`. Final qualification uses the published
-`kentbull/keripy` fork `23af39bf99383be0dea061a4ea60b184268f3529`: that same main
+`kentbull/keripy` fork `5044ecc64306348dbe12c6a8ce30a348538d06f2`: that same main
 base plus standalone mailbox commands/admission, explicit mailbox protocol
 selection, the transferable receipt-table lookup repair, and explicit VC export
 genus selection, and JSON mailbox queries for topic names that cannot be native
@@ -86,6 +86,14 @@ Verify exact commit and actual imports, and record every run, skip, failure,
 topology, and duration. Extended interop and ESSR workflow jobs have a 15-minute
 limit; only the maintainer dispatches them. Full local qualification still runs
 every maintained target, including long topologies.
+
+Qualification also reproduced an immediate replay interop blocker: current main
+rejects v1 `-D` receipt quadruples, so a Tufa OOBI replay can lose the following
+mailbox authorization. Land a narrow prerequisite PR using canonical grouped
+transferable receipt proofs (`-F`) and verified grouped receipt dispatch before
+closing #134. Keep stored evidence and legacy protocol decoding; the broader
+table upgrade remains in the follow-on sequence. Recheck the affected OOBI and
+credential flows after this repair instead of changing their topology or assertions.
 
 Continue the progressive parser sequence after preparing that review PR. Any
 interop regressions or missing features discovered against this KERIpy revision
@@ -166,7 +174,7 @@ implementation onto this frozen upstream revision and publishing an immutable
 commit on `kentbull/keripy`. Record that fork commit, upstream parent, mailbox
 delta, and actual import path separately from upstream-main evidence. Preserve
 the existing `mailbox-impl` branch. Published `mailbox-main-interop` commit
-`23af39bf99383be0dea061a4ea60b184268f3529` is based on upstream
+`5044ecc64306348dbe12c6a8ce30a348538d06f2` is based on upstream
 `927c0cb8794d7c84fc17143c67df64aab9deda6c`, ports the original mailbox commits
 `1faba4f2` / `9924fffa`, adapts their handler to nested messages, and adds explicit
 mailbox protocol selection, the `vrcs` lookup repair in forwarding introductions,

@@ -499,6 +499,8 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
               [
                 "vc",
                 "revoke",
+                "--version",
+                "1.0",
                 ...kliStoreArgs(kliName, passcode),
                 "--alias",
                 "issuer",
