@@ -30,7 +30,8 @@ export function* toEffectionFrames(
     async function* input(): AsyncGenerator<Uint8Array> {
       yield* source(controller.signal);
     }
-    const parser = parse(input(), { ...options, signal: controller.signal });
+    const iterator = input(); // Retain source lifetime separately from the cursor's interruptible read.
+    const parser = parse(iterator, { ...options, signal: controller.signal });
     let subscribed = false; // One source has one position; this stream is not a broadcast channel.
     let pending: Promise<IteratorResult<CesrFrame, void>> | undefined;
     let closing: Promise<void> | undefined;
@@ -45,7 +46,12 @@ export function* toEffectionFrames(
         try {
           if (unclaimed && !unclaimed.done) await unclaimed.value.essr?.discard();
         } finally {
-          await parser.return(undefined);
+          try {
+            await parser.return(undefined);
+          } finally {
+            // Cursor abort wakes locally; the cooperative adapter also joins source cleanup.
+            await iterator.return(undefined);
+          }
         }
       })();
     }
