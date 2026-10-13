@@ -213,7 +213,9 @@ codices to a newer KERIpy revision.
 
 ## Framework boundary
 
-CESR exposes async iterables and AbortSignal without importing Effection. KERI
-and Tufa use Operation scopes to own parsing, dispatch, and transport lifetimes.
-Their bridges must abort pending input and join cleanup before their scope exits;
-merely awaiting a Promise with `call` does not cancel the underlying I/O.
+The CESR root exposes async iterables and AbortSignal without importing Effection.
+The supported optional `cesr-ts/effection` entrypoint exports FrameChannel and
+toEffectionFrames. Its single-subscription Effection Stream supplies pull
+backpressure and owns source cancellation and joined cleanup. KERI and Tufa use
+Operation scopes around parsing, dispatch, and transport lifetimes; merely
+awaiting a Promise with `call` does not cancel the underlying I/O.
