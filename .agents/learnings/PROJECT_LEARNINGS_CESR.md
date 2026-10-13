@@ -34,15 +34,15 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    items; v2 payload counters count quadlets/triplets, including nested signature
    groups. Complete v2 payloads with incomplete items are boundary errors, not
    transport shortages. Fixtures must encode payload lengths, not item counts.
-   Dispatch selects separate v1 item-count and v2 payload-exhaustion handlers;
+   Direct handler maps select separate v1 item-count and v2 payload-exhaustion handlers;
    single-entry parsing and primitive rehydration remain shared.
    ESSR also has separate v1 item-count and v2 payload-length handlers, both
    returning Texters. Nested transferable signatures require the controller
    counter, matching the pinned reference (including its exclusion of big inner
    counters). Genus selectors decode both minor sextets and reject unsupported
    versions even in compat wrappers.
-6. Version and codex lookup now goes through explicit registries rather than ad
-   hoc major-version branching. Stream genus is independent of protocol
+6. Counter parsing validates genus versions through codex registries before
+   choosing an attachment handler from the v1/v2 maps. Stream genus is independent of protocol
    metadata: null selection permits legacy inference, explicit selectors persist,
    and enclosure context is authoritative for children. Version compatibility
    checks precede non-native opaque recovery. Selected counter probes never
