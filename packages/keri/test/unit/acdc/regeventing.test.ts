@@ -302,10 +302,10 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
       const rip = regcept(issuer.pre);
       let engine = new RegistryEventer(hby.db, issuer.pre, store);
       const foreign = regcept(hby.makeHab("foreign").pre);
-      assertEquals(engine.processInception(foreign), { kind: "reject", reason: "issuer" });
+      assertEquals(engine.processEvent(foreign), { kind: "reject", reason: "issuer" });
       assertEquals(store.event(foreign.said!), null);
       assertEquals(engine.regk, null);
-      assertEquals(engine.processInception(rip).kind, "escrow");
+      assertEquals(engine.processEvent(rip).kind, "escrow");
       assertEquals(store.event(rip.said!)!.raw, rip.raw);
       assertEquals(store.seqSaider(rip.said!, 0), null);
       assertEquals(store.head(rip.said!), null);
@@ -315,7 +315,7 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
       yield* baser.reopen({ reuse: true });
       engine = new RegistryEventer(hby.db, issuer.pre, store, rip.said!);
       issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
-      assertEquals(engine.processInception(rip).kind, "accept");
+      assertEquals(engine.processEvent(rip).kind, "accept");
       assertEquals(store.seqSaider(rip.said!, 0)!.qb64, rip.said);
       assertEquals(store.head(rip.said!)!.qb64, rip.said);
       assertEquals(store.anchor(rip.said!)!.map((v) => v.qb64), [
@@ -324,17 +324,17 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
       ]);
       assertEquals(baser.maes!.get(rip.said!, 0), []);
       assertEquals(baser.ooes!.get(rip.said!, 0), []);
-      assertEquals(engine.processInception(rip).kind, "duplicate");
+      assertEquals(engine.processEvent(rip).kind, "duplicate");
       assertEquals(store.head(rip.said!)!.qb64, rip.said);
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true, readonly: true });
       engine = new RegistryEventer(hby.db, issuer.pre, store);
-      assertEquals(engine.processInception(rip).kind, "duplicate", "readonly replay requires no writable setup");
+      assertEquals(engine.processEvent(rip).kind, "duplicate", "readonly replay requires no writable setup");
       assertEquals(engine.regk, rip.said);
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true, readonly: false });
       const other = regcept(issuer.pre);
-      assertEquals(engine.processInception(other), { kind: "reject", reason: "registry" });
+      assertEquals(engine.processEvent(other), { kind: "reject", reason: "registry" });
       assertEquals(store.event(other.said!), null);
 
       // A failure after tentative publication must roll back body, anchor, ordering and instance binding.
@@ -346,7 +346,7 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
           accept.apply(this, args);
           throw new Error("registry write failed");
         };
-        assertThrows(() => second.processInception(other), Error, "registry write failed");
+        assertThrows(() => second.processEvent(other), Error, "registry write failed");
       } finally {
         store.accept = accept;
       }
@@ -357,14 +357,100 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
         store.head(other.said!),
       ], [null, null, null, null]);
       assertEquals(second.regk, null);
-      assertEquals(second.processInception(other).kind, "accept");
+      assertEquals(second.processEvent(other).kind, "accept");
 
-      // Storage corruption is not a missing dependency; a competing occupied slot is never overwritten.
+      // A foreign registry body under an accepted marker is corruption, not a competing valid event.
       baser.tels.pinOn(rip.said!, 0, new Saider({ qb64: other.said! }));
-      assertEquals(engine.processInception(rip), { kind: "reject", reason: "duplicity" });
+      assertThrows(() => engine.processEvent(rip), Error, "Corrupt accepted registry event");
       assertEquals(store.seqSaider(rip.said!, 0)!.qb64, other.said);
       baser.evts.rem(other.said!);
-      assertThrows(() => engine.processInception(rip), Error, "Corrupt accepted registry inception");
+      assertThrows(() => engine.processEvent(rip), Error, "Corrupt accepted registry event");
+    } finally {
+      yield* baser.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("registry updates require accepted predecessors and preserve decided slots and heads", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `registry-order-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const baser = yield* openRegistry({ name: `registry-order-${crypto.randomUUID()}`, temp: true });
+    try {
+      const store = new RegistryStore(baser), issuer = hby.makeHab("issuer"), rip = regcept(issuer.pre);
+      const engine = new RegistryEventer(hby.db, issuer.pre, store);
+      const blid = fixture.disclosures.issued.d;
+      const first = blindate(rip.said!, rip.said!, blid);
+      const second = blindate(rip.said!, first.said!, blid, { sn: 2 });
+      const wrong = blindate(rip.said!, rip.said!, blid, { sn: 2 });
+      const competitor = blindate(rip.said!, first.said!, blid, { sn: 2, stamp: "2026-10-13T01:00:00Z" });
+      assertEquals(engine.processEvent(first), { kind: "reject", reason: "event" });
+      issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
+      assertEquals(engine.processEvent(rip).kind, "accept");
+
+      // Storing a body does not accept it. An unanchored successor first belongs in anchor escrow.
+      store.putEvent(first);
+      const unanchored = engine.processEvent(second);
+      assertEquals(unanchored.kind === "escrow" && unanchored.reason, "anchor");
+      assertEquals(baser.maes!.get(rip.said!, 2), [[second.said!]]);
+      issuer.interact({ data: [{ i: rip.said!, s: "2", d: second.said! }] });
+      const unordered = engine.processEvent(second);
+      assertEquals(unordered.kind === "escrow" && unordered.reason, "order");
+      assertEquals(baser.maes!.get(rip.said!, 2), []);
+      assertEquals(baser.ooes!.get(rip.said!, 2), [[second.said!]]);
+      assertEquals(store.seqSaider(rip.said!, 1), null);
+      assertEquals(store.seqSaider(rip.said!, 2), null);
+      assertEquals(store.head(rip.said!)!.qb64, rip.said);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      assertEquals(baser.ooes!.get(rip.said!, 2), [[second.said!]], "order escrow survives reopen");
+
+      issuer.interact({ data: [{ i: rip.said!, s: "1", d: first.said! }] });
+      assertEquals(engine.processEvent(first).kind, "accept");
+      assertEquals(engine.processEvent(wrong), { kind: "reject", reason: "prior" });
+      assertEquals(store.event(wrong.said!), null);
+      // Automatic progression belongs to the retry unit; explicit replay now has its accepted predecessor.
+      assertEquals(engine.processEvent(second).kind, "accept");
+      assertEquals(store.seqSaider(rip.said!, 2)!.qb64, second.said);
+      assertEquals(store.head(rip.said!)!.qb64, second.said);
+      assertEquals(baser.ooes!.get(rip.said!, 2), []);
+      assertEquals(engine.processEvent(competitor), { kind: "reject", reason: "duplicity" });
+      assertEquals(store.event(competitor.said!), null);
+      for (const prior of [rip, first, second]) assertEquals(engine.processEvent(prior).kind, "duplicate");
+      assertEquals(store.head(rip.said!)!.qb64, second.said);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true, readonly: true });
+      assertEquals(engine.processEvent(first).kind, "duplicate");
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true, readonly: false });
+
+      const foreign = blindate(issuer.pre, second.said!, blid, { sn: 3 });
+      assertEquals(engine.processEvent(foreign), { kind: "reject", reason: "registry" });
+      const huge = blindate(rip.said!, second.said!, blid, { sn: 2n ** 53n });
+      assertEquals(engine.processEvent(huge), { kind: "reject", reason: "ordinalRange" });
+      assertEquals(store.event(huge.said!), null, "unsafe ordinals are refused before storage conversion");
+
+      const forgedRegistry = regcept(issuer.pre);
+      const forgedUpdate = blindate(forgedRegistry.said!, rip.said!, blid);
+      store.accept(forgedRegistry.said!, 0, rip);
+      issuer.interact({ data: [{ i: forgedRegistry.said!, s: "1", d: forgedUpdate.said! }] });
+      const forgedEngine = new RegistryEventer(hby.db, issuer.pre, store, forgedRegistry.said!);
+      assertThrows(() => forgedEngine.processEvent(forgedUpdate), Error, "Corrupt accepted registry event");
+      assertEquals(store.seqSaider(forgedRegistry.said!, 1), null);
+      store.putEvent(forgedRegistry);
+      baser.heads.pin(rip.said!, new Saider({ qb64: forgedRegistry.said! }));
+      const third = blindate(rip.said!, second.said!, blid, { sn: 3 });
+      issuer.interact({ data: [{ i: rip.said!, s: "3", d: third.said! }] });
+      assertThrows(() => engine.processEvent(third), Error, "Corrupt registry head");
+      assertEquals(store.seqSaider(rip.said!, 3), null);
+      baser.heads.pin(rip.said!, new Saider({ qb64: second.said! }));
+
+      // A surviving higher head prevents a rollback even when its accepted slot was damaged.
+      baser.tels.remOn(rip.said!, 2);
+      assertThrows(() => engine.processEvent(second), Error, "Corrupt registry head ordinal");
+      assertEquals(store.head(rip.said!)!.qb64, second.said);
+      baser.evts.rem(first.said!);
+      assertThrows(() => engine.processEvent(second), Error, "Corrupt accepted registry event");
     } finally {
       yield* baser.close(true);
       yield* hby.close(true);

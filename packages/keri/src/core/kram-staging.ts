@@ -1,5 +1,5 @@
 /** Internal atomic KRAM staging; the handoff owner supplies capacity, queries and acknowledgement. */
-import { Dater, DigDex, Diger, NumberPrimitive, ResourceLimitError, type Siger } from "cesr-ts";
+import { Dater, DigDex, Diger, NumberPrimitive, type Prefixer, ResourceLimitError, type Siger } from "cesr-ts";
 import type { Operation } from "effection";
 import type { Baser } from "../db/basing.ts";
 import { MAX_NESTED_WIRE_BYTES } from "../db/exchange-nests.ts";
@@ -57,16 +57,18 @@ function establishmentGroup(kever: Kever, sigers: readonly Siger[]): TransIdxSig
   );
 }
 /** Freeze foreign known last groups at receipt, leaving unknown groups borrowed for downstream use. */
-function receivedFactors(db: Baser, incoming: KeriDispatchEnvelope): KeriDispatchEnvelope {
+function receivedFactors(db: Baser, incoming: KeriDispatchEnvelope) {
   const received = normalizeKramSenderFactors(incoming);
+  const resolvedLast: Prefixer[] = [];
   const pending = received.ssgs.filter((group) => {
     const kever = db.getKever(group.pre, { refresh: true });
     if (!kever) return true;
     received.tsgs.push(establishmentGroup(kever, group.sigers));
+    resolvedLast.push(group.prefixer);
     return false;
   });
   received.ssgs.splice(0, received.ssgs.length, ...pending);
-  return received;
+  return { received, resolvedLast };
 }
 /** Fingerprint private wire so a concurrent replacement cannot be overwritten by an older prepared tree. */
 function snapshotIdentity(db: Baser, key: readonly string[]): string | null {
@@ -184,7 +186,7 @@ export function* stageKram<T>(
     });
   }
   if (initial.kind !== "candidate") return initial;
-  const received = receivedFactors(db, initial.envelope);
+  const { received, resolvedLast } = receivedFactors(db, initial.envelope);
   const key = initial.plan.key, snapshotBefore = snapshotIdentity(db, key);
   return yield* withKramHydration(db, key, received, function*(hydrated) {
     const snapshot = yield* snapshotKram(hydrated);
@@ -222,6 +224,8 @@ export function* stageKram<T>(
         unresolvedLast: [...fresh.envelope.unresolvedLast, ...fresh.envelope.ssgs.map((group) => group.prefixer)],
       });
       storeKramFactors(db, key, factors);
+      // Only a fresh receipt-known last group supersedes its previous unknown marker.
+      for (const prefix of resolvedLast) db.ulgs.rem(key, prefix);
       validateKramFactors(db, key);
       storeKramSnapshot(db, key, snapshot);
       if (fresh.complete) db.kready.pin(key, fresh.receipt ?? plan.receiverTime);
