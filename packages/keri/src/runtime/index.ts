@@ -24,7 +24,9 @@ export * from "../app/forwarding.ts";
 export * from "../app/grouping.ts";
 export * from "../app/habbing.ts";
 export * from "../app/httping.ts";
+export * from "../app/ipex-building.ts";
 export * from "../app/ipex-credentialing.ts";
+export type { DisclosurePlan } from "../app/ipex-graph.ts";
 export * from "../app/ipexing.ts";
 export * from "../app/keeping.ts";
 export * from "../app/mailbox-director.ts";
@@ -89,3 +91,5 @@ export { type QueryReply } from "../app/query-replies.ts";
 export { abortable } from "../app/abortable.ts";
 
 export * from "../acdc/regeventing.ts";
+
+export * from "../db/registry-evidence.ts";

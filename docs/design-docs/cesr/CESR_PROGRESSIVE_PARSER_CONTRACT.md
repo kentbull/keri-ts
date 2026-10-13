@@ -258,8 +258,8 @@ correction relative to the frozen reference's first stored signature group.
 Safe-integer ordinal bounds are JavaScript/database limits, not protocol limits.
 Legacy v1 parser intake still requires signatures; source-only intake is a v2
 behavior. Unresolved sender last groups remain guarded pending consolidated
-processMsg admission. These proof facilities do not enable guarded nested IPEX
-routes or complete sender/KRAM admission policy.
+processMsg admission. IPEX route verification consumes these factors separately
+from child issuer proofs; sender/KRAM admission policy remains incomplete.
 
 ## Registry evidence verification
 
@@ -268,8 +268,10 @@ disclosures. Parent EXN acceptance supplies no implicit credential or registry
 proof. `vetRegistry`/`vetRegistryBindings` return complete verified state,
 retryable missing-anchor coordinates, or refusal, and never write accepted
 registry/credential state or escrow. The owning IPEX workflow retains those
-responsibilities and the nested IPEX guard remains until that integration works.
-A historical cutoff must originate in receiver-observed acceptance state.
+responsibilities. Nested offer/grant routes validate borrowed child frames before
+Exchanger persists the parent and evidence; missing dependencies use its durable
+escrow. Presentation registries remain guarded until a historical cutoff can
+originate in receiver-observed KRAM acceptance state.
 
 See the [registry ownership contract](../keri/ACDC_TEL_IPEX_VERIFIER_MAINTAINER_GUIDE.md#v2-registry-evidence)
 for chain, source, binding, precision, and explicit reference/API boundaries.
@@ -285,8 +287,8 @@ cryptographic proof verification and payload ownership.
 `Pather.resolve()` traverses labels or field/list ordinals with a default
 256-component deployment limit. The limit applies to resolution and can be
 configured per call; it does not reject otherwise legal deep wire paths.
-Malformed UTF-8 byte paths fail before traversal. These helpers prepare IPEX
-validation but do not admit nested IPEX. The standalone Mapper claimed-SAID
+Malformed UTF-8 byte paths fail before traversal. IPEX uses these helpers for
+disclosure validation, separately from each node's issuer authentication. The standalone Mapper claimed-SAID
 repair and preservation of Aggor disclosure semantics remain separate work.
 
 ## Serialization and HTTP egress

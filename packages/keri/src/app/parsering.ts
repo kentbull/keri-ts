@@ -39,7 +39,7 @@ import {
   TransReceiptQuadruple,
 } from "../core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
-import { nestedMultisigIlks } from "../core/protocol-exchanging.ts";
+import { nestedIpexRoute, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
 import type { ExchangeDecision } from "./exchanging.ts";
 
@@ -447,7 +447,10 @@ export function envelopeFromFrame(
 ): KeriDispatchEnvelope {
   // Only completed consumers may retain parent-owned children through normalization.
   const route = String(message.body.ked?.r ?? "");
-  if (message.body.ilk !== "exn" || message.body.pvrsn.major < 2 || (route !== "/fwd" && !nestedMultisigIlks(route))) {
+  if (
+    message.body.ilk !== "exn" || message.body.pvrsn.major < 2
+    || (route !== "/fwd" && !nestedMultisigIlks(route) && !nestedIpexRoute(route))
+  ) {
     requireFlatFrame(message, "KERI runtime normalization");
   }
   const serder = (message.body instanceof SerderKERI || message.body instanceof SerderACDC)

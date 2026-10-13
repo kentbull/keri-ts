@@ -14,6 +14,7 @@ import type { MailboxInboxLimits } from "../db/mailbox-inbox.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { Noter } from "../db/noting.ts";
 import { createReger, Reger } from "../db/reger.ts";
+import { createRegistryEvidenceStore, RegistryEvidenceStore } from "../db/registry-evidence.ts";
 import { Regery } from "../vdr/credentialing.ts";
 import { Tevery } from "../vdr/eventing.ts";
 import { Authenticator } from "./authenticating.ts";
@@ -94,6 +95,8 @@ export interface AgentRuntime {
   /** Bounded query deliveries drained outside guarded cue handling. */
   queryDeliveries: QueryDeliveries;
   vdr: VdrRuntimeServices;
+  /** Verified v2 observer chains; no automatic rip/bup wire intake is implied. */
+  registryEvidence: RegistryEvidenceStore | null;
   services: RuntimeServices;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
   close(): Operation<void>;
@@ -119,6 +122,8 @@ export interface AgentRuntimeOptions {
   /** Raw-byte retention limits; reaching capacity pauses admission without losing cursors. */
   mailboxAdmission?: { mode: "durable"; limits?: Partial<MailboxInboxLimits> };
   vdr?: VdrRuntimeServices;
+  /** Caller-injected stores remain caller-owned. */
+  registryEvidence?: RegistryEvidenceStore;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -217,12 +222,29 @@ export function* createAgentRuntime(
       cues,
     });
   }
+  const registryEvidence = options.registryEvidence
+    ?? (!hby.readonly
+      ? yield* resource<RegistryEvidenceStore>(function*(provide) {
+        const store = yield* createRegistryEvidenceStore({
+          name: hby.name,
+          base: hby.base,
+          temp: hby.temp,
+          headDirPath: hby.headDirPath,
+          compat: hby.compat,
+        });
+        try {
+          yield* provide(store);
+        } finally {
+          if (store.opened) yield* store.close(hby.temp);
+        }
+      })
+      : null);
   const reactor = new Reactor(hby, { cues, vdr });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);
   loadMultisigHandlers(hby, reactor.exchanger, { notifier });
-  loadIpexHandlers(hby, reactor.exchanger, { notifier });
+  loadIpexHandlers(hby, reactor.exchanger, { notifier, registry: registryEvidence });
   const mailboxDirector = new MailboxDirector(
     hby,
     mailboxer ? { mailboxer } : {},
@@ -282,6 +304,7 @@ export function* createAgentRuntime(
     replyStreams,
     queryDeliveries,
     vdr,
+    registryEvidence,
     services,
     *close(): Operation<void> {
       yield* queryDeliveries.close();
@@ -292,6 +315,9 @@ export function* createAgentRuntime(
       }
       if (ownsMailboxer && mailboxer?.opened) {
         yield* mailboxer.close();
+      }
+      if (!options.registryEvidence && registryEvidence?.opened) {
+        yield* registryEvidence.close(hby.temp);
       }
       if (ownsReger && reger?.opened) {
         yield* reger.close(hby.temp);

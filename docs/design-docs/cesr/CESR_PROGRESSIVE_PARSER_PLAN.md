@@ -14,7 +14,7 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 
 ## Acceptance matrix for the remaining parser gaps
 
-Current verified master: `d85fa42c89a5c30f4fce4bd583245c64f2b7b606` after #166
+Current verified master: `547c566eeee26298a37478a075b9fda525309ce2` after #167
 (starting boundary was `876d24b4` after #159); frozen upstream authority `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
 The seven follow-on phases below are distinct from the original twelve migration
 steps. Follow-on phase 1's identified tables/semantics and phase 2's parent-owned
@@ -27,8 +27,8 @@ matrix refer to the follow-on sequence, except where a GitHub PR is named.
 | Requirement      | Boundary             | Owning PR  | Evidence gate                       | Open limit           |
 | ---------------- | -------------------- | ---------- | ----------------------------------- | -------------------- |
 | Multisig         | Merged #160–161      | 3d         | [Proofs/retry][nested-gates]        | Four routes          |
-| IPEX             | Proofs/disclosure    | 3e         | [Grant/admit][nested-gates]         | Runtime pending      |
-| Registry vetting | In review            | 3e         | [Chains/bindings][registry-vetting] | No workflow yet      |
+| IPEX             | Runtime in review    | 3e         | [Grant/admit][nested-gates]         | KRAM presentations   |
+| Registry vetting | Merged #167          | 3e         | [Chains/bindings][registry-vetting] | Observer import only |
 | Exchange proofs  | Merged #165          | 3e cleanup | [Policy/cues][proof-cleanup]        | IPEX still pending   |
 | v2 admission     | Direct dispatch      | 3f         | [Sender/KRAM][nested-gates]         | Reference stubs      |
 | ESSR outcomes    | Merged #163          | After #162 | [Outcomes/cleanup][nested-gates]    | Local limits         |
@@ -51,6 +51,10 @@ matrix refer to the follow-on sequence, except where a GitHub PR is named.
 Final parity reporting must distinguish supported processing, unfinished work,
 intentional divergences, reference stubs, and unqualified claims. No structural
 parser result closes the full runtime or bounded-memory gates.
+
+Next dedicated PR after nested IPEX: audit all design docs, plans, and project/topic learnings, reduce
+completed work to concise summaries, and move useful historical evidence to linked
+reports or references. Preserve active acceptance gates and unresolved limits.
 
 ## PR sequence
 
@@ -628,16 +632,14 @@ parsed-frame reuse without payload reads, borrowed-owner lifetime, cancelled
 preparation, the real workflows, and the existing upstream interoperability probe.
 Apply the same boundaries in 3e without a repository-wide API migration.
 
-**3e — IPEX (source audit complete; proof prerequisite merged in #162):** use frozen
-`acdc/ipexing.py`, not just legacy `vc/protocoling.py`. Its 62 maintained tests
-pass with actual imports from `/work/keripy-main927/src`. The existing TS handler
-implements the legacy conversation graph only. The same planned IPEX unit owns
-supplemental evidence selection and source-seal persistence, single-DAG disclosure
-plans and graph semantics, independent issuer proofs, and `rip/bup` registry
-vetting/retry. Presentation-registry history additionally depends on the
-receiver-observed KRAM acceptance timestamp addressed with 3f. TS still lacks that v2 registry processing. The path-directed Compactor
-prerequisite merged in #166; registry evidence vetting is implemented for review below. Both belong inside 3e; they do not
-establish completed IPEX processing or create parallel workstreams.
+**3e — IPEX (runtime in review):** six version-specific routes now enforce the
+frozen conversation and disclosure rules, independently verify each nested node,
+and preserve missing-proof escrow and replay. The observer store imports verified
+`rip/bup` chains atomically. Pure body construction and cancellable byte preparation
+reuse the parsed-frame and serializer boundaries. See the
+[v2 IPEX contract](../keri/ACDC_TEL_IPEX_VERIFIER_MAINTAINER_GUIDE.md#v2-ipex-runtime).
+Presentation registries remain guarded until 3f supplies receiver-owned KRAM time;
+issuer-side v2 registry processing and full production qualification remain open.
 Completion requires real grant/admit workflows with credential/KEL/TEL dependency
 evidence, no silent evidence loss, and continued rejection of legacy pathed v2
 input until its supported nested processing path is complete.
@@ -756,13 +758,13 @@ The checked-in oracle uses real signed frozen-upstream KEL events and verifies
 all imported Python module bytes. keri-ts consumes those through its actual KEL
 processor; fixtures cover source hints, root/foreign seals, order/duplicity,
 blinded/bound state, substitution, and microsecond historical selection. The
-upstream registry suite passes (27 tests), and the affected maintained core
-suite passes (77 tests). Required PR checks remain publication
-gates; runtime integration remains a later 3e gate.
+verifier prerequisite merged in [#167](https://github.com/kentbull/keri-ts/pull/167);
+its independent fixture and focused upstream tests remain the evidence gate.
 
 This is verifier machinery within 3e. It does not create an issuer-side registry,
 fetch dependencies, persist escrow or credentials, obtain a trusted KRAM cutoff,
-or enable nested IPEX. Those remain in 3e/3f. The runtime API accepts parsed
+or admit IPEX by itself. The owning 3e workflow supplies persistence and retry;
+receiver-owned historical cutoffs remain in 3f. The runtime API accepts parsed
 Serders and semantic disclosures; it does not duplicate byte parsing. Historical
 cutoffs require timezone-qualified RFC3339 text with at most six fractional
 digits, a narrower contract than Python's general datetime parser. TEL ordinals

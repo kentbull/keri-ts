@@ -11,8 +11,10 @@
  */
 import type { Kind, SerderKERI, Versionage } from "cesr-ts";
 import { exchange } from "../core/protocol-exchanging.ts";
+import type { RegistryEvidenceReader } from "../db/registry-evidence.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { IpexV2Handler } from "./ipex-v2.ts";
 import type { Notifier } from "./notifying.ts";
 
 /** KERIpy IPEX route constants. */
@@ -53,6 +55,8 @@ interface RawMessage {
 
 export interface IpexHandlerOptions {
   notifier?: Notifier | null;
+  /** Optional accepted v2 observer evidence, owned by the caller/runtime. */
+  registry?: RegistryEvidenceReader | null;
 }
 
 export interface IpexBuilderOptions {
@@ -91,6 +95,7 @@ export class IpexHandler implements ExchangeRouteHandler {
   }
 
   verify(args: { serder: SerderKERI }): boolean {
+    if (args.serder.pvrsn.major !== 1) return false;
     const route = args.serder.route ?? "";
     if (route !== this.resource) {
       return false;
@@ -155,6 +160,7 @@ export function loadIpexHandlers(
 ): void {
   for (const route of IPEX_ROUTES) {
     exchanger.addHandler(new IpexHandler(route, hby, options.notifier ?? null));
+    exchanger.addHandler(new IpexV2Handler(route, hby, options.notifier ?? null, options.registry ?? null));
   }
 }
 
