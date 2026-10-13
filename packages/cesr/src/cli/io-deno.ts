@@ -1,52 +1,43 @@
 import type { CliIo } from "./types.ts";
 
-/**
- * Read a full `ReadableStream` into one contiguous byte buffer.
- *
- * Deno exposes stdin as a web stream, while CLI commands want a single byte
- * buffer. Keeping this helper here prevents command modules from depending on
- * the Deno runtime directly.
- */
-export async function readAllReadable(
-  stream: ReadableStream<Uint8Array>,
-): Promise<Uint8Array> {
+/** Consume a web stream on demand and join cancellation before releasing its reader. */
+async function* readStream(stream: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
   const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
   try {
     while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        total += value.length;
-      }
+      const { done, value } = await reader.read();
+      if (done) return;
+      if (value.length) yield value;
     }
   } finally {
-    reader.releaseLock();
+    try {
+      await reader.cancel();
+    } finally {
+      reader.releaseLock();
+    }
   }
-
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return out;
 }
 
-/** Create the Deno runtime IO adapter for the package-level `tephra` CLI. */
+/** Write all encoded bytes; Deno writers may accept less than one whole buffer. */
+async function writeText(stream: Pick<Deno.FsFile, "write">, text: string): Promise<void> {
+  const bytes = new TextEncoder().encode(text);
+  for (let offset = 0; offset < bytes.length;) offset += await stream.write(bytes.subarray(offset));
+}
+
+/** Create the Deno CLI adapter; every source closes when its consumer stops. */
 export function createDenoCliIo(): CliIo {
-  const textEncoder = new TextEncoder();
   return {
-    readFile: (path: string) => Deno.readFile(path),
-    writeTextFile: (path: string, text: string) => Deno.writeTextFile(path, text),
-    readStdin: () => readAllReadable(Deno.stdin.readable),
-    writeStdout: async (text: string) => {
-      await Deno.stdout.write(textEncoder.encode(text));
+    /** Deno's file/stdin streams are consumed incrementally, including finite annotation admission. */
+    async *read(path?: string) {
+      if (!path) {
+        yield* readStream(Deno.stdin.readable);
+        return;
+      }
+      const file = await Deno.open(path, { read: true });
+      yield* readStream(file.readable);
     },
-    writeStderr: async (text: string) => {
-      await Deno.stderr.write(textEncoder.encode(text));
-    },
+    writeTextFile: (path, text) => Deno.writeTextFile(path, text),
+    writeStdout: (text) => writeText(Deno.stdout, text),
+    writeStderr: (text) => writeText(Deno.stderr, text),
   };
 }

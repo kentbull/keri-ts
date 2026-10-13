@@ -1,209 +1,105 @@
-import type { ParseEvent } from "../core/types.ts";
-import { createParser, type ParserOptions } from "../parser/stream.ts";
+import { ResourceLimitError } from "../core/errors.ts";
+import { parse, type ParseOptions } from "../parser/progressive.ts";
 
-/**
- * Benchmark configuration for parser throughput measurements.
- *
- * Boundary contract:
- * - This configuration only controls execution shape (iterations/chunking/parser mode).
- * - It must not mutate parser behavior beyond explicit `parserOptions`.
- */
+/** Finite replay policy for the convenience benchmark, independent of protocol sizes. */
+export const BENCH_INPUT_LIMIT = 64 * 1024 ** 2;
+
+/** Controls repeated progressive parses; every run must consume valid input completely. */
 export interface CesrParserBenchmarkOptions {
-  /** Number of measured parser runs. */
+  /** Number of measured runs; default 50. */
   iterations?: number;
-  /** Number of warmup runs before measured runs. */
+  /** Unmeasured preparation runs; default 5. */
   warmupIterations?: number;
-  /**
-   * Optional chunk size for simulated streaming.
-   *
-   * When unset or <= 0, the full stream is fed in one chunk.
-   */
+  /** Independent copied source chunks; default 64 KiB. */
   chunkSize?: number;
-  /** Parser behavior options to benchmark. */
-  parserOptions?: ParserOptions;
-  /**
-   * Whether any parse error frame should fail the benchmark run.
-   * Default: true.
-   */
-  failOnParseError?: boolean;
+  /** Finite retained corpus budget; default 64 MiB. */
+  maxBytes?: number;
+  /** Protocol admission and cancellation passed directly to the single engine. */
+  parserOptions?: ParseOptions;
 }
 
-/** Per-run frame/error counts used to aggregate benchmark totals. */
+/** Completed-run frame count; errors reject instead of reporting misleading throughput. */
 export interface CesrParseRunSummary {
-  /** Count of successfully emitted frame events for one run. */
+  /** Complete frames whose temporary ESSR ownership has been released. */
   frameCount: number;
-  /** Count of emitted parser error events for one run. */
-  errorCount: number;
 }
 
-/**
- * Stable benchmark result envelope consumed by CLI and maintainers.
- *
- * Invariants:
- * - `totalBytes === bytesPerIteration * iterations`
- * - rate metrics are derived from `elapsedMs` and must remain monotonic with work size.
- */
+/** Throughput over fully consumed valid input, excluding warmup iterations. */
 export interface CesrParserBenchmarkResult {
+  /** Completed measured run count. */
   iterations: number;
+  /** Completed unmeasured run count. */
   warmupIterations: number;
+  /** Source chunk size used by every run. */
   chunkSize: number;
+  /** Size of the retained finite corpus. */
   bytesPerIteration: number;
+  /** Fully consumed bytes across measured runs. */
   totalBytes: number;
+  /** Complete frames across measured runs. */
   totalFrames: number;
-  totalErrors: number;
+  /** Monotonic elapsed time for measured parsing and payload cleanup. */
   elapsedMs: number;
+  /** Mean measured run duration. */
   avgIterationMs: number;
+  /** Fully consumed wire bytes per second. */
   throughputBytesPerSec: number;
+  /** Fully consumed mebibytes per second. */
   throughputMiBPerSec: number;
+  /** Complete frames per second. */
   framesPerSec: number;
 }
 
-function asPositiveInteger(
-  value: number | undefined,
-  fallback: number,
-): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return fallback;
-  }
-  return Math.max(0, Math.trunc(value));
+/** Reject invalid control values rather than silently changing the requested workload. */
+function integer(value: number, name: string, minimum = 1): number {
+  if (!Number.isSafeInteger(value) || value < minimum) throw new RangeError(`${name} must be an integer >= ${minimum}`);
+  return value;
 }
 
-/**
- * Normalize chunking to a legal parser-feed size.
- *
- * Boundary rules:
- * - `<= 0` means full-stream feed for each iteration.
- * - values larger than stream size collapse to full-stream feed.
- */
-function normalizeChunkSize(
-  chunkSize: number | undefined,
-  totalBytes: number,
-): number {
-  const normalized = asPositiveInteger(chunkSize, 0);
-  if (normalized <= 0 || normalized >= totalBytes) {
-    return totalBytes;
-  }
-  return normalized;
-}
-
-/**
- * Produce deterministic feed slices for one parse run.
- *
- * Invariant:
- * - slices preserve original stream ordering.
- * - slices are view-backed (`subarray`) to avoid benchmark-side copy noise.
- */
-function buildChunks(input: Uint8Array, chunkSize: number): Uint8Array[] {
-  if (chunkSize >= input.length) {
-    return [input];
-  }
-
-  const chunks: Uint8Array[] = [];
-  for (let offset = 0; offset < input.length; offset += chunkSize) {
-    chunks.push(
-      input.subarray(offset, Math.min(offset + chunkSize, input.length)),
-    );
-  }
-  return chunks;
-}
-
-/**
- * Count parser frame/error events for one parser emission batch.
- */
-function countFrames(events: ParseEvent[]): CesrParseRunSummary {
-  let frameCount = 0;
-  let errorCount = 0;
-  for (const event of events) {
-    if (event.type === "frame") {
-      frameCount++;
-      continue;
-    }
-    errorCount++;
-  }
-  return { frameCount, errorCount };
-}
-
-/**
- * Execute one complete parser pass over the provided stream.
- *
- * Boundary contract:
- * - Always feeds configured chunks and then flushes once.
- * - Returns event counts only; callers own timing and aggregation.
- */
-export function parseCesrStreamOnce(
+/** Consume one progressive pass, releasing ESSR on every delivered frame. */
+export async function parseCesrStreamOnce(
   input: Uint8Array,
-  options: Pick<CesrParserBenchmarkOptions, "chunkSize" | "parserOptions"> = {},
-): CesrParseRunSummary {
-  const chunkSize = normalizeChunkSize(options.chunkSize, input.length);
-  const parser = createParser(options.parserOptions);
-  let frameCount = 0;
-  let errorCount = 0;
-  for (const chunk of buildChunks(input, chunkSize)) {
-    const summary = countFrames(parser.feed(chunk));
-    frameCount += summary.frameCount;
-    errorCount += summary.errorCount;
+  options: Pick<CesrParserBenchmarkOptions, "chunkSize" | "parserOptions" | "maxBytes"> = {},
+): Promise<CesrParseRunSummary> {
+  const limit = integer(options.maxBytes ?? BENCH_INPUT_LIMIT, "maxBytes");
+  if (input.length > limit) throw new ResourceLimitError(`Benchmark corpus exceeds ${limit} bytes`);
+  const chunkSize = integer(options.chunkSize ?? 65536, "chunkSize");
+  /** Allocate only the next admitted chunk; no array of slices retains source metadata. */
+  async function* source(): AsyncGenerator<Uint8Array> {
+    for (let offset = 0; offset < input.length; offset += chunkSize) {
+      options.parserOptions?.signal?.throwIfAborted();
+      yield input.slice(offset, offset + chunkSize);
+    }
   }
-  const flushSummary = countFrames(parser.flush());
-  frameCount += flushSummary.frameCount;
-  errorCount += flushSummary.errorCount;
-  return { frameCount, errorCount };
+  let frameCount = 0;
+  for await (const frame of parse(source(), options.parserOptions)) {
+    try {
+      frameCount++;
+    } finally {
+      await frame.essr?.discard();
+    }
+  }
+  return { frameCount };
 }
 
-/**
- * Benchmark parser throughput across warmup + measured iterations.
- *
- * Invariants:
- * - warmup runs are excluded from final metrics.
- * - when `failOnParseError` is true, any parse error fails fast to prevent
- *   silently benchmarking degraded correctness.
- */
-export function benchmarkCesrParser(
+/** Measure valid finite input repeatedly; malformed warmup or measured input rejects immediately. */
+export async function benchmarkCesrParser(
   input: Uint8Array,
   options: CesrParserBenchmarkOptions = {},
-): CesrParserBenchmarkResult {
-  if (input.length === 0) {
-    throw new Error("Benchmark input stream must not be empty");
-  }
-
-  const iterations = asPositiveInteger(options.iterations, 50);
-  if (iterations <= 0) {
-    throw new Error("iterations must be greater than 0");
-  }
-
-  const warmupIterations = asPositiveInteger(options.warmupIterations, 5);
-  const chunkSize = normalizeChunkSize(options.chunkSize, input.length);
-  const failOnParseError = options.failOnParseError ?? true;
-
-  for (let i = 0; i < warmupIterations; i++) {
-    parseCesrStreamOnce(input, {
-      chunkSize,
-      parserOptions: options.parserOptions,
-    });
-  }
-
+): Promise<CesrParserBenchmarkResult> {
+  if (input.length === 0) throw new Error("Benchmark input stream must not be empty");
+  const iterations = integer(options.iterations ?? 50, "iterations");
+  const warmupIterations = integer(options.warmupIterations ?? 5, "warmupIterations", 0);
+  const chunkSize = integer(options.chunkSize ?? 65536, "chunkSize");
+  for (let index = 0; index < warmupIterations; index++) await parseCesrStreamOnce(input, { ...options, chunkSize });
   let totalFrames = 0;
-  let totalErrors = 0;
-  const startMs = performance.now();
-  for (let i = 0; i < iterations; i++) {
-    const run = parseCesrStreamOnce(input, {
-      chunkSize,
-      parserOptions: options.parserOptions,
-    });
-    totalFrames += run.frameCount;
-    totalErrors += run.errorCount;
-    if (failOnParseError && run.errorCount > 0) {
-      throw new Error(
-        `Benchmark run produced parse errors (run=${i + 1}, errorCount=${run.errorCount})`,
-      );
-    }
+  const start = performance.now();
+  for (let index = 0; index < iterations; index++) {
+    totalFrames += (await parseCesrStreamOnce(input, { ...options, chunkSize })).frameCount;
   }
-  const elapsedMs = Math.max(performance.now() - startMs, Number.EPSILON);
-
+  const elapsedMs = Math.max(performance.now() - start, Number.EPSILON);
   const totalBytes = input.length * iterations;
-  const throughputBytesPerSec = (totalBytes * 1000) / elapsedMs;
-  const throughputMiBPerSec = throughputBytesPerSec / (1024 * 1024);
-  const framesPerSec = (totalFrames * 1000) / elapsedMs;
-
+  const throughputBytesPerSec = totalBytes * 1000 / elapsedMs;
   return {
     iterations,
     warmupIterations,
@@ -211,11 +107,10 @@ export function benchmarkCesrParser(
     bytesPerIteration: input.length,
     totalBytes,
     totalFrames,
-    totalErrors,
     elapsedMs,
     avgIterationMs: elapsedMs / iterations,
     throughputBytesPerSec,
-    throughputMiBPerSec,
-    framesPerSec,
+    throughputMiBPerSec: throughputBytesPerSec / 1024 ** 2,
+    framesPerSec: totalFrames * 1000 / elapsedMs,
   };
 }

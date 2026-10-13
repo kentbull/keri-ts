@@ -1,8 +1,9 @@
+import { encodeB64 } from "../core/bytes.ts";
 import { DeserializeError, GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import type { CesrDomain, CesrFrame } from "../core/types.ts";
-import { parseAttachmentGroup } from "../parser/attachments.ts";
+import { parseAttachmentGroup, startsFrame } from "../parser/attachments.ts";
 import { sniff } from "../parser/cold-start.ts";
-import { parseBytes } from "../parser/stream.ts";
+import { readFrameCounter } from "../parser/frames.ts";
 import { Counter, decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import { Indexer } from "../primitives/indexer.ts";
 import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
@@ -10,13 +11,17 @@ import { Matter, parseMatter } from "../primitives/matter.ts";
 import { OpaqueSpan } from "../primitives/opaque.ts";
 import { type GroupEntry, isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { counterCodeName, counterCodeNameForVersion, matterCodeName, nativeLabelName } from "./comments.ts";
-import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
+import { counterCodeNameForVersion, matterCodeName, nativeLabelName } from "./comments.ts";
+import type { AnnotatedFrame, RenderOptions } from "./types.ts";
 
+/** Decode admitted textual tokens for presentation. */
 const TEXT_DECODER = new TextDecoder();
+/** Label entries without a semantic primitive renderer. */
 const OPAQUE_TOKEN_COMMENT = "opaque token";
+/** Label opaque attachment spans without inventing primitive meaning. */
 const OPAQUE_WRAPPER_PAYLOAD_COMMENT = "opaque wrapper payload";
 
+/** Attachment enclosures retain their wire order and scope-local genus selectors. */
 const WRAPPER_GROUP_NAMES = new Set([
   "AttachmentGroup",
   "BigAttachmentGroup",
@@ -24,6 +29,7 @@ const WRAPPER_GROUP_NAMES = new Set([
   "BigBodyWithAttachmentGroup",
 ]);
 
+/** Stream enclosures contribute indentation without replacing parsed bodies. */
 const TOP_LEVEL_WRAPPER_GROUP_NAMES = new Set([
   "GenericGroup",
   "BigGenericGroup",
@@ -31,10 +37,12 @@ const TOP_LEVEL_WRAPPER_GROUP_NAMES = new Set([
   "BigBodyWithAttachmentGroup",
 ]);
 
+/** Show opaque bytes in a reversible diagnostic comment. */
 function toHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Distinguish expected token-probe mismatches from implementation errors. */
 function isRecoverableParseError(error: unknown): boolean {
   return error instanceof UnknownCodeError
     || error instanceof DeserializeError
@@ -42,10 +50,12 @@ function isRecoverableParseError(error: unknown): boolean {
     || error instanceof GroupSizeError;
 }
 
+/** Build nonnegative presentation indentation. */
 function spaces(count: number): string {
   return " ".repeat(Math.max(0, count));
 }
 
+/** Classify a token span, treating non-CESR material as a message body. */
 function asDomain(raw: Uint8Array): CesrDomain | "msg" {
   try {
     const cold = sniff(raw);
@@ -59,12 +69,13 @@ function asDomain(raw: Uint8Array): CesrDomain | "msg" {
   return "msg";
 }
 
+/** Emit one annotated value using the selected comment placement. */
 function emitLine(
   lines: string[],
   value: string,
   comment: string,
   indent: number,
-  options: Required<AnnotateOptions>,
+  options: RenderOptions,
 ): void {
   const pad = spaces(indent);
   if (options.commentMode === "above") {
@@ -81,7 +92,7 @@ function renderGroupItems(
   items: readonly GroupEntry[],
   version: Versionage,
   indent: number,
-  options: Required<AnnotateOptions>,
+  options: RenderOptions,
 ): void {
   for (const item of items) {
     if (isGroupTuple(item)) {
@@ -152,95 +163,50 @@ function renderAttachmentGroupRaw(
   raw: Uint8Array,
   version: Versionage,
   indent: number,
-  options: Required<AnnotateOptions>,
+  options: RenderOptions,
 ): number {
   const domain = asDomain(raw);
   if (domain !== "txt" && domain !== "bny") {
     return 0;
   }
-  const parsed = parseAttachmentGroup(raw, version, domain);
   const counter = parseCounter(raw, version, domain);
-  emitLine(
-    lines,
-    counter.qb64,
-    `${parsed.group.name} count=${counter.count}`,
-    indent,
-    options,
-  );
-
   const headerSize = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
-  const payload = raw.slice(headerSize, parsed.consumed);
-
-  if (WRAPPER_GROUP_NAMES.has(parsed.group.name)) {
-    // Wrapper groups contain nested groups by convention, but real-world
-    // streams may include trailing opaque segments. Keep annotation resilient.
-    let offset = 0;
-    while (offset < payload.length) {
-      const slice = payload.slice(offset);
-      const sliceCold = asDomain(slice);
-      if (sliceCold === "msg") {
-        break;
+  emitLine(lines, counter.qb64, `${counter.name} count=${counter.count}`, indent, options);
+  if (WRAPPER_GROUP_NAMES.has(counter.name)) {
+    // The parser already validated this finite enclosure; preserve its original header and leaf order.
+    const total = headerSize + counter.count * (domain === "bny" ? 3 : 4);
+    let offset = headerSize;
+    let selected = version;
+    while (offset < total) {
+      const slice = raw.subarray(offset, total);
+      const childDomain = asDomain(slice);
+      if (childDomain !== "txt" && childDomain !== "bny") {
+        throw new DeserializeError("Invalid annotation attachment domain");
       }
-      if (sliceCold === "txt" && slice[0] !== "-".charCodeAt(0)) {
-        break;
-      }
-
-      let consumed = 0;
-      try {
-        consumed = renderAttachmentGroupRaw(
-          lines,
-          slice,
-          version,
-          indent + options.indent,
-          options,
-        );
-      } catch (error) {
-        if (!isRecoverableParseError(error)) {
-          throw error;
-        }
-        break;
-      }
-      if (consumed <= 0) break;
-      offset += consumed;
-    }
-    if (offset < payload.length) {
-      const remainder = payload.slice(offset);
-      const unit = domain === "bny" ? 3 : 4;
-      for (let i = 0; i < remainder.length; i += unit) {
-        const chunk = remainder.slice(i, Math.min(i + unit, remainder.length));
-        const rendered = domain === "bny"
-          ? `0x${toHex(chunk)}`
-          : TEXT_DECODER.decode(chunk);
-        emitLine(
-          lines,
-          rendered,
-          OPAQUE_WRAPPER_PAYLOAD_COMMENT,
-          indent + options.indent,
-          options,
-        );
+      const child = parseCounter(slice, selected, childDomain);
+      if (child.name === "KERIACDCGenusVersion") {
+        emitLine(lines, child.qb64, child.name, indent + options.indent, options);
+        selected = decodeGenusVersion(child);
+        offset += childDomain === "bny" ? child.fullSizeB2 : child.fullSize;
+      } else {
+        offset += renderAttachmentGroupRaw(lines, slice, selected, indent + options.indent, options);
       }
     }
-    return parsed.consumed;
+    return total;
   }
-
-  renderGroupItems(
-    lines,
-    parsed.group.items,
-    version,
-    indent + options.indent,
-    options,
-  );
+  // Primitive rendering is deliberately finite; it is not a second stream parser.
+  const parsed = parseAttachmentGroup(raw, version, domain);
+  renderGroupItems(lines, parsed.group.items, version, indent + options.indent, options);
   return parsed.consumed;
 }
 
 /** Walk native body tokens for annotation; Serder owns semantic validation. */
 function renderNativeBody(
   lines: string[],
-  frame: CesrFrame,
-  options: Required<AnnotateOptions>,
+  raw: Uint8Array,
+  options: RenderOptions,
   version: Versionage,
 ): void {
-  const raw = frame.body.raw;
   const domain = asDomain(raw);
   if (domain !== "txt" && domain !== "bny") {
     return;
@@ -260,6 +226,12 @@ function renderNativeBody(
   const payloadSize = counter.count * unit;
   const end = Math.min(raw.length, headerSize + payloadSize);
   let offset = headerSize;
+  // A NonNativeBodyGroup carries one qualified primitive, not a native label/value sequence.
+  if (counter.name === "NonNativeBodyGroup" || counter.name === "BigNonNativeBodyGroup") {
+    const matter = parseMatter(raw.subarray(headerSize, end), domain);
+    emitLine(lines, matter.qb64, matterCodeName(matter.code), options.indent, options);
+    return;
+  }
   let pendingLabel: string | null = null;
 
   while (offset < end) {
@@ -301,23 +273,9 @@ function renderNativeBody(
 function renderMessageBody(
   lines: string[],
   frame: CesrFrame,
-  options: Required<AnnotateOptions>,
+  options: RenderOptions,
 ): void {
   const rawBody = TEXT_DECODER.decode(frame.body.raw);
-  const isOpaqueCesrBody = frame.body.kind === "CESR"
-    && frame.body.ked === null;
-
-  if (isOpaqueCesrBody) {
-    emitLine(
-      lines,
-      rawBody,
-      `OPAQUE CESR body (non-serder fallback, hex=${toHex(frame.body.raw)})`,
-      0,
-      options,
-    );
-    return;
-  }
-
   let body = rawBody;
   if (options.pretty && frame.body.kind === "JSON") {
     try {
@@ -339,159 +297,97 @@ function renderMessageBody(
   emitLine(lines, body, info, 0, options);
 }
 
-/** Render one parsed frame and all of its attachment groups into annotation lines. */
-function renderFrame(
-  frame: CesrFrame,
-  index: number,
-  options: Required<AnnotateOptions>,
-): AnnotatedFrame {
-  const lines: string[] = [];
-  const version = frame.body.gvrsn ?? frame.body.pvrsn;
-  const domain = asDomain(frame.body.raw);
-
-  if (frame.body.kind === "CESR" && frame.body.ked === null) {
-    renderMessageBody(lines, frame, options);
-  } else if (domain === "txt" || domain === "bny") {
-    renderNativeBody(lines, frame, options, version);
-  } else {
-    renderMessageBody(lines, frame, options);
-  }
-
-  for (const group of frame.attachments) {
-    renderAttachmentGroupRaw(lines, group.raw, version, 0, options);
-  }
-
-  return { index, frame, lines };
-}
-
-/** Parse and render a nested frame chunk inside wrapper-aware annotation flows. */
-function renderFrameChunk(
-  lines: string[],
-  input: Uint8Array,
-  indent: number,
-  options: Required<AnnotateOptions>,
-): void {
-  const parsed = parseBytes(input);
-  const frames: CesrFrame[] = [];
-  for (const event of parsed) {
-    if (event.type === "error") {
-      throw event.error;
-    }
-    frames.push(event.frame);
-  }
-  const rendered = renderAnnotatedFrames(frames, options);
-  for (const frame of rendered) {
-    for (const line of frame.lines) {
-      lines.push(`${spaces(indent)}${line}`);
-    }
-  }
-}
-
-/** Walk a stream that may begin with wrapper/version selectors before ordinary frames. */
-function renderWrapperAwareStream(
-  lines: string[],
-  input: Uint8Array,
-  inheritedVersion: Versionage,
-  indent: number,
-  options: Required<AnnotateOptions>,
-): boolean {
-  let offset = 0;
-  let activeVersion = inheritedVersion;
-  let usedWrapper = false;
-
-  while (offset < input.length) {
-    const slice = input.slice(offset);
-    const domain = asDomain(slice);
-    if (domain !== "txt" && domain !== "bny") {
-      if (!usedWrapper) return false;
-      renderFrameChunk(lines, slice, indent, options);
-      return true;
-    }
-
-    const counter = parseCounter(slice, activeVersion, domain);
-    const headerSize = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
-    const name = counterCodeName(counter.code);
-
-    if (name === "KERIACDCGenusVersion") {
-      emitLine(
-        lines,
-        counter.qb64,
-        `${name} count=${counter.count}`,
-        indent,
-        options,
-      );
-      activeVersion = decodeGenusVersion(counter);
-      offset += headerSize;
-      usedWrapper = true;
-      continue;
-    }
-
-    if (!TOP_LEVEL_WRAPPER_GROUP_NAMES.has(name)) {
-      if (!usedWrapper) return false;
-      renderFrameChunk(lines, slice, indent, options);
-      return true;
-    }
-
-    const unit = domain === "bny" ? 3 : 4;
-    const payloadSize = counter.count * unit;
-    const total = headerSize + payloadSize;
-    if (slice.length < total) {
-      throw new ShortageError(total, slice.length);
-    }
-
-    emitLine(
-      lines,
-      counter.qb64,
-      `${name} count=${counter.count}`,
-      indent,
-      options,
-    );
-    const payload = slice.slice(headerSize, total);
-    const nestedHandled = renderWrapperAwareStream(
-      lines,
-      payload,
-      activeVersion,
-      indent + options.indent,
-      options,
-    );
-    if (!nestedHandled) {
-      renderFrameChunk(lines, payload, indent + options.indent, options);
-    }
-
-    offset += total;
-    usedWrapper = true;
-  }
-
-  return usedWrapper;
-}
-
-/**
- * Render stream-level wrapper groups (GenericGroup/BodyWithAttachmentGroup)
- * so denot round-trips preserve wrapper counters. Returns null when input does
- * not start in a wrapper-oriented domain and caller should use frame rendering.
- */
-export function renderWrapperAnnotatedStream(
-  input: Uint8Array,
-  options: Required<AnnotateOptions>,
-): string | null {
-  const lines: string[] = [];
-  const rendered = renderWrapperAwareStream(
-    lines,
-    input,
-    { major: 2, minor: 0 },
-    0,
-    options,
-  );
-  if (!rendered) {
-    return null;
-  }
-  return lines.join("\n");
-}
-
-/** Render parsed CESR frames into line-oriented, human-annotated text blocks. */
+/** Render original validated wire while taking semantic bodies from the single parser engine. */
 export function renderAnnotatedFrames(
   frames: CesrFrame[],
-  options: Required<AnnotateOptions>,
+  options: RenderOptions,
+  input: Uint8Array,
 ): AnnotatedFrame[] {
-  return frames.map((frame, index) => renderFrame(frame, index + 1, options));
+  const output: AnnotatedFrame[] = [];
+  let next = 0;
+  let prefix: string[] = [];
+
+  /** Preserve enclosure/selector presentation without hydrating or parsing another frame. */
+  function renderStream(raw: Uint8Array, inherited: Versionage | null, indent: number): void {
+    let offset = 0;
+    let selected = inherited;
+    while (offset < raw.length) {
+      const slice = raw.subarray(offset);
+      const domain = sniff(slice);
+      if (domain === "ano") {
+        offset++;
+        continue;
+      }
+      let wireSize: number | undefined;
+      let wireGenus: Versionage | undefined;
+      if (domain === "txt" || domain === "bny") {
+        const { counter, gvrsn } = readFrameCounter(
+          slice,
+          selected ?? { major: 2, minor: 0 },
+          domain,
+          selected === null,
+        );
+        wireGenus = gvrsn;
+        const size = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+        // Serder raw may be canonical text or omit an opaque enclosure header; source extent stays on wire.
+        wireSize = size + counter.count * (domain === "bny" ? 3 : 4);
+        if (counter.name === "KERIACDCGenusVersion") {
+          emitLine(prefix, counter.qb64, counter.name, indent, options);
+          selected = decodeGenusVersion(counter);
+          offset += size;
+          continue;
+        }
+        if (TOP_LEVEL_WRAPPER_GROUP_NAMES.has(counter.name)) {
+          const end = offset + size + counter.count * (domain === "bny" ? 3 : 4);
+          emitLine(prefix, counter.qb64, `${counter.name} count=${counter.count}`, indent, options);
+          renderStream(raw.subarray(offset + size, end), gvrsn, indent + options.indent);
+          offset = end;
+          continue;
+        }
+      }
+      const frame = frames[next++];
+      if (!frame) throw new DeserializeError("Annotation body does not match parsed frames");
+      const lines = prefix;
+      prefix = [];
+      const bodyLines: string[] = [];
+      let version = selected ?? wireGenus ?? frame.body.gvrsn ?? frame.body.pvrsn;
+      if (frame.body.kind === "CESR" && frame.body.ked === null) {
+        const wire = raw.subarray(offset, offset + (wireSize ?? frame.body.raw.length));
+        emitLine(
+          bodyLines,
+          domain === "bny" ? encodeB64(wire) : TEXT_DECODER.decode(wire),
+          `OPAQUE CESR body (non-serder fallback, hex=${toHex(wire)})`,
+          0,
+          options,
+        );
+      } else if (domain === "msg") {
+        renderMessageBody(bodyLines, frame, options);
+      } else {
+        renderNativeBody(bodyLines, raw.subarray(offset, offset + wireSize!), options, version);
+      }
+      for (const line of bodyLines) lines.push(`${spaces(indent)}${line}`);
+      offset += wireSize ?? frame.body.raw.length;
+      while (offset < raw.length) {
+        const tail = raw.subarray(offset);
+        const attachmentDomain = sniff(tail);
+        if (attachmentDomain === "ano") {
+          offset++;
+          continue;
+        }
+        if (attachmentDomain === "msg") break;
+        if (attachmentDomain !== "txt" && attachmentDomain !== "bny") {
+          throw new DeserializeError("Invalid annotation domain");
+        }
+        // A top-level genus selector starts the next frame's scope; wrapper-local selectors stay nested.
+        if (startsFrame(tail, version, attachmentDomain)) break;
+        offset += renderAttachmentGroupRaw(lines, tail, version, indent, options);
+      }
+      output.push({ index: next, frame, lines });
+    }
+  }
+
+  renderStream(input, null, 0);
+  if (next !== frames.length) throw new DeserializeError("Annotation did not consume every parsed body");
+  if (prefix.length && output.length) output[output.length - 1].lines.push(...prefix);
+  return output;
 }

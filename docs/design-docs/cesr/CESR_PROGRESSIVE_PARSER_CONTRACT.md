@@ -115,8 +115,14 @@ CESR core depends on the small read-only contract `Payload { size, open() }`,
 iterator and accepts an optional abort signal; `write()` provides backpressure;
 `finish()` returns the reopenable owner; borrowed wire/raw views remain read-only. Sinks capture their operation signal.
 Aborting a sink after successful finish must not delete the returned payload.
-Shared bounded collection can support finite consumers. No implicit
-`.raw` getter may materialize an external payload.
+Finite annotation uses the progressive engine through an internal complete-input
+collector, with an 8 MiB default input limit. Failed collection releases every
+undelivered payload, even when another cleanup fails. `annotate()` releases its
+temporary owners; `annotateFrames()` transfers them to the caller. Validation
+consumes file/stdin chunks progressively and discards each delivered payload.
+Convenience benchmarks retain a finite corpus, defaulting to 64 MiB, and reject
+malformed runs instead of reporting successful throughput. No implicit `.raw`
+getter may materialize an external payload.
 
 Runtime implementations own filesystem paths, staged storage, promotion, and
 cleanup. A parsed large attachment must not also retain a full `CounterGroup.raw`

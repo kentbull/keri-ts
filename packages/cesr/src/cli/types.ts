@@ -6,12 +6,10 @@
  * `tephra bench` executable from both the Deno launcher and the npm/Node launcher.
  */
 export interface CliIo {
-  /** Read one complete input file as raw CESR bytes. */
-  readFile(path: string): Promise<Uint8Array>;
+  /** Read bounded chunks from a file or stdin; consumer return closes the source. */
+  read(path?: string): AsyncIterable<Uint8Array>;
   /** Write command output to a text file, used by `tephra annotate --out`. */
   writeTextFile(path: string, text: string): Promise<void>;
-  /** Read stdin as raw CESR bytes when `--in` is omitted. */
-  readStdin(): Promise<Uint8Array>;
   /** Write terminal output intended for successful command output. */
   writeStdout(text: string): Promise<void>;
   /** Write terminal output intended for usage errors or validation failures. */

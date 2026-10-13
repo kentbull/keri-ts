@@ -86,6 +86,11 @@ and use this supplementary adapter at their parsing boundary.
    retry another major. Selector fixtures use `Counter.makeGVC`.
 7. Frame starts dispatch directly after domain/counter recognition. Native bodies
    hydrate once through Serder; annotation owns token walking and label comments.
+   Async annotation validates once with progressive finite parsing, then renders
+   original admitted wire to preserve wrapper headers, scoped selectors, and ESSR
+   ordering. Rendering hydrated frame attachments alone loses those wire details.
+   Annotation and replay benchmarks have explicit configurable finite-input budgets;
+   streaming CLI validation releases delivered payloads before pulling another frame.
    There is no parser-native sidecar or advisory metadata agreement pass. A
    shortage inside a complete body payload is an immediate boundary error.
 8. Binary serder cold-start support exists for JSON, MGPK, and CBOR. Local Deno

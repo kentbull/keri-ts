@@ -1,4 +1,5 @@
-import { benchmarkCesrParser } from "../../bench/parser-benchmark.ts";
+import { BENCH_INPUT_LIMIT, benchmarkCesrParser } from "../../bench/parser-benchmark.ts";
+import { collectInput } from "../input.ts";
 import type { CliIo } from "../types.ts";
 
 /**
@@ -9,22 +10,28 @@ import type { CliIo } from "../types.ts";
  *   silently drift.
  */
 interface BenchmarkCliOptions {
+  /** Finite corpus file; omission selects stdin. */
   inPath?: string;
+  /** Measured complete parse passes. */
   iterations: number;
+  /** Unmeasured complete parse passes. */
   warmupIterations: number;
+  /** Owned input bytes offered per parser pull. */
   chunkSize: number;
-  framed: boolean;
-  allowErrors: boolean;
+  /** Finite retained benchmark corpus limit. */
+  maxBytes: number;
+  /** Select machine-readable metrics. */
   json: boolean;
 }
 
+/** Supported replay controls; failed parses always fail the benchmark. */
 const BENCH_USAGE =
-  "Usage: tephra bench [--in <path>] [--iterations <n>] [--warmup <n>] [--chunk-size <bytes>] [--framed] [--allow-errors] [--json]";
+  "Usage: tephra bench [--in <path>] [--iterations <n>] [--warmup <n>] [--chunk-size <bytes>] [--max-bytes <n>] [--json]";
 
 /** Parse non-negative integer flags used for sizing and warmup controls. */
 function parseNonNegativeInt(argName: string, value: string): number {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
     throw new Error(`${argName} must be a non-negative integer`);
   }
   return parsed;
@@ -44,9 +51,8 @@ function parseArgs(args: string[]): BenchmarkCliOptions {
   const out: BenchmarkCliOptions = {
     iterations: 50,
     warmupIterations: 5,
-    chunkSize: 0,
-    framed: false,
-    allowErrors: false,
+    chunkSize: 65536,
+    maxBytes: BENCH_INPUT_LIMIT,
     json: false,
   };
 
@@ -76,16 +82,12 @@ function parseArgs(args: string[]): BenchmarkCliOptions {
     if (arg === "--chunk-size") {
       const next = args[i + 1];
       if (!next) throw new Error("Missing value for --chunk-size");
-      out.chunkSize = parseNonNegativeInt("--chunk-size", next);
+      out.chunkSize = parsePositiveInt("--chunk-size", next);
       i++;
       continue;
     }
-    if (arg === "--framed") {
-      out.framed = true;
-      continue;
-    }
-    if (arg === "--allow-errors") {
-      out.allowErrors = true;
+    if (arg === "--max-bytes") {
+      out.maxBytes = parsePositiveInt("--max-bytes", args[++i]);
       continue;
     }
     if (arg === "--json") {
@@ -101,7 +103,7 @@ function parseArgs(args: string[]): BenchmarkCliOptions {
 /** Render human-readable benchmark output for terminal workflows. */
 function formatHumanReadable(
   sourceLabel: string,
-  result: ReturnType<typeof benchmarkCesrParser>,
+  result: Awaited<ReturnType<typeof benchmarkCesrParser>>,
 ): string {
   const chunkLabel = result.chunkSize === result.bytesPerIteration
     ? "full stream"
@@ -113,7 +115,6 @@ function formatHumanReadable(
     `input bytes/iteration: ${result.bytesPerIteration}`,
     `chunk size: ${chunkLabel}`,
     `frames/iteration: ${(result.totalFrames / result.iterations).toFixed(2)}`,
-    `errors/iteration: ${(result.totalErrors / result.iterations).toFixed(2)}`,
     `avg iteration: ${result.avgIterationMs.toFixed(3)} ms`,
     `throughput: ${result.throughputMiBPerSec.toFixed(3)} MiB/s`,
     `frame rate: ${result.framesPerSec.toFixed(2)} frames/s`,
@@ -130,18 +131,12 @@ export async function benchCommand(args: string[], io: CliIo): Promise<number> {
   try {
     const options = parseArgs(args);
     const sourceLabel = options.inPath ? options.inPath : "stdin";
-    const inputBytes = options.inPath
-      ? await io.readFile(options.inPath)
-      : await io.readStdin();
-
-    const result = benchmarkCesrParser(inputBytes, {
+    const inputBytes = await collectInput(io.read(options.inPath), options.maxBytes);
+    const result = await benchmarkCesrParser(inputBytes, {
       iterations: options.iterations,
       warmupIterations: options.warmupIterations,
       chunkSize: options.chunkSize,
-      parserOptions: {
-        framed: options.framed,
-      },
-      failOnParseError: !options.allowErrors,
+      maxBytes: options.maxBytes,
     });
 
     if (options.json) {

@@ -1,23 +1,32 @@
-import { annotate } from "../../annotate/annotator.ts";
+import { annotate, ANNOTATION_LIMIT } from "../../annotate/annotator.ts";
+import { collectInput } from "../input.ts";
 import type { CliIo } from "../types.ts";
 
+/** Parsed finite annotation input and presentation choices. */
 interface AnnotateCliOptions {
+  /** File source; omission selects stdin. */
   inPath?: string;
+  /** Output file; omission selects stdout. */
   outPath?: string;
-  qb2: boolean;
+  /** Render embedded JSON with indentation. */
   pretty: boolean;
+  /** Finite annotation admission budget selected by the caller. */
+  maxBytes: number;
 }
 
-const TEXT_DECODER = new TextDecoder();
-const ANNOTATE_USAGE = "Usage: tephra annotate [--in <path>] [--out <path>] [--qb2] [--pretty]";
+/** Supported annotation flags shown by help and usage errors. */
+const ANNOTATE_USAGE = "Usage: tephra annotate [--in <path>] [--out <path>] [--pretty] [--max-bytes <n>]";
 
 /** Parse `tephra annotate` command-line flags without performing IO. */
 function parseArgs(args: string[]): AnnotateCliOptions {
-  const out: AnnotateCliOptions = { qb2: false, pretty: false };
+  const out: AnnotateCliOptions = { pretty: false, maxBytes: ANNOTATION_LIMIT };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--qb2") {
-      out.qb2 = true;
+    if (arg === "--max-bytes") {
+      out.maxBytes = Number(args[++i]);
+      if (!Number.isSafeInteger(out.maxBytes) || out.maxBytes < 1) {
+        throw new Error("max-bytes must be a positive safe integer");
+      }
       continue;
     }
     if (arg === "--pretty") {
@@ -43,12 +52,7 @@ function parseArgs(args: string[]): AnnotateCliOptions {
   return out;
 }
 
-/**
- * Execute `tephra annotate`.
- *
- * The command preserves the old standalone annotation behavior while moving it
- * under the package-level dispatcher.
- */
+/** Render admitted finite input after complete progressive validation. */
 export async function annotateCommand(args: string[], io: CliIo): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
     await io.writeStdout(`${ANNOTATE_USAGE}\n`);
@@ -57,16 +61,11 @@ export async function annotateCommand(args: string[], io: CliIo): Promise<number
 
   try {
     const options = parseArgs(args);
-    const inputBytes = options.inPath
-      ? await io.readFile(options.inPath)
-      : await io.readStdin();
-
-    const annotated = options.qb2
-      ? annotate(inputBytes, { domainHint: "bny", pretty: options.pretty })
-      : annotate(TEXT_DECODER.decode(inputBytes), {
-        domainHint: "txt",
-        pretty: options.pretty,
-      });
+    const inputBytes = await collectInput(io.read(options.inPath), options.maxBytes);
+    const annotated = await annotate(inputBytes, {
+      pretty: options.pretty,
+      maxBytes: options.maxBytes,
+    });
 
     if (options.outPath) {
       await io.writeTextFile(options.outPath, annotated);

@@ -19,7 +19,7 @@ const out = parser.feed(new TextEncoder().encode("...CESR..."));
 const last = parser.flush();
 
 const text = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
-const annotated = annotate(text, { domainHint: "txt", pretty: true });
+const annotated = await annotate(text, { pretty: true });
 ```
 
 ## Progressive parsing and optional Effection integration
@@ -47,6 +47,22 @@ for (const frame of yield* each(channel.frames)) {
 A channel permits one subscription and does not queue frames ahead of demand.
 Leaving its scope aborts pending input and joins source cleanup. KERI and Tufa
 use this Operation model while the standalone CESR API stays framework-neutral.
+
+## Finite annotation and benchmark helpers
+
+`annotate()` and `annotateFrames()` are asynchronous and validate with the same
+progressive engine as `parse()`. Wire sniffing selects text or binary automatically. Annotation retains its input and rendered output;
+its default input budget is 8 MiB. Set `maxBytes` to another finite budget when
+needed. This is application admission policy, not a CESR wire-format limit.
+`annotate()` releases temporary ESSR payloads; successful `annotateFrames()` callers
+own each returned `frame.essr` and must call its `discard()` when finished.
+
+`benchmarkCesrParser()` and `parseCesrStreamOnce()` are also asynchronous. The
+benchmark retains one replayable corpus, limited to 64 MiB by default through
+`maxBytes`, and rejects malformed or truncated runs instead of reporting partial
+throughput. `tephra annotate`, `tufa annotate`, `tephra bench`, and `tufa benchmark cesr` expose these
+budgets as `--max-bytes`. `tephra validate` reads incrementally and releases each
+frame before requesting the next; it has no retained-corpus limit.
 
 ## CLI usage
 
