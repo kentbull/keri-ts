@@ -16,8 +16,28 @@ the handler, matching frozen Python. Fresh children stay hydrated; reopened ESSR
 uses temporary file owners and aggregate tree credit across rows. See
 `packages/keri/src/db/payload-store.md` for finite LMDB-copy and recovery limits.
 Shared exchange encoding retains supplied v2 Number primitives; only v1 widens
-ordinals to Seqner. Nested multisig, IPEX and the broader v2 non-event policy
-remain unsupported.
+ordinals to Seqner. Nested multisig admits only frozen `/icp`, `/rot`, `/ixn`,
+and `/rpy` commitments: one saidive child, its exact signed SAID, allowed child
+ilk and local membership. The child remains unprocessed until a local submitter
+has approved that child SAID. Additional signatures replay through ordinary
+KEL/reply validation and escrows; wrapper acceptance does not mean child acceptance.
+Remote-first approval reopens original exchange evidence; local-first approval
+borrows hydrated children. Further descendants remain guarded. IPEX and the
+broader v2 non-event policy remain unsupported.
+
+Multisig event builders are Effection operations. Explicit v2 output carries
+supplemental nested bytes that must share an attachment enclosure with parent
+signatures; v1 output retains pathed evidence and its distinct aggregation key.
+The frozen native EXN builder leaves `ri/x/p` empty and cannot decode its own
+output; default native multisig construction remains unqualified. JSON/CBOR/MGPK
+have actual accepted storage/replay and Python return-path evidence.
+CLI proposal/join remains v1, as in the frozen reference. Preserve its first-notice
+behavior; repeated notices for indexed proposals cause approval re-publication.
+
+Exchange retry reads one key at a time up to a captured initial horizon, closing
+the LMDB cursor before awaiting or removing rows. Mutating a suspended live range
+iterator can skip the following escrow. Cross-runtime retry admission remains
+part of the shared-resource/storage follow-ons.
 
 Query delivery is deferred until guarded cue handling completes. The runtime owns
 its bounded request queue and joins active HTTP cleanup at shutdown. Mailbox SSE

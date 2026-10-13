@@ -12,6 +12,31 @@ The workload is many smaller ESSR messages in large aggregate transfers. Memory
 must depend on admitted active messages and bounded queues, not transfer size.
 Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 
+## Acceptance matrix for the remaining parser gaps
+
+Verified starting boundary: master `876d24b429780aa6e3aa5ffbf81a3a05b1621d22`
+after #159; frozen upstream authority `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+The seven follow-on phases below are distinct from the original twelve migration
+steps. Follow-on phase 1's identified tables/semantics and phase 2's parent-owned
+parsing are delivered. Phase 3 has delivered serialization, annotation, and
+forwarding/persistence. Phases 4–7 remain incomplete despite their foundations.
+
+| Requirement                                  | Current implementation boundary                                                  | Owning planned PR   | Evidence / completion gate                                                                                                                               | Unresolved limitation                                                                                                                                           |
+| -------------------------------------------- | -------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nested multisig                              | Four routes implemented; publication pending                                     | 3d                  | Frozen route commitments, independent child proofs, approval ordering, dependencies, retry, duplicate, reopen, failed publication and cleanup            | Only frozen `/icp`, `/rot`, `/ixn`, `/rpy` can be enabled; acceptance of a wrapper is not child acceptance                                                      |
+| Nested IPEX                                  | Existing v1 grant/admit and VDR paths; nested routes guarded                     | 3e                  | Real grant/admit workflows and credential/KEL/TEL dependency evidence                                                                                    | No silent evidence loss or legacy pathed v2 acceptance                                                                                                          |
+| V2 non-event admission                       | Direct dispatch bypasses consolidated reference policy                           | 3f                  | Sender allow/deny and optional KRAM intake through actual processing                                                                                     | Frozen `processXip`, `processPro`, `processBar` are stubs; preserve unsupported processing claims                                                               |
+| Shared admission before retention/allocation | Per-stream/tree/recipient limits exist                                           | 4                   | Two streams, one global decryption, slow consumers, pre-read rejection, empty-item caps and exactly-once release                                         | Runtime byte reservations must include native copies, backing buffers, queues and descendants; they are not an exact RSS limit                                  |
+| Durable storage/recovery                     | #159 preserves interoperable `enst.` and ciphertext evidence                     | 5, with 4 admission | Close/reopen, bounded replay, stage/finish/publication/cleanup crash probes                                                                              | LMDB obtains a whole row before checking size; the finite 24 MiB ceiling does not close pre-allocation admission                                                |
+| Production path/backpressure                 | Streaming ingress, forwarding and replay foundations exist                       | 6                   | HTTP/file/TCP through verification, storage and egress; slow sinks, abort, disconnect, EOF, failure and shutdown                                         | Demonstrate first verified usable independent GenericGroup child before enclosing transfer completion; parent-owned children remain dependent                   |
+| Reference environment inventory              | Tables use upstream927; declared runtime qualification uses mailbox fork b08ddeb | 7                   | Inspect macOS, ordinary/extended CI, local harnesses, and embedded DID Webs imports; qualify each applicable pin or explain a retained historical target | Fork-on-main evidence is not unmodified-upstream parity; macOS historical pin requires reconciliation                                                           |
+| Full interoperability and memory envelope    | Structural and small-corpus correctness evidence only                            | 7                   | Maintained full inventory plus repeated fresh-process 16 MiB/256 MiB/1 GiB/4 GiB end-to-end matrix, logical-message probes and variance                  | Measure parsed/verified latency separately and retained/native/mapped memory; failures/skips remain unqualified; extended jobs stay manual with a 15-minute cap |
+| Mapper claimed-SAID verification             | Standalone Mapper accepts the reproduced stale claim                             | Final Mapper PR     | Independent valid/tampered CESR/JSON/CBOR/MGPK fixtures                                                                                                  | Preserve Aggor partial-disclosure and compactification semantics                                                                                                |
+
+Final parity reporting must distinguish supported processing, unfinished work,
+intentional divergences, reference stubs, and unqualified claims. No structural
+parser result closes the full runtime or bounded-memory gates.
+
 ## PR sequence
 
 | Phase | Cohesive change                                                      | Required evidence before completion                                                                | Status                                                      |
@@ -501,9 +526,55 @@ recovery and durable replay. `packages/keri/scripts/qualify-nested-exchange.ts`
 qualifies actual stored rows with frozen Python `927c0cb8`, checking nested
 signature ownership and Python's replacement/handler semantics.
 
-**Remaining runtime slices:** Route-specific multisig checks and dependency
-handling, IPEX workflow evidence, and the affected v2 `processMsg` policy remain
-separate PRs. TS dispatch still bypasses the reference's consolidated non-event
+**3d — multisig (in review, [#160](https://github.com/kentbull/keri-ts/pull/160)):** `/multisig/icp|rot|ixn|rpy`
+requires exactly one child of the frozen allowed ilk, its valid SAID and the
+matching signed route field. V1 aggregation stays keyed by embedded `e.d`; v2
+uses the signed child SAID. Local membership is necessary for coordination, and
+a locally controlled submitter must approve before child replay. Parent proofs
+never satisfy child thresholds. First remote arrivals notify; already approved
+arrivals feed ordinary KEL/reply processors. Later local approval reopens earlier
+remote wrappers. Child dependency/signature escrows remain independent of the
+accepted wrapper and use normal retry turns.
+
+The route slice reuses #159's staged publication and file-owned replay. It also
+fixes exchange retry skipping the next row when a live LMDB iterator's current
+row is removed: each retry closes its key cursor before mutation and advances to
+a captured initial key horizon. Tests retain two real participant stores and
+prove approval order, invalid proofs/commitments, membership and route guards,
+missing dependency/retry, duplicate replacement, reopen, rollback and cancellation.
+`qualify-nested-multisig.ts` checks 12 actual accepted JSON/CBOR/MGPK wrappers with
+frozen upstream927 and reparses Python's serialized children. The reference's
+27 selected v2/approval tests pass independently. These are small-corpus checks,
+not memory/endurance qualification.
+
+The Tufa CLI still proposes and joins v1 pathed exchanges, matching frozen
+`cli/commands/multisig/{incept,interact,rotate,join}.py`; v2 evidence here covers
+the explicit builders and runtime approval APIs, not a v2 CLI workflow. Preserve
+v1 first-notice behavior: notifying again for an already indexed v1 proposal
+causes its CLI approval consumer to re-propose it. The unchanged three-member
+weighted CLI/mailbox/DID Webs integration passes after retaining that boundary.
+
+The frozen default native EXN builder leaves `ri/x/p` empty and reports local
+verification success even though `SerderKERI(raw=...)` rejects its output.
+Default native multisig builders therefore remain unqualified; TS rejects the
+empty required field. The qualification probe reproduces and reports this case
+instead of counting it as supported. Nested children with further descendants,
+`/multisig/vcp|iss|rev|exn`, and legacy pathed protocol-v2 coordination remain
+guarded. Complete node/tree resource admission remains in follow-ons 4–5.
+
+**3e — IPEX (source audit complete; implementation pending):** use frozen
+`acdc/ipexing.py`, not just legacy `vc/protocoling.py`. Its 62 maintained tests
+pass with actual imports from `/work/keripy-main927/src`. The existing TS handler
+implements the legacy conversation graph only. The same planned IPEX unit owns
+supplemental evidence selection and source-seal persistence, single-DAG disclosure
+plans and graph semantics, independent issuer proofs, and `rip/bup` registry
+vetting/retry. Presentation-registry history additionally depends on the
+receiver-observed KRAM acceptance timestamp addressed with 3f. TS currently lacks
+that v2 registry processing and path-directed Compactor API; these are concrete
+dependencies inside 3e, not completed capabilities or parallel workstreams.
+
+**Remaining runtime slices:** IPEX workflow evidence and the affected v2
+`processMsg` policy remain separate PRs. TS dispatch still bypasses the reference's consolidated non-event
 allow/deny and optional KRAM intake; no full frozen-runtime parity is claimed.
 Normalization continues to reject other nested roots, including the reference's
 unimplemented `xip/pro/bar` processing stubs. HTTP inspection keeps its own guard
@@ -600,6 +671,20 @@ without changing #134's organization, original participant topology, or assertio
 Fast deterministic parser/resource/interop regressions belong in ordinary checks;
 large/manual/endurance qualification stays outside required merge CI. The local
 qualification exception and 15-minute extended-job cap above remain in force.
+
+Reference inventory observed during #160 preparation (2026-10-13); pin changes
+and full qualification remain owned by this follow-on. A declared pin is not
+evidence of the modules a process actually imports.
+
+| Environment               | Declared target                                               | Observed import boundary / unresolved qualification                                                                                                                                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ordinary PR table CI      | Upstream `927c0cb8` in `pr-stage-gate.yml`                    | Table generation checks the frozen checkout; retain upstream provenance separately from runtime fork results.                                                                                                                                                                                 |
+| Extended interoperability | Fork `b08ddeb0` in `keri-extended-interop.yml`                | Shared runtime probe verifies source and interpreter; retain manual dispatch and both 15-minute caps.                                                                                                                                                                                         |
+| Shared local CLI harness  | Fork `b08ddeb0` in `interop-test-helpers.ts`                  | Explicit `/work/keripy-mailbox` runtime remains separate from frozen source probes.                                                                                                                                                                                                           |
+| Frozen nested probes      | Upstream `927c0cb8`                                           | `PYTHONPATH=/work/keripy-main927/src`; multisig probe verifies loaded module bytes against Git. IPEX, registry and KRAM import paths also observed under this root.                                                                                                                           |
+| macOS compatibility       | Historical `450ae1c2` in `macos-compatibility.yml`            | Workflow installs an older CLI on PATH while shared test helpers select their own runtime; reconcile both selections and probe actual imports. Not executed in this slice.                                                                                                                    |
+| Standalone Sally harness  | Historical `98b88cf7` in `scripts/vlei-tufa-sally-interop.sh` | Separate installer/cache; not covered merely by changing the shared TypeScript helper. Not executed in this slice.                                                                                                                                                                            |
+| Embedded DID Webs         | Resolver `8395277f`; dependency `keri>=1.2.13,<1.3`           | Actual cached Python 3.13 environment imports released KERIpy 1.2.14 from its own site-packages with no commit provenance, and HIO 0.6.14. This is historical release compatibility, not frozen upstream or fork-on-main qualification; upgrade and qualify or explicitly retain that target. |
 
 Run incrementally generated 16 MiB, 256 MiB, 1 GiB, and 4 GiB aggregates using
 fixed small messages and representative 1 MiB messages. Include flat and nested

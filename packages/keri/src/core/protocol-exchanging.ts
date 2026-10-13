@@ -243,3 +243,19 @@ export function serializeMessage(
     gvrsn,
   });
 }
+
+/** Exact v2 multisig route/child-ilk contract at frozen KERIpy 927c0cb8 grouping.py:validate. */
+export function nestedMultisigIlks(route: string): readonly string[] | null {
+  switch (route) {
+    case "/multisig/icp":
+      return ["icp", "dip"];
+    case "/multisig/rot":
+      return ["rot"];
+    case "/multisig/ixn":
+      return ["ixn"];
+    case "/multisig/rpy":
+      return ["rpy"];
+    default:
+      return null;
+  }
+}
