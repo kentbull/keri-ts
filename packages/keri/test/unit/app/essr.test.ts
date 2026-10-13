@@ -3,13 +3,19 @@
 import { collectPayload, concatBytes, Diger, Encrypter, MtrDex, type Payload, Prefixer, Texter } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { readdir } from "node:fs/promises";
 import { EssrError, EssrRecipient } from "../../../src/app/essr.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { PayloadStore } from "../../../src/db/payload-store.ts";
+
+/** Inspect this test-owned directory without depending on Node filesystem APIs. */
+async function entries(root: string): Promise<string[]> {
+  const names: string[] = [];
+  for await (const entry of Deno.readDir(root)) names.push(entry.name);
+  return names.sort();
+}
 
 /** Give each scenario real keys, accepted sender state, and an isolated payload store. */
 async function scenario(
@@ -113,7 +119,7 @@ Deno.test("ESSR recipient rejects unaccepted and misaddressed exchanges before r
       assertEquals(failure.kind, "envelope");
     }
     // PayloadStore.stage has never been called, so even its directory is absent.
-    assertEquals(await readdir(root), []);
+    assertEquals(await entries(root), []);
   });
 });
 
@@ -148,7 +154,7 @@ Deno.test("ESSR digest, sealed-box authentication, and inner source failures wri
       failure = await assertRejects(() => receiver.decrypt(invalidSaid, fragmentsPayload(sealed)), EssrError);
       assertEquals(failure.kind, "framing");
     }
-    assertEquals(await readdir(root), []);
+    assertEquals(await entries(root), []);
   });
 });
 
@@ -172,7 +178,7 @@ Deno.test("ESSR cancelled ingress releases its concurrency slot without creating
     const attempt = receiver.decrypt(said, waiting, controller.signal);
     controller.abort(new Error("request cancelled"));
     await assertRejects(() => attempt, Error, "request cancelled");
-    assertEquals(await readdir(root), []);
+    assertEquals(await entries(root), []);
     // A new request proves the cancelled attempt released admission state.
     const next = await receiver.decrypt(said, fragmentsPayload(cipher));
     await next.plaintext.discard();
@@ -223,7 +229,7 @@ Deno.test("ESSR admission caps one message and rejects concurrent work without q
     };
     const first = receiver.decrypt(said, waiting);
     assertEquals((await assertRejects(() => receiver.decrypt(said, waiting), EssrError)).kind, "busy");
-    assertEquals(await readdir(root), []);
+    assertEquals(await entries(root), []);
     resume();
     const result = await first;
     await result.plaintext.discard();
