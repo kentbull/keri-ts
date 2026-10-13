@@ -72,6 +72,10 @@ Preserve existing assertions and topology; this rule does not reduce qualificati
 Final reporting must classify **supported**, **unfinished**, **intentional
 divergence**, **reference stub**, and **unqualified** behavior separately.
 Passing parser tests or finite per-recipient guards cannot close phases 4–7.
+[Upstream gaps][upstream-gaps] do not block completion indefinitely: implement and
+qualify the approved TypeScript path, record the reference limitation and any
+intentional difference, then complete against our own acceptance/release gates.
+Discussion proposals and unimplemented stubs are not processing requirements.
 Long qualification stays outside required merge CI; only the maintainer dispatches
 hosted extended jobs, whose existing 15-minute cap remains unchanged.
 
@@ -106,3 +110,4 @@ do not close the goal on a merged version PR or a successful build alone.
 [qualification]: qualification/QUALIFICATION_PLAN.md
 [pins]: qualification/REFERENCE_ENVIRONMENTS.md
 [mapper]: cesr/MAPPER_PLAN.md
+[upstream-gaps]: ../reference/credentials/UPSTREAM_REGISTRY_GAPS.md
