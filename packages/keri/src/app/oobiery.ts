@@ -1,7 +1,7 @@
 import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "cesr-ts";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
-import { Deck } from "../core/deck.ts";
+import { Deck, DeckFullError } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
@@ -10,6 +10,7 @@ import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
 import { Schemer } from "../core/scheming.ts";
+import { chunkBytes } from "./byte-source.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
@@ -85,6 +86,7 @@ export class Oobiery {
    * - unlike the older bootstrap runtime, there is no root in-memory OOBI deck
    */
   resolve(url: string, alias?: string): void {
+    this.cues.checkSpace();
     const meta = parseOobiUrl(url, alias);
     this.pinQueuedRecord(queueKindFor(url), url, meta);
     this.cues.push({ kin: "oobiQueued", url, alias: meta.alias });
@@ -100,10 +102,18 @@ export class Oobiery {
    * - transitions the durable record into `eoobi.` or `roobi.`
    */
   *processOnce(): Operation<void> {
+    if (this.cues.length === this.cues.capacity) return;
     const item = this.nextQueued();
     if (item) {
       const [kind, url, record] = item;
-      yield* this.processJob(kind, url, record);
+      try {
+        yield* this.processJob(kind, url, record);
+      } catch (error) {
+        if (!(error instanceof DeckFullError)) throw error;
+        // Another producer filled the shared deck during I/O. Keep durable retry ownership.
+        this.hby.db.coobi.rem(url);
+        this.pinQueueStore(kind, url, record);
+      }
       return;
     }
 
@@ -194,6 +204,7 @@ export class Oobiery {
     const response = yield* fetchOobiResponse(url, this.services);
     if (!response.ok) {
       yield* closeResponseBody(response);
+      this.cues.checkSpace();
       this.remQueueStore(kind, url);
       this.hby.db.eoobi.pin(url, {
         ...queuedRecord,
@@ -253,9 +264,9 @@ export class Oobiery {
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
     bytes: Uint8Array,
   ): Operation<void> {
-    this.reactor.ingest(bytes);
-    yield* this.reactor.processOnce();
+    yield* this.reactor.process((signal) => chunkBytes(bytes, { signal }));
 
+    this.cues.checkSpace();
     this.hby.db.coobi.rem(url);
     this.hby.db.roobi.pin(url, {
       ...queuedRecord,
@@ -295,6 +306,7 @@ export class Oobiery {
       return false;
     }
 
+    this.cues.checkSpace();
     this.hby.db.schema.pin(schemer.said, schemer);
     this.hby.db.coobi.rem(url);
     this.hby.db.roobi.pin(url, {
@@ -360,6 +372,7 @@ export class Oobiery {
       return;
     }
 
+    this.cues.checkSpace(urls.length);
     for (const childUrl of urls) {
       this.resolve(childUrl, record.oobialias ?? undefined);
     }
@@ -376,6 +389,7 @@ export class Oobiery {
 
   /** Finalize one parent multi-OOBI after its child URLs all reach terminal state. */
   private completeMultiOobi(url: string, record: OobiRecord): void {
+    this.cues.checkSpace();
     const urls = record.urls ?? [];
     const date = new Date().toISOString();
     const failed = urls.length === 0
@@ -420,6 +434,7 @@ export class Oobiery {
     record: OobiRecordShape,
     state: string,
   ): void {
+    this.cues.checkSpace();
     this.hby.db.coobi.rem(url);
     this.hby.db.eoobi.pin(url, {
       ...record,
@@ -498,6 +513,7 @@ export class Oobiery {
       );
     }
 
+    this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
     const decision = this.reactor.revery.acceptReply({
       serder: args.serder,
       saider: args.diger,

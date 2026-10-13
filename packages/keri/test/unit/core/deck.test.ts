@@ -1,7 +1,7 @@
 // @file-test-lane core-fast-a
 
-import { assertEquals } from "jsr:@std/assert";
-import { Deck } from "../../../src/core/deck.ts";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { Deck, DeckFullError } from "../../../src/core/deck.ts";
 
 Deno.test("Deck preserves FIFO pull order and supports prepend requeue", () => {
   const deck = new Deck<number>();
@@ -19,4 +19,23 @@ Deno.test("Deck preserves FIFO pull order and supports prepend requeue", () => {
   assertEquals(deck.pull(), 9);
   assertEquals(deck.pop(), 2);
   assertEquals(deck.empty, true);
+});
+
+Deno.test("bounded Deck admits batches atomically and recovers after draining", () => {
+  const deck = new Deck([1], 2);
+  assertThrows(() => deck.extend([2, 3]), DeckFullError);
+  assertEquals(deck.toArray(), [1]);
+  /** A failed producer must not commit its earlier values into the queue. */
+  function* broken() {
+    yield 2;
+    throw new Error("producer failed");
+  }
+  assertThrows(() => deck.extend(broken()), Error, "producer failed");
+  assertEquals(deck.toArray(), [1]);
+  deck.prepend(0);
+  assertThrows(() => deck.append(2), DeckFullError);
+  assertThrows(() => deck.prepend(-1), DeckFullError);
+  assertEquals(deck.pull(), 0);
+  deck.extend([2]);
+  assertEquals(deck.toArray(), [1, 2]);
 });

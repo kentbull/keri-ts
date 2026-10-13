@@ -427,7 +427,7 @@ export function runtimePendingState(
   runtime: AgentRuntime,
 ): RuntimePendingState {
   return {
-    ingress: !runtime.reactor.ingress.empty,
+    ingress: runtime.reactor.hasIngress,
     cues: !runtime.cues.empty,
     replyEscrow: runtime.hby.db.rpes.cnt() > 0,
     oobiQueued: runtime.hby.db.oobis.cnt() > 0,

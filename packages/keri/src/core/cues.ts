@@ -53,6 +53,8 @@ export interface QueryCue extends CueBase {
 
 /** Cue carrying a prebuilt replay byte stream back to the host or transport layer. */
 export interface ReplayCue extends CueBase {
+  /** Query SAID that requested this response, including deferred escrow results. */
+  querySaid?: string;
   kin: "replay";
   msgs: Uint8Array;
   pre?: string;
@@ -68,6 +70,8 @@ export interface ReplayCue extends CueBase {
  * does not need another cue-shape migration.
  */
 export interface ReplyCue extends CueBase {
+  /** Query SAID that requested this response, including deferred escrow results. */
+  querySaid?: string;
   kin: "reply";
   route: string;
   data?: Record<string, unknown>;

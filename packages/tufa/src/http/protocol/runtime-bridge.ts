@@ -1,24 +1,8 @@
 import { type Operation } from "effection";
-import { type AgentRuntime, type CueEmission, type Hab, settleRuntimeIngress } from "keri-ts/runtime";
+import { type AgentCue, type AgentRuntime, type CueEmission, type Hab } from "keri-ts/runtime";
 
 /**
- * Ingest one mailbox-aware request payload through the shared runtime.
- *
- * The request-scoped mailbox AID travels with each dispatch so `/fwd` authorization can stay tied to the mailbox endpoint
- * that actually received the request.
- */
-export function* processRuntimeRequest(
-  runtime: AgentRuntime,
-  bytes: Uint8Array,
-  mailboxAid: string | null,
-  serviceHab?: Hab,
-): Operation<CueEmission[]> {
-  yield* settleRuntimeIngress(runtime, [bytes], { mailboxAid });
-  return yield* drainRuntimeCues(runtime, serviceHab);
-}
-
-/**
- * Drain runtime cues through one service habitat and mailbox side effects.
+ * Consume explicit cues under Reactor.settle through one service habitat and mailbox side effects.
  *
  * `Hab.processCuesIter(...)` remains the cue-to-wire interpreter; the request
  * layer owns mailbox publication side effects needed before HTTP responses are
@@ -26,7 +10,8 @@ export function* processRuntimeRequest(
  */
 export function* drainRuntimeCues(
   runtime: AgentRuntime,
-  serviceHab?: Hab,
+  serviceHab: Hab | undefined,
+  cues: Iterable<AgentCue>,
 ): Operation<CueEmission[]> {
   const habitats = [...runtime.hby.habs.values()];
   const hab = serviceHab
@@ -36,7 +21,7 @@ export function* drainRuntimeCues(
   }
 
   const emissions: CueEmission[] = [];
-  for (const emission of hab.processCuesIter(runtime.cues)) {
+  for (const emission of hab.processCuesIter(cues)) {
     yield* runtime.respondant.sendWithHab(emission, hab);
     emissions.push(emission);
   }

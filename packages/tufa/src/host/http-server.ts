@@ -72,15 +72,24 @@ function buildServerOptions(
   };
 }
 
-/** Open the native Deno HTTP host. */
-function openDenoServerHost(
+/** Open the native Deno HTTP host and join request cleanup after its listener closes. */
+export function openDenoServerHost(
   options: ServerOptions,
   handler: (req: Request) => Promise<Response>,
 ): ServerHost {
-  const server = Deno.serve(options, handler);
+  const requests = new Set<Promise<Response>>();
+  const server = Deno.serve(options, (request) => {
+    const response = Promise.resolve().then(() => handler(request));
+    requests.add(response);
+    void response.then(() => requests.delete(response), () => requests.delete(response));
+    return response;
+  });
   return {
     server: {
-      finished: server.finished,
+      // Native server.finished can resolve while a disconnected handler still joins parser/sink cleanup.
+      finished: server.finished.finally(async () => {
+        await Promise.allSettled(requests);
+      }),
     },
     close() {
       // The abort signal passed to `Deno.serve()` owns shutdown.
@@ -109,6 +118,7 @@ function appendNodeHeader(
 function toNodeRequest(
   req: IncomingMessage,
   options: ServerOptions,
+  signal: AbortSignal,
 ): Request {
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
@@ -120,6 +130,7 @@ function toNodeRequest(
   const init: RequestInit & { duplex?: "half" } = {
     method,
     headers,
+    signal,
   };
 
   if (method !== "GET" && method !== "HEAD") {
@@ -148,12 +159,28 @@ async function writeNodeResponse(
   const stream = Readable.fromWeb(
     response.body as unknown as NodeReadableStream<Uint8Array>,
   );
-  await new Promise<void>((resolve, reject) => {
-    stream.on("error", reject);
-    res.on("error", reject);
-    res.on("finish", () => resolve());
-    stream.pipe(res);
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      stream.once("error", reject);
+      res.once("error", reject);
+      res.once("finish", () => resolve());
+      res.once("close", () => {
+        // A disconnect may never emit finish; destroying the Node reader cancels its Fetch body too.
+        stream.destroy();
+        resolve();
+      });
+      stream.pipe(res);
+    });
+  } finally {
+    // fromWeb finishes destruction only after cancelling its source; retain ownership until that joins.
+    await new Promise<void>((resolve) => {
+      if (stream.closed) resolve();
+      else {
+        stream.once("close", resolve);
+        stream.destroy();
+      }
+    });
+  }
 }
 
 /** Execute the shared Fetch handler for one Node request. */
@@ -163,38 +190,65 @@ async function handleNodeRequest(
   options: ServerOptions,
   handler: (req: Request) => Promise<Response>,
 ): Promise<void> {
+  const disconnected = new AbortController();
+  /** Carry socket loss into every request-owned parser and storage operation. */
+  const abort = () => disconnected.abort(new DOMException("Client disconnected", "AbortError"));
+  req.once("aborted", abort);
+  res.once("close", abort);
   try {
-    const response = await handler(toNodeRequest(req, options));
-    await writeNodeResponse(res, response);
+    const signal = AbortSignal.any([options.signal, disconnected.signal]);
+    const response = await handler(toNodeRequest(req, options, signal));
+    if (!res.destroyed) await writeNodeResponse(res, response);
+    else await response.body?.cancel();
   } catch (error) {
-    const fallback = options.onError(error);
-    await writeNodeResponse(res, fallback);
+    if (!res.destroyed) {
+      const fallback = options.onError(error);
+      await writeNodeResponse(res, fallback);
+    }
+  } finally {
+    req.removeListener("aborted", abort);
+    res.removeListener("close", abort);
+    disconnected.abort();
   }
 }
 
-/** Open the Node fallback host used by the npm build. */
-function openNodeServerHost(
+/** Open the Node fallback host; completion joins every admitted request after the listener closes. */
+export function openNodeServerHost(
   options: ServerOptions,
   handler: (req: Request) => Promise<Response>,
 ): ServerHost {
+  // A closed socket does not imply that its parser or payload cleanup has finished.
+  const requests = new Set<Promise<void>>();
   const server = createServer((req, res) => {
-    void handleNodeRequest(req, res, options, handler);
+    const request = handleNodeRequest(req, res, options, handler);
+    requests.add(request);
+    // Attach both branches immediately: a rejected fallback response must not become detached rejection.
+    void request.then(() => requests.delete(request), () => requests.delete(request));
   });
-  const onAbort = () => {
-    void new Promise<void>((resolve, reject) => {
-      server.close((error) => error ? reject(error) : resolve());
-    }).catch(() => {
-      // Ignore shutdown races during abort-driven cleanup.
-    });
+  // listen() is asynchronous; an owner can close the host before Node marks it listening.
+  let closing = false;
+  /** Remember early cancellation and close the listener as soon as it becomes available. */
+  const close = () => {
+    closing = true;
+    if (server.listening) server.close();
   };
+  const onAbort = close;
 
   options.signal.addEventListener("abort", onAbort, { once: true });
-  const finished = new Promise<void>((resolve, reject) => {
+  const closed = new Promise<void>((resolve, reject) => {
     server.once("close", resolve);
     server.once("error", reject);
   });
+  const finished = closed.finally(async () => {
+    // Listener closure prevents new admissions; settle every remaining owner before releasing the runtime.
+    await Promise.allSettled(requests);
+  });
 
   server.listen(options.port, options.hostname, () => {
+    if (closing || options.signal.aborted) {
+      close();
+      return;
+    }
     const address = server.address();
     const port = typeof address === "object" && address !== null ? address.port : options.port;
     options.onListen({ port });
@@ -204,9 +258,7 @@ function openNodeServerHost(
     server: { finished },
     close() {
       options.signal.removeEventListener("abort", onAbort);
-      if (server.listening) {
-        server.close();
-      }
+      close();
     },
   };
 }

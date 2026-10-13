@@ -17,11 +17,13 @@ import {
   concatBytes,
   parseBytes,
   parseSerder,
+  ResourceLimitError,
   SerderKERI,
   smell,
   type Smellage,
 } from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
+import { collectBytes, type SourceOptions, streamBytes } from "./byte-source.ts";
 
 /** Mailbox HTTP framing modes supported by `keri-ts`. */
 export type CesrBodyMode = "header" | "body";
@@ -203,25 +205,41 @@ export function splitCesrStream(message: Uint8Array): Uint8Array[] {
  * In header mode this reattaches `CESR-ATTACHMENT` bytes to the parsed message
  * body so downstream parsing always sees the canonical CESR byte stream.
  */
-export async function readCesrRequestBytes(req: Request): Promise<Uint8Array> {
-  const body = new Uint8Array(await req.arrayBuffer());
-  const contentType = req.headers.get("content-type")
-    ?.split(";")[0]
-    ?.trim()
-    ?.toLowerCase();
-  const attachment = req.headers.get(CESR_ATTACHMENT_HEADER);
+export function requestBytes(
+  req: Request,
+  { maxHeaderBytes = 64 * 1024, ...options }: SourceOptions & { maxHeaderBytes?: number } = {},
+): AsyncIterable<Uint8Array> {
+  return read();
 
-  if (
-    contentType === CESR_CONTENT_TYPE
-    && attachment
-    && attachment.length > 0
-  ) {
-    return new Uint8Array(
-      [...body, ...textEncoder.encode(attachment)],
-    );
+  /** Acquire the body lazily, after validating the separately bounded attachment header. */
+  async function* read(): AsyncGenerator<Uint8Array> {
+    const attachment = req.headers.get(CESR_ATTACHMENT_HEADER);
+    if (!Number.isSafeInteger(maxHeaderBytes) || maxHeaderBytes < 1) {
+      throw new RangeError("Header byte limit must be a positive safe integer");
+    }
+    // The transport already holds the header string; validate it before allocating encoded bytes.
+    if (attachment && attachment.length > maxHeaderBytes) {
+      throw new ResourceLimitError(`CESR attachment header exceeds ${maxHeaderBytes} bytes`);
+    }
+    const tail = attachment && isCesrContentType(req.headers.get("content-type"))
+      ? textEncoder.encode(attachment)
+      : null;
+    if (tail && tail.length > maxHeaderBytes) {
+      throw new ResourceLimitError(`CESR attachment header exceeds ${maxHeaderBytes} bytes`);
+    }
+    yield* streamBytes(req.body, { signal: req.signal, ...options });
+    (options.signal ?? req.signal).throwIfAborted();
+    if (tail?.length) yield tail;
   }
+}
 
-  return body;
+/** Collect a bounded administrative/receipt request; generic ingress uses requestBytes directly. */
+export async function readCesrRequestBytes(req: Request, limit = 8 * 1024 * 1024): Promise<Uint8Array> {
+  try {
+    return await collectBytes(requestBytes(req), limit);
+  } finally {
+    if (req.body && !req.body.locked) await req.body.cancel().catch(() => {});
+  }
 }
 
 /**
@@ -263,14 +281,15 @@ export async function readMailboxAdminRequest(
   }
 
   if (isMultipartFormContentType(contentType)) {
-    const form = await req.formData();
+    const bytes = await collectBytes(streamBytes(req.body, { signal: req.signal }), 8 * 1024 * 1024);
+    const form = await new Response(bytes, { headers: { "content-type": contentType! } }).formData();
     const kel = readRequiredMailboxAdminField(form, "kel");
     const rpy = readRequiredMailboxAdminField(form, "rpy");
     const delkel = readOptionalMailboxAdminField(form, "delkel");
 
-    const bytes = textEncoder.encode(`${delkel ?? ""}${kel}${rpy}`);
+    const message = textEncoder.encode(`${delkel ?? ""}${kel}${rpy}`);
     return {
-      bytes,
+      bytes: message,
       inspection: inspectMailboxAdminReply(textEncoder.encode(rpy)),
     };
   }

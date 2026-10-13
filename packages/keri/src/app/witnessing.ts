@@ -17,13 +17,14 @@
 import { Cigar, concatBytes, Counter, CtrDexV1, Ilks, parseBytes, type SerderKERI, type Siger } from "cesr-ts";
 import { createConnection } from "node:net";
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
-import type { CueEmission } from "../core/cues.ts";
+import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { ValidationError } from "../core/errors.ts";
 import { receipt as receiptEvent, reply as replyEvent } from "../core/protocol-eventing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
+import { chunkBytes } from "./byte-source.ts";
 import {
   buildCesrRequest,
   CESR_CONTENT_TYPE,
@@ -245,15 +246,16 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
 }
 
 /**
- * Drain runtime cues through the selected habitat.
+ * Consume explicit cues under Reactor.settle, using the selected habitat.
  *
  * The host keeps mailbox side effects here so synchronous HTTP/TCP route
  * handlers can inspect witness/receipt wire emissions before the outer runtime
  * loop sees them.
  */
-function* drainWitnessCues(
+export function* drainWitnessCues(
   runtime: AgentRuntime,
-  serviceHab?: Hab,
+  serviceHab: Hab | undefined,
+  cues: Iterable<AgentCue>,
   {
     deliver = true,
   }: {
@@ -266,7 +268,7 @@ function* drainWitnessCues(
   }
 
   const emissions: CueEmission[] = [];
-  for (const emission of hab.processCuesIter(runtime.cues)) {
+  for (const emission of hab.processCuesIter(cues)) {
     if (deliver) {
       yield* runtime.respondant.sendWithHab(emission, hab);
     }
@@ -309,8 +311,11 @@ export function* processWitnessIngress(
     deliver?: boolean;
   } = {},
 ): Operation<CueEmission[]> {
-  yield* settleRuntimeIngress(runtime, [bytes], { local });
-  return yield* drainWitnessCues(runtime, serviceHab, { deliver });
+  const emissions: CueEmission[] = [];
+  yield* runtime.reactor.process((signal) => chunkBytes(bytes, { signal }), { local, escrows: true }, function*() {
+    emissions.push(...(yield* drainWitnessCues(runtime, serviceHab, runtime.cues, { deliver })));
+  });
+  return emissions;
 }
 
 /** Resolve the authoritative witness list for one accepted event. */

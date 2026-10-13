@@ -24,8 +24,8 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 | 6     | Payload sinks, reopenable references, and bounded manifests          | Backpressure, stage ownership, finish/abort, runtime filesystem boundary                           | Merged [#131](https://github.com/kentbull/keri-ts/pull/131) |
 | 7     | Progressive ESSR attachment reads and incremental digest             | Both count models/domains; no retained raw envelope or unbounded item list                         | Merged [#132](https://github.com/kentbull/keri-ts/pull/132) |
 | 8     | Bounded recipient decryption and explicit ciphertext retention       | Logical-message limits, authentication before plaintext storage, unchanged crypto wire format      | Merged [#133](https://github.com/kentbull/keri-ts/pull/133) |
-| 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Pending                                                     |
-| 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | Pending                                                     |
+| 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Merged [#137](https://github.com/kentbull/keri-ts/pull/137) |
+| 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | Runtime integration implemented                             |
 | 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Pending                                                     |
 | 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                                                     |
 
@@ -33,9 +33,9 @@ Phase 9 builds on [#135](https://github.com/kentbull/keri-ts/pull/135), which ma
 dispatch/settlement and mailbox batch delivery yield through completion with
 explicit mailbox endpoint identity, and
 [#136](https://github.com/kentbull/keri-ts/pull/136), which publishes durable
-payload references. Both foundations have merged. The exchange integration PR
-starts from that merged master; its commit list and review diff contain only
-the integration.
+payload references. Exchange integration merged in
+[#137](https://github.com/kentbull/keri-ts/pull/137). HTTP/runtime ingress starts
+from that merged master; its commit list and review diff contain only ingress.
 
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
 ahead, base it on the predecessor branch and retarget after that predecessor

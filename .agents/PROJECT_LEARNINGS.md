@@ -50,6 +50,10 @@ stay short enough to reread at session start.
 
 Runtime ingress yields each dispatch as an Effection operation and carries the receiving mailbox AID with
 the message; request identity must never live in shared mutable ambient state.
+Progressive HTTP/file sources use the optional CESR Effection adapter. Runtime
+turns serialize dispatch and cue consumption; direct HTTP replies reserve query
+SAIDs before dispatch. Ownership resources outlive their work children so
+cancellation joins pending I/O before disposing payloads or releasing admission.
 
 Mailbox transport cue correlation does not prove recipient authorization. KEL
 query processing authenticates `mbx` requester signatures against the recipient's
