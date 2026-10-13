@@ -261,6 +261,21 @@ behavior. Unresolved sender last groups remain guarded pending consolidated
 processMsg admission. These proof facilities do not enable guarded nested IPEX
 routes or complete sender/KRAM admission policy.
 
+## Canonical disclosure prerequisite
+
+`Compactor` retains canonical child maps throughout full compaction and restores
+requested SAD-path closures with ancestors before descendants. `compact(paths, root)` produces one targeted partial; `expand()` produces staged partials.
+Internal exact label paths preserve dotted-label distinctions. Compaction and
+path resolution are synchronous semantic operations, separate from parsing,
+cryptographic proof verification and payload ownership.
+
+`Pather.resolve()` traverses labels or field/list ordinals with a default
+256-component deployment limit. The limit applies to resolution and can be
+configured per call; it does not reject otherwise legal deep wire paths.
+Malformed UTF-8 byte paths fail before traversal. These helpers prepare IPEX
+validation but do not admit nested IPEX. The standalone Mapper claimed-SAID
+repair and preservation of Aggor disclosure semantics remain separate work.
+
 ## Serialization and HTTP egress
 
 `framePayload()` and `attachmentPayload()` return non-owning reopenable views of
