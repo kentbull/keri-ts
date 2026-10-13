@@ -20,6 +20,7 @@ let peakExternal = Deno.memoryUsage().external;
 const start = performance.now();
 const cpuStart = cpuUsage();
 
+/** Sample between parser calls; the supervisor also samples during blocking work. */
 function sampleMemory() {
   const memory = Deno.memoryUsage();
   peakRss = Math.max(peakRss, memory.rss);
@@ -27,6 +28,7 @@ function sampleMemory() {
   peakExternal = Math.max(peakExternal, memory.external);
 }
 
+/** Validate ordering and payload bytes before counting a frame as usable output. */
 function consume(events: ParseEvent[]) {
   sampleMemory();
   for (const event of events) {
@@ -41,6 +43,7 @@ function consume(events: ParseEvent[]) {
     if (new DataView(raw.buffer, raw.byteOffset, 8).getBigUint64(0) !== BigInt(frames)) {
       throw new Error("Wrong frame order");
     }
+    // Restore the deterministic template prefix after checking its sequence ID.
     for (let i = 0; i < 8; i++) raw[i] = i;
     if (createHash("sha256").update(raw).digest("hex") !== manifest.itemSha256) throw new Error("Wrong payload digest");
     payloadBytes += raw.length;
@@ -56,6 +59,7 @@ try {
     consume(parser.feed(chunk));
     sampleMemory();
   }
+  // EOF proves the final unwrapped frame has no more attachments.
   consume(parser.flush());
   if (frames !== manifest.items || payloadBytes !== options.payloadBytes) throw new Error("Incomplete parse output");
 } catch (cause) {
