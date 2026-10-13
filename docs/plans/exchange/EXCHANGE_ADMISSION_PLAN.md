@@ -14,9 +14,9 @@ refusal/readmission. Built-in TEL query processing remains unavailable.
 
 ## Remaining processing boundary
 
-The next cohesive **3f KRAM** PR owns optional intake, durable replay caches,
-partial-signature accumulation, configuration/pruning and receiver-observed time.
-It must integrate before route processing without replacing Exchanger proof policy.
+The [KRAM units K1–K10](KRAM_PLAN.md) replace the unmerged #172 snapshot with
+reviewable policy, evidence, authentication, replay and runtime changes. Intake
+must precede route processing without replacing Exchanger proof policy.
 3f also owns built-in TEL query processing; the injected dispatch seam alone does
 not qualify `tels/tsn` behavior.
 Inspect `core/parsing.py`, `core/eventing.py` and `core/kraming.py` at

@@ -5,6 +5,21 @@ references, exchange evidence and nested replay are implemented; see the
 [storage contract](../../design-docs/db/PAYLOAD_STORAGE.md). These foundations
 do not close runtime allocation or crash-recovery qualification.
 
+## Review units
+
+Apply the [roadmap review rules](../PARITY_ROADMAP.md), in dependency order:
+
+1. Native row-size admission before materialization; prove the actual binding seam.
+2. Charged finite row/hydration/replay reads, coordinated with resource phase 4.
+3. Atomic file/reference publication and failed duplicate rollback.
+4. Crash recovery of proven task-owned stages and unreferenced files.
+5. Joined cleanup-error handling and durable reopen/retry reconciliation.
+
+Keep each PR within the size target, including regressions. Reuse existing storage
+tests; exercise failure/crash designs with uncommitted probes unless a maintained
+regression has clear value. An unavailable native pre-allocation seam must remain
+an explicit limitation rather than becoming an after-allocation size assertion.
+
 ## Allocation boundary
 
 LMDB currently returns an entire row before its size check. Nested wire's 24 MiB

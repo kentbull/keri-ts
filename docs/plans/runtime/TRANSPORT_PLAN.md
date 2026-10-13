@@ -4,6 +4,21 @@ Owner: roadmap **6**. Progressive HTTP/file intake, serialization, lazy replay,
 query delivery and mailbox SSE exist. Their [runtime contract][runtime] records
 current finite guards. Shared admission and complete path qualification remain.
 
+## Review units
+
+Use [small stacked PRs](../PARITY_ROADMAP.md) after their resource/storage
+dependencies, preserving the current transport engine:
+
+1. Ingress read credit and bounded handoff through verification/storage.
+2. Forwarding/replay/egress credit through a slow sink.
+3. Cancellation, disconnect and failed-processing ownership cleanup.
+4. Shutdown/EOF/late-malformed-child reconciliation.
+
+Extend existing maintained transport cases where possible. Use uncommitted real
+path probes to measure parsed versus verified-usable children and pressure. New
+permanent integration coverage needs a demonstrated uncovered happy path or a
+strong regression justification. Keep review diffs within the roadmap target.
+
 ## Required path
 
 Qualify actual HTTP/file/TCP integrations through parsing, normalization,

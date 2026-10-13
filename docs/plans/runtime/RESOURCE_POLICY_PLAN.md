@@ -5,6 +5,22 @@ but independent. This phase must establish one admission policy across streams,
 habitats, recipients, decryptions, queues, storage copies and pending descendants.
 Coordinate the native row boundary with [storage phase 5](../db/STORAGE_RECOVERY_PLAN.md).
 
+## Review units
+
+Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
+
+1. Shared reservation policy, typed refusal and exactly-once release.
+2. Runtime stream admission and producer/cursor backing charges.
+3. Queues, completed trees and descendant ownership transfers.
+4. Shared ESSR decryption reservations across recipient instances.
+5. Storage/hydration copy charges, coordinated with phase 5.
+6. Pending metadata, handles/waiters and consumed-work checkpoints.
+
+Each is a 300–500-line-or-smaller target with focused existing-test extensions.
+Split further before publication if a complete boundary needs more. Qualification
+uses existing scenarios and uncommitted pressure probes rather than a new suite
+by default. These units jointly establish the runtime bound; no partial unit does.
+
 ## Approved initial deployment defaults
 
 | Resource                        | Default                     |

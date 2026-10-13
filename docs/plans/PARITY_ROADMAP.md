@@ -1,7 +1,7 @@
 # KERIpy parity and bounded runtime roadmap
 
-Verified boundary: keri-ts `be32f24b83c7c1c75b849e8f40e44ba5fb9e5014` after
-[#170][pr170]. Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+Verified boundary: keri-ts `b42b2f816e412d80f283cac0cb9c48f41ba9209a` after
+[#171][pr171]. Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
 completed PR evidence are summarized in the [delivery report][delivered].
@@ -21,8 +21,9 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 | CESR parsing     | Delivered        | [1–2][cesr]           | [Wire/tree][delivered]  | Accessor audit     |
 | Multisig         | Four routes      | [3d][multisig]        | [#160–161][delivered]   | Native/CLI scope   |
 | IPEX             | Nested runtime   | [3e][ipex]            | [#166–168][delivered]   | Presentations      |
+| V1/V2 registries | V1 + v2 observer | [R1–R12][registry]    | [#168][delivered]       | V2 engine/services |
 | EXN proofs       | Implemented      | [3e/3f][exchange]     | [#162/165][delivered]   | KRAM integration   |
-| v2 intake        | Sender/routing   | [3f KRAM][exchange]   | [Signed wire][intake]   | KRAM/TEL/stubs     |
+| v2 intake        | Sender/routing   | [K1–K10][kram]        | [Signed wire][intake]   | KRAM/TEL/stubs     |
 | ESSR outcomes    | Implemented      | [4 integration][essr] | [#163][delivered]       | Local guards       |
 | Shared budget    | Local guards     | [4][resource]         | [Required][resource]    | Pre-allocation     |
 | Storage/recovery | Durable wire     | [5][storage]          | [Required][storage]     | Whole-row reads    |
@@ -33,21 +34,36 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 
 ## Publication sequence
 
-1. Documentation reorganization (#169) and sender admission (#170) are delivered.
-   The dedicated runtime store-ownership cleanup precedes the remaining 3f work;
-   its [lifecycle contract][ownership] preserves caller-owned stores.
-2. Finish 3f KRAM admission and its dependent 3e presentation
-   path. Keep unimplemented consumers guarded; `xip/pro/bar` are reference stubs.
+1. Docs (#169), sender admission (#170) and store ownership (#171) are delivered.
+   Replace the unmerged #172 integration snapshot with [K1–K10][kram].
+   Independent registry analysis/storage can proceed alongside KRAM.
+2. Prioritize full v2 registry foundations [R1–R12][registry], preserving v1 and
+   existing v2 stores. Then finish built-in TEL queries and IPEX presentations.
+   Keep unimplemented consumers guarded; `xip/pro/bar` are reference stubs.
 3. Shared admission (4), storage/recovery (5), production backpressure (6).
 4. Full reference audit and repeated end-to-end qualification (7).
 5. Focused standalone Mapper repair; rerun affected qualification after it.
 
 The multisig responsibility extraction (#161), ESSR outcome extraction (#163),
-and proof cleanup (#165) are delivered. Do not recreate them. Split remaining
-work only for cohesive review or a demonstrated dependency. Branch each PR from
-its merged predecessor; merge only after required CI passes on that exact head.
+and proof cleanup (#165) are delivered. Do not recreate them. Target **300–500
+added or removed lines, or fewer, per PR**, including tests, fixtures, scripts and
+docs. A larger unit needs a concrete reason explained before publication; prefer
+splitting complete semantic responsibilities. Do not game the count by minifying,
+compressing artifacts or omitting verification. Dependent PRs may branch from
+unmerged predecessors and target their branches for a small stacked diff.
+Independent units may proceed in parallel worktrees. Before merging a dependent
+PR, land its predecessors, synchronize/retarget it to master, then require green
+CI on its resulting exact head. Preserve published history unless rewriting is
+explicitly authorized.
 Preserve worktrees, benchmark baselines, assertions and participant topology.
 Use explicit changesets and register every maintained test in the inventory.
+
+Reuse existing tests/workflows before adding coverage. Commit new integration or
+end-to-end tests only with strong justification, especially a missing happy path;
+exploratory probes may remain uncommitted with recorded evidence. Apply the same
+maintenance-value test to unit tests: choose the smallest meaningful regression,
+not implementation-mirroring assertions or new infrastructure by default.
+Preserve existing assertions and topology; this rule does not reduce qualification.
 
 Final reporting must classify **supported**, **unfinished**, **intentional
 divergence**, **reference stub**, and **unqualified** behavior separately.
@@ -55,7 +71,9 @@ Passing parser tests or finite per-recipient guards cannot close phases 4–7.
 Long qualification stays outside required merge CI; only the maintainer dispatches
 hosted extended jobs, whose existing 15-minute cap remains unchanged.
 
-[pr170]: https://github.com/kentbull/keri-ts/pull/170
+[pr171]: https://github.com/kentbull/keri-ts/pull/171
+[kram]: exchange/KRAM_PLAN.md
+[registry]: credentials/REGISTRY_PLAN.md
 [ownership]: ../design-docs/runtime/INGRESS_AND_EGRESS.md#runtime-store-ownership
 [intake]: ../design-docs/exchange/MESSAGE_ADMISSION.md
 [delivered]: ../reports/parity/DELIVERED_THROUGH_168.md

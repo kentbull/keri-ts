@@ -21,9 +21,9 @@ or bounded-memory qualification.
 
 ## Remaining acceptance
 
-1. Complete presentation registries only after [3f](EXCHANGE_ADMISSION_PLAN.md)
-   supplies a receiver-observed KRAM historical cutoff. Never invent a sender
-   timestamp or treat parent acceptance as a child proof.
+1. Complete presentation registries after the [registry foundation](../credentials/REGISTRY_PLAN.md)
+   and [KRAM sequence](KRAM_PLAN.md) supply actual services and a receiver-observed
+   cutoff. Never invent a sender timestamp or treat parent acceptance as a child proof.
 2. Keep unsupported deeper nests, registry compact-attribute cases and unfinished
    processing guarded. Preserve frozen edge/operator outcomes and document any
    narrower TypeScript API rather than claiming unsupported operators work.
