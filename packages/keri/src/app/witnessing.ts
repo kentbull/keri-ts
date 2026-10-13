@@ -14,27 +14,29 @@
  * - concrete listener ownership lives in `tufa`; this module stays on the
  *   protocol/runtime side of that boundary
  */
-import { Cigar, concatBytes, Counter, CtrDexV1, Ilks, parseBytes, type SerderKERI, type Siger } from "cesr-ts";
+import { Cigar, concatBytes, Counter, CtrDexV1, Ilks, type SerderKERI, type Siger } from "cesr-ts";
+import { toEffectionFrames } from "cesr-ts/effection";
 import { createConnection } from "node:net";
-import { action, type Operation, spawn } from "npm:effection@^3.6.0";
+import { action, call, each, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { ValidationError } from "../core/errors.ts";
 import { receipt as receiptEvent, reply as replyEvent } from "../core/protocol-eventing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
+import { abortable } from "./abortable.ts";
 import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
-import { chunkBytes } from "./byte-source.ts";
+import { chunkBytes, collectBytes, streamBytes } from "./byte-source.ts";
+import { postCesr } from "./cesr-egress.ts";
 import {
   buildCesrRequest,
   CESR_CONTENT_TYPE,
   inspectCesrRequest,
   KERIPY_CESR_JSON_CONTENT_TYPE,
-  splitCesrStream,
 } from "./cesr-http.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
-import { envelopesFromFrames } from "./parsering.ts";
+import { envelopeFromFrame } from "./parsering.ts";
 
 const WitnessReceiptPollAttempts = 20;
 const WitnessReceiptPollDelayMs = 100;
@@ -203,29 +205,36 @@ function buildWitnessReceiptMessage(
   return buildEndpointDetachedReceiptMessage(serder, { wigers });
 }
 
-/** Parse one CESR message and recover its detached receipt attachments. */
+/** Parse exactly one finite receipt while keeping parser and payload cleanup inside this operation. */
 function inspectReceiptMessage(
   bytes: Uint8Array,
-): { serder: SerderKERI; wigers: readonly Siger[]; cigars: readonly Cigar[] } {
-  const envelopes = envelopesFromFrames(parseBytes(bytes), false);
-  const envelope = envelopes[0];
-  if (!envelope) {
-    throw new ValidationError("Expected one witness receipt message.");
-  }
-  return {
-    serder: envelope.serder,
-    wigers: envelope.wigers,
-    cigars: envelope.cigars,
-  };
+): Operation<{ serder: SerderKERI; wigers: readonly Siger[]; cigars: readonly Cigar[] }> {
+  return call(function*() {
+    const channel = yield* toEffectionFrames((signal) => chunkBytes(bytes, { signal }));
+    let result: { serder: SerderKERI; wigers: readonly Siger[]; cigars: readonly Cigar[] } | undefined;
+    for (const frame of yield* each(channel.frames)) {
+      if (frame.essr) {
+        yield* resource<void>(function*(provide) {
+          try {
+            yield* provide();
+          } finally {
+            yield* call(() => frame.essr!.discard());
+          }
+        });
+      }
+      if (result) throw new ValidationError("Expected one witness receipt message.");
+      const envelope = envelopeFromFrame(frame, false);
+      result = { serder: envelope.serder, wigers: envelope.wigers, cigars: envelope.cigars };
+      yield* each.next();
+    }
+    if (!result) throw new ValidationError("Expected one witness receipt message.");
+    return result;
+  });
 }
 
-/** Read one HTTP response body fully under Effection control. */
-function* readResponseBytes(response: Response): Operation<Uint8Array> {
-  const buffer = yield* action<ArrayBuffer>((resolve, reject) => {
-    response.arrayBuffer().then(resolve).catch(reject);
-    return () => {};
-  });
-  return new Uint8Array(buffer);
+/** Receipt endpoints return one finite proof; cancellation joins the reader before leaving this operation. */
+function* readResponseBytes(response: Response, limit = 1024 * 1024): Operation<Uint8Array> {
+  return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal }), limit));
 }
 
 /** Sleep for one short polling interval while staying cancellable. */
@@ -407,7 +416,7 @@ export function* witnessReceiptPost(
     return { kind: "escrow", status: 202 };
   }
 
-  const inspected = inspectReceiptMessage(
+  const inspected = yield* inspectReceiptMessage(
     serviceHab.receipt(eligibility.accepted),
   );
   const body = buildEndpointDetachedReceiptMessage(inspected.serder, {
@@ -612,44 +621,11 @@ export function* sendWitnessMessage(
     return;
   }
 
-  for (const part of splitCesrStream(bytes)) {
-    let delivered = false;
-    let lastStatus = 0;
-    let lastText = "";
-    for (const contentType of WITNESS_HTTP_CONTENT_TYPES) {
-      const request = buildCesrRequest(part, {
-        contentType,
-        destination: witness,
-      });
-      const { response } = yield* fetchResponseHandle(url, {
-        method: "POST",
-        headers: {
-          ...request.headers,
-          ...(auth ? { Authorization: auth } : {}),
-        },
-        body: request.body,
-      });
-      if (response.ok) {
-        yield* closeResponseBody(response);
-        delivered = true;
-        break;
-      }
-      const body = yield* readResponseBytes(response);
-      lastStatus = response.status;
-      lastText = new TextDecoder().decode(body);
-      if (isKeripyContentTypeRejection(response.status, contentType, lastText)) {
-        continue;
-      }
-      throw new ValidationError(
-        `Witness delivery to ${witness} failed with HTTP ${response.status}: ${lastText}`,
-      );
-    }
-    if (!delivered) {
-      throw new ValidationError(
-        `Witness delivery to ${witness} failed with HTTP ${lastStatus}: ${lastText}`,
-      );
-    }
-  }
+  yield* postCesr(url, (signal) => chunkBytes(bytes, { signal }), {
+    bodyMode: "header",
+    destination: witness,
+    headers: auth ? { Authorization: auth } : undefined,
+  });
 }
 
 function isKeripyContentTypeRejection(
@@ -716,11 +692,13 @@ function* pollWitnessReceipt(
   }
 
   for (let attempt = 0; attempt < WitnessReceiptPollAttempts; attempt += 1) {
-    const response = yield* getWitnessReceiptEndpoint(hab, witness, {
-      pre,
-      sn,
-      said,
-    });
+    const response = yield* call(() =>
+      getWitnessReceiptEndpoint(hab, witness, {
+        pre,
+        sn,
+        said,
+      })
+    );
     if (response.kind === "accepted") {
       return response;
     }
@@ -776,7 +754,7 @@ function* postWitnessReceiptEndpoint(
     }
     if (response.status === 200) {
       const body = yield* readResponseBytes(response);
-      const inspected = inspectReceiptMessage(body);
+      const inspected = yield* inspectReceiptMessage(body);
       return {
         kind: "accepted",
         status: 200,
@@ -785,7 +763,7 @@ function* postWitnessReceiptEndpoint(
         cigars: inspected.cigars,
       };
     }
-    const body = yield* readResponseBytes(response);
+    const body = yield* readResponseBytes(response, 16 * 1024);
     lastStatus = response.status;
     lastText = new TextDecoder().decode(body);
     if (isKeripyContentTypeRejection(response.status, contentType, lastText)) {
@@ -828,7 +806,7 @@ function* getWitnessReceiptEndpoint(
     method: "GET",
   });
   if (response.status !== 200) {
-    const body = yield* readResponseBytes(response);
+    const body = yield* readResponseBytes(response, 16 * 1024);
     return {
       kind: "reject",
       status: response.status,
@@ -836,7 +814,7 @@ function* getWitnessReceiptEndpoint(
     };
   }
   const body = yield* readResponseBytes(response);
-  const inspected = inspectReceiptMessage(body);
+  const inspected = yield* inspectReceiptMessage(body);
   return {
     kind: "accepted",
     status: 200,
@@ -920,11 +898,14 @@ export class Receiptor {
           }
         }
 
-        let response = yield* postWitnessReceiptEndpoint(
-          hab,
-          witness,
-          message,
-          auths[witness],
+        // A single receipt attempt owns its response until parsing and collection finish.
+        let response = yield* call(() =>
+          postWitnessReceiptEndpoint(
+            hab,
+            witness,
+            message,
+            auths[witness],
+          )
         );
         if (response.kind === "escrow") {
           response = yield* pollWitnessReceipt(
@@ -1019,11 +1000,13 @@ export class Receiptor {
       return false;
     }
 
-    const response = yield* getWitnessReceiptEndpoint(hab, witness, {
-      pre,
-      sn: sn ?? kever.sn,
-      said,
-    });
+    const response = yield* call(() =>
+      getWitnessReceiptEndpoint(hab, witness, {
+        pre,
+        sn: sn ?? kever.sn,
+        said,
+      })
+    );
     if (response.kind !== "accepted") {
       return false;
     }

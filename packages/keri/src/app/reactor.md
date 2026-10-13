@@ -85,3 +85,20 @@ stored body must still be read as one value before its length can be checked.
 Aggregate replay length is not collected or capped; ordinary single-event bytes
 and concurrent HTTP replies remain independently bounded. Other finite callers
 of `cloneEvtMsg` without a limit retain their existing allocation behavior.
+
+## Witness and exchange output
+
+Signed exchanges and generic HTTP witness delivery use the same progressive
+sender as forwarding. Witness authorization is preserved across content-type
+retries; caller headers cannot replace CESR framing or destination metadata.
+Receipt endpoints intentionally return one finite proof: collection admits at
+most 1 MiB, failed-response diagnostics at most 16 KiB, and parsing requires one
+complete frame. Cancellation joins the body reader and releases its lock.
+The shared HTTP response resource also owns the handoff after headers arrive;
+continuous OOBI, authentication, query and mailbox workers close a finite call
+scope after each response so neither bodies nor resource registrations accumulate.
+
+Query-response handoff and incremental mailbox SSE remain a separate migration:
+a query cue runs inside the runtime turn and cannot recursively enter the
+Reactor while waiting for its streamed reply. These paths still retain their
+existing collection behavior until that next slice replaces it.

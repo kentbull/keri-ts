@@ -369,3 +369,26 @@ Deno.test("CESR parser cancellation also aborts the request consuming its delive
     await sending.halt();
   }
 });
+
+Deno.test("CESR transport headers preserve authorization without replacing frame metadata", async () => {
+  await run(function*() {
+    yield* postCesr("https://peer.test/", (signal) => chunkBytes(b(json), { signal }), {
+      destination: "actual-peer",
+      headers: {
+        Authorization: "Bearer fixture",
+        "Content-Type": "text/plain",
+        "CESR-DESTINATION": "stale-peer",
+        "CESR-ATTACHMENT": "stale-attachment",
+      },
+      services: services((_url, init) => {
+        const headers = new Headers(init?.headers);
+        assertEquals(headers.get("Authorization"), "Bearer fixture");
+        // Extra HTTP metadata cannot override the serializer's own attachment or routing fields.
+        assertEquals(headers.get("Content-Type"), "application/cesr");
+        assertEquals(headers.get("CESR-DESTINATION"), "actual-peer");
+        assertEquals(headers.get("CESR-ATTACHMENT"), "-VAA");
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }),
+    });
+  });
+});

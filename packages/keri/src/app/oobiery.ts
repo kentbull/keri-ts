@@ -1,5 +1,5 @@
 import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "cesr-ts";
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { action, call, type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
@@ -107,7 +107,8 @@ export class Oobiery {
     if (item) {
       const [kind, url, record] = item;
       try {
-        yield* this.processJob(kind, url, record);
+        // Release the response resource after this job, rather than retaining it in the continuous worker.
+        yield* call(() => this.processJob(kind, url, record));
       } catch (error) {
         if (!(error instanceof DeckFullError)) throw error;
         // Another producer filled the shared deck during I/O. Keep durable retry ownership.

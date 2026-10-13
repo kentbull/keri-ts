@@ -1,4 +1,4 @@
-import { type Operation } from "npm:effection@^3.6.0";
+import { call, type Operation } from "npm:effection@^3.6.0";
 import type { OobiRecord } from "../core/records.ts";
 import type { Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
@@ -46,7 +46,8 @@ export class Authenticator {
     }
 
     const [url, record] = item;
-    yield* this.processPendingAuth(url, record);
+    // Each authentication owns a finite response scope inside the long-lived worker.
+    yield* call(() => this.processPendingAuth(url, record));
   }
 
   /** Continuous auth doer for long-lived runtime hosts. */

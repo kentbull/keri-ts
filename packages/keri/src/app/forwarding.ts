@@ -1299,15 +1299,18 @@ export interface MailboxPollTransport {
 
 const defaultMailboxPollTransport: MailboxPollTransport = {
   *poll(args): Operation<MailboxSseMessage[]> {
-    return yield* fetchMailboxMessages(
-      args.hab,
-      args.targetPre,
-      args.endpoint.eid,
-      args.endpoint.url,
-      args.topics,
-      args.bodyMode,
-      args.timeouts,
-      args.services,
+    // A completed long poll releases its HTTP resource before the next poll begins.
+    return yield* call(() =>
+      fetchMailboxMessages(
+        args.hab,
+        args.targetPre,
+        args.endpoint.eid,
+        args.endpoint.url,
+        args.topics,
+        args.bodyMode,
+        args.timeouts,
+        args.services,
+      )
     );
   },
 };

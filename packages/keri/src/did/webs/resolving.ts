@@ -4,7 +4,7 @@
  * Resolution succeeds only when hosted `did.json` matches the DID document
  * regenerated from the fetched `keri.cesr` KERI/VDR stream.
  */
-import { action, type Operation } from "effection";
+import { action, call, type Operation } from "effection";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import { settleRuntimeIngress } from "../../app/agent-runtime.ts";
 import { fetchResponseHandle } from "../../app/httping.ts";
@@ -81,7 +81,8 @@ function* fetchBytesWithFallback(
   let lastError: unknown;
   for (const url of [...new Set(urls)]) {
     try {
-      return yield* fetchBytes(url);
+      // Dispose the failed or consumed response before retrying another URL.
+      return yield* call(() => fetchBytes(url));
     } catch (error) {
       lastError = error;
     }

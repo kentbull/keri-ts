@@ -1,4 +1,4 @@
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { action, call, type Operation, resource } from "npm:effection@^3.6.0";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 
 /** One live HTTP response plus the controller that can still abort its body. */
@@ -24,7 +24,9 @@ interface FetchResponseHandleInternalOptions extends FetchResponseHandleOrNullOp
  *
  * This is the shared request-lifecycle seam:
  * - create one local `AbortController`
- * - abort when the enclosing operation is canceled
+ * - keep the request and response body owned through enclosing scope exit
+ * - abort and join late fetch completion when the enclosing operation is canceled
+ * - consume each response inside a finite `call`/`scoped` operation in continuous workers
  * - hand the caller both the `Response` and the controller when body policy
  *   needs later abort access, such as mailbox SSE long-poll reads
  */
@@ -78,6 +80,7 @@ export function* closeResponseBody(response: Response): Operation<void> {
   });
 }
 
+/** Own fetch completion and the returned body until the enclosing request scope closes. */
 function* fetchResponseHandleInternal(
   url: string,
   init: RequestInit,
@@ -88,45 +91,44 @@ function* fetchResponseHandleInternal(
     nullOnAbort = false,
     services = defaultRuntimeServices,
   } = options;
-  return yield* action<HttpResponseHandle | null>((resolve, reject) => {
+  return yield* resource<HttpResponseHandle | null>(function*(provide) {
+    // The response body remains owned after headers settle and until this resource's scope exits.
     const controller = new AbortController();
-    let settled = false;
     let timedOut = false;
     const timeoutId = timeoutMs === undefined ? undefined : services.clock.setTimeout(() => {
       timedOut = true;
       controller.abort();
     }, timeoutMs);
-
+    /** A header timeout ends when fetch settles; body limits belong to its consumer. */
     const clearTimer = () => {
-      if (timeoutId !== undefined) {
-        services.clock.clearTimeout(timeoutId);
-      }
+      if (timeoutId !== undefined) services.clock.clearTimeout(timeoutId);
     };
-
-    services.http.fetch(url, { ...init, signal: controller.signal }).then((response) => {
-      settled = true;
-      clearTimer();
-      resolve({ response, controller });
-    }).catch((error) => {
-      settled = true;
-      clearTimer();
-      if (
-        nullOnAbort
-        && error instanceof DOMException
-        && error.name === "AbortError"
-        && timedOut
-      ) {
-        resolve(null);
-        return;
+    let pending: Promise<Response> | undefined;
+    try {
+      pending = services.http.fetch(url, { ...init, signal: controller.signal });
+      let response: Response;
+      try {
+        response = yield* call(() => pending!);
+      } catch (error) {
+        if (nullOnAbort && error instanceof DOMException && error.name === "AbortError" && timedOut) {
+          clearTimer();
+          yield* provide(null);
+          return;
+        }
+        throw error;
       }
-      reject(error);
-    });
-
-    return () => {
       clearTimer();
-      if (!settled) {
-        controller.abort();
+      yield* provide({ response, controller });
+    } finally {
+      clearTimer();
+      controller.abort();
+      if (pending) {
+        yield* call(async () => {
+          // A fetch completing during cancellation still transfers its response to this owner.
+          const response = await pending!.catch(() => undefined);
+          if (response?.body && !response.body.locked) await response.body.cancel().catch(() => {});
+        });
       }
-    };
+    }
   });
 }
