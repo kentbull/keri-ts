@@ -97,12 +97,12 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
     stay durable habery state in `tops.`.
 16. Local location updates must arrive through signed `/loc/scheme` replies, not
     direct writes to `locs.` / `lans.`.
-17. Interop contracts are exact: keep `lmdb` pinned to `3.4.4`, preserve
+17. Interop contracts are exact: use the repository-pinned `lmdb` release, preserve
     `LMDB_DATA_V1=true` for KERIpy interop workflows, size existing LMDB mappings
     from stored metadata with KERIpy-compatible environment overrides, and route
     protocol/storage CBOR through the shared CESR codec.
 18. Test parallelization should follow real isolation boundaries, not folder
-    names. Keep lane ownership explicit and keep default CI truthful.
+    names. Keep file ownership explicit and keep default CI truthful.
 19. `packages/tufa` now owns the runnable host/CLI edge; `keri-ts` root,
     `keri-ts/runtime`, and `keri-ts/db` are the supported library entrypoints.
     Its HTTP shutdown must close runtime-owned response streams before waiting
@@ -150,7 +150,7 @@ module binding, independent byte parity, and the limits of owned-buffer cleanup.
 9. Keep host-prefix selection explicit and conservative; do not leak
    system-managed identities into normal user-facing host startup.
 10. Keep witness interop claims tied to the scenarios actually proved.
-11. Keep test-lane ownership explicit as mailbox/runtime work grows.
+11. Keep `scripts/ci/keri-test-suites.ts` file ownership explicit as mailbox/runtime work grows.
 
 ## Recent Durable Changes
 

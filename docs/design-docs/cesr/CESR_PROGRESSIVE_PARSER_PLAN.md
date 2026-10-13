@@ -72,11 +72,15 @@ coverage. Keep production behavior unchanged in that PR.
 Run the complete maintained test inventory, including all manual and long-running
 targets. Preserve the frozen upstream-main baseline at
 `927c0cb8794d7c84fc17143c67df64aab9deda6c`. Final qualification uses the published
-`kentbull/keripy` fork `cd6f838a732ad99d1ad169a50b74885b5cf6a8fa`: that same main
+`kentbull/keripy` fork `23af39bf99383be0dea061a4ea60b184268f3529`: that same main
 base plus standalone mailbox commands/admission, explicit mailbox protocol
 selection, the transferable receipt-table lookup repair, and explicit VC export
 genus selection, and JSON mailbox queries for topic names that cannot be native
-CESR labels. Explicit encodings and CLI protocol defaults remain unchanged.
+CESR labels. Credential CLI commands also select anchor, grant, admit, and
+mailbox-consumption versions explicitly; admit uses protocol-specific serders for
+embedded KERI/ACDC bodies. Explicit encodings and CLI protocol defaults remain
+unchanged. The existing credential fixtures select v1; legacy pathed IPEX grants
+continue to reject v2.
 This is fork-on-main qualification, not pure upstream parity.
 Verify exact commit and actual imports, and record every run, skip, failure,
 topology, and duration. Extended interop and ESSR workflow jobs have a 15-minute
@@ -138,8 +142,7 @@ parser-only measurements do not establish the full runtime's memory bound.
 
 ## Approved follow-on sequence: current KERIpy alignment
 
-# Execute this sequence after phases 1–12 and their attendant repairs. Reconcile
-
+Execute this sequence after phases 1–12 and their attendant repairs. Reconcile
 prepared/merged work before each PR, keep the same plan, and implement only
 missing behavior. Synchronous-engine removal and #134's test reorganization
 already have owners; do not duplicate them or reshuffle those tests here.
@@ -163,12 +166,14 @@ implementation onto this frozen upstream revision and publishing an immutable
 commit on `kentbull/keripy`. Record that fork commit, upstream parent, mailbox
 delta, and actual import path separately from upstream-main evidence. Preserve
 the existing `mailbox-impl` branch. Published `mailbox-main-interop` commit
-`cd6f838a732ad99d1ad169a50b74885b5cf6a8fa` is based on upstream
+`23af39bf99383be0dea061a4ea60b184268f3529` is based on upstream
 `927c0cb8794d7c84fc17143c67df64aab9deda6c`, ports the original mailbox commits
 `1faba4f2` / `9924fffa`, adapts their handler to nested messages, and adds explicit
 mailbox protocol selection, the `vrcs` lookup repair in forwarding introductions,
 explicit VC export genus selection, and JSON mailbox queries for slash-prefixed
-topics that native CESR labels cannot encode. The #134 runtime qualification uses this declared fork; protocol-table pins remain
+topics that native CESR labels cannot encode. It also adds explicit credential
+command version boundaries and protocol-specific admit body rehydration.
+The #134 runtime qualification uses this declared fork; protocol-table pins remain
 independently identified. A successful fork run proves that declared combined surface,
 not unmodified upstream-main mailbox behavior.
 
@@ -212,6 +217,20 @@ Python-to-TS and TS-to-Python fixtures in qb64/qb2; exact widths, counts, bytes,
 semantic roles, and consumed extents; small/big forms, malformed lengths, and
 split headers; and generated-table verification against the immutable pin.
 Still-older runtime pins remain explicitly labeled until separately upgraded.
+
+### Follow-on PR 1b: imported v2 event replay
+
+The #134 interop run at TS `f3a267e6` against the declared mailbox fork reproduced
+v2 event bodies being replayed by `Baser.cloneEvtMsg` with fixed v1 attachment
+counters. This fails downstream OOBI and credential-evidence parsing. Explicit v1
+CLI fixtures qualify the existing v1 scenarios; they do not close this v2 defect.
+
+First check whether phase 11 streaming serialization already repairs every
+replay path. Implement only the remaining gap, with independent Python v2
+issuance/anchor fixtures, close/reopen replay, OOBI ingestion, and credential
+import across both genera. Preserve stored bodies and evidence; select a lawful
+explicit enclosure genus without heuristic retries or wire rewriting. Complete
+this repair before claiming the corresponding current-main v2 runtime parity.
 
 ### Follow-on PR 2: parent-owned nested message attachments
 

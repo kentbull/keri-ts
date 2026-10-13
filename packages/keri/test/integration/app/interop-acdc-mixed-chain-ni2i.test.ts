@@ -466,6 +466,8 @@ async function inceptKliRegistry(
         "vc",
         "registry",
         "incept",
+        "--version",
+        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -494,6 +496,8 @@ async function createKliCredential(
   const command = [
     "vc",
     "create",
+    "--version",
+    "1.0",
     ...kliStoreArgs(store),
     "--alias",
     store.alias,
@@ -601,6 +605,8 @@ async function grantFromKli(
       [
         "ipex",
         "grant",
+        "--version",
+        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -701,6 +707,8 @@ async function pollKliGrant(
       [
         "ipex",
         "list",
+        "--version",
+        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -765,6 +773,8 @@ async function admitKliGrant(
       [
         "ipex",
         "admit",
+        "--version",
+        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -889,6 +899,7 @@ import json
 from keri.app import Organizer, serialize
 from keri.cli.common import existing
 from keri.core import coring, serdering
+from keri.kering import Vrsn_1_0
 from keri.peer import cloneMessage
 from keri.vc import ipexAdmitExn, ipexGrantExn
 from keri.vdr import credentialing
@@ -910,15 +921,15 @@ def grant_candidate(hby, rgy, args, message):
     if creder is None:
         raise ValueError(f"invalid credential SAID to grant={args.said}")
     recp = resolve_recipient(hby, args.recipient)
-    acdc = serialize(creder, prefixer, seqner, saider)
-    iss = rgy.reger.cloneTvtAt(creder.said)
+    acdc = serialize(creder, prefixer, seqner, saider, gvrsn=Vrsn_1_0)
+    iss = rgy.reger.cloneTvtAt(creder.said, gvrsn=Vrsn_1_0)
     iserder = serdering.SerderKERI(raw=bytes(iss))
     seqner = coring.Seqner(sn=iserder.sn)
     serder = hby.db.fetchLastSealingEventByEventSeal(
         creder.sad["i"],
         seal=dict(i=iserder.pre, s=seqner.snh, d=iserder.said),
     )
-    anc = hby.db.cloneEvtMsg(pre=serder.pre, fn=0, dig=serder.said)
+    anc = hby.db.cloneEvtMsg(pre=serder.pre, fn=0, dig=serder.said, gvrsn=Vrsn_1_0)
     return ipexGrantExn(
         hab=hab,
         recp=recp,
@@ -927,6 +938,7 @@ def grant_candidate(hby, rgy, args, message):
         iss=iss,
         anc=anc,
         dt=args.timestamp,
+        version=Vrsn_1_0,
     )
 
 
@@ -935,7 +947,7 @@ def admit_candidate(hby, args, message):
     grant, _ = cloneMessage(hby, args.said)
     if grant is None:
         raise ValueError(f"invalid grant SAID to admit={args.said}")
-    return ipexAdmitExn(hab=hab, message=message, grant=grant, dt=args.timestamp)
+    return ipexAdmitExn(hab=hab, message=message, grant=grant, dt=args.timestamp, version=Vrsn_1_0)
 
 
 def main():
@@ -951,7 +963,7 @@ def main():
     parser.add_argument("--recipient", default="")
     args = parser.parse_args()
 
-    hby = existing.setupHby(name=args.name, base=args.base, bran=args.passcode)
+    hby = existing.setupHby(name=args.name, base=args.base, bran=args.passcode, version=Vrsn_1_0)
     rgy = credentialing.Regery(hby=hby, name=args.name, base=args.base) if args.mode == "grant" else None
     try:
         for pad in range(16):

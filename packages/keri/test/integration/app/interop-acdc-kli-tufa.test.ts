@@ -300,6 +300,8 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
               "vc",
               "registry",
               "incept",
+              "--version",
+              "1.0",
               ...kliStoreArgs(kliName, passcode),
               "--alias",
               "issuer",
@@ -315,6 +317,8 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
             runCmd(ctx.kliCommand, [
               "vc",
               "create",
+              "--version",
+              "1.0",
               ...kliStoreArgs(kliName, passcode),
               "--alias",
               "issuer",

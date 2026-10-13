@@ -69,18 +69,23 @@ Each manual workflow job has a 15-minute limit and retains timings, provenance,
 and raw logs. Select individual targets when the complete `qualification` group
 does not fit that limit; local qualification still runs every KERI file.
 Individual scenario timeouts remain in their test bodies. The separate
-`essr-qualification` target also has a 15-minute job limit and is never a required
-PR check. Manual workflows are dispatched explicitly by the maintainer.
+`essr-qualification` target runs one benchmark sample per 15-minute job, with
+a 600-second process limit and at most two jobs running concurrently. Its full
+108-sample matrix remains manual-only and is never a required PR check. Manual workflows are dispatched explicitly by the maintainer.
 
 ## Verified KERIpy selection
 
 The default CLI runtime is the published `kentbull/keripy` mailbox fork
-`cd6f838a732ad99d1ad169a50b74885b5cf6a8fa`, based on upstream main
+`23af39bf99383be0dea061a4ea60b184268f3529`, based on upstream main
 `927c0cb8794d7c84fc17143c67df64aab9deda6c` plus mailbox commands, admission
 checks, explicit protocol/genus selection for mailbox startup and authorization,
 the transferable receipt-table lookup repair, and explicit VC export genus
 selection, and JSON mailbox queries for topic names that cannot be native CESR
-labels. Explicit query encodings and CLI protocol defaults remain unchanged.
+labels. Credential commands expose explicit anchor, grant, admit, and mailbox
+consumption versions; admit rehydrates embedded KERI/ACDC bodies with the
+protocol-specific serder. Explicit query encodings and CLI protocol defaults
+remain unchanged. Legacy pathed IPEX grants still do not support protocol v2;
+these existing credential scenarios explicitly select v1.
 This is fork-on-main qualification, not pure upstream parity. Historical
 table-source pins are independent data provenance, not claims about the live peer.
 No test silently switches to a sibling checkout, PATH `kli`, or another Python.
@@ -107,7 +112,7 @@ For the maintained mailbox-on-main qualification, select its exact checkout and 
 
 ```bash
 export KERIPY_INTEROP_ROOT=/Users/kbull/enc/keri/worktrees/keripy/mailbox-main-interop
-export KERIPY_INTEROP_EXPECTED_COMMIT=cd6f838a732ad99d1ad169a50b74885b5cf6a8fa
+export KERIPY_INTEROP_EXPECTED_COMMIT=23af39bf99383be0dea061a4ea60b184268f3529
 export KERIPY_INTEROP_PYTHON="$KERIPY_INTEROP_ROOT/venv/bin/python"
 export LMDB_DATA_V1=true
 export KERI_TEST_TIMINGS_DIR=/tmp/keri-mailbox-main-qualification

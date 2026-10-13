@@ -32,8 +32,7 @@ release, and interoperability operations.
    environment story.
 9. Runtime version generation should stay deterministic during checks; build
    metadata is opt-in for artifact/release steps.
-10. KERIpy interop depends on exact LMDB-js behavior: keep `lmdb` pinned to
-    `3.4.4`, preserve `LMDB_DATA_V1=true`, use the correct native-addon rebuild
+10. KERIpy interop depends on exact LMDB-js behavior: use the repository-pinned `lmdb` release, preserve `LMDB_DATA_V1=true`, use the correct native-addon rebuild
     path, and size existing mappings from stored metadata after explicit,
     `KERI_LMDB_MAP_SIZE`, or `KERI_BASER_MAP_SIZE` configuration.
 11. Cache topology is part of correctness. Interop-sensitive LMDB-v1 jobs need
@@ -41,10 +40,10 @@ release, and interoperability operations.
 12. CI feedback should follow true isolation boundaries: DB, core, app/server,
     runtime, stateful app, and interop lanes should split when their wall-clock
     or isolation needs diverge materially.
-13. KERI test topology is an explicit repo contract. The source-owned lane
-    annotations plus `scripts/ci/run-keri-test-group.ts` are authoritative, with
-    `scripts/ci/run-keri-test-group.sh` as the stable task wrapper; lane audit
-    should fail if any discovered test case is missing or double-owned.
+13. KERI test topology is an explicit repo contract.
+    `scripts/ci/keri-test-suites.ts` owns file selection and
+    `scripts/ci/run-keri-test-group.ts` executes it. Inventory audit rejects
+    missing, duplicated, or unowned files; source tags and name filters are gone.
 14. Parallelism policy is explicit: parallelize only where isolation is real,
     cap default worker counts, and keep runtime/server/interop/stateful lanes
     serial until their assumptions change.
@@ -121,8 +120,8 @@ release, and interoperability operations.
    KERIpy pins whenever bootstrap logic changes.
 4. Preserve split-job feedback topology and isolation-aware test grouping rather
    than collapsing back into a giant lane.
-5. Keep KERI lane metadata current when mailbox/runtime/interop files gain new
-   tests.
+5. Keep the explicit KERI file inventory current when mailbox/runtime/interop
+   test files are added or reorganized.
 6. Keep runtime/server lanes serial until the tests stop depending on fixed
    ports, process-global state, or shared stores.
 7. If KLI/KERIpy witness-set replacement under the explicit harness becomes a

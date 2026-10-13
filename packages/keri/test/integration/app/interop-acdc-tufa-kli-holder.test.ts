@@ -592,6 +592,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "ipex",
               "list",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
@@ -613,6 +615,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "ipex",
               "admit",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
@@ -680,6 +684,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "ipex",
               "grant",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
