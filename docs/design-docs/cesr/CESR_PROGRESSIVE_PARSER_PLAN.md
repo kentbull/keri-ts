@@ -36,10 +36,18 @@ stack tooling is not an implementation dependency. Merge after the exact head's
 required CI passes. Use empty changesets for tooling/docs and release-impacting
 changesets for package/API changes.
 
+KERI/Tufa filesystem code uses native Deno APIs and the existing `@std/path`
+conventions. Keep Node-specific adaptation at npm packaging boundaries. Temporary
+file names may use Web Crypto UUIDs; publication uses the owning protocol SAID or
+a qualified content digest with representation scope where needed.
+
 The temporary atomic engine exists only for staged migration. Phase 12 removes
 it and obsolete keri-ts API compatibility surfaces. Move semantic regression
 coverage to the new API rather than deleting protocol tests. Do not ship two
-permanent parser strategies.
+permanent parser strategies. Consumers also get a convenient async complete-input
+API over the progressive engine; synchronous `feed`/`flush` is not retained as a
+second implementation. Collection must clean up undelivered owned payloads if a
+later frame fails.
 
 ## Additional approved review and qualification work
 
