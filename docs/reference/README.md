@@ -6,6 +6,7 @@ do not schedule work or prove current qualification by their presence.
 - CESR: [frozen table audit](cesr/CESR_CURRENT_REFERENCE_TABLES.md).
 - Disclosure: [fixed-field/selective examples](credentials/DISCLOSURE_EXAMPLES.md)
   and [JSON walkthrough](credentials/JSON_DISCLOSURE_WALKTHROUGH.md).
+- Registries: [verified-import preservation record](credentials/VERIFIED_IMPORT_SNAPSHOT.md).
 - DB: [keyspace/families](db/KEYSPACE_AND_FAMILIES.md),
   [memoryview/Uint8Array](db/MEMORYVIEW_UINT8ARRAY.md),
   [behavioral test coverage](db/LMDBER_TEST_COVERAGE.md),

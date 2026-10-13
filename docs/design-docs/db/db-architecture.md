@@ -158,6 +158,16 @@ Design intent:
 1. If payload is CESR primitive domain data, use Suber-family semantics.
 2. If payload is structured non-CESR record data, use Komer-family semantics.
 
+Opaque wire values need a byte-preserving adapter: `BytesSuber` for single
+values and `BytesIoSetSuber` for insertion-ordered sets. `Baser.ptds` uses the
+latter for pathed evidence keyed by `(AID, MID)` in the existing `ptds.` table.
+Distinct binary inputs such as `0xff` and `0xfe` must survive without UTF-8
+replacement, retaining insertion order and deduplicating only exact bytes.
+This honors frozen KERIpy `927c0cb8`'s documented raw-byte table contract while
+correcting its inherited text-decoding read path. A byte-oriented type does not
+establish zero-copy LMDB access; see the
+[byte ownership reference](../../reference/db/MEMORYVIEW_UINT8ARRAY.md).
+
 ## Key Ordering Conventions
 
 1. Use fixed-width hex ordinals where lexicographic order must match numeric

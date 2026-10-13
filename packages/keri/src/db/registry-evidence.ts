@@ -1,7 +1,7 @@
 /** Durable verifier-side v2 registry evidence; distinct from legacy Reger state. */
 import { ResourceLimitError, Saider, SerderACDC } from "cesr-ts";
 import type { Operation } from "effection";
-import { type RegistryEvidence, type RegistryVerification, vetRegistry } from "../acdc/regeventing.ts";
+import { type RegistryEvidence, type RegistryVerification, vet } from "../acdc/regeventing.ts";
 import { DatabaseOperationError } from "../core/errors.ts";
 import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
 import { CesrOnSuber, CesrSuber, SerderSuber } from "./subing.ts";
@@ -98,7 +98,7 @@ export class RegistryEvidenceStore extends LMDBer implements RegistryEvidenceRea
       if (merged.length >= this.maxEvents) {
         throw new ResourceLimitError("Registry evidence exceeds configured event limit.");
       }
-      const result = vetRegistry({ rip, updates: merged, db, sources });
+      const result = vet({ rip, updates: merged, db, sources });
       if (result.kind !== "verified") return result;
       for (const event of [rip, ...merged]) {
         const said = new Saider({ qb64: event.said! });

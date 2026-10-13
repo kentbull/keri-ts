@@ -966,6 +966,17 @@ export class B64IoSetSuber<T extends string[] = string[]> extends IoSetSuber<T> 
   }
 }
 
+/** Raw insertion-ordered members; preserve binary payloads without text decoding. */
+export class BytesIoSetSuber extends IoSetSuber<Uint8Array> {
+  protected override _ser(val: Uint8Array): Uint8Array {
+    return asUint8Array(val);
+  }
+
+  protected override _des(val: Uint8Array | null): Uint8Array | null {
+    return val === null ? null : asUint8Array(val);
+  }
+}
+
 /**
  * Qualified CESR primitive family over synthetic insertion-ordered sets.
  *
