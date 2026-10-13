@@ -189,6 +189,15 @@ keeps its admitted ciphertext in bounded memory until decryption; it does not
 automatically spill ciphertext to disk. Intentional evidence/relay retention is
 the separate ciphertext-preserving flow described below.
 
+Recipient `EssrDecision` separates admission `refuse` (`busy`, configured
+`limit`, durable-exchange `unaccepted`) from verification `reject` (`envelope`,
+`digest`, `decrypt`, `framing`). Only `accept` transfers an authenticated message
+and its plaintext owner. Undersized sealed ciphertext is malformed input;
+invalid size metadata is a payload contract exception. Admission occurs before
+ciphertext reads/allocation. Cancellation and unexpected I/O/storage/invariant
+failures remain abrupt and join owner cleanup; no unsuccessful path publishes
+plaintext. Per-recipient finite guards are not shared runtime admission.
+
 KERIpy-compatible `.essrs` values remain qualified Texters where exchange
 evidence, escrow, replay, or relay requires them. Do not replace those values with
 proprietary file pointers or silently overwrite them with plaintext. Retain

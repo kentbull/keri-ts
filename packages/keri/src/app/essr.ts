@@ -1,22 +1,24 @@
-import { collectPayload, Diger, MtrDex, parseBexter, parsePrefixer, parseTagger, type Payload } from "cesr-ts";
+import {
+  collectPayload,
+  Diger,
+  MtrDex,
+  parseBexter,
+  parsePrefixer,
+  ParserError,
+  parseTagger,
+  type Payload,
+} from "cesr-ts";
 import { call, type Operation, resource } from "effection";
-import { ValidationError } from "../core/errors.ts";
 import type { FilePayload, PayloadStore } from "../db/payload-store.ts";
 import { payloadRange } from "../db/payload-view.ts";
 import { abortable } from "./abortable.ts";
 import type { Hab } from "./habbing.ts";
 
-/** Expected ESSR admission failures; no failure publishes plaintext. */
-export class EssrError extends ValidationError {
-  /** Preserve the admission stage separately from its human-readable failure reason. */
-  constructor(
-    /** Stable failure category for recipient admission and authenticated decoding. */
-    readonly kind: "unaccepted" | "envelope" | "limit" | "busy" | "digest" | "decrypt" | "framing",
-    message: string,
-  ) {
-    super(message);
-  }
-}
+/** Expected recipient outcomes; only acceptance transfers an authenticated plaintext owner. */
+export type EssrDecision =
+  | { kind: "accept"; message: EssrMessage }
+  | { kind: "refuse"; reason: "busy" | "limit" | "unaccepted" }
+  | { kind: "reject"; reason: "envelope" | "digest" | "decrypt" | "framing" };
 
 /** One owning plaintext file and a non-owning view of its inner CESR stream. */
 export interface EssrMessage {
@@ -67,12 +69,12 @@ export class EssrRecipient {
    * successful result transfers file ownership to the caller; discarding that
    * file also invalidates body. No complete byte buffer escapes in the result.
    */
-  decrypt(said: string, ciphertext: Payload, signal?: AbortSignal): Operation<EssrMessage> {
+  decrypt(said: string, ciphertext: Payload, signal?: AbortSignal): Operation<EssrDecision> {
     return call(() => this.receive(said, ciphertext, signal));
   }
 
   /** Isolate cancellation and retain ownership until the consumer receives the result. */
-  private *receive(said: string, ciphertext: Payload, signal?: AbortSignal): Operation<EssrMessage> {
+  private *receive(said: string, ciphertext: Payload, signal?: AbortSignal): Operation<EssrDecision> {
     let received: EssrMessage | undefined;
     let transferred = false;
     // The later I/O child is cancelled and joined before this owner is finalized.
@@ -84,27 +86,32 @@ export class EssrRecipient {
       }
     });
     const result = yield* abortable(async (scopeSignal) => {
-      received = await this.decryptMessage(said, ciphertext, scopeSignal);
+      const decision = await this.decryptMessage(said, ciphertext, scopeSignal);
+      if (decision.kind === "accept") received = decision.message;
       scopeSignal.throwIfAborted();
-      return received;
+      return decision;
     }, signal);
     transferred = true;
     return result;
   }
 
   /** Own the finite crypto buffer and unfinished file until signal-aware cleanup completes. */
-  private async decryptMessage(said: string, ciphertext: Payload, signal: AbortSignal): Promise<EssrMessage> {
-    signal?.throwIfAborted();
-    if (this.active >= this.maxConcurrent) throw new EssrError("busy", "ESSR recipient concurrency limit reached");
-    if (!Number.isSafeInteger(ciphertext.size) || ciphertext.size < 48 || ciphertext.size > this.maxMessageBytes) {
-      throw new EssrError("limit", "ESSR ciphertext exceeds admitted message size");
+  private async decryptMessage(said: string, ciphertext: Payload, signal: AbortSignal): Promise<EssrDecision> {
+    signal.throwIfAborted();
+    if (!Number.isSafeInteger(ciphertext.size) || ciphertext.size < 0) {
+      throw new RangeError("Invalid payload size or limit");
     }
+    if (ciphertext.size > this.maxMessageBytes) return { kind: "refuse", reason: "limit" };
+    if (ciphertext.size < 48) return { kind: "reject", reason: "envelope" };
+    if (this.active >= this.maxConcurrent) return { kind: "refuse", reason: "busy" };
     this.active++;
-    // Keep the owned decrypt buffer local so finalization can clear it before returning.
-    let plain: Uint8Array | undefined;
+    // Keep buffers and any finished file owned until the result can transfer them.
+    let plain: Uint8Array | null = null;
+    let plaintext: FilePayload | undefined;
     try {
       const serder = this.hab.db.exns.get([said]);
-      if (!serder || serder.said !== said) throw new EssrError("unaccepted", "ESSR exchange has not been accepted");
+      if (!serder) return { kind: "refuse", reason: "unaccepted" };
+      if (serder.said !== said) throw new Error("Stored ESSR exchange SAID does not match its key");
       const modifiers = serder.ked?.q as Record<string, unknown> | undefined;
       if (
         serder.ilk !== "exn" || serder.route !== "/essr/req"
@@ -112,40 +119,52 @@ export class EssrRecipient {
         || modifiers?.dest !== this.hab.pre || !this.hab.db.prefixes.has(this.hab.pre)
         || typeof serder.a !== "string"
       ) {
-        throw new EssrError("envelope", "ESSR envelope source, destination, route, or digest is invalid");
+        return { kind: "reject", reason: "envelope" };
       }
       const verfer = this.hab.kever?.verfers[0];
-      if (!verfer) throw new EssrError("envelope", "ESSR recipient has no accepted verification key");
+      if (!verfer) throw new Error("ESSR recipient has no accepted verification key");
       let diger: Diger;
       try {
         diger = new Diger({ qb64: serder.a });
-      } catch {
-        throw new EssrError("envelope", "ESSR envelope has an invalid ciphertext digest");
+      } catch (error) {
+        if (error instanceof ParserError) return { kind: "reject", reason: "envelope" };
+        throw error;
       }
       const sealed = await collectPayload(ciphertext, this.maxMessageBytes, signal);
-      if (!diger.verify(sealed)) throw new EssrError("digest", "ESSR ciphertext digest mismatch");
+      if (!diger.verify(sealed)) return { kind: "reject", reason: "digest" };
       signal?.throwIfAborted();
-      try {
-        // StreamPoster selects this recipient's first current verifier. Never
-        // try unrelated hosted habitats or reinterpret ciphertext as qb64.
-        plain = this.hab.mgr.open(sealed, verfer);
-      } catch {
-        throw new EssrError("decrypt", "ESSR sealed-box authentication failed or recipient key is unavailable");
-      }
+      // The raw crypto boundary returns null only for authentication failure.
+      // Keeper reads, key derivation and unexpected backend failures stay abrupt.
+      plain = this.hab.mgr.open(sealed, verfer);
+      if (plain === null) return { kind: "reject", reason: "decrypt" };
       signal?.throwIfAborted();
       const offset = bodyOffset(plain, serder.pre);
+      if (offset === null) return { kind: "reject", reason: "framing" };
       const sink = await this.store.stage(plain.length, signal);
       try {
         for (let start = 0; start < plain.length; start += 65536) {
           await sink.write(plain.subarray(start, start + 65536));
         }
-        const plaintext = await sink.finish();
-        return { sender: serder.pre, recipient: this.hab.pre, plaintext, body: payloadRange(plaintext, offset) };
+        plaintext = await sink.finish();
       } finally {
         // Successful finish transferred ownership, so this only removes an
         // unfinished stage when writing or cancellation failed.
         await sink.abort();
       }
+      return {
+        kind: "accept",
+        message: { sender: serder.pre, recipient: this.hab.pre, plaintext, body: payloadRange(plaintext, offset) },
+      };
+    } catch (error) {
+      // finish may have transferred a file before abort/hand-off failed.
+      if (plaintext) {
+        try {
+          await plaintext.discard();
+        } catch (cleanup) {
+          throw new AggregateError([error, cleanup], "ESSR processing and plaintext cleanup failed");
+        }
+      }
+      throw error;
     } finally {
       plain?.fill(0);
       this.active--;
@@ -154,18 +173,19 @@ export class EssrRecipient {
 }
 
 /** Read KERIpy's text-qualified SCS tag, source prefix, and variable padding. */
-function bodyOffset(plain: Uint8Array, sender: string): number {
+function bodyOffset(plain: Uint8Array, sender: string): number | null {
   try {
     const tag = parseTagger(plain, "txt");
-    if (tag.code !== MtrDex.Tag3 || tag.tag !== "SCS") throw new Error("Unsupported ESSR payload tag");
+    if (tag.code !== MtrDex.Tag3 || tag.tag !== "SCS") return null;
     const prefix = parsePrefixer(plain.subarray(tag.fullSize), "txt");
-    if (prefix.qb64 !== sender) throw new Error("ESSR plaintext source does not match authenticated sender");
+    if (prefix.qb64 !== sender) return null;
     const paddingAt = tag.fullSize + prefix.fullSize;
     const padding = parseBexter(plain.subarray(paddingAt), "txt");
     const offset = paddingAt + padding.fullSize;
-    if (offset >= plain.length) throw new Error("ESSR payload has no inner CESR stream");
+    if (offset >= plain.length) return null;
     return offset;
   } catch (error) {
-    throw new EssrError("framing", error instanceof Error ? error.message : "Invalid ESSR SCS framing");
+    if (error instanceof ParserError) return null;
+    throw error;
   }
 }
