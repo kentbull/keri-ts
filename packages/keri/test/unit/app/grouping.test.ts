@@ -258,6 +258,10 @@ Deno.test("Exchanger lead elects the signer with the lowest group signature inde
 
       assertEquals(decision.kind, "accept");
       assertEquals(exchanger.lead(group, grant.said!), true);
+      // A foreign endorsement at index zero cannot elect a group leader.
+      hby.db.esigs.trim([grant.said!, group.pre], { topive: false });
+      hby.db.esigs.add([grant.said!, member.pre, member.kever!.sner.numh, member.kever!.said], sigers[0]);
+      assertEquals(exchanger.lead(group, grant.said!), false);
     } finally {
       yield* hby.close(true);
     }

@@ -1,6 +1,6 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
-import { Cigar, concatBytes, Diger, parseBytes } from "../../../../cesr/mod.ts";
+import { Cigar, concatBytes, Diger, parseBytes, Signer } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopesFromFrames } from "../../../src/app/parsering.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
@@ -610,7 +610,8 @@ Deno.test("app/reactor - unverified `/ksn` replies stay recoverable through escr
 });
 
 Deno.test("runtime dispatch waits for an exchange and keeps its mailbox identity explicit", async () => {
-  const [serder] = exchange("/test", {}, { sender: "EA2X8Lfrl9lZbCGz8cfKIvM_cqLyTYVLSFLhnttezlzQ" });
+  const signer = new Signer({ code: "A", raw: new Uint8Array(32), transferable: false });
+  const [serder] = exchange("/test", {}, { sender: signer.verfer.qb64 });
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -619,7 +620,12 @@ Deno.test("runtime dispatch waits for an exchange and keeps its mailbox identity
   let mailbox: string | null | undefined;
   const work = run(function*() {
     yield* dispatchEnvelope(
-      new KeriDispatchEnvelope({ serder, attachmentGroups: [], local: false }),
+      new KeriDispatchEnvelope({
+        serder,
+        attachmentGroups: [],
+        cigars: [signer.sign(serder.raw) as Cigar],
+        local: false,
+      }),
       {} as never,
       {} as never,
       {

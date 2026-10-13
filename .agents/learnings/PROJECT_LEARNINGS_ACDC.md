@@ -33,7 +33,12 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 6. The registry-backed IPEX route family now exists in `app/ipexing.ts` with
    KERIpy route graph validation, `erpy` one-response-per-prior enforcement,
    KERIpy notifier payloads, and v1 EXN builders for apply/offer/agree/grant/
-   admit/spurn.
+   admit/spurn. Nested v2 IPEX remains guarded: its upstream `acdc/ipexing.py`
+   disclosure DAG and v2 registry vetting differ from the legacy workflow.
+   The shared EXN proof seam verifies source anchors and route-selected foreign
+   endorsements independently, freezes last-establishment coordinates before
+   escrow, and preserves `ests.`/`eidx.` through retry/replay. An EXN proof never
+   authenticates its nested credential; each node needs its own evidence.
 7. Parser/runtime VDR dispatch is now fakeable: TEL ilks route through injected
    `tvy.processEvent` with the last `SealSourceCouples` source, ACDC bodies
    route through injected `vry.processACDC` with the last `SealSourceTriples`

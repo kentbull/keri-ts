@@ -51,6 +51,10 @@ export interface ExchangerLike {
     tsgs: TransIdxSigGroup[];
     cigars: Cigar[];
     ptds: PathedMaterialGroup[];
+    /** Source and last-establishment factors retain their own proof ownership. */
+    sscs?: readonly SealSource[];
+    sourceSeals?: readonly SealEvent[];
+    lsgs?: readonly TransLastIdxSigGroup[];
     /** Reopenable payload views owned by the dispatch caller. */
     essr?: EssrPayload;
     /** Borrowed parent-owned descendants for a supported route. */
@@ -158,10 +162,15 @@ export function* dispatchEnvelope(
       kevery.processReceipt(envelope);
       break;
     case Ilks.exn:
+      // Frozen legacy intake requires a signature group even though the EXN kernel accepts source seals.
+      if (serder.pvrsn.major === 1 && !envelope.tsgs.length && !envelope.cigars.length) break;
       if (exchanger) {
         yield* exchanger.processEvent({
           serder,
           tsgs: envelope.tsgs,
+          sscs: envelope.sscs,
+          sourceSeals: envelope.ssts,
+          lsgs: envelope.ssgs,
           cigars: envelope.cigars,
           ptds: envelope.ptds,
           essr: envelope.essr,
