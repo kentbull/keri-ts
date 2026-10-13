@@ -46,6 +46,8 @@ tuple plus witness-receipt requirement. Field validity is not TEL acceptance.
 Local TEL publication must atomically commit body, anchor, accepted ordinal/head
 and escrow cleanup; bind instance state only after the transaction succeeds.
 Stored body presence alone never counts as acceptance or an accepted predecessor.
+Duplicate replay is read-only and cannot move the head backward. Missing anchors
+precede ordering escrow; unsafe numeric storage ordinals require explicit refusal.
 
 IPEX conversations, issuer proofs and wallet acceptance remain separate. Follow
 [exchange learnings](PROJECT_LEARNINGS_EXCHANGE.md) for v2 nested routes and
