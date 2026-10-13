@@ -470,7 +470,23 @@ For an aggregate list:
 - later elements may be compact SAIDs or fully disclosed maps
 
 `Aggor.disclose([indices])` reveals selected map elements while preserving the
-same aggregate commitment in slot zero.
+same aggregate commitment in slot zero. The commitment hashes the complete
+serialized compact list, including CESR counters or JSON/CBOR/MGPK list framing.
+Disclosed maps must retain their verified SAIDs, and `verifyDisclosure` rejects
+a changed map SAID, map content, or AGID.
+
+`Aggor.kind` is the serialization kind, `code` is the digest code, and `raw` /
+`qb64b` contain the complete aggregate serialization. Native `count` includes
+the counter; other kinds use null. CESR binary conversion uses `qb2`.
+`Aggor` no longer inherits `Structor`: generic parser list/map groups are
+transport projections under `Serder.projectStructors().generic`, using
+`Structor` and its `qb64g` / `qb2g` views. Construct semantic aggregates with
+`new Aggor({ael, kind})` or `new Aggor({raw, kind})`.
+
+Checked vectors in `aggregate-vectors.json` cover all four kinds against frozen
+KERIpy `927c0cb8794d7c84fc17143c67df64aab9deda6c`;
+`reference-aggregate-vectors.py` verifies the imported source bytes before
+regenerating them.
 
 This is selective list disclosure, not fixed-field blinded disclosure and not
 hierarchical branch compaction.

@@ -1,5 +1,6 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
+import { decodeHex } from "jsr:@std/encoding/hex";
 import {
   concatBytes,
   Counter,
@@ -10,7 +11,9 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
+import issueeVectors from "../../../../cesr/test/fixtures/issuee-vectors.json" with { type: "json" };
 import { createAgentRuntime, enqueueOobi } from "../../../src/app/agent-runtime.ts";
+import { revocationRecipients } from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
@@ -345,5 +348,16 @@ Deno.test("vdr/credentialing - imports frozen Python issuance and replays both g
         yield* hby.close(true);
       }
     });
+  }
+});
+
+Deno.test("credentialing: revoke delivery includes disclosed aggregate issuees only when requested", () => {
+  for (const row of issueeVectors.rows) {
+    const credential = new SerderACDC({ raw: decodeHex(row.raw) });
+    // Use the workflow's actual recipient resolver, including its de-duplication policy.
+    const explicit = row.issuee ? [row.issuee, "observer"] : ["observer"];
+    assertEquals(revocationRecipients(credential, ["observer"], true), explicit, row.name);
+    assertEquals(revocationRecipients(credential, explicit, true), explicit, row.name);
+    assertEquals(revocationRecipients(credential, ["observer"], false), ["observer"], row.name);
   }
 });

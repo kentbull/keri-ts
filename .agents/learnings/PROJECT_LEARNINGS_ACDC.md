@@ -13,7 +13,12 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
    standalone credential implementation lane.
 2. `SerderACDC` parity now depends on section-label-aware identifier handling:
    schema sections compute `$id`, ordinary saidive sections compute `d`, and
-   aggregate sections compute and verify `agid`.
+   aggregate sections compute and verify `agid`. `Aggor` is a standalone
+   semantic primitive whose commitment includes its declared CESR/JSON/CBOR/MGPK
+   list framing and verified map SAIDs. Its native count includes the enclosure;
+   non-native count is null. Generic parser groups remain `Structor` values.
+   `SerderACDC.issuee` reads disclosed attributes or the first aggregate member;
+   compact commitments do not disclose a recipient.
 3. Compactable top-level ACDCs and partial section-message ilks are different
    verification lanes: compactive ilks hash over the most compact section form,
    while partial section messages keep the visible section expanded but still
@@ -101,6 +106,13 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 3. `docs/design-docs/keri/ATTACHMENT_COUNTER_GVRSN_MAINTAINER_GUIDE.md`
 
 ## Current Follow-Ups
+
+`Mapper({saidive: true, verify: true})` currently checks only serialization round
+trips, not claimed SAIDs. Reproduction: makify `{d: "", role: "holder"}` with
+`kind: "JSON"`, change `role` to `"changed"`, then construct a saidive Mapper
+with `verify: true`: it accepts the unchanged old `d`. `Aggor` now recomputes and
+compares all declared map SAID fields locally before accepting disclosure;
+independent Mapper verification still needs a focused parity repair.
 
 1. Grow ACDC-native coverage only through the shared native support matrix.
 2. Keep compactification and partial-section verification as explicitly separate

@@ -1157,7 +1157,7 @@ function parseNativeField(
       });
       return {
         value: aggor.ael,
-        nextOffset: offset + aggor.serialized.length,
+        nextOffset: offset + aggor.size,
       };
     }
     return parseQb64Field(raw, offset);
@@ -1312,7 +1312,7 @@ function encodeNativeFieldValue(
         kind: "CESR",
         makify: false,
         verify: false,
-      }).qb64g;
+      }).qb64;
     }
     if (typeof value !== "string" || value.length === 0) {
       throw new SerializeError(

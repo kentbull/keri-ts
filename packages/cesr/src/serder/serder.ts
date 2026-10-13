@@ -4,7 +4,7 @@ import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import type { CesrBody, CesrFrame, Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
-import { Aggor, isAggorCode } from "../primitives/aggor.ts";
+import { Aggor } from "../primitives/aggor.ts";
 import { Blinder, isBlinderCode } from "../primitives/blinder.ts";
 import {
   DigDex,
@@ -28,8 +28,10 @@ import {
 import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
 import { SealDescriptors, SealEvent, type SealRecord } from "../primitives/structing.ts";
+import { Structor } from "../primitives/structor.ts";
 import { Tholder, type ThresholdInput } from "../primitives/tholder.ts";
 import { Verfer } from "../primitives/verfer.ts";
+import { AGGOR_CODES } from "../tables/counter-groups.ts";
 import { type CounterCodex, resolveMUDex } from "../tables/counter-version-registry.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
@@ -1315,7 +1317,7 @@ function collectMessageGroups(
  * Structured projection of parsed attachment counter-groups into structor families.
  *
  * `other` captures counted groups that are intentionally not one of the known
- * structor families (`Aggor`, `Sealer`, `Blinder`, `Mediar`).
+ * structor families (`Structor`, `Sealer`, `Blinder`, `Mediar`).
  *
  * Boundary reminder:
  * - these are transport-family projections
@@ -1323,7 +1325,8 @@ function collectMessageGroups(
  *   `structing.ts` and `disclosure.ts`
  */
 export interface SerderStructorProjection {
-  aggor: Aggor[];
+  /** Generic counted groups preserve transport bytes without claiming aggregate semantics. */
+  generic: Structor[];
   sealer: Sealer[];
   blinder: Blinder[];
   mediar: Mediar[];
@@ -1615,7 +1618,7 @@ export class Serder implements CesrBody {
   ): SerderStructorProjection {
     const groups = collectMessageGroups(message);
     const projection: SerderStructorProjection = {
-      aggor: [],
+      generic: [],
       sealer: [],
       blinder: [],
       mediar: [],
@@ -1635,8 +1638,8 @@ export class Serder implements CesrBody {
         projection.mediar.push(Mediar.fromGroup(group));
         continue;
       }
-      if (isAggorCode(group.code)) {
-        projection.aggor.push(Aggor.fromGroup(group));
+      if (AGGOR_CODES.has(group.code)) {
+        projection.generic.push(Structor.fromGroup(group));
         continue;
       }
       projection.other.push(group);
@@ -1980,17 +1983,17 @@ export class SerderACDC extends Serder {
     return this.ked?.a;
   }
 
+  /** Recipient disclosed by attributes or the first aggregate member; commitments hide it. */
   get issuee(): string | null {
-    const attrib = this.attrib;
-    if (attrib && typeof attrib === "object" && !Array.isArray(attrib)) {
-      const issuee = (attrib as SadMap).i;
-      return typeof issuee === "string" ? issuee : null;
-    }
-    return null;
+    const aggregate = this.aggreg;
+    const section = this.attrib ?? (Array.isArray(aggregate) ? aggregate[1] : null);
+    return isPlainSadObject(section) && typeof section.i === "string" ? section.i : null;
   }
 
+  /** Qualified recipient bytes when the credential discloses its issuee. */
   get issueeb(): Uint8Array | null {
-    return this.issuee ? b(this.issuee) : null;
+    const issuee = this.issuee;
+    return issuee === null ? null : b(issuee);
   }
 
   get aggreg(): unknown {

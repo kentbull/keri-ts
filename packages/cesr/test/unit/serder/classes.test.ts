@@ -1,4 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { decodeHex } from "jsr:@std/encoding/hex";
 import { DeserializeError } from "../../../src/core/errors.ts";
 import { b } from "../../../src/index.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
@@ -8,6 +9,7 @@ import { smell, versify } from "../../../src/serder/smell.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { Vrsn_2_0 } from "../../../src/tables/versions.ts";
 import { counterV2, groupV2, sigerToken, token } from "../../fixtures/counter-token-fixtures.ts";
+import issueeVectors from "../../fixtures/issuee-vectors.json" with { type: "json" };
 import { KERIPY_STRUCTOR_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { KERIPY_STRUCTING_DATA_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { v2ify } from "../../fixtures/versioned-body-fixtures.ts";
@@ -79,12 +81,12 @@ Deno.test("serder: subtype constructors reject wrong protocol domains", () => {
 
 Deno.test("serder: structor projection classifies attachment families", async () => {
   const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"ixn\",\"d\":\"Eabc\"}");
-  const aggorPayload = `${token("B")}${token("E")}`;
-  const aggor = `${counterV2(CtrDexV2.GenericListGroup, aggorPayload.length / 4)}${aggorPayload}`;
+  const genericPayload = `${token("B")}${token("E")}`;
+  const generic = `${counterV2(CtrDexV2.GenericListGroup, genericPayload.length / 4)}${genericPayload}`;
   const sealer = groupV2(CtrDexV2.SealSourceCouples, `${token("0A")}${token("E")}`);
   const blinder = groupV2(CtrDexV2.BlindedStateQuadruples, KERIPY_STRUCTOR_VECTORS.blinderBlindStatePayload);
   const mediar = groupV2(CtrDexV2.TypedMediaQuadruples, KERIPY_STRUCTOR_VECTORS.mediarTypedMediaPayload);
-  const stream = `${body}${aggor}${sealer}${blinder}${mediar}`;
+  const stream = `${body}${generic}${sealer}${blinder}${mediar}`;
 
   const frames = await parseBytes(b(stream));
   assertEquals(frames.length, 1);
@@ -94,7 +96,8 @@ Deno.test("serder: structor projection classifies attachment families", async ()
   const serder = frame.body as SerderKERI;
   const projection = serder.projectStructors(frame);
 
-  assertEquals(projection.aggor.length, 1);
+  assertEquals(projection.generic.length, 1);
+  assertEquals(projection.generic[0].qb64g, generic);
   assertEquals(projection.sealer.length, 1);
   assertEquals(projection.blinder.length, 1);
   assertEquals(projection.mediar.length, 1);
@@ -556,4 +559,13 @@ Deno.test("serder: SerderACDC partial schema sections compute and verify $id whi
   assertEquals(serder.verify(), true);
   assertEquals(typeof serder.schema, "object");
   assertEquals(typeof (serder.schema as Record<string, unknown>).$id, "string");
+});
+
+Deno.test("serder: ACDC issuee follows disclosed attributes or aggregate members", () => {
+  for (const row of issueeVectors.rows) {
+    // Checked wire hydration keeps compacted commitments from becoming fake recipients.
+    const credential = new SerderACDC({ raw: decodeHex(row.raw) });
+    assertEquals(credential.issuee, row.issuee, row.name);
+    assertEquals(credential.issueeb, row.issuee === null ? null : b(row.issuee), row.name);
+  }
 });

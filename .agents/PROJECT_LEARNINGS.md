@@ -72,6 +72,10 @@ query processing authenticates `mbx` requester signatures against the recipient'
 current accepted threshold before emitting a stream cue; public KEL query policy
 is unchanged. See the KEL learnings and mailbox-read-authorization plan.
 
+Aggregate semantics and generic transport groups are separate: `Aggor` owns
+format-specific list commitments and disclosure; `Structor` preserves generic
+CESR group bytes. See the ACDC topic for verification limits.
+
 1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the parser
    lifecycle contract; keep parser behavior traceable to that contract and its
    tests. Parent-owned nested frames preserve descendant evidence and resources; public
