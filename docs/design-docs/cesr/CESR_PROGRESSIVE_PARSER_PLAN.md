@@ -40,9 +40,12 @@ payload references. Exchange integration merged in
 
 Phase 11 serialization and HTTP output merged in
 [#140](https://github.com/kentbull/keri-ts/pull/140). Its remaining review slices
-are finite annotation and streaming CLI consumers, lazy replay and HTTP replies,
-and the remaining mailbox/runtime consumers. Each slice preserves one owner for
+include lazy replay and HTTP replies,
+exchange/witness delivery, and query-response/mailbox consumption. Query responses
+must hand off outside the active dispatch turn before entering the parser again. Each slice preserves one owner for
 pending reads and leaves shared runtime reservations to the approved follow-on.
+Finite annotation and streaming CLI consumers merged in
+[#141](https://github.com/kentbull/keri-ts/pull/141).
 
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
 ahead, base it on the predecessor branch and retarget after that predecessor

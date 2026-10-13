@@ -1029,7 +1029,7 @@ Deno.test("Kevery.processQuery replays logs from fn=0 when q.fn is omitted", asy
         throw new Error("Expected replay cue.");
       }
       assertEquals(
-        cue.msgs,
+        concatMessages([...cue.messages]),
         concatMessages([...hby.db.clonePreIter(hab.pre, 0)]),
       );
     } finally {
@@ -1070,7 +1070,7 @@ Deno.test("Kevery.processQuery accepts KERIpy-style numeric logs ordinals", asyn
       }
       assertEquals(cue.pre, hab.pre);
       assertEquals(cue.dest, hab.pre);
-      assertEquals(cue.msgs.length > 0, true);
+      assertEquals([...cue.messages].length > 0, true);
     } finally {
       yield* hby.close(true);
     }
@@ -1131,7 +1131,7 @@ Deno.test("Kevery.processQuery replays logs from the requested first-seen ordina
         throw new Error("Expected replay cue.");
       }
       assertEquals(
-        cue.msgs,
+        concatMessages([...cue.messages]),
         concatMessages([...hby.db.clonePreIter(hab.pre, 1)]),
       );
     } finally {
@@ -1250,7 +1250,7 @@ Deno.test("Kevery logs query escrows on q.s and preserves fn plus dest on replay
       }
       assertEquals(cue.dest, bob.pre);
       assertEquals(
-        cue.msgs,
+        concatMessages([...cue.messages]),
         concatMessages([...remote.db.clonePreIter(alice.pre, 1)]),
       );
     } finally {
@@ -1337,7 +1337,7 @@ Deno.test("Kevery logs query escrows on q.a until the anchoring event is availab
       }
       assertEquals(cue.dest, bob.pre);
       assertEquals(
-        cue.msgs,
+        concatMessages([...cue.messages]),
         concatMessages([...remote.db.clonePreIter(delegator.pre, 0)]),
       );
     } finally {
@@ -1388,7 +1388,7 @@ Deno.test("Kevery logs replay for delegated identifiers includes the delegator c
         throw new Error("Expected replay cue.");
       }
       assertEquals(
-        cue.msgs,
+        concatMessages([...cue.messages]),
         concatMessages([
           ...hby.db.clonePreIter(delegate.pre, 0),
           ...hby.db.cloneDelegation(delegateKever),

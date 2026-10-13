@@ -79,7 +79,7 @@ export class Respondant implements CueSink {
       return;
     }
 
-    for (const message of emission.msgs) {
+    for (const message of emission.messages) {
       try {
         yield* this.poster.sendBytes(senderHab, {
           recipient,

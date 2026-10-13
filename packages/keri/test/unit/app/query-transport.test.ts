@@ -96,7 +96,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               route: "logs",
               query: { s: "0", fn: "0" },
             },
-            msgs: [query],
+            messages: [query],
           });
 
           assertEquals(
@@ -222,7 +222,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
               },
               wits: [remoteWitness.pre],
             },
-            msgs: [query],
+            messages: [query],
           });
 
           assertEquals(
@@ -358,7 +358,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
               route: "logs",
               query: { s: "0", fn: "0" },
             },
-            msgs: [query],
+            messages: [query],
           });
           yield* processRuntimeTurn(runtime, { pollMailbox: false });
 

@@ -13,6 +13,7 @@ import {
   Noncer,
   NumberPrimitive,
   NumDex,
+  parseSerder,
   type Payload,
   Prefixer,
   ResourceLimitError,
@@ -21,6 +22,7 @@ import {
   Seqner,
   SerderKERI,
   Siger,
+  smell,
   t,
   Texter,
   Verfer,
@@ -30,7 +32,11 @@ import {
 import { join } from "jsr:@std/path";
 import { action, call, type Operation } from "npm:effection@^3.6.0";
 import type { Database } from "npm:lmdb@3.5.3";
-import { attachmentCounterPayloadQb64b, attachmentCounterQb64b } from "../core/attachment-countering.ts";
+import {
+  type AttachmentCounterName,
+  attachmentCounterPayloadQb64b,
+  attachmentCounterQb64b,
+} from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
@@ -73,7 +79,7 @@ import {
   WellKnownAuthN,
   type WellKnownAuthNShape,
 } from "../core/records.ts";
-import { dgKey, suffix, unsuffix } from "./core/keys.ts";
+import { dgKey, splitOnKey, suffix, unsuffix } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { ExchangeRecord, PlaintextRecord } from "./exchange-records.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
@@ -1496,148 +1502,115 @@ export class Baser {
    * This is the durable export/replay seam for locally stored events. The
    * event body comes from `evts.`, while the attached foot is reconstructed
    * from the companion stores that hold controller signatures, witness
-   * signatures, source seals, receipts, and first-seen replay metadata.
+   * signatures, source seals, receipts, and first-seen replay metadata. An optional
+   * byte budget admits each stored evidence item before retaining the full message;
+   * the existing single body value is read before its size can be checked.
    */
   cloneEvtMsg(
     pre: string,
     fn: number,
     said: string,
+    maxBytes = Infinity,
   ): Uint8Array {
+    if (maxBytes !== Infinity && (!Number.isSafeInteger(maxBytes) || maxBytes < 1)) {
+      throw new RangeError("Replay byte limit must be a positive safe integer");
+    }
     const dgkey = dgKey(pre, said);
-    const serder = this.evts.get(dgkey);
-    if (serder === null) {
-      throw new DatabaseOperationError(
-        `Missing event body for ${pre}:${said}`,
-      );
-    }
-
-    const sigers = this.sigs.get(dgkey);
-    if (sigers.length === 0) {
-      throw new DatabaseOperationError(
-        `Missing indexed signatures for ${pre}:${said}`,
-      );
-    }
-
-    const sigerPayload = sigers.map((siger) => siger.qb64b);
-    const attachments: Uint8Array[] = [
-      attachmentCounterPayloadQb64b(
-        "ControllerIdxSigs",
-        sigers.length,
-        sigerPayload,
-      ),
-      ...sigerPayload,
-    ];
-
-    const wigers = this.wigs.get(dgkey);
-    if (wigers.length > 0) {
-      const wigerPayload = wigers.map((wiger) => wiger.qb64b);
-      attachments.push(
-        attachmentCounterPayloadQb64b(
-          "WitnessIdxSigs",
-          wigers.length,
-          wigerPayload,
-        ),
-        ...wigerPayload,
-      );
-    }
+    // Storage supplies one existing body value; reject it before hydrating or copying it.
+    const stored = this.getEvt(dgkey);
+    if (stored === null) throw new DatabaseOperationError(`Missing event body for ${pre}:${said}`);
+    if (stored.length > maxBytes) throw new ResourceLimitError("Replay message exceeds byte limit");
+    // Preserve SerderSuber's validation so corrupt records retain clonePreIter's skip behavior.
+    const { smellage } = smell(stored);
+    const serder = parseSerder(stored, smellage);
+    if (!(serder instanceof SerderKERI)) throw new TypeError("Replay body must be KERI");
+    const raw = serder.raw;
+    let size = 0;
+    /** Admit each qualified fragment before retaining it or allocating the complete replay. */
+    const retain = (part: Uint8Array): Uint8Array => {
+      if (part.length > maxBytes - size) throw new ResourceLimitError("Replay message exceeds byte limit");
+      size += part.length;
+      return part;
+    };
+    retain(raw);
+    const attachments: Uint8Array[] = [];
+    /** Prefix already admitted payload pieces without a large argument spread or another copy. */
+    const group = (name: AttachmentCounterName, count: number, payload: Uint8Array[]) => {
+      attachments.push(retain(attachmentCounterPayloadQb64b(name, count, payload)));
+      for (const part of payload) attachments.push(part);
+    };
+    /** Iterate fixed-size signatures so storage cannot materialize an unbounded evidence array. */
+    const signatures = (entries: Iterable<Siger>): Uint8Array[] => {
+      const parts: Uint8Array[] = [];
+      for (const siger of entries) parts.push(retain(siger.qb64b));
+      return parts;
+    };
+    const sigers = signatures(this.sigs.getIter(dgkey));
+    if (sigers.length === 0) throw new DatabaseOperationError(`Missing indexed signatures for ${pre}:${said}`);
+    group("ControllerIdxSigs", sigers.length, sigers);
+    const wigers = signatures(this.wigs.getIter(dgkey));
+    if (wigers.length) group("WitnessIdxSigs", wigers.length, wigers);
 
     const seal = this.aess.get(dgkey);
     if (seal !== null) {
       const [number, diger] = seal;
-      const sealPayload = [
-        seqnerFromNumber(number).qb64b,
-        diger.qb64b,
-      ];
-      attachments.push(
-        attachmentCounterPayloadQb64b(
-          "SealSourceCouples",
-          1,
-          sealPayload,
-        ),
-        ...sealPayload,
-      );
+      group("SealSourceCouples", 1, [retain(seqnerFromNumber(number).qb64b), retain(diger.qb64b)]);
     }
 
-    const vrcs = this.vrcs.get(dgkey);
-    if (vrcs.length > 0) {
-      // Receipt storage remains per signature; wire groups share one establishment seal.
-      const groups = new Map<string, [Prefixer, NumberPrimitive, Diger, Siger[]]>();
-      for (const [prefixer, snu, diger, siger] of vrcs) {
-        const key = `${prefixer.qb64}:${snu.num}:${diger.qb64}`;
-        const group = groups.get(key);
-        if (group) {
-          group[3].push(siger);
-        } else {
-          groups.set(key, [prefixer, snu, diger, [siger]]);
-        }
+    // Receipt storage remains per signature; canonical groups share one establishment seal.
+    const groups = new Map<string, { seal: Uint8Array[]; signatures: Uint8Array[] }>();
+    for (const [prefixer, snu, diger, siger] of this.vrcs.getIter(dgkey)) {
+      const key = `${prefixer.qb64}:${snu.num}:${diger.qb64}`;
+      let receipt = groups.get(key);
+      if (!receipt) {
+        receipt = {
+          seal: [retain(prefixer.qb64b), retain(seqnerFromNumber(snu).qb64b), retain(diger.qb64b)],
+          signatures: [],
+        };
+        groups.set(key, receipt);
       }
-      const vrcPayload = [...groups.values()].flatMap(([prefixer, snu, diger, sigers]) => {
-        const signatures = sigers.map((siger) => siger.qb64b);
-        return [
-          prefixer.qb64b,
-          seqnerFromNumber(snu).qb64b,
-          diger.qb64b,
-          attachmentCounterPayloadQb64b("ControllerIdxSigs", sigers.length, signatures),
-          ...signatures,
-        ];
-      });
-      attachments.push(
-        attachmentCounterPayloadQb64b(
-          "TransIdxSigGroups",
-          groups.size,
-          vrcPayload,
-        ),
-        ...vrcPayload,
-      );
+      receipt.signatures.push(retain(siger.qb64b));
+    }
+    if (groups.size) {
+      const payload: Uint8Array[] = [];
+      for (const receipt of groups.values()) {
+        for (const part of receipt.seal) payload.push(part);
+        payload.push(retain(attachmentCounterPayloadQb64b(
+          "ControllerIdxSigs",
+          receipt.signatures.length,
+          receipt.signatures,
+        )));
+        for (const part of receipt.signatures) payload.push(part);
+      }
+      group("TransIdxSigGroups", groups.size, payload);
     }
 
-    const rcts = this.rcts.get(dgkey);
-    if (rcts.length > 0) {
-      const receiptPayload = rcts.flatMap(([prefixer, cigar]) => [
-        prefixer.qb64b,
-        cigar.qb64b,
-      ]);
-      attachments.push(
-        attachmentCounterPayloadQb64b(
-          "NonTransReceiptCouples",
-          rcts.length,
-          receiptPayload,
-        ),
-        ...receiptPayload,
-      );
+    const receipts: Uint8Array[] = [];
+    let count = 0;
+    for (const [prefixer, cigar] of this.rcts.getIter(dgkey)) {
+      receipts.push(retain(prefixer.qb64b), retain(cigar.qb64b));
+      count++;
     }
+    if (count) group("NonTransReceiptCouples", count, receipts);
 
     const dater = this.dtss.get(dgkey);
-    if (dater === null) {
-      throw new DatabaseOperationError(
-        `Missing datetime stamp for ${pre}:${said}`,
-      );
+    if (dater === null) throw new DatabaseOperationError(`Missing datetime stamp for ${pre}:${said}`);
+    group("FirstSeenReplayCouples", 1, [retain(encodeHugeOrdinal(fn).qb64b), retain(dater.qb64b)]);
+    const attachmentSize = size - raw.length;
+    if (attachmentSize % 4 !== 0) {
+      throw new DatabaseOperationError(`Invalid attachment quadlet size for ${pre}:${said}`);
     }
-    const firstSeenPayload = [
-      encodeHugeOrdinal(fn).qb64b,
-      dater.qb64b,
-    ];
-    attachments.push(
-      attachmentCounterPayloadQb64b(
-        "FirstSeenReplayCouples",
-        1,
-        firstSeenPayload,
-      ),
-      ...firstSeenPayload,
-    );
-
-    const atc = concatBytes(...attachments);
-    if (atc.length % 4 !== 0) {
-      throw new DatabaseOperationError(
-        `Invalid attachment quadlet size for ${pre}:${said}`,
-      );
+    const header = retain(attachmentCounterQb64b("AttachmentGroup", attachmentSize / 4));
+    // One admitted final allocation replaces the former attachment copy plus whole-message copy.
+    const message = new Uint8Array(size);
+    message.set(raw);
+    message.set(header, raw.length);
+    let offset = raw.length + header.length;
+    for (const part of attachments) {
+      message.set(part, offset);
+      offset += part.length;
     }
-
-    return concatBytes(
-      serder.raw,
-      attachmentCounterQb64b("AttachmentGroup", atc.length / 4),
-      atc,
-    );
+    return message;
   }
 
   /**
@@ -1680,6 +1653,89 @@ export class Baser {
     }
     yield* this.cloneDelegation(delegator);
     yield* this.clonePreIter(kever.delpre, 0);
+  }
+
+  /**
+   * Capture a reopenable replay extent without retaining its event bytes or an LMDB cursor.
+   * The queried log precedes root-to-parent delegator logs, matching cloneDelegation order.
+   * Event identities stop at the captured first-seen tails; proofs are read at consumption time.
+   */
+  replay(
+    pre: string,
+    fn = 0,
+    { maxDepth = 32, maxMessageBytes = 8 * 1024 * 1024 }: { maxDepth?: number; maxMessageBytes?: number } = {},
+  ): Iterable<Uint8Array> | null {
+    if (!Number.isSafeInteger(fn) || fn < 0) throw new RangeError("Replay ordinal must be a non-negative safe integer");
+    for (const limit of [maxDepth, maxMessageBytes]) {
+      if (!Number.isSafeInteger(limit) || limit < 1) {
+        throw new RangeError("Replay limits must be positive safe integers");
+      }
+    }
+    // Each range is a small immutable identity/ordinal tuple; no event body is read during capture.
+    const ranges: Array<readonly [string, number, number]> = [];
+    const ancestors: string[] = [];
+    const visited = new Set([pre]);
+    let parent = this.getKever(pre)?.delpre;
+    while (parent) {
+      if (visited.has(parent)) throw new DatabaseOperationError("Cyclic replay delegation chain");
+      if (ancestors.length >= maxDepth) throw new ResourceLimitError("Replay delegation depth exceeds limit");
+      visited.add(parent);
+      const kever = this.getKever(parent);
+      if (!kever) break;
+      ancestors.push(parent);
+      parent = kever.delpre;
+    }
+    // Preserve the established target-first, oldest-delegator-first replay order.
+    for (const current of [pre, ...ancestors.reverse()]) {
+      const from = current === pre ? fn : 0;
+      const end = this.replayEnd(current);
+      if (end !== null && from <= end) ranges.push([current, from, end]);
+    }
+    if (ranges.length === 0) return null;
+    // deno-lint-ignore no-this-alias -- The returned iterator borrows this databaser without retaining a cursor.
+    const db = this;
+    return {
+      /** Reopen each range independently; a suspended consumer holds only its current complete event. */
+      *[Symbol.iterator]() {
+        for (const [current, from, end] of ranges) {
+          let next = from;
+          while (next <= end) {
+            const rows = db.fels.getAllItemIter(current, next);
+            let row: [string[], number, string] | undefined;
+            try {
+              row = rows.next().value;
+            } finally {
+              // LMDB read ownership ends before an event is yielded to a potentially slow transport.
+              rows.return(undefined);
+            }
+            if (!row || row[1] > end) break;
+            const [, ordinal, said] = row;
+            next = ordinal + 1;
+            let message: Uint8Array;
+            try {
+              message = db.cloneEvtMsg(current, ordinal, said, maxMessageBytes);
+            } catch (error) {
+              // Resource policy is terminal; only corrupt/incomplete replay records are skipped.
+              if (error instanceof ResourceLimitError) throw error;
+              // KERIpy clonePreIter skips individual corrupt/incomplete replay records.
+              continue;
+            }
+            yield message;
+          }
+        }
+      },
+    };
+  }
+
+  /** Seek the captured last first-seen ordinal without scanning or retaining a read transaction. */
+  private replayEnd(pre: string): number | null {
+    // Fixed-width CESR ordinal keys sort lexically, so the maximal suffix bounds this prefix's tail.
+    const start = b(`${pre}.${"f".repeat(32)}`);
+    for (const entry of this.fels.sdb.getRange({ start, reverse: true, limit: 1 })) {
+      const [prefix, ordinal] = splitOnKey(entry.key);
+      return t(prefix) === pre ? ordinal : null;
+    }
+    return null;
   }
 
   /** Insert one habitat metadata record in `habs.` if absent. */

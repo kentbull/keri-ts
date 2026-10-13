@@ -61,7 +61,7 @@ function* emitWithoutHab(
     }
     yield {
       cue,
-      msgs: [],
+      messages: [],
       kind: cue.kin === "stream" ? "transport" : "notify",
     };
   }

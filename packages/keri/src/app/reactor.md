@@ -33,8 +33,8 @@ retains event/reply/credential escrows and queued OOBI work for a later turn;
 a batch larger than the configured capacity fails explicitly. A draining turn
 remains available while admission is full. Cue consumers handle only the batch
 present when their pass begins, so concurrent producers cannot grow a returned
-emission array indefinitely. Replay byte representation is a separate phase 11
-concern.
+emission array indefinitely. Replay cues retain lazy captured ranges as described
+below.
 
 Ownership is ordered with Effection resources: a source or runtime permit is
 acquired before its work child, so cancellation joins that child before releasing
@@ -58,3 +58,30 @@ The generic HTTP route consumes its request body progressively and appends a
 separately bounded CESR attachment header. Administrative requests still collect
 an explicitly bounded 8 MiB value. Legacy feed/complete-record methods remain
 only until the phase 12 API cut; they are not compatibility guarantees.
+
+## Replay output ownership
+
+KEL `replay` cues and `CueEmission.messages` are reopenable iterables of complete,
+finite messages. `Baser.replay` captures prefix/first-seen ranges, including at
+most 32 delegators by default, and releases each LMDB cursor before yielding an
+event. Its default 8 MiB event limit is admission policy, not a KERI wire limit.
+Later accepted events do not extend a captured replay; stored proofs are read
+when that replay is consumed.
+
+`ReplyStreams` owns up to eight live HTTP replies by default. Each pull copies at
+most 64 KiB from one event; transport cancellation or runtime closure releases
+the iterator and event. The response lifetime is independent of ingress: Deno's
+legacy request signal aborts when its handler returns. No background task or
+whole-replay array is needed for these synchronous database readers.
+
+`QueryCoordinator` caps pending requests and continuations separately. A request
+retains its queue credit until delivery succeeds; failure leaves it available
+for retry. Concurrent drains cannot send the same head, and newly appended work
+waits for the next bounded pass.
+
+Replay byte admission runs in `cloneEvtMsg` while evidence is read from storage,
+before retaining each attachment and allocating the final event buffer. The raw
+stored body must still be read as one value before its length can be checked.
+Aggregate replay length is not collected or capped; ordinary single-event bytes
+and concurrent HTTP replies remain independently bounded. Other finite callers
+of `cloneEvtMsg` without a limit retain their existing allocation behavior.

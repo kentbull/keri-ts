@@ -51,12 +51,13 @@ export interface QueryCue extends CueBase {
   wits?: string[];
 }
 
-/** Cue carrying a prebuilt replay byte stream back to the host or transport layer. */
+/** Cue carrying a reopenable replay of bounded complete messages back to the host or transport layer. */
 export interface ReplayCue extends CueBase {
   /** Query SAID that requested this response, including deferred escrow results. */
   querySaid?: string;
   kin: "replay";
-  msgs: Uint8Array;
+  /** Reiterating reopens the captured replay extent without collecting its event bytes. */
+  messages: Iterable<Uint8Array>;
   pre?: string;
   src?: string;
   dest?: string;
@@ -200,7 +201,8 @@ export type CueEmissionKind = "wire" | "notify" | "transport";
  */
 export interface CueEmission {
   cue: AgentCue;
-  msgs: Uint8Array[];
+  /** Reopenable bounded messages; each iterator owns at most its current message. */
+  messages: Iterable<Uint8Array>;
   kind: CueEmissionKind;
 }
 

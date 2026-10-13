@@ -5,6 +5,10 @@
 Top-level routing and durable cross-topic memory for `keri-ts`. This file should
 stay short enough to reread at session start.
 
+Replay sources and live HTTP replies now have explicit runtime ownership:
+reopen captured first-seen ranges, materialize only one bounded event, and
+release output iterators before database shutdown. See the KEL topic for limits.
+
 ## Current Focus
 
 1. CESR parser migration to progressive generators is approved for the many-message

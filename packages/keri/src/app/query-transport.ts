@@ -137,7 +137,14 @@ export function queryTransportSink(
       }
       const destination = emission.cue.src;
       const queriedPre = emission.cue.pre;
-      const message = emission.msgs[0];
+      const messages = emission.messages[Symbol.iterator]();
+      let message: Uint8Array | undefined;
+      try {
+        message = messages.next().value;
+      } finally {
+        // A query consumes one message; release a lazy source before network suspension.
+        messages.return?.();
+      }
       if (!destination || !queriedPre || !message) {
         return;
       }
