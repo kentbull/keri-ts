@@ -5,6 +5,7 @@
  * aligned with KERIpy by default while still allowing Tufa's optional body
  * mode.
  */
+import { attachmentPayload, collectPayload, parseBytes } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { concatBytes } from "../../../../cesr/mod.ts";
@@ -18,7 +19,6 @@ import {
   isCesrContentType,
   readCesrRequestBytes,
   readRequiredCesrRequestBytes,
-  splitCesrStream,
 } from "../../../src/app/cesr-http.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
@@ -208,7 +208,11 @@ Deno.test("CESR HTTP - header mode splits a multi-message stream into KERIpy-sty
     }
   });
 
-  const parts = splitCesrStream(stream);
+  const parts = [];
+  for (const frame of await parseBytes(stream)) {
+    // HTTP attachment serialization restores the counted boundary flattened by parsing.
+    parts.push(concatBytes(frame.body.raw, await collectPayload(attachmentPayload(frame), 8192)));
+  }
   assertEquals(parts, [reply, query]);
 });
 
@@ -251,7 +255,9 @@ Deno.test("CESR HTTP - header mode does not split a forwarded exn across embedde
     }
   });
 
-  assertEquals(splitCesrStream(forwarded), [forwarded]);
+  const frames = await parseBytes(forwarded);
+  assertEquals(frames.length, 1);
+  assertEquals(concatBytes(frames[0].body.raw, ...frames[0].attachments.map((group) => group.raw)), forwarded);
 });
 
 /** Proves raw CESR stream helpers keep multi-message mailbox admin bodies intact. */
@@ -332,7 +338,7 @@ Deno.test("CESR HTTP - terminal message inspection returns the final message in 
     }
   });
 
-  const serder = inspectCesrTerminalMessage(stream);
+  const serder = await inspectCesrTerminalMessage(stream);
   assertExists(serder);
   assertEquals(serder?.route, "/end/role/add");
   assertEquals(

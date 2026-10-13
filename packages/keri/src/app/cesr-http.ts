@@ -13,14 +13,11 @@
  *   the header
  */
 import {
-  type CesrFrame,
-  concatBytes,
   parseBytes,
   parseSerder,
   ResourceLimitError,
   SerderKERI,
   smell,
-  type Smellage,
 } from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
 import { collectBytes, type SourceOptions, streamBytes } from "./byte-source.ts";
@@ -169,37 +166,6 @@ export function buildCesrStreamRequest(
 }
 
 /**
- * Split one CESR JSON message stream into individual request-ready messages.
- *
- * KERIpy correspondence:
- * - mirrors `streamCESRRequests(...)`, which posts one message body plus its
- *   attachments per HTTP request instead of shoving a whole multi-message
- *   stream behind one `CESR-ATTACHMENT` header
- */
-export function splitCesrStream(message: Uint8Array): Uint8Array[] {
-  if (message.length === 0) {
-    return [];
-  }
-
-  const frames = parseBytes(message);
-  const parts: Uint8Array[] = [];
-
-  for (const frame of frames) {
-    if (frame.type === "error") {
-      throw frame.error;
-    }
-    parts.push(
-      concatBytes(
-        frame.frame.body.raw,
-        ...frame.frame.attachments.map((attachment) => attachment.raw),
-      ),
-    );
-  }
-
-  return parts;
-}
-
-/**
  * Reconstruct one logical CESR payload from an incoming HTTP request.
  *
  * In header mode this reattaches `CESR-ATTACHMENT` bytes to the parsed message
@@ -276,7 +242,7 @@ export async function readMailboxAdminRequest(
     const bytes = new Uint8Array(await readCesrRequestBytes(req));
     return {
       bytes,
-      inspection: inspectMailboxAdminCesrStream(new Uint8Array(bytes)),
+      inspection: await inspectMailboxAdminCesrStream(new Uint8Array(bytes)),
     };
   }
 
@@ -290,7 +256,7 @@ export async function readMailboxAdminRequest(
     const message = textEncoder.encode(`${delkel ?? ""}${kel}${rpy}`);
     return {
       bytes: message,
-      inspection: inspectMailboxAdminReply(textEncoder.encode(rpy)),
+      inspection: await inspectMailboxAdminReply(textEncoder.encode(rpy)),
     };
   }
 
@@ -309,46 +275,30 @@ export function inspectCesrRequest(bytes: Uint8Array): SerderKERI | null {
 }
 
 /** Parse and return the final CESR message in one request body. */
-export function inspectCesrTerminalMessage(
+export async function inspectCesrTerminalMessage(
   bytes: Uint8Array,
-): SerderKERI | null {
-  return inspectCesrStream(bytes).terminal;
+): Promise<SerderKERI | null> {
+  return (await inspectCesrStream(bytes)).terminal;
 }
 
 /** Parse one entire CESR request body and return every message plus the last. */
-export function inspectCesrStream(bytes: Uint8Array): CesrStreamInspection {
-  const messages: SerderKERI[] = [];
-  const frames = parseBytes(bytes);
-  for (const frame of frames) {
-    if (frame.type === "error") {
-      throw frame.error;
-    }
-    messages.push(parseSerder(
-      frame.frame.body.raw,
-      smellageFromMessage(frame.frame),
-    ) as SerderKERI);
+export async function inspectCesrStream(bytes: Uint8Array): Promise<CesrStreamInspection> {
+  const frames = await parseBytes(bytes);
+  try {
+    const messages = frames.map(({ body }) => {
+      if (!(body instanceof SerderKERI)) throw new ValidationError("Expected a KERI message in the CESR request");
+      return body;
+    });
+    return { messages, terminal: messages.at(-1) ?? null };
+  } finally {
+    // Inspection returns body metadata only; it must not retain discarded attachment payloads.
+    for (const frame of frames) await frame.essr?.discard();
   }
-  return {
-    messages,
-    terminal: messages.at(-1) ?? null,
-  };
 }
 
 /** Copy a byte view into a standalone `ArrayBuffer` for Fetch request bodies. */
 function arrayBufferFromBytes(bytes: Uint8Array): ArrayBuffer {
   return new Uint8Array(bytes).buffer;
-}
-
-function smellageFromMessage(
-  message: CesrFrame,
-): Smellage {
-  return {
-    proto: message.body.proto,
-    pvrsn: message.body.pvrsn,
-    kind: message.body.kind,
-    size: message.body.size,
-    gvrsn: message.body.gvrsn,
-  };
 }
 
 function readRequiredMailboxAdminField(form: FormData, name: string): string {
@@ -377,11 +327,11 @@ function readOptionalMailboxAdminField(
   return value;
 }
 
-function inspectMailboxAdminCesrStream(
+async function inspectMailboxAdminCesrStream(
   bytes: Uint8Array,
-): CesrStreamInspection {
+): Promise<CesrStreamInspection> {
   try {
-    return inspectCesrStream(bytes);
+    return await inspectCesrStream(bytes);
   } catch (error) {
     throw new ValidationError(
       `Invalid mailbox authorization stream: ${error instanceof Error ? error.message : String(error)}`,
@@ -389,9 +339,9 @@ function inspectMailboxAdminCesrStream(
   }
 }
 
-function inspectMailboxAdminReply(bytes: Uint8Array): CesrStreamInspection {
+async function inspectMailboxAdminReply(bytes: Uint8Array): Promise<CesrStreamInspection> {
   try {
-    const inspection = inspectCesrStream(bytes);
+    const inspection = await inspectCesrStream(bytes);
     if (inspection.messages.length !== 1) {
       throw new ValidationError(
         "Mailbox authorization reply field must contain exactly one CESR message",

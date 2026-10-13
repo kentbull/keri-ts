@@ -1,4 +1,4 @@
-import { BENCH_INPUT_LIMIT, benchmarkCesrParser } from "../../bench/parser-benchmark.ts";
+import { BENCH_INPUT_LIMIT, benchmarkParser } from "../../bench/parser-benchmark.ts";
 import { collectInput } from "../input.ts";
 import type { CliIo } from "../types.ts";
 
@@ -103,7 +103,7 @@ function parseArgs(args: string[]): BenchmarkCliOptions {
 /** Render human-readable benchmark output for terminal workflows. */
 function formatHumanReadable(
   sourceLabel: string,
-  result: Awaited<ReturnType<typeof benchmarkCesrParser>>,
+  result: Awaited<ReturnType<typeof benchmarkParser>>,
 ): string {
   const chunkLabel = result.chunkSize === result.bytesPerIteration
     ? "full stream"
@@ -132,7 +132,7 @@ export async function benchCommand(args: string[], io: CliIo): Promise<number> {
     const options = parseArgs(args);
     const sourceLabel = options.inPath ? options.inPath : "stdin";
     const inputBytes = await collectInput(io.read(options.inPath), options.maxBytes);
-    const result = await benchmarkCesrParser(inputBytes, {
+    const result = await benchmarkParser(inputBytes, {
       iterations: options.iterations,
       warmupIterations: options.warmupIterations,
       chunkSize: options.chunkSize,

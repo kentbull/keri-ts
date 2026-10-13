@@ -1,10 +1,10 @@
-import { action, type Operation, run, spawn } from "effection";
+import { action, call, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
-import { createParser } from "../../../../cesr/mod.ts";
+import { parseBytes } from "../../../../cesr/mod.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
-import { buildCesrRequest, splitCesrStream } from "../../../src/app/cesr-http.ts";
+import { buildCesrRequest } from "../../../src/app/cesr-http.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
 import { Receiptor } from "../../../src/app/witnessing.ts";
@@ -17,13 +17,10 @@ function randomPort(): number {
   return 20000 + Math.floor(Math.random() * 20000);
 }
 
-function firstEnvelope(
-  bytes: Uint8Array,
-): ReturnType<typeof envelopesFromFrames>[number] {
-  const parser = createParser({
-    framed: false,
-  });
-  const envelopes = envelopesFromFrames([...parser.feed(bytes), ...parser.flush()], false);
+/** Inspect a finite witness proof through the progressive parser and KERI projection. */
+function* firstEnvelope(bytes: Uint8Array): Operation<ReturnType<typeof envelopesFromFrames>[number]> {
+  const frames = yield* call(() => parseBytes(bytes));
+  const envelopes = envelopesFromFrames(frames, false);
   const envelope = envelopes[0];
   if (!envelope) {
     throw new Error("Expected one parsed CESR envelope.");
@@ -160,7 +157,7 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
         });
         assertEquals(receiptResponse.status, 200);
         const receiptBytes = yield* bytesOp(receiptResponse);
-        const receiptEnvelope = firstEnvelope(receiptBytes);
+        const receiptEnvelope = yield* firstEnvelope(receiptBytes);
         assertEquals(receiptEnvelope.cigars.length, 1);
         assertEquals(receiptEnvelope.wigers.length, 0);
         assertEquals(
@@ -173,7 +170,7 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
         );
         assertEquals(storedResponse.status, 200);
         const storedBytes = yield* bytesOp(storedResponse);
-        const storedEnvelope = firstEnvelope(storedBytes);
+        const storedEnvelope = yield* firstEnvelope(storedBytes);
         assertEquals(storedEnvelope.cigars.length, 0);
         assertEquals(storedEnvelope.wigers.length, 1);
 
@@ -182,8 +179,8 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
         );
         assertEquals(queryResponse.status, 200);
         const queryBytes = yield* bytesOp(queryResponse);
-        assertEquals(splitCesrStream(queryBytes).length, 1);
-        assertEquals(firstEnvelope(queryBytes).serder.pre, controller.pre);
+        assertEquals((yield* call(() => parseBytes(queryBytes))).length, 1);
+        assertEquals((yield* firstEnvelope(queryBytes)).serder.pre, controller.pre);
 
         const mailboxOobi = yield* fetchOp(
           `${hostUrl}/oobi/${witness.pre}/mailbox/${witness.pre}`,

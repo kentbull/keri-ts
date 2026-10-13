@@ -7,7 +7,6 @@ import {
   Dater,
   Diger,
   type EssrPayload,
-  essrPayload,
   type GroupEntry,
   Ilks,
   isCounterGroupLike,
@@ -15,7 +14,6 @@ import {
   Labeler,
   Noncer,
   NumberPrimitive,
-  type ParseEvent,
   parseSerder,
   Prefixer,
   SealEvent,
@@ -29,7 +27,6 @@ import {
   TypeMedia,
   Verfer,
   Verser,
-  Vrsn_1_0,
 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import {
@@ -111,23 +108,16 @@ export interface VdrDispatchServices {
  * Convert one or more already-parsed CESR frames into KERI dispatch envelopes.
  *
  * Architectural rule:
- * - CESR parsing belongs to the real `CesrParser`
+ * - CESR parsing belongs to the real progressive CESR parser
  * - KERI normalization belongs here
  * - routing into `Revery` / `Kevery` / `Exchanger` happens separately via
  *   `dispatchEnvelope(...)`
  */
 export function envelopesFromFrames(
-  frames: readonly ParseEvent[],
+  frames: readonly CesrFrame[],
   local = false,
 ): KeriDispatchEnvelope[] {
-  const envelopes: KeriDispatchEnvelope[] = [];
-  for (const frame of frames) {
-    if (frame.type === "error") {
-      throw frame.error;
-    }
-    envelopes.push(envelopeFromFrame(frame.frame, local));
-  }
-  return envelopes;
+  return frames.map((frame) => envelopeFromFrame(frame, local));
 }
 
 /**
@@ -431,9 +421,6 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
     case "BigPathedMaterialCouples":
       envelope.ptds.push(PathedMaterialGroup.fromRaw(group.raw));
       return;
-    case "ESSRPayloadGroup":
-    case "BigESSRPayloadGroup":
-      return;
     default:
       return;
   }
@@ -450,7 +437,7 @@ export function envelopeFromFrame(
   const envelope = new KeriDispatchEnvelope({
     serder,
     attachmentGroups: message.attachments,
-    essr: message.essr ?? atomicEssr(message),
+    essr: message.essr,
     local,
   });
   for (const group of message.attachments) {
@@ -470,62 +457,4 @@ export function queryEnvelopeFromDispatch(
     sigers: lastSsg ? [...lastSsg.sigers] : [],
     cigars: [...envelope.cigars],
   };
-}
-
-/** Adapt the atomic parser's already resident items without copying their array. */
-function atomicEssr(message: CesrFrame): EssrPayload | undefined {
-  let groups = message.attachments;
-  let count = 0;
-  let size = 0;
-  let wireSize = 0;
-  // The outer attachment header carries the atomic frame's selected genus.
-  const gvrsn = message.attachments[0]?.version ?? message.body.gvrsn ?? Vrsn_1_0;
-  let disposed = false;
-  /** Visit only attachment wrappers that may legally contain ESSR groups. */
-  function* items(attachments: readonly AttachmentGroup[]): Generator<Texter> {
-    for (const group of attachments) {
-      if (group.name === "ESSRPayloadGroup" || group.name === "BigESSRPayloadGroup") {
-        for (const item of group.items) yield primitive(item, Texter);
-      } else if (
-        ["AttachmentGroup", "BigAttachmentGroup", "BodyWithAttachmentGroup", "BigBodyWithAttachmentGroup"].includes(
-          group.name,
-        )
-      ) {
-        for (const item of group.items) if (isCounterGroupLike(item)) yield* items([item]);
-      }
-    }
-  }
-  for (const item of items(groups)) {
-    count++;
-    size += item.raw.length;
-    wireSize += item.qb64.length;
-  }
-  if (!count) return undefined;
-  return essrPayload(
-    {
-      size: wireSize,
-      /** Yield bounded backing buffers from already resident atomic primitives. */
-      async *open(signal?: AbortSignal) {
-        signal?.throwIfAborted();
-        if (disposed) throw new Error("Atomic ESSR payload is disposed");
-        for (const item of items(groups)) {
-          const bytes = item.qb64b;
-          // Copies bound the backing buffer passed into the progressive decoder.
-          for (let offset = 0; offset < bytes.length; offset += 65536) {
-            signal?.throwIfAborted();
-            yield bytes.slice(offset, offset + 65536);
-          }
-        }
-      },
-      /** Release the adapter references without taking ownership of its original frame. */
-      discard() {
-        disposed = true;
-        groups = [];
-        return Promise.resolve();
-      },
-    },
-    count,
-    size,
-    gvrsn,
-  );
 }

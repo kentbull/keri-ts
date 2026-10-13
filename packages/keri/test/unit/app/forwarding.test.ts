@@ -7,11 +7,11 @@
  * - alias error semantics
  * - shared mailbox storage and remote cursor progression
  */
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { concatBytes, SerderKERI } from "../../../../cesr/mod.ts";
+import { concatBytes, parseBytes, SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
-import { readCesrRequestBytes, splitCesrStream } from "../../../src/app/cesr-http.ts";
+import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { ForwardHandler, introduce, mailboxTopicForRoute, Poster } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -698,9 +698,9 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             { s: "0" },
             "logs",
           );
-          const expectedIntro = splitCesrStream(
-            introduce(sender, remoteWitness.pre),
-          );
+          const expectedIntro = introduce(sender, remoteWitness.pre);
+          const introduction = yield* call(() => parseBytes(expectedIntro));
+          const frameCount = introduction.length;
 
           const poster = new Poster(hby);
           const result = yield* poster.sendBytes(sender, {
@@ -710,8 +710,9 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           });
 
           assertEquals(result.deliveries, [`http://127.0.0.1:${port}`]);
-          assertEquals(bodies.slice(0, expectedIntro.length), expectedIntro);
-          assertEquals(bodies.length, expectedIntro.length + 1);
+          // Compare against original signed wire independently of the transport serializer.
+          assertEquals(concatBytes(...bodies.slice(0, frameCount)), expectedIntro);
+          assertEquals(bodies.length, frameCount + 1);
 
           const delivered = new SerderKERI({ raw: bodies.at(-1)! });
           assertEquals(delivered.route, "/fwd");
@@ -801,8 +802,8 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
         );
         yield* processRuntimeTurn(runtime, { pollMailbox: false });
 
-        const intro = splitCesrStream(introduce(sender, remote.pre))
-          .map((msg) => new SerderKERI({ raw: msg }))
+        const intro = (yield* call(() => parseBytes(introduce(sender, remote.pre))))
+          .map(({ body }) => body as SerderKERI)
           .filter((serder) => serder.ilk === "rpy")
           .map((serder) => ({
             route: serder.route,

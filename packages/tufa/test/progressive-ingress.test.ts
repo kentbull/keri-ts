@@ -219,9 +219,9 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
       for (let index = 0; index < replies.length; index++) {
         assertEquals(replies[index].status, 200);
         const bytes = yield* call(async () => new Uint8Array(await replies[index].arrayBuffer()));
-        const prefixes = parseBytes(bytes).filter((event) => event.type === "frame").map((event) => {
-          assertInstanceOf(event.frame.body, SerderKERI);
-          return event.frame.body.pre;
+        const prefixes = (yield* call(() => parseBytes(bytes))).map((frame) => {
+          assertInstanceOf(frame.body, SerderKERI);
+          return frame.body.pre;
         });
         assertEquals(prefixes, [[alice.pre], [bob.pre]][index]);
       }
@@ -242,7 +242,7 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       const alice = hby.makeHab("alice");
       const bob = hby.makeHab("bob");
       // Ordinary replies have a real local mailbox destination, so earlier query delivery is observable.
-      yield* runtime.reactor.processCompleteChunk(alice.makeEndRole(alice.pre, "mailbox", true));
+      yield* runtime.reactor.processBytes(alice.makeEndRole(alice.pre, "mailbox", true));
       const handler = createProtocolHandler(runtime, { serviceHab: alice, directQueryResponses: true });
       const requests = [
         concatBytes(alice.query(alice.pre, alice.pre, {}, "logs"), acceptedEventReplayMessage(hby, bob.pre, 0).message),
@@ -265,12 +265,13 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       assertEquals(replies.map((reply) => reply.status), [204, 200]);
       const direct = yield* call(async () => new Uint8Array(await replies[1].arrayBuffer()));
       /** Read the admitted event identities from both HTTP and mailbox delivery evidence. */
-      const prefixes = (bytes: Uint8Array) =>
-        parseBytes(bytes)
-          .filter((event) => event.type === "frame")
-          .map((event) => (event.frame.body as SerderKERI).pre);
-      assertEquals(prefixes(direct), [alice.pre]);
-      const ordinary = runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`).flatMap(prefixes);
+      const prefixes = async (bytes: Uint8Array) =>
+        (await parseBytes(bytes)).map(({ body }) => (body as SerderKERI).pre);
+      assertEquals(yield* call(() => prefixes(direct)), [alice.pre]);
+      const ordinary: (string | null)[] = [];
+      for (const bytes of runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)) {
+        ordinary.push(...(yield* call(() => prefixes(bytes))));
+      }
       assertEquals(ordinary.includes(alice.pre), true);
       assertEquals(ordinary.includes(bob.pre), true);
     } finally {

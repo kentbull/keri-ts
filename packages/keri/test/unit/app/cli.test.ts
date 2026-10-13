@@ -1,6 +1,17 @@
 import { type Operation, run } from "effection";
-import { assertEquals, assertExists, assertStringIncludes, assertThrows } from "jsr:@std/assert";
-import { Prefixer, Vrsn_2_0 } from "../../../../cesr/mod.ts";
+import { assertEquals, assertExists, assertRejects, assertStringIncludes, assertThrows } from "jsr:@std/assert";
+import {
+  concatBytes,
+  Counter,
+  CtrDexV1,
+  Prefixer,
+  SerderACDC,
+  SerderKERI,
+  ShortageError,
+  Texter,
+  Vrsn_1_0,
+  Vrsn_2_0,
+} from "../../../../cesr/mod.ts";
 import { tufa } from "../../../../tufa/src/cli/cli.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
@@ -8,12 +19,13 @@ import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { interactCommand } from "../../../src/app/cli/interact.ts";
-import { ipexGrantCommand, ipexJoinCommand, ipexPollCommand } from "../../../src/app/cli/ipex.ts";
+import { ipexAdmitCommand, ipexGrantCommand, ipexJoinCommand, ipexPollCommand } from "../../../src/app/cli/ipex.ts";
 import { multisigInceptCommand, multisigJoinCommand, multisigRpyCommand } from "../../../src/app/cli/multisig.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { ipexGrantExn } from "../../../src/app/ipexing.ts";
 import { parseGvrsn } from "../../../src/core/attachment-countering.ts";
 import { delcept } from "../../../src/core/protocol-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
@@ -679,4 +691,49 @@ Deno.test("CLI - query help exposes KLI-compatible core flags", async () => {
   assertStringIncludes(res.stdout, "--alias <alias>");
   assertStringIncludes(res.stdout, "--prefix <prefix>");
   assertStringIncludes(res.stdout, "--anchor <file>");
+});
+
+Deno.test("CLI - grant-file admission requires valid EOF and keeps the selected body after payload cleanup", async () => {
+  const headDirPath = await Deno.makeTempDir({ prefix: "ipex-grant-file-" });
+  const name = "grant-file";
+  const grantFile = `${headDirPath}/grant.cesr`;
+  const out = `${headDirPath}/admit.cesr`;
+  let wire: Uint8Array = new Uint8Array();
+  let said = "";
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name, headDirPath, temp: false, skipConfig: true });
+      try {
+        const hab = hby.makeHab("holder");
+        // A real ACDC embed exercises body hydration without requiring a registry admission in this CLI test.
+        const acdc = new SerderACDC({
+          sad: { v: "ACDC10JSON000000_", d: "", i: hab.pre, s: hab.pre, a: { i: hab.pre } },
+          makify: true,
+        });
+        const [grant] = ipexGrantExn(hab, hab.pre, "file grant", acdc);
+        said = grant.said!;
+        wire = concatBytes(
+          hab.endorse(grant, { pipelined: false }),
+          new Counter({ code: CtrDexV1.ESSRPayloadGroup, count: 1, version: Vrsn_1_0 }).qb64b,
+          new Texter({ raw: new TextEncoder().encode("discarded attachment"), code: "4B" }).qb64b,
+        );
+      } finally {
+        yield* hby.close();
+      }
+    });
+    const args = { name, headDirPath, alias: "holder", grantFile, out, noWait: true };
+    // Seeing a grant before a malformed tail must not produce an admit file.
+    await Deno.writeFile(grantFile, concatBytes(wire, new TextEncoder().encode("-A")));
+    await assertRejects(() => run(() => ipexAdmitCommand(args)), ShortageError);
+    await assertRejects(() => Deno.stat(out), Deno.errors.NotFound);
+    await Deno.writeFile(grantFile, wire);
+    const result = await captureCommand(ipexAdmitCommand(args));
+    assertEquals(result.code, 0);
+    const admit = new SerderKERI({ raw: await Deno.readFile(out) });
+    assertEquals(admit.route, "/ipex/admit");
+    assertEquals(admit.ked?.p, said);
+    assertStringIncludes(result.stdout, said);
+  } finally {
+    await Deno.remove(headDirPath, { recursive: true });
+  }
 });

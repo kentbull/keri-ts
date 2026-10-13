@@ -77,14 +77,14 @@ export function* approveMultisigIpex(
   }
   const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, "exn");
   if (peerAttachment.length > 0) {
-    yield* runtime.reactor.processCompleteChunk(
+    yield* runtime.reactor.processBytes(
       concatBytes(embedded.raw, peerAttachment),
       { local: true },
     );
     yield* runtime.reactor.processEscrowsOnce();
   }
   const approved = groupIpexPartial(hby, groupHab, embedded, wrapperSaid);
-  yield* runtime.reactor.processCompleteChunk(approved, { local: true });
+  yield* runtime.reactor.processBytes(approved, { local: true });
   yield* runtime.reactor.processEscrowsOnce();
   const deliveries = options.publish ? yield* publishGroupIpexProposal(runtime, groupHab, approved) : [];
   if (

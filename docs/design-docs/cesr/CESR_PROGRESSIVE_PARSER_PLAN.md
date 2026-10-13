@@ -26,8 +26,8 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 | 8     | Bounded recipient decryption and explicit ciphertext retention       | Logical-message limits, authentication before plaintext storage, unchanged crypto wire format      | Merged [#133](https://github.com/kentbull/keri-ts/pull/133) |
 | 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Merged [#137](https://github.com/kentbull/keri-ts/pull/137) |
 | 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | Merged [#138](https://github.com/kentbull/keri-ts/pull/138) |
-| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | In progress                                                 |
-| 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                                                     |
+| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Consumers implemented; shared-policy follow-ons remain      |
+| 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Engine/API removal implemented; final qualification pending |
 
 Phase 9 builds on [#135](https://github.com/kentbull/keri-ts/pull/135), which makes
 dispatch/settlement and mailbox batch delivery yield through completion with
@@ -44,7 +44,8 @@ Phase 11 serialization and HTTP output merged in
 [#142](https://github.com/kentbull/keri-ts/pull/142), and exchange/witness delivery
 in [#143](https://github.com/kentbull/keri-ts/pull/143).
 
-The query/mailbox slice queues bounded query requests outside guarded dispatch,
+The query/mailbox slice in [#145](https://github.com/kentbull/keri-ts/pull/145)
+queues bounded query requests outside guarded dispatch,
 awaits each complete SSE event consumer, and produces mailbox output on HTTP
 demand without holding LMDB iterators across suspension. Finite OOBI/DID
 verification still collects at most 8 MiB. Stored mailbox values are read whole
@@ -63,19 +64,20 @@ conventions. Keep Node-specific adaptation at npm packaging boundaries. Temporar
 file names may use Web Crypto UUIDs; publication uses the owning protocol SAID or
 a qualified content digest with representation scope where needed.
 
-Phase 12 separates the CESR test/body-hydration migration from the final KERI
-consumer/API removal. This keeps protocol assertion changes reviewable independently
-of Effection call-site changes. The test/body migration merged in
-[#144](https://github.com/kentbull/keri-ts/pull/144). CESR tests use the progressive engine directly;
-the remaining atomic engine serves only the not-yet-migrated KERI callers.
+Phase 12 separated the test/body migration in
+[#144](https://github.com/kentbull/keri-ts/pull/144) from the final KERI consumer
+migration. The atomic engine, synchronous push API, event wrappers, unused KERI
+CESR re-export stubs, and atomic ESSR adapter are removed. Consumers use progressive
+`parse` or async finite `parseBytes`; KERI complete records use `Reactor.processBytes`
+through the same progressive source. Local bootstrap replies retain normal
+signature and BADA acceptance without serializing solely to parse them again.
+Protocol regressions remain on the new API.
 
-The temporary atomic engine exists only for staged migration. Phase 12 removes
-it and obsolete keri-ts API compatibility surfaces. Move semantic regression
-coverage to the new API rather than deleting protocol tests. Do not ship two
-permanent parser strategies. Consumers also get a convenient async complete-input
-API over the progressive engine; synchronous `feed`/`flush` is not retained as a
-second implementation. Collection must clean up undelivered owned payloads if a
-later frame fails.
+The engine-removal checkpoint closes the implementation portion of phase 12.
+Run the final controlled end-to-end matrix after the approved current-main and
+resource-policy follow-ons so it qualifies the finished implementation. Preserve
+the earlier independent benchmark checkpoints; do not treat parser-only results
+as runtime qualification.
 
 ## Additional approved review and qualification work
 
@@ -169,10 +171,11 @@ parser-only measurements do not establish the full runtime's memory bound.
 
 ## Approved follow-on sequence: current KERIpy alignment
 
-Execute this sequence after phases 1–12 and their attendant repairs. Reconcile
+Execute this sequence after the phase 12 engine removal and attendant repairs;
+finish phase 12 qualification with the final matrix below. Reconcile
 prepared/merged work before each PR, keep the same plan, and implement only
-missing behavior. Synchronous-engine removal and #134's test reorganization
-already have owners; do not duplicate them or reshuffle those tests here.
+missing behavior. Synchronous-engine removal and #134's test reorganization are implemented;
+do not recreate them or reshuffle those tests here.
 These are approved future obligations, not claims about current parser support.
 
 The frozen test baseline at upstream `927c0cb8` records actual execution failures;
@@ -244,6 +247,23 @@ Python-to-TS and TS-to-Python fixtures in qb64/qb2; exact widths, counts, bytes,
 semantic roles, and consumed extents; small/big forms, malformed lengths, and
 split headers; and generated-table verification against the immutable pin.
 Still-older runtime pins remain explicitly labeled until separately upgraded.
+
+### Follow-on PR 1a: current-reference text and semantic primitives
+
+The source audit and a direct frozen-reference probe reproduced another wire
+mismatch: KERIpy `Bexter(bext="AAA")` emits `4AAB-AAA`; current TS decodes that
+as `-AAA`. Leading `A` and `-` inputs also fail. Update Bexter's explicit escape
+semantics together with Labeler and Pather consumers; Pather deliberately uses
+unescaped Bexter conversion and must retain its own path escaping rules. Preserve
+independent qb64/qb2 vectors and large-input decoding coverage.
+
+Audit the remaining primitive/Serder delta at the same frozen revision before
+claiming parity: threshold/path validation limits, version-aware SAID derivation,
+nonce/first-seen structures, and changed ACDC/KERI semantic accessors. Separate
+API naming differences from reproduced wire or validation gaps. Implement actual
+gaps in cohesive dependent slices, retaining protocol v1/v2 fixtures and avoiding
+old keri-ts compatibility aliases. Pure diagnostic wording and Python-specific
+buffer adaptations do not require a port.
 
 ### Follow-on PR 1b: imported v2 event replay
 

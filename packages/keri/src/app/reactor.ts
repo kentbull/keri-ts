@@ -1,10 +1,7 @@
 import {
   type CesrFrame,
-  type CesrParser,
   Cigar,
-  createParser,
   Ilks,
-  parseBytes,
   type ParseOptions,
   ResourceLimitError,
   SerderKERI,
@@ -18,6 +15,7 @@ import { Deck, DeckFullError } from "../core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
 import { Kevery } from "../core/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
+import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
 import type { Habery } from "./habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame, type TeveryLike, type VerifierLike } from "./parsering.ts";
@@ -51,14 +49,13 @@ export interface IngressOptions extends ParseOptions {
 export class Reactor {
   readonly hby: Habery;
   readonly cues: Deck<AgentCue>;
-  /** Temporary bounded complete-record queue; callers enter only through ingest(). */
+  /** Bounded complete-record queue; callers enter only through ingest(). */
   private readonly ingress: Deck<Uint8Array>;
   readonly router: Router;
   readonly revery: Revery;
   readonly replyRoutes: BasicReplyRouteHandler;
   readonly kevery: Kevery;
   readonly exchanger: Exchanger;
-  readonly parser: CesrParser;
   readonly local: boolean;
   /** Bounded direct-response reservations, captured before any guarded cue consumer runs. */
   readonly replies: QueryReplies;
@@ -68,11 +65,11 @@ export class Reactor {
   private busy = false;
   /** Waiting turns are bounded independently of the lifetime of their input streams. */
   private readonly waiting = new Set<() => void>();
-  /** Resident bytes retained by the temporary complete-record ingress deck. */
+  /** Resident bytes retained by the complete-record ingress deck. */
   private queuedBytes = 0;
   /** Maximum simultaneous input sources and waiting runtime turns. */
   private readonly maxSources: number;
-  /** Maximum bytes in the temporary complete-record ingress deck. */
+  /** Maximum bytes in the complete-record ingress deck. */
   private readonly maxQueuedBytes: number;
   readonly vdr: VdrRuntimeServices;
 
@@ -91,7 +88,7 @@ export class Reactor {
       vdr?: VdrRuntimeServices;
       /** Reject additional sources and waiting turns when this admission limit is reached. */
       maxSources?: number;
-      /** Bound the legacy queue until all complete-record callers use process(). */
+      /** Bound already resident complete records awaiting processOnce(). */
       maxQueuedBytes?: number;
       /** Reject more protocol work until the host drains a full cue deck. */
       maxPendingCues?: number;
@@ -116,9 +113,6 @@ export class Reactor {
     this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery });
     this.kevery.registerReplyRoutes(this.router);
     this.exchanger = new Exchanger(hby, { cues: this.cues });
-    this.parser = createParser({
-      framed: false,
-    });
     this.local = local;
     this.vdr = vdr;
   }
@@ -268,43 +262,11 @@ export class Reactor {
     this.queuedBytes += bytes.byteLength;
   }
 
-  /**
-   * Feed a raw stream chunk and dispatch only frames with proven boundaries.
-   *
-   * This keeps the parser lifecycle owned by `Reactor` while letting higher
-   * level hosts choose whether one ingress source should be treated as local or
-   * remote without creating a second parser/router stack.
-   */
-  *processChunk(
-    chunk: Uint8Array,
-    { local = this.local, mailboxAid }: { local?: boolean; mailboxAid?: string | null } = {},
-  ): Operation<void> {
-    yield* this.dispatchParsedFrames(this.parser.feed(chunk), local, mailboxAid);
-  }
-
-  /**
-   * Parse and dispatch one complete CESR/KERI record.
-   *
-   * HTTP bodies, mailbox SSE entries, and local messages have an explicit end.
-   * A fresh parser plus flush completes their open attachment sets without
-   * waiting for another record or affecting the shared streaming parser.
-   */
-  *processCompleteChunk(
-    chunk: Uint8Array,
-    { local = this.local, mailboxAid }: { local?: boolean; mailboxAid?: string | null } = {},
-  ): Operation<void> {
-    yield* this.dispatchParsedFrames(parseBytes(chunk), local, mailboxAid);
-  }
-
-  /** Complete each dispatch before advancing a parsed batch. */
-  private *dispatchParsedFrames(
-    frames: ReturnType<CesrParser["feed"]>,
-    local: boolean,
-    mailboxAid?: string | null,
-  ): Operation<void> {
-    for (const event of frames) {
-      if (event.type === "frame") yield* this.settle(event.frame, { local, mailboxAid });
-    }
+  /** Consume one complete record through the same progressive source and dispatch path as network input. */
+  *processBytes(bytes: Uint8Array, options: IngressOptions = {}): Operation<void> {
+    // Honor tighter caller chunk limits while keeping copies bounded for already resident input.
+    const maxChunkBytes = Math.min(64 * 1024, options.maxChunkBytes ?? 64 * 1024);
+    yield* this.process((signal) => chunkBytes(bytes, { signal, maxChunkBytes }), options);
   }
 
   /**
@@ -317,7 +279,7 @@ export class Reactor {
     while (!this.ingress.empty) {
       const chunk = this.ingress.peekHead()!;
       try {
-        yield* this.processCompleteChunk(chunk);
+        yield* this.processBytes(chunk);
       } catch (error) {
         // Keep the record for retry after cue delivery; already accepted frames replay as duplicates.
         if (error instanceof DeckFullError) return;

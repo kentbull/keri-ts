@@ -1,11 +1,12 @@
-import { concatBytes, parseSerder, SerderKERI, smell, type Versionage } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { concatBytes, SerderKERI, type Versionage } from "cesr-ts";
+import { toEffectionFrames } from "cesr-ts/effection";
+import { call, each, type Operation } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
 import { Reger } from "../../db/reger.ts";
 import { type AgentRuntime, processMailboxTurn } from "../agent-runtime.ts";
-import { splitCesrStream } from "../cesr-http.ts";
+import { fileBytes } from "../byte-source.ts";
 import {
   isLocalGroupHab,
   localGroupMember,
@@ -160,7 +161,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     const group = isLocalGroupHab(hby, hab);
     if (group) {
       const partialGrant = groupIpexPartial(hby, hab, grant.grant, undefined, grant.attachments);
-      yield* runtime.reactor.processCompleteChunk(partialGrant, { local: true });
+      yield* runtime.reactor.processBytes(partialGrant, { local: true });
       yield* runtime.reactor.processEscrowsOnce();
 
       const deliveries = yield* publishGroupIpexProposal(
@@ -232,7 +233,7 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void
   };
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = requireHab(hby, ipexArgs.alias);
-    const grant = loadGrant(hby, ipexArgs);
+    const grant = yield* loadGrant(hby, ipexArgs);
     const admit = ipexCredentialAdmit({
       hab,
       reger,
@@ -554,17 +555,24 @@ function parseJsonArg(value: string | undefined): Record<string, unknown> | unde
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-function loadGrant(hby: Habery, args: IpexAdmitArgs): SerderKERI {
+/** Read a grant from bounded progressive file input or its already persisted exchange record. */
+function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<SerderKERI> {
   if (args.grantFile) {
-    const raw = Deno.readFileSync(args.grantFile);
-    for (const frame of splitCesrStream(raw)) {
-      const { smellage } = smell(frame);
-      const serder = parseSerder(frame.slice(0, smellage.size), smellage);
-      if (serder instanceof SerderKERI && serder.route === IPEX_GRANT_ROUTE) {
-        return serder;
+    return yield* call(function*() {
+      const channel = yield* toEffectionFrames((signal) => fileBytes(args.grantFile!, { signal }));
+      let grant: SerderKERI | undefined;
+      for (const frame of yield* each(channel.frames)) {
+        // Only the hydrated grant body escapes this scope; its ESSR payload remains owned here.
+        try {
+          if (!grant && frame.body instanceof SerderKERI && frame.body.route === IPEX_GRANT_ROUTE) grant = frame.body;
+        } finally {
+          if (frame.essr) yield* call(() => frame.essr!.discard());
+        }
+        yield* each.next();
       }
-    }
-    throw new ValidationError(`Grant file ${args.grantFile} does not contain an IPEX grant.`);
+      if (grant) return grant; // Require valid EOF before accepting the selected grant.
+      throw new ValidationError(`Grant file ${args.grantFile} does not contain an IPEX grant.`);
+    });
   }
   requireNonEmpty(args.said, "Grant SAID");
   const grant = hby.db.exns.get([args.said!]);

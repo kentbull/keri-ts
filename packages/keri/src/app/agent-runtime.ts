@@ -356,7 +356,7 @@ export function* settleRuntimeIngress(
   } = {},
 ): Operation<void> {
   for (const message of messages) {
-    yield* runtime.reactor.processCompleteChunk(message, { local, mailboxAid });
+    yield* runtime.reactor.processBytes(message, { local, mailboxAid });
   }
   yield* runtime.reactor.processEscrowsOnce();
 }
@@ -372,7 +372,7 @@ export function* settleMailboxPollBatch(
   batch: MailboxPollBatch,
 ): Operation<void> {
   for (const message of batch.messages) {
-    yield* runtime.reactor.processCompleteChunk(message);
+    yield* runtime.reactor.processBytes(message);
   }
   yield* runtime.reactor.processEscrowsOnce();
 }

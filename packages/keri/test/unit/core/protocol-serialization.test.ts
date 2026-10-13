@@ -110,7 +110,7 @@ Deno.test("protocol exchange pathed embeds use requested gvrsn", () => {
   assertEquals(counter.code, CtrDexV2.PathedMaterialCouples);
 });
 
-Deno.test("protocol v2 signature serialization parses flat, sealed, and nested envelopes", () => {
+Deno.test("protocol v2 signature serialization parses flat, sealed, and nested envelopes", async () => {
   const [serder] = exchange("/test", {}, { sender: SENDER, pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0 });
   const signer = Signer.random({ transferable: true });
   const sigers = [signer.sign(serder.raw, { index: 0 }) as Siger];
@@ -119,19 +119,12 @@ Deno.test("protocol v2 signature serialization parses flat, sealed, and nested e
   for (const seal of [undefined, { i: prefix }, { i: prefix, s: "0", d: digest }]) {
     for (const nested of [false, true]) {
       const message = messagize(serder, { sigers, seal, nested, gvrsn: Vrsn_2_0, genusify: true });
-      const events = parseBytes(message);
-      assertEquals(
-        events.filter((event) => event.type === "error"),
-        [],
-        `seal=${JSON.stringify(seal)} nested=${nested}`,
-      );
-      assertEquals(events.map((event) => event.type), ["frame"]);
-      if (events[0].type === "frame") {
-        const group = events[0].frame.attachments[0];
-        const parsedSigs = group.items.flat(2).filter((item) => item instanceof Indexer);
-        assertEquals(parsedSigs.map((siger) => siger.qb64), sigers.map((siger) => siger.qb64));
-        assertEquals(group.items.length, 1);
-      }
+      const frames = await parseBytes(message);
+      assertEquals(frames.length, 1, `seal=${JSON.stringify(seal)} nested=${nested}`);
+      const group = frames[0].attachments[0];
+      const parsedSigs = group.items.flat(2).filter((item) => item instanceof Indexer);
+      assertEquals(parsedSigs.map((siger) => siger.qb64), sigers.map((siger) => siger.qb64));
+      assertEquals(group.items.length, 1);
     }
   }
 });
