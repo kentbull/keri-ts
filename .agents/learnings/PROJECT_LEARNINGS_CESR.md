@@ -7,9 +7,10 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 ## Current State
 
 The CESR package is framework-neutral: progressive parsing uses async iterables
-and AbortSignal, with no Effection runtime export or dependency. KERI and Tufa
-own Operation scopes, cancellation bridges, and joined resource cleanup around
-that byte-stream boundary.
+and AbortSignal. The optional `cesr-ts/effection` entrypoint supplies FrameChannel
+and toEffectionFrames with scope-owned cancellation and joined cleanup; importing
+the package root does not load Effection. KERI and Tufa embrace Operation scopes
+and use this supplementary adapter at their parsing boundary.
 
 1. The historical parser completeness `GO` predates the count-unit correction
    and genus-context correction; current parity claims must name
