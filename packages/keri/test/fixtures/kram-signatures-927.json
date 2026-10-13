@@ -1,0 +1,254 @@
+{
+  "reference": "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+  "donor": "04178add",
+  "kel": [
+    "{\"v\":\"KERICAACAAJSONAAEt.\",\"t\":\"icp\",\"d\":\"ECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN\",\"i\":\"ECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN\",\"s\":\"0\",\"kt\":\"1\",\"k\":[\"DHZZIHWsDJUuWSNZJW3vUqhv3zdNJNmYEnY1yiLpDCFl\"],\"nt\":\"1\",\"n\":[\"EFtu0MVmx7cgFJyN-IFRnkDaKKvOPtS7_qKb7o27fVDo\"],\"bt\":\"0\",\"b\":[],\"c\":[],\"a\":[]}-KAWAACI7llmAUoAfVydjcGANDiD1YbTGUi99BorhbFnicwlxxek1NlDBDHLaWq6TOwHtmvH-nS3B3i72ZVI6Y21MhIA",
+    "{\"v\":\"KERICAACAAJSONAAEt.\",\"t\":\"icp\",\"d\":\"ECJbI-e9xi7x2KMWhy1aC2EmLQcfgSDCNZOfy70cy18b\",\"i\":\"ECJbI-e9xi7x2KMWhy1aC2EmLQcfgSDCNZOfy70cy18b\",\"s\":\"0\",\"kt\":\"1\",\"k\":[\"DNUpf6nl4QBEImJGW3KdJUAl-5l8Dx3m0CMQHeDnB3tq\"],\"nt\":\"1\",\"n\":[\"EIxQk7xZ4pX-jmiGDt3nm9FGcaamVjpuOeJDgNn8WGFm\"],\"bt\":\"0\",\"b\":[],\"c\":[],\"a\":[]}-KAWAACDhOwn0A8xmcy-fhVRkwT0-lmdnsX6fker99KhbmQ5O6LjEvlytrkTMZNNaNsaytLtOi8lR2Z1U71FiAAmM3QH",
+    "{\"v\":\"KERICAACAAJSONAAD_.\",\"t\":\"icp\",\"d\":\"EPktnLmowV-Pz8lfGHVi8Wys0nao4lTHRi8JoZF5bMrf\",\"i\":\"BLM6o3VSlrHOISxDhsZeFf7Tfjk7FM5OJmblimaKJ752\",\"s\":\"0\",\"kt\":\"1\",\"k\":[\"BLM6o3VSlrHOISxDhsZeFf7Tfjk7FM5OJmblimaKJ752\"],\"nt\":\"0\",\"n\":[],\"bt\":\"0\",\"b\":[],\"c\":[],\"a\":[]}-KAWAADHLYB1gsZssu8P-m17pK-rpe_4fa6gWwyB7Nws6SQwUmIN10kkPMHczB0ppy6ZpnzcGS2jzitsDHgj6DgdMy4D"
+  ],
+  "bodies": {
+    "foreign": "{\"v\":\"KERICAACAAJSONAAEp.\",\"t\":\"exn\",\"d\":\"EFniVcZixBjr6nL8MrrHuToJ9vhpC70z5vPvxqZyvB4J\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"/ipex/apply\",\"q\":{\"n\":\"foreign-proofs\"},\"a\":{}}",
+    "prior": "{\"v\":\"KERICAACAAJSONAAFK.\",\"t\":\"qry\",\"d\":\"EIGP6ICBHkkseG2fu6e9qdhLV874mT65ZJmHa5EOC8Dz\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"ksn\",\"rr\":\"\",\"q\":{\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"src\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"n\":\"rotation-pending\"}}",
+    "single": "{\"v\":\"KERICAACAAJSONAAER.\",\"t\":\"exn\",\"d\":\"EIpV4ENQAK_lCyaoU8BP07M0whTqivenUaFaNRyLrFux\",\"i\":\"ECJbI-e9xi7x2KMWhy1aC2EmLQcfgSDCNZOfy70cy18b\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"/single\",\"q\":{},\"a\":{}}",
+    "cigar": "{\"v\":\"KERICAACAAJSONAAEQ.\",\"t\":\"exn\",\"d\":\"EEOj2wogl8U8WDJlZeNlxi2pqvS3fuNZxVw4E29Zef-c\",\"i\":\"BLM6o3VSlrHOISxDhsZeFf7Tfjk7FM5OJmblimaKJ752\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"/cigar\",\"q\":{},\"a\":{}}",
+    "badCigar": "{\"v\":\"KERICAACAAJSONAAEU.\",\"t\":\"exn\",\"d\":\"ENe4Sq2Y1tAjPS8lGfpSFl_DN5RqtE5va_-PdKu_WINU\",\"i\":\"BLM6o3VSlrHOISxDhsZeFf7Tfjk7FM5OJmblimaKJ752\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"/bad-cigar\",\"q\":{},\"a\":{}}"
+  },
+  "proofs": {
+    "sender0": "AAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL",
+    "sender1": "ABBAZbZ6vmEFY-O66zKEwmgbDvVGrRAZYBsHioOO9hKsF0TUac1C0Gd9hNBO9OH_Fbu7uqx653XF_uasPLVGycsA",
+    "sender0Only": "BAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL",
+    "prior0": "AABJxPYef_gJgwl_A5Mb5HsJ7haiMpD2pIaLls6KYv_ZhD_PQIh8OCnFDxGTUSwCxxIDbVELw6b3cYA_QOWppwQO",
+    "foreign0": "AACGMOyTaSVD6i0ONx_xAO7ML8ALXDOOHjvVEVxeSWLnRUNlZfGWm9dEPNdtuA6PxSbf0-eb361vXpHbiN2PrSwA",
+    "foreignSender0": "AAC1GUmmjHbwjo_yRtAQVQnjGjR_xMMSx492Dq8Yy_qEtqdOo1BGi7F0GGUe_jdGVhhJrk5xc0mGemBeorr8X0wH",
+    "single0": "AABtJU0_5YkSb3P0F9eL9NIfufFMkbicfhlTtRm0_3FRuRD-h3lIrb-hT6VmAxyFfh-rRpKUQHedBGUBGz8PM8YK"
+  },
+  "senderEstablishments": {
+    "source.wrong": {
+      "pre": "EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-",
+      "snhex": "1",
+      "digest": "EHtvg5zxE2otNrosBUyhNzp-SslgJALKXpmIbF0MvtDc"
+    },
+    "foreign": {
+      "pre": "EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-",
+      "snhex": "1",
+      "digest": "EHtvg5zxE2otNrosBUyhNzp-SslgJALKXpmIbF0MvtDc"
+    },
+    "single": {
+      "pre": "ECJbI-e9xi7x2KMWhy1aC2EmLQcfgSDCNZOfy70cy18b",
+      "snhex": "0",
+      "digest": "ECJbI-e9xi7x2KMWhy1aC2EmLQcfgSDCNZOfy70cy18b"
+    }
+  },
+  "cases": [
+    {
+      "name": "one valid sender signature is below threshold",
+      "body": "source.wrong",
+      "attachments": "-CAX-KAWAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL",
+      "verified": [
+        "sender0"
+      ],
+      "kind": "verified",
+      "auth": "indexed",
+      "senderGroup": true,
+      "threshold": false
+    },
+    {
+      "name": "signature order remains one then zero",
+      "body": "source.wrong",
+      "attachments": "-CAt-KAsABBAZbZ6vmEFY-O66zKEwmgbDvVGrRAZYBsHioOO9hKsF0TUac1C0Gd9hNBO9OH_Fbu7uqx653XF_uasPLVGycsAAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL",
+      "verified": [
+        "sender1",
+        "sender0"
+      ],
+      "kind": "verified",
+      "auth": "indexed",
+      "senderGroup": true,
+      "threshold": true
+    },
+    {
+      "name": "same qb64 duplicates only one pool factor",
+      "body": "source.wrong",
+      "attachments": "-CA6-KAWAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL-YAiEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi--KAWAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL",
+      "verified": [
+        "sender0"
+      ],
+      "kind": "verified",
+      "auth": "indexed",
+      "normalizedSigers": [
+        "sender0",
+        "sender0"
+      ],
+      "senderGroup": true,
+      "threshold": false
+    },
+    {
+      "name": "distinct encodings at one index cannot satisfy threshold",
+      "body": "source.wrong",
+      "attachments": "-CAt-KAsAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwLBAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL",
+      "verified": [
+        "sender0",
+        "sender0Only"
+      ],
+      "kind": "verified",
+      "auth": "indexed",
+      "senderGroup": true,
+      "threshold": false
+    },
+    {
+      "name": "current explicit group contributes to sender pool",
+      "body": "source.wrong",
+      "attachments": "-CBF-XBEEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-MAABEHtvg5zxE2otNrosBUyhNzp-SslgJALKXpmIbF0MvtDc-KAsABBAZbZ6vmEFY-O66zKEwmgbDvVGrRAZYBsHioOO9hKsF0TUac1C0Gd9hNBO9OH_Fbu7uqx653XF_uasPLVGycsAAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL",
+      "verified": [
+        "sender1",
+        "sender0"
+      ],
+      "kind": "verified",
+      "auth": "indexed",
+      "senderGroup": true,
+      "threshold": true
+    },
+    {
+      "name": "invalid sender signature is scrubbed",
+      "body": "source.wrong",
+      "attachments": "-CAt-KAsAABJxPYef_gJgwl_A5Mb5HsJ7haiMpD2pIaLls6KYv_ZhD_PQIh8OCnFDxGTUSwCxxIDbVELw6b3cYA_QOWppwQOAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL",
+      "verified": [
+        "sender0"
+      ],
+      "kind": "verified",
+      "auth": "indexed",
+      "senderGroup": true,
+      "threshold": false
+    },
+    {
+      "name": "foreign last group cannot complete sender threshold",
+      "body": "foreign",
+      "attachments": "-CBF-YBEEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi--KAWAAC1GUmmjHbwjo_yRtAQVQnjGjR_xMMSx492Dq8Yy_qEtqdOo1BGi7F0GGUe_jdGVhhJrk5xc0mGemBeorr8X0wHECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN-KAWAACGMOyTaSVD6i0ONx_xAO7ML8ALXDOOHjvVEVxeSWLnRUNlZfGWm9dEPNdtuA6PxSbf0-eb361vXpHbiN2PrSwA",
+      "verified": [
+        "foreignSender0"
+      ],
+      "kind": "verified",
+      "auth": "indexed",
+      "senderGroup": true,
+      "threshold": false
+    },
+    {
+      "name": "foreign explicit group stays independent",
+      "body": "foreign",
+      "attachments": "-CBd-XBcEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-MAABEHtvg5zxE2otNrosBUyhNzp-SslgJALKXpmIbF0MvtDc-KAWAAC1GUmmjHbwjo_yRtAQVQnjGjR_xMMSx492Dq8Yy_qEtqdOo1BGi7F0GGUe_jdGVhhJrk5xc0mGemBeorr8X0wHECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoNMAAAECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN-KAWAACGMOyTaSVD6i0ONx_xAO7ML8ALXDOOHjvVEVxeSWLnRUNlZfGWm9dEPNdtuA6PxSbf0-eb361vXpHbiN2PrSwA",
+      "verified": [
+        "foreignSender0"
+      ],
+      "kind": "verified",
+      "auth": "indexed",
+      "senderGroup": true,
+      "threshold": false
+    },
+    {
+      "name": "prior sender group is historical diagnostic only",
+      "body": "prior",
+      "attachments": "-CAv-XAuEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-MAAAEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi--KAWAABJxPYef_gJgwl_A5Mb5HsJ7haiMpD2pIaLls6KYv_ZhD_PQIh8OCnFDxGTUSwCxxIDbVELw6b3cYA_QOWppwQO",
+      "verified": [],
+      "kind": "unverified",
+      "senderGroup": false,
+      "stale": [
+        {
+          "snhex": "0",
+          "digest": "EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-",
+          "sigers": [
+            "prior0"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "missing prior sender group is removed without promotion",
+      "body": "prior",
+      "attachments": "-CAx-XAwEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-NAAgAAAAAAABEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi--KAWAABJxPYef_gJgwl_A5Mb5HsJ7haiMpD2pIaLls6KYv_ZhD_PQIh8OCnFDxGTUSwCxxIDbVELw6b3cYA_QOWppwQO",
+      "verified": [],
+      "kind": "unverified",
+      "senderGroup": false
+    },
+    {
+      "name": "sender triples convert and foreign triples survive",
+      "body": "source.wrong",
+      "attachments": "-CBS-YAiEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi--KAWAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL-TAuEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-MAACEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49SECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoNMABjEHtvg5zxE2otNrosBUyhNzp-SslgJALKXpmIbF0MvtDc",
+      "verified": [
+        "sender0"
+      ],
+      "kind": "verified",
+      "auth": "indexed",
+      "senderGroup": true,
+      "threshold": false,
+      "sourceCouples": [
+        [
+          "MAAC",
+          "EBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S"
+        ]
+      ],
+      "sourceTriples": [
+        [
+          "ECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN",
+          "MABj",
+          "EHtvg5zxE2otNrosBUyhNzp-SslgJALKXpmIbF0MvtDc"
+        ]
+      ]
+    },
+    {
+      "name": "single transferable sender signature verifies",
+      "body": "single",
+      "attachments": "-CAj-YAiECJbI-e9xi7x2KMWhy1aC2EmLQcfgSDCNZOfy70cy18b-KAWAABtJU0_5YkSb3P0F9eL9NIfufFMkbicfhlTtRm0_3FRuRD-h3lIrb-hT6VmAxyFfh-rRpKUQHedBGUBGz8PM8YK",
+      "verified": [
+        "single0"
+      ],
+      "kind": "verified",
+      "auth": "indexed",
+      "senderGroup": true,
+      "threshold": true
+    },
+    {
+      "name": "matching nontransferable cigar verifies",
+      "body": "cigar",
+      "attachments": "-CAi-MAhBLM6o3VSlrHOISxDhsZeFf7Tfjk7FM5OJmblimaKJ7520BBKXaYn5hFBYCG3IGvTqhs0K2gnYLFZGEYlF8t_gyc0w0Tz9AMXY9cibeF3QNFmqVsEcYrrheWU1PDma6ZRgtcO",
+      "verified": [],
+      "kind": "verified",
+      "auth": "cigar",
+      "senderGroup": false
+    },
+    {
+      "name": "invalid matching cigar does not verify",
+      "body": "badCigar",
+      "attachments": "-CAi-MAhBLM6o3VSlrHOISxDhsZeFf7Tfjk7FM5OJmblimaKJ7520BAPXHEiCkH2IqsArihZ0jDxrklMs-8qrh3DiEI-s4S-OwViC4gnsjFUcXtXQuybkOlWhDqYN8Cs_cttevLnFCcI",
+      "verified": [],
+      "kind": "unverified",
+      "senderGroup": false
+    },
+    {
+      "name": "valid cigar returns before indexed signature scrubbing",
+      "body": "cigar",
+      "attachments": "-CA5-KAWAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL-MAhBLM6o3VSlrHOISxDhsZeFf7Tfjk7FM5OJmblimaKJ7520BBKXaYn5hFBYCG3IGvTqhs0K2gnYLFZGEYlF8t_gyc0w0Tz9AMXY9cibeF3QNFmqVsEcYrrheWU1PDma6ZRgtcO",
+      "verified": [],
+      "kind": "verified",
+      "auth": "cigar",
+      "normalizedSigers": [
+        "sender0"
+      ],
+      "senderGroup": false
+    },
+    {
+      "name": "valid foreign cigar cannot authenticate claimed sender",
+      "body": "source.wrong",
+      "attachments": "-CAi-MAhBAOhB7_zzhC-HXDdGOdLwJln5NYwm6UNXx3chmQSVTG40BBa7R6muSlScV1Ms7tpgP2Aa1R8g7InzdfUQwRa9eyLDZ9htx7lS77jNQu3Iivr2iyq8hmYHE70HODlaaZYpgEF",
+      "verified": [],
+      "kind": "unverified",
+      "senderGroup": false
+    },
+    {
+      "name": "sender signatures in foreign groups cannot authenticate sender",
+      "body": "source.wrong",
+      "attachments": "-CBS-XAuECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoNMAAAECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN-KAWABBAZbZ6vmEFY-O66zKEwmgbDvVGrRAZYBsHioOO9hKsF0TUac1C0Gd9hNBO9OH_Fbu7uqx653XF_uasPLVGycsA-YAiECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN-KAWAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwL",
+      "verified": [],
+      "kind": "unverified",
+      "senderGroup": false
+    }
+  ]
+}
