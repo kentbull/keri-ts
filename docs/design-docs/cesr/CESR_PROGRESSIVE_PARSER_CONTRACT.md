@@ -10,7 +10,7 @@ Nested GenericGroups delegate through `yield*` and deliver complete children
 before their enclosing payload finishes. There is no synchronous stream engine.
 The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) maps the
 implemented lifecycle to tests. Parent-owned trees, serialization, and finite
-annotation and v2 forwarding are implemented. Other nested runtime routes,
+annotation, v2 forwarding, and the four supported nested multisig routes are implemented. Other nested runtime routes,
 shared runtime reservations, and final qualification remain follow-ons.
 
 The parser materializes bodies and ordinary attachment leaves through the existing

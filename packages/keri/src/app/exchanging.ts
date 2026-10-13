@@ -1,5 +1,6 @@
 import {
   type AttachmentGroup,
+  b,
   type CesrFrame,
   type Cigar,
   Dater,
@@ -22,7 +23,7 @@ import { Deck } from "../core/deck.ts";
 import { PathedMaterialGroup, TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
-import { exchange as exchangeMessage } from "../core/protocol-exchanging.ts";
+import { exchange as exchangeMessage, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
 import {
@@ -331,7 +332,8 @@ export class Exchanger {
     }
     if (
       (args.nests?.length || retainedNests)
-      && (args.serder.pvrsn.major < 2 || args.serder.route !== "/fwd" || !handler?.acceptsNests)
+      && (args.serder.pvrsn.major < 2 || !handler?.acceptsNests
+        || (args.serder.route !== "/fwd" && !nestedMultisigIlks(args.serder.route ?? "")))
     ) {
       return reject("Nested exchange route is not implemented.");
     }
@@ -439,9 +441,23 @@ export class Exchanger {
   /** Retry each bounded escrow inside one structured child scope. */
   private *retryEscrows(): Operation<void> {
     if (this.processing) throw new ValidationError("Exchanger has an active admission.");
-    for (const [keys, serder] of this.hby.db.epse.getTopItemIter()) {
-      const said = keys[0];
-      if (!said) continue;
+    let end: Uint8Array | undefined;
+    // Capture a finite key horizon without retaining bodies or holding a cursor across mutations.
+    for (const key of this.hby.db.epse.sdb.getKeys({ reverse: true, limit: 1 })) {
+      end = b(`${textDecoder.decode(key)}\0`);
+    }
+    if (!end) return;
+    let start: Uint8Array | undefined;
+    for (;;) {
+      let said: string | undefined;
+      for (const key of this.hby.db.epse.sdb.getKeys({ start, end, limit: 1 })) {
+        said = textDecoder.decode(key);
+      }
+      if (!said) break;
+      // A zero suffix sorts immediately after this ASCII SAID and before the next SAID.
+      start = b(`${said}\0`);
+      const serder = this.hby.db.epse.get([said]);
+      if (!serder) throw new Error("Exchange escrow disappeared during retry.");
       const dater = this.hby.db.epsd.get([said]);
       if (!dater || Date.now() - new Date(dater.dts).getTime() > EXCHANGE_ESCROW_TIMEOUT_MS) {
         yield* call(() => this.dropEscrow(said));

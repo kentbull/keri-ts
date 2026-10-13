@@ -78,7 +78,7 @@ export function* proposeGroupEndpointRole(
   yield* runtime.reactor.processBytes(localRpy, { local: true });
   yield* runtime.reactor.processEscrowsOnce();
 
-  const [exn, attachments] = multisigRpyExn(groupHab, member, localRpy);
+  const [exn, attachments] = yield* multisigRpyExn(groupHab, member, localRpy);
   const deliveries = yield* publishEndpointRoleProposal(
     runtime,
     member,

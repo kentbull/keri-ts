@@ -6,11 +6,33 @@
  * own group key-event counseling; local group habitat state still lives under
  * `Habery.makeGroupHab(...)`, `Baser.habs`, and the keeper member stores.
  */
-import { Counter, type Kind, parsePather, Prefixer, Saider, SerderKERI, type Versionage } from "cesr-ts";
-import { exchange } from "../core/protocol-exchanging.ts";
-import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
+import {
+  type CesrFrame,
+  collectPayload,
+  concatBytes,
+  Counter,
+  discardFrame,
+  type Kind,
+  nestedPayload,
+  parseBytes,
+  parsePather,
+  Prefixer,
+  Saider,
+  SerderKERI,
+  type Versionage,
+  Vrsn_1_0,
+  Vrsn_2_0,
+} from "cesr-ts";
+import { toEffectionFrames } from "cesr-ts/effection";
+import { call, each, type Operation } from "effection";
+import { Kevery } from "../core/eventing.ts";
+import { exchange, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
+import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
+import { abortable } from "./abortable.ts";
+import { Exchanger, type ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "./parsering.ts";
 
 /** KERIpy multisig route constants. */
 export const MULTISIG_ICP_ROUTE = "/multisig/icp";
@@ -41,6 +63,8 @@ interface RawMessage {
 }
 
 export interface MultisigBuilderOptions {
+  /** Explicit attachment genus for a v1 child carried under a v2 wrapper. */
+  childGvrsn?: Versionage;
   stamp?: string;
   date?: string;
   version?: Versionage;
@@ -49,6 +73,7 @@ export interface MultisigBuilderOptions {
   kind?: Kind;
 }
 
+/** Unsigned wrapper plus supplemental path/child bytes; enclose these with parent signatures when sending v2. */
 export type MultisigMessage = readonly [serder: SerderKERI, attachments: Uint8Array];
 
 export type MultisigDecision =
@@ -85,14 +110,14 @@ export interface MultisigHandlerOptions {
 }
 
 /** Coordinate one proposed group inception event. */
-export function multisigInceptExn(
+export function* multisigInceptExn(
   member: Hab,
   smids: readonly string[],
   rmids: readonly string[] | null,
   icp: Uint8Array | RawMessage,
   delegator?: string | null,
   options: MultisigBuilderOptions = {},
-): MultisigMessage {
+): Operation<MultisigMessage> {
   const icpBytes = rawMessage(icp);
   const serder = new SerderKERI({ raw: icpBytes });
   const attrs: Record<string, unknown> = {
@@ -104,46 +129,49 @@ export function multisigInceptExn(
     attrs.delegator = delegator;
   }
 
-  return exchange(MULTISIG_ICP_ROUTE, attrs, {
-    ...exchangeOptions(member, options),
-    embeds: { icp: icpBytes },
-  });
+  return yield* multisigEventExn(member, MULTISIG_ICP_ROUTE, attrs, icpBytes, options);
 }
 
 /** Coordinate one proposed group rotation event. */
-export function multisigRotateExn(
+export function* multisigRotateExn(
   group: string | Hab,
   member: Hab,
   smids: readonly string[],
   rmids: readonly string[],
   rot: Uint8Array | RawMessage,
   options: MultisigBuilderOptions = {},
-): MultisigMessage {
-  return exchange(MULTISIG_ROT_ROUTE, {
-    gid: groupPrefix(group),
-    smids: [...smids],
-    rmids: [...rmids],
-  }, {
-    ...exchangeOptions(member, options),
-    embeds: { rot: rawMessage(rot) },
-  });
+): Operation<MultisigMessage> {
+  return yield* multisigEventExn(
+    member,
+    MULTISIG_ROT_ROUTE,
+    {
+      gid: groupPrefix(group),
+      smids: [...smids],
+      rmids: [...rmids],
+    },
+    rawMessage(rot),
+    options,
+  );
 }
 
 /** Coordinate one proposed group interaction event. */
-export function multisigInteractExn(
+export function* multisigInteractExn(
   group: string | Hab,
   member: Hab,
   aids: readonly string[],
   ixn: Uint8Array | RawMessage,
   options: MultisigBuilderOptions = {},
-): MultisigMessage {
-  return exchange(MULTISIG_IXN_ROUTE, {
-    gid: groupPrefix(group),
-    smids: [...aids],
-  }, {
-    ...exchangeOptions(member, options),
-    embeds: { ixn: rawMessage(ixn) },
-  });
+): Operation<MultisigMessage> {
+  return yield* multisigEventExn(
+    member,
+    MULTISIG_IXN_ROUTE,
+    {
+      gid: groupPrefix(group),
+      smids: [...aids],
+    },
+    rawMessage(ixn),
+    options,
+  );
 }
 
 /** Coordinate one proposed multisig credential-registry inception. */
@@ -210,18 +238,21 @@ export function multisigRevokeExn(
 }
 
 /** Coordinate one proposed multisig reply event. */
-export function multisigRpyExn(
+export function* multisigRpyExn(
   group: string | Hab,
   member: Hab,
   rpy: Uint8Array | RawMessage,
   options: MultisigBuilderOptions = {},
-): MultisigMessage {
-  return exchange(MULTISIG_RPY_ROUTE, {
-    gid: groupPrefix(group),
-  }, {
-    ...exchangeOptions(member, options),
-    embeds: { rpy: rawMessage(rpy) },
-  });
+): Operation<MultisigMessage> {
+  return yield* multisigEventExn(
+    member,
+    MULTISIG_RPY_ROUTE,
+    {
+      gid: groupPrefix(group),
+    },
+    rawMessage(rpy),
+    options,
+  );
 }
 
 /** Wrap one business EXN, such as `/ipex/grant`, for group approval. */
@@ -239,22 +270,62 @@ export function multisigExn(
   });
 }
 
+/** Build one finite proposal using legacy pathed evidence or the frozen v2 signed-child commitment. */
+function* multisigEventExn(
+  member: Hab,
+  route: MultisigRoute,
+  attrs: Record<string, unknown>,
+  wire: Uint8Array,
+  options: MultisigBuilderOptions,
+): Operation<MultisigMessage> {
+  const version = options.pvrsn ?? options.version ?? Vrsn_1_0;
+  const field = route.slice(route.lastIndexOf("/") + 1);
+  if (version.major === 1) {
+    return exchange(route, attrs, { ...exchangeOptions(member, options), embeds: { [field]: wire } });
+  }
+  return yield* abortable(async (signal) => {
+    const body = new SerderKERI({ raw: wire });
+    const genus = options.childGvrsn ?? body.gvrsn ?? body.pvrsn;
+    // This complete-input builder is finite; large transfer consumers serialize owned frames directly.
+    const frames = await parseBytes(concatBytes(Counter.makeGVC(genus), wire), { signal });
+    try {
+      const child = frames[0];
+      if (
+        frames.length !== 1 || !child.body.said || !nestedMultisigIlks(route)?.includes(child.body.ilk ?? "")
+        || child.nests?.length
+      ) throw new Error("Multisig proposal requires one supported direct child.");
+      const serder = exchange(route, { ...attrs, [field]: child.body.said }, exchangeOptions(member, options))[0];
+      return [serder, await collectPayload(nestedPayload(child, Vrsn_2_0), 8 * 1024 ** 2, signal)] as const;
+    } finally {
+      for (const frame of frames) await discardFrame(frame);
+    }
+  });
+}
+
 /** Route handler that forwards accepted multisig EXNs to the `Multiplexor`. */
 export class MultisigNotificationHandler implements ExchangeRouteHandler {
   readonly resource: MultisigRoute;
   private readonly mux: Multiplexor;
 
+  /** Bind one registered route to its shared approval coordinator. */
   constructor(resource: MultisigRoute, mux: Multiplexor) {
     this.resource = resource;
     this.mux = mux;
   }
 
-  verify(args: { serder: SerderKERI }): boolean {
-    return args.serder.route === this.resource && this.mux.verify(args.serder);
+  /** Only the four frozen-reference v2 routes have child consumers. */
+  get acceptsNests(): boolean {
+    return nestedMultisigIlks(this.resource) !== null;
   }
 
-  handle(args: { serder: SerderKERI }): void {
-    this.mux.add(args.serder);
+  /** Authenticate the signed child relationship before exchange evidence is published. */
+  verify(args: { serder: SerderKERI; nests?: readonly CesrFrame[] }): boolean {
+    return args.serder.route === this.resource && this.mux.verify(args.serder, args.nests);
+  }
+
+  /** Borrow persisted children until approval replay and coordination indexing finish. */
+  *handle(args: { serder: SerderKERI; nests?: readonly CesrFrame[] }): Operation<void> {
+    yield* this.mux.add(args.serder, args.nests);
   }
 }
 
@@ -280,17 +351,29 @@ export function loadMultisigHandlers(
 export class Multiplexor {
   readonly hby: Habery;
   readonly notifier: Notifier | null;
+  /** Approval replay owns separate processors, as in frozen KERIpy Multiplexor. */
+  readonly kvy: Kevery;
+  readonly rvy: Revery;
+  private readonly replay: Exchanger;
 
+  /** Reuse durable group membership and separate child processors without sharing parent proof state. */
   constructor(
     hby: Habery,
     { notifier }: { notifier?: Notifier | null } = {},
   ) {
     this.hby = hby;
     this.notifier = notifier ?? null;
+    const router = new Router();
+    this.rvy = new Revery(hby.db, { rtr: router });
+    new BasicReplyRouteHandler(hby.db, this.rvy).registerReplyRoutes(router);
+    this.kvy = new Kevery(hby.db, { lax: false, local: false, rvy: this.rvy });
+    this.kvy.registerReplyRoutes(router);
+    this.replay = new Exchanger(hby);
   }
 
-  add(serder: SerderKERI): MultisigDecision {
-    const inspection = this.inspect(serder);
+  /** Index an authenticated proposal; child acceptance still requires local approval and its own proofs. */
+  *add(serder: SerderKERI, nests: readonly CesrFrame[] = []): Operation<MultisigDecision> {
+    const inspection = this.inspect(serder, nests);
     if (!inspection.ok) {
       return {
         kind: "reject",
@@ -301,8 +384,17 @@ export class Multiplexor {
     const { said, embeddedSaid, route, sender } = inspection;
     const existing = this.hby.db.meids.get([embeddedSaid]);
     const firstSubmission = existing.length === 0;
-    if (firstSubmission && !this.isLocalHab(sender)) {
-      this.notifier?.add({ r: route, d: said });
+    const submitters = this.hby.db.maids.get([embeddedSaid]);
+    if (!this.isLocalHab(sender)) {
+      if (serder.pvrsn.major === 2 && submitters.some((submitter) => this.isLocalHab(submitter.qb64))) {
+        // The parent is durable, but approval never lends its signatures to the child.
+        yield* this.processApproved(nests);
+      } else {
+        this.notifier?.add(firstSubmission ? { r: route, d: said } : { r: route, d: said, e: embeddedSaid });
+      }
+    } else if (serder.pvrsn.major === 2 && submitters.some((submitter) => !this.isLocalHab(submitter.qb64))) {
+      // Remote evidence can precede approval. Replay one durable wrapper at a time after reopen.
+      for (const prior of existing) yield* call(() => this.replayApproved(prior.qb64));
     }
 
     this.hby.db.meids.add([embeddedSaid], new Saider({ qb64: said }));
@@ -319,30 +411,75 @@ export class Multiplexor {
   }
 
   /** Return true when this wrapper can be accepted for local group work. */
-  verify(serder: SerderKERI): boolean {
-    return this.inspect(serder).ok;
+  verify(serder: SerderKERI, nests: readonly CesrFrame[] = []): boolean {
+    return this.inspect(serder, nests).ok;
   }
 
-  private inspect(serder: SerderKERI): MultisigInspection {
+  /** Process only the approved direct child; arbitrary descendants remain guarded. */
+  private *processApproved(nests: readonly CesrFrame[]): Operation<void> {
+    for (const child of nests) {
+      yield* dispatchEnvelope(envelopeFromFrame(child, true), this.rvy, this.kvy);
+    }
+  }
+
+  /** Reopen original evidence through the exchange replay owner; cancellation joins all temporary files. */
+  private *replayApproved(said: string): Operation<void> {
+    const channel = yield* toEffectionFrames((signal) => this.replay.replay(said, signal), {
+      payloadSink: async (limit, signal) => (await this.hby.db.openPayloads(signal)).files.stage(limit, signal),
+    });
+    for (const frame of yield* each(channel.frames)) {
+      try {
+        const serder = frame.body as SerderKERI;
+        if (!this.verify(serder, frame.nests)) throw new Error("Stored multisig proposal failed revalidation.");
+        yield* this.processApproved(frame.nests ?? []);
+      } finally {
+        yield* call(() => discardFrame(frame));
+      }
+      yield* each.next();
+    }
+  }
+
+  /** Check route, child body commitment, and membership without mutating durable state. */
+  private inspect(serder: SerderKERI, nests: readonly CesrFrame[]): MultisigInspection {
     const said = serder.said ?? "<unknown>";
     const ked = serder.ked;
     if (!ked) {
       return { ok: false, said, reason: "Missing decoded exchange body." };
     }
 
-    const embed = embeddedSection(ked);
-    if (!embed) {
-      return { ok: false, said, reason: "Missing multisig embedded section." };
-    }
-
-    const embeddedSaid = embed["d"];
-    if (typeof embeddedSaid !== "string" || embeddedSaid.length === 0) {
-      return { ok: false, said, reason: "Missing multisig embedded SAID." };
-    }
-
     const sender = serder.pre ?? "";
     const route = serder.route ?? "";
     const payload = payloadSection(ked);
+    let embeddedSaid: string;
+    if (serder.pvrsn.major === 1) {
+      const embed = embeddedSection(ked);
+      if (!embed || typeof embed.d !== "string" || !embed.d || nests.length) {
+        return { ok: false, said, reason: "Missing multisig embedded SAID or unexpected v1 nesting." };
+      }
+      embeddedSaid = embed.d;
+    } else {
+      const allowed = nestedMultisigIlks(route);
+      if (!allowed || nests.length !== 1) {
+        return { ok: false, said, reason: "Unsupported nested multisig route or child count." };
+      }
+      const child = nests[0];
+      const signed = payload[route.slice(route.lastIndexOf("/") + 1)];
+      if (
+        typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "")
+        || !(child.body instanceof SerderKERI) || child.nests?.length
+      ) {
+        return { ok: false, said, reason: "Invalid multisig child kind, descendants, or signed SAID." };
+      }
+      try {
+        if (!child.body.verify() || !child.body.compare(signed)) {
+          return { ok: false, said, reason: "Invalid multisig child digest." };
+        }
+      } catch {
+        return { ok: false, said, reason: "Invalid multisig child commitment." };
+      }
+      embeddedSaid = signed;
+    }
+
     const membership = this.verifyMembership(route, payload);
     if (membership) {
       return { ok: false, said, reason: membership };

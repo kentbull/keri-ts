@@ -54,7 +54,7 @@ Deno.test("multisig builders produce KERIpy route payload and embed shapes", asy
       const rpy = exchangeMessage("/dummy/rpy", { r: true }, { sender: group.pre })[0];
       const [grant] = ipexGrantExn(group, member.pre, "grant", acdc);
 
-      const [micp] = multisigInceptExn(member, [member.pre], [member.pre], icp);
+      const [micp] = yield* multisigInceptExn(member, [member.pre], [member.pre], icp);
       assertEquals(micp.route, MULTISIG_ICP_ROUTE);
       assertEquals(micp.ked?.a, { gid: group.pre, smids: [member.pre], rmids: [member.pre] });
       assertExists((micp.ked?.e as Record<string, unknown>).icp);
@@ -78,7 +78,7 @@ Deno.test("multisig builders produce KERIpy route payload and embed shapes", asy
       assertExists((revExn.ked?.e as Record<string, unknown>).rev);
       assertExists((revExn.ked?.e as Record<string, unknown>).anc);
 
-      const [rpyExn] = multisigRpyExn(group, member, rpy);
+      const [rpyExn] = yield* multisigRpyExn(group, member, rpy);
       assertEquals(rpyExn.route, MULTISIG_RPY_ROUTE);
       assertEquals(rpyExn.ked?.a, { gid: group.pre });
       assertExists((rpyExn.ked?.e as Record<string, unknown>).rpy);
@@ -132,7 +132,7 @@ Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote s
 
       const notifier = new Notifier(hby, { noter });
       const mux = new Multiplexor(hby, { notifier });
-      const decision = mux.add(wrapped);
+      const decision = yield* mux.add(wrapped);
       const embeddedSaid = (wrapped.ked?.e as Record<string, unknown>).d as string;
 
       assertEquals(decision.kind, "accept");
@@ -144,7 +144,7 @@ Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote s
       assertEquals(hby.db.maids.get([embeddedSaid]).map((prefixer) => prefixer.qb64), [remote.pre]);
       assertEquals(notifier.list().map((notice) => notice.attrs), [{ r: MULTISIG_EXN_ROUTE, d: wrapped.said }]);
 
-      assertEquals(mux.add(wrapped).kind, "duplicate");
+      assertEquals((yield* mux.add(wrapped)).kind, "duplicate");
     } finally {
       if (noter.opened) {
         yield* noter.close();
@@ -177,7 +177,7 @@ Deno.test("Multiplexor rejects nonlocal group participation proposals", async ()
       hby.habs.delete(sender.pre);
 
       const mux = new Multiplexor(hby);
-      const decision = mux.add(proposal);
+      const decision = yield* mux.add(proposal);
 
       assertEquals(decision.kind, "reject");
       if (decision.kind !== "reject") {

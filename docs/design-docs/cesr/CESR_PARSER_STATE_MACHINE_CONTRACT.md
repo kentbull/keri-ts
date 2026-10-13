@@ -107,6 +107,9 @@ scoped genera, root/child presentation, exactly-once traversal, and recursive
 ESSR transfer/cleanup on success, failure, and cancellation. Nested runtime
 forwarding preserves evidence through exchange escrow, storage, reopen, and
 replay; `packages/keri/test/unit/app/exchanging-nests.test.ts` covers those
-route and ownership decisions. Other nested routes and HTTP inspection remain
-guarded. A frozen 40-node fixture verifies serialization preserves admitted
+route and ownership decisions. Nested multisig uses the same durable ownership and requires route-specific
+commitments and local approval before child verification/replay.
+`packages/keri/test/unit/app/grouping-nests.test.ts` covers actual two-participant
+approval ordering, child proofs, dependencies, reopen/retry, rollback and cancellation.
+Other nested routes and HTTP inspection remain guarded. A frozen 40-node fixture verifies serialization preserves admitted
 enclosure depth under the default parser limit.

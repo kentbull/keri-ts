@@ -12,6 +12,31 @@ The workload is many smaller ESSR messages in large aggregate transfers. Memory
 must depend on admitted active messages and bounded queues, not transfer size.
 Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 
+## Acceptance matrix for the remaining parser gaps
+
+Verified starting boundary: master `876d24b429780aa6e3aa5ffbf81a3a05b1621d22`
+after #159; frozen upstream authority `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+The seven follow-on phases below are distinct from the original twelve migration
+steps. Follow-on phase 1's identified tables/semantics and phase 2's parent-owned
+parsing are delivered. Phase 3 has delivered serialization, annotation, and
+forwarding/persistence. Phases 4–7 remain incomplete despite their foundations.
+
+| Requirement                                  | Current implementation boundary                                                  | Owning planned PR   | Evidence / completion gate                                                                                                                               | Unresolved limitation                                                                                                                                           |
+| -------------------------------------------- | -------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nested multisig                              | Four routes implemented; publication pending                                     | 3d                  | Frozen route commitments, independent child proofs, approval ordering, dependencies, retry, duplicate, reopen, failed publication and cleanup            | Only frozen `/icp`, `/rot`, `/ixn`, `/rpy` can be enabled; acceptance of a wrapper is not child acceptance                                                      |
+| Nested IPEX                                  | Existing v1 grant/admit and VDR paths; nested routes guarded                     | 3e                  | Real grant/admit workflows and credential/KEL/TEL dependency evidence                                                                                    | No silent evidence loss or legacy pathed v2 acceptance                                                                                                          |
+| V2 non-event admission                       | Direct dispatch bypasses consolidated reference policy                           | 3f                  | Sender allow/deny and optional KRAM intake through actual processing                                                                                     | Frozen `processXip`, `processPro`, `processBar` are stubs; preserve unsupported processing claims                                                               |
+| Shared admission before retention/allocation | Per-stream/tree/recipient limits exist                                           | 4                   | Two streams, one global decryption, slow consumers, pre-read rejection, empty-item caps and exactly-once release                                         | Runtime byte reservations must include native copies, backing buffers, queues and descendants; they are not an exact RSS limit                                  |
+| Durable storage/recovery                     | #159 preserves interoperable `enst.` and ciphertext evidence                     | 5, with 4 admission | Close/reopen, bounded replay, stage/finish/publication/cleanup crash probes                                                                              | LMDB obtains a whole row before checking size; the finite 24 MiB ceiling does not close pre-allocation admission                                                |
+| Production path/backpressure                 | Streaming ingress, forwarding and replay foundations exist                       | 6                   | HTTP/file/TCP through verification, storage and egress; slow sinks, abort, disconnect, EOF, failure and shutdown                                         | Demonstrate first verified usable independent GenericGroup child before enclosing transfer completion; parent-owned children remain dependent                   |
+| Reference environment inventory              | Tables use upstream927; declared runtime qualification uses mailbox fork b08ddeb | 7                   | Inspect macOS, ordinary/extended CI, local harnesses, and embedded DID Webs imports; qualify each applicable pin or explain a retained historical target | Fork-on-main evidence is not unmodified-upstream parity; macOS historical pin requires reconciliation                                                           |
+| Full interoperability and memory envelope    | Structural and small-corpus correctness evidence only                            | 7                   | Maintained full inventory plus repeated fresh-process 16 MiB/256 MiB/1 GiB/4 GiB end-to-end matrix, logical-message probes and variance                  | Measure parsed/verified latency separately and retained/native/mapped memory; failures/skips remain unqualified; extended jobs stay manual with a 15-minute cap |
+| Mapper claimed-SAID verification             | Standalone Mapper accepts the reproduced stale claim                             | Final Mapper PR     | Independent valid/tampered CESR/JSON/CBOR/MGPK fixtures                                                                                                  | Preserve Aggor partial-disclosure and compactification semantics                                                                                                |
+
+Final parity reporting must distinguish supported processing, unfinished work,
+intentional divergences, reference stubs, and unqualified claims. No structural
+parser result closes the full runtime or bounded-memory gates.
+
 ## PR sequence
 
 | Phase | Cohesive change                                                      | Required evidence before completion                                                                | Status                                                      |
@@ -501,9 +526,37 @@ recovery and durable replay. `packages/keri/scripts/qualify-nested-exchange.ts`
 qualifies actual stored rows with frozen Python `927c0cb8`, checking nested
 signature ownership and Python's replacement/handler semantics.
 
-**Remaining runtime slices:** Route-specific multisig checks and dependency
-handling, IPEX workflow evidence, and the affected v2 `processMsg` policy remain
-separate PRs. TS dispatch still bypasses the reference's consolidated non-event
+**3d — multisig (implemented; publication pending):** `/multisig/icp|rot|ixn|rpy`
+requires exactly one child of the frozen allowed ilk, its valid SAID and the
+matching signed route field. V1 aggregation stays keyed by embedded `e.d`; v2
+uses the signed child SAID. Local membership is necessary for coordination, and
+a locally controlled submitter must approve before child replay. Parent proofs
+never satisfy child thresholds. First remote arrivals notify; already approved
+arrivals feed ordinary KEL/reply processors. Later local approval reopens earlier
+remote wrappers. Child dependency/signature escrows remain independent of the
+accepted wrapper and use normal retry turns.
+
+The route slice reuses #159's staged publication and file-owned replay. It also
+fixes exchange retry skipping the next row when a live LMDB iterator's current
+row is removed: each retry closes its key cursor before mutation and advances to
+a captured initial key horizon. Tests retain two real participant stores and
+prove approval order, invalid proofs/commitments, membership and route guards,
+missing dependency/retry, duplicate replacement, reopen, rollback and cancellation.
+`qualify-nested-multisig.ts` checks 12 actual accepted JSON/CBOR/MGPK wrappers with
+frozen upstream927 and reparses Python's serialized children. The reference's
+27 selected v2/approval tests pass independently. These are small-corpus checks,
+not memory/endurance qualification.
+
+The frozen default native EXN builder leaves `ri/x/p` empty and reports local
+verification success even though `SerderKERI(raw=...)` rejects its output.
+Default native multisig builders therefore remain unqualified; TS rejects the
+empty required field. The qualification probe reproduces and reports this case
+instead of counting it as supported. Nested children with further descendants,
+`/multisig/vcp|iss|rev|exn`, and legacy pathed protocol-v2 coordination remain
+guarded. Complete node/tree resource admission remains in follow-ons 4–5.
+
+**Remaining runtime slices:** IPEX workflow evidence and the affected v2
+`processMsg` policy remain separate PRs. TS dispatch still bypasses the reference's consolidated non-event
 allow/deny and optional KRAM intake; no full frozen-runtime parity is claimed.
 Normalization continues to reject other nested roots, including the reference's
 unimplemented `xip/pro/bar` processing stubs. HTTP inspection keeps its own guard
