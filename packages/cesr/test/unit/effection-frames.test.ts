@@ -40,6 +40,7 @@ Deno.test("Effection frames: halting a pending read joins source cleanup", async
   const started = Promise.withResolvers<void>();
   let closed = false;
   let aborted = false;
+  let continued = false; // Cancellation must not resume the caller after a joined cleanup.
   const task = run(function*() {
     const channel = yield* toEffectionFrames(async function*(signal) {
       try {
@@ -57,10 +58,12 @@ Deno.test("Effection frames: halting a pending read joins source cleanup", async
     });
     const subscription = yield* channel.frames;
     yield* subscription.next();
+    continued = true;
   });
   await started.promise;
   await task.halt();
   assertEquals(aborted, true);
+  assertEquals(continued, false);
   assertEquals(closed, true);
 });
 
