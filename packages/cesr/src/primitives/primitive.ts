@@ -1,8 +1,8 @@
 import type { Counter } from "./counter.ts";
 import type { Indexer } from "./indexer.ts";
 import type { Matter } from "./matter.ts";
+import type { OpaqueSpan } from "./opaque.ts";
 import type { Streamer } from "./streamer.ts";
-import type { UnknownPrimitive } from "./unknown.ts";
 
 /**
  * Structural contract used by parser outputs for counted group payloads.
@@ -16,7 +16,7 @@ export interface CounterGroupLike extends Counter {
 }
 
 /** Any first-class hydrated CESR primitive returned by parser hydration. */
-export type Primitive = Matter | Indexer | Counter | UnknownPrimitive;
+export type Primitive = Matter | Indexer | Counter;
 /**
  * Rehydratable qualified primitive from one parsed recursive group graph.
  *
@@ -28,7 +28,7 @@ export type QualifiedPrimitive = Matter | Indexer | Counter;
 /**
  * Primitive family that cipher encryption/decryption can faithfully round-trip.
  *
- * This intentionally excludes `UnknownPrimitive`: sealed-box decrypt returns a
+ * This intentionally excludes `OpaqueSpan`: sealed-box decrypt returns a
  * fully hydrated constructor-backed value, not a parser fallback placeholder.
  */
 export type CipherHydratable = QualifiedPrimitive | Streamer;
@@ -39,7 +39,7 @@ export type CipherHydratableCtor<
 /** Ordered tuple payload used by grouped attachments (for fixed small tuples). */
 export type GroupTuple = readonly GroupEntry[];
 /** Recursive parser graph entry for attachment/native payloads. */
-export type GroupEntry = Primitive | GroupTuple | CounterGroupLike;
+export type GroupEntry = Primitive | GroupTuple | CounterGroupLike | OpaqueSpan;
 
 /** Runtime guard for tuple-shaped group entries. */
 export function isGroupTuple(entry: GroupEntry): entry is GroupTuple {
@@ -59,7 +59,7 @@ export function isCounterGroupLike(
  *
  * This intentionally means "real CESR primitive with `qb64b`" rather than
  * "any parser primitive union member", so tuples, nested counter groups, and
- * `UnknownPrimitive` placeholders are all excluded.
+ * `OpaqueSpan` placeholders are all excluded.
  */
 export function isQualifiedPrimitive(
   entry: unknown,

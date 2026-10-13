@@ -1,6 +1,7 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { codeB64ToB2 } from "../../../src/core/bytes.ts";
+import { assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
+import { codeB64ToB2, concatBytes } from "../../../src/core/bytes.ts";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
+import { OpaqueSpan } from "../../../src/primitives/opaque.ts";
 import { parseStructor, Structor } from "../../../src/primitives/structor.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV2 } from "../../fixtures/counter-token-fixtures.ts";
@@ -17,7 +18,9 @@ Deno.test("structor: hydrates generic list group as class instance", () => {
   assertEquals(structor instanceof Structor, true);
   assertEquals(structor.code, CtrDexV2.GenericListGroup);
   assertEquals(structor.count, payload.length / 4);
-  assertEquals(structor.items.length, 2);
+  assertEquals(structor.items.length, 1);
+  assertInstanceOf(structor.items[0], OpaqueSpan);
+  assertEquals(structor.items[0].raw, txt(payload));
   assertEquals(structor.qb64g, ims);
 });
 
@@ -68,4 +71,20 @@ Deno.test("structor: allowed-code guard rejects mismatched families", () => {
       ),
     UnknownCodeError,
   );
+});
+
+Deno.test("opaque group spans and rebuilt Structors preserve original payload bytes in both domains", () => {
+  for (const domain of ["txt", "bny"] as const) {
+    const payload = domain === "txt"
+      ? new Uint8Array([255, 33, 0, 65, 66, 67, 68, 69])
+      : new Uint8Array([255, 0, 33, 64, 128, 200]);
+    const header = counterV2(CtrDexV2.GenericListGroup, 2);
+    const wire = concatBytes(domain === "txt" ? txt(header) : codeB64ToB2(header), payload);
+    const parsed = parseStructor(wire, V2, domain);
+    assertEquals(parsed.items.length, 1);
+    assertInstanceOf(parsed.items[0], OpaqueSpan);
+    assertEquals(parsed.items[0].raw, payload);
+    assertEquals(parsed.items[0].domain, domain);
+    assertEquals(Structor.fromGroup(parsed, domain).serialized, wire);
+  }
 });

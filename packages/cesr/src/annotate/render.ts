@@ -7,8 +7,8 @@ import { Counter, decodeGenusVersion, parseCounter } from "../primitives/counter
 import { Indexer } from "../primitives/indexer.ts";
 import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
 import { Matter, parseMatter } from "../primitives/matter.ts";
+import { OpaqueSpan } from "../primitives/opaque.ts";
 import { type GroupEntry, isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
-import { UnknownPrimitive } from "../primitives/unknown.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { counterCodeName, counterCodeNameForVersion, matterCodeName, nativeLabelName } from "./comments.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
@@ -113,10 +113,10 @@ function renderGroupItems(
       continue;
     }
 
-    if (item instanceof UnknownPrimitive) {
-      const value = item.sourceDomain === "bny"
-        ? `0x${toHex(item.qb2)}`
-        : item.qb64;
+    if (item instanceof OpaqueSpan) {
+      const value = item.domain === "bny"
+        ? `0x${toHex(item.raw)}`
+        : TEXT_DECODER.decode(item.raw);
       emitLine(lines, value, OPAQUE_WRAPPER_PAYLOAD_COMMENT, indent, options);
       continue;
     }

@@ -3,13 +3,13 @@ import { b } from "../../../src/index.ts";
 import { Counter, CounterGroup } from "../../../src/primitives/counter.ts";
 import { Indexer } from "../../../src/primitives/indexer.ts";
 import { Matter } from "../../../src/primitives/matter.ts";
+import { OpaqueSpan } from "../../../src/primitives/opaque.ts";
 import {
   type GroupEntry,
   isCounterGroupLike,
   isGroupTuple,
   isQualifiedPrimitive,
 } from "../../../src/primitives/primitive.ts";
-import { UnknownPrimitive } from "../../../src/primitives/unknown.ts";
 import {
   KERIPY_COUNTER_VECTORS,
   KERIPY_INDEXER_VECTORS,
@@ -45,7 +45,7 @@ Deno.test("primitive guards: detects rehydratable qualified primitives", () => {
 });
 
 Deno.test("primitive guards: unknown primitive is not tuple/group", () => {
-  const unknown = UnknownPrimitive.fromPayload(
+  const unknown = new OpaqueSpan(
     b("ABCD"),
     "txt",
   );
