@@ -13,6 +13,8 @@ responsibilities into one vague "VC" layer.
 
 - `acdc/regeventing.ts` verifies supplied v2 `rip`/`bup` evidence against already
   accepted KEL state; it owns no fetching, persistence, or issuer-side processing.
+- Internal `acdc/regengine.ts` owns local inception acceptance and anchor escrow,
+  borrowing an issuer's public KEL and RegistryStore without acquiring secrets.
 - `vdr/eventing.ts` owns legacy TEL state processing: registry inception, rotation,
   issue, revoke, accepted-state persistence, and TEL escrows.
 - `db/reger.ts` owns KERIpy-shaped VDR storage and credential/TEL clone helpers.
@@ -94,7 +96,16 @@ restricts cutoff text to timezone-qualified RFC3339 with at most six fractional
 digits and retains exact microseconds; events at the cutoff are included.
 `makeNowIso8601` accepts a caller-supplied `Date` for clock injection, padding its
 milliseconds to six digits. Python accepts a broader datetime grammar. The issuer
-engine and end-to-end production qualification remain unfinished.
+engine's update/retry orchestration and end-to-end production qualification remain unfinished.
+
+The internal inception entry point returns accept, duplicate, anchor escrow or
+typed rejection. It discovers full, fully witnessed KEL seals; stored anchors
+are already caller-verified evidence. One registry transaction stages the body,
+anchor, accepted ordinal/head and escrow removal. Failure rolls back those rows
+before binding the engine instance. Replay cannot rewrite an occupied slot or
+downgrade a head; absent/corrupt accepted bodies propagate as invariant failures.
+Duplicate replay opens no write transaction and remains usable on readonly stores.
+Named services and scheduled retries belong to the remaining registry units.
 
 Existing #168 stores retain their paths, bodies, 32-digit ordinal keys and head
 markers. Readonly opening binds the existing three tables without rewriting or
