@@ -32,12 +32,12 @@ them. Runtime acquisition retains explicit scopes and joined failure cleanup.
 | Runtime acquisition          | Explicit `acdc.rgy` ownership                      |
 
 Pure verifier names match `vet`/`vetBinds`; the local engine accepts anchored
-inceptions/updates with protected slots and heads, explicit escrow retry and
-earliest-anchor resealing. Named v2 Regery/Registry services support creation and
-reopen; a borrowed Registrar stages credential, presentation and vacuous updates.
-Blinded updates extend one unambiguous staged frontier. Presentation validates
-target digest syntax only; IPEX still owns grant authentication, and trailing
-vacuous updates require their disclosures when resolving the effective binding.
+inceptions/updates with protected slots and heads, deterministic sibling retry,
+queued progression and earliest-anchor resealing. Named v2 Regery/Registry services
+support creation and reopen; a borrowed Registrar stages credential, presentation
+and vacuous updates from one unambiguous staged frontier. Presentation validates
+target digest syntax only; IPEX still owns grant authentication. Trailing vacuous
+updates require their disclosures when resolving the effective binding.
 Runtime integration remains unfinished. Ordinals above the safe-integer storage
 range are explicitly unsupported pending the storage phase.
 The [import preservation record][import-record] retains the exact original code.
@@ -106,7 +106,9 @@ If used, port the real feature under its proper owner/name. Otherwise replace
 production/test use with actual reference-aligned intake before removing it;
 retain the design as a deferred TypeScript-specific proposal without an active
 implementation or parity claim. Do not substitute direct accepted-row writes
-for the workflow's validation assertions. Intake correspondence is still open.
+for the workflow's validation assertions. Current main also lacks that receiving
+path. The approved R10 implementation is public observer intake through the
+ported engine, explicitly a TypeScript integration; see the [upstream gap review][gaps].
 
 ## Compatibility and completion gates
 
@@ -148,3 +150,4 @@ Long hosted qualification remains maintainer-only with the 15-minute cap.
 [ipex]: ../exchange/IPEX_PLAN.md
 [kram]: ../exchange/KRAM_PLAN.md
 [import-record]: ../../reference/credentials/VERIFIED_IMPORT_SNAPSHOT.md
+[gaps]: ../../reference/credentials/UPSTREAM_REGISTRY_GAPS.md
