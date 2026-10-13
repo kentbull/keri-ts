@@ -39,8 +39,14 @@ export function* toEffectionFrames(
     function close(): Promise<void> {
       return closing ??= (async () => {
         controller.abort();
-        await pending?.catch(() => undefined);
-        await parser.return(undefined);
+        const unclaimed = await pending?.catch(() => undefined);
+        // Cancellation may win after parsing completes but before next() hands
+        // ownership to its Operation caller. Dispose that one undelivered frame.
+        try {
+          if (unclaimed && !unclaimed.done) await unclaimed.value.essr?.discard();
+        } finally {
+          await parser.return(undefined);
+        }
       })();
     }
 

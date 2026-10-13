@@ -1,4 +1,6 @@
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { run } from "npm:effection@^3.6.0";
+import { toEffectionFrames } from "../../effection.ts";
 import { b, concatBytes, decodeB64, t } from "../../src/core/bytes.ts";
 import { DeserializeError, GroupSizeError, ResourceLimitError, ShortageError } from "../../src/core/errors.ts";
 import { collectPayload, MemoryPayloadSink, type PayloadSink } from "../../src/core/payload.ts";
@@ -360,4 +362,53 @@ Deno.test("attachment wrapper selectors restore genus and empty leaves obey a me
     () => parse(chunks(b(two.selector + two.body + empty + empty)), { maxAttachmentGroups: 1 }).next(),
     ResourceLimitError,
   );
+});
+
+Deno.test("ESSR Effection scope preserves delivered ownership and aborts pending sink writes", async () => {
+  const v = vector(2);
+  // A real wrapped ESSR message uses the same parser path as transport input.
+  const wire = b(
+    v.selector + v.group("BodyWithAttachmentGroup", v.body + v.essr(new Texter({ raw: b("abc"), code: "4B" }).qb64, 1)),
+  );
+  const delivered = await run(function*() {
+    const channel = yield* toEffectionFrames(() => chunks(wire));
+    const subscription = yield* channel.frames;
+    return (yield* subscription.next()).value as CesrFrame;
+  });
+  // Scope teardown must not revoke storage already handed to the caller.
+  assertExists(delivered.essr);
+  assertEquals(await collectPayload(delivered.essr.raw, 3), b("abc"));
+  await delivered.essr.discard();
+
+  const writing = Promise.withResolvers<void>();
+  let abandoned = false;
+  const task = run(function*() {
+    const channel = yield* toEffectionFrames(() => chunks(wire), {
+      payloadSink(limit, signal) {
+        const sink = new MemoryPayloadSink(limit, signal);
+        return {
+          /** Hold a real staging write until scope cancellation reaches the sink. */
+          async write(bytes) {
+            await sink.write(bytes);
+            await new Promise<void>((_resolve, reject) => {
+              signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+              writing.resolve();
+            });
+          },
+          /** Finish only if input reaches its exact frame boundary. */
+          finish: () => sink.finish(),
+          /** Observe joined cleanup without replacing the real storage owner. */
+          async abort() {
+            await sink.abort();
+            abandoned = true;
+          },
+        };
+      },
+    });
+    const subscription = yield* channel.frames;
+    yield* subscription.next();
+  });
+  await writing.promise;
+  await task.halt();
+  assertEquals(abandoned, true);
 });
