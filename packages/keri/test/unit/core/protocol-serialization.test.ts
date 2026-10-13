@@ -121,7 +121,7 @@ Deno.test("protocol v2 signature serialization parses flat, sealed, and nested e
   for (const seal of [undefined, { i: prefix }, { i: prefix, s: "0", d: digest }]) {
     for (const nested of [false, true]) {
       const message = messagize(serder, { sigers, seal, nested, gvrsn: Vrsn_2_0, genusify: true });
-      const events = parseBytes(message, { attachmentDispatchMode: "strict" });
+      const events = parseBytes(message);
       assertEquals(
         events.filter((event) => event.type === "error"),
         [],

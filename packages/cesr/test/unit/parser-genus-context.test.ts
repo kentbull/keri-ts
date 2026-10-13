@@ -109,25 +109,23 @@ Deno.test("explicit genus cannot be replaced by body metadata or alternate-major
     assertEquals(events.map((e) => e.type), ["error"]);
     if (events[0].type === "error") assertInstanceOf(events[0].error, VersionError);
   }
-  for (const mode of ["strict", "compat"] as const) {
-    for (const wire of incompatible) {
-      const events = parseBytes(encode(wire), { attachmentDispatchMode: mode });
-      assertEquals(events.some((e) => e.type === "error"), true, wire);
-    }
-    for (const suffix of ["DAA", "CAB", "CBA"]) {
-      for (const cesr of [encode, decodeB64]) {
-        for (const wrapped of [false, true]) {
-          const selector = "-_AAA" + suffix;
-          const wire = wrapped ? native + groupV2("-C", selector + sig2) : selector + native;
-          const events = parseBytes(cesr(wire), { attachmentDispatchMode: mode });
-          assertEquals(events.map((e) => e.type), ["error"]);
-          if (events[0].type === "error") {
-            assertInstanceOf(events[0].error, VersionError);
-            assertStringIncludes(
-              events[0].error.message,
-              suffix === "DAA" ? "major version 3" : suffix === "CAB" ? "2.1" : "2.64",
-            );
-          }
+  for (const wire of incompatible) {
+    const events = parseBytes(encode(wire));
+    assertEquals(events.some((e) => e.type === "error"), true, wire);
+  }
+  for (const suffix of ["DAA", "CAB", "CBA"]) {
+    for (const cesr of [encode, decodeB64]) {
+      for (const wrapped of [false, true]) {
+        const selector = "-_AAA" + suffix;
+        const wire = wrapped ? native + groupV2("-C", selector + sig2) : selector + native;
+        const events = parseBytes(cesr(wire));
+        assertEquals(events.map((e) => e.type), ["error"]);
+        if (events[0].type === "error") {
+          assertInstanceOf(events[0].error, VersionError);
+          assertStringIncludes(
+            events[0].error.message,
+            suffix === "DAA" ? "major version 3" : suffix === "CAB" ? "2.1" : "2.64",
+          );
         }
       }
     }

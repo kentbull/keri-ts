@@ -4,7 +4,6 @@ import type { CliIo } from "../types.ts";
 interface ValidateCliOptions {
   inPath?: string;
   framed: boolean;
-  attachmentDispatchMode: "strict" | "compat";
   json: boolean;
 }
 
@@ -25,13 +24,12 @@ interface ValidationReport {
   errors: ValidationErrorReport[];
 }
 
-const VALIDATE_USAGE = "Usage: tephra validate [--in <path>] [--framed] [--compat] [--json]";
+const VALIDATE_USAGE = "Usage: tephra validate [--in <path>] [--framed] [--json]";
 
 /** Parse `tephra validate` command-line flags without performing IO. */
 function parseArgs(args: string[]): ValidateCliOptions {
   const out: ValidateCliOptions = {
     framed: false,
-    attachmentDispatchMode: "strict",
     json: false,
   };
 
@@ -46,10 +44,6 @@ function parseArgs(args: string[]): ValidateCliOptions {
     }
     if (arg === "--framed") {
       out.framed = true;
-      continue;
-    }
-    if (arg === "--compat") {
-      out.attachmentDispatchMode = "compat";
       continue;
     }
     if (arg === "--json") {
@@ -90,9 +84,7 @@ function describeError(error: Error): ValidationErrorReport {
 /**
  * Count frames, attachment groups, and parser errors for one input stream.
  *
- * `tephra validate` is strict by default because a validation command should fail
- * on malformed attachments. `--compat` permits opaque wrapper tails but still
- * decodes every attachment under the selected version.
+ * Malformed attachments fail under the selected genus, including wrapper tails.
  *
  * Empty input is reported as a validation failure even though the parser has no
  * malformed bytes to diagnose. A zero-frame stream is not useful evidence that a
@@ -105,7 +97,6 @@ function validateBytes(
 ): ValidationReport {
   const events = parseBytes(bytes, {
     framed: options.framed,
-    attachmentDispatchMode: options.attachmentDispatchMode,
   });
   const frames = events.filter((event) => event.type === "frame");
   const errors = events

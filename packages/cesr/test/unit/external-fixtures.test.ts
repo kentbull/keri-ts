@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { decodeB64, t } from "../../src/core/bytes.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { parseAttachmentDispatch } from "../../src/parser/group-dispatch.ts";
+import { parseAttachmentGroup } from "../../src/parser/attachment-parser.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY, PARSIDE_GROUP_VECTORS } from "../fixtures/external-vectors.ts";
@@ -37,7 +37,7 @@ Deno.test("parside fixtures parse as expected CESR groups", () => {
   ];
 
   for (const entry of cases) {
-    const parsed = parseAttachmentDispatch(
+    const parsed = parseAttachmentGroup(
       encode(entry.vector),
       { major: 1, minor: 0 },
       "txt",
@@ -59,12 +59,12 @@ Deno.test("parside fixtures have qb64/qb2 dispatch parity", () => {
   ];
 
   for (const vector of vectors) {
-    const txt = parseAttachmentDispatch(
+    const txt = parseAttachmentGroup(
       encode(vector),
       { major: 1, minor: 0 },
       "txt",
     );
-    const bny = parseAttachmentDispatch(
+    const bny = parseAttachmentGroup(
       decodeB64(vector),
       { major: 1, minor: 0 },
       "bny",

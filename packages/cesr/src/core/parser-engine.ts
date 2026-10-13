@@ -1,5 +1,4 @@
 import { sniff } from "../parser/cold-start.ts";
-import type { AttachmentDispatchOptions } from "../parser/group-dispatch.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { concatBytes } from "./bytes.ts";
 import { ParserError, ShortageError } from "./errors.ts";
@@ -8,13 +7,11 @@ import { FrameParser } from "./parser-frame-parser.ts";
 import type { CesrFrame, ParseEvent } from "./types.ts";
 
 /**
- * Parser construction options for emission and wrapper-tail recovery.
+ * Parser emission options.
  */
 export interface ParserOptions {
   /** Emit at most one complete frame per feed; never treat a chunk as a frame. */
   framed?: boolean;
-  /** Wrapper-tail recovery mode; attachment dispatch never retries versions. */
-  attachmentDispatchMode?: AttachmentDispatchOptions["mode"];
 }
 
 /**
@@ -38,13 +35,9 @@ export class CesrParser {
   /** Configure frame parsing and attachment collection. */
   constructor(options: ParserOptions = {}) {
     this.framed = options.framed ?? false;
-    const attachmentDispatchMode = options.attachmentDispatchMode ?? "compat";
 
-    this.frameParser = new FrameParser({
-      attachmentDispatchMode,
-    });
+    this.frameParser = new FrameParser();
     this.attachmentCollector = new AttachmentCollector({
-      attachmentDispatchMode,
       startsFrame: (input, gvrsn, cold) => this.frameParser.startsFrame(input, gvrsn, cold),
     });
   }

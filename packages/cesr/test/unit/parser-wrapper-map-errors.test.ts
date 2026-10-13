@@ -1,7 +1,5 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { CounterGroup } from "../../src/primitives/counter.ts";
-import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
@@ -13,7 +11,7 @@ Deno.test("V-P1-002: strict/parity mode rejects opaque tail remainder inside Att
   const wrappedAttachmentGroup = `${counterV2(CtrDexV2.AttachmentGroup, payload.length / 4)}${payload}`;
   const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedAttachmentGroup}`;
 
-  const parser = createParser({ attachmentDispatchMode: "strict" });
+  const parser = createParser();
   const events = [...parser.feed(encode(stream)), ...parser.flush()];
   const errors = events.filter((event) => event.type === "error");
   const frames = events.filter((event) => event.type === "frame");
@@ -24,38 +22,6 @@ Deno.test("V-P1-002: strict/parity mode rejects opaque tail remainder inside Att
     assertEquals(errors[0].error.name, "DeserializeError");
     assertStringIncludes(errors[0].error.message, "Invalid counter text input");
   }
-});
-
-Deno.test("supplemental: compat mode preserves opaque tail remainder inside AttachmentGroup wrapper payload", () => {
-  const nested = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
-  const payload = `${nested}ABCD`; // valid nested group + opaque tail quadlet
-  const wrappedAttachmentGroup = `${counterV2(CtrDexV2.AttachmentGroup, payload.length / 4)}${payload}`;
-  const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedAttachmentGroup}`;
-
-  const parser = createParser({ attachmentDispatchMode: "compat" });
-  const events = [...parser.feed(encode(stream)), ...parser.flush()];
-  const errors = events.filter((event) => event.type === "error");
-  const frames = events.filter((event) => event.type === "frame");
-
-  assertEquals(errors.length, 0);
-  assertEquals(frames.length, 1);
-  assertEquals(frames[0].frame.attachments.length, 1);
-
-  const attachment = frames[0].frame.attachments[0];
-  assertEquals(attachment.code, CtrDexV2.AttachmentGroup);
-  assertEquals(attachment.items.length, 2);
-  assertEquals(
-    attachment.items.some(
-      (item) => item instanceof CounterGroup && item.name === "ControllerIdxSigs",
-    ),
-    true,
-  );
-  assertEquals(
-    attachment.items.some(
-      (item) => item instanceof UnknownPrimitive && item.qb64 === "ABCD",
-    ),
-    true,
-  );
 });
 
 Deno.test("V-P1-003: parser rejects MapBodyGroup with dangling label and no value", () => {

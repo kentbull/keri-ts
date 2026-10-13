@@ -61,7 +61,6 @@ export class Reactor {
     this.exchanger = new Exchanger(hby, { cues: this.cues });
     this.parser = createParser({
       framed: false,
-      attachmentDispatchMode: "compat",
     });
     this.local = local;
     this.vdr = vdr;

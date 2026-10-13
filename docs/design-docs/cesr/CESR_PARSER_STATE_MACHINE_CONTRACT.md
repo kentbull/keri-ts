@@ -104,7 +104,7 @@ boundaries; there is no fixed signature-size assumption.
 If fewer bytes than the declared payload have arrived, parsing raises
 `ShortageError` and waits. Once that payload is complete, an incomplete inner
 primitive, tuple, or nested group is a `GroupSizeError`: following bytes cannot
-repair it. Strict and compat wrapper modes both propagate this boundary error.
+repair it. Wrappers propagate this boundary error.
 Old v2 fixtures that used item counts are invalid; no fallback accepts them.
 
 Coverage: `packages/cesr/test/unit/parser-count-units.test.ts` and the KERI
@@ -133,7 +133,7 @@ resolved genus for counters and attachments, never the body's protocol version.
   stream head. Boundary lookahead and native token probes use the resolved genus
   once. Selected streams and enclosed payloads never retry under another major.
 - Non-native opaque-body recovery cannot hide a recognized header's version
-  incompatibility. Strict and compat modes obey the same genus rules.
+  incompatibility. All parsing obeys these genus rules.
 
 Selectors use one major sextet plus two minor sextets; `decodeGenusVersion()`
 remains the sole decoder. Fixtures use `Counter.makeGVC()` except when testing
@@ -150,7 +150,7 @@ deserialization failures, and invalid primitives must not trigger a retry under 
 different major version. In particular, malformed v1 `ControllerIdxSigs` must not
 be accepted as an opaque v2 `GenericGroup` because both use `-A`.
 
-Strict/compat mode controls wrapper-tail recovery only. Explicit scoped
+Malformed wrapper tails are rejected; there is no recovery mode. Explicit scoped
 `KERIACDCGenusVersion` selectors remain supported. Frame-start recognition and
 legacy implicit-v1 behavior are separate from attachment dispatch.
 
@@ -199,7 +199,7 @@ must update this contract and the mapped tests in the matrix.
 - ESSR v1 counts Texter items; ESSR v2 counts payload quadlets (text) or triplets
   (binary). Both hydrate Texters before KERI envelope normalization.
 - Genus selectors carry one major sextet and two minor sextets. Unsupported
-  versions fail without coercion or compat-wrapper recovery.
+  versions fail without coercion or wrapper recovery.
 - Transferable signature groups require the selected version's ControllerIdxSigs
   counter internally. Witness counters and big inner counters are rejected to
   match the pinned KERIpy parser; top-level big signature counters remain valid.

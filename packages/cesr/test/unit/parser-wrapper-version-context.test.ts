@@ -52,7 +52,7 @@ Deno.test("V-P1-008: strict mode rejects nested mixed-version wrapper groups tha
   const wrappedV1Attachment = `${counterV1(CtrDexV1.AttachmentGroup, v2OnlyNested.length / 4)}${v2OnlyNested}`;
   const stream = `${body}${wrappedV1Attachment}`;
 
-  const parser = createParser({ attachmentDispatchMode: "strict" });
+  const parser = createParser();
   const events = [...parser.feed(encode(stream)), ...parser.flush()];
   const errors = events.filter((event) => event.type === "error");
   const frames = events.filter((event) => event.type === "frame");
@@ -72,7 +72,7 @@ Deno.test("V-P1-010: latest genus-version inside wrapper payload controls subseq
   const wrapper = wrapQuadletGroupV2(CtrDexV2.AttachmentGroup, payload);
   const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrapper}`;
 
-  const parser = createParser({ attachmentDispatchMode: "strict" });
+  const parser = createParser();
   const events = [...parser.feed(encode(stream)), ...parser.flush()];
   const errors = events.filter((event) => event.type === "error");
   const frames = events.filter((event) => event.type === "frame");

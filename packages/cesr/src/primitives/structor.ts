@@ -16,7 +16,7 @@
 import { b, codeB64ToB2, encodeB64, t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { CesrDomain } from "../core/types.ts";
-import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
+import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CounterGroup } from "./counter.ts";
 import type { Counter } from "./counter.ts";
@@ -133,7 +133,7 @@ export function parseStructor(
   allowedCodes?: ReadonlySet<string>,
   expectedFamily = "structor",
 ): Structor {
-  const parsed = parseAttachmentDispatch(input, version, cold);
+  const parsed = parseAttachmentGroup(input, version, cold);
   if (allowedCodes && !allowedCodes.has(parsed.group.code)) {
     throw new UnknownCodeError(
       `Expected ${expectedFamily} group code, got ${parsed.group.code}`,

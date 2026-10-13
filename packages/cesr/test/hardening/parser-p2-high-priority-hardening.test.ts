@@ -3,7 +3,6 @@ import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { createParser, type ParserOptions } from "../../src/core/parser-engine.ts";
 import type { ParseEvent } from "../../src/core/types.ts";
 import { Counter } from "../../src/primitives/counter.ts";
-import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
@@ -163,7 +162,6 @@ Deno.test(
     const frames = parseFramesNoError(
       input,
       splitIntoThirds(input),
-      { attachmentDispatchMode: "strict" },
     );
     const majors = frames.map((event) => event.type === "frame" ? event.frame.body.pvrsn.major : -1);
     assertEquals(majors, [1, 2, 1, 2]);
@@ -273,7 +271,7 @@ Deno.test(
 );
 
 Deno.test(
-  "V-P2-015: malformed wrapper payload is fail-fast in strict mode and recoverable in compat mode",
+  "V-P2-015: malformed wrapper payload fails without publishing a partial frame",
   () => {
     const nested = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
     const malformedPayload = `${nested}ABCD`;
@@ -285,29 +283,10 @@ Deno.test(
     const strictEvents = parseEvents(
       encode(stream),
       [],
-      { attachmentDispatchMode: "strict" },
     );
     const strictFrames = strictEvents.filter((event) => event.type === "frame");
     const strictErrors = strictEvents.filter((event) => event.type === "error");
     assertEquals(strictFrames.length, 0);
     assertEquals(strictErrors.length, 1);
-
-    const compatFrames = parseFramesNoError(
-      encode(stream),
-      [],
-      { attachmentDispatchMode: "compat" },
-    );
-    assertEquals(compatFrames.length, 2);
-    if (compatFrames[0].type === "frame") {
-      assertEquals(compatFrames[0].frame.attachments.length, 1);
-      const items = compatFrames[0].frame.attachments[0].items;
-      assert(
-        items.some((item) => item instanceof UnknownPrimitive && item.qb64 === "ABCD"),
-      );
-    }
-    if (compatFrames[1].type === "frame") {
-      assertEquals(compatFrames[1].frame.attachments.length, 0);
-      assertEquals(compatFrames[1].frame.body.ilk, "icp");
-    }
   },
 );

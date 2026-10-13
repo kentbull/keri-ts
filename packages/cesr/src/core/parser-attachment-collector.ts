@@ -1,14 +1,12 @@
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
-import type { AttachmentDispatchMode } from "../parser/group-dispatch.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { ColdStartError, ShortageError } from "./errors.ts";
 import { isCesrDomain } from "./parser-constants.ts";
 import type { AttachmentGroup, CesrDomain } from "./types.ts";
 
-/** Attachment decoding mode and recognition of the next body. */
+/** Recognition of the next body. */
 interface AttachmentCollectorOptions {
-  attachmentDispatchMode: AttachmentDispatchMode;
   startsFrame: (
     input: Uint8Array,
     gvrsn: Versionage,
@@ -25,7 +23,6 @@ export interface CollectAttachmentsResult {
 
 /** Collect a message's attachments identically on initial and resumed feeds. */
 export class AttachmentCollector {
-  private readonly attachmentDispatchMode: AttachmentDispatchMode;
   private readonly startsFrame: (
     input: Uint8Array,
     gvrsn: Versionage,
@@ -33,7 +30,6 @@ export class AttachmentCollector {
   ) => boolean;
 
   constructor(options: AttachmentCollectorOptions) {
-    this.attachmentDispatchMode = options.attachmentDispatchMode;
     this.startsFrame = options.startsFrame;
   }
 
@@ -80,7 +76,6 @@ export class AttachmentCollector {
           input.slice(offset),
           gvrsn,
           nextCold,
-          { mode: this.attachmentDispatchMode },
         );
         attachments.push(group);
         offset += consumed;

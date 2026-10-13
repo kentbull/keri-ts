@@ -2,8 +2,8 @@ import { b, codeB2ToB64, intToB64, t } from "../core/bytes.ts";
 import { DeserializeError, SerializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { type Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
+import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
-import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
 import { Aggor, isAggorListCode, isAggorMapCode, parseAggor } from "../primitives/aggor.ts";
 import { Bexter } from "../primitives/bexter.ts";
 import {
@@ -543,7 +543,7 @@ function decodeList(raw: Uint8Array, gvrsn: Versionage): MapperValue[] {
   while (offset < payload.length) {
     const chunk = b(payload.slice(offset));
     try {
-      const parsed = parseAttachmentDispatch(chunk, gvrsn, "txt");
+      const parsed = parseAttachmentGroup(chunk, gvrsn, "txt");
       out.push(decodeEntry(parsed.group, gvrsn));
       offset += parsed.consumed;
       continue;

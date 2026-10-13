@@ -1,7 +1,7 @@
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { decodeB64 } from "../../src/core/bytes.ts";
 import { UnknownCodeError } from "../../src/core/errors.ts";
-import { parseAttachmentDispatch, parseAttachmentDispatchCompat } from "../../src/parser/group-dispatch.ts";
+import { parseAttachmentGroup } from "../../src/parser/attachment-parser.ts";
 import { supportedPrimitiveCodes } from "../../src/primitives/registry.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {
@@ -43,7 +43,7 @@ Deno.test("primitive registry includes extended KERIpy codex entries", () => {
 
 Deno.test("dispatch parses v2 controller indexed signatures group", () => {
   const ims = `-KAW${sigerToken()}`;
-  const parsed = parseAttachmentDispatch(encode(ims), {
+  const parsed = parseAttachmentGroup(encode(ims), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -55,7 +55,7 @@ Deno.test("dispatch parses v2 controller indexed signatures group", () => {
 Deno.test("dispatch parses v2 trans indexed sig group", () => {
   const payload = `${token("B")}${token("M")}${token("E")}-KAW${sigerToken()}`;
   const ims = `${counterV2("-X", payload.length / 4)}${payload}`;
-  const parsed = parseAttachmentDispatch(encode(ims), {
+  const parsed = parseAttachmentGroup(encode(ims), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -67,7 +67,7 @@ Deno.test("dispatch parses v2 trans indexed sig group", () => {
 Deno.test("dispatch parses nested attachment wrapper", () => {
   const nested = `-KAW${sigerToken()}`;
   const ims = `${counterV2("-C", nested.length / 4)}${nested}`;
-  const parsed = parseAttachmentDispatch(encode(ims), {
+  const parsed = parseAttachmentGroup(encode(ims), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -87,24 +87,20 @@ Deno.test("attachment dispatch rejects undeclared major versions in both modes",
   const code = selectV2OnlyQuadletGroupCode();
   const ims = `${counterV2(code, 1)}AAAA`;
 
-  for (const mode of ["strict", "compat"] as const) {
-    assertThrows(
-      () => parseAttachmentDispatchCompat(encode(ims), { major: 1, minor: 0 }, "txt", { mode }),
-      UnknownCodeError,
-    );
-  }
+  assertThrows(
+    () => parseAttachmentGroup(encode(ims), { major: 1, minor: 0 }, "txt"),
+    UnknownCodeError,
+  );
 });
 
 Deno.test("malformed v1 signatures cannot be reinterpreted as a v2 GenericGroup", () => {
   // -A is ControllerIdxSigs in v1, but GenericGroup in v2.
   const malformed = "-AABzzzz";
-  for (const mode of ["strict", "compat"] as const) {
-    for (const domain of ["txt", "bny"] as const) {
-      const input = domain === "txt" ? encode(malformed) : decodeB64(malformed);
-      assertThrows(
-        () => parseAttachmentDispatchCompat(input, { major: 1, minor: 0 }, domain, { mode }),
-        UnknownCodeError,
-      );
-    }
+  for (const domain of ["txt", "bny"] as const) {
+    const input = domain === "txt" ? encode(malformed) : decodeB64(malformed);
+    assertThrows(
+      () => parseAttachmentGroup(input, { major: 1, minor: 0 }, domain),
+      UnknownCodeError,
+    );
   }
 });

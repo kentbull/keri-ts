@@ -24,7 +24,6 @@ function firstEnvelope(
 ): ReturnType<typeof envelopesFromFrames>[number] {
   const parser = createParser({
     framed: false,
-    attachmentDispatchMode: "compat",
   });
   const envelopes = envelopesFromFrames([...parser.feed(bytes), ...parser.flush()], false);
   const envelope = envelopes[0];

@@ -43,7 +43,6 @@ function registerBenchmarkCmds(
         0,
       )
       .option("--framed", "Use framed parser mode")
-      .option("--compat", "Use compat attachment dispatch mode")
       .option(
         "--allow-errors",
         "Do not fail benchmark if parse errors are emitted",
@@ -60,7 +59,6 @@ function registerBenchmarkCmds(
         warmupIterations: options.warmup,
         chunkSize: options.chunkSize,
         framed: options.framed || false,
-        compat: options.compat || false,
         allowErrors: options.allowErrors || false,
         json: options.json || false,
       }),
