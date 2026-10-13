@@ -1,12 +1,12 @@
 # ADR-0012: Progressive Nested Parsing and Bounded Payload Storage
 
-- Status: Accepted design; progressive frame traversal implemented, migration in progress
+- Status: Accepted; progressive engine implemented, full runtime qualification pending
 - Date: 2026-10-12
 - Scope: CESR parsing and its KERI transport, payload, and storage boundaries
 - Replaces: the long-term architecture decision in
-  [ADR-0001](adr-0001-parser-atomic-bounded-first.md), after migration
-- Contract: [progressive parser target](../design-docs/cesr/CESR_PROGRESSIVE_PARSER_CONTRACT.md)
-- Execution: [phased plan](../design-docs/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md)
+  [ADR-0001](adr-0001-parser-atomic-bounded-first.md)
+- Contract: [progressive parser ownership](../design-docs/cesr/CESR_PROGRESSIVE_PARSER_CONTRACT.md)
+- Execution: [parity roadmap](../plans/PARITY_ROADMAP.md)
 
 ## Context
 

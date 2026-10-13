@@ -55,9 +55,11 @@ Compaction rules:
 
 - Treat learnings as rehydration memory, not audit history
 - Prefer rewrite-in-place over append-only growth
-- Update `Current State` and `Current Follow-Ups` before adding milestones
-- Add milestones only for durable changes in ownership, invariants, parity
-  rules, architecture boundaries, or remaining-work shape
+- Update the owning subject in place; do not append milestone or session diaries
+- Keep execution in `docs/plans`, behavior in `docs/design-docs`, dated evidence
+  in `docs/reports`, and examples/inventories in `docs/reference`
+- Use `docs/README.md` for subject routing and `docs/plans/PARITY_ROADMAP.md`
+  for the existing parity sequence
 - If a doc grows noisy, compact it before splitting it
 - If a topic doc grows past roughly 250 lines, split only when doing so improves
   clarity

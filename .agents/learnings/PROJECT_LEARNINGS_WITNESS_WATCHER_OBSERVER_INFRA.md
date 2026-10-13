@@ -1,211 +1,51 @@
-# PROJECT_LEARNINGS_WITNESS_WATCHER_OBSERVER_INFRA
+# Infrastructure and qualification learnings
 
-## Purpose
+## Honest test evidence
 
-Persistent learnings for witness, watcher, and observer infrastructure, CI,
-release, and interoperability operations.
+The maintained inventory in scripts/ci/keri-test-suites.ts owns files; the runner
+enforces missing/duplicate/unowned coverage. Audit is not execution. Parallelize
+only truly isolated files; runtime/server/stateful/interop lanes stay serial until
+their assumptions change. Preserve participant topology and semantic assertions.
 
-## Current State
+Witness harnesses use temporary copied configs and bind-checked randomized ports.
+Track children before readiness waits and report their output on startup failure.
+Probe OOBIs, not nonexistent health endpoints; resolve both controller and witness
+OOBIs. Proved controller/witness combinations do not imply untested KLI replacement
+or arbitrary topology. The six-witness soak is manual, outside merge CI.
 
-1. Witness interop now has a real explicit-harness seam. The `interop-witness`
-   lane boots actual KERIpy witnesses from temp-copied configs with randomized
-   localhost ports instead of relying on fixed-port demos.
-2. Explicit KERIpy witness hosts should be treated as OOBI-served services, not
-   `/health`-served services; readiness should probe controller or witness OOBI
-   URLs.
-3. Witness-node discovery needs both controller and witness OOBIs. Resolving
-   only the witness OOBI is not enough for stable receipt/query interop.
-4. The currently proved witness matrix is:
-   - `tufa` controller with only KERIpy witnesses, including cut/add rotation
-     and receipt convergence
-   - KLI/KERIpy controller with only KERIpy witnesses across repeated
-     same-witness rotations
-   - `tufa` controller with mixed `tufa` + KERIpy witnesses, including
-     cross-implementation replacement
-5. The 6-witness KERIpy soak is intentionally manual/nightly, not default CI.
-6. Infra work inherits the same DB ordering and duplicate-semantics model as the
-   rest of the project.
-7. Formatting policy is `dprint`, and CI/release paths should enforce
-   `deno task fmt:check`.
-8. PR CI is stage-gated and pinned closely enough to local expectations that
-   GitHub Actions can serve as honest interop evidence rather than a separate
-   environment story.
-9. Runtime version generation should stay deterministic during checks; build
-   metadata is opt-in for artifact/release steps.
-10. KERIpy interop depends on exact LMDB-js behavior: use the repository-pinned `lmdb` release, preserve `LMDB_DATA_V1=true`, use the correct native-addon rebuild
-    path, and size existing mappings from stored metadata after explicit,
-    `KERI_LMDB_MAP_SIZE`, or `KERI_BASER_MAP_SIZE` configuration.
-11. Cache topology is part of correctness. Interop-sensitive LMDB-v1 jobs need
-    their own cache boundary.
-12. CI feedback should follow true isolation boundaries: DB, core, app/server,
-    runtime, stateful app, and interop lanes should split when their wall-clock
-    or isolation needs diverge materially.
-13. KERI test topology is an explicit repo contract.
-    `scripts/ci/keri-test-suites.ts` owns file selection and
-    `scripts/ci/run-keri-test-group.ts` executes it. Inventory audit rejects
-    missing, duplicated, or unowned files; source tags and name filters are gone.
-14. Parallelism policy is explicit: parallelize only where isolation is real,
-    cap default worker counts, and keep runtime/server/interop/stateful lanes
-    serial until their assumptions change.
-15. When the true safe boundary is the file or module rather than individual
-    tests, physically split the file instead of accumulating lane overrides.
-16. The active host boundary lives in `packages/tufa`: shared host kernel, Hono
-    HTTP edge, Deno/Node listeners, witness TCP listener, and role-host seams.
-17. Infra and runtime tests should target `packages/tufa` entrypoints/roles
-    rather than rebuilding dependencies on removed `packages/keri` host paths.
-18. `tufa db dump` is the preferred operational seam for localizing
-    controller-vs-witness or provider-vs-controller state drift.
-19. Npm release build scripts should derive manifest export/bin paths from the
-    generated DNT output and assert those targets in the packed tarball; hard
-    coded emitted paths are release blockers.
-20. Build and release shell scripts are orchestration wrappers, not hidden
-    source files. Multiline executable JS/TS belongs in real `.ts`/`.mjs`
-    helpers, generated module bodies belong in source templates/renderers, and
-    `deno task inline-code:check` should block regressions such as `node`
-    heredocs or `deno eval`.
-21. Scoped package publication and GitHub Release creation are separate seams
-    from artifact correctness. `@keri-ts/tufa` can build, smoke, dry-run, and
-    publish successfully while the release job still fails if it depends on
-    generated workspace paths that are absent in a clean release-job checkout.
-22. Package smoke CI should install the local npm tarballs once per runtime
-    image and exercise both library and CLI surfaces from that installed graph.
-    macOS needs all three tarballs too: `tufa` belongs to `@keri-ts/tufa`, not
-    the KERI library. Invoke the installed bin directly, without npx fallback.
-    Keep LMDB-v1 interop `node_modules` cached behind its own key boundary.
-23. DID Webs hosting belongs at the Tufa edge. The Universal Resolver route
-    `/1.0/identifiers/{did}` and `did.json`/`keri.cesr` artifact routes share
-    the protocol handler, while dynamic DID Webs hosting requires explicit
-    hosted-prefix selection.
-24. Interop service harnesses should allocate bind-checked localhost ports from
-    a non-ephemeral test range and track spawned children before readiness waits
-    so startup failures report the failing child output instead of surfacing as
-    opaque connection refusals.
+Verify Python interpreter, revision and actually imported modules. Console entry
+exit status matters: python -m can ignore main's return. Explicitly select body
+protocol and replay genus. Current witness CLI lacks protocol selection, so v1
+fixtures use public Habery/setupWitness APIs. Fork-on-main and upstream evidence
+remain separate in the [reference inventory](../../docs/plans/qualification/REFERENCE_ENVIRONMENTS.md).
 
-25. macOS KERIpy jobs must provision native `libsodium` independently of the
-    cached Python virtualenv. `pysodium` discovers it through `ctypes`, so expose
-    Homebrew's resolved dylib in a standard discovery directory on the ephemeral
-    runner, without overwriting a conflicting file. System `/bin/bash` scrubs
-    `DYLD_*` variables, so `GITHUB_ENV` alone is insufficient. Verify the actual
-    loaded library and keep the real KLI import assertion.
-26. HTTP host shutdown is two-phase: stop accepting work, close the runtime and
-    every response-producing mailbox stream, then await server drain. Awaiting
-    drain before runtime closure deadlocks active SSE responses and forces the
-    outer process guard to use `SIGKILL`.
-27. Interop provenance must verify the interpreter and imported source, and the
-    launcher must preserve console-entry exit status. Python `-m` can ignore a
-    CLI `main()` return value. Keep body protocol and replay genus explicit in
-    fixture expectations; compare exact wire bytes separately for each genus.
-    The randomized v1 witness fixture uses public KERIpy Habery/setupWitness
-    APIs because the current `witness start` CLI lacks protocol selection.
+LMDB V1 needs its own native rebuild/preflight and cache boundary. On macOS,
+provision libsodium independently of cached venvs; expose the resolved Homebrew
+dylib without overwriting a conflict, verify actual loading and keep KLI import
+assertions. /bin/bash scrubs DYLD variables, so GITHUB_ENV alone is insufficient.
 
-## Use This Doc For
+## Packaging and release
 
-1. Witness/watcher/observer deployment and compatibility notes
-2. CI/release/runtime interop contracts that affect infra behavior
-3. Cache, versioning, and test-isolation lessons
+Use dprint and deterministic version generation in checks; opt into build metadata
+only for artifacts. Build helpers are real source files, not multiline JS/TS in
+shell/workflow strings. Keep inline-code:check and export docstring checks honest.
 
-## Key References
+The package graph is tufa → keri-ts → cesr-ts. Derive manifest exports/bin from DNT
+output and assert packed targets. Install all three local tarballs once per runtime
+image (including macOS); run the installed Tufa bin without npx fallback. Source
+tests do not qualify package resolution or Node hosting.
 
-1. `docs/design-docs/db/db-architecture.md`
-2. `docs/versioning/versioning-and-release-plan.md`
-3. `docs/versioning/release-versioning.md`
+Npm publish and GitHub Release creation are separate seams. Reruns skip existing
+exact versions, use the uploaded tarball's dependency metadata, edit existing
+release state and upload assets idempotently. Do not describe the old scope-access
+blocker as current publication status; verify live state before release claims.
 
-## Current Follow-Ups
+## Remaining qualification
 
-1. Keep the explicit KERIpy witness harness on temp-copied randomized configs;
-   do not regress to fixed-port demos for default CI coverage.
-2. Preserve the controller-plus-witness OOBI resolution rule whenever new
-   interop or bootstrap helpers are added.
-3. Keep CI and release workflows honest about LMDB v1 rebuild requirements and
-   KERIpy pins whenever bootstrap logic changes.
-4. Preserve split-job feedback topology and isolation-aware test grouping rather
-   than collapsing back into a giant lane.
-5. Keep the explicit KERI file inventory current when mailbox/runtime/interop
-   test files are added or reorganized.
-6. Keep runtime/server lanes serial until the tests stop depending on fixed
-   ports, process-global state, or shared stores.
-7. If KLI/KERIpy witness-set replacement under the explicit harness becomes a
-   required control path, prove it in its own scenario rather than silently
-   broadening a different test.
-8. Keep new host/integration tests pointed at `packages/tufa` surfaces so
-   package-boundary drift is caught where users actually run the code.
-9. Keep Tufa release reruns idempotent: skip `npm publish` when the exact
-   version already exists, read release-note dependency links from the tarball
-   manifest, and edit/upload the GitHub Release with `--draft=false` instead of
-   assuming a fresh release object.
-10. Keep Python did:webs and did:keri interop rows opt-in unless the CI job
-    provisions the external Python resolver/KERIpy topology required for real
-    witnessed-AID evidence.
-
-## Milestone Rollup
-
-### 2026-03-03 to 2026-03-27 - Reproducible Infra Rules Became Explicit
-
-- Infra work was tied to the shared DB invariants contract instead of carrying
-  its own storage folklore.
-- Formatting, PR gates, version determinism, LMDB-v1 rebuild rules, and cache
-  topology were turned into explicit correctness constraints.
-
-### 2026-04-07 to 2026-04-08 - Witness Interop And Test Topology Became Honest
-
-- Mailbox query interop failures were narrowed to controller convergence and
-  replay/publication truth rather than generic SSE compatibility.
-- Real KERIpy witness interop now uses an explicit harness, OOBI-based
-  readiness, and a clearly stated proved scenario matrix.
-- `tufa db dump` became the preferred seam for localizing interop failures.
-- KERI lane ownership became a maintained contract rather than an informal shell
-  convention.
-
-### 2026-04-09 - CI Buckets And Runtime Isolation Were Recut Around Reality
-
-- The old "fast" CI umbrella was split because it no longer described actual
-  wall-clock behavior.
-- Worker defaults were capped and tied to honest isolation boundaries.
-- Oversized parallel lanes were split, and mixed runtime files were physically
-  separated so the test topology matches the real safe concurrency boundary.
-
-### 2026-06-06 - Release Artifact Validation Became Target-Aware
-
-- `cesr-ts@0.6.0` and `keri-ts@0.6.0` published through CI after PR-gated
-  version and packaging fixes.
-- `keri-ts`, `cesr-ts`, and `@keri-ts/tufa` npm build scripts now treat DNT
-  output paths as generated facts, then normalize and assert manifest targets
-  before smoke.
-- Build/smoke scripts stopped carrying multiline JS/TS strings: npm smoke
-  probes, LMDB environment helpers, version templates, and CESR table renderers
-  now live in source files, with an inline-code guard covering shell/workflow
-  regressions.
-- `@keri-ts/tufa@0.6.0` remains blocked at npm publish by `@keri-ts` scope
-  authorization despite passing quality, build, npm dry-run, Docker smoke, and
-  artifact upload in CI.
-
-### 2026-06-08 - CI Cache And Package Smoke Boundaries Were Split
-
-- PR CI now keeps Deno deps, normal `node_modules`, and LMDB-v1 interop
-  `node_modules` in separate cache families.
-- Package smoke checks install the local tarballs once per Node image and then
-  exercise both `keri-ts` exports and the `@keri-ts/tufa` CLI from that graph.
-
-### 2026-06-09 - DID Resolver Hosting Landed In Tufa
-
-- Tufa now has a long-lived `dws resolver` service with Universal Resolver
-  `/1.0/identifiers` dispatch plus static and explicit dynamic artifact
-  hosting for DID Webs.
-- Resolver route parsing must tolerate both raw DID path parameters and fully
-  URI-encoded DID parameters without decoding a method-specific host-port `%3A`
-  into a raw DID colon.
-- Cross-implementation DID Webs and lower-priority DID KERI resolver rows are
-  present as opt-in command-driven interop gates until a Python resolver harness
-  is wired into CI.
-
-### 2026-06-11 - Tufa 0.10.0 Release Reruns Became Idempotent
-
-- `@keri-ts/tufa@0.10.0` published successfully once npm scope permissions were
-  correct; the remaining release failure was GitHub Release creation, not
-  package publication.
-- Tufa release jobs now use the uploaded tarball as the release-note dependency
-  source, because generated `packages/tufa/npm/**` files are not present in the
-  clean release-job checkout.
-- Tufa tag reruns must tolerate already-published npm versions and existing
-  release objects by skipping publish, clearing draft state, preserving the tag,
-  and uploading assets with clobber semantics.
+The [qualification plan](../../docs/plans/qualification/QUALIFICATION_PLAN.md) owns
+the full inventory and repeated fresh-process runtime matrix. Long hosted jobs
+remain maintainer-dispatched with the existing 15-minute cap, outside required
+merge CI. Record failures/skips and variance; parser-only timing does not prove
+production memory bounds. [Runtime learnings](PROJECT_LEARNINGS_RUNTIME.md) own
+signal/SSE shutdown, and [storage learnings](PROJECT_LEARNINGS_STORAGE.md) own
+LMDB process and allocation boundaries.

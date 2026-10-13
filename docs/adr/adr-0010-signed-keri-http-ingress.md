@@ -5,7 +5,7 @@
 - Scope: `packages/keri` HTTP endpoints that carry signed KERI material
 - Related:
   - `docs/adr/adr-0009-mailbox-architecture.md`
-  - `docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`
+  - `docs/design-docs/mailbox/MAILBOX.md`
   - `packages/keri/src/app/cesr-http.ts`
   - `packages/keri/src/app/server.ts`
   - `packages/keri/src/app/cli/mailbox.ts`

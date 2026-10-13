@@ -62,5 +62,5 @@ Future parser work should use this archived plan only as historical context.
 Active authority is now:
 
 1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
-2. `docs/design-docs/cesr/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
+2. `docs/archived-plan-docs/cesr/cesr-parser/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
 3. The current CESR learnings doc

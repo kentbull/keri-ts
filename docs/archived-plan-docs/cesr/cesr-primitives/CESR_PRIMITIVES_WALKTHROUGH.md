@@ -33,15 +33,15 @@ Parser cross-links:
 
 - [CESR Parser Maintainer Guide](../../../design-docs/cesr/CESR_PARSER_MAINTAINER_GUIDE.md)
 - [CESR Parser State Machine Contract](../../../design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md)
-- [CESR Atomic Bounded Parser Architecture](../../../design-docs/cesr/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md)
+- [CESR Atomic Bounded Parser Architecture](../cesr-parser/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md)
 
 Companion scan sheet:
 
-- [CESR Primitives KERIpy Parity Matrix](./CESR_PRIMITIVES_KERIPY_PARITY_MATRIX.md)
+- [CESR Primitives KERIpy Parity Matrix](CESR_PRIMITIVES_KERIPY_PARITY_MATRIX.md)
 
 Active graduated-disclosure architecture docs:
 
-- [Graduated Disclosure Maintainer Guide](../../../design-docs/cesr/GRADUATED_DISCLOSURE_MAINTAINER_GUIDE.md)
+- [Graduated Disclosure Maintainer Guide](../../../design-docs/credentials/GRADUATED_DISCLOSURE.md)
 - [ADR-0007: Graduated Disclosure Workflow Boundaries](../../../adr/adr-0007-graduated-disclosure-workflow-boundaries.md)
 
 ## How To Use This Guide

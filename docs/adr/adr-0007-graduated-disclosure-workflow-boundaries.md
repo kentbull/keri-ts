@@ -12,7 +12,7 @@
   - `packages/cesr/src/primitives/mapper.ts`
   - `packages/cesr/src/primitives/compactor.ts`
   - `packages/cesr/src/primitives/aggor.ts`
-  - `docs/design-docs/cesr/GRADUATED_DISCLOSURE_MAINTAINER_GUIDE.md`
+  - `docs/design-docs/credentials/GRADUATED_DISCLOSURE.md`
   - `keripy/src/keri/core/structing.py`
   - `keripy/src/keri/core/mapping.py`
 

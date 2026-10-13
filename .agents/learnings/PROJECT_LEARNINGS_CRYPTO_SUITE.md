@@ -1,157 +1,48 @@
-# PROJECT_LEARNINGS_CRYPTO_SUITE
+# Crypto learnings
 
-## Purpose
+## Primitive boundaries
 
-Persistent learnings for crypto primitives, key material, and
-signing/verification behavior in `keri-ts`.
+Signer/Verfer own executable suite dispatch; higher layers call primitives or
+Manager orchestration, never concrete curve implementations. Salter owns signer
+derivation and work factors. Matter owns derivation-code meaning and variable
+size promotion. Shared codex subsets prevent lossy aliases across semantic roles.
+Indexed signatures must preserve implicit `ondex=index` in the small both-index
+families and distinguish current-only signatures.
 
-## Current State
+Cipher, Encrypter, Decrypter and Streamer own sealed-box semantics. Cipher hydration
+accepts QualifiedPrimitive or Streamer; parser fallback UnknownPrimitive is not a
+decrypt result. ESSR Texters contain raw ciphertext, not Cipher qb64.
 
-`Decrypter.open` and `Manager.open` return null only for raw sealed-box
-authentication failure. The pinned sodium adapter classifies the wrapper's
-native authentication failure narrowly; unexpected backend failures propagate.
-Qualified
-`decrypt` still throws on failed Cipher authentication, so corrupt keeper
-material cannot become an ordinary recipient verification result. ESSR Texter content is raw ciphertext, not
-Cipher qb64. `app/essr.ts` owns recipient admission, SCS framing, and plaintext
-staging after accepted exchange evidence; parser code never decrypts payloads.
-`EssrDecision` transfers plaintext only on `accept`, separates policy `refuse`
-from verification `reject`, and keeps cancellation/storage/invariant failures
-abrupt. Cleanup after finish must dispose any file not transferred to a caller.
-Per-recipient finite guards do not establish shared runtime admission.
+`Decrypter.open`/`Manager.open` return null only for the pinned raw authentication
+failure. Unexpected backend errors, corrupt keeper state and missing keys propagate.
+Qualified `decrypt` still throws on failed authentication. The [ESSR recipient][essr]
+owns admission, digest/SCS checks and plaintext staging after durable EXN acceptance;
+the parser never decrypts.
 
-1. Primitive semantic parity is tracked against current KERIpy `main`, not older
-   bootstrap-era assumptions.
-2. Shared primitive codex subsets exist to avoid lossy aliasing when one CESR
-   code participates in multiple semantic domains.
-3. Primitive-first documentation is in good shape: touched modules carry
-   maintainer-oriented purpose/invariant docs rather than assuming KERIpy
-   context is already in the maintainer's head.
-4. Per-primitive tests and stronger KERIpy-derived vectors closed important
-   serialization and projection gaps such as `Matter` qb2 raw extraction,
-   `Dater.dts`, and structor-family behavior.
-5. A maintainers-first primitive walkthrough and parity matrix exist and are
-   intentionally organized from `Matter` / `Indexer` / `Counter` outward.
-6. `Matter` and `Indexer` should be treated as infrastructure bases in
-   crypto-adjacent code. If the semantic type is known, use the narrow primitive
-   instead of the superclass.
-7. Executable signer behavior and suite dispatch are primitive-owned:
-   `Signer.sign()`, `Verfer.verify()`, and `Salter.signer()` are the preferred
-   public seams, and concrete curve imports belong inside `Signer` / `Verfer`,
-   not in higher layers or sidecar helpers.
-8. Compatibility helpers that other layers still need, such as signer-seed
-   sizing and verifier-to-seed-suite projection, should hang off `Signer` rather
-   than reopening a free helper seam.
-9. Indexed-signature parity includes the small indexed "both" code families
-   whose implicit `ondex=index` relationship matters for prior-next handling.
-10. Sealed-box behavior is also primitive-owned: `Cipher`, `Encrypter`,
-    `Decrypter`, and `Streamer` form one semantic CESR execution seam.
-11. Variable-family code promotion belongs in `Matter`, not in ad hoc
-    primitive-local normalization branches.
-12. Cipher plaintext hydration uses the narrower
-    `CipherHydratable = QualifiedPrimitive | Streamer` contract because
-    `UnknownPrimitive` is a parser-fallback concern, not a decrypt result.
-13. `Matter` owns derivation-code semantics. Concrete crypto primitives own
-    executable behavior. Keeping those responsibilities separate is the stable
-    mental model.
+Diger owns the shared incremental algorithm registry. Hash ordered concatenated
+decoded Texter bytes, not qualified text. EXN `a` may be a string digest even
+though `.seals` is array-only; verify it after signatures and before acceptance.
 
-14. Salter and sealed boxes share one initialized `libsodium-wrappers-sumo@0.8.4`
-    backend. Argon2id13 keeps KERIpy's unchanged temp/low/med/high work factors;
-    independent pysodium vectors cover empty, NUL, Unicode, and variable output
-    lengths. Output sizes are safe integers of at least 16 bytes; the former
-    Noble-only 4–15-byte behavior is not a compatibility requirement.
-15. `pwhash.ts` owns password, salt, and output WASM allocations through cleanup
-    and reads the current heap view after growth. Zero-before-free applies only
-    to those owned ranges. Native temporaries can retain secret copies, and the
-    WASM high-water allocation is retained after free; no process-erasure or
-    memory-shrink guarantee follows from owned cleanup.
-16. The private wasm32 ABI requires the exact raw sodium distribution as well
-    as the wrapper version. Deno uses its frozen lock; generated npm output
-    authenticates and includes the two exact ESM files, their license, and hash
-    provenance with one relative import rewrite. Never rely on the wrapper's
-    upstream semver range for this private ABI, or instantiate a second heap to
-    try to check module identity. Package qualification must exercise the built
-    Node/browser runtime, not source imports alone.
+## Sodium ownership
 
-17. `Diger` owns one incremental factory registry for both one-shot digests and
-    streamed verification. ESSR hashes ordered concatenated raw Texter bytes,
-    never qualified wire. KERI exchange `a` may be a string digest even though
-    `.seals` only returns arrays; verify after signatures and before acceptance.
+Salter and sealed boxes share one initialized sodium backend. Wrapper and raw
+distribution identity both matter for the private wasm32 ABI. The frozen Deno lock
+and generated npm vendor hashes bind the exact distribution; do not rely on an
+upstream semver range or instantiate a second heap as an identity check.
 
-## Use This Doc For
+`pwhash.ts` owns password/salt/output allocations and reloads HEAPU8 after growth.
+Zero-before-free applies only to owned ranges. Native temporaries and JS copies
+can remain, and WASM retains its high-water memory after free. No process-erasure
+or memory-shrink guarantee follows. KERIpy Argon2id13 work factors remain unchanged;
+output is a safe integer of at least 16 bytes, not the old Noble-only 4–15 range.
 
-1. Key generation, derivation, and rotation semantics.
-2. Signature, verifier, and digest behavior.
-3. Encryption/decryption behavior tied to CESR primitives.
+Any upgrade must repeat ABI/authentication-failure mapping, independent all-tier
+vectors, allocation/cleanup failures and built Node/browser bindings. Run high-tier
+vectors in an explicit isolated process. Faster derivation does not change key-cache
+authority or LMDB reopen/close requirements.
 
-## Key Docs
+See [Argon2 ownership](../../docs/design-docs/crypto/ARGON2_OWNERSHIP.md).
+Remaining shared admission belongs to the [ESSR plan](../../docs/plans/essr/ESSR_PLAN.md).
+Primitive evidence uses the selected frozen reference, not moving upstream main.
 
-1. `docs/archived-plan-docs/cesr/cesr-primitives/CESR_PRIMITIVES_WALKTHROUGH.md`
-2. `docs/archived-plan-docs/cesr/cesr-primitives/CESR_PRIMITIVES_KERIPY_PARITY_MATRIX.md`
-3. `docs/ARCHITECTURE_MAP.md`
-4. `packages/cesr/src/primitives/pwhash.md`
-
-## Current Follow-Ups
-
-1. Preserve KERIpy `main` as the authority for primitive semantics.
-2. Keep intentional TypeScript-local convenience differences explicit whenever
-   public contracts stay narrower than KERIpy.
-3. Keep parser-layer follow-ups separate unless the primitive contract itself
-   changes.
-4. Keep variable-family size/code normalization centralized in `Matter`.
-5. Avoid widening crypto ownership boundaries casually; suite-specific or
-   AEID-specific broadening should happen deliberately, not by leakage.
-
-6. Any sodium upgrade must requalify the raw authentication-failure mapping,
-   ABI arguments, independent all-tier bytes,
-   owned allocation failure cleanup, and generated package bindings. Run high-tier
-   vectors in a separate explicitly opted-in process because WASM retains its
-   high-water memory. Faster derivation does not change application authority,
-   key-cache lifetimes, or durable native reopen/close requirements.
-
-## Milestone Rollup
-
-### 2026-03-03 to 2026-03-04 - Primitive Hierarchy, Docs, And Test Hardening
-
-- Refreshed codex/primitive hierarchy behavior against current KERIpy, including
-  `Tagger`, `Decimer`, `Verser`, `Ilker`, `Traitor`, `Noncer`, `Labeler`, and
-  related families.
-- Added maintainer-grade docstrings across the primitive stack and deepened
-  per-primitive test coverage with stronger KERIpy-derived vectors.
-
-### 2026-03-14 to 2026-03-17 - Primitive Construction And Doc Ownership Tightened
-
-- Added the maintainers-first primitive walkthrough and parity matrix.
-- Demoted superclass construction to genuinely generic seams and filled in the
-  helper-level documentation that explains how primitives actually inhale,
-  exhale, and normalize data.
-
-### 2026-04-02 - Signature Ownership Moved Fully Into Primitives
-
-- Added the shared signature-suite dispatch seam.
-- Moved verification onto `Verfer.verify(...)` and rebuilt `Signer` / `Salter`
-  around KERIpy's executable signer model, including real verifier context on
-  `Cigar` and deterministic salty derivation behavior.
-
-### 2026-04-05 - Signer And Verfer Absorbed The Remaining Suite Dispatch
-
-- Removed the separate `signature-suite` helper module and moved the remaining
-  signer/verifier suite dispatch directly into `Signer` and `Verfer`.
-- Kept the needed cross-layer compatibility seams as `Signer` statics for seed
-  sizing and verifier-to-seed-suite projection, so keeper code stays
-  primitive-driven without recreating a free helper boundary.
-
-### 2026-04-02 - Sealed-Box And Variable-Family Ownership Moved To The Right Layer
-
-- Added KERIpy-style sealed-box behavior through `Cipher`, `Encrypter`,
-  `Decrypter`, and `Streamer`.
-- Moved variable-family size/code promotion into `Matter`, matching KERIpy's
-  actual ownership model instead of scattering promotion logic across helpers.
-
-### 2026-04-03 - Matter Semantics And Maintainer Docs Reached The Helper Seams
-
-- Reasserted `Matter` as the owner of derivation-code semantics while keeping
-  executable crypto on concrete primitives.
-- Extended maintainer-facing docs through the remaining helper and support seams
-  so the source now explains the real ownership split instead of leaving it to
-  tribal memory.
+[essr]: ../../docs/design-docs/essr/RECIPIENT.md

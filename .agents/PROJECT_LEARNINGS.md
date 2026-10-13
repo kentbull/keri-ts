@@ -1,257 +1,44 @@
-# PROJECT_LEARNINGS (Index)
+# Project learnings
 
-## Purpose
+Routing and durable rules only. Current source, tests and normative contracts
+outrank these summaries. The [parity roadmap](../docs/plans/PARITY_ROADMAP.md)
+owns remaining work; do not duplicate its checklist here. Parser structure and
+nested consumers are implemented, while consolidated admission, shared budgets,
+storage/transport reconciliation and final qualification remain incomplete.
 
-Top-level routing and durable cross-topic memory for `keri-ts`. This file should
-stay short enough to reread at session start.
+## Read by subject
 
-Replay sources and live HTTP replies now have explicit runtime ownership:
-reopen captured first-seen ranges, materialize only one bounded event, and
-release output iterators before database shutdown. See the KEL topic for limits.
-ESSR recipient decisions separate local admission from verification; only success
-transfers plaintext, while infrastructure failures and cancellation remain abrupt.
-See the crypto topic for the raw authentication and owner-cleanup boundary.
-Canonical disclosure construction remains separate from credential authentication;
-the CESR topic covers Compactor/Pather rules. The ACDC topic records nested IPEX
-issuer proofs and observer registry imports; parent conversation acceptance,
-credential acceptance and global registry freshness remain distinct.
+- [CESR](learnings/PROJECT_LEARNINGS_CESR.md): parsing, framing and primitives.
+- [Crypto](learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md): suites, sodium and secrets.
+- [KELs](learnings/PROJECT_LEARNINGS_KELS.md): accepted state, delegation and replay.
+- [Exchange](learnings/PROJECT_LEARNINGS_EXCHANGE.md): proofs, multisig and IPEX.
+- [ACDC](learnings/PROJECT_LEARNINGS_ACDC.md): disclosure, TEL and verifier state.
+- [Storage](learnings/PROJECT_LEARNINGS_STORAGE.md): DB parity and payload owners.
+- [Runtime](learnings/PROJECT_LEARNINGS_RUNTIME.md): scopes, transport and mailboxes.
+- [DID](learnings/PROJECT_LEARNINGS_DID.md): generation, resolution and aliases.
+- [Infrastructure](learnings/PROJECT_LEARNINGS_WITNESS_WATCHER_OBSERVER_INFRA.md):
+  test provenance, witness harnesses, packaging and release.
 
-## Current Focus
+## Cross-topic rules
 
-1. CESR parser migration to progressive generators is approved for the many-message
-   ESSR workload. ADR-0012 and the progressive plan govern execution; the remaining work covers current-main parity, shared resource accounting, and
-   final runtime qualification.
-2. KERI Phase 2 is parity-first around DB closure, runtime/key-management
-   behavior, and practical `kli`/`tufa` interoperability.
-3. DID Webs work is now a first-class hosted identity surface: KERI/VDR state
-   generates `did.json` plus `keri.cesr`, Tufa owns static/dynamic hosting, and
-   the DA ACDC set is the source for `alsoKnownAs`.
-4. The learnings layer itself should stay compact; when it grows noisy, rewrite
-   it instead of appending another diary section.
+One progressive parser engine; CESR stays framework-neutral with an optional
+Effection adapter. KERI/Tufa own cancellable operations and joined cleanup.
+Parsed evidence, wrapper construction, verified acceptance and durable publication
+are separate boundaries. Parent signatures never authenticate nested children.
 
-## Topic Learnings Index
+Normal remote outcomes use typed decisions. Exceptions retain invariant,
+infrastructure and caller-contract failures. Keep protocol compatibility and
+frozen-reference evidence explicit; no old TypeScript API shims are required.
+Finite local limits do not establish a shared runtime memory bound.
 
-| Topic                          | File                                                                    | Scope                                                                    |
-| ------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| CESR Parser                    | `.agents/learnings/PROJECT_LEARNINGS_CESR.md`                           | Parser architecture, primitive/serder parity, native handling            |
-| Crypto Suite                   | `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`                   | Primitive semantics, signer/verifier ownership, encryption behavior      |
-| KELs                           | `.agents/learnings/PROJECT_LEARNINGS_KELS.md`                           | DB parity, state transitions, runtime/cue/reply ownership, interop gates |
-| ACDC                           | `.agents/learnings/PROJECT_LEARNINGS_ACDC.md`                           | Credential compactification, section semantics, ACDC-native rules        |
-| Witness/Watcher/Observer Infra | `.agents/learnings/PROJECT_LEARNINGS_WITNESS_WATCHER_OBSERVER_INFRA.md` | CI, release, witness interop, runtime/infra operations                   |
+## Maintenance and handoff
 
-## Session Start Policy
+Read `AGENTS.md`, this index, relevant topics and their contracts at session start.
+Update the owning topic in place when a durable rule changes. Keep plans in
+`docs/plans`, behavior in `docs/design-docs`, dated evidence in `docs/reports`,
+and examples/inventories in `docs/reference`. Do not append session or milestone
+diaries to learnings; Git history retains superseded text.
 
-1. Read `AGENTS.md`
-2. Read this file
-3. Read only the topic doc(s) relevant to the task
-4. Read only the referenced ADR/contract/plan docs the task actually depends on
-5. Use KERIpy as the behavioral authority when parity reasoning is uncertain
-
-## Compaction Policy
-
-1. Keep this file as a routing layer, not a second archive
-2. Keep detailed topic memory in topic docs
-3. Prefer "what matters now" over chronological completeness
-4. Collapse noisy history into milestone rollups instead of adding more
-   micro-handoffs
-5. Most tasks should update `Current State` or `Current Follow-Ups`, not append
-   a new milestone
-
-## Cross-Topic Snapshot
-
-CLI validation consumes progressive frames; annotation and convenience benchmarks
-have explicit finite input budgets. Tufa awaits native I/O through owned
-Effection operations, and output tests exercise actual process pipes.
-
-Replay wire encoding and durable receipt storage are separate contracts: canonical
-transferable receipt groups preserve every signature while allowing current KERIpy
-to consume following OOBI endpoint replies. See the KEL learnings.
-
-Runtime ingress yields each dispatch as an Effection operation and carries the receiving mailbox AID with
-the message; request identity must never live in shared mutable ambient state.
-Progressive HTTP/file sources use the optional CESR Effection adapter. Runtime
-turns serialize dispatch and cue consumption; direct HTTP replies reserve query
-SAIDs before dispatch. Ownership resources outlive their work children so
-cancellation joins pending I/O before disposing payloads or releasing admission.
-
-Mailbox transport cue correlation does not prove recipient authorization. KEL
-query processing authenticates `mbx` requester signatures against the recipient's
-current accepted threshold before emitting a stream cue; public KEL query policy
-is unchanged. See the KEL learnings and mailbox-read-authorization plan.
-
-Aggregate semantics and generic transport groups are separate: `Aggor` owns
-format-specific list commitments and disclosure; `Structor` preserves generic
-CESR group bytes. See the ACDC topic for verification limits.
-
-1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the parser
-   lifecycle contract; keep parser behavior traceable to that contract and its
-   tests. Parent-owned nested frames preserve descendant evidence and resources; public
-   runtime normalization admits them only for completed v2 forwarding and route-specific multisig paths;
-   serialization borrows complete trees and other runtime routes remain guarded. Pure proposal
-   bodies consume parsed Serders; byte convenience operations own parsing, wire consumption and disposal. Stream
-   genus controls attachment decoding independently of a body protocol version; only unselected streams permit legacy inference.
-2. CESR progressive parsing is an approved performance phase with before/after
-   benchmarks. Keep current and target contracts distinct; the atomic production path and old API shims are removed while protocol
-   v1/v2 support remains. Final end-to-end qualification is still required.
-3. Generated KERIpy-parity codex objects are authoritative; helper sets are
-   derived readability views. Table membership does not grant context admission:
-   current nonce seals are structing values, while native event and attachment
-   readers retain narrower registries. Historical v1 wire extensions stay explicit.
-4. When the semantic type is known, construct the narrow CESR primitive.
-   `Matter` and `Indexer` are low-level bases, not the preferred public result.
-5. `Signer`/`Verfer` own signer/verifier suite dispatch; crypto helpers should
-   not become a second semantic home.
-6. Fixed-field seal/blind/media values belong to CESR `primitives/structing.ts`;
-   KERI runtime code projects hydrated primitives through CESR structing helpers
-   without decoding their bytes again; public raw-input boundaries still validate.
-   FirstSeen shares this record boundary; Dater.dts is the canonical ISO projection.
-   Typed-seal Noncer roles survive TS storage, while the frozen Python database
-   still has a narrower Diger cast; wire parity does not imply widened DB parity.
-7. CESR-native and ACDC-native behavior should extend the shared native support
-   matrix in `packages/cesr/src/serder/native.ts`.
-8. Weighted thresholds are semantic through `Tholder`; KEL and reply logic
-   should use `tholder.satisfy(...)`, not ad hoc numeric shortcuts.
-9. `docs/design-docs/db/db-architecture.md` is the shared DB invariants
-   contract; DB work remains parity-first, not abstraction-first.
-10. Durable local state is DB-backed: `states.` is authoritative local key
-    state, `kels.` / `fels.` / `dtss.` support reopenable event state, and
-    `Habery.habs` is only an in-memory reconstruction cache.
-11. Record-model parity is `FooRecord` plus `FooRecordShape`, with `recordClass`
-    as the durable public seam.
-12. KEL control flow should stay on typed decisions: `Kever` decides validity,
-    `Kevery` routes/applies, and
-    `docs/adr/adr-0005-kel-decision-control-flow.md` is normative.
-13. Cue/runtime ownership is dual-scope and explicit: runtime-hosted work uses
-    the shared runtime cue deck, while `Habery.kevery` owns a separate local cue
-    deck for habitat-local processing.
-14. `Revery` owns reply verification/BADA/escrows, `Kevery` owns KEL and
-    KEL-derived reply families, and `Oobiery` owns introduction-driven OOBI
-    work.
-15. The mailbox mental model must stay explicit: provider mailbox storage is
-    shared runtime-composed state above `Habery`, while remote topic cursors
-    stay durable habery state in `tops.`.
-16. Local location updates must arrive through signed `/loc/scheme` replies, not
-    direct writes to `locs.` / `lans.`.
-17. Interop contracts are exact: use the repository-pinned `lmdb` release, preserve
-    `LMDB_DATA_V1=true` for KERIpy interop workflows, size existing LMDB mappings
-    from stored metadata with KERIpy-compatible environment overrides, and route
-    protocol/storage CBOR through the shared CESR codec.
-18. Test parallelization should follow real isolation boundaries, not folder
-    names. Keep file ownership explicit and keep default CI truthful.
-19. `packages/tufa` now owns the runnable host/CLI edge; `keri-ts` root,
-    `keri-ts/runtime`, and `keri-ts/db` are the supported library entrypoints.
-    Its HTTP shutdown must close runtime-owned response streams before waiting
-    for the listener to drain.
-20. Progressive frame egress preserves payload ownership through an Effection
-    request resource; successful fetch headers do not end the response lifetime.
-    Normalize attachment genus/domain at serialization, using CESR-owned counter
-    tables and preserving KERIpy's inner-signature counter restrictions.
-21. Attachment counter `gvrsn` support is a cross-boundary parity rule: CESR
-    `Counter` owns KERIpy genus/enclosure helpers, live serialization may use
-    requested `gvrsn`, and replay derives its minimum genus from the stored body without changing its bytes.
-22. Maintainer docs now have a ratcheted export-surface check for selected
-    recent modules; expand that list as future documentation slices close more
-    exported API gaps.
-23. DID Webs resolution is not just hosted JSON lookup: resolution must ingest
-    `keri.cesr`, rebuild the DID document from KERI/VDR state, and compare it
-    with the hosted `did.json`; Universal Resolver path decoding must preserve
-    method-specific `%3A` host-port encodings. Verification-method projection
-    preserves numeric, flat weighted, nested weighted, and multi-clause KERI
-    threshold semantics through `ConditionalProof2022` methods.
-24. The learnings layer is part of project hygiene: compact docs when they grow
-    noisy instead of preserving every step as prose.
-
-Crypto backend changes cross the source/package boundary: pinned wrapper versions
-alone do not pin a private native ABI. See Crypto Suite learnings for exact raw
-module binding, independent byte parity, and the limits of owned-buffer cleanup.
-
-## Current Follow-Ups
-
-1. Promote the highest-value DB `Partial` rows with evidence, especially
-   `fetchTsgs` and remaining `Komer` families.
-2. Execute the progressive parser plan with scoped PRs, retained protocol
-   regressions, and measured memory/latency at each declared checkpoint.
-3. Continue runtime closure on the remaining exchange/forwarding breadth and the
-   broader stale/timeout continuation tail now that the core query/reply,
-   receipt/query, mailbox, and challenge slices are real.
-4. Keep maintainer-facing docs and referenced contracts updated in the same
-   change set as behavior changes.
-5. Keep KERI tuple-storage aliases derived from CESR structing descriptors
-   rather than reintroducing duplicate wrapper families.
-6. Treat source-vs-npm drift in `tufa` as a release blocker; smoke the packed
-   artifact when CLI or Node-host behavior changes.
-7. Treat scoped npm package publication and GitHub Release creation as separate
-   release seams. `@keri-ts/tufa` now publishes under the `@keri-ts` scope, and
-   tag reruns must skip already-published npm versions while idempotently
-   editing/uploading the GitHub Release.
-8. Keep bootstrap config on honest CLI/file seams rather than hidden default
-   paths or ad hoc store mutation in scripts.
-9. Keep host-prefix selection explicit and conservative; do not leak
-   system-managed identities into normal user-facing host startup.
-10. Keep witness interop claims tied to the scenarios actually proved.
-11. Keep `scripts/ci/keri-test-suites.ts` file ownership explicit as mailbox/runtime work grows.
-
-## Recent Durable Changes
-
-### 2026-04-04 to 2026-04-05 - Runtime Replay, Structing, And Mailbox Boundaries Sharpened
-
-- Replay/unescrow control flow now uses explicit typed decisions instead of
-  mixed boolean or exception-only branching.
-- CESR structing records are the semantic home for fixed-field seal/blind/media
-  values; KERI storage aliases remain derived.
-- Provider mailbox storage moved out of `Habery`; mailbox ownership is now
-  shared runtime-composed state plus durable habery cursors.
-
-### 2026-04-07 to 2026-04-08 - CLI, Witness, And Host Boundaries Became More Honest
-
-- Single-sig sign/verify/query/rotate parity landed on separate control paths.
-- Real witness interop now uses an explicit KERIpy harness and an honest proved
-  scenario matrix.
-- Protocol routing was split from transport hosting; route policy is no longer
-  hidden in server adapters.
-
-### 2026-04-09 - Package Ownership And Release Surfaces Tightened
-
-- `packages/tufa` is now the runnable host/CLI boundary; `keri-ts` exposes the
-  narrow library surface.
-- CLI tests must launch `packages/tufa/mod.ts`, and `tufa` source changes
-  require regenerating `packages/tufa/npm/**`.
-- Delegation and peer-OOBI notifications belong in `Notifier`, not in new cue
-  kinds.
-- This learnings layer was compacted so startup context stays small enough to
-  reread every thread.
-
-### 2026-06-09 - DID Webs Became A Tufa Runtime Surface
-
-- `keri-ts/runtime` now exposes DID Webs and DID KERI resolver/generator helpers,
-  while `packages/tufa` owns the user-facing `dws`/`dkr` CLI and Universal
-  Resolver HTTP edge.
-- Static artifacts and dynamic hosting share the same generator; dynamic hosting
-  must remain explicit by hosted prefix so a long-lived host does not publish
-  every local AID by accident.
-- DID Webs `alsoKnownAs` is derived only from active, unrevoked designated-alias
-  ACDCs issued from the bound AID.
-
-### 2026-09-10 - Signal Shutdown Must Enter Ownership Cleanup Before Drain
-
-- Aborting `Deno.serve` from a signal can leave `server.finished` waiting on an
-  active response, so the signal must also wake the supervising operation.
-- The supervisor closes runtime-owned response streams before it awaits the
-  HTTP adapter drain; task cancellation tests alone do not prove this signal path.
-
-## Templates
-
-### New Thread Kickoff Template
-
-1. Current state: <10 concise bullets>
-2. Plan: <10 concise bullets>
-
-### End-of-Task Handoff Template
-
-#### YYYY-MM-DD - <Task Title>
-
-- Substance: <1-3 durable changes in ownership, invariants, parity rules, or
-  mental model>
-- Why it matters: <what future work would get wrong without this>
-- Next: <remaining blocker, risk, or follow-up if any>
-- Verification: <passed locally / pending CI / not run>
+Kickoff: ten concise current-state bullets, then a concise execution plan.
+Handoff: result, changed contracts, checks, remaining blocker/risk. Record only
+the durable substance and why future work needs it; link detailed evidence.

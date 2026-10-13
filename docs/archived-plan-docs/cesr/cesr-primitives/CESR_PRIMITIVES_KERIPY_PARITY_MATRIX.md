@@ -14,11 +14,11 @@ Use it when you already know the symbol name and want fast answers about:
 
 Companion guide:
 
-- [CESR Primitives Walkthrough](./CESR_PRIMITIVES_WALKTHROUGH.md)
+- [CESR Primitives Walkthrough](CESR_PRIMITIVES_WALKTHROUGH.md)
 
 Active disclosure-specific references:
 
-- [Graduated Disclosure Maintainer Guide](../../../design-docs/cesr/GRADUATED_DISCLOSURE_MAINTAINER_GUIDE.md)
+- [Graduated Disclosure Maintainer Guide](../../../design-docs/credentials/GRADUATED_DISCLOSURE.md)
 - [ADR-0007: Graduated Disclosure Workflow Boundaries](../../../adr/adr-0007-graduated-disclosure-workflow-boundaries.md)
 
 Baseline source for the KERIpy comparisons in this document:

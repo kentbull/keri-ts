@@ -5,7 +5,7 @@
 This matrix reconciles CESR parser commitments from:
 
 - `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
-- `docs/design-docs/cesr/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
 - `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_PARSER_CONSOLIDATED_PLAN_AND_RESULTS.md`
 - `docs/design-docs/cesr/CESR_PARSER_MAINTAINER_GUIDE.md`
 - `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_PARSER_FLOW_FROM_TUFA_ANNOTATE.md`

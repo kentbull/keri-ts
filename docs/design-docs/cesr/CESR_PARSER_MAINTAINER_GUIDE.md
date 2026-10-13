@@ -23,7 +23,7 @@ defines payload ownership and limits.
 | `packages/keri/src/app/parsering.ts`      | Project parsed values into runtime envelopes without decoding their bytes again.                            |
 
 `CesrFrame` contains `body`, ordinary `attachments`, and an optional owned `essr`
-payload. Errors reject parsing. A `GroupTuple` is an ordered recursive tuple;
+payload and parent-owned `nests`. Errors reject parsing. A `GroupTuple` is an ordered recursive tuple;
 `OpaqueSpan` holds original wire bytes and their domain.
 
 ## Follow one frame
@@ -32,7 +32,7 @@ payload. Errors reject parsing. A `GroupTuple` is an ordered recursive tuple;
    input on demand; empty chunks and chunk boundaries do not complete messages.
 2. Read a selector or body, then traverse attachments inside exact bounded scopes.
    GenericGroup children can finish before their siblings arrive. A
-   BodyWithAttachmentGroup must contain exactly one frame before it can yield.
+   BodyWithAttachmentGroup must contain one complete parent-owned tree before it can yield.
 3. Finish an open attachment set at a following body, a closed attachment
    enclosure, or valid source EOF. A partial terminal token rejects the parse.
 4. Finish any ESSR stage immediately before delivery. The caller now owns that
@@ -71,7 +71,7 @@ fixed tuples, with small named readers for nested or variable shapes.
 
 Validate real text and binary wire, count units, primitive roles, enclosure
 bounds, and split input. Update the lifecycle contract when behavior changes.
-Generated tables target KERIpy `450ae1c2a7eac61d92bc7b830cb6883c41e6a798`;
+Generated tables target KERIpy `927c0cb8794d7c84fc17143c67df64aab9deda6c`;
 [the interop guide](../../../packages/keri/test/README.md) records the live fork
 pin and its exact upstream provenance. Changing either baseline is a coordinated
 protocol task.

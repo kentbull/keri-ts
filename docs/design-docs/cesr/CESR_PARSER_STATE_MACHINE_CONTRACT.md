@@ -102,7 +102,7 @@ repeated recursive disposal. Runtime boundary coverage is in
 `packages/keri/test/unit/app/nested-frame-boundary.test.ts`.
 `test/unit/parser/serialize-nests.test.ts` covers structure-preserving payload
 views in both domains/genera, scoped children, independent signatures, repeated
-ESSR reopening and cancellation. `scripts/qualify-nested-serialization.ts` feeds
+ESSR reopening and cancellation. `packages/cesr/scripts/qualify-nested-serialization.ts` feeds
 actual output to frozen Python, verifies imported source bytes, signature
 ownership, full consumption, and Python subtree reserialization.
 `test/unit/annotate-nests.test.ts` checks exact frozen Python wire round-trips,
@@ -117,5 +117,7 @@ approval ordering, child proofs, dependencies, reopen/retry, rollback and cancel
 It also checks the pure proposal-body boundary, direct parsed-frame wire preparation,
 and byte convenience ownership: cancellation must abort reads and join disposal
 before returning. Constructing a parent never authenticates its child.
-Other nested routes and HTTP inspection remain guarded. A frozen 40-node fixture verifies serialization preserves admitted
+Nested IPEX offer/grant evidence is covered by
+`packages/keri/test/unit/app/ipex-v2.test.ts`; conversation and issuer proof rules
+live in the [IPEX contract](../exchange/IPEX.md). Unfinished routes and HTTP inspection remain guarded. A frozen 40-node fixture verifies serialization preserves admitted
 enclosure depth under the default parser limit.

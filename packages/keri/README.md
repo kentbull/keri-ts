@@ -21,11 +21,11 @@ ownership lives in the separate `tufa` package.
 ## Maintainer Docs
 
 - `docs/ARCHITECTURE_MAP.md`: package and module ownership map
-- `docs/design-docs/keri/ACDC_TEL_IPEX_VERIFIER_MAINTAINER_GUIDE.md`:
+- `docs/design-docs/credentials/ACDC_TEL_VERIFIER.md`:
   credential stack ownership and failure modes
-- `docs/design-docs/keri/DELEGATION_MULTISIG_ENDPOINT_ROLES_MAINTAINER_GUIDE.md`:
+- `docs/design-docs/kel/DELEGATION_AND_ENDPOINTS.md`:
   delegation, group coordination, and endpoint-role mental model
-- `docs/design-docs/keri/ATTACHMENT_COUNTER_GVRSN_MAINTAINER_GUIDE.md`:
+- `docs/design-docs/cesr/ATTACHMENT_COUNTER_GVRSN.md`:
   attachment counter versioning and replay boundaries
 
 ## License
