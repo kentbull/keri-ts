@@ -7,6 +7,12 @@ and KERIpy interoperability.
 
 ## Current State
 
+Live LMDB V1 inspection requires separate processes or the existing owning
+Habery. Opening the same database twice in one process can corrupt reader-slot
+ownership even when the second handle is read-only. Keep live host assertions
+and protocol participants; move the inspection or host into a real CLI process
+instead of suppressing the error or waiting until shutdown.
+
 Protocol-v2 `/fwd` now preserves parent-owned child trees through `Exchanger`,
 `enst.` storage, escrow retry, reopen and replay. The signed `a.evt` digest binds
 one verified child body; child signatures remain recipient evidence. Candidate

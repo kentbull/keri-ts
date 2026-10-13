@@ -624,6 +624,15 @@ These invariants are mandatory for parity-compatible DB behavior in `keri-ts`.
 
 ### E. Lifecycle Invariants
 
+LMDB V1 permits one environment handle per database path in a process. A second
+read-only Habery does not provide isolation: concurrent handles can invalidate
+reader slots (`MDB_BAD_RSLOT`, sometimes surfaced as `Invalid argument`). Reuse
+the owning Habery or inspect a live host from a separate process. The live-agent
+mailbox test uses the actual CLI child and retains HTTP and stored endpoint-role
+assertions while that host remains running. This test correction adds no shared
+handle pool or runtime admission guarantee; handle accounting remains in the
+progressive storage/resource follow-ons.
+
 1. DB open/close/reopen flows are safe and idempotent.
    `createBaser`, `createKeeper`, and `createOutboxer` retain ownership until
    returning the opened store; failed or cancelled acquisition closes the

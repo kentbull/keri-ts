@@ -21,6 +21,7 @@ import {
   mailboxStartCommand,
   mailboxUpdateCommand,
 } from "../../../../tufa/src/cli/mailbox.ts";
+import { spawnTufa, stopChild } from "../../../../tufa/test/test-helpers.ts";
 import {
   createAgentRuntime,
   ingestKeriBytes,
@@ -952,19 +953,24 @@ Deno.test("agent command uses explicit config-file controller curls and does not
     }
   });
 
-  await run(function*(): Operation<void> {
-    const serverTask = yield* spawn(function*() {
-      yield* agentCommand({
-        name,
-        headDirPath,
-        configDir,
-        configFile,
-        port,
-      });
-    });
-    yield* waitForServer(port, { host: "127.0.0.1", maxAttempts: 30 });
-
-    try {
+  // LMDB V1 forbids two environment handles for one path in a process.
+  // Keep the host live while inspecting it from the test's separate process.
+  const server = spawnTufa([
+    "agent",
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--config-dir",
+    configDir,
+    "--config-file",
+    configFile,
+    "--port",
+    String(port),
+  ]);
+  try {
+    await run(function*(): Operation<void> {
+      yield* waitForServer(port, { host: "127.0.0.1", maxAttempts: 30 });
       const hosted = yield* fetchOp(`${configuredUrl}/oobi/${pre}/controller`);
       assertEquals(hosted.status, 200);
       yield* textOp(hosted);
@@ -987,10 +993,14 @@ Deno.test("agent command uses explicit config-file controller curls and does not
       } finally {
         yield* hby.close();
       }
-    } finally {
-      yield* waitForTaskHalt(serverTask, 100);
-    }
-  });
+      // Closing the independent inspector must leave the live host usable.
+      const stillHosted = yield* fetchOp(`${configuredUrl}/oobi/${pre}/controller`);
+      assertEquals(stillHosted.status, 200);
+      yield* textOp(stillHosted);
+    });
+  } finally {
+    await stopChild(server);
+  }
 });
 
 Deno.test("agent command rejects missing controller curls config", async () => {
