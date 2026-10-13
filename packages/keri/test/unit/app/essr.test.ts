@@ -160,6 +160,7 @@ Deno.test("ESSR cancelled ingress releases its concurrency slot without creating
     const controller = new AbortController();
     const waiting: Payload = {
       size: cipher.length,
+      /** Stay pending until cancellation to exercise signal-aware source teardown. */
       async *open(signal) {
         // Simulate an owned network read that is released by the request signal.
         await new Promise<void>((_resolve, reject) => {
@@ -182,6 +183,7 @@ Deno.test("ESSR cancelled ingress releases its concurrency slot without creating
 function fragmentsPayload(bytes: Uint8Array): Payload {
   return {
     size: bytes.length,
+    /** Reopen fixed bytes at deliberately unaligned transport boundaries. */
     async *open(signal) {
       for (let offset = 0; offset < bytes.length; offset += 13) {
         signal?.throwIfAborted();
@@ -199,6 +201,7 @@ Deno.test("ESSR admission caps one message and rejects concurrent work without q
     let opened = false;
     const oversized: Payload = {
       size: 4097,
+      /** Detect any premature source access before size admission. */
       async *open() {
         opened = true;
       },
@@ -211,6 +214,7 @@ Deno.test("ESSR admission caps one message and rejects concurrent work without q
     });
     const waiting: Payload = {
       size: cipher.length,
+      /** Hold the sole admission slot until the test releases its read gate. */
       async *open() {
         // Hold the first request at ingress to prove the second is rejected, not queued.
         await gate;
