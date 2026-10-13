@@ -42,6 +42,7 @@ Deno.test("tufa/runtime-bridge - replay cues are forwarded through poster instea
     return yield* drainRuntimeCues(
       runtime as never,
       serviceHab as never,
+      runtime.cues,
     );
   });
 

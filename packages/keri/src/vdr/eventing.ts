@@ -23,7 +23,7 @@ import {
   Verfer,
 } from "cesr-ts";
 import type { AgentCue } from "../core/cues.ts";
-import { Deck } from "../core/deck.ts";
+import { Deck, DeckFullError } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
 import { state as registryState, vcstate as credentialState } from "../core/protocol-vdr-eventing.ts";
@@ -640,6 +640,7 @@ export class Tever {
         this.escrowALEvent(serder, args.seqner ?? null, args.saider ?? null);
         return escrow("anchorless", "Missing KEL anchor for TEL revoke.", serder, this.regk);
       }
+      this.cues.checkSpace();
       this.logEvent({
         pre: vci,
         sn,
@@ -669,6 +670,7 @@ export class Tever {
     if (checked.kind !== "accept") {
       return checked.decision;
     }
+    this.cues.checkSpace();
     this.logEvent({
       pre: vci,
       sn,
@@ -967,6 +969,7 @@ export class Tevery {
       }
       return decision;
     } catch (error) {
+      if (error instanceof DeckFullError) throw error;
       return reject(error instanceof Error ? error.message : String(error), args.serder);
     }
   }

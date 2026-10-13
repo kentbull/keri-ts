@@ -1,4 +1,4 @@
-import { run } from "effection";
+import { call, type Operation, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -191,11 +191,17 @@ Deno.test("app/runtime-responder - witness ingress drains through responder inst
   const runtime = {
     cues: [],
     reactor: {
-      *processCompleteChunk(bytes: Uint8Array, { local }: { local?: boolean } = {}) {
-        chunks.push({ bytes, local: local ?? false });
-      },
-      *processEscrowsOnce() {
-        return;
+      *process(
+        source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
+        { local }: { local?: boolean },
+        consume: () => Operation<void>,
+      ) {
+        // The transport fixture records one bounded input and then exercises the real cue consumer.
+        const iterator = source(new AbortController().signal)[Symbol.asyncIterator]();
+        const chunk = yield* call(() => iterator.next());
+        chunks.push({ bytes: chunk.value!, local: local ?? false });
+        yield* call(() => iterator.return?.());
+        yield* consume();
       },
     },
     respondant: {

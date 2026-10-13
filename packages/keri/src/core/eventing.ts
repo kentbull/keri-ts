@@ -269,6 +269,7 @@ export class Kevery {
    *   query-not-found escrow
    */
   private decideQuery(envelope: QueryEnvelope): QueryProcessDecision {
+    this.cues.checkSpace();
     const route = envelope.serder.route;
     const query = envelope.serder.ked?.q as Record<string, unknown> | undefined;
     const pre = typeof query?.i === "string" ? query.i : null;
@@ -328,6 +329,7 @@ export class Kevery {
         }
         return acceptQuery([{
           kin: "replay",
+          querySaid: envelope.serder.said ?? undefined,
           pre,
           src,
           dest,
@@ -344,6 +346,7 @@ export class Kevery {
         }
         return acceptQuery([{
           kin: "reply",
+          querySaid: envelope.serder.said ?? undefined,
           route: "/ksn",
           serder: replyEvent(`/ksn/${src}`, kever.state().asDict()),
           src,
@@ -862,6 +865,12 @@ export class Kevery {
    *   post-acceptance cue emission
    */
   applyDecision(decision: KeverDecision): void {
+    // Accepted KEL transitions may emit clone, receipt/notice, witness, and state cues.
+    // Reserve their worst-case count before durable mutation; this path never suspends.
+    this.cues.checkSpace(
+      ("cues" in decision ? decision.cues?.length ?? 0 : 0)
+        + (decision.kind === "accept" ? 4 : decision.kind === "duplicate" ? 1 : 0),
+    );
     switch (decision.kind) {
       case "accept": {
         let kever = this.kevers.get(decision.transition.pre);
@@ -1202,6 +1211,7 @@ export class Kevery {
 
     const saider = new Diger({ qb64: said });
     const dater = new Dater({ qb64: encodeDateTimeToDater(dt) });
+    this.cues.checkSpace();
     this.updateKeyState(args.aid, ksn, saider, dater);
     this.cues.push({ kin: "keyStateSaved", ksn });
     return acceptReplyDecision();
@@ -1334,9 +1344,7 @@ export class Kevery {
 
   /** Forward decision-carried cues into the shared runtime cue deck. */
   private emitDecisionCues(cues?: readonly AgentCue[]): void {
-    for (const cue of cues ?? []) {
-      this.cues.push(cue);
-    }
+    this.cues.extend(cues ?? []);
   }
 
   /**
@@ -2971,16 +2979,16 @@ export class Kevery {
     switch (decision.kind) {
       case "accept":
       case "duplicate":
-        this.removeEscrow(currentEscrow, pre, on, said);
         this.applyDecision(decision);
+        this.removeEscrow(currentEscrow, pre, on, said);
         break;
       case "reject":
         this.removeEscrow(currentEscrow, pre, on, said);
         break;
       case "escrow":
         if (decision.reason !== currentEscrow) {
-          this.removeEscrow(currentEscrow, pre, on, said);
           this.applyDecision(decision);
+          this.removeEscrow(currentEscrow, pre, on, said);
         }
         break;
     }

@@ -52,7 +52,9 @@ function resolveCueHab(
 function* emitWithoutHab(
   runtime: AgentRuntime,
 ): Generator<CueEmission> {
-  while (!runtime.cues.empty) {
+  // New cues wait for the next pass even when delivery suspends and permits another producer to run.
+  const count = runtime.cues.length;
+  for (let index = 0; index < count; index++) {
     const cue = runtime.cues.pull();
     if (!cue) {
       continue;
@@ -82,14 +84,16 @@ export function* processCuesOnce(
     sink?: CueSink;
   } = {},
 ): Operation<void> {
-  const cueHab = resolveCueHab(runtime, hab);
-  const emissions = cueHab
-    ? cueHab.processCuesIter(runtime.cues)
-    : emitWithoutHab(runtime);
+  yield* runtime.reactor.settle(undefined, {}, function*() {
+    const cueHab = resolveCueHab(runtime, hab);
+    const emissions = cueHab
+      ? cueHab.processCuesIter(runtime.cues)
+      : emitWithoutHab(runtime);
 
-  for (const emission of emissions) {
-    yield* sink.send(emission);
-  }
+    for (const emission of emissions) {
+      yield* sink.send(emission);
+    }
+  });
 }
 
 /**

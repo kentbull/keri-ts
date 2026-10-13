@@ -9,6 +9,7 @@
 export * from "../acdc/index.ts";
 export * from "../app/agent-runtime.ts";
 export * from "../app/authenticating.ts";
+export * from "../app/byte-source.ts";
 export * from "../app/cesr-http.ts";
 export * from "../app/challenging.ts";
 export * from "../app/configing.ts";
@@ -44,6 +45,7 @@ export * from "../app/verifier-agent.ts";
 export * from "../app/verifying.ts";
 export { BUILD_METADATA, DISPLAY_VERSION, PACKAGE_VERSION } from "../app/version.ts";
 export {
+  drainWitnessCues,
   processWitnessIngress,
   Receiptor,
   type WitnessAuthMap,
@@ -79,3 +81,5 @@ export * from "../did/index.ts";
 export * from "../time/mod.ts";
 export * from "../vdr/credentialing.ts";
 export * from "../vdr/eventing.ts";
+
+export { type QueryReply } from "../app/query-replies.ts";

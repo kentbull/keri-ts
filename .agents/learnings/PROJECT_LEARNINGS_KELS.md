@@ -51,6 +51,15 @@ store it in mutable request-global state across a suspension. Local habitat boot
 configuration remains synchronous because it processes only its own endpoint
 replies directly through Revery.
 
+HTTP/file ingress pulls progressive frames through the optional CESR Effection
+adapter. `Reactor.settle` serializes dispatch, escrow progress, and cue delivery;
+background consumers must use the same guard. Direct HTTP replies reserve their
+query SAID before dispatch so background workers cannot steal them. Only the
+EOF-final query controls a multi-frame response. Earlier replies transfer to
+ordinary delivery before their reservation closes. Source, frame, and runtime
+permit resources precede their work children so cancellation joins I/O before
+releasing ownership. See `packages/keri/src/app/reactor.md`.
+
 Mailbox `mbx` queries authorize recipient-private bytes: requester identity must
 match the recipient and its signatures must satisfy the current accepted signing
 threshold. Naming a prefix in attachment material and correlating a stream cue

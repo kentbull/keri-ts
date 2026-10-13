@@ -125,7 +125,7 @@ export function envelopesFromFrames(
     if (frame.type === "error") {
       throw frame.error;
     }
-    envelopes.push(envelopeFromMessage(frame.frame, local));
+    envelopes.push(envelopeFromFrame(frame.frame, local));
   }
   return envelopes;
 }
@@ -439,7 +439,8 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
   }
 }
 
-function envelopeFromMessage(
+/** Project one complete frame for progressive routing without an intermediate event array. */
+export function envelopeFromFrame(
   message: CesrFrame,
   local = false,
 ): KeriDispatchEnvelope {

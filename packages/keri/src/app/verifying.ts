@@ -11,7 +11,7 @@
  */
 import { Dater, Diger, Ilks, NumberPrimitive, Prefixer, Saider, SerderACDC } from "cesr-ts";
 import type { AgentCue } from "../core/cues.ts";
-import { Deck } from "../core/deck.ts";
+import { Deck, DeckFullError } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { VcStateRecordShape } from "../core/records.ts";
 import type { Reger } from "../db/reger.ts";
@@ -109,6 +109,7 @@ export class Verifier {
     seqner: NumberPrimitive;
     saider: Diger;
   }): VerifierDecision {
+    this.cues.checkSpace();
     const creder = args.creder;
     const said = credentialSaid(creder);
     const regk = creder.regid;
@@ -344,7 +345,8 @@ export class Verifier {
       let decision: VerifierDecision;
       try {
         decision = this.processCredential({ creder, prefixer, seqner, saider });
-      } catch {
+      } catch (error) {
+        if (error instanceof DeckFullError) throw error;
         db.rem([said]);
         continue;
       }

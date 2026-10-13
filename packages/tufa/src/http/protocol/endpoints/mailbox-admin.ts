@@ -1,12 +1,12 @@
-import { Ilks } from "cesr-ts";
+import { Ilks, ResourceLimitError } from "cesr-ts";
 import { type Operation, run } from "effection";
 import {
   type AgentRuntime,
   type CesrStreamInspection,
+  chunkBytes,
   type Hab,
   readMailboxAdminRequest,
   Roles,
-  settleRuntimeIngress,
   ValidationError,
 } from "keri-ts/runtime";
 import { textResponse } from "../responses.ts";
@@ -53,12 +53,15 @@ export async function handleMailboxAdmin(
   try {
     mailboxRequest = await readMailboxAdminRequest(req);
   } catch (error) {
+    if (req.signal.aborted) return textResponse("Request cancelled", 408);
+    if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
     if (error instanceof ValidationError) {
       return textResponse(error.message, 400);
     }
     return textResponse(String(error), 400);
   }
   if (!mailboxRequest) {
+    await req.body?.cancel().catch(() => {});
     return textResponse("Unacceptable content type.", 406);
   }
 
@@ -69,7 +72,24 @@ export async function handleMailboxAdmin(
   }
 
   const { cid, role, expected } = validation;
-  await run(() => settleMailboxAdminIngress(runtime, bytes, mailboxAid));
+  const task = run(() => settleMailboxAdminIngress(runtime, bytes, mailboxAid, req.signal));
+  /** Request disconnect cancels its owned settlement, including any pending escrow storage. */
+  const stop = () => {
+    void task.halt();
+  };
+  req.signal.addEventListener("abort", stop, { once: true });
+  if (req.signal.aborted) stop();
+  try {
+    await task;
+  } catch (error) {
+    if (req.signal.aborted) return textResponse("Request cancelled", 408);
+    if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
+    throw error;
+  } finally {
+    req.signal.removeEventListener("abort", stop);
+    await task.halt();
+  }
+  if (req.signal.aborted) return textResponse("Request cancelled", 408);
 
   const acceptance = confirmMailboxAuthorization(
     runtime,
@@ -158,6 +178,11 @@ export function* settleMailboxAdminIngress(
   runtime: AgentRuntime,
   bytes: Uint8Array,
   mailboxAid: string,
+  signal?: AbortSignal,
 ): Operation<void> {
-  yield* settleRuntimeIngress(runtime, [bytes], { mailboxAid });
+  yield* runtime.reactor.process((owned) => chunkBytes(bytes, { signal: owned }), {
+    mailboxAid,
+    signal,
+    escrows: true,
+  });
 }

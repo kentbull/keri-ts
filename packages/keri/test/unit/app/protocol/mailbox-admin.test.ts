@@ -1,4 +1,4 @@
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { SerderKERI } from "../../../../../cesr/mod.ts";
 import {
@@ -8,6 +8,7 @@ import {
   validateMailboxAuthorizationReply,
 } from "../../../../../tufa/src/http/protocol/endpoints/mailbox-admin.ts";
 import type { AgentRuntime } from "../../../../src/app/agent-runtime.ts";
+import { collectBytes } from "../../../../src/app/byte-source.ts";
 import type { CesrStreamInspection } from "../../../../src/app/cesr-http.ts";
 
 function inspectionFor(
@@ -109,15 +110,15 @@ Deno.test("app/protocol/mailbox-admin - ingest settles parser state without resp
   let activeMailboxAid: string | null = null;
   const runtime = {
     reactor: {
-      *processCompleteChunk(
-        bytes: Uint8Array,
-        { local, mailboxAid }: { local?: boolean; mailboxAid?: string | null } = {},
+      *process(
+        source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
+        { local, mailboxAid, escrows }: { local?: boolean; mailboxAid?: string | null; escrows?: boolean } = {},
       ) {
+        // The edge supplies a bounded source and asks dispatch to advance escrows in the same turn.
+        const bytes = yield* call(() => collectBytes(source(new AbortController().signal), 3));
         settled.push({ bytes, local });
         activeMailboxAid = mailboxAid ?? null;
-      },
-      *processEscrowsOnce() {
-        return;
+        assertEquals(escrows, true);
       },
     },
     hby: {

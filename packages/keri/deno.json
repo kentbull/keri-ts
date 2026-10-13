@@ -65,7 +65,8 @@
     "effection": "npm:effection@^3.6.0",
     "commander": "npm:commander@^10.0.1",
     "jsr:@std/assert": "jsr:@std/assert@^0.217.0",
-    "cesr-ts": "../cesr/mod.ts"
+    "cesr-ts": "../cesr/mod.ts",
+    "cesr-ts/effection": "../cesr/effection.ts"
   },
   "compilerOptions": {
     "lib": [

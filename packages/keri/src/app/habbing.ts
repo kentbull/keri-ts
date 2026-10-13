@@ -1387,7 +1387,9 @@ export class Hab {
     cues: Deck<AgentCue> | Iterable<AgentCue>,
   ): Generator<CueEmission> {
     const queue = cues instanceof Deck ? cues : new Deck(cues);
-    while (!queue.empty) {
+    // One pass owns only its initial batch; producers may append while a consumer awaits delivery.
+    const count = queue.length;
+    for (let index = 0; index < count; index++) {
       const cue = queue.pull();
       if (!cue) {
         continue;

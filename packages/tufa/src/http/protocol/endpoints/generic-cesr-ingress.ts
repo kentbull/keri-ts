@@ -5,22 +5,24 @@
  * the remaining raw CESR traffic and decides whether it belongs to local
  * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
  */
-import { concatBytes, Ilks, parseBytes, type SerderKERI } from "cesr-ts";
-import { run } from "effection";
+import { concatBytes, Ilks, ParserError, ResourceLimitError, type SerderKERI } from "cesr-ts";
+import { call, each, type Operation, resource, run } from "effection";
 import {
   type CueEmission,
-  envelopesFromFrames,
+  drainWitnessCues,
   type HostedRouteResolution,
-  inspectCesrRequest,
-  processWitnessIngress,
+  isCesrContentType,
   queryEnvelopeFromDispatch,
-  readRequiredCesrRequestBytes,
+  type QueryReply,
+  requestBytes,
   runtimeTurn,
+  ValidationError,
 } from "keri-ts/runtime";
 import { cesrResponse, jsonNoContentResponse, textResponse } from "../responses.ts";
-import { drainRuntimeCues, processRuntimeRequest } from "../runtime-bridge.ts";
+import { drainRuntimeCues } from "../runtime-bridge.ts";
 import type { CesrIngressRoute, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
+/** No hosted endpoint matched this generic ingress request. */
 const NONE_HOSTED_ROUTE: HostedRouteResolution = {
   kind: "none",
   endpoint: null,
@@ -92,6 +94,7 @@ export function classifyCesrIngressRoute(
   return { kind: "runtimeIngress", mailboxAid };
 }
 
+/** Return the mailbox stream correlated with this already-authorized query. */
 function querySseResponse(
   context: ProtocolRequestContext,
   said: string | null,
@@ -130,108 +133,138 @@ function directQueryResponse(
     : null;
 }
 
-/** Optionally wait for escrow replay to produce direct `/logs` response bytes. */
+/** Wait for this request's reserved response while other runtime turns continue fairly. */
 function* deferredDirectQueryResponse(
   context: ProtocolRequestContext,
   serder: SerderKERI,
-  emissions: readonly CueEmission[],
-) {
-  if (!context.policy.directQueryResponses) {
-    return null;
-  }
-
-  const immediate = directQueryResponse(emissions);
-  if (immediate || serder.ilk !== Ilks.qry || serder.route !== "logs") {
-    return immediate;
-  }
-
+  reply: QueryReply,
+): Operation<Response | null> {
   const runtime = context.runtime!;
   const expires = Date.now() + DIRECT_QUERY_RESPONSE_WAIT_MS;
-  while (Date.now() < expires) {
-    yield* runtime.reactor.processEscrowsOnce();
-    const replayEmissions = yield* drainRuntimeCues(
-      runtime,
-      context.policy.serviceHab,
-    );
-    const response = directQueryResponse(replayEmissions);
-    if (response) {
-      return response;
-    }
+  do {
+    let response: Response | null = null;
+    yield* runtime.reactor.settle(undefined, { escrows: true }, function*() {
+      const cue = reply.take();
+      if (cue) response = directQueryResponse(yield* drainRuntimeCues(runtime, context.policy.serviceHab, [cue]));
+    });
+    if (response) return response;
+    if (serder.route !== "logs") return null;
     yield* runtimeTurn();
-  }
+  } while (Date.now() < expires);
   return null;
 }
 
-/** Handle one classified generic POST/PUT CESR ingress request. */
+/** Run one request in a single owned Effection task and join it on disconnect. */
 export async function handleGenericCesrIngress(
   context: ProtocolRequestContext,
   hosted: HostedRouteResolution,
 ): Promise<Response> {
-  const runtime = context.runtime!;
-  const bytes = await readRequiredCesrRequestBytes(context.req);
-  if (!bytes) {
+  if (!isCesrContentType(context.req.headers.get("content-type"))) {
+    await context.req.body?.cancel().catch(() => {});
     return textResponse("Unacceptable content type.", 406);
   }
-
-  const serder = inspectCesrRequest(bytes);
-  if (!serder) {
-    return textResponse("Invalid CESR request", 400);
-  }
-
-  const ingressRoute = classifyCesrIngressRoute(context, hosted, serder);
-
-  switch (ingressRoute.kind) {
-    case "witnessLocalIngress":
-      await run(function*() {
-        yield* processWitnessIngress(runtime, ingressRoute.witnessHab, bytes, {
-          local: true,
-        });
-      });
-      return jsonNoContentResponse();
-    case "runtimeIngress": {
-      let response: Response | null = null;
-      await run(function*() {
-        const emissions = yield* processRuntimeRequest(
-          runtime,
-          bytes,
-          ingressRoute.mailboxAid,
-          context.policy.serviceHab,
-        );
-        response = yield* deferredDirectQueryResponse(
-          context,
-          serder,
-          emissions,
-        );
-      });
-      return response ?? jsonNoContentResponse();
-    }
-    case "mailboxQueryStream":
-      await run(function*() {
-        yield* processRuntimeRequest(
-          runtime,
-          bytes,
-          ingressRoute.mailboxAid,
-          context.policy.serviceHab,
-        );
-      });
-      // Query SAIDs omit attachments: an older accepted cue must not authorize
-      // this request when it carries forged, foreign or now-stale signatures.
-      if (!authorizesMailboxRequest(context, bytes, serder.said ?? null)) {
-        return textResponse("Mailbox requester is not authorized", 403);
-      }
-      return querySseResponse(context, serder.said ?? null);
+  const task = run(() => ingest(context, hosted));
+  /** Disconnect halts the sole task that owns this request source and its dispatches. */
+  const stop = () => {
+    void task.halt();
+  };
+  context.req.signal.addEventListener("abort", stop, { once: true });
+  if (context.req.signal.aborted) stop();
+  try {
+    const response = await task;
+    return context.req.signal.aborted ? textResponse("Request cancelled", 408) : response;
+  } catch (error) {
+    if (context.req.signal.aborted) return textResponse("Request cancelled", 408);
+    if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
+    if (error instanceof ParserError || error instanceof ValidationError) return textResponse(error.message, 400);
+    throw error;
+  } finally {
+    context.req.signal.removeEventListener("abort", stop);
+    await task.halt();
+    // Admission or header failure may precede acquisition of the request body reader.
+    if (context.req.body && !context.req.body.locked) await context.req.body.cancel().catch(() => {});
   }
 }
 
-/** Parse and authenticate this request envelope before consulting shared query cues. */
-function authorizesMailboxRequest(context: ProtocolRequestContext, bytes: Uint8Array, said: string | null): boolean {
-  let envelopes;
+/** Parse on demand, dispatch each completed child, and retain only the final response query. */
+function* ingest(context: ProtocolRequestContext, hosted: HostedRouteResolution): Operation<Response> {
+  const runtime = context.runtime!;
+  let seen = false;
+  let query: { serder: SerderKERI; mailbox: boolean; authorized: boolean; reply?: QueryReply } | undefined;
   try {
-    envelopes = envelopesFromFrames(parseBytes(bytes), false);
-  } catch {
-    return false;
+    // This child scope closes its parser before an optional deferred query wait begins.
+    yield* call(function*() {
+      const channel = yield* runtime.reactor.frames(
+        (signal) => requestBytes(context.req, { signal }),
+        { signal: context.req.signal },
+      );
+      for (const frame of yield* each(channel.frames)) {
+        yield* call(function*() {
+          // Invalid trailing frames still own payloads even when they never reach runtime dispatch.
+          if (frame.essr) {
+            yield* resource<void>(function*(provide) {
+              try {
+                yield* provide();
+              } finally {
+                yield* call(() => frame.essr!.discard());
+              }
+            });
+          }
+          if (query?.reply) {
+            const previous = query.reply;
+            // A later frame makes this an ordinary query; transfer its reply before releasing its reservation.
+            yield* runtime.reactor.settle(undefined, {}, function*() {
+              try {
+                const cue = previous.take();
+                if (cue) yield* drainRuntimeCues(runtime, context.policy.serviceHab, [cue]);
+              } finally {
+                previous.close();
+              }
+            });
+          }
+          query = undefined;
+          seen = true;
+          const serder = frame.body as SerderKERI;
+          const route = classifyCesrIngressRoute(context, hosted, serder);
+          if (serder.ilk === Ilks.qry) {
+            query = {
+              serder,
+              mailbox: route.kind === "mailboxQueryStream",
+              authorized: false,
+              reply: context.policy.directQueryResponses && route.kind !== "mailboxQueryStream" && serder.said
+                ? runtime.reactor.replies.reserve(serder.said)
+                : undefined,
+            };
+          }
+          yield* runtime.reactor.settle(frame, {
+            local: route.kind === "witnessLocalIngress",
+            mailboxAid: route.kind === "witnessLocalIngress" ? hosted.endpoint?.eid : route.mailboxAid,
+            escrows: true,
+          }, function*(envelope) {
+            if (query) {
+              // SAIDs exclude attachments: authorize this exact envelope, not an older query cue.
+              query.authorized = !query.mailbox || runtime.reactor.kevery.isMailboxQueryAuthorized(
+                queryEnvelopeFromDispatch(envelope!),
+              );
+            }
+            if (route.kind === "witnessLocalIngress") {
+              yield* drainWitnessCues(runtime, route.witnessHab, runtime.cues);
+            } else {
+              yield* drainRuntimeCues(runtime, context.policy.serviceHab, runtime.cues);
+            }
+          });
+        });
+        yield* each.next();
+      }
+    });
+    if (!seen) return textResponse("Invalid CESR request", 400);
+    if (!query) return jsonNoContentResponse();
+    if (!query.authorized) return textResponse("Mailbox requester is not authorized", 403);
+    if (query.mailbox) return querySseResponse(context, query.serder.said ?? null);
+    return query.reply
+      ? (yield* deferredDirectQueryResponse(context, query.serder, query.reply)) ?? jsonNoContentResponse()
+      : jsonNoContentResponse();
+  } finally {
+    query?.reply?.close();
   }
-  const envelope = envelopes[0];
-  if (!envelope || envelope.serder.said !== said) return false;
-  return context.runtime!.reactor.kevery.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(envelope));
 }

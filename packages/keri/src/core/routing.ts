@@ -2,7 +2,7 @@ import { Cigar, Dater, Diger, Prefixer, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
-import { Deck } from "./deck.ts";
+import { Deck, DeckFullError } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import {
@@ -364,6 +364,8 @@ export class Revery {
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
+    // Missing signer groups can each request state; the accepted route may also emit one cue.
+    this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
     if (!args.serder.verify()) {
       throw new ValidationError(
         `Invalid said for reply msg=${JSON.stringify(args.serder.ked)}.`,
@@ -403,6 +405,7 @@ export class Revery {
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
+    this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
     const daterText = args.serder.ked?.dt;
     if (typeof daterText !== "string") {
       throw new ValidationError("Reply message is missing 'dt'.");
@@ -744,6 +747,7 @@ export class Revery {
       }
       return acceptEscrow();
     } catch (error) {
+      if (error instanceof DeckFullError) throw error;
       return dropEscrow("processingError", {
         message: error instanceof Error ? error.message : String(error),
         context: { said: diger.qb64, route: serder.route },

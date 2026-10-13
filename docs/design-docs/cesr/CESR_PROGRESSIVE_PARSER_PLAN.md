@@ -14,28 +14,29 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 
 ## PR sequence
 
-| Phase | Cohesive change                                                      | Required evidence before completion                                                                | Status                                                      |
-| ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| 1     | Streaming benchmark source and untouched baseline; no parser changes | Immutable commit/runtime/corpus manifest; correctness oracle; bounded isolated runs                | Merged [#126](https://github.com/kentbull/keri-ts/pull/126) |
-| 2     | Large byte-to-text and base64 correctness; exact token decoding      | 1 MiB+ values, small-token/large-tail cases, both domains; decoding-fixed atomic baseline          | Merged [#127](https://github.com/kentbull/keri-ts/pull/127) |
-| 3     | Progressive contract, ownership, limits, and execution plan          | Accurate distinction between current behavior and accepted target                                  | Merged [#128](https://github.com/kentbull/keri-ts/pull/128) |
-| 4     | Segmented input cursor and bounded views                             | No accumulated suffix copying; bounds, split headers, cancellation; cursor checkpoint              | Merged [#129](https://github.com/kentbull/keri-ts/pull/129) |
-| 5     | Async generator frame traversal with `yield*`                        | Early GenericGroup children, exact single-frame enclosures, scopes, partial failure                | Merged [#130](https://github.com/kentbull/keri-ts/pull/130) |
-| 6     | Payload sinks, reopenable references, and bounded manifests          | Backpressure, stage ownership, finish/abort, runtime filesystem boundary                           | Merged [#131](https://github.com/kentbull/keri-ts/pull/131) |
-| 7     | Progressive ESSR attachment reads and incremental digest             | Both count models/domains; no retained raw envelope or unbounded item list                         | Merged [#132](https://github.com/kentbull/keri-ts/pull/132) |
-| 8     | Bounded recipient decryption and explicit ciphertext retention       | Logical-message limits, authentication before plaintext storage, unchanged crypto wire format      | Merged [#133](https://github.com/kentbull/keri-ts/pull/133) |
-| 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Pending                                                     |
-| 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | Pending                                                     |
-| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Pending                                                     |
-| 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                                                     |
+| Phase | Cohesive change                                                      | Required evidence before completion                                                                | Status                                                         |
+| ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| 1     | Streaming benchmark source and untouched baseline; no parser changes | Immutable commit/runtime/corpus manifest; correctness oracle; bounded isolated runs                | Merged [#126](https://github.com/kentbull/keri-ts/pull/126)    |
+| 2     | Large byte-to-text and base64 correctness; exact token decoding      | 1 MiB+ values, small-token/large-tail cases, both domains; decoding-fixed atomic baseline          | Merged [#127](https://github.com/kentbull/keri-ts/pull/127)    |
+| 3     | Progressive contract, ownership, limits, and execution plan          | Accurate distinction between current behavior and accepted target                                  | Merged [#128](https://github.com/kentbull/keri-ts/pull/128)    |
+| 4     | Segmented input cursor and bounded views                             | No accumulated suffix copying; bounds, split headers, cancellation; cursor checkpoint              | Merged [#129](https://github.com/kentbull/keri-ts/pull/129)    |
+| 5     | Async generator frame traversal with `yield*`                        | Early GenericGroup children, exact single-frame enclosures, scopes, partial failure                | Merged [#130](https://github.com/kentbull/keri-ts/pull/130)    |
+| 6     | Payload sinks, reopenable references, and bounded manifests          | Backpressure, stage ownership, finish/abort, runtime filesystem boundary                           | Merged [#131](https://github.com/kentbull/keri-ts/pull/131)    |
+| 7     | Progressive ESSR attachment reads and incremental digest             | Both count models/domains; no retained raw envelope or unbounded item list                         | Merged [#132](https://github.com/kentbull/keri-ts/pull/132)    |
+| 8     | Bounded recipient decryption and explicit ciphertext retention       | Logical-message limits, authentication before plaintext storage, unchanged crypto wire format      | Merged [#133](https://github.com/kentbull/keri-ts/pull/133)    |
+| 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Merged [#137](https://github.com/kentbull/keri-ts/pull/137)    |
+| 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | In review [#138](https://github.com/kentbull/keri-ts/pull/138) |
+| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Pending                                                        |
+| 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                                                        |
 
 Phase 9 builds on [#135](https://github.com/kentbull/keri-ts/pull/135), which makes
 dispatch/settlement and mailbox batch delivery yield through completion with
 explicit mailbox endpoint identity, and
 [#136](https://github.com/kentbull/keri-ts/pull/136), which publishes durable
-payload references. Both foundations have merged. The exchange integration PR
-starts from that merged master; its commit list and review diff contain only
-the integration.
+payload references. Exchange integration merged in
+[#137](https://github.com/kentbull/keri-ts/pull/137). HTTP/runtime ingress also incorporates the merged test cleanup
+[#134](https://github.com/kentbull/keri-ts/pull/134) and grouped-receipt repair
+[#139](https://github.com/kentbull/keri-ts/pull/139); its review diff contains only ingress.
 
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
 ahead, base it on the predecessor branch and retarget after that predecessor
@@ -59,15 +60,15 @@ later frame fails.
 
 ## Additional approved review and qualification work
 
-# After the open parser PRs through recipient decryption (#129–#133) merge, prepareone test cleanup/reorganization PR against current master for human review.
+### Completed test cleanup and qualification
 
-Merge [#134](https://github.com/kentbull/keri-ts/pull/134) after the complete
-maintained local inventory, including manual and long runs, passes and required
-static/unit/package CI passes. Hosted interop completion is not a merge gate.
-Revalidate the side-chat audit against the new code, remove only
-proven duplication or tests without a production contract, retain protocol and
-resource-lifecycle regressions, and simplify test scheduling without hiding
-coverage. Keep production behavior unchanged in that PR.
+[#134](https://github.com/kentbull/keri-ts/pull/134) merged after the complete
+local inventory passed: 1,059 tests, including 577 KERI tests across 111 files
+and the manual endurance targets. Static/unit/package CI and installed npm
+smokes on glibc and Alpine also passed. The immutable TypeScript qualification
+revision was `1e0af1b189ae947bb236178946e6ab008d885507`; subsequent phases must
+register new tests explicitly and preserve the qualified protocol coverage.
+Hosted interop completion remains outside the merge gate.
 
 Run the complete maintained test inventory, including all manual and long-running
 targets. Preserve the frozen upstream-main baseline at
@@ -87,15 +88,14 @@ topology, and duration. Extended interop and ESSR workflow jobs have a 15-minute
 limit; only the maintainer dispatches them. Full local qualification still runs
 every maintained target, including long topologies.
 
-Qualification also reproduced an immediate replay interop blocker: current main
-rejects v1 `-D` receipt quadruples, so a Tufa OOBI replay can lose the following
-mailbox authorization. Land a narrow prerequisite PR using canonical grouped
-transferable receipt proofs (`-F`) and verified grouped receipt dispatch before
-closing #134. Keep stored evidence and legacy protocol decoding; the broader
-table upgrade remains in the follow-on sequence. Recheck the affected OOBI and
-credential flows after this repair instead of changing their topology or assertions.
+The replay blocker discovered during qualification was repaired in
+[#139](https://github.com/kentbull/keri-ts/pull/139). Canonical grouped
+transferable receipt proofs (`-F`) replace emitted v1 `-D` quadruples, and
+runtime dispatch verifies the groups. Stored evidence and legacy decoding are
+preserved. The affected OOBI and credential flows passed without changing their
+topology or assertions; the broader table upgrade remains in the follow-on sequence.
 
-Continue the progressive parser sequence after preparing that review PR. Any
+Continue the progressive parser sequence from these merged prerequisites. Any
 interop regressions or missing features discovered against this KERIpy revision
 must have an evidence-backed follow-up list and sequenced implementation plan.
 Execute those follow-ups after the progressive parser work; do not disguise
