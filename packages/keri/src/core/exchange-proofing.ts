@@ -5,7 +5,7 @@ import { TransIdxSigGroup } from "./dispatch.ts";
 import { Kever } from "./kever.ts";
 
 /** Explicit proof factors; no parent or neighboring node can supply implicit evidence here. */
-export interface ExchangeProofs {
+export interface ExchangeFactors {
   tsgs?: readonly TransIdxSigGroup[];
   cigars?: readonly Cigar[];
   sourceSeals?: readonly SealEvent[];
@@ -18,7 +18,7 @@ export interface MissingExchangeState {
 }
 
 /** Valid factors plus invalid/missing observations, for the owning route's selection policy. */
-export interface VerifiedExchangeProofs {
+export interface ExchangeProofVerification {
   tsgs: TransIdxSigGroup[];
   cigars: Cigar[];
   sourceSeals: SealEvent[];
@@ -29,15 +29,16 @@ export interface VerifiedExchangeProofs {
 /**
  * Match frozen KERIpy peer.exchanging.verifyAttachments without fetching or publishing.
  * Source seals select an accepted key event containing this body's SAID.
+ * Safe-integer bounds are JavaScript/database constraints, not protocol ordinal limits.
  * The route decides whether one valid factor suffices and whether optional failures matter.
  */
 export function verifyExchangeProofs(
   db: Baser,
   serder: SerderKERI | SerderACDC,
-  proofs: ExchangeProofs,
-): VerifiedExchangeProofs {
-  const result: VerifiedExchangeProofs = { tsgs: [], cigars: [], sourceSeals: [], invalid: false, missing: [] };
-  for (const group of proofs.tsgs ?? []) {
+  factors: ExchangeFactors,
+): ExchangeProofVerification {
+  const result: ExchangeProofVerification = { tsgs: [], cigars: [], sourceSeals: [], invalid: false, missing: [] };
+  for (const group of factors.tsgs ?? []) {
     if (!group.prefixer.transferable || group.sn > BigInt(Number.MAX_SAFE_INTEGER)) {
       result.invalid = true;
       continue;
@@ -59,12 +60,12 @@ export function verifyExchangeProofs(
     }
     result.tsgs.push(new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, verified.sigers));
   }
-  for (const cigar of proofs.cigars ?? []) {
+  for (const cigar of factors.cigars ?? []) {
     if (!cigar.verfer || cigar.verfer.transferable || !cigar.verfer.verify(cigar.raw, serder.raw)) {
       result.invalid = true;
     } else result.cigars.push(cigar);
   }
-  for (const seal of proofs.sourceSeals ?? []) {
+  for (const seal of factors.sourceSeals ?? []) {
     if (!seal.i.transferable || seal.s.num > BigInt(Number.MAX_SAFE_INTEGER)) {
       result.invalid = true;
       continue;

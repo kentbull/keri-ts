@@ -97,8 +97,8 @@ Deno.test("exchange payload references survive request disposal and preserve rea
     );
     await reframed.discard();
     assertEquals([...hby.db.essrs.getIter([serder.said!])].map((item) => item.text), ["abc", "xyz"]);
-    // A later signature-only duplicate cannot downgrade accepted ownership to escrow.
-    assertEquals((await run(() => exchanger.processEvent({ serder }))).kind, "accept");
+    // An incomplete attempt remains pending but cannot downgrade accepted ownership.
+    assertEquals((await run(() => exchanger.processEvent({ serder }))).kind, "escrow");
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertEquals((names(join(hby.db.path!, "payloads", "objects"))).length, 1);
     assertEquals(names(join(hby.db.path!, "payloads", "staging")), []);

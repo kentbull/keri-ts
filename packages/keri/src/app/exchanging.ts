@@ -26,9 +26,8 @@ import { Deck } from "../core/deck.ts";
 import { PathedMaterialGroup, TransIdxSigGroup, type TransLastIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import {
-  type ExchangeProofs,
+  type ExchangeFactors,
   type MissingExchangeState,
-  type VerifiedExchangeProofs,
   verifyExchangeProofs,
 } from "../core/exchange-proofing.ts";
 import { Kever } from "../core/kever.ts";
@@ -63,11 +62,11 @@ export interface ExchangeAttachment {
   text: string;
 }
 
-/** A route may await credential/KEL/TEL dependencies without treating absence as invalidity. */
+/** Route dependency escrow maps KERIpy MissingChainError to an expected pending decision. */
 export type ExchangeRouteVerification = boolean | { kind: "escrow"; reason: string };
 
-/** Resolved evidence is finite and retains historical coordinates before any sender escrow. */
-interface ResolvedExchangeProofs {
+/** Historical coordinates are frozen before escrow; unresolved last groups cannot be persisted. */
+interface ResolvedExchangeFactors {
   tsgs: TransIdxSigGroup[];
   cigars: Cigar[];
   sourceSeals: SealEvent[];
@@ -75,10 +74,10 @@ interface ResolvedExchangeProofs {
 }
 
 /** Authenticated sender factors and the owning route's selected supplemental factors. */
-interface ExchangeAuthentication {
+interface AuthenticatedExchange {
   kind: "verified";
-  proofs: Required<ExchangeProofs>;
-  evidence: Required<ExchangeProofs>;
+  retained: Required<ExchangeFactors>;
+  supplemental: Required<ExchangeFactors>;
   sscs: SealSource[];
 }
 
@@ -89,17 +88,25 @@ export interface ExchangeRouteHandler {
   readonly acceptsNests?: boolean;
   /** Opt in to verified sender source coordinates required by the v2 IPEX workflow. */
   readonly acceptsSscs?: boolean;
+  /** Permit selected supplemental factors in verify(), independently of the selection hook. */
+  readonly acceptsEvidence?: boolean;
   /** Only routes with optional supplemental evidence may query and drop missing factors. */
   readonly acceptsMissingEvidence?: boolean;
   /** Select from independently verified non-sender factors; null permanently rejects the route. */
   verifyEvidence?(
-    args: { serder: SerderKERI; evidence: VerifiedExchangeProofs },
-  ): ExchangeProofs | null | Operation<ExchangeProofs | null>;
+    args: {
+      serder: SerderKERI;
+      factors: Required<ExchangeFactors>;
+      invalid: boolean;
+      /** Present only when acceptsMissingEvidence is enabled, including an empty list. */
+      missing?: readonly MissingExchangeState[];
+    },
+  ): ExchangeFactors | null | Operation<ExchangeFactors | null>;
   /** Validate route policy before publishing accepted evidence. */
   verify?(args: {
     serder: SerderKERI;
     /** Selected supplemental proofs; each factor authenticates this body only. */
-    evidence?: Required<ExchangeProofs>;
+    evidence?: Required<ExchangeFactors>;
     /** Valid sender-implied source couples, only for opted-in routes. */
     sscs?: readonly SealSource[];
     attachments: ExchangeAttachment[];
@@ -149,7 +156,7 @@ export interface ExchangeInput {
   mailboxAid?: string | null;
 }
 
-/** Result of one `Exchanger` processing attempt. */
+/** Result of this attempt; complete(said) separately reports any earlier durable acceptance. */
 export type ExchangeDecision =
   | {
     kind: "accept";
@@ -164,6 +171,8 @@ export type ExchangeDecision =
     kind: "reject";
     reason: string;
     said: string;
+    /** MissingSignatureError preserves an existing escrow but does not authorize creating one. */
+    preserveEscrow?: true;
   };
 
 /**
@@ -284,9 +293,14 @@ export class Exchanger {
     const resolved = this.resolveProofs(args);
     const authentication = yield* this.authenticate(args.serder, resolved, handler);
     if (authentication.kind === "reject") return authentication;
-    let pending = authentication.kind === "escrow" ? authentication : undefined;
+    let pending = authentication.kind === "escrow"
+      ? { kind: authentication.kind, said, reason: authentication.reason }
+      : undefined;
+    const senderQuery = authentication.kind === "escrow" ? authentication.query : undefined;
+    let needsProof = false;
+    let newEscrow = false;
     const approved = authentication.kind === "verified" ? authentication : undefined;
-    const retainedProofs = approved?.proofs ?? resolved;
+    const retainedFactors = approved?.retained ?? resolved;
 
     const previous = this.hby.db.exchangeMeta.get([said]);
     const retained = yield* abortable((signal) =>
@@ -406,8 +420,8 @@ export class Exchanger {
         essr,
         nests,
         mailboxAid,
-        ...(handler.acceptsSscs ? { sscs: approved.sscs } : {}),
-        ...(handler.verifyEvidence ? { evidence: approved.evidence } : {}),
+        ...(handler.acceptsSscs && approved.sscs.length ? { sscs: approved.sscs } : {}),
+        ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
       });
       const verified = typeof verification === "object" && Symbol.iterator in verification
         ? yield* verification
@@ -415,11 +429,11 @@ export class Exchanger {
       if (verified === false) return reject(`Exchange route ${args.serder.route ?? ""} failed handler verification.`);
       if (typeof verified === "object") {
         pending = { ...verified, said };
-        this.cues.push({ kin: "proof", said });
+        needsProof = true;
       }
     }
     // An already accepted exchange cannot be downgraded by an incomplete duplicate.
-    if (pending && this.complete(said)) return { kind: "accept", said };
+    if (pending && this.complete(said)) return pending;
     if (args.nests?.length) {
       nestStage = crypto.randomUUID();
       yield* abortable((signal) => stageNests(this.hby.db, nestStage!, nests, signal));
@@ -431,12 +445,12 @@ export class Exchanger {
         this.clearEscrow(said, true);
         this.logAcceptedEvent({
           serder: args.serder,
-          ...approved.proofs,
-          evidence: approved.evidence,
+          ...approved.retained,
+          supplemental: approved.supplemental,
           ptds: args.ptds ?? [],
         });
       } else {
-        this.escrowPartialSigned(args.serder, retainedProofs, args.ptds ?? []);
+        newEscrow = this.escrowPartialSigned(args.serder, retainedFactors, args.ptds ?? []);
       }
       this.hby.db.exchangeMeta.pin([said], {
         mailboxAid,
@@ -484,7 +498,13 @@ export class Exchanger {
         await this.hby.db.env!.flushed;
       });
     }
-    if (pending) return pending;
+    if (pending) {
+      if (newEscrow) {
+        if (senderQuery) this.cueMissingStates([senderQuery]);
+        if (needsProof) this.cues.push({ kin: "proof", said });
+      }
+      return pending;
+    }
     if (handler) {
       yield* call(() =>
         handler.handle({
@@ -493,7 +513,7 @@ export class Exchanger {
           essr: stored ?? undefined,
           nests,
           mailboxAid,
-          ...(handler.acceptsSscs ? { sscs: approved?.sscs } : {}),
+          ...(handler.acceptsSscs && approved?.sscs.length ? { sscs: approved.sscs } : {}),
         })
       );
     }
@@ -538,7 +558,7 @@ export class Exchanger {
         ptds: this.hby.db.epath.get([said]).map((text) => PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))),
         mailboxAid: this.hby.db.exchangeMeta.get([said])?.mailboxAid,
       });
-      if (decision.kind === "reject") yield* call(() => this.dropEscrow(said));
+      if (decision.kind === "reject" && !decision.preserveEscrow) yield* call(() => this.dropEscrow(said));
     }
   }
 
@@ -652,8 +672,8 @@ export class Exchanger {
   }
 
   /** Freeze last-establishment groups and expand sender-implied seals before durable admission. */
-  private resolveProofs(args: ExchangeInput): ResolvedExchangeProofs {
-    const result: ResolvedExchangeProofs = {
+  private resolveProofs(args: ExchangeInput): ResolvedExchangeFactors {
+    const result: ResolvedExchangeFactors = {
       tsgs: [...(args.tsgs ?? [])],
       cigars: [...(args.cigars ?? [])],
       sourceSeals: [
@@ -683,9 +703,14 @@ export class Exchanger {
   /** Match sender-factor precedence and let the registered route select supplemental evidence. */
   private *authenticate(
     serder: SerderKERI,
-    resolved: ResolvedExchangeProofs,
+    resolved: ResolvedExchangeFactors,
     handler?: ExchangeRouteHandler,
-  ): Operation<ExchangeAuthentication | Exclude<ExchangeDecision, { kind: "accept" }>> {
+  ): Operation<
+    | AuthenticatedExchange
+    | (Exclude<ExchangeDecision, { kind: "accept" }> & {
+      query?: MissingExchangeState;
+    })
+  > {
     const said = serder.said!;
     const sender = serder.pre!;
     const senderTsgs = aggregateTransIdxSigGroups(resolved.tsgs.filter((group) => group.pre === sender));
@@ -693,7 +718,7 @@ export class Exchanger {
     const cigars = senderTsgs.length && !handler?.verifyEvidence ? [] : resolved.cigars;
     const senderCigars = cigars.filter((cigar) => cigar.verfer?.qb64 === sender);
     const extraCigars = cigars.filter((cigar) => cigar.verfer?.qb64 !== sender);
-    for (const missing of resolved.missing) this.cueMissingState(missing);
+    this.cueMissingStates(resolved.missing);
     if (
       resolved.missing.length && (!handler?.acceptsMissingEvidence || resolved.missing.some((m) => m.pre === sender))
     ) {
@@ -702,6 +727,7 @@ export class Exchanger {
       return {
         kind: "reject",
         said,
+        preserveEscrow: true,
         reason: "Unresolved last-establishment evidence requires key state and retransmission.",
       };
     }
@@ -709,8 +735,13 @@ export class Exchanger {
       sourceSeals: resolved.sourceSeals.filter((seal) => seal.i.qb64 === sender),
     });
     if (sealed.missing.length) {
-      for (const missing of sealed.missing) this.cueMissingState(missing);
-      return { kind: "escrow", said, reason: "Missing sender source-seal KEL evidence." };
+      this.cueMissingStates(sealed.missing);
+      return {
+        kind: handler?.acceptsSscs ? "escrow" : "reject",
+        ...(!handler?.acceptsSscs ? { preserveEscrow: true as const } : {}),
+        said,
+        reason: "Missing sender source-seal KEL evidence.",
+      };
     }
     let tsgs: TransIdxSigGroup[];
     let validCigars: Cigar[];
@@ -723,7 +754,12 @@ export class Exchanger {
         !handler?.verifyEvidence && !senderTsgs.length && !senderCigars.length
         && (extraTsgs.length || extraCigars.length)
       ) {
-        return { kind: "reject", said, reason: "Exchange has foreign proofs without sender authentication." };
+        return {
+          kind: "reject",
+          said,
+          preserveEscrow: true,
+          reason: "Exchange has foreign proofs without sender authentication.",
+        };
       }
       const signatures = this.verifySignatures({ serder, sender, tsgs: senderTsgs, cigars: senderCigars });
       if (signatures.kind !== "verified") {
@@ -733,40 +769,61 @@ export class Exchanger {
       validCigars = signatures.cigars;
     }
     if (!handler?.verifyEvidence && (extraTsgs.length || extraCigars.length)) {
-      return { kind: "reject", said, reason: "Exchange route does not accept supplemental endorsements." };
+      return {
+        kind: "reject",
+        said,
+        preserveEscrow: true,
+        reason: "Exchange route does not accept supplemental endorsements.",
+      };
     }
-    let evidence: Required<ExchangeProofs> = { tsgs: [], cigars: [], sourceSeals: [] };
+    let supplemental: Required<ExchangeFactors> = { tsgs: [], cigars: [], sourceSeals: [] };
     if (handler?.verifyEvidence) {
-      const extras = verifyExchangeProofs(this.hby.db, serder, {
+      const { invalid, missing, ...factors } = verifyExchangeProofs(this.hby.db, serder, {
         tsgs: extraTsgs,
         cigars: extraCigars,
         sourceSeals: resolved.sourceSeals.filter((seal) => seal.i.qb64 !== sender),
       });
-      extras.missing.push(...resolved.missing);
-      for (const missing of extras.missing) this.cueMissingState(missing);
-      if (extras.missing.length && !handler.acceptsMissingEvidence) {
-        return { kind: "escrow", said, reason: "Missing supplemental proof key state." };
+      // Each reference helper invocation deduplicates its own coordinate list. Do not
+      // re-query unresolved last groups when passing them on to the selection hook.
+      this.cueMissingStates(missing);
+      if (missing.length && !handler.acceptsMissingEvidence) {
+        return { kind: "reject", said, preserveEscrow: true, reason: "Missing supplemental proof key state." };
       }
-      const selection = handler.verifyEvidence!({ serder, evidence: extras });
+      const selection = handler.verifyEvidence!({
+        serder,
+        factors,
+        invalid,
+        ...(handler.acceptsMissingEvidence ? { missing: [...resolved.missing, ...missing] } : {}),
+      });
       const selected = selection && Symbol.iterator in selection ? yield* selection : selection;
       if (!selected) return { kind: "reject", said, reason: "Route rejected supplemental exchange proofs." };
-      evidence = { tsgs: selected.tsgs ?? [], cigars: selected.cigars ?? [], sourceSeals: selected.sourceSeals ?? [] };
+      supplemental = {
+        tsgs: selected.tsgs ?? [],
+        cigars: selected.cigars ?? [],
+        sourceSeals: selected.sourceSeals ?? [],
+      };
     }
     return {
       kind: "verified",
-      evidence,
+      supplemental,
       sscs: sealed.sourceSeals.map(({ s, d }) => ({ s, d })),
-      proofs: {
-        tsgs: [...tsgs, ...evidence.tsgs],
-        cigars: [...validCigars, ...evidence.cigars],
-        sourceSeals: [...sealed.sourceSeals, ...evidence.sourceSeals],
+      retained: {
+        tsgs: [...tsgs, ...supplemental.tsgs],
+        cigars: [...validCigars, ...supplemental.cigars],
+        sourceSeals: [...sealed.sourceSeals, ...supplemental.sourceSeals],
       },
     };
   }
 
-  /** Request a concrete KEL coordinate without claiming query completion or proof acceptance. */
-  private cueMissingState({ pre, sn }: MissingExchangeState): void {
-    this.cues.push({ kin: "query", pre, q: { r: "logs", pre, ...(sn === null ? {} : { sn: sn.toString(16) }) } });
+  /** Match _cueMissingKeyState's coordinate deduplication within this invocation. */
+  private cueMissingStates(missing: readonly MissingExchangeState[]): void {
+    const seen = new Set<string>();
+    for (const { pre, sn } of missing) {
+      const key = `${pre}:${sn ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      this.cues.push({ kin: "query", pre, q: { r: "logs", pre, ...(sn === null ? {} : { sn: sn.toString(16) }) } });
+    }
   }
 
   /** Reattach the persisted verifier to each nontransferable signature before replay or retry. */
@@ -795,7 +852,7 @@ export class Exchanger {
       tsgs: TransIdxSigGroup[];
       cigars: Cigar[];
     }
-    | Exclude<ExchangeDecision, { kind: "accept" }>
+    | (Exclude<ExchangeDecision, { kind: "accept" }> & { query?: MissingExchangeState })
   {
     if (args.tsgs.length > 0) {
       const verifiedGroups: TransIdxSigGroup[] = [];
@@ -816,9 +873,9 @@ export class Exchanger {
         const estSaid = this.hby.db.kels.getLast(tsg.pre, Number(tsg.sn));
         const estEvent = estSaid ? this.hby.db.getEvtSerder(tsg.pre, estSaid) : null;
         if (!estSaid || !estEvent) {
-          this.cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
           return {
             kind: "escrow",
+            query: { pre: tsg.pre, sn: tsg.sn },
             reason: `Missing accepted establishment state for ${tsg.pre}:${tsg.said}.`,
             said: args.serder.said ?? "<unknown>",
           };
@@ -842,9 +899,9 @@ export class Exchanger {
           estEvent.verfers,
         );
         if (!tholder.satisfy(verified.indices)) {
-          this.cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
           return {
             kind: "escrow",
+            query: { pre: tsg.pre, sn: tsg.sn },
             reason: `Exchange ${args.serder.said ?? "<unknown>"} does not yet satisfy sender threshold.`,
             said: args.serder.said ?? "<unknown>",
           };
@@ -883,6 +940,7 @@ export class Exchanger {
         if (cigar.verfer.transferable || !cigar.verfer.verify(cigar.raw, args.serder.raw)) {
           return {
             kind: "reject",
+            preserveEscrow: true,
             reason: `Exchange cigar failed verification for ${args.sender}.`,
             said: args.serder.said ?? "<unknown>",
           };
@@ -903,26 +961,27 @@ export class Exchanger {
   /** Retain incomplete endorsements and the original expiration clock for retry. */
   private escrowPartialSigned(
     serder: SerderKERI,
-    proofs: Required<ExchangeProofs>,
+    factors: Required<ExchangeFactors>,
     ptds: readonly PathedMaterialGroup[],
-  ): void {
+  ): boolean {
     const said = serder.said;
     if (!said) {
       throw new ValidationError("Cannot escrow an exchange without a SAID.");
     }
 
-    for (const tsg of proofs.tsgs) {
-      const quadKey = [said, tsg.pre, tsg.snh, tsg.said] as const;
+    if (this.complete(said)) return false;
+
+    for (const tsg of factors.tsgs) {
+      const quadKey = [said, tsg.pre, tsg.sn.toString(16).padStart(32, "0"), tsg.said] as const;
       for (const siger of tsg.sigers) {
         this.hby.db.esigs.add(quadKey, siger);
       }
     }
 
-    for (const cigar of proofs.cigars) {
+    for (const cigar of factors.cigars) {
       if (cigar.verfer) this.hby.db.ecigs.add([said], [cigar.verfer, cigar]);
     }
-    for (const seal of proofs.sourceSeals) this.hby.db.ests.add([said, seal.i.qb64], [seal.s, seal.d]);
-    this.hby.db.epse.pin([said], serder);
+    for (const seal of factors.sourceSeals) this.hby.db.ests.add([said, seal.i.qb64], [seal.s, seal.d]);
     // Preserve first admission time so repeated retries cannot keep stale wire alive forever.
     this.hby.db.epsd.put(
       [said],
@@ -934,6 +993,7 @@ export class Exchanger {
       [said],
       ptds.map((group) => textDecoder.decode(group.raw)),
     );
+    return this.hby.db.epse.put([said], serder);
   }
 
   /** Persist protocol evidence inside the admission transaction before route handling. */
@@ -942,7 +1002,7 @@ export class Exchanger {
     tsgs: readonly TransIdxSigGroup[];
     cigars: readonly Cigar[];
     sourceSeals: readonly SealEvent[];
-    evidence: Required<ExchangeProofs>;
+    supplemental: Required<ExchangeFactors>;
     ptds: readonly PathedMaterialGroup[];
   }): void {
     const said = args.serder.said;
@@ -951,7 +1011,7 @@ export class Exchanger {
     }
 
     for (const tsg of args.tsgs) {
-      const quadKey = [said, tsg.pre, tsg.snh, tsg.said] as const;
+      const quadKey = [said, tsg.pre, tsg.sn.toString(16).padStart(32, "0"), tsg.said] as const;
       for (const siger of tsg.sigers) {
         this.hby.db.esigs.add(quadKey, siger);
       }
@@ -971,9 +1031,9 @@ export class Exchanger {
 
     for (const seal of args.sourceSeals) this.hby.db.ests.add([said, seal.i.qb64], [seal.s, seal.d]);
     const endorsers = new Set([
-      ...args.evidence.tsgs.map((group) => group.pre),
-      ...args.evidence.cigars.map((cigar) => cigar.verfer!.qb64),
-      ...args.evidence.sourceSeals.map((seal) => seal.i.qb64),
+      ...args.supplemental.tsgs.map((group) => group.pre),
+      ...args.supplemental.cigars.map((cigar) => cigar.verfer!.qb64),
+      ...args.supplemental.sourceSeals.map((seal) => seal.i.qb64),
     ]);
     for (const pre of endorsers) this.hby.db.eidx.add([pre], new Diger({ qb64: said }));
     const prior = args.serder.ked?.p;
@@ -1184,7 +1244,7 @@ function aggregateTransIdxSigGroups(
 ): TransIdxSigGroup[] {
   const aggregated = new Map<string, TransIdxSigGroup>();
   for (const group of groups) {
-    const key = `${group.pre}\0${group.snh}\0${group.said}`;
+    const key = `${group.pre}\0${group.sn}\0${group.said}`;
     const existing = aggregated.get(key);
     if (!existing) {
       aggregated.set(key, group);

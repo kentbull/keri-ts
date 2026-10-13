@@ -14,7 +14,7 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 
 ## Acceptance matrix for the remaining parser gaps
 
-Current verified master: `60fbf597adecec0b6888315cd81f8ea218dec1ba` after #163
+Current verified master: `ba74491e8222edaf1c2204f7767b552b948a632f` after #164
 (starting boundary was `876d24b4` after #159); frozen upstream authority `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
 The seven follow-on phases below are distinct from the original twelve migration
 steps. Follow-on phase 1's identified tables/semantics and phase 2's parent-owned
@@ -28,7 +28,7 @@ matrix refer to the follow-on sequence, except where a GitHub PR is named.
 | ---------------- | -------------------- | ---------- | ----------------------------------- | -------------------- |
 | Multisig         | Merged #160–161      | 3d         | [Proofs/retry][nested-gates]        | Four routes          |
 | IPEX             | Proofs merged #162   | 3e         | [Grant/admit][nested-gates]         | DAG/VDR pending      |
-| Exchange proofs  | #162 gaps identified | 3e cleanup | [Policy/cues][proof-cleanup]        | Correction pending   |
+| Exchange proofs  | Correction in review | 3e cleanup | [Policy/cues][proof-cleanup]        | IPEX still pending   |
 | v2 admission     | Direct dispatch      | 3f         | [Sender/KRAM][nested-gates]         | Reference stubs      |
 | ESSR outcomes    | Merged #163          | After #162 | [Outcomes/cleanup][nested-gates]    | Local limits         |
 | Shared admission | Local guards         | 4          | [Concurrent load][resource-gates]   | Allocation gaps      |
@@ -648,9 +648,9 @@ replay rechecks every retained factor. Route dependency decisions can escrow
 without accepting the EXN. The qualification probe passes 15 v1/v2
 JSON/CBOR/MGPK storage/replay cases through actually imported unmodified upstream
 modules. This custom proof-route probe does not qualify any IPEX workflow.
-Legacy v1 intake still requires signatures. Missing explicit sender source coordinates and supplemental missing state currently
-have broader TS escrow behavior than frozen Python. The dedicated correction
-below closes those mismatches; consolidated processMsg/KRAM intake remains 3f.
+Legacy v1 intake still requires signatures. The dedicated correction below
+restores missing-state persistence and capability boundaries; consolidated
+processMsg/KRAM intake remains 3f.
 
 **Dedicated ESSR refactor (merged [#163](https://github.com/kentbull/keri-ts/pull/163)):** separates normal
 recipient outcomes into successful authenticated message/owner transfer,
@@ -678,35 +678,46 @@ refusal/later admission, joined cancellation, and storage/keeper failure probes.
 
 #### Exchange-proof correction after #162
 
-After the focused live-LMDB test repair, publish one proof-policy cleanup before
-further IPEX implementation. Recheck frozen `peer/exchanging.py` `processEvent`,
-`verifyAttachments`, `verify`, `escrowPSEvent` and missing-state queries, plus
-`acdc/ipexing.py` handler flags, `verifyEvidence` and dependency handling.
+The focused live-LMDB inspection repair merged in [#164][lmdb-inspection]. The
+next dedicated cleanup corrects #162 within 3e before further IPEX implementation.
+Its implementation is under review; required CI and publication remain gates.
 
-- Restore exact persistence effects: missing sender source state escrows only
-  for `acceptsSscs`; missing supplemental state without `acceptsMissingEvidence`
-  queries and rejects without escrow. Keep missing signatures, source state,
-  unresolved last-establishment references and route `MissingChainError` distinct.
-- Add explicit `acceptsEvidence`. A selection hook alone must not expose its
-  selected non-sender factors to route verification. Keep selection, delivery,
-  source-couple delivery and missing-evidence opt-ins independent.
-- Name retained authentication factors and selected supplemental factors clearly;
-  use a result-oriented proof-verification name and consolidate only redundant
-  intermediate records. Retain the typed route dependency outcome, mapped to
-  `MissingChainError`, without a generic proof framework or compatibility layer.
-- Preserve the intentional leader correction excluding foreign endorsements;
-  label JS/database ordinal bounds as runtime constraints. Match coordinate
-  query deduplication, historical proofs, `ests.`/`eidx.`, cigar verifier recovery,
-  stored-proof verification and parent/child separation.
-- Test decisions, escrow/evidence rows, query/proof cues, route verification and
-  handling, and exact opted-in/legacy arguments. Cover reference-established
-  retry/reopen and preservation of accepted evidence on incomplete/rejected
-  duplicates. Use independent frozen-Python branch comparisons where practical.
+- **Persistence:** missing sender source state escrows only for `acceptsSscs`;
+  strict supplemental and unresolved last-reference failures query/reject without
+  creating escrow. KERIpy `MissingSignatureError` counterparts preserve an
+  existing escrow. Sender signatures and `MissingChainError` dependencies retain
+  their distinct escrow paths. Incomplete duplicates preserve accepted evidence.
+- **Capabilities and representation:** selection, evidence delivery, nonempty
+  sender-couple delivery and missing-evidence metadata are independent.
+  `ExchangeProofVerification` reports valid factors plus invalid/missing status;
+  authenticated records distinguish `retained` from `supplemental`. Domain records
+  retain historical-resolution and selection boundaries without a generic framework.
+- **Cues:** missing coordinate lists deduplicate within each reference helper call.
+  Passing unresolved coordinates to selection does not query them a second time.
+  Sender-signature queries and route-dependency proof cues require a newly inserted
+  escrow row. An incomplete accepted duplicate emits neither of those cues.
+- **Evidence:** focused real-store tests cover callback arguments, decisions,
+  authentication rows, cues, retry/reopen and accepted-duplicate preservation.
+  The existing frozen-Python wire probe checks capability delivery alongside
+  storage/replay. Upstream's own strict missing-state and retry tests supply
+  independent branch evidence. These are proof machinery tests, not IPEX workflows.
 
-Update contracts, learnings and parity notes in that PR. Generic proof handlers
-remain machinery tests; unsupported nested IPEX and unfinished processMsg/KRAM
-stay guarded. This is a correction within 3e's proof prerequisite, not another
-IPEX or admission implementation project.
+Source mappings at frozen upstream `927c0cb8`: [processEvent and queries][py-policy]
+(lines 65–420), [escrow/retry][py-escrow] (426–575),
+[stored-proof verification][py-verify] (1122 onward), and
+[IPEX capabilities][py-ipex] (426–455; selection at 1721).
+Parent/child proof separation, historical coordinates, `ests.`/`eidx.` and cigar
+verifier reconstruction remain required. Excluding foreign endorsements from
+leadership intentionally corrects the frozen first-group choice; ordinal bounds
+are JS/database constraints, not protocol limits. Unresolved sender last groups,
+unsupported nested IPEX and unfinished processMsg/KRAM remain guarded. This work
+adds no second IPEX or shared-admission project.
+
+[lmdb-inspection]: https://github.com/kentbull/keri-ts/pull/164
+[py-policy]: https://github.com/WebOfTrust/keripy/blob/927c0cb8794d7c84fc17143c67df64aab9deda6c/src/keri/peer/exchanging.py#L65
+[py-escrow]: https://github.com/WebOfTrust/keripy/blob/927c0cb8794d7c84fc17143c67df64aab9deda6c/src/keri/peer/exchanging.py#L426
+[py-verify]: https://github.com/WebOfTrust/keripy/blob/927c0cb8794d7c84fc17143c67df64aab9deda6c/src/keri/peer/exchanging.py#L1122
+[py-ipex]: https://github.com/WebOfTrust/keripy/blob/927c0cb8794d7c84fc17143c67df64aab9deda6c/src/keri/acdc/ipexing.py#L426
 
 **Remaining runtime slices:** IPEX workflow evidence and the affected v2
 `processMsg` policy remain separate PRs. TS dispatch still bypasses the reference's consolidated non-event
