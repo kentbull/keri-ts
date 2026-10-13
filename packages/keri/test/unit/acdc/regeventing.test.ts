@@ -409,8 +409,8 @@ Deno.test("registry updates require accepted predecessors and preserve decided s
       assertEquals(engine.processEvent(first).kind, "accept");
       assertEquals(engine.processEvent(wrong), { kind: "reject", reason: "prior" });
       assertEquals(store.event(wrong.said!), null);
-      // Automatic progression belongs to the retry unit; explicit replay now has its accepted predecessor.
-      assertEquals(engine.processEvent(second).kind, "accept");
+      // Accepting the predecessor advances ready successors; later replay remains idempotent.
+      assertEquals(engine.processEvent(second).kind, "duplicate");
       assertEquals(store.seqSaider(rip.said!, 2)!.qb64, second.said);
       assertEquals(store.head(rip.said!)!.qb64, second.said);
       assertEquals(baser.ooes!.get(rip.said!, 2), []);
@@ -523,6 +523,85 @@ Deno.test("registry anchor retry selects verified siblings independently of arri
       engine.processMissingAnchors();
       assertEquals(baser.maes!.get(rip.said!, 3), []);
       assertEquals(store.head(rip.said!)!.qb64, tied[0].said);
+    } finally {
+      yield* baser.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("registry queued replay retains earliest anchors and advances a contiguous chain", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `registry-queued-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const baser = yield* openRegistry({ name: `registry-queued-${crypto.randomUUID()}`, temp: true });
+    try {
+      const store = new RegistryStore(baser), issuer = hby.makeHab("issuer"), rip = regcept(issuer.pre);
+      const engine = new RegistryEventer(hby.db, issuer.pre, store);
+      engine.processEvent(rip);
+      issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
+      assertEquals(engine.anchorMsg(rip.said!).kind, "accept");
+      const blid = fixture.disclosures.issued.d;
+      const first = blindate(rip.said!, rip.said!, blid);
+      const winner = blindate(rip.said!, first.said!, blid, { sn: 2 });
+      const loser = blindate(rip.said!, first.said!, blid, { sn: 2, stamp: "2026-10-13T02:00:00Z" });
+      const third = blindate(rip.said!, winner.said!, blid, { sn: 3 });
+      const stale = blindate(rip.said!, first.said!, blid, { sn: 3 });
+      for (const event of [first, loser, winner, stale, third]) engine.processEvent(event);
+      assertEquals(engine.anchorMsg(issuer.pre), { kind: "reject", reason: "event" });
+      assertEquals(engine.anchorMsg(first.said!, NumberPrimitive.fromNum(0n)), { kind: "reject", reason: "anchor" });
+      assertEquals(store.anchor(first.said!), null);
+      for (const event of [winner, loser, third, stale]) {
+        issuer.interact({ data: [{ i: rip.said!, s: event.sad!.n, d: event.said! }] });
+        const decision = engine.anchorMsg(
+          event.said!,
+          NumberPrimitive.fromNum(BigInt(issuer.kever!.sn)),
+          new Diger({ qb64: issuer.kever!.said }),
+        );
+        assertEquals(decision.kind === "escrow" && decision.reason, "order");
+      }
+      const earliest = store.anchor(winner.said!)!.map((value) => value.qb64);
+      issuer.interact({ data: [{ i: rip.said!, s: "2", d: winner.said! }] });
+      assertEquals(
+        engine.anchorMsg(
+          winner.said!,
+          NumberPrimitive.fromNum(BigInt(issuer.kever!.sn)),
+          new Diger({ qb64: issuer.kever!.said }),
+        ).kind,
+        "escrow",
+      );
+      assertEquals(store.anchor(winner.said!)!.map((value) => value.qb64), earliest);
+      assertEquals(
+        engine.anchorMsg(
+          first.said!,
+          NumberPrimitive.fromNum(BigInt(issuer.kever!.sn)),
+          new Diger({ qb64: issuer.kever!.said }),
+        ),
+        { kind: "reject", reason: "anchor" },
+      );
+      assertEquals(store.anchor(first.said!), null);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      issuer.interact({ data: [{ i: rip.said!, s: "1", d: first.said! }] });
+      engine.processEscrows();
+      assertEquals(store.head(rip.said!)!.qb64, third.said);
+      assertEquals(store.seqSaider(rip.said!, 2)!.qb64, winner.said);
+      assertEquals([...baser.maes!.getTopItemIter(rip.said!)], []);
+      assertEquals([...baser.ooes!.getTopItemIter(rip.said!)], []);
+      assertEquals(engine.anchorMsg(winner.said!).kind, "duplicate");
+      assertEquals(store.head(rip.said!)!.qb64, third.said);
+
+      const badPrior = blindate(rip.said!, first.said!, blid, { sn: 4 });
+      store.putEvent(badPrior);
+      issuer.interact({ data: [{ i: rip.said!, s: "4", d: badPrior.said! }] });
+      assertEquals(
+        engine.anchorMsg(
+          badPrior.said!,
+          NumberPrimitive.fromNum(BigInt(issuer.kever!.sn)),
+          new Diger({ qb64: issuer.kever!.said }),
+        ),
+        { kind: "reject", reason: "prior" },
+      );
+      assertEquals(store.anchor(badPrior.said!), null, "validation precedes explicit anchor persistence");
     } finally {
       yield* baser.close(true);
       yield* hby.close(true);
