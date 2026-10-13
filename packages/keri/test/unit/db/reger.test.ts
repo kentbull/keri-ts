@@ -176,6 +176,8 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
       const sealDiger = new Diger({ qb64: regk });
 
       assertEquals(reger.tvts.put(dgkey, tel.raw), true);
+      // The reference emits a bare body when no attachment evidence was stored.
+      assertEquals(reger.cloneTvt(regk, regk), tel.raw);
       assertEquals(reger.tels.putOn(regk, 0, new Diger({ qb64: regk })), true);
       assertEquals(reger.tibs.pin([regk, regk], [wiger]), true);
       assertEquals(reger.ancs.put(dgkey, [sealNumber, sealDiger]), true);

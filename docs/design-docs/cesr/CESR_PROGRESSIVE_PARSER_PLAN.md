@@ -299,10 +299,20 @@ source seals/grouped receipts after database reopen; Python independently
 constructs and parses each expected envelope. This narrow repair can land before
 the reference-table update.
 
-The remaining acceptance work still requires independent Python v2 issuance/anchor
-fixtures, actual OOBI ingestion, and credential import across both genera. Preserve stored bodies and evidence; select a lawful
-explicit enclosure genus without heuristic retries or wire rewriting. Complete
-this repair before claiming the corresponding current-main v2 runtime parity.
+The acceptance fixture now generates signed KERI v1/v2 anchor chains, v1 TEL
+registry/issuance events, and an ACDC credential with frozen Python. The runtime
+receives TEL evidence before its anchors, resolves the KEL through actual HTTP
+OOBI ingestion, unescrows and verifies the credential, then closes/reopens storage
+and reproduces Python's TEL, credential, and source-chain wire in both genera.
+This exposed and repaired fixed-v1 TEL clone counters, fixed-width credential
+ordinal construction, and unnecessary ordinal widening in TEL storage/escrow.
+
+Protocol version and attachment genus remain independent: frozen `927c0cb8`
+rejects v2 `vcp` bodies. These fixtures therefore use supported v1 TEL/ACDC bodies
+with both attachment genera and KERI v1/v2 anchors. They do not invent unsupported
+v2 TEL encoding or establish the separately tracked ACDC-v2/nested-runtime parity.
+Stored bodies remain unchanged; explicit genus selectors replace no protocol
+bytes and no parse failure retries another version.
 
 ### Follow-on PR 2: parent-owned nested message attachments
 

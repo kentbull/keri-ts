@@ -1,6 +1,16 @@
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { Counter, CtrDexV1, Diger, SerderACDC } from "../../../../cesr/mod.ts";
+import {
+  concatBytes,
+  Counter,
+  CtrDexV1,
+  Diger,
+  NumberPrimitive,
+  SerderACDC,
+  Vrsn_1_0,
+  Vrsn_2_0,
+} from "../../../../cesr/mod.ts";
+import { createAgentRuntime, enqueueOobi } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
@@ -14,6 +24,7 @@ import {
   serializeCredential,
 } from "../../../src/vdr/credentialing.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
+import vectors from "../../fixtures/credential-replay-927.json" with { type: "json" };
 
 function schemaSed(): Record<string, unknown> {
   return {
@@ -266,4 +277,73 @@ Deno.test("vdr/credentialing - reloads registry TEL state from persisted records
       yield* hby.close(true);
     }
   });
+});
+
+Deno.test("vdr/credentialing - imports frozen Python issuance and replays both genera after reopen", async () => {
+  for (const vector of vectors.vectors) {
+    await run(function*() {
+      const hby = yield* createHabery({ name: `frozen-issuer-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+      const reger = yield* createReger({ name: `frozen-credential-${crypto.randomUUID()}`, temp: true });
+      try {
+        yield* call(function*() {
+          const gvrsn = vector.version === 1 ? Vrsn_1_0 : Vrsn_2_0;
+          const bytes = new TextEncoder();
+          const tvy = new Tevery({ db: hby.db, reger });
+          const vry = new Verifier(hby, { reger });
+          const runtime = yield* createAgentRuntime(hby, { vdr: { reger, tvy, vry } });
+          const reactor = runtime.reactor;
+          hby.db.schema.pin(vectors.schema.$id, new Schemer({ sed: vectors.schema }));
+          // Arrival before the issuer KEL exercises durable source-seal escrow as well.
+          for (const tel of vector.tels) {
+            yield* reactor.processBytes(concatBytes(bytes.encode(vector.genus), bytes.encode(tel.wire)));
+            if (vector.version === 2) {
+              assertEquals(reger.ancs.get([tel.pre, tel.said])?.[0].qb64, tel.number);
+            }
+          }
+          // Resolve the independently signed KEL through actual HTTP/OOBI ingestion.
+          const server = Deno.serve(
+            { hostname: "127.0.0.1", port: 0, onListen() {} },
+            () =>
+              new Response(vector.genus + vector.kel, {
+                headers: { "Content-Type": "application/cesr", "Oobi-Aid": vector.pre },
+              }),
+          );
+          try {
+            const url = `http://127.0.0.1:${server.addr.port}/oobi/${vector.pre}/controller`;
+            enqueueOobi(runtime, { url });
+            yield* runtime.oobiery.processOnce();
+            assertEquals(hby.db.roobi.get(url)?.state, "resolved");
+            assertEquals(hby.db.getState(vector.pre)?.s, "2");
+          } finally {
+            yield* call(() => server.shutdown());
+          }
+          yield* reactor.processEscrowsOnce();
+          for (const tel of vector.tels) {
+            assertEquals(reger.tvts.get([tel.pre, tel.said]), bytes.encode(tel.body));
+          }
+          yield* reactor.processBytes(concatBytes(bytes.encode(vector.genus), bytes.encode(vector.credential)));
+          assertEquals(reger.saved.get([vector.said])?.qb64, vector.said);
+          yield* reger.close();
+          yield* reger.reopen({ reuse: true });
+          const [creder, prefixer, number, diger] = reger.cloneCred(vector.said);
+          assertEquals(creder.raw, bytes.encode(vector.body));
+          assertEquals(serializeCredential(creder, prefixer, number, diger, gvrsn), bytes.encode(vector.credential));
+          // A small Number must widen by value for v1, rather than copying its two raw bytes.
+          const small = new NumberPrimitive({ qb64: vector.seal.number });
+          assertEquals(serializeCredential(creder, prefixer, small, diger, gvrsn), bytes.encode(vector.credential));
+          for (const tel of vector.tels) {
+            assertEquals(reger.cloneTvtAt(tel.pre, 0, gvrsn), bytes.encode(tel.wire));
+            assertEquals([...reger.clonePreIter(tel.pre, 0, gvrsn)], [bytes.encode(tel.wire)]);
+          }
+          // Source-chain export must use the same ordinal/counter rules as direct export.
+          const parent = new SerderACDC({ sad: { ...creder.sad, e: { source: { n: vector.said } } }, makify: true });
+          const [[source, attachment]] = reger.sources(hby.db, parent, gvrsn);
+          assertEquals(concatBytes(source.raw, attachment), bytes.encode(vector.credential));
+        });
+      } finally {
+        yield* reger.close(true);
+        yield* hby.close(true);
+      }
+    });
+  }
 });

@@ -31,7 +31,7 @@ import {
 import type { Hab, Habery } from "../app/habbing.ts";
 import { resolveCachedSchema } from "../app/schema-resolving.ts";
 import { Verifier, type VerifierDecision } from "../app/verifying.ts";
-import { attachmentCounterPayloadQb64b } from "../core/attachment-countering.ts";
+import { attachmentCounterPayloadQb64b, resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -119,6 +119,7 @@ function ordinal(num: number | bigint): NumberPrimitive {
   return new NumberPrimitive({ code: NumDex.Huge, raw });
 }
 
+/** Encode an ordinal value as the fixed-width v1 seal primitive. */
 function seqner(num: number | bigint): Seqner {
   const raw = new Uint8Array(16);
   let value = BigInt(num);
@@ -270,18 +271,20 @@ export function credential({
   });
 }
 
-/** Serialize one ACDC plus the KERIpy grant/export seal-source triple. */
+/** Preserve one ACDC body and encode its source triple at the body/requested genus floor. */
 export function serializeCredential(
   creder: SerderACDC,
   prefixer: Prefixer,
-  seqner: NumberPrimitive | Seqner,
+  number: NumberPrimitive | Seqner,
   saider: Diger,
   gvrsn: Versionage = Vrsn_1_0,
 ): Uint8Array {
-  const actualSeqner = seqner instanceof Seqner ? seqner : new Seqner({ code: NumDex.Huge, raw: seqner.raw });
+  gvrsn = resolveAttachmentGvrsn(creder, gvrsn);
+  // V1 requires a fixed-width Seqner; v2 accepts the stored qualified Number unchanged.
+  const ordinal = gvrsn.major === 1 && !(number instanceof Seqner) ? seqner(number.num) : number;
   const sealPayload = [
     prefixer.qb64b,
-    actualSeqner.qb64b,
+    ordinal.qb64b,
     saider.qb64b,
   ];
   return concatBytes(
