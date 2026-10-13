@@ -17,7 +17,7 @@ import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
-import { KeriDispatchEnvelope } from "../../../src/core/dispatch.ts";
+import { KeriDispatchEnvelope, TransLastIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { authenticateKramSource } from "../../../src/core/kram-auth.ts";
 import { KramPolicy } from "../../../src/core/kram-policy.ts";
 import { verifyKramSignatures } from "../../../src/core/kram-signatures.ts";
@@ -230,16 +230,18 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
     const unexpected = function*() {
       throw new Error("pending invoked consumer");
     };
+    /** Accept actual fixture KEL wire and join its frame owner before staging. */
+    const acceptKel = function*(wire: string) {
+      const [frame] = yield* call(() => parseBytes(b(wire)));
+      try {
+        yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
+      } finally {
+        yield* call(() => discardFrame(frame));
+      }
+    };
     try {
       // Inception-only state first: the frozen prior proof becomes stale at the real accepted rotation.
-      for (const wire of [fixture.kel[0]]) {
-        const [frame] = yield* call(() => parseBytes(b(wire)));
-        try {
-          yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
-        } finally {
-          yield* call(() => discardFrame(frame));
-        }
-      }
+      yield* acceptKel(fixture.kel[0]);
       const prior = new KeriDispatchEnvelope({
         serder: new SerderKERI({ raw: b(signatureFixture.bodies.prior) }),
         attachmentGroups: [],
@@ -248,13 +250,8 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
       });
       const priorKey = [prior.serder.pre!, prior.serder.said!];
       assertEquals(yield* stageKram(hby.db, policy, prior, receipt, unexpected), { kind: "pending", key: priorKey });
-      for (const wire of [...fixture.kel.slice(1), ...signatureFixture.kel]) {
-        const [frame] = yield* call(() => parseBytes(b(wire)));
-        try {
-          yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
-        } finally {
-          yield* call(() => discardFrame(frame));
-        }
+      for (const wire of [...fixture.kel.slice(1), ...signatureFixture.kel.filter((_, i) => i !== 1)]) {
+        yield* acceptKel(wire);
       }
       assertEquals(yield* stageKram(hby.db, policy, prior, later, unexpected), { kind: "drop", reason: "replay" });
       assertExists(hby.db.msgc.get(priorKey));
@@ -264,24 +261,36 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
         hby.db.pmks.get(priorKey),
         hby.db.kready.get(priorKey),
       ], [null, null, [], null]);
+      const foreign = new SerderKERI({ raw: b(signatureFixture.bodies.single) }).pre!;
+      const last = new TransLastIdxSigGroup(new Prefixer({ qb64: foreign }), [new Siger({ qb64: proofs.single0 })]);
       const first = new KeriDispatchEnvelope({
         ...input(["sender0", "sender0Only"]),
         attachmentGroups: [],
         nests: [child],
+        ssgs: [last],
       });
       assertEquals(yield* stageKram(hby.db, policy, first, receipt, unexpected), { kind: "pending", key });
       assertEquals(hby.db.pmks.get(key).map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only]);
       assertEquals(hby.db.kready.get(key), null, "same-index variants do not satisfy threshold");
+      assertEquals(hby.db.ulgs.get(key).map((prefix) => prefix.qb64), [foreign]);
+      yield* acceptKel(signatureFixture.kel[1]);
+      assertEquals(yield* stageKram(hby.db, policy, input(["sender0"]), later, unexpected), { kind: "pending", key });
+      assertEquals(
+        hby.db.ulgs.get(key).map((prefix) => prefix.qb64),
+        [foreign],
+        "KEL recovery alone preserves unknown proof",
+      );
       const snapshot = hby.db.kpnd.get(key);
       assertExists(snapshot);
-      const foreign = new SerderKERI({ raw: b(signatureFixture.bodies.single) }).pre!;
       const repeat = new KeriDispatchEnvelope({
         ...input(["sender0"]),
         attachmentGroups: [],
         ssts: [{ i: new Prefixer({ qb64: foreign }), s: NumberPrimitive.fromNum(0n), d: new Diger({ qb64: foreign }) }],
+        ssgs: [last],
       });
       assertEquals(yield* stageKram(hby.db, policy, repeat, later, unexpected), { kind: "pending", key });
       assertEquals(hby.db.ssts.get(key).map(([prefix]) => prefix.qb64), [foreign]);
+      assertEquals(hby.db.ulgs.get(key), [], "fresh known-last receipt clears the earlier marker");
       assertEquals(hby.db.kpnd.get(key), snapshot, "retry preserves independent saved child");
       const ready = yield* stageKram(hby.db, policy, input(["sender1"]), later, function*(envelope, stagedKey, clock) {
         assertEquals(stagedKey, key);
@@ -289,6 +298,11 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
         assertEquals(envelope.sigers.map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only, proofs.sender1]);
         assertEquals(envelope.nests[0].body.raw, child.body.raw);
         assertEquals(envelope.ssts.map((triple) => triple.i.qb64), [foreign]);
+        assertEquals(envelope.unresolvedLast, []);
+        assertEquals(envelope.tsgs.filter((group) => group.pre === foreign).map((group) => [group.sn, group.said]), [[
+          0n,
+          foreign,
+        ]]);
         assertEquals(hby.db.msgc.get([child.body.pre!, child.body.said!]), null, "parent admission never admits child");
         assertEquals(hby.db.kready.get(key), later, "publication precedes scoped consumption");
         return "consumed";
