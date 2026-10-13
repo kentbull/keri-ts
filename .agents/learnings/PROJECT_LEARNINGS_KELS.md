@@ -25,7 +25,11 @@ Remote-first approval reopens original exchange evidence; local-first approval
 borrows hydrated children. Further descendants remain guarded. IPEX and the
 broader v2 non-event policy remain unsupported.
 
-Multisig event builders are Effection operations. Explicit v2 output carries
+Multisig v2 bodies use synchronous `multisigExnBody()` with a parsed child Serder;
+construction neither reads payloads nor authenticates proofs. Parsed-frame callers
+reuse `nestedPayload()` with borrowed owners. Byte-input route helpers delegate
+to `prepareMultisigEventExn()`, an Effection operation owning parsing, bounded wire
+collection and joined disposal on failure/cancellation. Explicit v2 output carries
 supplemental nested bytes that must share an attachment enclosure with parent
 signatures; v1 output retains pathed evidence and its distinct aggregation key.
 The frozen native EXN builder leaves `ri/x/p` empty and cannot decode its own

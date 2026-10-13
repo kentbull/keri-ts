@@ -111,5 +111,8 @@ route and ownership decisions. Nested multisig uses the same durable ownership a
 commitments and local approval before child verification/replay.
 `packages/keri/test/unit/app/grouping-nests.test.ts` covers actual two-participant
 approval ordering, child proofs, dependencies, reopen/retry, rollback and cancellation.
+It also checks the pure proposal-body boundary, direct parsed-frame wire preparation,
+and byte convenience ownership: cancellation must abort reads and join disposal
+before returning. Constructing a parent never authenticates its child.
 Other nested routes and HTTP inspection remain guarded. A frozen 40-node fixture verifies serialization preserves admitted
 enclosure depth under the default parser limit.
