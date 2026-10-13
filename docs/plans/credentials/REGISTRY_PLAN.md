@@ -31,6 +31,7 @@ them. Runtime acquisition retains explicit scopes and joined failure cleanup.
 | Complete-chain assembly      | IPEX through RegistryStore                         |
 | Runtime acquisition          | Explicit `acdc.rgy` ownership                      |
 
+R1–R5 are merged through #185: storage, validation and inception are available.
 Pure verifier names match `vet`/`vetBinds`; the internal engine accepts anchored
 inceptions/updates with protected slots and heads. Retry and public orchestration
 remain unfinished; processing ordinals above the safe-integer storage range is
