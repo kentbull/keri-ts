@@ -8,6 +8,7 @@ export * from "./bench/parser-benchmark.ts";
 export * from "./core/bytes.ts";
 export * from "./core/cbor.ts";
 export * from "./core/errors.ts";
+export * from "./core/frame.ts";
 export * from "./core/payload.ts";
 export * from "./core/types.ts";
 export * from "./core/vocabulary.ts";

@@ -1,4 +1,4 @@
-import { concatBytes, ResourceLimitError } from "cesr-ts";
+import { concatBytes, discardFrame, ResourceLimitError } from "cesr-ts";
 import { toEffectionFrames } from "cesr-ts/effection";
 import { call, each, type Operation, resource } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
@@ -150,7 +150,7 @@ function* postQueryMessage(
         try {
           yield* provide();
         } finally {
-          if (frame.essr) yield* call(() => frame.essr!.discard());
+          yield* call(() => discardFrame(frame));
         }
       });
       const response = yield* requestFrame(delivery.url, frame, {

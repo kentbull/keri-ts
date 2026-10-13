@@ -17,6 +17,7 @@ import {
   NumberPrimitive,
   parseSerder,
   Prefixer,
+  requireFlatFrame,
   SealEvent,
   SealKind,
   SealSource,
@@ -431,6 +432,7 @@ export function envelopeFromFrame(
   message: CesrFrame,
   local = false,
 ): KeriDispatchEnvelope {
+  requireFlatFrame(message, "KERI runtime normalization");
   const serder = (message.body instanceof SerderKERI || message.body instanceof SerderACDC)
     ? message.body as SerderKERI
     : parseSerder(message.body.raw, smellageFromMessage(message)) as SerderKERI;

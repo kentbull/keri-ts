@@ -13,8 +13,10 @@
  *   the header
  */
 import {
+  discardFrame,
   parseBytes,
   parseSerder,
+  requireFlatFrame,
   ResourceLimitError,
   SerderKERI,
   smell,
@@ -285,14 +287,16 @@ export async function inspectCesrTerminalMessage(
 export async function inspectCesrStream(bytes: Uint8Array): Promise<CesrStreamInspection> {
   const frames = await parseBytes(bytes);
   try {
-    const messages = frames.map(({ body }) => {
+    const messages = frames.map((frame) => {
+      requireFlatFrame(frame, "HTTP message inspection");
+      const { body } = frame;
       if (!(body instanceof SerderKERI)) throw new ValidationError("Expected a KERI message in the CESR request");
       return body;
     });
     return { messages, terminal: messages.at(-1) ?? null };
   } finally {
     // Inspection returns body metadata only; it must not retain discarded attachment payloads.
-    for (const frame of frames) await frame.essr?.discard();
+    for (const frame of frames) await discardFrame(frame);
   }
 }
 

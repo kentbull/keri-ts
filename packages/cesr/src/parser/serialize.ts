@@ -1,6 +1,7 @@
 /** Reopenable frame serialization with bounded metadata and streamed canonical ESSR wire. */
 import { b, byteString, concatBytes, decodeB64, encodeB64 } from "../core/bytes.ts";
 import { SerializeError } from "../core/errors.ts";
+import { requireFlatFrame } from "../core/frame.ts";
 import type { Payload } from "../core/payload.ts";
 import type { AttachmentGroup, CesrDomain, CesrFrame, EssrPayload } from "../core/types.ts";
 import { Counter } from "../primitives/counter.ts";
@@ -39,7 +40,7 @@ function sameVersion(left: Versionage, right: Versionage): boolean {
 /** Choose an output genus that can carry the body's independently declared protocol version. */
 function frameGenus(frame: CesrFrame, requested?: Versionage): Versionage {
   // ESSR retains the resolved frame genus; scoped ordinary leaves may select an older genus locally.
-  const selected = requested ?? frame.essr?.gvrsn ?? frame.attachments[0]?.version ?? frame.body.gvrsn
+  const selected = requested ?? frame.gvrsn ?? frame.essr?.gvrsn ?? frame.attachments[0]?.version ?? frame.body.gvrsn
     ?? frame.body.pvrsn;
   // A non-native protocol version still establishes a minimum compatible counter genus.
   const required = frame.body.gvrsn ?? frame.body.pvrsn;
@@ -202,6 +203,7 @@ export async function* essrChunks(
 
 /** Build a reopenable finite attachment enclosure while retaining ESSR only by reference. */
 export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions = {}): Payload {
+  requireFlatFrame(frame, "Attachment serialization");
   // The frame's resolved genus is distinct from a JSON body's protocol version.
   const gvrsn = frameGenus(frame, options.gvrsn);
   // One attachment enclosure cannot mix text and binary qualification.
@@ -240,6 +242,7 @@ export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions =
 
 /** Serialize one admitted frame with an explicit genus and a complete attachment boundary. */
 export function framePayload(frame: CesrFrame, options: SerializeOptions = {}): Payload {
+  requireFlatFrame(frame, "Frame serialization");
   // Native bodies declare a genus in their own qualification; JSON protocol versions do not.
   const gvrsn = frameGenus(frame, options.gvrsn);
   // One attachment enclosure cannot mix text and binary qualification.

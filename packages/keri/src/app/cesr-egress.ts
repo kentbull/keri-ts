@@ -4,6 +4,7 @@ import {
   byteString,
   type CesrFrame,
   collectPayload,
+  discardFrame,
   framePayload,
   type ParseOptions,
   type Payload,
@@ -253,7 +254,7 @@ export function postCesr(
           yield* requestFrame(url, frame, { ...options, signal });
         });
       } finally {
-        if (frame.essr) yield* call(() => frame.essr!.discard());
+        yield* call(() => discardFrame(frame));
       }
       yield* each.next();
     }

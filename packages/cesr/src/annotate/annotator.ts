@@ -1,5 +1,6 @@
 import { b } from "../core/bytes.ts";
 import { ResourceLimitError } from "../core/errors.ts";
+import { discardFrame } from "../core/frame.ts";
 import type { CesrFrame } from "../core/types.ts";
 import { parseBytes } from "../parser/complete.ts";
 import { renderAnnotatedFrames } from "./render.ts";
@@ -16,7 +17,7 @@ const DEFAULT_OPTIONS: RenderOptions = Object.freeze({
 
 /** Release every collected payload, including siblings after one storage cleanup fails. */
 async function discardFrames(frames: readonly CesrFrame[]): Promise<void> {
-  const results = await Promise.allSettled(frames.map((frame) => frame.essr?.discard()));
+  const results = await Promise.allSettled(frames.map((frame) => discardFrame(frame)));
   const errors = results.filter((result) => result.status === "rejected").map((result) => result.reason);
   if (errors.length) throw new AggregateError(errors, "Annotation payload cleanup failed");
 }

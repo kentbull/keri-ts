@@ -1,4 +1,5 @@
 import { call, type Operation, resource, type Stream } from "npm:effection@^3.6.0";
+import { discardFrame } from "../core/frame.ts";
 import type { CesrFrame } from "../core/types.ts";
 import { parse, type ParseOptions } from "../parser/progressive.ts";
 
@@ -44,7 +45,7 @@ export function* toEffectionFrames(
         // Cancellation may win after parsing completes but before next() hands
         // ownership to its Operation caller. Dispose that one undelivered frame.
         try {
-          if (unclaimed && !unclaimed.done) await unclaimed.value.essr?.discard();
+          if (unclaimed && !unclaimed.done) await discardFrame(unclaimed.value);
         } finally {
           try {
             await parser.return(undefined);

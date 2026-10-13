@@ -11,15 +11,23 @@ import { Cursor } from "./cursor.ts";
 
 /** Finite logical-message budgets apply even when the sink writes to disk. */
 export interface EssrOptions {
-  /** Maximum concatenated decoded ESSR bytes in one frame; default 8 MiB. */
+  /** Maximum concatenated decoded ESSR bytes in one owned tree; default 8 MiB. */
   maxEssrBytes?: number;
-  /** Maximum Texters in one frame, including empty values; default 16,384. */
+  /** Maximum Texters in one owned tree, including empty values; default 16,384. */
   maxEssrItems?: number;
   /**
    * Awaited writes supply backpressure; the sink must honor the supplied signal.
    * Finished open() readers must yield chunks with backing buffers of at most 1 MiB.
    */
   payloadSink?: (maxBytes: number, signal?: AbortSignal) => PayloadSink | Promise<PayloadSink>;
+}
+
+/** Remaining decoded bytes and item credit shared by an owned parent tree. */
+export interface EssrBudget {
+  /** Available decoded bytes, reserved before writing token content. */
+  bytes: number;
+  /** Available Texters, including zero-length values. */
+  items: number;
 }
 
 /** Texter headers are aligned whole quadlets/triplets in both Bytes code families. */
@@ -57,10 +65,12 @@ async function* texter(
   domain: CesrDomain,
   remaining: number,
   sink?: PayloadSink,
+  admit?: (size: number) => void,
 ): AsyncGenerator<Uint8Array, number> {
   // Admission happens before pulling any declared payload bytes.
   const token = await header(input, domain);
   if (token.rawSize > remaining) throw new ResourceLimitError("ESSR exceeds decoded byte limit", input.offset);
+  admit?.(token.rawSize);
   // This scope prevents following attachment bytes from repairing an incomplete token.
   const payload = input.scope(token.count * (domain === "txt" ? 4 : 3));
   if (sink) await sink.write(b(token.text));
@@ -141,6 +151,8 @@ export class EssrWriter {
     private readonly maxItems: number,
     /** Resolved frame genus used as the default when replay constructs new counters. */
     private readonly gvrsn: Versionage,
+    /** Optional shared credit for every descendant of the pending parent. */
+    private readonly budget?: EssrBudget,
   ) {}
 
   /** Append one group; v1 counts items and v2 bounds qualified payload bytes. */
@@ -152,9 +164,22 @@ export class EssrWriter {
     // This counter is local to the group; this.count enforces the frame-wide policy.
     let items = 0;
     while (bounded ? !await body.atEnd() : items < counter.count) {
-      if (this.count >= this.maxItems) throw new ResourceLimitError("ESSR exceeds item limit", input.offset);
+      if (this.count >= this.maxItems || this.budget?.items === 0) {
+        throw new ResourceLimitError("ESSR exceeds item limit", input.offset);
+      }
       // Fully validate this token while each awaited write supplies downstream credit.
-      const token = texter(body, domain, this.maxBytes - this.size, this.sink);
+      const token = texter(
+        body,
+        domain,
+        Math.min(this.maxBytes - this.size, this.budget?.bytes ?? Infinity),
+        this.sink,
+        (size) => {
+          if (this.budget) {
+            this.budget.bytes -= size;
+            this.budget.items--;
+          }
+        },
+      );
       // The iterator return carries even a zero-length item's admitted byte count.
       let step = await token.next();
       while (!step.done) step = await token.next();
@@ -177,7 +202,10 @@ export class EssrWriter {
 }
 
 /** Validate budgets and derive a finite canonical-wire cap including empty item headers. */
-export function essrFactory(options: EssrOptions, signal?: AbortSignal): (gvrsn: Versionage) => Promise<EssrWriter> {
+export function essrFactory(
+  options: EssrOptions,
+  signal?: AbortSignal,
+): (gvrsn: Versionage, budget?: EssrBudget) => Promise<EssrWriter> {
   // Decoded-byte and item limits constrain separate sources of retained work.
   const bytes = options.maxEssrBytes ?? 8 * 1024 ** 2;
   // Empty items consume headers even when they contribute no decoded bytes.
@@ -190,12 +218,12 @@ export function essrFactory(options: EssrOptions, signal?: AbortSignal): (gvrsn:
   // Each item needs at most two lead bytes and an eight-character qualified header.
   const wireLimit = 4 * Math.ceil(bytes / 3) + 12 * items;
   if (!Number.isSafeInteger(wireLimit)) throw new RangeError("ESSR wire limit exceeds safe integer range");
-  return async (gvrsn) => {
+  return async (gvrsn, budget) => {
     // A custom sink receives the same finite wire cap and operation cancellation signal.
     const sink = options.payloadSink
       ? await options.payloadSink(wireLimit, signal)
       : new MemoryPayloadSink(wireLimit, signal);
-    return new EssrWriter(sink, bytes, items, gvrsn);
+    return new EssrWriter(sink, bytes, items, gvrsn, budget);
   };
 }
 

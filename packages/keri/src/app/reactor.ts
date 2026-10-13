@@ -1,6 +1,7 @@
 import {
   type CesrFrame,
   Cigar,
+  discardFrame,
   Ilks,
   type ParseOptions,
   ResourceLimitError,
@@ -180,13 +181,13 @@ export class Reactor {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     return call(function*() {
-      if (frame?.essr) {
+      if (frame && (frame.essr || frame.nests?.length)) {
         // Register ownership before dispatch: reverse resource teardown joins its work before deleting input.
         yield* resource<void>(function*(provide) {
           try {
             yield* provide();
           } finally {
-            yield* call(() => frame.essr!.discard());
+            yield* call(() => discardFrame(frame));
           }
         });
       }

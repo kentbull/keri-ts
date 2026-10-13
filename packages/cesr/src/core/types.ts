@@ -59,10 +59,14 @@ export interface EssrPayload {
   discard(): Promise<void>;
 }
 
-/** One parsed frame: a body and its complete attachment set. */
+/** One owned message tree: a body, its evidence, and enclosed nested messages. */
 export interface CesrFrame {
   body: CesrBody;
   attachments: AttachmentGroup[];
+  /** Resolved attachment genus; parser results always supply it. */
+  gvrsn?: Versionage;
+  /** Children belong to this message, never independent stream deliveries. */
+  nests?: CesrFrame[];
   /** Owned by the recipient after delivery; ordinary attachments exclude ESSR groups. */
   essr?: EssrPayload;
 }
