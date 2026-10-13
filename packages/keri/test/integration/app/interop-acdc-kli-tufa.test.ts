@@ -350,6 +350,9 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
             runCmd(ctx.kliCommand, [
               "vc",
               "export",
+              // This v1 fixture selects the replay genus independently of its body version.
+              "--version",
+              "1.0",
               ...kliStoreArgs(kliName, passcode),
               "--alias",
               "issuer",

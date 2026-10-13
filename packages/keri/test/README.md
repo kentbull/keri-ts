@@ -75,9 +75,13 @@ PR check. Manual workflows are dispatched explicitly by the maintainer.
 ## Verified KERIpy selection
 
 The default CLI runtime is the published `kentbull/keripy` mailbox fork
-`4a744cff0e6369bb5eecc807b8f7e6a3def83fe6`, based on upstream main
+`cd6f838a732ad99d1ad169a50b74885b5cf6a8fa`, based on upstream main
 `927c0cb8794d7c84fc17143c67df64aab9deda6c` plus mailbox commands, admission
-checks, and explicit protocol/genus selection for mailbox startup and authorization. This is fork-on-main qualification, not pure upstream parity. Historical
+checks, explicit protocol/genus selection for mailbox startup and authorization,
+the transferable receipt-table lookup repair, and explicit VC export genus
+selection, and JSON mailbox queries for topic names that cannot be native CESR
+labels. Explicit query encodings and CLI protocol defaults remain unchanged.
+This is fork-on-main qualification, not pure upstream parity. Historical
 table-source pins are independent data provenance, not claims about the live peer.
 No test silently switches to a sibling checkout, PATH `kli`, or another Python.
 
@@ -87,7 +91,8 @@ independent: an explicit v1 body does not force a v1 replay enclosure. Keep
 same-version byte parity distinct from mixed-version parsing checks. Export tests
 compare exact v1 Tufa bytes with an explicitly v1 Python clone and exact default
 v2 KLI bytes with a v2 clone, then compare complete ordered signature evidence.
-KLI export carries no genus selector, so parsing uses known external v2 context.
+KLI event export carries no genus selector, so parsing uses known external v2
+context. The v1 credential fixture selects `vc export --version 1.0` explicitly.
 The CESR v1/v2 vectors remain independent coverage. Mailbox fixtures use
 `mailbox add --version 1.0` and `mailbox start --protocol-version 1.0`;
 `mailbox start --version` still prints the Python distribution version.
@@ -102,7 +107,7 @@ For the maintained mailbox-on-main qualification, select its exact checkout and 
 
 ```bash
 export KERIPY_INTEROP_ROOT=/Users/kbull/enc/keri/worktrees/keripy/mailbox-main-interop
-export KERIPY_INTEROP_EXPECTED_COMMIT=4a744cff0e6369bb5eecc807b8f7e6a3def83fe6
+export KERIPY_INTEROP_EXPECTED_COMMIT=cd6f838a732ad99d1ad169a50b74885b5cf6a8fa
 export KERIPY_INTEROP_PYTHON="$KERIPY_INTEROP_ROOT/venv/bin/python"
 export LMDB_DATA_V1=true
 export KERI_TEST_TIMINGS_DIR=/tmp/keri-mailbox-main-qualification
