@@ -1,9 +1,8 @@
 // @file-test-lane db-fast
 
-import { collectPayload } from "cesr-ts";
+import { collectPayload, DigDex, Diger } from "cesr-ts";
 import { assertEquals, assertRejects } from "jsr:@std/assert";
-import { open, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join } from "jsr:@std/path";
 import { PayloadStore, writePayloadChunk } from "../../../src/db/payload-store.ts";
 
 Deno.test("payload store transfers finished ownership and reopens promoted files", async () => {
@@ -20,9 +19,15 @@ Deno.test("payload store transfers finished ownership and reopens promoted files
     await sink.abort();
     await store.close();
     assertEquals(await collectPayload(payload, 6), new Uint8Array([1, 2, 3, 4, 5, 6]));
-    await payload.promote();
-    await payload.promote();
-    assertEquals(await readdir(join(root, "staging")), []);
+    // The caller knows the completed content; use its qualified digest as identity.
+    const id = new Diger({
+      raw: Diger.digest(new Uint8Array([1, 2, 3, 4, 5, 6]), DigDex.Blake3_256),
+      code: DigDex.Blake3_256,
+    }).qb64;
+    await payload.promote(id);
+    await payload.promote(id);
+    assertEquals(payload.id, id);
+    assertEquals(await entries(join(root, "staging")), []);
     const reopenedStore = new PayloadStore(root, 2);
     // Reconstruct from persistent identity, independent of the original handle.
     const reopened = await reopenedStore.open(payload.id);
@@ -51,11 +56,11 @@ Deno.test("payload store aborts unfinished stages and enforces byte limits", asy
     await assertRejects(() => sink.write(new Uint8Array([3])), RangeError, "sink limit");
     await sink.abort();
     await sink.abort();
-    assertEquals(await readdir(join(root, "staging")), []);
+    assertEquals(await entries(join(root, "staging")), []);
     await assertRejects(() => sink.finish(), Error, "closed");
     await store.stage(10);
     await store.close();
-    assertEquals(await readdir(join(root, "staging")), []);
+    assertEquals(await entries(join(root, "staging")), []);
     await assertRejects(() => store.stage(1), Error, "closed");
   } finally {
     await store.close();
@@ -75,7 +80,7 @@ Deno.test("payload store cancellation removes only the unfinished stage", async 
     // A shared request abort cleans unfinished B without revoking emitted A.
     controller.abort(new Error("cancelled"));
     await second.abort();
-    assertEquals(await readdir(join(root, "staging")), [payload.id]);
+    assertEquals(await entries(join(root, "staging")), [payload.id]);
     await assertRejects(() => store.stage(1, controller.signal), Error, "cancelled");
     await assertRejects(() => collectPayload(payload, 1, controller.signal), Error, "cancelled");
     assertEquals(await collectPayload(payload, 1), new Uint8Array([1]));
@@ -84,7 +89,7 @@ Deno.test("payload store cancellation removes only the unfinished stage", async 
     // Early return must close its descriptor; Deno's sanitizer checks for leaks.
     await iterator.return!();
     await payload.discard();
-    assertEquals(await readdir(join(root, "staging")), []);
+    assertEquals(await entries(join(root, "staging")), []);
   } finally {
     await store.close();
     await Deno.remove(root, { recursive: true });
@@ -93,15 +98,15 @@ Deno.test("payload store cancellation removes only the unfinished stage", async 
 
 Deno.test("payload file writer retries real partial writes and stops when cancelled", async () => {
   const root = await Deno.makeTempDir();
-  const file = await open(join(root, "partial"), "wx");
+  const file = await Deno.open(join(root, "partial"), { write: true, createNew: true });
   try {
     const controller = new AbortController();
     let writes = 0;
     const partial = {
-      write: async (bytes: Uint8Array, offset: number, length: number, position: null) => {
+      write: async (bytes: Uint8Array) => {
         writes++;
         // Use a real file while limiting each OS write to two bytes.
-        const result = await file.write(bytes, offset, Math.min(2, length), position);
+        const result = await file.write(bytes.subarray(0, 2));
         if (writes === 5) controller.abort(new Error("stop"));
         return result;
       },
@@ -117,12 +122,12 @@ Deno.test("payload file writer retries real partial writes and stops when cancel
     assertEquals(writes, 5);
     // A zero-progress writer must fail rather than spin indefinitely.
     await assertRejects(
-      () => writePayloadChunk({ write: () => Promise.resolve({ bytesWritten: 0 }) }, new Uint8Array([1])),
+      () => writePayloadChunk({ write: () => Promise.resolve(0) }, new Uint8Array([1])),
       Error,
       "write progress",
     );
   } finally {
-    await file.close();
+    file.close();
     await Deno.remove(root, { recursive: true });
   }
 });
@@ -140,9 +145,39 @@ Deno.test("payload store rejects concurrent operations and cleans an interrupted
     const failure = assertRejects(() => finishing, Error, "aborted");
     await sink.abort();
     await failure;
-    assertEquals(await readdir(join(root, "staging")), []);
+    assertEquals(await entries(join(root, "staging")), []);
   } finally {
     await store.close();
     await Deno.remove(root, { recursive: true });
   }
 });
+
+Deno.test("payload promotion rejects traversal and preserves an existing content identity", async () => {
+  const root = await Deno.makeTempDir();
+  const store = new PayloadStore(root);
+  try {
+    const sink = await store.stage(1);
+    await sink.write(new Uint8Array([1]));
+    const first = await sink.finish();
+    const id = new Diger({ raw: Diger.digest(new Uint8Array([1]), DigDex.Blake3_256), code: DigDex.Blake3_256 }).qb64;
+    await first.promote(id);
+    const other = await store.stage(1);
+    await other.write(new Uint8Array([2]));
+    const second = await other.finish();
+    await assertRejects(() => second.promote("../outside"), TypeError, "Invalid payload ID");
+    // A duplicate basename must never replace bytes still owned by the first caller.
+    await assertRejects(() => second.promote(id), Deno.errors.AlreadyExists);
+    assertEquals(await collectPayload(first, 1), new Uint8Array([1]));
+    assertEquals(await collectPayload(second, 1), new Uint8Array([2]));
+    await second.discard();
+    await first.discard();
+  } finally {
+    await store.close();
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+/** Read the small test directory to assert file ownership after each transition. */
+async function entries(path: string): Promise<string[]> {
+  return (await Array.fromAsync(Deno.readDir(path))).map((entry) => entry.name).sort();
+}
