@@ -296,13 +296,25 @@ pass, alongside 455 CESR tests and 59 focused runtime tests. Coverage includes
 small/big counters, split headers, exact consumed extents, truncated input, missing tuple fields,
 wrong primitive roles, record identity, and database reopen.
 
+### Weighted-threshold deployment limits
+
+`Tholder.maxWeights` (1,000 terms) and `maxSithLength` (65,536 JSON characters)
+bound weighted thresholds before rational conversion or JSON decoding. Count all
+clauses and nested outer/member weights, and include whitespace in the JSON
+budget. These tunable settings do not constrain numeric thresholds or define
+protocol maxima. Frozen `927c0cb8` rejects oversized `sith` but actually admits the
+same 1,001-weight `limen`; TS deliberately closes that wire-input bypass.
+Boundary, aggregate, nested, pre-decode, override, and qb64/qb2 tests cover this
+policy. A source-verified Python probe confirms the default boundaries and the
+reference bypass. Larger deployments can raise both caps before parsing begins.
+
 ### Remaining current-reference primitive and Serder slices
 
 Audit the remaining primitive/Serder delta at the same frozen revision before
-claiming parity: threshold/path validation limits, version-aware SAID derivation,
-and changed ACDC/KERI semantic accessors. Direct probes confirm TS accepts 1,001
-threshold leaves and a 65,537-character JSON sith that the reference rejects.
-These validation limits remain outside the text and fixed-field repairs.
+claiming parity: path traversal limits, version-aware SAID derivation,
+and changed ACDC/KERI semantic accessors. Python's Pather depth limit applies
+to its resolution API, which TS does not expose; it does not limit wire path
+construction. Do not invent a wire-depth restriction when auditing that gap.
 
 A separate native/Serder defect is reproduced with Python `eventing.incept`
 (version 2, CESR, `a=[{t: "0OKERICAACAA", d: "1AAP"}]`): Python emits a typed-seal

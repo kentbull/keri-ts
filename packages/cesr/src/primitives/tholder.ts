@@ -367,11 +367,34 @@ function normalizeWeightedInput(
     ? [value as ThresholdClause]
     : value as ThresholdClause[];
 
-  const clauses: NormalizedWeightedThreshold[] = [];
+  // Count the whole expression before constructing any rational numbers.
+  // A nested group's outer weight costs one in addition to its signer weights.
+  if (sourceClauses.length > Tholder.maxWeights) {
+    throw new Error(`Threshold clause count exceeds limit ${Tholder.maxWeights}.`);
+  }
+  let weights = 0;
   for (const clause of sourceClauses) {
     if (!Array.isArray(clause) || clause.length === 0) {
       throw new Error("Empty weighted threshold clause.");
     }
+    if (clause.length > Tholder.maxWeights) {
+      throw new Error(`Threshold clause weight count exceeds limit ${Tholder.maxWeights}.`);
+    }
+    for (const entry of clause) {
+      weights += isRecord(entry)
+        ? Object.values(entry).reduce<number>(
+          (count, members) => count + 1 + (Array.isArray(members) ? members.length : 1),
+          0,
+        )
+        : 1;
+      if (weights > Tholder.maxWeights) {
+        throw new Error(`Threshold total weight count exceeds limit ${Tholder.maxWeights}.`);
+      }
+    }
+  }
+
+  const clauses: NormalizedWeightedThreshold[] = [];
+  for (const clause of sourceClauses) {
     let topWeight = rationalZero();
     const normalizedClause: NormalizedWeightedThreshold = [];
     for (const entry of clause) {
@@ -439,6 +462,9 @@ function normalizeWeightedInput(
 
 /** Parse a JSON threshold literal supplied through string-only config or CLI seams. */
 function parseWeightedJson(text: string): WeightedThreshold {
+  if (text.length > Tholder.maxSithLength) {
+    throw new Error(`Threshold JSON length exceeds limit ${Tholder.maxSithLength}.`);
+  }
   const parsed = JSON.parse(text) as unknown;
   if (!Array.isArray(parsed)) {
     throw new Error("Weighted threshold JSON must decode to an array.");
@@ -489,7 +515,8 @@ function normalizeThresholdInput(
       throw new Error("Empty threshold expression.");
     }
     if (trimmed.startsWith("[")) {
-      return normalizeThresholdInput(parseWeightedJson(trimmed));
+      // Include whitespace in the pre-decode budget, as KERIpy does.
+      return normalizeThresholdInput(parseWeightedJson(value));
     }
     if (!/^[0-9a-f]+$/i.test(trimmed)) {
       throw new Error(`Invalid numeric threshold ${trimmed}.`);
@@ -550,7 +577,17 @@ function decodeThresholdMatter(
   }
   if (THOLDER_WEIGHTED_CODES.has(matter.code)) {
     const bexter = new Bexter(matter);
-    const clauses = bexter.bext.replaceAll("s", "/").split("a").map((clause) =>
+    const bext = bexter.bext;
+    // Each clause/term/member separator introduces another weight; `k` also
+    // counts the first nested member after its outer weight. Check before split
+    // allocates arrays for hostile wire input. Shape validation still follows.
+    let weights = 1;
+    for (const char of bext) {
+      if ("ackv".includes(char) && ++weights > Tholder.maxWeights) {
+        throw new Error(`Threshold total weight count exceeds limit ${Tholder.maxWeights}.`);
+      }
+    }
+    const clauses = bext.replaceAll("s", "/").split("a").map((clause) =>
       clause.split("c").map((entry) => {
         const at = entry.indexOf("k");
         if (at < 0) {
@@ -628,6 +665,11 @@ function normalizeConstructorInput(
  *   `Bexter` bext encoding for weighted thresholds
  */
 export class Tholder extends Matter {
+  /** Deployment cap on all weighted terms, including nested outer weights; not a protocol maximum. */
+  static maxWeights = 1_000;
+  /** Deployment cap on JSON sith characters before decoding; raise alongside maxWeights when needed. */
+  static maxSithLength = 65_536;
+
   private readonly _weighted: boolean;
   private readonly _num: bigint | null;
   private readonly _size: number;
@@ -648,6 +690,12 @@ export class Tholder extends Matter {
         sith?: ThresholdInput;
       },
   ) {
+    if (
+      !Number.isSafeInteger(Tholder.maxWeights) || Tholder.maxWeights < 1
+      || !Number.isSafeInteger(Tholder.maxSithLength) || Tholder.maxSithLength < 1
+    ) {
+      throw new Error("Threshold deployment limits must be positive safe integers.");
+    }
     const normalized = normalizeConstructorInput(init);
     super(normalized.matterInit);
     if (
