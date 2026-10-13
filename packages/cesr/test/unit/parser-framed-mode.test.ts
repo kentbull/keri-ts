@@ -16,8 +16,9 @@ Deno.test("V-P0-007: framed=true emits one frame per drain cycle when feed conta
     assertEquals(first[0].frame.body.ilk, "icp");
   }
 
-  // Next drain cycle emits the buffered second frame.
-  const second = parser.feed(new Uint8Array(0));
+  // The last bare body needs an explicit terminal boundary.
+  assertEquals(parser.feed(new Uint8Array(0)), []);
+  const second = parser.flush();
   assertEquals(second.length, 1);
   assertEquals(second[0].type, "frame");
   if (second[0].type === "frame") {

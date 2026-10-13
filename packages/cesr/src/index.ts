@@ -10,7 +10,6 @@ export * from "./core/bytes.ts";
 export * from "./core/cbor.ts";
 export * from "./core/errors.ts";
 export * from "./core/parser-engine.ts";
-export * from "./core/parser-policy.ts";
 export * from "./core/types.ts";
 export * from "./core/vocabulary.ts";
 export * from "./parser/cold-start.ts";

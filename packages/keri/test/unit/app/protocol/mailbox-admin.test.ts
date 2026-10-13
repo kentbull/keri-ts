@@ -110,7 +110,7 @@ Deno.test("app/protocol/mailbox-admin - ingest settles parser state without resp
   let activeMailboxAid: string | null = null;
   const runtime = {
     reactor: {
-      processChunk(
+      processCompleteChunk(
         bytes: Uint8Array,
         { local }: { local?: boolean } = {},
       ) {

@@ -96,9 +96,9 @@ function issueFixture(
 
 function ingestGrant(runtime: AgentRuntime, fixture: IssuedFixture): void {
   for (const message of fixture.grant.support) {
-    runtime.reactor.processChunk(message);
+    runtime.reactor.processCompleteChunk(message);
   }
-  runtime.reactor.processChunk(fixture.grant.wire);
+  runtime.reactor.processCompleteChunk(fixture.grant.wire);
   runtime.reactor.processEscrowsOnce();
 }
 
@@ -230,10 +230,10 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
 
       fixture.registry.revoke(fixture.creder.said!);
       for (const message of issuerHby.db.clonePreIter(fixture.issuer.pre)) {
-        runtime.reactor.processChunk(message);
+        runtime.reactor.processCompleteChunk(message);
       }
       for (const message of issuerReger.clonePreIter(fixture.creder.said!)) {
-        runtime.reactor.processChunk(message);
+        runtime.reactor.processCompleteChunk(message);
       }
       runtime.reactor.processEscrowsOnce();
 
@@ -310,10 +310,10 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
 
       fixture.registry.revoke(fixture.creder.said!);
       for (const message of issuerHby.db.clonePreIter(fixture.issuer.pre)) {
-        runtime.reactor.processChunk(message);
+        runtime.reactor.processCompleteChunk(message);
       }
       for (const message of issuerReger.clonePreIter(fixture.creder.said!)) {
-        runtime.reactor.processChunk(message);
+        runtime.reactor.processCompleteChunk(message);
       }
       runtime.reactor.processEscrowsOnce();
       while (!runtime.cues.empty) {

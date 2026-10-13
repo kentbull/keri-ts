@@ -15,7 +15,7 @@
 import {
   type CesrMessage,
   concatBytes,
-  createParser,
+  parseBytes,
   parseSerder,
   SerderKERI,
   smell,
@@ -179,11 +179,7 @@ export function splitCesrStream(message: Uint8Array): Uint8Array[] {
     return [];
   }
 
-  const parser = createParser({
-    framed: false,
-    attachmentDispatchMode: "compat",
-  });
-  const frames = [...parser.feed(message), ...parser.flush()];
+  const frames = parseBytes(message);
   const parts: Uint8Array[] = [];
 
   for (const frame of frames) {
@@ -302,12 +298,8 @@ export function inspectCesrTerminalMessage(
 
 /** Parse one entire CESR request body and return every message plus the last. */
 export function inspectCesrStream(bytes: Uint8Array): CesrStreamInspection {
-  const parser = createParser({
-    framed: false,
-    attachmentDispatchMode: "compat",
-  });
   const messages: SerderKERI[] = [];
-  const frames = parser.feed(bytes);
+  const frames = parseBytes(bytes);
   for (const frame of frames) {
     if (frame.type === "error") {
       throw frame.error;

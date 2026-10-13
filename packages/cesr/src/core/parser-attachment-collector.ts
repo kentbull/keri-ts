@@ -4,12 +4,10 @@ import type { AttachmentDispatchMode } from "../parser/group-dispatch.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { ColdStartError, ShortageError } from "./errors.ts";
 import { isAttachmentDomain } from "./parser-constants.ts";
-import type { FrameBoundaryPolicy } from "./parser-policy.ts";
-import type { AttachmentGroup, CesrMessage } from "./types.ts";
+import type { AttachmentGroup } from "./types.ts";
 
-/** Dependency-injected attachment collection policies and hooks. */
+/** Attachment decoding mode and recognition of the next body. */
 interface AttachmentCollectorOptions {
-  frameBoundaryPolicy: FrameBoundaryPolicy;
   attachmentDispatchMode: AttachmentDispatchMode;
   isFrameBoundaryAhead: (
     input: Uint8Array,
@@ -22,23 +20,11 @@ interface AttachmentCollectorOptions {
 export interface CollectAttachmentsResult {
   attachments: AttachmentGroup[];
   consumed: number;
-  pausedForShortage: boolean;
+  complete: boolean;
 }
 
-/** Outcome for pending-frame continuation parsing. */
-export interface ResumePendingResult {
-  consumed: number;
-  emitPending: boolean;
-  shouldContinue: boolean;
-}
-
-/**
- * Parses and appends attachment groups for both:
- * - normal trailing-attachment collection after frame start parse
- * - pending-frame continuation after shortage pauses
- */
+/** Collect a message's attachments identically on initial and resumed feeds. */
 export class AttachmentCollector {
-  private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
   private readonly attachmentDispatchMode: AttachmentDispatchMode;
   private readonly isFrameBoundaryAhead: (
     input: Uint8Array,
@@ -47,7 +33,6 @@ export class AttachmentCollector {
   ) => boolean;
 
   constructor(options: AttachmentCollectorOptions) {
-    this.frameBoundaryPolicy = options.frameBoundaryPolicy;
     this.attachmentDispatchMode = options.attachmentDispatchMode;
     this.isFrameBoundaryAhead = options.isFrameBoundaryAhead;
   }
@@ -61,6 +46,7 @@ export class AttachmentCollector {
     version: Versionage,
     streamVersion: Versionage,
     seed: AttachmentGroup[] = [],
+    terminal = false,
   ): CollectAttachmentsResult {
     const attachments = [...seed];
     let offset = 0;
@@ -68,7 +54,7 @@ export class AttachmentCollector {
     while (offset < input.length) {
       const nextCold = sniff(input.slice(offset));
       if (nextCold === "msg") {
-        break;
+        return { attachments, consumed: offset, complete: true };
       }
       if (nextCold === "ano") {
         offset = this.consumeLeadingAno(input, offset);
@@ -88,7 +74,7 @@ export class AttachmentCollector {
             nextCold,
           )
         ) {
-          break;
+          return { attachments, consumed: offset, complete: true };
         }
 
         const { group, consumed } = parseAttachmentGroup(
@@ -99,17 +85,17 @@ export class AttachmentCollector {
         );
         attachments.push(group);
         offset += consumed;
-        if (
-          this.frameBoundaryPolicy.shouldStopAfterAttachmentGroupCollection()
-        ) {
-          break;
+        // An AttachmentGroup encloses the entire attachment set, unlike an
+        // individual signature/receipt group. Its boundary completes the frame.
+        if (group.name === "AttachmentGroup" || group.name === "BigAttachmentGroup") {
+          return { attachments, consumed: offset, complete: true };
         }
       } catch (error) {
         if (error instanceof ShortageError) {
           return {
             attachments,
             consumed: offset,
-            pausedForShortage: true,
+            complete: false,
           };
         }
         throw error;
@@ -119,84 +105,8 @@ export class AttachmentCollector {
     return {
       attachments,
       consumed: offset,
-      pausedForShortage: false,
+      complete: terminal,
     };
-  }
-
-  /**
-   * Resume attachment parsing for a pending top-level frame.
-   *
-   * Emits no events directly; parser orchestration decides when to emit pending.
-   */
-  resumePendingFrame(
-    input: Uint8Array,
-    pendingFrame: CesrMessage,
-    version: Versionage,
-    streamVersion: Versionage,
-  ): ResumePendingResult {
-    if (input.length === 0) {
-      return { consumed: 0, emitPending: false, shouldContinue: false };
-    }
-
-    let offset = 0;
-    const nextCold = sniff(input.slice(offset));
-
-    if (nextCold === "ano") {
-      offset = this.consumeLeadingAno(input, offset);
-      return {
-        consumed: offset,
-        emitPending: false,
-        shouldContinue: offset < input.length,
-      };
-    }
-
-    if (nextCold === "msg") {
-      return { consumed: 0, emitPending: true, shouldContinue: true };
-    }
-
-    if (!isAttachmentDomain(nextCold)) {
-      throw new ColdStartError(
-        `Unsupported pending-frame continuation cold code ${nextCold}`,
-      );
-    }
-
-    if (
-      this.isFrameBoundaryAhead(input.slice(offset), streamVersion, nextCold)
-    ) {
-      return { consumed: 0, emitPending: true, shouldContinue: true };
-    }
-
-    const { group, consumed } = parseAttachmentGroup(
-      input.slice(offset),
-      version,
-      nextCold,
-      { mode: this.attachmentDispatchMode },
-    );
-    pendingFrame.attachments.push(group);
-    offset += consumed;
-
-    if (this.frameBoundaryPolicy.shouldEmitPendingAfterAttachmentResume()) {
-      return { consumed: offset, emitPending: true, shouldContinue: false };
-    }
-
-    if (offset >= input.length) {
-      return { consumed: offset, emitPending: false, shouldContinue: false };
-    }
-
-    const afterCold = sniff(input.slice(offset));
-    if (afterCold === "ano") {
-      offset = this.consumeLeadingAno(input, offset);
-      return {
-        consumed: offset,
-        emitPending: false,
-        shouldContinue: offset < input.length,
-      };
-    }
-    if (afterCold === "msg") {
-      return { consumed: offset, emitPending: true, shouldContinue: true };
-    }
-
-    return { consumed: offset, emitPending: false, shouldContinue: true };
   }
 
   /** Fast-forward consecutive annotation separator bytes from a local offset. */

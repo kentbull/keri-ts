@@ -282,14 +282,10 @@ Deno.test(
     const firstFrames = firstPass.filter((event) => event.type === "frame");
     const firstErrors = firstPass.filter((event) => event.type === "error");
 
-    assertEquals(firstFrames.length, 1);
+    assertEquals(firstFrames.length, 0);
     assertEquals(firstErrors.length, 1);
     if (firstErrors[0].type === "error") {
       assertEquals(firstErrors[0].error.name, "ShortageError");
-    }
-    if (firstFrames[0].type === "frame") {
-      assertEquals(firstFrames[0].frame.attachments.length, 0);
-      assertEquals(firstFrames[0].frame.body.ilk, "icp");
     }
 
     const secondFlush = parser.flush();

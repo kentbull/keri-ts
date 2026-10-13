@@ -15,6 +15,7 @@ import { Kinds, type Protocol, Protocols } from "../tables/versions.ts";
 import {
   ColdStartError,
   DeserializeError,
+  GroupSizeError,
   SemanticInterpretationError,
   ShortageError,
   SyntaxParseError,
@@ -34,19 +35,20 @@ import {
   quadletUnit,
   tokenSize,
 } from "./parser-constants.ts";
-import type { FrameBoundaryPolicy } from "./parser-policy.ts";
 import type { CesrMessage } from "./types.ts";
 
-/** Dependency-injected options for frame parsing behavior and hooks. */
+/** Attachment decoding options for enclosed frames. */
 interface FrameParserOptions {
-  frameBoundaryPolicy: FrameBoundaryPolicy;
   attachmentDispatchMode: AttachmentDispatchMode;
-  onEnclosedFrames: (frames: CesrMessage[]) => void;
 }
 
 /** Parsed frame-start result consumed by top-level parser orchestration. */
 export interface ParsedFrameStart {
   frame: CesrMessage;
+  /** True only when an enclosure proves the entire frame is present. */
+  complete?: boolean;
+  /** Further complete frames from the same enclosure, in stream order. */
+  siblings?: CesrMessage[];
   consumed: number;
   version: Versionage;
   streamVersion: Versionage;
@@ -128,17 +130,13 @@ interface NativeBodySyntaxArtifact {
  * Responsibilities:
  * - resolve frame-start forms (`msg`, native/body groups, wrappers)
  * - preserve version-scope semantics for stream and nested payloads
- * - emit enclosed GenericGroup siblings through callback for deferred handling
+ * - return complete enclosed GenericGroup siblings in stream order
  */
 export class FrameParser {
-  private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
   private readonly attachmentDispatchMode: AttachmentDispatchMode;
-  private readonly onEnclosedFrames: (frames: CesrMessage[]) => void;
 
   constructor(options: FrameParserOptions) {
-    this.frameBoundaryPolicy = options.frameBoundaryPolicy;
     this.attachmentDispatchMode = options.attachmentDispatchMode;
-    this.onEnclosedFrames = options.onEnclosedFrames;
   }
 
   /** Probe whether the next token is a top-level frame boundary counter. */
@@ -385,7 +383,13 @@ export class FrameParser {
       throw new ShortageError(offset + total, input.length);
     }
     const payload = input.slice(offset + headerSize, offset + total);
-    const nested = this.parseCompleteFrame(payload, version, false);
+    let nested: ReturnType<FrameParser["parseCompleteFrame"]>;
+    try {
+      nested = this.parseCompleteFrame(payload, version);
+    } catch (error) {
+      if (error instanceof ShortageError) throw new GroupSizeError("Incomplete frame inside BodyWithAttachmentGroup");
+      throw error;
+    }
     if (nested.consumed !== payload.length) {
       throw new ColdStartError(
         "BodyWithAttachmentGroup payload did not parse to a complete frame",
@@ -393,6 +397,7 @@ export class FrameParser {
     }
     return {
       frame: nested.frame,
+      complete: true,
       consumed: offset + total,
       version: nested.frame.body.gvrsn ?? nested.frame.body.pvrsn, // fallback to pvrsn is a v1 fallback compatibility heuristic
       streamVersion,
@@ -534,7 +539,13 @@ export class FrameParser {
     }
 
     const payload = input.slice(offset + headerSize, offset + total);
-    const frames = this.parseFrameSequence(payload, version);
+    let frames: CesrMessage[];
+    try {
+      frames = this.parseFrameSequence(payload, version);
+    } catch (error) {
+      if (error instanceof ShortageError) throw new GroupSizeError("Incomplete frame inside GenericGroup");
+      throw error;
+    }
     if (frames.length === 0) {
       throw new ColdStartError(
         "GenericGroup payload contained no enclosed frames",
@@ -542,12 +553,11 @@ export class FrameParser {
     }
 
     const [first, ...rest] = frames;
-    if (rest.length > 0) {
-      this.onEnclosedFrames(rest);
-    }
 
     return {
       frame: first,
+      complete: true,
+      siblings: rest,
       consumed: offset + total,
       version: first.body.gvrsn ?? first.body.pvrsn,
       streamVersion,
@@ -576,6 +586,11 @@ export class FrameParser {
       const frameVersion = base.version;
       const streamVersion = base.streamVersion;
       const attachments = [...base.frame.attachments];
+      if (base.complete) {
+        out.push(base.frame, ...(base.siblings ?? []));
+        activeVersion = base.streamVersion;
+        continue;
+      }
 
       // greedily parse attachment groups until offset == input.length
       while (offset < input.length) {
@@ -611,6 +626,7 @@ export class FrameParser {
         );
         attachments.push(group);
         offset += consumed;
+        if (group.name === "AttachmentGroup" || group.name === "BigAttachmentGroup") break;
       }
 
       out.push({
@@ -627,9 +643,12 @@ export class FrameParser {
   private parseCompleteFrame(
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
-    stopAtNextMessage = true,
   ): { frame: CesrMessage; consumed: number } {
     const base = this.parseFrame(input, inheritedVersion);
+    if (base.complete) {
+      if (base.siblings?.length) throw new ColdStartError("Expected one enclosed frame");
+      return { frame: base.frame, consumed: base.consumed };
+    }
     const version = base.version;
     const attachments = [...base.frame.attachments];
     let offset = base.consumed;
@@ -641,9 +660,6 @@ export class FrameParser {
         continue;
       }
       if (nextCold === "msg") {
-        if (stopAtNextMessage) {
-          break;
-        }
         throw new ColdStartError(
           "Enclosed frame payload encountered unexpected nested message start",
         );
@@ -663,9 +679,7 @@ export class FrameParser {
       );
       attachments.push(group);
       offset += consumed;
-      if (this.frameBoundaryPolicy.shouldStopAfterAttachmentGroupCollection()) {
-        break;
-      }
+      if (group.name === "AttachmentGroup" || group.name === "BigAttachmentGroup") break;
     }
 
     return {

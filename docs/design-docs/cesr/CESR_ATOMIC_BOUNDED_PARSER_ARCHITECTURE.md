@@ -35,32 +35,24 @@ It does **not** keep a resumable nested parse stack across chunk boundaries.
 
 ```mermaid
 flowchart TD
-    A["Caller"] --> B["feed(chunk)"]
-    B --> C["Append chunk to parser.state.buffer"]
-    C --> D["drain() loop"]
-    D --> E["consumeLeadingAno()"]
-    E --> F{"pendingFrame exists?"}
-    F -- "yes" --> G["resumePendingFrame()"]
-    F -- "no" --> H{"queuedFrames exists?"}
-    H -- "yes" --> I["Emit queued frame"]
-    H -- "no" --> J["parseFrame(buffer, streamVersion)"]
-    J --> K["Consume parsed bytes"]
-    K --> L["Collect trailing attachments at top level"]
-    L --> M{"Need to defer?"}
-    M -- "yes" --> N["Set pendingFrame"]
-    M -- "no" --> O["Emit completed frame"]
-    G --> G1{"pending frame emitted?"}
-    G1 -- "yes" --> O
-    G1 -- "no (continue hold or wait)" --> D
+    A["feed(chunk)"] --> B["Append bytes"]
+    B --> D["drain()"]
+    Q["flush()"] --> R["drain(terminal=true)"]
+    R --> D
+    D --> F{"Open frame?"}
+    F -- "yes" --> G["Collect trailing attachments"]
+    G --> H{"Completion boundary?"}
+    H -- "yes" --> O["Emit frame"]
+    H -- "no" --> P["Wait, or report terminal shortage"]
+    F -- "no" --> I{"Queued complete siblings?"}
+    I -- "yes" --> O
+    I -- "no" --> J["Parse next body or enclosure"]
+    J --> K{"Complete enclosure?"}
+    K -- "yes" --> L["Queue siblings"]
+    L --> O
+    K -- "no" --> M["Retain open frame"]
+    M --> G
     O --> D
-    I --> D
-    D --> P["Return CesrFrame events"]
-
-    Q["flush()"] --> R["Emit queuedFrames first"]
-    R --> S["Emit pendingFrame if present"]
-    S --> T{"buffer has remainder?"}
-    T -- "yes" --> U["Emit ShortageError"]
-    T -- "no" --> V["Return"]
 ```
 
 ## Frame Start Parsing Contract
@@ -112,8 +104,8 @@ flowchart TD
     C --> D["First enclosed frame"]
     C --> E["Remaining enclosed frames"]
     D --> F["Return first as current parse result"]
-    E --> G["Push remainder into queuedFrames"]
-    G --> H["Later drain() iterations emit queuedFrames before new parsing"]
+    E --> G["Return remainder as complete siblings"]
+    G --> H["drain() queues siblings before new parsing"]
 ```
 
 ## Attachment Wrapper Behavior
@@ -156,7 +148,7 @@ sequenceDiagram
     P-->>C: "[frame/error events]"
 
     C->>P: "flush()"
-    P-->>C: "[queued frame, pending frame, optional shortage]"
+    P-->>C: "[complete frames in order, optional terminal shortage]"
 ```
 
 ## Sequence: BodyWithAttachmentGroup (Atomic Enclosed Parse)
@@ -194,13 +186,12 @@ mutable nested parse stack.
 
 ## Emission and Deferral Rules
 
-1. `queuedFrames` (from `GenericGroup`) are emitted before new parse work.
-2. `pendingFrame` is used both for unresolved attachment continuation and for
-   unframed no-lookahead holds after a complete body parse with no attachments.
-3. `flush()` emits:
-   - queued frames
-   - pending frame
-   - trailing `ShortageError` only if bytes remain in buffer
+1. Open frames wait for a following body, an enclosing attachment-set boundary,
+   or explicit terminal flush. Chunk exhaustion is not a completion boundary.
+2. Enclosed frames are complete; their siblings emit before parsing outside bytes.
+3. `framed` caps complete-frame emissions per feed, without changing boundaries.
+4. `flush()` drains all complete frames. An incomplete attachment tail produces
+   one shortage error and discards its pending frame, without partial emission.
 
 ## When This Architecture Is Preferable
 

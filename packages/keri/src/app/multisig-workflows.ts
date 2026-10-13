@@ -365,13 +365,13 @@ function* approveRpyProposal(
   }
 
   const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, "rpy");
-  runtime.reactor.processChunk(
+  runtime.reactor.processCompleteChunk(
     concatBytes(rpySerder.raw, peerAttachment),
     { local: true },
   );
 
   const localRpy = groupEndorseReply(hby, groupPre, rpySerder);
-  runtime.reactor.processChunk(localRpy, { local: true });
+  runtime.reactor.processCompleteChunk(localRpy, { local: true });
   runtime.reactor.processEscrowsOnce();
 
   const attrs = rpyAttrs(rpySerder);
@@ -428,9 +428,10 @@ function* approveKelProposal(
   const keys = groupEventKeys(hby, groupPre, serder);
   const smids = route === MULTISIG_IXN_ROUTE ? stringArrayField(payload, "smids") : proposalSigningMembers(payload);
   const sigers = signLocalGroupEvent(hby, serder, smids, keys);
-  const localMessage = messagize(serder, { sigers, pipelined: true });
+  // Keep the attachment set open until the peer signatures are appended.
+  const localMessage = messagize(serder, { sigers, pipelined: false });
   const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, label);
-  runtime.reactor.processChunk(concatBytes(localMessage, peerAttachment), { local: true });
+  runtime.reactor.processCompleteChunk(concatBytes(localMessage, peerAttachment), { local: true });
   runtime.reactor.processEscrowsOnce();
 
   const deliveries = yield* publishProposal(runtime, member, members, route, label, payload, localMessage);
@@ -479,9 +480,10 @@ function* approveVdrProposal(
   const smids = groupSigningMembers(hby, groupPre);
   const keys = groupEventKeys(hby, groupPre, anchorSerder);
   const sigers = signLocalGroupEvent(hby, anchorSerder, smids, keys);
-  const localAnchor = messagize(anchorSerder, { sigers, pipelined: true });
+  // Keep the attachment set open until the peer signatures are appended.
+  const localAnchor = messagize(anchorSerder, { sigers, pipelined: false });
   const peerAnchorAttachment = multisigPathedAttachment(hby, wrapperSaid, "anc");
-  runtime.reactor.processChunk(concatBytes(localAnchor, peerAnchorAttachment), { local: true });
+  runtime.reactor.processCompleteChunk(concatBytes(localAnchor, peerAnchorAttachment), { local: true });
   runtime.reactor.processEscrowsOnce();
 
   let accepted = false;

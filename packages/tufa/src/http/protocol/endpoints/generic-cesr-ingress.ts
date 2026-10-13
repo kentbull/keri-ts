@@ -5,7 +5,7 @@
  * the remaining raw CESR traffic and decides whether it belongs to local
  * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
  */
-import { concatBytes, createParser, Ilks, type SerderKERI } from "cesr-ts";
+import { concatBytes, Ilks, parseBytes, type SerderKERI } from "cesr-ts";
 import { run } from "effection";
 import {
   type CueEmission,
@@ -227,8 +227,7 @@ export async function handleGenericCesrIngress(
 function authorizesMailboxRequest(context: ProtocolRequestContext, bytes: Uint8Array, said: string | null): boolean {
   let envelopes;
   try {
-    const parser = createParser({ framed: false, attachmentDispatchMode: "compat" });
-    envelopes = envelopesFromFrames(parser.feed(bytes), false);
+    envelopes = envelopesFromFrames(parseBytes(bytes), false);
   } catch {
     return false;
   }
