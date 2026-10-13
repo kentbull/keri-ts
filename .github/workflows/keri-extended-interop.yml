@@ -20,6 +20,7 @@ on:
           - interop-delegation
           - interop-mailbox-slow
           - full
+          - essr-qualification
 
 permissions:
   contents: read
@@ -45,6 +46,7 @@ env:
 
 jobs:
   extended-interop:
+    if: inputs.target != 'essr-qualification'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -127,3 +129,30 @@ jobs:
           path: .test-timings/*.json
           if-no-files-found: ignore
           retention-days: 14
+
+  essr-qualification:
+    # Deliberately manual-only: never part of the PR stage gate or merge checks.
+    if: inputs.target == 'essr-qualification'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: run bounded large ESSR qualification
+        run: >-
+          python3 scripts/bench/run-cesr-benchmark.py
+          --output cesr-qualification.jsonl
+          --timeout 120 --max-rss-mib 768
+
+      - name: upload raw ESSR qualification evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: essr-qualification-${{ github.run_id }}
+          path: cesr-qualification.jsonl
+          if-no-files-found: error
+          retention-days: 90
