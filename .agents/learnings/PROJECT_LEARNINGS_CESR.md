@@ -6,6 +6,16 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 
 ## Current State
 
+Compactor caches canonical descendants across compaction passes; clearing leaves
+on every trace loses the data needed for expansion. Targeted `compact(paths, root)` restores one canonical closure, with ancestors first, ordinal selectors,
+whole-node suffixes and exact internal label paths. Use a fresh expanded instance
+for each target. Four-format golden bytes come from frozen Python partials and
+canonical Mapper serialization: frozen Compactor.raw itself stays stale after
+compaction. TS keeps its existing current-map raw snapshot. See the graduated
+disclosure guide for this intentional difference and the pure semantic boundary.
+Pather resolution has a configurable 256-component default; construction has no
+such wire-depth cap. These helpers do not authenticate or enable IPEX workflows.
+
 SAID exclusion is a hash-input rule: size the complete versioned SAD first,
 then omit ignored fields only from the digest serialization. Keep ignored fields
 in the returned SAD/raw. Frozen `927c0cb8` literals cover JSON, CBOR, and MGPK for

@@ -1,4 +1,4 @@
-import { b, t } from "../core/bytes.ts";
+import { b } from "../core/bytes.ts";
 import { DeserializeError, UnknownCodeError } from "../core/errors.ts";
 import type { CesrDomain } from "../core/types.ts";
 import { Bexter } from "./bexter.ts";
@@ -142,11 +142,51 @@ export class Pather extends Matter {
 
   /** Decode `/`-separated paths, removing only Pather's own double-hyphen escape. */
   get path(): string {
+    return this.parts.join("/");
+  }
+
+  /** Decoded components retain the absolute root and a trailing whole-node selector. */
+  get parts(): string[] {
     if (BEXTER_CODES.has(this.code)) {
-      const bext = Bexter.derawify(this.raw, this.code, false).replace(/^--/, "");
-      return bext.split("-").join("/");
+      return Bexter.derawify(this.raw, this.code, false).replace(/^--/, "").split("-");
     }
-    return t(this.raw);
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(this.raw).split("/");
+    } catch {
+      throw new DeserializeError("Non-UTF-8 Pather bytes");
+    }
+  }
+
+  /** Relative traversal discards only leading root components. */
+  get rparts(): string[] {
+    const parts = this.parts;
+    while (parts[0] === "") parts.shift();
+    return parts;
+  }
+
+  /** Resolve SAD labels or field/list ordinals under a deployment depth limit, not a wire limit. */
+  resolve(sad: unknown, { maxDepth = 256 }: { maxDepth?: number } = {}): unknown {
+    if (!Number.isSafeInteger(maxDepth) || maxDepth < 0) throw new RangeError("Invalid path depth limit");
+    const parts = this.rparts;
+    if (parts.length > maxDepth) throw new DeserializeError(`Path depth exceeds limit ${maxDepth}`);
+    let value = sad;
+    for (const part of parts) {
+      if (Array.isArray(value)) {
+        if (!/^[+-]?\d+$/.test(part)) throw new DeserializeError("Invalid array pointer index");
+        const ordinal = Number(part);
+        const index = ordinal < 0 ? value.length + ordinal : ordinal;
+        if (!Number.isSafeInteger(index) || index < 0 || index >= value.length) {
+          throw new DeserializeError("Array pointer index is outside the list");
+        }
+        value = value[index];
+      } else if (value !== null && typeof value === "object") {
+        if (part === "") return value;
+        const key = /^\d+$/.test(part) ? Object.keys(value)[Number(part)] : part;
+        if (key === undefined || !Object.hasOwn(value, key)) throw new DeserializeError("Invalid map pointer");
+        value = (value as Record<string, unknown>)[key];
+      } else throw new DeserializeError("Invalid path traversal type");
+    }
+    return value;
   }
 }
 

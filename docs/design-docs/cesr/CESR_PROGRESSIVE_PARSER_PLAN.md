@@ -14,7 +14,7 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 
 ## Acceptance matrix for the remaining parser gaps
 
-Current verified master: `ba74491e8222edaf1c2204f7767b552b948a632f` after #164
+Current verified master: `192ecff938249e5a77fc092c9f09db67287dde32` after #165
 (starting boundary was `876d24b4` after #159); frozen upstream authority `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
 The seven follow-on phases below are distinct from the original twelve migration
 steps. Follow-on phase 1's identified tables/semantics and phase 2's parent-owned
@@ -28,7 +28,7 @@ matrix refer to the follow-on sequence, except where a GitHub PR is named.
 | ---------------- | -------------------- | ---------- | ----------------------------------- | -------------------- |
 | Multisig         | Merged #160–161      | 3d         | [Proofs/retry][nested-gates]        | Four routes          |
 | IPEX             | Proofs merged #162   | 3e         | [Grant/admit][nested-gates]         | DAG/VDR pending      |
-| Exchange proofs  | Correction in review | 3e cleanup | [Policy/cues][proof-cleanup]        | IPEX still pending   |
+| Exchange proofs  | Merged #165          | 3e cleanup | [Policy/cues][proof-cleanup]        | IPEX still pending   |
 | v2 admission     | Direct dispatch      | 3f         | [Sender/KRAM][nested-gates]         | Reference stubs      |
 | ESSR outcomes    | Merged #163          | After #162 | [Outcomes/cleanup][nested-gates]    | Local limits         |
 | Shared admission | Local guards         | 4          | [Concurrent load][resource-gates]   | Allocation gaps      |
@@ -387,9 +387,9 @@ reference bypass. Larger deployments can raise both caps before parsing begins.
 ### Remaining current-reference primitive and Serder slices
 
 Audit the remaining primitive/Serder delta at the same frozen revision before
-claiming parity: path traversal limits and changed ACDC/KERI semantic accessors. Python's Pather depth limit applies
-to its resolution API, which TS does not expose; it does not limit wire path
-construction. Do not invent a wire-depth restriction when auditing that gap.
+claiming parity: path traversal limits and changed ACDC/KERI semantic accessors. Pather now exposes bounded resolution as part of the 3e disclosure prerequisite
+below. The default depth limit applies to resolution; it does not limit wire path
+construction. Changed Serder accessors still require a scope-specific audit.
 
 The native seal repair now encodes and projects the seven frozen `Serder.ClanCodes`
 families through the existing typed descriptors. It preserves homogeneous runs,
@@ -633,9 +633,9 @@ implements the legacy conversation graph only. The same planned IPEX unit owns
 supplemental evidence selection and source-seal persistence, single-DAG disclosure
 plans and graph semantics, independent issuer proofs, and `rip/bup` registry
 vetting/retry. Presentation-registry history additionally depends on the
-receiver-observed KRAM acceptance timestamp addressed with 3f. TS currently lacks
-that v2 registry processing and path-directed Compactor API; these are concrete
-dependencies inside 3e, not completed capabilities or parallel workstreams.
+receiver-observed KRAM acceptance timestamp addressed with 3f. TS still lacks that v2 registry processing. The path-directed Compactor
+prerequisite is implemented for review below. Both belong inside 3e; they do not
+establish completed IPEX processing or create parallel workstreams.
 Completion requires real grant/admit workflows with credential/KEL/TEL dependency
 evidence, no silent evidence loss, and continued rejection of legacy pathed v2
 input until its supported nested processing path is complete.
@@ -679,8 +679,8 @@ refusal/later admission, joined cancellation, and storage/keeper failure probes.
 #### Exchange-proof correction after #162
 
 The focused live-LMDB inspection repair merged in [#164][lmdb-inspection]. The
-next dedicated cleanup corrects #162 within 3e before further IPEX implementation.
-Its implementation is under review; required CI and publication remain gates.
+dedicated cleanup merged in [#165][proof-policy-pr] after all six required checks
+passed on `36af5404`. It corrects #162 within 3e before further IPEX implementation.
 
 - **Persistence:** missing sender source state escrows only for `acceptsSscs`;
   strict supplemental and unresolved last-reference failures query/reject without
@@ -714,10 +714,32 @@ unsupported nested IPEX and unfinished processMsg/KRAM remain guarded. This work
 adds no second IPEX or shared-admission project.
 
 [lmdb-inspection]: https://github.com/kentbull/keri-ts/pull/164
+[proof-policy-pr]: https://github.com/kentbull/keri-ts/pull/165
 [py-policy]: https://github.com/WebOfTrust/keripy/blob/927c0cb8794d7c84fc17143c67df64aab9deda6c/src/keri/peer/exchanging.py#L65
 [py-escrow]: https://github.com/WebOfTrust/keripy/blob/927c0cb8794d7c84fc17143c67df64aab9deda6c/src/keri/peer/exchanging.py#L426
 [py-verify]: https://github.com/WebOfTrust/keripy/blob/927c0cb8794d7c84fc17143c67df64aab9deda6c/src/keri/peer/exchanging.py#L1122
 [py-ipex]: https://github.com/WebOfTrust/keripy/blob/927c0cb8794d7c84fc17143c67df64aab9deda6c/src/keri/acdc/ipexing.py#L426
+
+#### Canonical disclosure prerequisite within 3e
+
+The existing IPEX worktree now repairs Compactor's lost descendant cache and
+adds path-directed canonical disclosure, plus the Pather resolution used by
+frozen IPEX plan validation (`acdc/ipexing.py` 850–945). Focused independent
+fixtures cover four serialization formats, scalar/subtree/ordinal/union paths,
+root filtering and exact dotted-label traversal. The fixture generator verifies
+actually imported unmodified upstream modules. Invalid paths and depth policy
+have explicit checks. This implementation is under review; publication and
+required CI remain gates.
+
+Compaction preserves commitments while constructing disclosure variants; it
+supplies no issuer authentication, graph acceptance or credential persistence.
+Standalone Mapper stale claimed-SAID verification stays in its dedicated later
+repair. Frozen `Compactor.raw` remains a stale pre-compaction snapshot; TS retains
+its existing current-map serialization and compares canonical bytes with a fresh
+reference Mapper. Partial bytes are compared directly. This intentional object
+snapshot difference is recorded in the graduated disclosure guide. Registry
+processing, grant/admit workflows, sender/KRAM admission and full qualification
+remain incomplete.
 
 **Remaining runtime slices:** IPEX workflow evidence and the affected v2
 `processMsg` policy remain separate PRs. TS dispatch still bypasses the reference's consolidated non-event

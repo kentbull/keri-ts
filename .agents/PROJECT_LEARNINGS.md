@@ -11,6 +11,8 @@ release output iterators before database shutdown. See the KEL topic for limits.
 ESSR recipient decisions separate local admission from verification; only success
 transfers plaintext, while infrastructure failures and cancellation remain abrupt.
 See the crypto topic for the raw authentication and owner-cleanup boundary.
+Canonical disclosure construction remains separate from credential authentication;
+the CESR topic describes the Compactor/Pather prerequisite for pending nested IPEX.
 
 ## Current Focus
 

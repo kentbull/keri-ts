@@ -752,18 +752,27 @@ const revealRole = staged.find((partial) =>
 const revealRoleMad = revealRole?.mad;
 ```
 
-Important realism note:
+For a specific disclosure, start from a fresh expanded mapping and request its
+SAD paths directly:
 
-- today `Compactor` does not expose a polished `reveal([".role"])` helper
-- instead, `expand()` precomputes staged partial variants in `partials`
-- callers select the staged variant whose revealed-versus-compact branch pattern
-  matches the disclosure they want
+```ts
+const targeted = new Compactor({ mad: semantic, verify: false });
+const paths = ["a/role/"];
+targeted.compact(paths, "a");
+const revealRoleMad = targeted.partials?.[paths.join("|")]?.mad;
+```
 
-So the incremental “uncompaction” surface in current `keri-ts` is:
+`root` filters the section prefix; a trailing separator selects the entire node.
+A scalar path retains its canonical ancestor maps while leaving unrelated
+branches compact. Numeric components select fields by insertion order. Multiple
+paths produce one combined partial. Empty or wholly out-of-section selections
+produce no partial. A targeted call consumes the expanded input; another target
+requires a fresh instance. `expand()` still provides the staged expansion path.
+Exact internal label paths distinguish a literal dotted label from nested labels.
 
-- `compact()` to reach the most compact state
-- `expand()` to build staged re-expansions
-- `partials` plus `getTail(path)` to choose the right variant
+These operations construct canonical disclosure shapes. They do not authenticate
+a credential or its issuer. IPEX must still compare the actual disclosed shape,
+verify each node's proofs, and resolve the relevant workflow dependencies.
 
 ### Step 4: reveal two fields
 
@@ -871,10 +880,10 @@ It is not the fixed-field `BlindState` / `BoundState` / `TypeMedia` path.
 
 ### CESR native callout
 
-In live `keri-ts`, `Mapper` and `Compactor` do not operate on JSON text bytes.
-They operate on CESR-native map bodies and their semantic projections.
-
-So the actual wire/body representation is CESR-native, not a JSON blob.
+`Mapper` and `Compactor` support CESR, JSON, CBOR and MGPK. Select `kind`
+explicitly when handling a non-native credential section: the serialization
+format is part of its commitment. `parseCompactor()` remains the native CESR
+hydration entry point.
 
 Practical `keri-ts` callout:
 
@@ -894,8 +903,13 @@ const reparsed = parseCompactor(
 );
 ```
 
-So the JSON example in this appendix is teaching the semantic shape, while the
-live CESR APIs still preserve exact native map-body bytes.
+The examples show semantic maps; `kind: "CESR"` preserves exact native map-body
+bytes. Independent frozen-Python fixtures cover canonical maps and serialized
+partials in all four formats. Frozen `927c0cb8` leaves `Compactor.raw` at its
+pre-compaction snapshot; keri-ts keeps its existing current-map serialization
+behavior. Canonical raw comparisons therefore use Python `Mapper(mad=c.mad)`,
+while partial bytes come directly from the reference partials. This is an
+explicit snapshot-behavior difference, not a claim of identical object state.
 
 This appendix is still useful because the JSON-shaped semantic view is the
 easiest way to understand:

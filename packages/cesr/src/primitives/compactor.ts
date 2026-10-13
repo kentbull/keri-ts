@@ -3,6 +3,7 @@ import type { CesrDomain } from "../core/types.ts";
 import { COMPACTOR_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Mapper, type MapperInit, type MapperMap, type MapperValue, parseMapperBody } from "./mapper.ts";
+import { makePather } from "./pather.ts";
 
 type SadMap = MapperMap;
 
@@ -43,6 +44,8 @@ export class Compactor extends Mapper {
   leaves: Record<string, Mapper>;
   /** Partially re-expanded disclosure variants built by `expand()`. */
   partials: Record<string, Compactor> | null;
+  /** Exact label paths keep dotted labels distinct from nested labels during disclosure. */
+  private readonly leafPaths = new Map<string, { path: readonly string[]; mapper: Mapper }>();
 
   /**
    * Construct one compactable map primitive.
@@ -89,17 +92,17 @@ export class Compactor extends Mapper {
     if (paths.length === 0) {
       return null;
     }
-    return this.said !== null && "" in this.leaves;
+    return Boolean(this.said) && Object.hasOwn(this.leaves, "");
   }
 
   /** Return the nested tail value located at dotted `path`, or `null` when absent. */
-  getTail(path: string, mad: SadMap | null = null): MapperValue | null {
+  getTail(path: string | readonly string[], mad: SadMap | null = null): MapperValue | null {
     let tail: MapperValue = mad ?? this._mad;
-    const parts = path.split(".").slice(1);
+    const parts = typeof path === "string" ? path.split(".").slice(1) : path;
     for (const part of parts) {
       if (
         !tail || typeof tail !== "object" || Array.isArray(tail)
-        || !(part in (tail as SadMap))
+        || !Object.hasOwn(tail, part)
       ) {
         return null;
       }
@@ -116,27 +119,15 @@ export class Compactor extends Mapper {
    * path `` (top level) => returns `[null, ""]`.
    */
   getMad(
-    path: string,
+    path: string | readonly string[],
     mad: SadMap | null = null,
   ): [SadMap | null, string | null] {
-    let current = mad ?? this._mad;
-    const parts = path.split(".");
-    const tail = parts.at(-1) ?? null;
-    const parents = parts.slice(1, -1);
-    if (parts.length <= 1) {
-      return [null, tail];
-    }
-    for (const part of parents) {
-      const next = current[part];
-      if (!next || typeof next !== "object" || Array.isArray(next)) {
-        return [null, tail];
-      }
-      current = next as SadMap;
-    }
-    if (tail !== null && tail !== "" && !(tail in current)) {
-      return [null, null];
-    }
-    return [current, tail];
+    const parts = typeof path === "string" ? path.split(".").slice(1) : [...path];
+    if (!parts.length) return [null, ""];
+    const tail = parts.pop()!;
+    const parent = this.getTail(parts, mad);
+    if (!parent || typeof parent !== "object" || Array.isArray(parent)) return [null, tail];
+    return Object.hasOwn(parent, tail) ? [parent, tail] : [null, null];
   }
 
   /**
@@ -146,8 +137,7 @@ export class Compactor extends Mapper {
    * `makify=true` so its leaf SAID is computed before the path is recorded.
    */
   trace(saidify = false): string[] {
-    this.leaves = {};
-    const paths = this._trace(this._mad, [], "", saidify);
+    const paths = this._trace(this._mad, [], [], saidify);
 
     if (saidify && this.iscompact === false) {
       // When nested leaves have just been saidified, the top-level map's own
@@ -174,29 +164,113 @@ export class Compactor extends Mapper {
     return paths;
   }
 
-  /** Apply the most-compact branch reduction recursively until the root is compact or no leaves exist. */
-  compact(): void {
-    while (true) {
-      const paths = this.trace(true);
-      for (const path of paths) {
-        const leafer = this.leaves[path];
-        const [mad, tail] = this.getMad(path);
-        if (mad && tail) {
-          // Replacing a nested leaf map with its SAID is the actual "compaction"
-          // step. `trace(true)` did the saidification; this step does the branch
-          // contraction.
-          mad[tail] = leafer.said;
+  /**
+   * Cache canonical leaves and compact every saidive branch. Optional SAD paths
+   * restore one disclosure closure, with ancestors before descendants. A trailing
+   * separator selects a whole subtree; numeric components select field ordinals.
+   * Targeted calls consume the expanded input; use a fresh instance for another.
+   */
+  compact(paths: Iterable<string> | null = null, root: string | null = null): void {
+    let disclosure: string[] | null = null;
+    const marks = new Map<string, readonly string[]>();
+    if (paths !== null) {
+      if (typeof paths === "string" || typeof paths?.[Symbol.iterator] !== "function") {
+        throw new DeserializeError("Disclosure paths must be an iterable of strings");
+      }
+      if (root !== null && typeof root !== "string") throw new DeserializeError("Invalid disclosure root");
+      if (this.iscompact) throw new DeserializeError("Cannot disclose from compact mapping");
+      disclosure = [...paths];
+      let matched = false;
+      for (const path of disclosure) {
+        if (typeof path !== "string") throw new DeserializeError("Invalid disclosure path");
+        let parts = makePather(path, { relative: true }).rparts;
+        const whole = !parts.length || parts.at(-1) === "";
+        if (root !== null) {
+          if (parts[0] !== root) continue;
+          parts = parts.slice(1);
+        }
+        matched = true;
+        marks.set("[]", []);
+        if (whole && parts.at(-1) === "") parts.pop();
+        let tail: MapperValue = this._mad;
+        let mark: readonly string[] = [];
+        for (const part of parts) {
+          if (!tail || typeof tail !== "object" || Array.isArray(tail)) {
+            throw new DeserializeError(`Invalid disclosure path=${path}`);
+          }
+          const label: string | undefined = /^\d+$/.test(part) ? Object.keys(tail)[Number(part)] : part;
+          if (label === undefined || !Object.hasOwn(tail, label)) {
+            throw new DeserializeError(`Invalid disclosure path=${path}`);
+          }
+          tail = tail[label];
+          mark = [...mark, label];
+          marks.set(JSON.stringify(mark), mark);
+        }
+        if (whole) {
+          if (!tail || typeof tail !== "object" || Array.isArray(tail)) {
+            throw new DeserializeError(`Invalid disclosure node=${path}`);
+          }
+          const nodes: [readonly string[], SadMap][] = [[mark, tail]];
+          while (nodes.length) {
+            const [parent, node] = nodes.pop()!;
+            for (const [label, value] of Object.entries(node)) {
+              if (value && typeof value === "object" && !Array.isArray(value)) {
+                const child = [...parent, label];
+                marks.set(JSON.stringify(child), child);
+                nodes.push([child, value]);
+              }
+            }
+          }
         }
       }
-
-      if (paths.length === 0 || this.iscompact) {
-        break;
-      }
+      this.partials = {};
+      if (!matched) disclosure = null;
     }
 
+    for (;;) {
+      const current: string[][] = [];
+      const paths = this._trace(this._mad, [], [], true, current);
+      let compacted = false;
+      for (const path of current) {
+        const leaf = this.leafPaths.get(JSON.stringify(path))!.mapper;
+        const [mad, tail] = this.getMad(path);
+        if (mad !== null && tail !== null) {
+          mad[tail] = leaf.said;
+          compacted = true;
+        }
+      }
+      if (!paths.length || this.iscompact) break;
+      if (!compacted) throw new DeserializeError("Unable to compact mapping");
+    }
+    // The frozen Compactor leaves raw at its pre-compaction snapshot. Keep our
+    // existing current-map serialization contract; canonical Mapper bytes agree.
+    this.rebuild();
+    if (disclosure !== null) {
+      const pmad = this.mad;
+      for (const [key, path] of [...marks].sort((a, b) => a[1].length - b[1].length)) {
+        const leaf = this.leafPaths.get(key);
+        if (!path.length || !leaf) continue;
+        const [mad, tail] = this.getMad(path, pmad);
+        if (mad !== null && tail !== null) mad[tail] = leaf.mapper.mad;
+      }
+      const partial = new Compactor({
+        mad: pmad,
+        strict: this.strict,
+        saids: this.saids,
+        saidive: this.saidive,
+        verify: false,
+        kind: this.kind,
+      });
+      partial.trace();
+      this.partials![disclosure.join("|")] = partial;
+    }
+  }
+
+  /** Refresh serialized views after internal map mutation without rewriting its commitments. */
+  private rebuild(): void {
     const rebuilt = Mapper.fromSad(this._mad, {
       strict: this.strict,
-      saidive: true,
+      saidive: this.saidive,
       saids: this.saids,
       kind: this.kind,
       verify: false,
@@ -220,14 +294,14 @@ export class Compactor extends Mapper {
    */
   expand(greedy = true): void {
     this.partials = {};
-    let paths = Object.keys(this.leaves);
+    let paths = [...this.leafPaths.keys()];
     if (greedy) {
       paths = [...paths].reverse();
     }
 
     const used: string[] = [];
-    if (paths.includes("")) {
-      const top = this.leaves[""];
+    if (paths.includes("[]")) {
+      const top = this.leafPaths.get("[]")!.mapper;
       const partial = new Compactor({
         mad: top.mad,
         verify: false,
@@ -237,7 +311,7 @@ export class Compactor extends Mapper {
       });
       partial.trace(false);
       this.partials[""] = partial;
-      used.push("");
+      used.push("[]");
     }
 
     const pmad = this.mad;
@@ -249,14 +323,15 @@ export class Compactor extends Mapper {
 
       let created = false;
       for (const path of unused) {
-        const [mad, tail] = this.getMad(path, pmad);
-        if (!mad || !tail) {
+        const leaf = this.leafPaths.get(path)!;
+        const [mad, tail] = this.getMad(leaf.path, pmad);
+        if (mad === null || tail === null) {
           continue;
         }
         // Replacing one compact SAID with the full leaf map is the inverse
         // operation of `compact()`. Repeating this step builds a staircase of
         // disclosure variants from compact to expanded.
-        mad[tail] = this.leaves[path].mad;
+        mad[tail] = leaf.mapper.mad;
         used.push(path);
         created = true;
       }
@@ -280,36 +355,39 @@ export class Compactor extends Mapper {
   private _trace(
     mad: SadMap,
     paths: string[],
-    path: string,
+    path: readonly string[],
     saidify: boolean,
+    exact?: string[][],
   ): string[] {
     // A map is a leaf when it has one of the configured saidive labels at this
     // level and no descendant map with its own saidive field. That is the key
     // mental model for every compact/disclose operation in this class.
-    let isLeaf = Object.keys(this.saids).some((label) => label in mad);
+    let isLeaf = Object.keys(this.saids).some((label) => Object.hasOwn(mad, label));
 
     for (const [label, value] of Object.entries(mad)) {
       if (value && typeof value === "object" && !Array.isArray(value)) {
-        if (label in this.saids) {
+        if (Object.hasOwn(this.saids, label)) {
           throw new DeserializeError(
             `Got nested map in said field label=${label}`,
           );
         }
         if (this._hasSaid(value as SadMap)) {
           isLeaf = false;
-          this._trace(value as SadMap, paths, `${path}.${label}`, saidify);
+          this._trace(value as SadMap, paths, [...path, label], saidify, exact);
         }
       }
     }
 
     if (isLeaf) {
-      paths.push(path);
+      const dotted = path.length ? `.${path.join(".")}` : "";
+      paths.push(dotted);
+      exact?.push([...path]);
       // Each leaf is normalized through plain `Mapper` so `Compactor` stays
       // focused on tree traversal and branch replacement rather than duplicating
       // base map serialization logic.
       const leafer = Mapper.fromSad(mad, {
         strict: this.strict,
-        saidive: true,
+        saidive: saidify,
         saids: this.saids,
         kind: this.kind,
         makify: true,
@@ -317,12 +395,13 @@ export class Compactor extends Mapper {
       });
       if (saidify) {
         for (const label of Object.keys(this.saids)) {
-          if (label in mad && leafer.mad[label] !== undefined) {
+          if (Object.hasOwn(mad, label) && leafer.mad[label] !== undefined) {
             mad[label] = leafer.mad[label];
           }
         }
       }
-      this.leaves[path] = leafer;
+      this.leaves[dotted] = leafer;
+      this.leafPaths.set(JSON.stringify(path), { path: [...path], mapper: leafer });
     }
 
     return paths;
@@ -333,7 +412,7 @@ export class Compactor extends Mapper {
     // the leaf test is the hardest part of compactor reasoning; keeping it in
     // one helper makes future parity changes less error-prone.
     for (const [label, value] of Object.entries(mad)) {
-      if (label in this.saids) {
+      if (Object.hasOwn(this.saids, label)) {
         return true;
       }
       if (

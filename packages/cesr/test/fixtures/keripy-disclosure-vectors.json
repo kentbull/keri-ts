@@ -1,0 +1,486 @@
+{
+  "reference": "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+  "source": {
+    "d": "",
+    "name": {
+      "d": "",
+      "value": "Alice"
+    },
+    "grades": {
+      "d": "",
+      "math": {
+        "d": "",
+        "value": "A"
+      },
+      "art": {
+        "d": "",
+        "value": "B"
+      }
+    },
+    "role": "holder"
+  },
+  "formats": [
+    {
+      "kind": "CESR",
+      "compact": {
+        "d": "EDIm9d11QM5hQD4ihTLlDukREnl8k2LVAb2Sm7skrxm5",
+        "name": "ELVF4yfwihhVm_TsglPGSeAIyQz8WUrxiLFoau3w8PKa",
+        "grades": "EPWqlUOGyj8Ey1K9U-kDDuGiKa_fL5N7Rx5WU6rHd-df",
+        "role": "holder"
+      },
+      "raw": "2d494171304a5f644544496d39643131514d35685144346968544c6c44756b52456e6c386b324c56416232536d37736b72786d35314141466e616d65454c564634796677696868566d5f5473676c50475365414979517a3857557278694c466f6175337738504b61304d677261646573455057716c554f47796a384579314b39552d6b44447547694b615f664c354e375278355755367248642d646631414146726f6c65304d686f6c646572",
+      "leaves": [
+        ".name",
+        ".grades.math",
+        ".grades.art",
+        ".grades",
+        ""
+      ],
+      "expanded": [
+        {
+          "paths": [
+            ""
+          ],
+          "mad": {
+            "d": "EDIm9d11QM5hQD4ihTLlDukREnl8k2LVAb2Sm7skrxm5",
+            "name": "ELVF4yfwihhVm_TsglPGSeAIyQz8WUrxiLFoau3w8PKa",
+            "grades": "EPWqlUOGyj8Ey1K9U-kDDuGiKa_fL5N7Rx5WU6rHd-df",
+            "role": "holder"
+          },
+          "raw": "2d494171304a5f644544496d39643131514d35685144346968544c6c44756b52456e6c386b324c56416232536d37736b72786d35314141466e616d65454c564634796677696868566d5f5473676c50475365414979517a3857557278694c466f6175337738504b61304d677261646573455057716c554f47796a384579314b39552d6b44447547694b615f664c354e375278355755367248642d646631414146726f6c65304d686f6c646572"
+        },
+        {
+          "paths": [
+            ".name",
+            ".grades.math",
+            ".grades.art"
+          ],
+          "mad": {
+            "d": "EDIm9d11QM5hQD4ihTLlDukREnl8k2LVAb2Sm7skrxm5",
+            "name": {
+              "d": "ELVF4yfwihhVm_TsglPGSeAIyQz8WUrxiLFoau3w8PKa",
+              "value": "Alice"
+            },
+            "grades": {
+              "d": "EPWqlUOGyj8Ey1K9U-kDDuGiKa_fL5N7Rx5WU6rHd-df",
+              "math": {
+                "d": "EAVcS9idvQKiAbkNMM4l-QvRW4OXygYXXW_6gg_q6SP_",
+                "value": "A"
+              },
+              "art": {
+                "d": "ENDgQCvwaclizSKpm83mOn9ODpNKtZ0-GIDbqtmQpDx_",
+                "value": "B"
+              }
+            },
+            "role": "holder"
+          },
+          "raw": "2d494256304a5f644544496d39643131514d35685144346968544c6c44756b52456e6c386b324c56416232536d37736b72786d35314141466e616d652d494151304a5f64454c564634796677696868566d5f5473676c50475365414979517a3857557278694c466f6175337738504b61304c5f76616c7565304c5f416c696365304d6772616465732d494176304a5f64455057716c554f47796a384579314b39552d6b44447547694b615f664c354e375278355755367248642d6466314141466d6174682d494150304a5f64454156635339696476514b6941626b4e4d4d346c2d51765257344f587967595858575f3667675f713653505f304c5f76616c7565304a5f41586172742d494150304a5f64454e44675143767761636c697a534b706d38336d4f6e394f44704e4b745a302d4749446271746d517044785f304c5f76616c7565304a5f4231414146726f6c65304d686f6c646572"
+        }
+      ]
+    },
+    {
+      "kind": "JSON",
+      "compact": {
+        "d": "EF5sumlEyx1XOEY4j9segNKAVGYvTjNs41GOgO3-_7CF",
+        "name": "EPsh8wgZjw9C-QqHvgL-bitSdjRCUWlZX0BSE9n6jLZc",
+        "grades": "ELqYT7zp-XGfNp-wJPZ75mNCHMXo6m-EhlPSeCQQahbx",
+        "role": "holder"
+      },
+      "raw": "7b2264223a2245463573756d6c45797831584f4559346a397365674e4b4156475976546a4e733431474f674f332d5f374346222c226e616d65223a22455073683877675a6a7739432d51714876674c2d62697453646a524355576c5a5830425345396e366a4c5a63222c22677261646573223a22454c715954377a702d5847664e702d774a505a37356d4e43484d586f366d2d45686c50536543515161686278222c22726f6c65223a22686f6c646572227d",
+      "leaves": [
+        ".name",
+        ".grades.math",
+        ".grades.art",
+        ".grades",
+        ""
+      ],
+      "expanded": [
+        {
+          "paths": [
+            ""
+          ],
+          "mad": {
+            "d": "EF5sumlEyx1XOEY4j9segNKAVGYvTjNs41GOgO3-_7CF",
+            "name": "EPsh8wgZjw9C-QqHvgL-bitSdjRCUWlZX0BSE9n6jLZc",
+            "grades": "ELqYT7zp-XGfNp-wJPZ75mNCHMXo6m-EhlPSeCQQahbx",
+            "role": "holder"
+          },
+          "raw": "7b2264223a2245463573756d6c45797831584f4559346a397365674e4b4156475976546a4e733431474f674f332d5f374346222c226e616d65223a22455073683877675a6a7739432d51714876674c2d62697453646a524355576c5a5830425345396e366a4c5a63222c22677261646573223a22454c715954377a702d5847664e702d774a505a37356d4e43484d586f366d2d45686c50536543515161686278222c22726f6c65223a22686f6c646572227d"
+        },
+        {
+          "paths": [
+            ".name",
+            ".grades.math",
+            ".grades.art"
+          ],
+          "mad": {
+            "d": "EF5sumlEyx1XOEY4j9segNKAVGYvTjNs41GOgO3-_7CF",
+            "name": {
+              "d": "EPsh8wgZjw9C-QqHvgL-bitSdjRCUWlZX0BSE9n6jLZc",
+              "value": "Alice"
+            },
+            "grades": {
+              "d": "ELqYT7zp-XGfNp-wJPZ75mNCHMXo6m-EhlPSeCQQahbx",
+              "math": {
+                "d": "EEXsHZInu2FdBg02yUL69kpy3Z2F6t66rXFNS8w8oUMZ",
+                "value": "A"
+              },
+              "art": {
+                "d": "ENuaNiFGjimr5K76PBZHd4sWYm_DQKZKU91JpYOfbukb",
+                "value": "B"
+              }
+            },
+            "role": "holder"
+          },
+          "raw": "7b2264223a2245463573756d6c45797831584f4559346a397365674e4b4156475976546a4e733431474f674f332d5f374346222c226e616d65223a7b2264223a22455073683877675a6a7739432d51714876674c2d62697453646a524355576c5a5830425345396e366a4c5a63222c2276616c7565223a22416c696365227d2c22677261646573223a7b2264223a22454c715954377a702d5847664e702d774a505a37356d4e43484d586f366d2d45686c50536543515161686278222c226d617468223a7b2264223a2245455873485a496e753246644267303279554c36396b7079335a3246367436367258464e533877386f554d5a222c2276616c7565223a2241227d2c22617274223a7b2264223a22454e75614e6946476a696d72354b373650425a4864347357596d5f44514b5a4b5539314a70594f6662756b62222c2276616c7565223a2242227d7d2c22726f6c65223a22686f6c646572227d"
+        }
+      ]
+    },
+    {
+      "kind": "CBOR",
+      "compact": {
+        "d": "EBo7AlK0oHEo5akYlFAFsW4rMPDAJJYvF9-gq8-MkxO1",
+        "name": "ECeA5S0uZmB8iq5UELAfjBARFtsaJVJlnZTJ7K124qsJ",
+        "grades": "EGb5hnNTYhuVFlr0yCCLXyjXuawDXPRp13xQls8v1Dp2",
+        "role": "holder"
+      },
+      "raw": "a46164782c45426f37416c4b306f48456f35616b596c464146735734724d5044414a4a597646392d6771382d4d6b784f31646e616d65782c45436541355330755a6d423869713555454c41666a424152467473614a564a6c6e5a544a374b31323471734a66677261646573782c45476235686e4e5459687556466c72307943434c58796a587561774458505270313378516c7338763144703264726f6c6566686f6c646572",
+      "leaves": [
+        ".name",
+        ".grades.math",
+        ".grades.art",
+        ".grades",
+        ""
+      ],
+      "expanded": [
+        {
+          "paths": [
+            ""
+          ],
+          "mad": {
+            "d": "EBo7AlK0oHEo5akYlFAFsW4rMPDAJJYvF9-gq8-MkxO1",
+            "name": "ECeA5S0uZmB8iq5UELAfjBARFtsaJVJlnZTJ7K124qsJ",
+            "grades": "EGb5hnNTYhuVFlr0yCCLXyjXuawDXPRp13xQls8v1Dp2",
+            "role": "holder"
+          },
+          "raw": "a46164782c45426f37416c4b306f48456f35616b596c464146735734724d5044414a4a597646392d6771382d4d6b784f31646e616d65782c45436541355330755a6d423869713555454c41666a424152467473614a564a6c6e5a544a374b31323471734a66677261646573782c45476235686e4e5459687556466c72307943434c58796a587561774458505270313378516c7338763144703264726f6c6566686f6c646572"
+        },
+        {
+          "paths": [
+            ".name",
+            ".grades.math",
+            ".grades.art"
+          ],
+          "mad": {
+            "d": "EBo7AlK0oHEo5akYlFAFsW4rMPDAJJYvF9-gq8-MkxO1",
+            "name": {
+              "d": "ECeA5S0uZmB8iq5UELAfjBARFtsaJVJlnZTJ7K124qsJ",
+              "value": "Alice"
+            },
+            "grades": {
+              "d": "EGb5hnNTYhuVFlr0yCCLXyjXuawDXPRp13xQls8v1Dp2",
+              "math": {
+                "d": "EG3ExR_NlyspXO2U4CaocopR0ehdD-TB0aF35RLDhnYL",
+                "value": "A"
+              },
+              "art": {
+                "d": "EBuj8hTvjPwvoCZYpQjoIhH7x21_xRdV3BPgc9Q7mAOJ",
+                "value": "B"
+              }
+            },
+            "role": "holder"
+          },
+          "raw": "a46164782c45426f37416c4b306f48456f35616b596c464146735734724d5044414a4a597646392d6771382d4d6b784f31646e616d65a26164782c45436541355330755a6d423869713555454c41666a424152467473614a564a6c6e5a544a374b31323471734a6576616c756565416c69636566677261646573a36164782c45476235686e4e5459687556466c72307943434c58796a587561774458505270313378516c73387631447032646d617468a26164782c4547334578525f4e6c797370584f32553443616f636f705230656864442d54423061463335524c44686e594c6576616c7565614163617274a26164782c4542756a386854766a5077766f435a5970516a6f496848377832315f7852645633425067633951376d414f4a6576616c7565614264726f6c6566686f6c646572"
+        }
+      ]
+    },
+    {
+      "kind": "MGPK",
+      "compact": {
+        "d": "ELSRxUctz9DjHGtvLOba0c1zci6LYetq2TEaSGvm3gsN",
+        "name": "EH-YFQ6yXIgefZ2T8_aE2RWiLktfOA1r-HuMYTrj_kX_",
+        "grades": "EHLtVJBRgfzMGNWiTAM1nkNpjUr2bOooXNydr-ocfnHz",
+        "role": "holder"
+      },
+      "raw": "84a164d92c454c5352785563747a39446a484774764c4f62613063317a6369364c59657471325445615347766d3367734ea46e616d65d92c45482d594651367958496765665a3254385f6145325257694c6b74664f4131722d48754d5954726a5f6b585fa6677261646573d92c45484c74564a425267667a4d474e576954414d316e6b4e706a557232624f6f6f584e7964722d6f63666e487aa4726f6c65a6686f6c646572",
+      "leaves": [
+        ".name",
+        ".grades.math",
+        ".grades.art",
+        ".grades",
+        ""
+      ],
+      "expanded": [
+        {
+          "paths": [
+            ""
+          ],
+          "mad": {
+            "d": "ELSRxUctz9DjHGtvLOba0c1zci6LYetq2TEaSGvm3gsN",
+            "name": "EH-YFQ6yXIgefZ2T8_aE2RWiLktfOA1r-HuMYTrj_kX_",
+            "grades": "EHLtVJBRgfzMGNWiTAM1nkNpjUr2bOooXNydr-ocfnHz",
+            "role": "holder"
+          },
+          "raw": "84a164d92c454c5352785563747a39446a484774764c4f62613063317a6369364c59657471325445615347766d3367734ea46e616d65d92c45482d594651367958496765665a3254385f6145325257694c6b74664f4131722d48754d5954726a5f6b585fa6677261646573d92c45484c74564a425267667a4d474e576954414d316e6b4e706a557232624f6f6f584e7964722d6f63666e487aa4726f6c65a6686f6c646572"
+        },
+        {
+          "paths": [
+            ".name",
+            ".grades.math",
+            ".grades.art"
+          ],
+          "mad": {
+            "d": "ELSRxUctz9DjHGtvLOba0c1zci6LYetq2TEaSGvm3gsN",
+            "name": {
+              "d": "EH-YFQ6yXIgefZ2T8_aE2RWiLktfOA1r-HuMYTrj_kX_",
+              "value": "Alice"
+            },
+            "grades": {
+              "d": "EHLtVJBRgfzMGNWiTAM1nkNpjUr2bOooXNydr-ocfnHz",
+              "math": {
+                "d": "EMpqMZ_9RumxNTeir50zQdr0ApxpeFTx2R30LSFo_QmN",
+                "value": "A"
+              },
+              "art": {
+                "d": "EOnIx9vBUhNKmOsh4pJ2IuY-tMAqg4A9VGG0G1FjWVIc",
+                "value": "B"
+              }
+            },
+            "role": "holder"
+          },
+          "raw": "84a164d92c454c5352785563747a39446a484774764c4f62613063317a6369364c59657471325445615347766d3367734ea46e616d6582a164d92c45482d594651367958496765665a3254385f6145325257694c6b74664f4131722d48754d5954726a5f6b585fa576616c7565a5416c696365a667726164657383a164d92c45484c74564a425267667a4d474e576954414d316e6b4e706a557232624f6f6f584e7964722d6f63666e487aa46d61746882a164d92c454d70714d5a5f3952756d784e5465697235307a516472304170787065465478325233304c53466f5f516d4ea576616c7565a141a361727482a164d92c454f6e497839764255684e4b6d4f736834704a324975592d744d417167344139564747304731466a57564963a576616c7565a142a4726f6c65a6686f6c646572"
+        }
+      ]
+    }
+  ],
+  "paths": [
+    {
+      "paths": [
+        "a/grades/math/value"
+      ],
+      "partials": [
+        {
+          "paths": [
+            "a/grades/math/value"
+          ],
+          "mad": {
+            "d": "EDIm9d11QM5hQD4ihTLlDukREnl8k2LVAb2Sm7skrxm5",
+            "name": "ELVF4yfwihhVm_TsglPGSeAIyQz8WUrxiLFoau3w8PKa",
+            "grades": {
+              "d": "EPWqlUOGyj8Ey1K9U-kDDuGiKa_fL5N7Rx5WU6rHd-df",
+              "math": {
+                "d": "EAVcS9idvQKiAbkNMM4l-QvRW4OXygYXXW_6gg_q6SP_",
+                "value": "A"
+              },
+              "art": "ENDgQCvwaclizSKpm83mOn9ODpNKtZ0-GIDbqtmQpDx_"
+            },
+            "role": "holder"
+          },
+          "raw": "2d49424b304a5f644544496d39643131514d35685144346968544c6c44756b52456e6c386b324c56416232536d37736b72786d35314141466e616d65454c564634796677696868566d5f5473676c50475365414979517a3857557278694c466f6175337738504b61304d6772616465732d494171304a5f64455057716c554f47796a384579314b39552d6b44447547694b615f664c354e375278355755367248642d6466314141466d6174682d494150304a5f64454156635339696476514b6941626b4e4d4d346c2d51765257344f587967595858575f3667675f713653505f304c5f76616c7565304a5f4158617274454e44675143767761636c697a534b706d38336d4f6e394f44704e4b745a302d4749446271746d517044785f31414146726f6c65304d686f6c646572"
+        }
+      ]
+    },
+    {
+      "paths": [
+        "a/grades/"
+      ],
+      "partials": [
+        {
+          "paths": [
+            "a/grades/"
+          ],
+          "mad": {
+            "d": "EDIm9d11QM5hQD4ihTLlDukREnl8k2LVAb2Sm7skrxm5",
+            "name": "ELVF4yfwihhVm_TsglPGSeAIyQz8WUrxiLFoau3w8PKa",
+            "grades": {
+              "d": "EPWqlUOGyj8Ey1K9U-kDDuGiKa_fL5N7Rx5WU6rHd-df",
+              "math": {
+                "d": "EAVcS9idvQKiAbkNMM4l-QvRW4OXygYXXW_6gg_q6SP_",
+                "value": "A"
+              },
+              "art": {
+                "d": "ENDgQCvwaclizSKpm83mOn9ODpNKtZ0-GIDbqtmQpDx_",
+                "value": "B"
+              }
+            },
+            "role": "holder"
+          },
+          "raw": "2d494250304a5f644544496d39643131514d35685144346968544c6c44756b52456e6c386b324c56416232536d37736b72786d35314141466e616d65454c564634796677696868566d5f5473676c50475365414979517a3857557278694c466f6175337738504b61304d6772616465732d494176304a5f64455057716c554f47796a384579314b39552d6b44447547694b615f664c354e375278355755367248642d6466314141466d6174682d494150304a5f64454156635339696476514b6941626b4e4d4d346c2d51765257344f587967595858575f3667675f713653505f304c5f76616c7565304a5f41586172742d494150304a5f64454e44675143767761636c697a534b706d38336d4f6e394f44704e4b745a302d4749446271746d517044785f304c5f76616c7565304a5f4231414146726f6c65304d686f6c646572"
+        }
+      ]
+    },
+    {
+      "paths": [
+        "a/"
+      ],
+      "partials": [
+        {
+          "paths": [
+            "a/"
+          ],
+          "mad": {
+            "d": "EDIm9d11QM5hQD4ihTLlDukREnl8k2LVAb2Sm7skrxm5",
+            "name": {
+              "d": "ELVF4yfwihhVm_TsglPGSeAIyQz8WUrxiLFoau3w8PKa",
+              "value": "Alice"
+            },
+            "grades": {
+              "d": "EPWqlUOGyj8Ey1K9U-kDDuGiKa_fL5N7Rx5WU6rHd-df",
+              "math": {
+                "d": "EAVcS9idvQKiAbkNMM4l-QvRW4OXygYXXW_6gg_q6SP_",
+                "value": "A"
+              },
+              "art": {
+                "d": "ENDgQCvwaclizSKpm83mOn9ODpNKtZ0-GIDbqtmQpDx_",
+                "value": "B"
+              }
+            },
+            "role": "holder"
+          },
+          "raw": "2d494256304a5f644544496d39643131514d35685144346968544c6c44756b52456e6c386b324c56416232536d37736b72786d35314141466e616d652d494151304a5f64454c564634796677696868566d5f5473676c50475365414979517a3857557278694c466f6175337738504b61304c5f76616c7565304c5f416c696365304d6772616465732d494176304a5f64455057716c554f47796a384579314b39552d6b44447547694b615f664c354e375278355755367248642d6466314141466d6174682d494150304a5f64454156635339696476514b6941626b4e4d4d346c2d51765257344f587967595858575f3667675f713653505f304c5f76616c7565304a5f41586172742d494150304a5f64454e44675143767761636c697a534b706d38336d4f6e394f44704e4b745a302d4749446271746d517044785f304c5f76616c7565304a5f4231414146726f6c65304d686f6c646572"
+        }
+      ]
+    },
+    {
+      "paths": [
+        "a/2/1/1"
+      ],
+      "partials": [
+        {
+          "paths": [
+            "a/2/1/1"
+          ],
+          "mad": {
+            "d": "EDIm9d11QM5hQD4ihTLlDukREnl8k2LVAb2Sm7skrxm5",
+            "name": "ELVF4yfwihhVm_TsglPGSeAIyQz8WUrxiLFoau3w8PKa",
+            "grades": {
+              "d": "EPWqlUOGyj8Ey1K9U-kDDuGiKa_fL5N7Rx5WU6rHd-df",
+              "math": {
+                "d": "EAVcS9idvQKiAbkNMM4l-QvRW4OXygYXXW_6gg_q6SP_",
+                "value": "A"
+              },
+              "art": "ENDgQCvwaclizSKpm83mOn9ODpNKtZ0-GIDbqtmQpDx_"
+            },
+            "role": "holder"
+          },
+          "raw": "2d49424b304a5f644544496d39643131514d35685144346968544c6c44756b52456e6c386b324c56416232536d37736b72786d35314141466e616d65454c564634796677696868566d5f5473676c50475365414979517a3857557278694c466f6175337738504b61304d6772616465732d494171304a5f64455057716c554f47796a384579314b39552d6b44447547694b615f664c354e375278355755367248642d6466314141466d6174682d494150304a5f64454156635339696476514b6941626b4e4d4d346c2d51765257344f587967595858575f3667675f713653505f304c5f76616c7565304a5f4158617274454e44675143767761636c697a534b706d38336d4f6e394f44704e4b745a302d4749446271746d517044785f31414146726f6c65304d686f6c646572"
+        }
+      ]
+    },
+    {
+      "paths": [
+        "a/name/value",
+        "a/grades/art/value"
+      ],
+      "partials": [
+        {
+          "paths": [
+            "a/name/value",
+            "a/grades/art/value"
+          ],
+          "mad": {
+            "d": "EDIm9d11QM5hQD4ihTLlDukREnl8k2LVAb2Sm7skrxm5",
+            "name": {
+              "d": "ELVF4yfwihhVm_TsglPGSeAIyQz8WUrxiLFoau3w8PKa",
+              "value": "Alice"
+            },
+            "grades": {
+              "d": "EPWqlUOGyj8Ey1K9U-kDDuGiKa_fL5N7Rx5WU6rHd-df",
+              "math": "EAVcS9idvQKiAbkNMM4l-QvRW4OXygYXXW_6gg_q6SP_",
+              "art": {
+                "d": "ENDgQCvwaclizSKpm83mOn9ODpNKtZ0-GIDbqtmQpDx_",
+                "value": "B"
+              }
+            },
+            "role": "holder"
+          },
+          "raw": "2d494251304a5f644544496d39643131514d35685144346968544c6c44756b52456e6c386b324c56416232536d37736b72786d35314141466e616d652d494151304a5f64454c564634796677696868566d5f5473676c50475365414979517a3857557278694c466f6175337738504b61304c5f76616c7565304c5f416c696365304d6772616465732d494171304a5f64455057716c554f47796a384579314b39552d6b44447547694b615f664c354e375278355755367248642d6466314141466d617468454156635339696476514b6941626b4e4d4d346c2d51765257344f587967595858575f3667675f713653505f586172742d494150304a5f64454e44675143767761636c697a534b706d38336d4f6e394f44704e4b745a302d4749446271746d517044785f304c5f76616c7565304a5f4231414146726f6c65304d686f6c646572"
+        }
+      ]
+    },
+    {
+      "paths": [
+        "a/grades/",
+        "a/grades/math/value",
+        "a/grades/"
+      ],
+      "partials": [
+        {
+          "paths": [
+            "a/grades/",
+            "a/grades/math/value",
+            "a/grades/"
+          ],
+          "mad": {
+            "d": "EDIm9d11QM5hQD4ihTLlDukREnl8k2LVAb2Sm7skrxm5",
+            "name": "ELVF4yfwihhVm_TsglPGSeAIyQz8WUrxiLFoau3w8PKa",
+            "grades": {
+              "d": "EPWqlUOGyj8Ey1K9U-kDDuGiKa_fL5N7Rx5WU6rHd-df",
+              "math": {
+                "d": "EAVcS9idvQKiAbkNMM4l-QvRW4OXygYXXW_6gg_q6SP_",
+                "value": "A"
+              },
+              "art": {
+                "d": "ENDgQCvwaclizSKpm83mOn9ODpNKtZ0-GIDbqtmQpDx_",
+                "value": "B"
+              }
+            },
+            "role": "holder"
+          },
+          "raw": "2d494250304a5f644544496d39643131514d35685144346968544c6c44756b52456e6c386b324c56416232536d37736b72786d35314141466e616d65454c564634796677696868566d5f5473676c50475365414979517a3857557278694c466f6175337738504b61304d6772616465732d494176304a5f64455057716c554f47796a384579314b39552d6b44447547694b615f664c354e375278355755367248642d6466314141466d6174682d494150304a5f64454156635339696476514b6941626b4e4d4d346c2d51765257344f587967595858575f3667675f713653505f304c5f76616c7565304a5f41586172742d494150304a5f64454e44675143767761636c697a534b706d38336d4f6e394f44704e4b745a302d4749446271746d517044785f304c5f76616c7565304a5f4231414146726f6c65304d686f6c646572"
+        }
+      ]
+    },
+    {
+      "paths": [],
+      "partials": []
+    },
+    {
+      "paths": [
+        "s/name"
+      ],
+      "partials": []
+    }
+  ],
+  "collision": {
+    "source": {
+      "d": "",
+      "a.b": {
+        "d": "",
+        "value": "literal"
+      },
+      "a": {
+        "b": {
+          "d": "",
+          "value": "nested"
+        }
+      }
+    },
+    "paths": [
+      "a/1/value",
+      "a/2/b/value"
+    ],
+    "partials": [
+      {
+        "paths": [
+          "a/1/value",
+          "a/2/b/value"
+        ],
+        "mad": {
+          "d": "EGIUHnSlel2OGBX0LHrd6dIOftLamcIwCa29sRtLzq1n",
+          "a.b": {
+            "d": "EOHsQb5fgVh8u1FVqlSRnOMy-ebagFO7KDPG-i957RyV",
+            "value": "literal"
+          },
+          "a": {
+            "b": {
+              "d": "EDCHXjoMTr1kysdLt0gPB2u5upSjoZ4MhVbS0lt1aROA",
+              "value": "nested"
+            }
+          }
+        },
+        "raw": "2d49417a304a5f6445474955486e536c656c324f474258304c4872643664494f66744c616d634977436132397352744c7a71316e34424142595335692d494151304a5f64454f4873516235666756683875314656716c53526e4f4d792d65626167464f374b4450472d69393537527956304c5f76616c7565596c69746572616c304a5f612d494153304a5f622d494151304a5f6445444348586a6f4d5472316b7973644c74306750423275357570536a6f5a344d68566253306c743161524f41304c5f76616c7565304d6e6573746564"
+      }
+    ]
+  }
+}
