@@ -27,6 +27,7 @@ export const AGGOR_CODES = new Set<string>([
 
 export const COMPACTOR_CODES = AGGOR_MAP_CODES;
 
+/** Structing seal transport families; membership does not grant attachment/native admission. */
 export const SEALER_CODES = new Set<string>([
   CtrDexV1.SealSourceCouples,
   CtrDexV1.SealSourceTriples,
@@ -36,6 +37,8 @@ export const SEALER_CODES = new Set<string>([
   CtrDexV2.BigSealSourceTriples,
   CtrDexV2.SealSourceLastSingles,
   CtrDexV2.BigSealSourceLastSingles,
+  CtrDexV2.NonceSealSingles,
+  CtrDexV2.BigNonceSealSingles,
   CtrDexV2.DigestSealSingles,
   CtrDexV2.BigDigestSealSingles,
   CtrDexV2.MerkleRootSealSingles,

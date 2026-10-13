@@ -58,13 +58,15 @@ Deno.test(
 );
 
 Deno.test(
-  "CtrDexByVersion excludes legacy v1 sad-path aliases but keeps explicit allowlist",
+  "CtrDexByVersion excludes historical v1 wire extensions but keeps explicit allowlist",
   () => {
     const ctr = resolveCtrDex({ major: 1, minor: 0 });
+    assertEquals("TransReceiptQuadruples" in ctr, false);
     assertEquals("SadPathSig" in ctr, false);
     assertEquals("SadPathSigGroup" in ctr, false);
 
     const aliases = LEGACY_COMPAT_COUNTER_CODES_BY_VERSION[1][0];
+    assertEquals(aliases.has("-D"), true);
     assertEquals(aliases.has("-J"), true);
     assertEquals(aliases.has("-K"), true);
   },
@@ -113,6 +115,8 @@ Deno.test(
       ControllerIdxSigs: "-K",
       WitnessIdxSigs: "-L",
       NonTransReceiptCouples: "-M",
+      NonceSealSingles: "-N",
+      BigNonceSealSingles: "--N",
       KERIACDCGenusVersion: "-_AAA",
     } as const;
 

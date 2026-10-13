@@ -19,7 +19,7 @@ env:
   PYTHON_VERSION: "3.14"
   LMDB_DATA_V1: "true"
   DEPS_CACHE_KEY_PREFIX: ci-deps-v6
-  KERIPY_GIT_SHA: 450ae1c2a7eac61d92bc7b830cb6883c41e6a798
+  KERIPY_TABLE_SHA: 927c0cb8794d7c84fc17143c67df64aab9deda6c
   KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
 
 jobs:
@@ -176,10 +176,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kentbull/keripy
-          ref: ${{ env.KERIPY_GIT_SHA }}
+          ref: ${{ env.KERIPY_TABLE_SHA }}
           path: .cache/keripy-source
 
-      - name: verify CESR tables against interop baseline
+      - name: verify CESR tables against frozen table reference
         env:
           KERIPY_PATH: ${{ github.workspace }}/.cache/keripy-source
         run: deno run -A packages/cesr/scripts/verify-tables.ts

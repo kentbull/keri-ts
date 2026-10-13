@@ -97,10 +97,12 @@ and use this supplementary adapter at their parsing boundary.
    source graphs must carry CESR-owned npm/import-map entries when they load
    local CESR source.
 9. Table generation and verification read immutable KERIpy source at
-   `450ae1c2a7eac61d92bc7b830cb6883c41e6a798`, the PR interop baseline. CI checks
-   table parity. At that baseline, v2 `-N` is TransReceiptQuadruples and GramHead
-   is `0Q`; newer `-N` NonceSealSingles and Matter `b` require a coordinated
-   reference upgrade, not a partial table import.
+   `927c0cb8794d7c84fc17143c67df64aab9deda6c`; runtime pins remain independent.
+   V2 `-N`/`--N` mean nonce seals and Matter GramHead uses `b`. Retained historical
+   v1 `-D`/`-J`/`-K` belong to explicit protocol extensions outside the current
+   reference codex. Structing admits nonce seals; attachment dispatch and native
+   event seal lists do not. The reference's native Serder registry omits them.
+   See `CESR_CURRENT_REFERENCE_TABLES.md` for the audit and independent wire evidence.
    Generated KERIpy-parity codex objects such as `MtrDex`, `PreDex`, `DigDex`,
    `IdrDex`, `IdxSigDex`, and `TraitDex` are the primary authority. Helper sets
    in `primitives/codex.ts` are derived readability views.

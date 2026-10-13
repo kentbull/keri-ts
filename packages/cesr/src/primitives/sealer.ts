@@ -5,7 +5,7 @@ import type { Versionage } from "../tables/table-types.ts";
 import type { CounterGroupLike } from "./primitive.ts";
 import { parseStructor, Structor } from "./structor.ts";
 
-/** True when counter code belongs to KERI seal source/digest families. */
+/** True when counter code belongs to KERI seal source/digest/nonce families. */
 export function isSealerCode(code: string): boolean {
   return SEALER_CODES.has(code);
 }
@@ -14,7 +14,8 @@ export function isSealerCode(code: string): boolean {
  * Seal-group structor primitive.
  *
  * KERIpy substance: `Sealer` materializes counted seal tuple groups used for
- * anchoring, seal-source references, and registrar-binding payloads.
+ * anchoring, seal-source references, nonce seals, and registrar-binding payloads.
+ * Nonce seal support here does not grant native-event or attachment admission.
  */
 export class Sealer extends Structor {
   constructor(init: Structor | ConstructorParameters<typeof Structor>[0]) {
@@ -36,7 +37,7 @@ export class Sealer extends Structor {
   }
 }
 
-/** Parse and validate seal attachment groups across v1/v2 seal families. */
+/** Parse structing seal groups; v2 nonce seals are deliberately not attachment routes. */
 export function parseSealer(
   input: Uint8Array,
   version: Versionage,

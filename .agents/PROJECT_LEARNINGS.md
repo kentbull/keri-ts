@@ -80,7 +80,9 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
    benchmarks. Keep current and target contracts distinct; the atomic production path and old API shims are removed while protocol
    v1/v2 support remains. Final end-to-end qualification is still required.
 3. Generated KERIpy-parity codex objects are authoritative; helper sets are
-   derived readability views.
+   derived readability views. Table membership does not grant context admission:
+   current nonce seals are structing values, while native event and attachment
+   readers retain narrower registries. Historical v1 wire extensions stay explicit.
 4. When the semantic type is known, construct the narrow CESR primitive.
    `Matter` and `Indexer` are low-level bases, not the preferred public result.
 5. `Signer`/`Verfer` own signer/verifier suite dispatch; crypto helpers should

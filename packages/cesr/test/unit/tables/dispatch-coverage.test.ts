@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { ShortageError } from "../../../src/core/errors.ts";
+import { ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import {
@@ -145,7 +145,7 @@ Deno.test(
   },
 );
 
-Deno.test("every supported wire counter routes in both encoding domains, including legacy path signatures", () => {
+Deno.test("wire counter dispatch distinguishes attachment routes from structing-only nonce seals", () => {
   for (const major of [1, 2] as const) {
     const gvrsn = { major, minor: 0 };
     const codes: Readonly<Record<string, string>> = major === 1 ? COUNTER_CODE_NAMES_V1 : COUNTER_CODE_NAMES_V2;
@@ -157,7 +157,9 @@ Deno.test("every supported wire counter routes in both encoding domains, includi
       for (const domain of ["txt", "bny"] as const) {
         const raw = domain === "txt" ? new TextEncoder().encode(counter.qb64) : counter.qb2;
         const parse = () => parseAttachmentGroup(raw, gvrsn, domain);
-        if (name === "SadPathSigGroup") {
+        if (name === "NonceSealSingles" || name === "BigNonceSealSingles") {
+          assertThrows(parse, UnknownCodeError);
+        } else if (name === "SadPathSigGroup") {
           // Even an empty path-signature group requires its root path token.
           assertThrows(parse, ShortageError);
         } else {

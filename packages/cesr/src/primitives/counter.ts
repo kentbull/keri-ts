@@ -227,6 +227,7 @@ function codeForSemanticName(name: string, version: Versionage): string | null {
   return null;
 }
 
+/** Promote only within the selected genus when a named big form exists. */
 function promoteCounterCodeForCount(code: string, count: number, version: Versionage): string {
   const sizeTable = resolveCounterSizeTable(version);
   const sizage = sizeTable.get(code);
@@ -248,14 +249,14 @@ function promoteCounterCodeForCount(code: string, count: number, version: Versio
   return bigCode;
 }
 
-/** Normalize the supported constructor variants into one shared counter payload. */
+/** Normalize constructor fields, promoting overflow without changing protocol meaning. */
 function parseCounterInit(init: CounterInit): CounterData {
   const version = init.version ?? { major: 2, minor: 0 };
 
   if (init.code !== undefined) {
     const count = init.count
       ?? (init.countB64 ? b64ToInt(init.countB64) : 0);
-    return encodeCounterFromFields(init.code, count, version);
+    return encodeCounterFromFields(promoteCounterCodeForCount(init.code, count, version), count, version);
   }
 
   if (init.qb64b) {

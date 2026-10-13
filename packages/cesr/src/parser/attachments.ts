@@ -410,7 +410,7 @@ const HANDLERS_V1: Readonly<Record<string, GroupParser>> = {
   [CtrDexV1.SadPathSigGroup]: parsePathSigGroup,
 };
 
-/** Direct routes for CESR v2; counter parsing validates the requested minor. */
+/** Direct v2 attachment routes; NonceSealSingles belongs to structing, not attachments. */
 const HANDLERS_V2: Readonly<Record<string, GroupParser>> = {
   [CtrDexV2.KERIACDCGenusVersion]: parseGenus,
   [CtrDexV2.GenericGroup]: parseSizedGroup,
@@ -451,8 +451,6 @@ const HANDLERS_V2: Readonly<Record<string, GroupParser>> = {
   [CtrDexV2.BigBackerRegistrarSealCouples]: tuplesV2(parsePrefixer, parseDiger),
   [CtrDexV2.TypedDigestSealCouples]: tuplesV2(parseVerser, parseDiger),
   [CtrDexV2.BigTypedDigestSealCouples]: tuplesV2(parseVerser, parseDiger),
-  [CtrDexV2.TransReceiptQuadruples]: tuplesV2(parsePrefixer, parseNumber, parseDiger, parseSiger),
-  [CtrDexV2.BigTransReceiptQuadruples]: tuplesV2(parsePrefixer, parseNumber, parseDiger, parseSiger),
   [CtrDexV2.SealSourceTriples]: tuplesV2(parsePrefixer, parseNumber, parseDiger),
   [CtrDexV2.BigSealSourceTriples]: tuplesV2(parsePrefixer, parseNumber, parseDiger),
   [CtrDexV2.SealSourceLastSingles]: tuplesV2(parsePrefixer),
@@ -502,6 +500,31 @@ export function parseAttachmentGroup(
     );
   }
 
+  return parseCountedGroup(input, counter, parser, gvrsn, domain);
+}
+
+/** Parse structing transport, adding nonce seals without widening attachment admission. */
+export function parseStructingGroup(
+  input: Uint8Array,
+  gvrsn: Versionage,
+  domain: CesrDomain,
+): { group: AttachmentGroup; consumed: number } {
+  const counter = parseCounter(input, gvrsn, domain);
+  const nonceSeal = gvrsn.major === 2
+    && (counter.code === CtrDexV2.NonceSealSingles || counter.code === CtrDexV2.BigNonceSealSingles);
+  const parser = nonceSeal ? tuplesV2(parseNoncer) : (gvrsn.major === 1 ? HANDLERS_V1 : HANDLERS_V2)[counter.code];
+  if (!parser) throw new UnknownCodeError(`Unsupported structing group code ${counter.code}`);
+  return parseCountedGroup(input, counter, parser, gvrsn, domain);
+}
+
+/** Bound the declared payload before hydration so following input cannot complete a broken item. */
+function parseCountedGroup(
+  input: Uint8Array,
+  counter: Counter,
+  parser: GroupParser,
+  gvrsn: Versionage,
+  domain: CesrDomain,
+): { group: AttachmentGroup; consumed: number } {
   // V2 groups and v1 sized groups count payload units. The genus selector
   // carries a version instead. Bound here so peers cannot fill incomplete items.
   const bounded = parser === parseSizedGroup

@@ -126,7 +126,6 @@ Deno.test("v2 tuple families exhaust payload lengths rather than repeat the wire
       [CtrDexV2.FirstSeenReplayCouples, token("0A") + token("1AAG")],
       [CtrDexV2.SealSourceCouples, token("0A") + token("E")],
       [CtrDexV2.SealSourceTriples, token("B") + token("0A") + token("E")],
-      [CtrDexV2.TransReceiptQuadruples, token("B") + token("0A") + token("E") + sigerToken()],
       [CtrDexV2.SealSourceLastSingles, token("B")],
       [CtrDexV2.DigestSealSingles, token("E")],
       [CtrDexV2.MerkleRootSealSingles, token("E")],
