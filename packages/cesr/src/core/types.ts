@@ -1,4 +1,4 @@
-import type { CounterGroupLike, GroupEntry, Primitive } from "../primitives/primitive.ts";
+import type { CounterGroupLike, GroupEntry } from "../primitives/primitive.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { Kind, Protocol } from "../tables/versions.ts";
 
@@ -39,13 +39,6 @@ export interface CesrBody {
   ilk: string | null;
   /** The SAID of the body. */
   said: string | null;
-  /** The native fields of the body. */
-  native?: {
-    /** The body code of the native fields. */
-    bodyCode: string;
-    /** Parsed native fields as hydrated primitives. */
-    fields: Array<{ label: string | null; primitive: Primitive }>;
-  };
 }
 
 /** One parsed attachment-group entry. */

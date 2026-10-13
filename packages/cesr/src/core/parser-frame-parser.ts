@@ -3,24 +3,17 @@ import { sniff } from "../parser/cold-start.ts";
 import type { AttachmentDispatchMode } from "../parser/group-dispatch.ts";
 import { decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
-import { parseIlker } from "../primitives/ilker.ts";
-import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
-import { interpretMapperBodySyntax, type MapperBodySyntax, parseMapperBodySyntax } from "../primitives/mapper.ts";
 import { parseMatter } from "../primitives/matter.ts";
-import type { Primitive } from "../primitives/primitive.ts";
-import { parseVerser } from "../primitives/verser.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { smell } from "../serder/smell.ts";
 import { resolveCounterSizeTable } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { Kinds, type Protocol, Protocols } from "../tables/versions.ts";
+import { Kinds, Protocols } from "../tables/versions.ts";
 import {
   ColdStartError,
   DeserializeError,
   GroupSizeError,
-  SemanticInterpretationError,
   ShortageError,
-  SyntaxParseError,
   UnknownCodeError,
   VersionError,
 } from "./errors.ts";
@@ -32,7 +25,6 @@ import {
   GENUS_VERSION_CODE,
   isCesrDomain,
   isFrameBoundaryCounter,
-  MAP_BODY_CODES,
   NATIVE_BODY_GROUP_NAMES,
   NON_NATIVE_BODY_GROUP_NAMES,
   tokenSize,
@@ -57,48 +49,6 @@ export interface FrameStart {
   gvrsn: Versionage;
   /** Explicit stream selection; null leaves subsequent frames in legacy inference mode. */
   streamGvrsn: Versionage | null;
-}
-
-/**
- * Advisory metadata token syntax extracted from native body streams.
- *
- * Maintainer note:
- * top-level native frame parsing no longer uses this as a metadata-only
- * fallback success path. It remains valuable as a readability seam because
- * parser-local native syntax extraction, annotation, and lower-level
- * map/list reasoning still benefit from explicit `verser` / `ilker` /
- * `saider` token projections.
- */
-interface NativeMetadataSyntaxArtifact {
-  verser?: ReturnType<typeof parseVerser>;
-  ilker?: ReturnType<typeof parseIlker>;
-  saider?: ReturnType<typeof parseMatter>;
-}
-
-/**
- * One syntax-level token entry from a non-map native body payload.
- *
- * Labels are preserved as separate tokens; label/value pairing is resolved only
- * during semantic interpretation.
- */
-type NativeFieldSyntaxEntry =
-  | { kind: "label"; label: string; primitive: Primitive }
-  | { kind: "value"; primitive: Primitive };
-
-/**
- * Native field syntax representation.
- *
- * - `map`: delegates to mapper syntax artifacts for strict map payload parsing.
- * - `fixed`: preserves raw label/value token order for later semantic pairing.
- */
-type NativeFieldSyntaxArtifact =
-  | { kind: "map"; mapper: MapperBodySyntax }
-  | { kind: "fixed"; entries: NativeFieldSyntaxEntry[] };
-
-/** Combined syntax artifact for native-body metadata + field tokenization. */
-interface NativeBodySyntaxArtifact {
-  metadata: NativeMetadataSyntaxArtifact;
-  fields: NativeFieldSyntaxArtifact;
 }
 
 /**
@@ -216,9 +166,7 @@ export class FrameParser {
         headerSize,
         counter.count,
         unit,
-        cold,
         frameGvrsn,
-        counter.code,
         activeGvrsn,
       );
     }
@@ -344,16 +292,14 @@ export class FrameParser {
     };
   }
 
-  /** Parse native fixed/map body group and extract metadata/native fields. */
+  /** Bound a native body and let Serder decode its fields once. */
   private parseNativeBody(
     input: Uint8Array,
     offset: number,
     headerSize: number,
     count: number,
     unit: number,
-    cold: CesrDomain,
     gvrsn: Versionage,
-    bodyCode: string,
     streamGvrsn: Versionage | null,
   ): FrameStart {
     const payloadSize = count * unit;
@@ -362,37 +308,23 @@ export class FrameParser {
       throw new ShortageError(offset + total, input.length);
     }
     const raw = input.slice(offset, offset + total);
-    const syntax = this.parseNativeBodySyntax(raw, cold, gvrsn);
-    const metadata = this.interpretNativeMetadataSyntax(
-      syntax.metadata,
-      gvrsn,
-    );
-    const fields = this.interpretNativeFieldSyntax(syntax.fields);
     // KERIpy parity rule: once the frame parser has classified a top-level
     // FixBodyGroup/MapBodyGroup as a native message body, the result must be a
     // real Serder or a parse error. Arbitrary native map/list corpora still
     // belong to lower-level CESR-native surfaces such as Mapper/Aggor.
-    const { serder } = reapSerder(raw);
-    this.bodyGenus(serder, gvrsn);
-    if (
-      serder.proto !== metadata.proto
-      || serder.pvrsn.major !== metadata.pvrsn.major
-      || serder.pvrsn.minor !== metadata.pvrsn.minor
-      || (metadata.ilk !== null && serder.ilk !== metadata.ilk)
-      || (metadata.said !== null && serder.said !== metadata.said)
-    ) {
-      throw new SemanticInterpretationError(
-        "Native body syntax pre-read disagreed with Serder hydration",
-      );
+    let serder: CesrBody;
+    try {
+      ({ serder } = reapSerder(raw));
+    } catch (error) {
+      if (error instanceof ShortageError) {
+        throw new GroupSizeError("Incomplete field inside native body payload");
+      }
+      throw error;
     }
-    (serder as CesrFrame["body"]).native = {
-      bodyCode,
-      fields,
-    };
-    const body: CesrFrame["body"] = serder;
+    this.bodyGenus(serder, gvrsn);
     return {
       frame: {
-        body,
+        body: serder,
         attachments: [],
       },
       consumed: offset + total,
@@ -567,222 +499,6 @@ export class FrameParser {
       frame: { body: base.frame.body, attachments },
       consumed: offset,
     };
-  }
-
-  /** Build native-body syntax artifacts used by semantic interpretation phase. */
-  private parseNativeBodySyntax(
-    raw: Uint8Array,
-    cold: CesrDomain,
-    defaultGvrsn: Versionage,
-  ): NativeBodySyntaxArtifact {
-    try {
-      const bodyCounter = parseCounter(raw, defaultGvrsn, cold);
-      return {
-        metadata: this.parseNativeMetadataSyntax(
-          raw,
-          cold,
-          defaultGvrsn,
-          bodyCounter.code,
-        ),
-        fields: this.parseNativeFieldSyntax(
-          raw,
-          cold,
-          defaultGvrsn,
-          bodyCounter.code,
-        ),
-      };
-    } catch (error) {
-      if (
-        error instanceof ShortageError
-        || error instanceof UnknownCodeError
-        || error instanceof DeserializeError
-      ) {
-        throw new SyntaxParseError(
-          `Native body syntax parse failed: ${error.message}`,
-          error,
-        );
-      }
-      throw error;
-    }
-  }
-
-  /** Parse advisory native metadata tokens without semantic projection. */
-  private parseNativeMetadataSyntax(
-    raw: Uint8Array,
-    cold: CesrDomain,
-    defaultGvrsn: Versionage,
-    bodyCode: string,
-  ): NativeMetadataSyntaxArtifact {
-    const out: NativeMetadataSyntaxArtifact = {};
-    let offset = 0;
-
-    try {
-      const bodyCounter = parseCounter(raw, defaultGvrsn, cold);
-      offset += tokenSize(bodyCounter, cold);
-
-      if (MAP_BODY_CODES.has(bodyCode)) {
-        offset = this.skipNativeLabelers(raw, offset, cold);
-      }
-
-      out.verser = parseVerser(raw.slice(offset), cold);
-      offset += tokenSize(out.verser, cold);
-
-      if (MAP_BODY_CODES.has(bodyCode)) {
-        offset = this.skipNativeLabelers(raw, offset, cold);
-      }
-
-      out.ilker = parseIlker(raw.slice(offset), cold);
-      offset += tokenSize(out.ilker, cold);
-
-      if (MAP_BODY_CODES.has(bodyCode)) {
-        offset = this.skipNativeLabelers(raw, offset, cold);
-      }
-
-      out.saider = parseMatter(raw.slice(offset), cold);
-    } catch (_error) {
-      // metadata parse remains advisory; do not fail native-body parse when absent.
-    }
-
-    return out;
-  }
-
-  /** Interpret advisory metadata syntax into projected body metadata fields. */
-  private interpretNativeMetadataSyntax(
-    syntax: NativeMetadataSyntaxArtifact,
-    defaultGvrsn: Versionage,
-  ): {
-    proto: "KERI" | "ACDC";
-    pvrsn: Versionage;
-    gvrsn: Versionage;
-    ilk: string | null;
-    said: string | null;
-  } {
-    return {
-      proto: (syntax.verser?.proto as Protocol | undefined) ?? Protocols.keri,
-      pvrsn: syntax.verser?.pvrsn ?? defaultGvrsn,
-      gvrsn: syntax.verser?.gvrsn ?? defaultGvrsn,
-      ilk: syntax.ilker?.ilk ?? null,
-      said: syntax.saider?.code.startsWith("E") ? syntax.saider.qb64 : null,
-    };
-  }
-
-  /** Parse native field tokens without resolving label/value pairing semantics. */
-  private parseNativeFieldSyntax(
-    raw: Uint8Array,
-    cold: CesrDomain,
-    defaultGvrsn: Versionage,
-    bodyCode: string,
-  ): NativeFieldSyntaxArtifact {
-    if (MAP_BODY_CODES.has(bodyCode)) {
-      return {
-        kind: "map",
-        mapper: parseMapperBodySyntax(raw, defaultGvrsn, cold),
-      };
-    }
-
-    const bodyCounter = parseCounter(raw, defaultGvrsn, cold);
-    const total = tokenSize(bodyCounter, cold);
-    const payloadBytes = bodyCounter.count * unitBytes(cold);
-    const start = total;
-    const end = start + payloadBytes;
-    const entries: NativeFieldSyntaxEntry[] = [];
-    let offset = start;
-
-    while (offset < end) {
-      const at = raw.slice(offset, end);
-      const ctr = this.tryParseCounter(at, defaultGvrsn, cold);
-      if (ctr) {
-        const size = tokenSize(ctr, cold);
-        entries.push({
-          kind: "value",
-          primitive: ctr,
-        });
-        offset += size;
-        continue;
-      }
-
-      const token = parseMatter(at, cold);
-      const size = tokenSize(token, cold);
-      offset += size;
-
-      if (isLabelerCode(token.code)) {
-        entries.push({
-          kind: "label",
-          label: parseLabeler(at, cold).label,
-          primitive: token,
-        });
-        continue;
-      }
-
-      entries.push({
-        kind: "value",
-        primitive: token,
-      });
-    }
-
-    if (offset !== end) {
-      throw new ShortageError(end, offset);
-    }
-    return { kind: "fixed", entries };
-  }
-
-  /** Interpret native field syntax into semantic fields with label/value pairing. */
-  private interpretNativeFieldSyntax(
-    syntax: NativeFieldSyntaxArtifact,
-  ): Array<{ label: string | null; primitive: Primitive }> {
-    if (syntax.kind === "map") {
-      try {
-        return interpretMapperBodySyntax(syntax.mapper).map((field) => ({
-          label: field.label,
-          primitive: field.primitive,
-        }));
-      } catch (error) {
-        if (error instanceof SemanticInterpretationError) {
-          throw new SemanticInterpretationError(
-            `Native body semantic interpretation failed: ${(error as Error).message}`,
-            error,
-          );
-        }
-        throw error;
-      }
-    }
-
-    const out: Array<{ label: string | null; primitive: Primitive }> = [];
-    let pendingLabel: string | null = null;
-    for (const entry of syntax.entries) {
-      if (entry.kind === "label") {
-        pendingLabel = entry.label;
-        continue;
-      }
-      out.push({
-        label: pendingLabel,
-        primitive: entry.primitive,
-      });
-      pendingLabel = null;
-    }
-    if (pendingLabel !== null) {
-      throw new SemanticInterpretationError(
-        "Dangling native map label without value",
-      );
-    }
-    return out;
-  }
-
-  /** Skip consecutive labeler tokens in native map-body parsing context. */
-  private skipNativeLabelers(
-    raw: Uint8Array,
-    offset: number,
-    cold: CesrDomain,
-  ): number {
-    let out = offset;
-    while (out < raw.length) {
-      const item = parseMatter(raw.slice(out), cold);
-      if (!isLabelerCode(item.code)) {
-        break;
-      }
-      out += tokenSize(item, cold);
-    }
-    return out;
   }
 
   /** Infer unselected legacy bodies, otherwise validate metadata against the stream genus. */

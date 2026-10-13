@@ -71,7 +71,9 @@ cannot repair them.
 
 The offset advances only through stream consumption, until reset. Nested groups
 remain atomic: the parser waits for the entire counted payload before parsing
-it. Native body success requires full `Serder` hydration, not metadata alone.
+it. Native bodies hydrate once through `Serder`; annotation walks tokens only
+when rendering. `CesrBody` has no native token sidecar. A shortage within the
+complete body payload raises `GroupSizeError` immediately.
 
 Complete-record callers (HTTP requests/responses, locally serialized messages,
 and queued runtime ingress) must finish parsing with `flush()` or the existing

@@ -26,17 +26,13 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
         kind: string;
         ilk: string | null;
         said: string | null;
-        native?: { bodyCode: string; fields: Array<unknown> };
       };
       attachments: Array<{ code: string; count: number }>;
     };
     const atts = message.attachments.map((a) => `${a.code}:${a.count}`).join(
       ",",
     );
-    const native = message.body.native
-      ? `${message.body.native.bodyCode}:${message.body.native.fields.length}`
-      : "none";
-    return `${message.body.kind}|${message.body.ilk ?? ""}|${message.body.said ?? ""}|${native}|${atts}`;
+    return `${message.body.kind}|${message.body.ilk ?? ""}|${message.body.said ?? ""}|${atts}`;
   });
 }
 

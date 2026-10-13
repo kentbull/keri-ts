@@ -103,7 +103,7 @@ Canonical parser lifecycle/state-machine contract:
 3. Register group handling in `group-dispatch.ts`:
    - use `repeatTupleParser(...)` where possible,
    - add dedicated parser only when structure is nested/variable.
-4. Extend parser-native extraction if field-level rendering is required.
+4. Extend annotation token rendering if field-level comments are required.
 5. Add tests:
    - unit parser test,
    - qb64/qb2 parity,

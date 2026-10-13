@@ -6,12 +6,6 @@ import type { CesrDomain } from "./types.ts";
 /** Default parser version context when no explicit selector is present. */
 export const DEFAULT_GVRSN: Versionage = { major: 2, minor: 0 };
 
-/** Native map-body counter codes that permit interleaved label parsing. */
-export const MAP_BODY_CODES = new Set([
-  CtrDexV2.MapBodyGroup,
-  CtrDexV2.BigMapBodyGroup,
-]);
-
 /** Counter code for stream or nested genus-version selector tokens. */
 export const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
 
