@@ -53,20 +53,23 @@ export function* toEffectionFrames(
             subscribed = true;
             return {
               /** Transfer one complete frame only after its input and framing checks finish. */
-              *next(): Operation<IteratorResult<CesrFrame, void>> {
-                if (closing) throw new Error("Frame channel is closed");
-                if (pending) throw new Error("Frame channel cannot read concurrently");
-                pending = parser.next();
-                let delivered = false;
-                try {
-                  const result = yield* call(() => pending!);
-                  delivered = true;
-                  return result;
-                } finally {
-                  // Halting only this next() must also cancel the in-flight parser read.
-                  if (!delivered) yield* call(close);
-                  pending = undefined;
-                }
+              next(): Operation<IteratorResult<CesrFrame, void>> {
+                // Isolate teardown yields so halting next() cannot resume its caller with undefined.
+                return call(function*() {
+                  if (closing) throw new Error("Frame channel is closed");
+                  if (pending) throw new Error("Frame channel cannot read concurrently");
+                  pending = parser.next();
+                  let delivered = false;
+                  try {
+                    const result = yield* call(() => pending!);
+                    delivered = true;
+                    return result;
+                  } finally {
+                    // Halting only this next() must also cancel the in-flight parser read.
+                    if (!delivered) yield* call(close);
+                    pending = undefined;
+                  }
+                });
               },
             };
           },
