@@ -406,6 +406,8 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
         messages: [query],
       });
 
+      // Network response processing begins only after the cue consumer's guarded turn has ended.
+      yield* proxyRuntime.queryDeliveries.process(proxyRuntime);
       assertExists(witnessRuntime.hby.db.getKever(proxy.pre));
       assertExists(
         witnessRuntime.hby.db.ends.get([

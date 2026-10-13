@@ -7,11 +7,13 @@
  * here is to keep the operational flow obvious.
  */
 import { concatBytes } from "cesr-ts";
-import { action, type Operation } from "effection";
+import { call, type Operation } from "effection";
 import {
+  abortable,
   type AgentRuntime,
   buildCesrStreamRequest,
   type CesrBodyMode,
+  collectBytes,
   endpointRoleAccepted,
   fetchEndpointUrls,
   fetchResponseHandle,
@@ -27,6 +29,7 @@ import {
   processRuntimeTurn,
   proposeGroupEndpointRole,
   Roles,
+  streamBytes,
   TopicsRecord,
   ValidationError,
 } from "keri-ts/runtime";
@@ -606,14 +609,11 @@ function* postMailboxAdmin(
   },
   rpy: Uint8Array,
 ): Operation<{ ok: boolean; status: number; body: string }> {
-  const raw = yield* postMailboxAdminCesr(
-    url,
-    concatBytes(submission.replay, rpy),
-  );
+  const raw = yield* call(() => postMailboxAdminCesr(url, concatBytes(submission.replay, rpy)));
   if (raw.ok || (raw.status !== 406 && raw.status !== 415)) {
     return raw;
   }
-  return yield* postMailboxAdminMultipart(url, submission, rpy);
+  return yield* call(() => postMailboxAdminMultipart(url, submission, rpy));
 }
 
 function* postMailboxAdminCesr(
@@ -627,10 +627,9 @@ function* postMailboxAdminCesr(
     body: request.body,
   });
 
-  const body = yield* action<string>((resolve, reject) => {
-    response.text().then(resolve).catch(reject);
-    return () => {};
-  });
+  // Administrative JSON/diagnostics are finite metadata, not an unbounded stream.
+  const responseBytes = yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal }), 1024 * 1024));
+  const body = new TextDecoder().decode(responseBytes);
   return { ok: response.ok, status: response.status, body };
 }
 
@@ -654,9 +653,8 @@ function* postMailboxAdminMultipart(
     body: form,
   });
 
-  const body = yield* action<string>((resolve, reject) => {
-    response.text().then(resolve).catch(reject);
-    return () => {};
-  });
+  // Administrative JSON/diagnostics are finite metadata, not an unbounded stream.
+  const responseBytes = yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal }), 1024 * 1024));
+  const body = new TextDecoder().decode(responseBytes);
   return { ok: response.ok, status: response.status, body };
 }

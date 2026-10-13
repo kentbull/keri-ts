@@ -15,6 +15,7 @@
  * - one runtime host receives an explicit mailbox sidecar instead of
  *   discovering mailbox storage through `Habery`
  */
+import { ResourceLimitError } from "cesr-ts";
 import type { StreamCue } from "./../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -165,86 +166,97 @@ export class MailboxDirector {
     } = {},
   ): ReadableStream<Uint8Array> {
     const cursors = { ...topicCursor };
-    const encoder = new TextEncoder();
     let closed = false;
-    let idleTimer: ReturnType<typeof setTimeout> | null = null;
-    let pollTimer: ReturnType<typeof setTimeout> | null = null;
-    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
-
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let wake: (() => void) | undefined;
+    let stream: ReadableStreamDefaultController<Uint8Array>;
+    let retry = emitRetryHeader;
+    let parts: Uint8Array[] = [];
+    let offset = 0;
+    let idleSince: number | undefined;
+    /** Closing wakes a pending pull before its database owner is released. */
     const cleanup = () => {
-      if (closed) {
-        return;
-      }
+      if (closed) return;
       closed = true;
-      if (idleTimer !== null) {
-        clearTimeout(idleTimer);
-        idleTimer = null;
-      }
-      if (pollTimer !== null) {
-        clearTimeout(pollTimer);
-        pollTimer = null;
-      }
+      if (timer !== undefined) clearTimeout(timer);
+      wake?.();
+      parts = [];
       this.streamCleanups.delete(close);
     };
+    /** Runtime shutdown completes the response even when its consumer still holds a reader. */
     const close = () => {
-      if (closed) {
-        return;
-      }
+      if (closed) return;
       cleanup();
-      streamController?.close();
+      stream.close();
     };
     this.streamCleanups.add(close);
-
     return new ReadableStream<Uint8Array>({
-      start: (controller) => {
-        streamController = controller;
-        if (emitRetryHeader) {
-          controller.enqueue(encoder.encode(`retry: ${retryMs}\n\n`));
-        }
-
-        const resetIdle = () => {
-          if (idleTimeoutMs === null) {
+      start(controller) {
+        stream = controller;
+      },
+      pull: async (controller) => {
+        try {
+          if (retry) {
+            retry = false;
+            controller.enqueue(textEncoder.encode(`retry: ${retryMs}\n\n`));
             return;
           }
-          if (idleTimer !== null) {
-            clearTimeout(idleTimer);
-          }
-          idleTimer = setTimeout(close, idleTimeoutMs);
-        };
-
-        const poll = () => {
-          if (closed) {
-            return;
-          }
-
-          let emitted = false;
-          for (const [topic, start] of Object.entries(cursors)) {
-            for (const item of this.topicIter(pre, topic, start)) {
-              controller.enqueue(encoder.encode(
-                `id: ${item.idx}\nevent: ${topic}\nretry: ${retryMs}\ndata: `,
-              ));
-              controller.enqueue(item.msg);
-              controller.enqueue(encoder.encode("\n\n"));
-              cursors[topic] = item.idx + 1;
-              emitted = true;
+          while (!closed) {
+            if (parts.length) {
+              const part = parts[0];
+              const end = Math.min(part.length, offset + 64 * 1024);
+              controller.enqueue(part.slice(offset, end));
+              offset = end;
+              if (offset === part.length) {
+                parts.shift();
+                offset = 0;
+              }
+              return;
             }
+            for (const [topic, start] of Object.entries(cursors)) {
+              // Take one stored item, then release the LMDB iterator before suspending on HTTP demand.
+              const items = this.topicIter(pre, topic, start);
+              let item: { idx: number; msg: Uint8Array } | undefined;
+              try {
+                item = items.next().value;
+              } finally {
+                items.return(undefined);
+              }
+              if (!item) continue;
+              if (item.msg.buffer.byteLength > 4 * 1024 * 1024) {
+                throw new ResourceLimitError("Mailbox SSE message exceeds byte limit");
+              }
+              parts = [
+                textEncoder.encode(`id: ${item.idx}\nevent: ${topic}\nretry: ${retryMs}\ndata: `),
+                item.msg,
+                textEncoder.encode("\n\n"),
+              ];
+              cursors[topic] = item.idx + 1;
+              idleSince = undefined;
+              break;
+            }
+            if (parts.length) continue;
+            idleSince ??= Date.now();
+            if (idleTimeoutMs !== null && Date.now() - idleSince >= idleTimeoutMs) {
+              close();
+              return;
+            }
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+              timer = setTimeout(resolve, pollIntervalMs);
+            });
+            wake = undefined;
+            timer = undefined;
           }
-
-          if (emitted) {
-            resetIdle();
+        } catch (error) {
+          if (!closed) {
+            cleanup();
+            controller.error(error);
           }
-          pollTimer = setTimeout(poll, pollIntervalMs);
-        };
-
-        if (idleTimeoutMs !== null) {
-          resetIdle();
         }
-        poll();
       },
-      cancel: () => {
-        cleanup();
-      },
-    });
+      cancel: cleanup,
+    }, { highWaterMark: 0 });
   }
 
   /**
@@ -269,90 +281,82 @@ export class MailboxDirector {
       pollIntervalMs?: number;
     } = {},
   ): ReadableStream<Uint8Array> {
-    const encoder = new TextEncoder();
     let closed = false;
-    let pollTimer: ReturnType<typeof setTimeout> | null = null;
-    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
-
-    const cleanup = () => {
-      if (closed) {
-        return;
-      }
+    let retry = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let wake: (() => void) | undefined;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let pending: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
+    let closing: Promise<void> | undefined;
+    let stream: ReadableStreamDefaultController<Uint8Array>;
+    /** Stop cue polling and join the single nested read before releasing its reader. */
+    const cleanup = (): Promise<void> => {
+      if (closing) return closing;
       closed = true;
-      if (pollTimer !== null) {
-        clearTimeout(pollTimer);
-        pollTimer = null;
-      }
-      if (reader) {
-        void reader.cancel().catch(() => undefined);
-        reader = null;
-      }
+      if (timer !== undefined) clearTimeout(timer);
+      wake?.();
       this.streamCleanups.delete(close);
+      closing = (async () => {
+        await reader?.cancel().catch(() => {});
+        await pending?.catch(() => {});
+        reader?.releaseLock();
+      })();
+      return closing;
     };
+    /** Director shutdown closes the outer response and starts joined nested cleanup. */
     const close = () => {
-      if (closed) {
-        return;
-      }
-      cleanup();
-      streamController?.close();
+      if (closed) return;
+      void cleanup();
+      stream.close();
     };
     this.streamCleanups.add(close);
-
     return new ReadableStream<Uint8Array>({
-      start: (controller) => {
-        streamController = controller;
-        controller.enqueue(encoder.encode(`retry: ${retryMs}\n\n`));
-
-        const pumpMailbox = () => {
-          if (!reader || closed) {
+      start(controller) {
+        stream = controller;
+      },
+      pull: async (controller) => {
+        try {
+          if (retry) {
+            retry = false;
+            controller.enqueue(textEncoder.encode(`retry: ${retryMs}\n\n`));
             return;
           }
-          void reader.read().then(({ value, done }) => {
-            if (closed || done) {
-              return;
+          while (!reader && !closed) {
+            const cue = this.takeQueryCue(said);
+            if (cue) {
+              reader = this.streamMailbox(cue.pre, cue.topics, {
+                retryMs,
+                pollIntervalMs,
+                idleTimeoutMs: null,
+                emitRetryHeader: false,
+              }).getReader();
+              break;
             }
-            if (value && value.length > 0) {
-              controller.enqueue(value);
-            }
-            pumpMailbox();
-          }).catch((error) => {
-            if (closed) {
-              return;
-            }
-            cleanup();
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+              timer = setTimeout(resolve, pollIntervalMs);
+            });
+            wake = undefined;
+            timer = undefined;
+          }
+          if (closed || !reader) return;
+          pending = reader.read();
+          const next = await pending;
+          pending = undefined;
+          if (closed) return;
+          if (next.done) {
+            await cleanup();
+            controller.close();
+          } else controller.enqueue(next.value);
+        } catch (error) {
+          if (!closed) {
+            await cleanup();
             controller.error(error);
-          });
-        };
-
-        const waitForCue = () => {
-          if (closed) {
-            return;
           }
-          const cue = this.takeQueryCue(said);
-          if (!cue) {
-            pollTimer = setTimeout(waitForCue, pollIntervalMs);
-            return;
-          }
-          reader = this.streamMailbox(
-            cue.pre,
-            cue.topics,
-            {
-              retryMs,
-              pollIntervalMs,
-              idleTimeoutMs: null,
-              emitRetryHeader: false,
-            },
-          ).getReader();
-          pumpMailbox();
-        };
-
-        waitForCue();
+        }
       },
-      cancel: () => {
-        cleanup();
-      },
-    });
+      cancel: cleanup,
+    }, { highWaterMark: 0 });
   }
 
   /**

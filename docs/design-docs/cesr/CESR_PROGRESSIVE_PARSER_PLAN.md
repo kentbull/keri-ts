@@ -39,17 +39,17 @@ payload references. Exchange integration merged in
 [#139](https://github.com/kentbull/keri-ts/pull/139); its review diff contains only ingress.
 
 Phase 11 serialization and HTTP output merged in
-[#140](https://github.com/kentbull/keri-ts/pull/140). Its remaining review slices
-include lazy replay and HTTP replies,
-exchange/witness delivery, and query-response/mailbox consumption. Query responses
-must hand off outside the active dispatch turn before entering the parser again. Each slice preserves one owner for
-pending reads and leaves shared runtime reservations to the approved follow-on.
-Finite annotation and streaming CLI consumers merged in
-[#141](https://github.com/kentbull/keri-ts/pull/141).
-Lazy replay sources and runtime-owned replies are merged in
-[#142](https://github.com/kentbull/keri-ts/pull/142). Exchange/witness delivery and finite
-HTTP response scopes merged in [#143](https://github.com/kentbull/keri-ts/pull/143). Query-response handoff and incremental mailbox SSE
-remain the next consumer slice.
+[#140](https://github.com/kentbull/keri-ts/pull/140), CLI consumers in
+[#141](https://github.com/kentbull/keri-ts/pull/141), lazy replay and replies in
+[#142](https://github.com/kentbull/keri-ts/pull/142), and exchange/witness delivery
+in [#143](https://github.com/kentbull/keri-ts/pull/143).
+
+The query/mailbox slice queues bounded query requests outside guarded dispatch,
+awaits each complete SSE event consumer, and produces mailbox output on HTTP
+demand without holding LMDB iterators across suspension. Finite OOBI/DID
+verification still collects at most 8 MiB. Stored mailbox values are read whole
+before their 4 MiB output check; aggregate connection and memory admission belong
+to the approved resource-policy follow-on.
 
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
 ahead, base it on the predecessor branch and retarget after that predecessor
@@ -65,7 +65,8 @@ a qualified content digest with representation scope where needed.
 
 Phase 12 separates the CESR test/body-hydration migration from the final KERI
 consumer/API removal. This keeps protocol assertion changes reviewable independently
-of Effection call-site changes. CESR tests use the progressive engine directly;
+of Effection call-site changes. The test/body migration merged in
+[#144](https://github.com/kentbull/keri-ts/pull/144). CESR tests use the progressive engine directly;
 the remaining atomic engine serves only the not-yet-migrated KERI callers.
 
 The temporary atomic engine exists only for staged migration. Phase 12 removes

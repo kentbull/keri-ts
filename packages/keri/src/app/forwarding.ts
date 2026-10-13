@@ -12,7 +12,7 @@
  * - sender retry durability is optional via `Outboxer`
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
-import { concatBytes, Counter, parsePather, SerderACDC, SerderKERI } from "cesr-ts";
+import { concatBytes, Counter, parsePather, ResourceLimitError, SerderACDC, SerderKERI } from "cesr-ts";
 import { action, call, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
@@ -20,7 +20,12 @@ import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } 
 import { exchange } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
-import { DEFAULT_MAILBOX_INBOX_LIMITS, type MailboxDelivery, type MailboxInboxLimits } from "../db/mailbox-inbox.ts";
+import {
+  DEFAULT_MAILBOX_INBOX_LIMITS,
+  MailboxAdmissionError,
+  type MailboxDelivery,
+  type MailboxInboxLimits,
+} from "../db/mailbox-inbox.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
@@ -31,7 +36,7 @@ import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandleOrNull } from "./httping.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
-import { type MailboxSseMessage, parseMailboxSse, readMailboxSseBody } from "./mailbox-sse.ts";
+import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
 import {
   directDeliveryEndpoints,
   firstSortedEndpoint,
@@ -721,6 +726,11 @@ export class MailboxPoller {
     }
     this.durableAdmission = options.mailboxAdmission?.mode === "durable";
     this.inboxLimits = { ...DEFAULT_MAILBOX_INBOX_LIMITS, ...options.mailboxAdmission?.limits };
+    for (const limit of Object.values(this.inboxLimits)) {
+      if (!Number.isSafeInteger(limit) || limit < 1) {
+        throw new MailboxAdmissionError("invalid-input", "Invalid mailbox inbox limit");
+      }
+    }
     this.mailboxDirector = mailboxDirector;
     this.timeoutPolicy = normalizeMailboxPollingTimeoutPolicy(timeouts);
     this.services = services;
@@ -844,6 +854,7 @@ export class MailboxPoller {
     }
     const cursor = this.localCursor(pre);
     const messages: Uint8Array[] = [];
+    let bytes = 0;
 
     for (const topic of topics) {
       for (
@@ -853,6 +864,14 @@ export class MailboxPoller {
           cursor[topic] ?? 0,
         )
       ) {
+        if (item.msg.length > this.inboxLimits.maxRecordBytes) {
+          throw new MailboxAdmissionError("capacity", "Mailbox record byte limit");
+        }
+        if (
+          messages.length === this.inboxLimits.maxBatchRecords
+          || item.msg.length > this.inboxLimits.maxBatchBytes - bytes
+        ) return messages;
+        bytes += item.msg.length;
         cursor[topic] = item.idx + 1;
         messages.push(item.msg);
       }
@@ -883,12 +902,17 @@ export class MailboxPoller {
     target: MailboxPollTarget,
     endpoint: { eid: string; url: string },
     budgetMs: number,
+    onBatch?: (batch: MailboxPollBatch) => void | Operation<void>,
   ): Operation<MailboxPollBatch | null> {
     const cursor = this.mailboxDirector.remoteQueryCursor(
       target.targetPre,
       endpoint.eid,
     );
-    const messages = yield* this.pollTransport.poll({
+    const messages: MailboxSseMessage[] = [];
+    let bytes = 0;
+    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
+    const self = this;
+    yield* this.pollTransport.poll({
       hab: target.signerHab,
       targetPre: target.targetPre,
       endpoint,
@@ -896,6 +920,34 @@ export class MailboxPoller {
       bodyMode: this.hby.cesrBodyMode,
       timeouts: mailboxFetchTimeoutPolicy(this.timeoutPolicy, budgetMs),
       services: this.services,
+    }, function*(message) {
+      if (message.msg.length > self.inboxLimits.maxRecordBytes) {
+        throw new MailboxAdmissionError("capacity", "Mailbox record byte limit");
+      }
+      if (message.msg.length > self.inboxLimits.maxBatchBytes) {
+        throw new MailboxAdmissionError("capacity", "Mailbox batch byte limit");
+      }
+      if (onBatch) {
+        // Await acceptance before asking SSE for another event; durable cursors move with retained bytes.
+        if (self.durableAdmission) {
+          self.hby.db.mailboxInbox.admit(target.targetPre, endpoint.eid, [message], self.inboxLimits);
+          for (const batch of self.replayRetained(target.targetPre, endpoint.eid)) {
+            yield* call(() => onBatch(batch));
+            self.handOff([batch]);
+          }
+        } else {
+          yield* call(() =>
+            onBatch({ source: "remote", pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] })
+          );
+          self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
+        }
+        return;
+      }
+      // Command-local batches are finite; unread/over-budget events remain at the peer for the next poll.
+      if (message.msg.length > self.inboxLimits.maxBatchBytes - bytes) return false;
+      bytes += message.msg.length;
+      messages.push(message);
+      return messages.length < self.inboxLimits.maxBatchRecords;
     });
     if (messages.length === 0) {
       return null;
@@ -1011,6 +1063,7 @@ export class MailboxPoller {
         target,
         endpoint,
         this.timeoutPolicy.maxPollDurationMs,
+        onBatch,
       );
       if (batch) {
         yield* call(() => onBatch(batch));
@@ -1111,6 +1164,7 @@ function mailboxReplyPayload(
 export function introduce(
   hab: Hab,
   remote: string,
+  maxBytes = Infinity,
 ): Uint8Array {
   const kever = hab.kever;
   if (!kever) {
@@ -1128,15 +1182,22 @@ export function introduce(
   }
 
   const messages: Uint8Array[] = [];
+  let size = 0;
+  /** Admit each replay event before retaining it for this finite introduction. */
+  const append = (bytes: Uint8Array) => {
+    if (bytes.length > maxBytes - size) throw new ResourceLimitError("Query introduction exceeds byte limit");
+    size += bytes.length;
+    messages.push(bytes);
+  };
   for (const msg of hab.db.clonePreIter(hab.pre)) {
-    messages.push(msg);
+    append(msg);
   }
   for (const msg of hab.db.cloneDelegation(kever)) {
-    messages.push(msg);
+    append(msg);
   }
   const endpoints = hab.replyEndRole(hab.pre);
   if (endpoints.length > 0) {
-    messages.push(endpoints);
+    append(endpoints);
   }
   return concatBytes(...messages);
 }
@@ -1294,11 +1355,15 @@ export interface MailboxPollTransportRequest {
 }
 
 export interface MailboxPollTransport {
-  poll(args: MailboxPollTransportRequest): Operation<MailboxSseMessage[]>;
+  /** Await each complete event consumer; false ends the poll without reading ahead. */
+  poll(
+    args: MailboxPollTransportRequest,
+    consume: (message: MailboxSseMessage) => Operation<boolean | void>,
+  ): Operation<void>;
 }
 
 const defaultMailboxPollTransport: MailboxPollTransport = {
-  *poll(args): Operation<MailboxSseMessage[]> {
+  *poll(args, consume): Operation<void> {
     // A completed long poll releases its HTTP resource before the next poll begins.
     return yield* call(() =>
       fetchMailboxMessages(
@@ -1310,6 +1375,7 @@ const defaultMailboxPollTransport: MailboxPollTransport = {
         args.bodyMode,
         args.timeouts,
         args.services,
+        consume,
       )
     );
   },
@@ -1329,8 +1395,9 @@ function* fetchMailboxMessages(
   topics: Record<string, number>,
   bodyMode: "header" | "body",
   timeouts: MailboxFetchTimeoutPolicy,
-  services: RuntimeServices = defaultRuntimeServices,
-): Operation<MailboxSseMessage[]> {
+  services: RuntimeServices,
+  consume: (message: MailboxSseMessage) => Operation<boolean | void>,
+): Operation<void> {
   const query = hab.query(targetPre, src, { topics }, "mbx");
   const handle = yield* fetchMailboxQueryResponse(
     url,
@@ -1341,25 +1408,25 @@ function* fetchMailboxMessages(
     services,
   );
   if (!handle) {
-    return [];
+    return;
   }
   const { response, controller } = handle;
 
   if (!response.ok) {
     yield* closeResponseBody(response);
-    return [];
+    return;
   }
 
-  const text = yield* readMailboxSseBody(
+  yield* consumeMailboxSse(
     response,
     controller,
+    consume,
     {
       idleTimeoutMs: timeouts.readIdleTimeoutMs,
       maxDurationMs: timeouts.maxReadDurationMs,
       services,
     },
   );
-  return parseMailboxSse(text);
 }
 
 /**

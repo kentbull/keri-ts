@@ -1,17 +1,18 @@
-import { concatBytes } from "cesr-ts";
-import { action, call, type Operation } from "npm:effection@^3.6.0";
+import { concatBytes, ResourceLimitError } from "cesr-ts";
+import { toEffectionFrames } from "cesr-ts/effection";
+import { call, each, type Operation, resource } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
+import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Roles } from "../core/roles.ts";
 import { Schemes } from "../core/schemes.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
-import { ingestKeriBytes } from "./agent-runtime.ts";
-import { buildCesrRequest, splitCesrStream } from "./cesr-http.ts";
+import { chunkBytes, streamBytes } from "./byte-source.ts";
+import { requestFrame } from "./cesr-egress.ts";
 import type { CueSink } from "./cue-runtime.ts";
 import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import { fetchResponseHandle } from "./httping.ts";
-import { parseMailboxSse, readMailboxSseBody } from "./mailbox-sse.ts";
+import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
 
 /**
@@ -56,64 +57,124 @@ function resolveQueryDestinationUrl(
   return null;
 }
 
-/** Read one HTTP response body fully so parser ingress can consume it. */
-function* readResponseBytes(response: Response): Operation<Uint8Array> {
-  const buffer = yield* action<ArrayBuffer>((resolve, reject) => {
-    response.arrayBuffer()
-      .then(resolve)
-      .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
-    return () => {};
-  });
-  return new Uint8Array(buffer);
+/** A bounded signed request waiting for the runtime guard to release. */
+interface QueryDelivery {
+  url: string;
+  body: Uint8Array;
+  bodyMode: "header" | "body";
+  destination: string;
 }
 
-/**
- * Post one outbound query message and ingest any immediate CESR reply bytes.
- */
+/** Own finite query requests; network responses are consumed only outside a guarded cue turn. */
+export class QueryDeliveries {
+  /** At most eight 8 MiB requests plus the single active request. */
+  private readonly pending = new Deck<QueryDelivery>(undefined, 8);
+  /** Command-local and background drains cannot deliver the same head concurrently. */
+  private draining = false;
+  /** Active delivery cancellation and its joined completion belong to runtime shutdown. */
+  private active?: AbortController;
+  /** Shutdown waits for response resource teardown, not merely parser return. */
+  private joined?: Promise<void>;
+  /** Closed queues reject all later admissions. */
+  private closed = false;
+
+  /** Reject overflow explicitly while preserving every previously admitted request. */
+  enqueue(delivery: QueryDelivery): void {
+    if (this.closed) throw new Error("Query deliveries are closed");
+    if (delivery.body.buffer.byteLength > 8 * 1024 * 1024) {
+      throw new ResourceLimitError("Query request exceeds byte limit");
+    }
+    this.pending.push(delivery);
+  }
+
+  /** Include queued transport in runtime convergence checks. */
+  get hasPending(): boolean {
+    return this.draining || !this.pending.empty;
+  }
+
+  /** Release unsent request bytes at runtime shutdown. */
+  *close(): Operation<void> {
+    this.closed = true;
+    this.pending.clear();
+    this.active?.abort();
+    if (this.joined) yield* call(() => this.joined!);
+  }
+
+  /** Send a finite snapshot outside Reactor.settle, then progressively settle each response. */
+  process(runtime: AgentRuntime): Operation<void> {
+    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
+    const self = this;
+    return call(function*() {
+      if (self.draining || self.closed) return;
+      self.draining = true;
+      const active = self.active = new AbortController();
+      const done = Promise.withResolvers<void>();
+      self.joined = done.promise;
+      // Register completion before response resources so close() joins their teardown as well.
+      yield* resource<void>(function*(provide) {
+        try {
+          yield* provide();
+        } finally {
+          self.draining = false;
+          self.active = undefined;
+          self.joined = undefined;
+          done.resolve();
+        }
+      });
+      const count = self.pending.length;
+      for (let index = 0; index < count && !self.closed; index++) {
+        const delivery = self.pending.peekHead();
+        if (!delivery) break;
+        active.signal.throwIfAborted();
+        yield* call(() => postQueryMessage(runtime, delivery, active));
+        // Shutdown may clear the queue while successful response cleanup is still yielding.
+        active.signal.throwIfAborted();
+        self.pending.pull();
+      }
+    });
+  }
+}
+
+/** One delivery scope owns upload frames and all response readers through completion or cancellation. */
 function* postQueryMessage(
   runtime: AgentRuntime,
-  url: string,
-  body: Uint8Array,
-  bodyMode: "header" | "body",
-  destination?: string,
+  delivery: QueryDelivery,
+  controller: AbortController,
 ): Operation<void> {
-  const requests = bodyMode === "header" ? splitCesrStream(body) : [body];
-  for (const currentBody of requests) {
-    const request = buildCesrRequest(currentBody, {
-      bodyMode,
-      destination,
-    });
-    const { response, controller } = yield* fetchResponseHandle(url, {
-      method: "POST",
-      headers: request.headers,
-      body: request.body,
-    }, {
-      services: runtime.services,
-    });
-    if (!response.ok) {
-      throw new ValidationError(
-        `Query delivery to ${url} failed with HTTP ${response.status}.`,
-      );
-    }
-    const contentType = response.headers.get("Content-Type")?.toLowerCase()
-      ?? "";
-    if (contentType.startsWith("text/event-stream")) {
-      const text = yield* readMailboxSseBody(response, controller, {
-        idleTimeoutMs: 500,
-        maxDurationMs: 5_000,
-        services: runtime.services,
-      });
-      for (const message of parseMailboxSse(text)) {
-        if (message.msg.length > 0) {
-          ingestKeriBytes(runtime, message.msg);
+  const channel = yield* toEffectionFrames((signal) => chunkBytes(delivery.body, { signal }), {
+    signal: controller.signal,
+  });
+  for (const frame of yield* each(channel.frames)) {
+    yield* call(function*() {
+      yield* resource<void>(function*(provide) {
+        try {
+          yield* provide();
+        } finally {
+          if (frame.essr) yield* call(() => frame.essr!.discard());
         }
+      });
+      const response = yield* requestFrame(delivery.url, frame, {
+        bodyMode: delivery.bodyMode,
+        destination: delivery.destination,
+        services: runtime.services,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new ValidationError(`Query delivery to ${delivery.url} failed with HTTP ${response.status}.`);
       }
-      continue;
-    }
-    const bytes = yield* readResponseBytes(response);
-    if (bytes.length > 0) {
-      ingestKeriBytes(runtime, bytes);
-    }
+      if (response.headers.get("Content-Type")?.toLowerCase().startsWith("text/event-stream")) {
+        yield* consumeMailboxSse(response, new AbortController(), function*(message) {
+          yield* runtime.reactor.process((signal) => chunkBytes(message.msg, { signal }), {
+            signal: controller.signal,
+          });
+        }, { idleTimeoutMs: 500, maxDurationMs: 5_000, services: runtime.services, signal: controller.signal });
+      } else {
+        yield* runtime.reactor.process((signal) => streamBytes(response.body, { signal }), {
+          signal: controller.signal,
+        });
+      }
+    });
+    yield* each.next();
   }
 }
 
@@ -157,16 +218,17 @@ export function queryTransportSink(
           `No endpoint URL found for query destination ${destination}.`,
         );
       }
-      // The cue worker may persist indefinitely; response ownership ends with this delivery.
-      yield* call(() =>
-        postQueryMessage(
-          runtime,
-          url,
-          concatBytes(introduce(hab, destination), message),
-          hby.cesrBodyMode,
-          destination,
-        )
-      );
+      const intro = introduce(hab, destination, 8 * 1024 * 1024 - message.length);
+      // Check before concatenation: the deck retains a finite request, never a live HTTP body.
+      if (intro.length + message.length > 8 * 1024 * 1024) {
+        throw new ResourceLimitError("Query request exceeds byte limit");
+      }
+      runtime.queryDeliveries.enqueue({
+        url,
+        body: concatBytes(intro, message),
+        bodyMode: hby.cesrBodyMode,
+        destination,
+      });
     },
   };
 }

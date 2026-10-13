@@ -98,7 +98,37 @@ The shared HTTP response resource also owns the handoff after headers arrive;
 continuous OOBI, authentication, query and mailbox workers close a finite call
 scope after each response so neither bodies nor resource registrations accumulate.
 
-Query-response handoff and incremental mailbox SSE remain a separate migration:
-a query cue runs inside the runtime turn and cannot recursively enter the
-Reactor while waiting for its streamed reply. These paths still retain their
-existing collection behavior until that next slice replaces it.
+## Query delivery and mailbox SSE
+
+The query cue sink admits at most eight finite 8 MiB signed request streams.
+The runtime drains those requests after its guarded cue turn, preserving a failed
+request for retry. Its HTTP response stays in the delivery scope and enters the
+progressive Reactor directly. Runtime closure aborts and joins the active delivery
+before closing stores; a consumer never reenters its own guarded turn.
+
+Mailbox SSE consumes one complete event at a time and awaits the consumer before
+reading again. Each event admits at most 8 MiB of wire bytes and 4,096 fields; transport chunks
+admit at most 1 MiB. EOF, timeout, and cancellation discard an unterminated event,
+leaving its cursor available for retry. The first event may use the full poll
+window; an idle poll ends after 500 ms once an event has completed. Every timeout
+cancels and joins the single pending read. Long-lived mailbox workers admit and
+hand off each event before requesting the next. Command-local polling retains
+only a finite batch (256 records / 16 MiB by default), with a 4 MiB per-record
+limit; the durable inbox retains its independent capacity and explicit disposition.
+
+Provider SSE performs no mailbox reads without HTTP demand, releases each LMDB
+iterator before suspension, and copies at most 64 KiB per transport pull from one
+admitted 4 MiB stored message. A blocked consumer cannot accumulate a mailbox
+replay in the platform stream queue. Stored values are still read whole before
+their individual size check.
+
+Finite OOBI and DID verification currently admit at most 8 MiB per fetched
+artifact, including their CESR replay document. Moving those complete verification
+flows to streamed artifacts remains separate work. Mailbox admin response metadata
+admits 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those
+finite collectors use the same owned, cancellable byte reader.
+
+Mailbox-provider connection count and configured endpoint/topic counts do not yet
+share an aggregate runtime reservation. Their cross-source concurrency budget
+belongs to the planned shared resource-policy follow-up, not these per-reader
+and per-event bounds.
