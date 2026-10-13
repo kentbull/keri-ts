@@ -1,4 +1,4 @@
-import type { OwnedPayload, PayloadSink } from "cesr-ts";
+import type { OwnedPayload, Payload, PayloadSink } from "cesr-ts";
 import { join, resolve } from "jsr:@std/path";
 
 /** A caller-owned file; promotion is separate from publishing a database reference. */
@@ -87,6 +87,20 @@ export class PayloadStore {
     }
   }
 
+  /** Identify an owned local file without exposing filesystem paths. */
+  owns(payload: Payload): payload is FilePayload {
+    return payload instanceof FileValue && payload.belongsTo(this.root);
+  }
+
+  /** Transfer a local handle to a new owner while keeping existing read views usable. */
+  adopt(payload: Payload): FilePayload {
+    if (this.closed) throw new Error("Payload store is closed");
+    if (!(payload instanceof FileValue) || !payload.belongsTo(this.root)) {
+      throw new TypeError("Payload belongs to another store");
+    }
+    return payload.transfer();
+  }
+
   /** Abort unfinished writes only; completed files have transferred to callers. */
   async close(): Promise<void> {
     this.closed = true;
@@ -96,23 +110,43 @@ export class PayloadStore {
 
 /** A finished stage or promoted object; each read owns its own file descriptor. */
 class FileValue implements FilePayload {
-  /** Discard is terminal and idempotent for this owner. */
-  private removed = false;
-  /** Reject overlapping promotion/discard instead of queueing ownership changes. */
-  private busy = false;
+  /** Revokes only mutation rights after another owner adopts this handle. */
+  private transferred = false;
+  /** Shared identity and location keep borrowed views valid after owner publication. */
+  private readonly state: { id: string; staged: boolean; removed: boolean; busy: boolean };
 
   /** Represent one completed file without taking ownership of any reader descriptor. */
   constructor(
     private readonly root: string,
-    public id: string,
+    id: string,
     readonly size: number,
     private readonly chunkSize: number,
-    private staged: boolean,
-  ) {}
+    staged: boolean,
+    state?: { id: string; staged: boolean; removed: boolean; busy: boolean },
+  ) {
+    this.state = state ?? { id, staged, removed: false, busy: false };
+  }
+
+  /** Resolve the current final identity through the shared owner state. */
+  get id(): string {
+    return this.state.id;
+  }
+
+  /** Test private store provenance without exposing filesystem paths. */
+  belongsTo(root: string): boolean {
+    return this.root === root;
+  }
+
+  /** Move mutation rights to a new handle sharing the same file lifetime. */
+  transfer(): FilePayload {
+    this.checkOwner();
+    this.transferred = true;
+    return new FileValue(this.root, this.id, this.size, this.chunkSize, this.state.staged, this.state);
+  }
 
   /** Resolve the current stage/object location after any completed promotion. */
   private get path(): string {
-    return join(this.root, this.staged ? "staging" : "objects", this.id);
+    return join(this.root, this.state.staged ? "staging" : "objects", this.id);
   }
 
   /** Reopen from byte zero and release the descriptor on return, failure, or cancellation. */
@@ -138,42 +172,48 @@ class FileValue implements FilePayload {
 
   /** Publish a completed file under its final identity without overwriting another owner. */
   async promote(id: string): Promise<void> {
-    this.check();
+    this.checkOwner();
     checkPayloadId(id);
-    if (!this.staged) {
+    if (!this.state.staged) {
       if (id !== this.id) throw new Error("Payload is already promoted under another ID");
       return;
     }
-    this.busy = true;
+    this.state.busy = true;
     try {
       await Deno.mkdir(join(this.root, "objects"), { recursive: true, mode: 0o700 });
       const stage = this.path;
       // Linking publishes the complete file atomically and rejects an existing ID.
       await Deno.link(stage, join(this.root, "objects", id));
-      this.id = id;
-      this.staged = false;
+      this.state.id = id;
+      this.state.staged = false;
       await Deno.remove(stage);
     } finally {
-      this.busy = false;
+      this.state.busy = false;
     }
   }
 
   /** Remove this owned file once, rejecting concurrent ownership mutations. */
   async discard(): Promise<void> {
-    if (this.removed) return;
-    this.check();
-    this.busy = true;
+    if (this.transferred || this.state.removed) return;
+    this.checkOwner();
+    this.state.busy = true;
     try {
       await Deno.remove(this.path);
-      this.removed = true;
+      this.state.removed = true;
     } finally {
-      this.busy = false;
+      this.state.busy = false;
     }
+  }
+
+  /** Reject mutation by a stale transferred handle before inspecting file state. */
+  private checkOwner(): void {
+    if (this.transferred) throw new Error("Payload ownership was transferred");
+    this.check();
   }
 
   /** Ensure this file remains readable and is not changing ownership. */
   private check(): void {
-    if (this.removed || this.busy) throw new Error("Payload file is removed or changing ownership");
+    if (this.state.removed || this.state.busy) throw new Error("Payload file is removed or changing ownership");
   }
 }
 

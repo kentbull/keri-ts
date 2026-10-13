@@ -7,15 +7,18 @@ and KERIpy interoperability.
 
 ## Current State
 
-`db/payload-store.ts` provides bounded file staging and explicitly owned payload
-references without altering KERIpy tables. Filesystem operations use Deno and
-`@std/path`; final names come from a caller-supplied SAID/scoped identity while
-incomplete stages use temporary names. The npm build supplies missing Deno-shim
-fsync methods at its packaging boundary and exercises file publication in the
-installed-artifact smoke test. Finishing a sink transfers its file to
-the caller; store close only aborts unfinished sinks. Database publication and
-orphan recovery must be integrated separately before these files become durable
-accepted application state. See `packages/keri/src/db/payload-store.md`.
+`PayloadArchive` publishes immutable file references in private LMDB tables
+only after file and directory flushes. Recovery walks directory entries and
+rows incrementally, removes unreferenced files, and fails closed on missing
+referenced objects. The host must own its archive directory exclusively across
+processes. KERIpy wire tables remain separate and unchanged.
+
+`PayloadStore.adopt` transfers mutation ownership while preserving borrowed
+readers; stale request cleanup cannot delete published content. Native filesystem
+operations use Deno and `@std/path`; the npm packaging shim supplies fsync.
+Final names use scoped owner identities such as `essr.SAID` and `plain.SAID`,
+with temporary UUIDs confined to staging. These names do not claim to be
+independent payload hashes. See `packages/keri/src/db/payload-store.md`.
 
 `EssrRecipient` binds one explicitly hosted habitat and reloads accepted EXNs
 before decrypting their committed raw ESSR bytes. It checks source/destination,

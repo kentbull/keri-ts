@@ -58,3 +58,41 @@ transaction spanning file promotion and LMDB. Those operations require explicit
 storage ownership and crash recovery. It does not modify KERIpy-readable tables
 such as `.essrs` or mailbox `msgs.`. Decryption, verification, and the choice to
 retain ciphertext or plaintext belong to runtime consumers.
+
+## Durable references
+
+`PayloadArchive.open(db, root, signal)` recovers a private directory before
+admitting work. Cancellation is checked between recovery entries. The host must
+own that directory exclusively across processes. The archive also rejects
+duplicate owners within one process, including path aliases. This is an explicit
+host requirement, not a PID-file lock or a lease.
+
+`publish(key, payload, commit, signal)` stores immutable bytes under an
+application key.
+A previously unclaimed local file transfers ownership through `PayloadStore.adopt`; stale readers
+remain usable, stale disposal is harmless, and stale promotion rejects. Other
+sources copy through awaited bounded writes. A reopened file already referenced
+by the archive is borrowed: publication under a new key copies it, and duplicate
+publication never consumes the original. The synchronous `commit` callback
+runs in the same LMDB transaction as the reference, after file contents and
+all required directory entries have been flushed. Identical duplicate bytes
+reuse the reference; conflicting bytes reject. Reference keys are nonempty ASCII
+segments separated by `/`, at most 240 characters.
+Final filenames replace separators with dots, so `essr/SAID` becomes `essr.SAID`
+and `plain/SAID` becomes `plain.SAID`. Dots are forbidden in reference keys to keep
+this mapping unambiguous. These names identify immutable owners; they are not
+independent hashes of the qualified wire or plaintext. Equal bytes under distinct
+keys keep separate lifetimes. Random UUIDs identify staging files only.
+
+The private `payload.refs.` and `payload.owners.` tables belong together. They
+must not be edited independently. Recovery scans files and records incrementally,
+deletes unfinished stages and unreferenced objects, and fails closed on a missing
+referenced object or inconsistent ownership. A failure after promotion but before
+reference commit can leave a recoverable orphan. Removal commits reference
+absence before unlinking its file. Mutations reject concurrent admission, and
+close waits for already admitted work before releasing the runtime owner.
+Admission is reserved before invoking callbacks, so reentrant mutations reject.
+
+Archive views expose only reads. Existing readers must finish before reference
+removal; removal does not provide reader leases. KERIpy-readable wire tables
+remain separate from private file references and retain their protocol schema.
