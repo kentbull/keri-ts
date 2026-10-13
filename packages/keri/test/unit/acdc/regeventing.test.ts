@@ -457,3 +457,75 @@ Deno.test("registry updates require accepted predecessors and preserve decided s
     }
   });
 });
+
+Deno.test("registry anchor retry selects verified siblings independently of arrival order", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `registry-retry-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const baser = yield* openRegistry({ name: `registry-retry-${crypto.randomUUID()}`, temp: true });
+    try {
+      const store = new RegistryStore(baser), issuer = hby.makeHab("issuer"), rip = regcept(issuer.pre);
+      const engine = new RegistryEventer(hby.db, issuer.pre, store);
+      engine.processMissingAnchors();
+      assertEquals(engine.processEvent(rip).kind, "escrow");
+      engine.processMissingAnchors();
+      assertEquals(store.head(rip.said!), null);
+      issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
+      engine.processMissingAnchors();
+      assertEquals(store.head(rip.said!)!.qb64, rip.said);
+      const blid = fixture.disclosures.issued.d;
+      const candidates = [0, 1, 2].map((second) =>
+        blindate(rip.said!, rip.said!, blid, {
+          stamp: `2026-10-13T01:00:0${second}Z`,
+        })
+      );
+      for (const event of candidates) assertEquals(engine.processEvent(event).kind, "escrow");
+      // The last arrival gets the earliest anchor; an unanchored sibling cannot block it.
+      for (const event of [candidates[2], candidates[0]]) {
+        issuer.interact({ data: [{ i: rip.said!, s: "1", d: event.said! }] });
+      }
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      engine.processMissingAnchors();
+      const winner = candidates[2];
+      assertEquals(store.seqSaider(rip.said!, 1)!.qb64, winner.said);
+      assertEquals(baser.maes!.get(rip.said!, 1), []);
+      assertEquals(baser.ooes!.get(rip.said!, 1), []);
+      engine.processMissingAnchors();
+      assertEquals(store.head(rip.said!)!.qb64, winner.said);
+
+      // One KEL event may anchor competing siblings: SAID code-point order breaks the full-couple tie.
+      const tied = [0, 1].map((second) =>
+        blindate(rip.said!, winner.said!, blid, {
+          sn: 2,
+          stamp: `2026-10-13T01:01:0${second}Z`,
+        })
+      ).sort((a, b) => a.said! < b.said! ? -1 : 1);
+      for (const event of [...tied].reverse()) engine.processEvent(event);
+      issuer.interact({ data: tied.map((event) => ({ i: rip.said!, s: "2", d: event.said! })) });
+      engine.processMissingAnchors();
+      assertEquals(store.seqSaider(rip.said!, 2)!.qb64, tied[0].said);
+
+      // Dangling/stale candidates are removable; an infrastructure fault is not a validation decision.
+      const invalid = blindate(rip.said!, winner.said!, blid, { sn: 3 });
+      store.putEvent(invalid);
+      store.escrowMissingAnchor(rip.said!, 3, invalid.said!);
+      store.escrowMissingAnchor(rip.said!, 3, issuer.kever!.said);
+      const get = store.event;
+      try {
+        store.event = () => {
+          throw new Error("retry read failed");
+        };
+        assertThrows(() => engine.processMissingAnchors(), Error, "retry read failed");
+        assertEquals(baser.maes!.get(rip.said!, 3).length, 2);
+      } finally {
+        store.event = get;
+      }
+      engine.processMissingAnchors();
+      assertEquals(baser.maes!.get(rip.said!, 3), []);
+      assertEquals(store.head(rip.said!)!.qb64, tied[0].said);
+    } finally {
+      yield* baser.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
