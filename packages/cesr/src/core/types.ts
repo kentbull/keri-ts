@@ -66,8 +66,3 @@ export interface CesrFrame {
   /** Owned by the recipient after delivery; ordinary attachments exclude ESSR groups. */
   essr?: EssrPayload;
 }
-
-/** Parser stream event union: parsed frame payload or parse error. */
-export type ParseEvent =
-  | { type: "frame"; frame: CesrFrame }
-  | { type: "error"; error: Error };

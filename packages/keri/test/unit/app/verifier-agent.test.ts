@@ -95,9 +95,9 @@ function issueFixture(
 /** Admit supporting state before the grant, then settle escrows before each verifier assertion. */
 function* ingestGrant(runtime: AgentRuntime, fixture: IssuedFixture): Operation<void> {
   for (const message of fixture.grant.support) {
-    yield* runtime.reactor.processCompleteChunk(message);
+    yield* runtime.reactor.processBytes(message);
   }
-  yield* runtime.reactor.processCompleteChunk(fixture.grant.wire);
+  yield* runtime.reactor.processBytes(fixture.grant.wire);
   yield* runtime.reactor.processEscrowsOnce();
 }
 
@@ -229,10 +229,10 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
 
       fixture.registry.revoke(fixture.creder.said!);
       for (const message of issuerHby.db.clonePreIter(fixture.issuer.pre)) {
-        yield* runtime.reactor.processCompleteChunk(message);
+        yield* runtime.reactor.processBytes(message);
       }
       for (const message of issuerReger.clonePreIter(fixture.creder.said!)) {
-        yield* runtime.reactor.processCompleteChunk(message);
+        yield* runtime.reactor.processBytes(message);
       }
       yield* runtime.reactor.processEscrowsOnce();
 
@@ -309,10 +309,10 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
 
       fixture.registry.revoke(fixture.creder.said!);
       for (const message of issuerHby.db.clonePreIter(fixture.issuer.pre)) {
-        yield* runtime.reactor.processCompleteChunk(message);
+        yield* runtime.reactor.processBytes(message);
       }
       for (const message of issuerReger.clonePreIter(fixture.creder.said!)) {
-        yield* runtime.reactor.processCompleteChunk(message);
+        yield* runtime.reactor.processBytes(message);
       }
       yield* runtime.reactor.processEscrowsOnce();
       while (!runtime.cues.empty) {

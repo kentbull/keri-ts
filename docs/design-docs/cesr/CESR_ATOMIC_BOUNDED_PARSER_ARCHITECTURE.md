@@ -1,15 +1,12 @@
-# CESR Atomic Bounded Parser Architecture
+# Historical CESR Atomic Bounded Parser Architecture
 
-This describes the temporary synchronous parser. Async `parse()` and frame
-adapters now use progressive traversal; see the
-[progressive contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md). The accepted
-[progressive design](../../adr/adr-0012-progressive-nested-parser.md) is a planned
-replacement, tracked in the [execution plan](CESR_PROGRESSIVE_PARSER_PLAN.md).
+This implementation has been removed. This document records its historical
+tradeoffs; the current [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md)
+and [progressive contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md) govern all callers.
 
-The stream parser keeps one open frame and complete queued siblings. Nested
-counted payloads are bounded and parsed atomically; there is no resumable nested
-parse stack. See the [normative contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md)
-and [module guide](CESR_PARSER_MAINTAINER_GUIDE.md).
+The former stream parser kept one open frame and complete queued siblings.
+Nested counted payloads were bounded and parsed atomically, with no resumable
+nested parse stack. The sections below describe that removed implementation.
 
 ## Ownership
 

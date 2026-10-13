@@ -278,9 +278,9 @@ export function* processCredentialPresentationArtifacts(
   reactor: Reactor,
   artifacts: CredentialPresentationArtifacts,
 ): Operation<void> {
-  yield* reactor.processCompleteChunk(artifacts.anc);
-  yield* reactor.processCompleteChunk(artifacts.iss);
-  yield* reactor.processCompleteChunk(artifacts.acdc);
+  yield* reactor.processBytes(artifacts.anc);
+  yield* reactor.processBytes(artifacts.iss);
+  yield* reactor.processBytes(artifacts.acdc);
   yield* reactor.processEscrowsOnce();
 }
 

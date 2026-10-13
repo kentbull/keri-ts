@@ -1,6 +1,6 @@
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
-import { createParser } from "../../../../cesr/mod.ts";
+import { parseBytes } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
@@ -14,7 +14,7 @@ Deno.test("group query signs only its local member at current index3", async () 
       const peers = [0, 1, 2].map((i) => remote.makeHab(`peer${i}`));
       for (const peer of peers) {
         for (const bytes of remote.db.clonePreIter(peer.pre, 0)) {
-          yield* runtime.reactor.processCompleteChunk(bytes, { local: true });
+          yield* runtime.reactor.processBytes(bytes, { local: true });
         }
       }
       const member = local.makeHab("user");
@@ -25,8 +25,8 @@ Deno.test("group query signs only its local member at current index3", async () 
         toad: 0,
       }).hab;
       const bytes = group.query(group.pre, peers[0].pre, { topics: { "/receipt": 0 } }, "mbx");
-      const parser = createParser({ framed: false });
-      const envelopes = envelopesFromFrames([...parser.feed(bytes), ...parser.flush()]);
+      const frames = yield* call(() => parseBytes(bytes));
+      const envelopes = envelopesFromFrames(frames);
       assertEquals(envelopes.length, 1);
       const envelope = envelopes[0];
       const signature = envelope.ssgs[0]?.sigers[0];

@@ -36,12 +36,20 @@ Deno.test("app/reactor - query parsing normalizes transferable last-establishmen
       }) as typeof reactor.kevery.processQuery;
 
       const query = hab.endorse(makeQuerySerder("ksn", { i: hab.pre, src: hab.pre }), { pipelined: false });
-      yield* reactor.processChunk(query.slice(0, -1));
-      assertEquals(seen, null);
-      yield* reactor.processChunk(query.slice(-1));
-      assertEquals(seen, null, "Chunk exhaustion must not dispatch an open attachment set");
-      yield* reactor.processChunk(query);
-      assertExists(seen, "The following body closes the previous query");
+      /** Transport exhaustion leaves the query open; a following body proves its boundary. */
+      const queryChunks = async function*() {
+        yield query.slice(0, -1);
+        assertEquals(seen, null);
+        yield query.slice(-1);
+        assertEquals(seen, null, "Chunk exhaustion must not dispatch an open attachment set");
+        yield query;
+        assertExists(seen, "The following body closes the previous query");
+      };
+      yield* reactor.process(() => queryChunks());
+      seen = null;
+      // Finite input must respect a caller's tighter chunk budget and still finish at EOF.
+      yield* reactor.processBytes(query, { maxChunkBytes: 32 });
+      assertExists(seen);
       seen = null;
       // Queued complete records finish independently of the open stream.
       reactor.ingest(hab.query(hab.pre, hab.pre, {}, "ksn"));
@@ -237,7 +245,7 @@ async function assertGroupedReceiptReplay(known: boolean): Promise<void> {
 
         const url = "http://127.0.0.1:9724/";
         const provider = new Reactor(source);
-        yield* provider.processCompleteChunk(concatBytes(
+        yield* provider.processBytes(concatBytes(
           controller.makeLocScheme(url, controller.pre, "http"),
           controller.makeEndRole(controller.pre, EndpointRoles.controller, true),
         ));
@@ -245,7 +253,7 @@ async function assertGroupedReceiptReplay(known: boolean): Promise<void> {
         yield* source.db.close();
         yield* source.db.reopen({ reuse: true });
         const bundle = controller.replyToOobi(controller.pre, EndpointRoles.controller);
-        const [envelope] = envelopesFromFrames(parseBytes(bundle));
+        const [envelope] = envelopesFromFrames(yield* call(() => parseBytes(bundle)));
         assertEquals(envelope.trqs.length, 0);
         assertEquals(envelope.tsgs.map((group) => group.sigers.length), [2, 1]);
         assertEquals(envelope.tsgs.map((group) => group.diger.qb64), [first.diger.qb64, second.diger.qb64]);
@@ -255,7 +263,7 @@ async function assertGroupedReceiptReplay(known: boolean): Promise<void> {
           for (const message of source.db.clonePreIter(validator.pre)) reactor.ingest(message);
           yield* reactor.processOnce();
         }
-        yield* reactor.processCompleteChunk(bundle);
+        yield* reactor.processBytes(bundle);
         // A receipt with unavailable validator state must not hide the following replies.
         assertEquals(remote.db.locs.get([controller.pre, "http"])?.url, url);
         assertEquals(remote.db.ends.get([controller.pre, EndpointRoles.controller, controller.pre])?.allowed, true);
@@ -268,7 +276,7 @@ async function assertGroupedReceiptReplay(known: boolean): Promise<void> {
           assertEquals(remote.db.vrcs.get(key).length, 2);
           assertEquals(remote.db.vres.cnt(), 0);
           // A duplicate replay then admits the second establishment group, without duplicates.
-          yield* reactor.processCompleteChunk(bundle);
+          yield* reactor.processBytes(bundle);
         }
         assertEquals(
           remote.db.vrcs.get(key).map((receipt) => receipt[3].qb64),

@@ -18,16 +18,13 @@ and use this supplementary adapter at their parsing boundary.
 2. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the
    normative lifecycle contract. Parser behavior changes should stay mapped to
    that contract and its tests.
-3. The synchronous parser remains atomic/bounded-substream first during migration.
-   `CesrParser` directly owns its buffer, offset, and selected stream genus.
-   The parser lives in `parser/stream.ts`, `frames.ts`, and `attachments.ts`;
-   shared byte widths live in `core/domain.ts`. Frame parsing uses stateless
-   functions; no collector or frame-parser objects.
-   Progressive async generators are approved in ADR-0012 for many smaller ESSR
-   messages. The target contract and phased plan specify benchmark gates, early
-   child delivery, payload ownership, and end-to-end memory budgets. These remain
-   target obligations until their implementation/tests land; phase 12 removes the
-   atomic engine and old keri-ts API shims without dropping protocol support.
+3. One progressive async engine owns parsing in `parser/progressive.ts`.
+   `parser/complete.ts` provides async finite `parseBytes`; `parser/body.ts` owns
+   finite body hydration and frame-counter recognition. The old atomic walker,
+   push API, event wrappers, and atomic ESSR adapter have been removed.
+   KERI and Tufa consume sources through optional Effection channels. Current-main
+   parity, shared runtime reservations, and final benchmark qualification remain
+   explicit follow-ons; their target obligations are not yet implementation claims.
    `parser/cursor.ts` prepares that input boundary: segmented storage drops consumed
    buffers, scope ends limit all reads, and accepted producer backing buffers count
    toward resource policy. Demand and cancellation belong to the shared cursor;
@@ -45,26 +42,26 @@ and use this supplementary adapter at their parsing boundary.
    or nested attachment wrappers. Preserve small inner transferable-signature
    counters; reject unsafe opaque genus changes and inner-counter overflow.
    Internal one-frame candidates remain parser-owned until the public yield;
-   malformed enclosures abort all undelivered stages. Runtime migration remains
-   later work, so parser measurements alone are not an end-to-end memory claim.
-   `CesrFrame` is the body-plus-attachments payload; `ParseEvent` is the frame/error
-   union. Recursive attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
+   malformed enclosures abort all undelivered stages. Runtime consumers use the progressive engine; shared admission and final
+   qualification remain, so parser measurements alone are not an end-to-end memory claim.
+   `CesrFrame` carries the hydrated body, attachments, and optional owned ESSR
+   payload. Parsing returns frames directly and rejects on errors. Recursive
+   attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
    Opaque wire payloads are one `OpaqueSpan` of original bytes plus domain, not
    arrays of fabricated primitives. Same-domain serialization preserves the bytes.
    `CesrDomain` names qb64/qb2 domains; `tokenSize` and `unitBytes` own byte widths.
    Parser genus context uses `gvrsn`/`streamGvrsn`; protocol metadata keeps `pvrsn`.
 4. Chunk exhaustion never completes an open attachment set. A following body,
-   a complete frame/attachment enclosure, or explicit `flush()` does. Initial and
-   resumed collection and bounded frames share `parseAttachments`; `framed` only caps emissions per feed.
-   Terminal partial attachments emit a shortage without exposing their pending
-   frame. Complete-record runtime callers finish explicitly; raw streams retain
-   parser state. Do not append peer attachments after a closed enclosure.
+   complete frame/attachment enclosure, or source EOF does. Terminal partial
+   attachments reject without yielding their pending frame. Earlier completed
+   siblings stay delivered if a later body fails. Each parse invocation starts
+   fresh; there is no reset, flush, framed cadence, or compatibility push API.
 5. Attachment dispatch decodes only the selected genus version; unknown codes
    and primitive failures never trigger a cross-major retry. Malformed wrapper
    tails are errors; there is no strict/compat parser mode. Explicit genus selectors and
    legacy frame-start recognition remain separate from attachment dispatch.
-   Non-shortage errors emit the normal parser error event and reset; recovery
-   has no separate diagnostic callback API. V1 signature/tuple counters count
+   Malformed input throws and terminates the iterator; recovery has no separate
+   diagnostic callback API. V1 signature/tuple counters count
    items; v2 payload counters count quadlets/triplets, including nested signature
    groups. Complete sized payloads with incomplete items are boundary errors, not
    transport shortages. Fixtures must encode payload lengths, not item counts.
@@ -74,8 +71,8 @@ and use this supplementary adapter at their parsing boundary.
    `NumberPrimitive`, accepting fixed-width `0A` and compact numeric codes in
    both genera. Table baseline 450ae1c used Seqner; live CLI interop baseline
    98b88cf uses Number. Do not mistake the old reader for the full wire surface.
-   ESSR also has separate v1 item-count and v2 payload-length handlers, the atomic path returning Texters and the progressive path staging canonical
-   wire without arrays. KERI envelopes reuse hydrated Serders and primitives, validating
+   ESSR respects v1 item counts and v2 payload lengths while staging canonical
+   wire without per-item arrays. KERI envelopes reuse hydrated Serders and primitives, validating
    roles at the public frame boundary. Structing views use existing Matter instances
    when their semantic class differs, never a qb64 round trip. Nested transferable signatures require the controller
    counter, matching the pinned reference (including its exclusion of big inner
@@ -184,7 +181,7 @@ ownership; abort cannot revoke an already returned payload. KERI's file store ow
 file promotion and disposal, independently of parser and crypto policy.
 
 1. Execute the progressive parser plan with explicit checkpoint evidence. Keep
-   current behavior accurate until migration, preserve version/count/boundary
+   current behavior accurate through the remaining follow-ons, preserve version/count/boundary
    regressions, and distinguish ESSR fragments from logical sealed messages.
 2. Preserve parser boundary, partition, external-vector and lifecycle coverage
    under `packages/cesr/test/unit/parser`; serder and table tests have their own

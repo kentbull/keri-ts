@@ -49,19 +49,15 @@ storage is a separate representation and must not replace original wire evidence
 
 ## Implementation transition
 
-Progressive frame traversal and async adapters now implement the generator
-portion of this ADR. Payload sinks and the runtime path remain later phases. The existing
+The production parser and all consumers use the progressive engine. The
 [state-machine contract](../design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md)
-remains authoritative for its synchronous API until callers migrate. The
-progressive contract distinguishes implemented traversal from the remaining
-payload, storage, and runtime obligations.
+maps its lifecycle to the retained protocol tests. The atomic engine, push API,
+event wrappers, and atomic ESSR adapter have been removed; finite callers await
+`parseBytes`, and KERI operations use `Reactor.process` or `Reactor.processBytes`.
 
-A temporary second implementation is permitted only to keep intermediate PRs
-cohesive. Migrate the actual async adapter first, then its consumers. Phase 12
-removes the atomic production engine, old API aliases and adapters, and tests
-whose only purpose is compatibility with old keri-ts APIs. Keep protocol and
-boundary regressions in the new API's tests. Do not retain a permanent parser
-mode, feature flag, or fallback strategy.
+The execution plan still requires shared runtime resource accounting, the
+current-main protocol follow-ons, and final end-to-end benchmark qualification.
+Do not infer those guarantees from parser-only measurements.
 
 ## Consequences
 

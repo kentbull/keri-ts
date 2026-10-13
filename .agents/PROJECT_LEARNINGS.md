@@ -12,8 +12,8 @@ release output iterators before database shutdown. See the KEL topic for limits.
 ## Current Focus
 
 1. CESR parser migration to progressive generators is approved for the many-message
-   ESSR workload. ADR-0012 and the progressive plan govern execution; current
-   atomic behavior remains authoritative until each caller migrates.
+   ESSR workload. ADR-0012 and the progressive plan govern execution; the remaining work covers current-main parity, shared resource accounting, and
+   final runtime qualification.
 2. KERI Phase 2 is parity-first around DB closure, runtime/key-management
    behavior, and practical `kli`/`tufa` interoperability.
 3. DID Webs work is now a first-class hosted identity surface: KERI/VDR state
@@ -77,8 +77,8 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
    tests. Stream genus controls attachment decoding independently of a body
    protocol version; only unselected streams permit legacy inference.
 2. CESR progressive parsing is an approved performance phase with before/after
-   benchmarks. Keep current and target contracts distinct; the final phase removes
-   the atomic production path and old API shims while preserving protocol parity.
+   benchmarks. Keep current and target contracts distinct; the atomic production path and old API shims are removed while protocol
+   v1/v2 support remains. Final end-to-end qualification is still required.
 3. Generated KERIpy-parity codex objects are authoritative; helper sets are
    derived readability views.
 4. When the semantic type is known, construct the narrow CESR primitive.

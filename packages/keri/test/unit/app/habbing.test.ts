@@ -31,6 +31,7 @@ import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from ".
 import type { QueryCoordinator } from "../../../src/app/querying.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
+import { fetchStoredTsgs } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
 function makeExchangeSerder(
@@ -1329,48 +1330,77 @@ Deno.test("Habery reconfigure preserves top-level OOBI preload queues", async ()
 });
 
 Deno.test("Hab reconfigure applies alias-scoped controller curls through reply acceptance", async () => {
-  const name = `habery-config-curls-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
-  const url = "http://127.0.0.1:7002/controller";
+  // Both cigar and establishment-group proofs must pass the normal reply verifier.
+  for (const transferable of [true, false]) {
+    const name = `habery-config-curls-${crypto.randomUUID()}`;
+    const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+    const url = "http://127.0.0.1:7002/controller";
 
-  await run(function*() {
-    const cf = yield* createConfiger({
-      name,
-      headDirPath,
-      temp: false,
-    });
-    cf.put({
-      alice: {
-        dt: "2026-04-06T12:30:00.000Z",
-        curls: [url],
-      },
-    });
-
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-      cf,
-    });
-    try {
-      const hab = hby.makeHab("alice", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
+    await run(function*() {
+      const cf = yield* createConfiger({
+        name,
+        headDirPath,
+        temp: false,
+      });
+      cf.put({
+        alice: {
+          dt: "2026-04-06T12:30:00.000Z",
+          curls: [url],
+        },
       });
 
-      assertEquals(
-        hby.db.ends.get([hab.pre, "controller", hab.pre])?.allowed,
-        true,
-      );
-      assertEquals(hby.db.locs.get([hab.pre, "http"])?.url, url);
-      assertEquals(hab.fetchUrls(hab.pre, "http").http, url);
-    } finally {
-      yield* hby.close();
-    }
-  });
+      const hby = yield* createHabery({
+        name,
+        headDirPath,
+        cf,
+      });
+      try {
+        const hab = hby.makeHab("alice", undefined, {
+          transferable,
+          icount: 1,
+          isith: "1",
+          ncount: transferable ? 1 : 0,
+          nsith: transferable ? "1" : "0",
+          toad: 0,
+        });
+
+        assertEquals(
+          hby.db.ends.get([hab.pre, "controller", hab.pre])?.allowed,
+          true,
+        );
+        assertEquals(hby.db.locs.get([hab.pre, "http"])?.url, url);
+        assertEquals(hab.fetchUrls(hab.pre, "http").http, url);
+        const accepted = hby.db.lans.get([hab.pre, "http"])!.qb64;
+        const proof = hby.db.rpys.get([accepted])!;
+        assertEquals(proof.verify(), true);
+        if (transferable) {
+          const [group] = fetchStoredTsgs(hby.db, accepted);
+          assertEquals(group.diger.qb64, hab.kever!.lastEst.d);
+          assertEquals(hab.kever!.verfers[0].verify(group.sigers[0].raw, proof.raw), true);
+        } else {
+          const [[verfer, cigar]] = hby.db.scgs.get([accepted]);
+          assertEquals(verfer.verify(cigar.raw, proof.raw), true);
+        }
+
+        // An older timestamp with different content must not bypass BADA through local admission.
+        const changedUrl = "http://127.0.0.1:7002/changed";
+        cf.put({ alice: { dt: "2026-04-05T12:30:00.000Z", curls: [changedUrl] } });
+        hab.reconfigure();
+        assertEquals(hby.db.locs.get([hab.pre, "http"])?.url, url);
+        assertEquals(hby.db.lans.get([hab.pre, "http"])?.qb64, accepted);
+        if (transferable) {
+          // A later establishment event outranks the old reply time and uses its accepted keys.
+          hab.rotate();
+          hab.reconfigure();
+          assertEquals(hby.db.locs.get([hab.pre, "http"])?.url, changedUrl);
+          const latest = hby.db.lans.get([hab.pre, "http"])!.qb64;
+          assertEquals(fetchStoredTsgs(hby.db, latest)[0].diger.qb64, hab.kever!.lastEst.d);
+        }
+      } finally {
+        yield* hby.close();
+      }
+    });
+  }
 });
 
 Deno.test("Habery reconfigure reapplies alias-scoped controller curls idempotently on reopen", async () => {

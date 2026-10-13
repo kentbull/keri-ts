@@ -1,8 +1,8 @@
 import {
   BENCH_INPUT_LIMIT,
-  benchmarkCesrParser,
-  type CesrParserBenchmarkOptions,
-  type CesrParserBenchmarkResult,
+  type BenchmarkOptions,
+  benchmarkParser,
+  type BenchmarkResult,
 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import { abortable } from "../abortable.ts";
@@ -10,7 +10,7 @@ import { collectBytes, fileBytes, streamBytes } from "../byte-source.ts";
 import { writeStdout } from "./output.ts";
 
 /** CLI transport choices extend the shared benchmark controls without a second parser loop. */
-interface BenchmarkArgs extends Omit<CesrParserBenchmarkOptions, "parserOptions"> {
+interface BenchmarkArgs extends Omit<BenchmarkOptions, "parserOptions"> {
   /** Corpus file; omission reads stdin. */
   inPath?: string;
   /** Emit machine-readable metrics instead of terminal text. */
@@ -18,7 +18,7 @@ interface BenchmarkArgs extends Omit<CesrParserBenchmarkOptions, "parserOptions"
 }
 
 /** Present complete-run metrics using the shared benchmark's measured values. */
-function formatBenchmarkText(source: string, result: CesrParserBenchmarkResult): string {
+function formatBenchmarkText(source: string, result: BenchmarkResult): string {
   return [
     "CESR parser benchmark",
     `source: ${source}`,
@@ -44,7 +44,7 @@ export function* benchmarkCommand(args: Record<string, unknown>): Operation<void
     )
   );
   const result = yield* abortable((signal) =>
-    benchmarkCesrParser(bytes, {
+    benchmarkParser(bytes, {
       ...options,
       maxBytes: limit,
       parserOptions: { signal },

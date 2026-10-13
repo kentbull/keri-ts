@@ -56,8 +56,9 @@ authorization uses the final query frame's exact signatures.
 
 The generic HTTP route consumes its request body progressively and appends a
 separately bounded CESR attachment header. Administrative requests still collect
-an explicitly bounded 8 MiB value. Legacy feed/complete-record methods remain
-only until the phase 12 API cut; they are not compatibility guarantees.
+an explicitly bounded 8 MiB value. `Reactor.processBytes` supplies a finite value to the same progressive source
+path; it owns parsing and dispatch through an Effection operation. No shared
+feed buffer or separate synchronous parser remains.
 
 ## Replay output ownership
 

@@ -12,13 +12,11 @@ npm install cesr-ts
 ## Library quick start
 
 ```ts
-import { annotate, createParser } from "cesr-ts";
-
-const parser = createParser();
-const out = parser.feed(new TextEncoder().encode("...CESR..."));
-const last = parser.flush();
+import { annotate, parseBytes } from "cesr-ts";
 
 const text = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
+const frames = await parseBytes(new TextEncoder().encode(text));
+console.log(frames[0].body.ilk);
 const annotated = await annotate(text, { pretty: true });
 ```
 
@@ -29,17 +27,27 @@ frames with pull backpressure. Pass an AbortSignal to the parser and the source
 when cancellation must interrupt pending I/O. This core API requires no Effection
 installation.
 
+`parseBytes(bytes, options)` is the async complete-input convenience API, with
+an 8 MiB input budget by default. It returns frames and rejects malformed input.
+Both APIs transfer ownership of each successful frame's `essr` payload to the
+caller; call `frame.essr?.discard()` after consumption. The finite helper cleans
+up collected payloads if parsing fails before returning.
+
 Applications using Effection can install Effection and import the supported
 supplementary adapter from `cesr-ts/effection`:
 
 ```ts
-import { each } from "effection";
+import { call, each } from "effection";
 import { toEffectionFrames } from "cesr-ts/effection";
 
 // Inside an Operation, readChunks must honor the supplied signal.
 const channel = yield* toEffectionFrames((signal) => readChunks(signal));
 for (const frame of yield* each(channel.frames)) {
-  yield* handleFrame(frame);
+  try {
+    yield* handleFrame(frame);
+  } finally {
+    if (frame.essr) yield* call(() => frame.essr.discard());
+  }
   yield* each.next();
 }
 ```
@@ -57,7 +65,7 @@ needed. This is application admission policy, not a CESR wire-format limit.
 `annotate()` releases temporary ESSR payloads; successful `annotateFrames()` callers
 own each returned `frame.essr` and must call its `discard()` when finished.
 
-`benchmarkCesrParser()` and `parseCesrStreamOnce()` are also asynchronous. The
+`benchmarkParser()` and `countFrames()` are also asynchronous. The
 benchmark retains one replayable corpus, limited to 64 MiB by default through
 `maxBytes`, and rejects malformed or truncated runs instead of reporting partial
 throughput. `tephra annotate`, `tufa annotate`, `tephra bench`, and `tufa benchmark cesr` expose these

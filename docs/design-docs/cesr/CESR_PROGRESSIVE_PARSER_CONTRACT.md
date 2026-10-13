@@ -2,13 +2,15 @@
 
 ## Status and scope
 
-**Partially implemented; runtime and payload migration remains in progress.**
-[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) authorizes the migration.
-`parser/progressive.ts` now provides `parse(source, options)` and the async frame
-adapters use it. Nested GenericGroups delegate through `yield*` and deliver
-complete children before their enclosing payload finishes. The
-[current synchronous contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) still
-applies to callers of the temporary `CesrParser`/`parseBytes` path.
+**One progressive engine is implemented; final runtime qualification remains pending.**
+[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) authorizes this architecture.
+`parser/progressive.ts` provides `parse(source, options)`; `parser/complete.ts`
+provides async `parseBytes(bytes, options)` with an explicit finite input budget.
+Nested GenericGroups delegate through `yield*` and deliver complete children
+before their enclosing payload finishes. There is no synchronous stream engine.
+The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) maps the
+implemented lifecycle to tests. Shared runtime reservations and parent-owned
+nested message trees remain the approved follow-ons in the execution plan.
 
 The parser materializes bodies and ordinary attachment leaves through the existing
 Serder and selected-version handlers. `maxFrameBytes` defaults to 8 MiB and bounds
@@ -21,12 +23,12 @@ ESSR Texters stream into an awaited sink, with separate `maxEssrBytes` (8 MiB
 concatenated decoded bytes) and `maxEssrItems` (16,384) defaults per frame. Both
 limits are finite even for filesystem sinks. The default is a bounded memory sink;
 `payloadSink(maxWireBytes, signal)` selects another owner. No transfer-sized or
-per-item manifest array is retained. Final storage and runtime backpressure
-migration remains pending; parser tests alone do not establish its memory bound.
+per-item manifest array is retained. Durable storage references and runtime source/output ownership preserve this
+representation. Parser tests alone do not establish an end-to-end memory bound.
 
-`parser-progressive.test.ts` proves early delivery, exact single-frame wrappers,
+`test/unit/parser/progressive.test.ts` proves early delivery, exact single-frame wrappers,
 every-byte partitions in both genera/domains, version scope restoration, partial
-failure, cancellation, and frame admission. `parser-essr.test.ts` adds payload
+failure, cancellation, and frame admission. `test/unit/parser/essr.test.ts` adds payload
 padding/extent validation, separate budgets, backpressure, and stage cleanup.
 Final runtime and benchmark qualification remain pending.
 
@@ -41,7 +43,7 @@ The canonical stream operation is an async generator over an async byte source,
 with nested generators delegated through `yield*`. Each requested result grants
 one frame of output credit. Source exhaustion supplies the record/stream end.
 There is no permanent push-parser compatibility wrapper, `framed` cadence flag,
-or separate reset/flush lifecycle in the target API.
+or separate reset/flush lifecycle.
 
 - Yield complete `CesrFrame` values in wire order.
 - Await downstream payload writes before reading more input unless an explicitly
@@ -53,7 +55,7 @@ or separate reset/flush lifecycle in the target API.
   limits. They are not the large-transfer API.
 
 Synchronous primitive readers remain useful for admitted complete tokens. Old
-keri-ts aliases and compatibility-only tests are removed during migration; KERI,
+keri-ts aliases and compatibility-only tests are removed; KERI,
 CESR, and ACDC wire/version compatibility is retained.
 
 ## Frame completion and progressive enclosure reads

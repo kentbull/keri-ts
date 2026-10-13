@@ -18,8 +18,8 @@ import {
   Diger,
   Ilks,
   NumberPrimitive,
-  parseBytes,
   Prefixer,
+  type SealEvent,
   SealLast,
   SerderKERI,
   Siger,
@@ -66,7 +66,6 @@ import {
   normalizeSaltQb64,
   saltySigner,
 } from "./keeping.ts";
-import { envelopesFromFrames } from "./parsering.ts";
 
 /** Reserved alias for the local signatory habitat record. */
 export const SIGNER = "__signatory__";
@@ -496,20 +495,29 @@ export class Hab {
     return kever;
   }
 
-  /**
-   * Parse and dispatch locally generated CESR bytes through the real
-   * `CesrParser` architecture.
-   *
-   * This mirrors the KERIpy shape where locally generated bootstrap replies may
-   * still flow through the same parser-driven reply acceptance machinery as
-   * remotely received wire messages.
-   */
-  private ingestLocalCesr(ims: Uint8Array): void {
-    for (const envelope of envelopesFromFrames(parseBytes(ims), true)) {
-      // Bootstrap configuration contains only locally generated endpoint replies.
-      if (envelope.serder.ilk !== "rpy") throw new ValidationError("Expected a local configuration reply");
-      this.rvy.processReply({ serder: envelope.serder, cigars: envelope.cigars, tsgs: envelope.tsgs });
+  /** Sign one local bootstrap reply and submit it to normal signature and BADA validation. */
+  private acceptReply(route: string, data: Record<string, unknown>, stamp: string): void {
+    const serder = replyEvent(route, data, { pre: this.pre, stamp });
+    const kever = this.kever;
+    if (!kever) throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    if (!kever.transferable) {
+      this.rvy.processReply({ serder, cigars: this.sign(serder.raw, false) });
+      return;
     }
+    const seal = this.establishmentSeal(kever);
+    this.rvy.processReply({
+      serder,
+      tsgs: [new TransIdxSigGroup(seal.i, seal.s, seal.d, this.sign(serder.raw, true))],
+    });
+  }
+
+  /** Share the latest accepted establishment anchor between local admission and wire endorsement. */
+  private establishmentSeal(kever: Kever): SealEvent {
+    const said = kever.lastEst.d || kever.said;
+    if (!said) throw new Error(`Missing establishment event for ${this.pre}.`);
+    const seqner = this.db.getEvtSerder(this.pre, said)?.sner;
+    if (!seqner) throw new Error(`Missing establishment sequence number for ${this.pre}.`);
+    return { i: kever.prefixer, s: seqner, d: new Diger({ qb64: said }) };
   }
 
   /** Return the alias-scoped config section for this habitat when present. */
@@ -527,7 +535,7 @@ export class Hab {
   }
 
   /**
-   * Apply alias-scoped controller endpoint config through the real CESR parser path.
+   * Apply alias-scoped controller endpoint config through signed reply acceptance.
    *
    * KERIpy correspondence:
    * - `Hab` owns per-alias config lookup and reply ingestion
@@ -540,15 +548,14 @@ export class Hab {
     }
 
     const dt = requireConfigDatetime(this.name, conf.dt);
-    const messages: Uint8Array[] = [
-      this.makeEndRole(this.pre, Roles.controller, true, dt),
-    ];
-    for (const url of loadConfigUrls(conf.curls)) {
+    // Validate every configured URL before admitting any bootstrap reply.
+    const locations = loadConfigUrls(conf.curls).map((url) => {
       const parsed = new URL(url);
       const scheme = parsed.protocol.length > 0 ? parsed.protocol.slice(0, -1) : Schemes.http;
-      messages.push(this.makeLocScheme(url, this.pre, scheme, dt));
-    }
-    this.ingestLocalCesr(concatMessages(messages));
+      return { eid: this.pre, scheme, url };
+    });
+    this.acceptReply("/end/role/add", { cid: this.pre, role: Roles.controller, eid: this.pre }, dt);
+    for (const location of locations) this.acceptReply("/loc/scheme", location, dt);
     return true;
   }
 
@@ -853,10 +860,6 @@ export class Hab {
    *   establishment event
    * - non-transferable detached signature cigars with attached verifier
    *   context for local replay/reload flows
-   *
-   * Current `keri-ts` limitation:
-   * - the Gate E bootstrap path only actively uses the transferable branch for
-   *   locally generated replies and queries
    */
   endorse(
     serder: SerderKERI,
@@ -899,18 +902,9 @@ export class Hab {
       });
     }
 
-    const estSaid = kever.lastEst.d || kever.said;
-    if (!estSaid) {
-      throw new Error(`Missing establishment event for ${this.pre}.`);
-    }
-    const estEvent = this.db.getEvtSerder(this.pre, estSaid);
-    const seqner = estEvent?.sner;
-    if (!seqner) {
-      throw new Error(`Missing establishment sequence number for ${this.pre}.`);
-    }
     return messagize(serder, {
       sigers,
-      seal: { i: prefixer, s: seqner, d: new Diger({ qb64: estSaid }) },
+      seal: this.establishmentSeal(kever),
       pipelined,
       gvrsn,
       nested: options.nested,
