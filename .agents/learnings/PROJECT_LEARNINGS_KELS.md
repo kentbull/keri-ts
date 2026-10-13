@@ -7,6 +7,12 @@ and KERIpy interoperability.
 
 ## Current State
 
+`db/payload-store.ts` provides bounded file staging and explicitly owned payload
+references without altering KERIpy tables. Finishing a sink transfers its file to
+the caller; store close only aborts unfinished sinks. Database publication and
+orphan recovery must be integrated separately before these files become durable
+accepted application state. See `packages/keri/src/db/payload-store.md`.
+
 Mailbox `mbx` queries authorize recipient-private bytes: requester identity must
 match the recipient and its signatures must satisfy the current accepted signing
 threshold. Naming a prefix in attachment material and correlating a stream cue
