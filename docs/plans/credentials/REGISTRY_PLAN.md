@@ -51,9 +51,11 @@ meaningful verification and relevant contract update.
 | R4   | Reuse rip/bup constructors; shared typed validation/anchor policy  |
 | R5   | Safe inception acceptance, duplicate protection, anchor escrow     |
 | R6   | Safe update ordering, accepted-slot/head protection, order escrow  |
-| R7   | Retry, duplicates, competing candidates and re-anchoring           |
+| R7a  | Missing-anchor retry and deterministic sibling arbitration         |
+| R7b  | Queued-chain progression, stale cleanup and re-anchoring           |
 | R8   | Named Regery/Registry creation, lookup and reopen                  |
-| R9   | Registrar blind/present/vacate operations and commitments          |
+| R9a  | Staged frontier, blind updates and pipelined commitments           |
+| R9b  | Registrar present/vacate operations and facade                     |
 | R10  | Actual public evidence intake and custom import disposition        |
 | R11  | IPEX accepted-chain assembly and dependency retry/replay           |
 | R12  | Runtime acdc/vdr grouping and scoped service ownership             |
@@ -65,10 +67,18 @@ APIs may then be removed. If storage extraction requires coordinated caller
 changes, include those changes in that cohesive unit and split unrelated work.
 
 R5/R6 must protect duplicates, accepted slots and heads in their first acceptance
-paths; R7 adds candidate arbitration/retry, not delayed safety fixes. Local engine
+paths; R7a/R7b add candidate arbitration/retry, not delayed safety fixes. Local engine
 anchors require the reference's full seal tuple and witnessed KEL policy, distinct
 from observer digest-only vetting. Preserve earliest verified anchors, sibling
 winner ordering and the effective staged frontier used to construct updates.
+
+Resolve R10 correspondence early, in parallel with R1/R2, before any removal.
+R7a/R7b each budget roughly 250–400 changed lines including evidence; measure
+rather than assume. R9a must retain pipelining of an unambiguous staged frontier
+and refusal of competing successors. Count extraction moves as both additions
+and removals when assessing review burden. Registry analysis/storage can proceed
+alongside KRAM; prioritizing the full registry rollout afterward is scheduling,
+not a technical dependency. Presentations require both completed foundations.
 
 ## Custom import disposition
 

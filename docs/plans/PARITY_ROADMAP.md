@@ -36,6 +36,7 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 
 1. Docs (#169), sender admission (#170) and store ownership (#171) are delivered.
    Replace the unmerged #172 integration snapshot with [K1–K10][kram].
+   Independent registry analysis/storage can proceed alongside KRAM.
 2. Prioritize full v2 registry foundations [R1–R12][registry], preserving v1 and
    existing v2 stores. Then finish built-in TEL queries and IPEX presentations.
    Keep unimplemented consumers guarded; `xip/pro/bar` are reference stubs.
