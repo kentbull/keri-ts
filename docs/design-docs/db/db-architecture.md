@@ -185,6 +185,21 @@ Sender seal couples/triples remain authentication inputs and are excluded from
 factor staging, as in frozen `_storeNonAuthData`.
 These finite limits do not bound whole-row LMDB allocation or the shared runtime.
 
+`db/kram-snapshots.ts` serializes bounded whole-tree wire while borrowing incoming
+owners; `storeKramSnapshot` stages raw `kpnd.` bytes in the caller's transaction.
+Missing replacement wire preserves an existing snapshot. Consume-scoped `withKramHydration`
+composes scalar factors with matching-body child/ESSR hydration, preferring fresh
+borrowed owners. It never reconstructs parent signature groups from saved wire.
+Its callback cannot retain reopened owners. Direct `finally` propagates disposal
+failures before returning. Cancellation joins reads/writes before disposal; downstream failure and
+corrupt-row failure release every temporary reopened owner. Ordinary metadata,
+nodes, ESSR bytes/items and the 24 MiB wire copy all retain finite limits.
+Invalid ESSR size/count declarations are `RangeError` contract failures; valid
+extents over configured ceilings are `ResourceLimitError`.
+Private snapshots do not accept parent/child messages or replace public `enst.`
+publication. `removeKramSnapshot` removes only private wire; full pending cleanup
+must compose it with factor and later handoff owners.
+
 ## Key Ordering Conventions
 
 1. Use fixed-width hex ordinals where lexicographic order must match numeric

@@ -43,6 +43,9 @@ presentation cutoffs require receiver-observed KRAM time, still pending.
 Share parsed rip/bup field validation across observer and local processing, but
 retain their anchor rules: observer digest seals do not satisfy the local full
 tuple plus witness-receipt requirement. Field validity is not TEL acceptance.
+Local TEL publication must atomically commit body, anchor, accepted ordinal/head
+and escrow cleanup; bind instance state only after the transaction succeeds.
+Stored body presence alone never counts as acceptance or an accepted predecessor.
 
 IPEX conversations, issuer proofs and wallet acceptance remain separate. Follow
 [exchange learnings](PROJECT_LEARNINGS_EXCHANGE.md) for v2 nested routes and

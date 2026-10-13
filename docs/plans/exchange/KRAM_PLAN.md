@@ -1,7 +1,8 @@
 # Incremental KRAM intake plan
 
 Owner: roadmap **3f**, within [exchange admission](EXCHANGE_ADMISSION_PLAN.md).
-Merged master `b42b2f81` (#171) has sender/routing policy, not KRAM intake.
+K1–K6b are merged through #184: storage, time, policy, snapshots and authentication
+helpers exist; optional runtime intake remains guarded pending K7–K10.
 [#172][snapshot] at `04178add` preserves the implementation and its observations;
 it is being superseded by this review sequence, not merged as one large PR.
 
@@ -76,7 +77,7 @@ busy/size guards do not establish a shared runtime budget. Whole-row allocation
 and unbounded consumed-work scans retain their phase 4/5 owners. `xip/pro/bar`
 remain frozen-reference processing stubs even when intake understands their bodies.
 
-Full v2 registry foundations follow this replacement sequence; dependent IPEX
+V2 registry foundations proceed alongside this sequence; dependent IPEX
 presentations require both those foundations and receiver-observed KRAM cutoffs.
 
 [snapshot]: https://github.com/kentbull/keri-ts/pull/172

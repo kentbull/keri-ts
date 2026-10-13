@@ -58,6 +58,16 @@ Transaction `rdt` records receiver-observed completion time, distinct from messa
 must atomically recheck policy, current keys, caches and durable readiness before
 publishing cache/opener/receipt, partial factors and snapshot together.
 
+Internal `verifyKramSignatures` normalizes sender triples/last groups on cloned
+factor arrays, verifies only current sender factors and returns the borrowed
+normalized envelope. `verified` means at least one valid cigar or indexed
+signature, never threshold satisfaction. Frozen factor ordering and qb64-based
+deduplication retain distinct encodings at one index; intake must use unique
+signer indices for threshold satisfaction. Prior sender groups are removed from
+forwarding and retained only as historically verified diagnostics. Foreign groups
+and children remain independent. These helpers publish no intake state or queries
+and do not change existing parser/v1 normalization.
+
 ## Ownership and HTTP
 
 Dispatch borrows the envelope, including separate parent and child proof owners.

@@ -47,7 +47,7 @@ export function chargeNests(nests: readonly CesrFrame[], budget: NestBudget, dep
         [count, raw.size, wire.size].some((value) => !Number.isSafeInteger(value) || value < 0)
         || wire.size > 4 * Math.ceil(raw.size / 3) + 12 * count
       ) {
-        throw new ResourceLimitError("Invalid nested ESSR extent");
+        throw new RangeError("Invalid nested ESSR extent");
       }
     }
     budget.essrBytes -= frame.essr?.raw.size ?? 0;
