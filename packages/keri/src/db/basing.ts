@@ -491,6 +491,7 @@ export class Baser {
   public maids!: CesrIoSetSuber<Prefixer>; // Multisig embed payload SAIDs to participant AIDs.
   public ctyp!: Komer<CacheTypeRecord>; // KRAM cache-type records.
   public msgc!: Komer<MsgCacheRecord>; // KRAM message-cache records.
+  public xdt!: CesrSuber<Dater>; // Shared KRAM exchange opener time keyed by XID.
   public tmsc!: Komer<TxnMsgCacheRecord>; // KRAM transactioned message-cache records.
   public kpnd!: BytesSuber; // Private KRAM parent snapshots, never accepted wire publication.
   public ulgs!: CesrIoSetSuber<Prefixer>; // Foreign last references unresolved at original receipt.
@@ -1086,6 +1087,7 @@ export class Baser {
         subkey: "msgc.",
         recordClass: MsgCacheRecord,
       });
+      this.xdt = new CesrSuber<Dater>(this.lmdber, { subkey: "xdt.", ctor: Dater });
 
       // KRAM transactioned message-cache records keyed by `(AID, XID, MID)`.
       this.tmsc = new Komer<TxnMsgCacheRecord>(
