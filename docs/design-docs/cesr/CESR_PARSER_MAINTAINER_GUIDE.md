@@ -48,7 +48,7 @@ it is not a qualified primitive.
 - Await the full declared payload before descending into an enclosure. A
   truncated item inside that complete payload is a `GroupSizeError`; bytes from
   the next group cannot repair it.
-- Known roles hydrate narrow primitives such as Siger, Verfer/Cigar, Seqner,
+- Known roles hydrate narrow primitives such as Siger, Verfer/Cigar, NumberPrimitive,
   Diger, and Texter. Preserve canonical wire family names from the pinned codex.
 - Opaque wire families preserve one span. Malformed wrappers are errors, not
   opaque recovery paths. Non-native opaque body handling remains a separate,
@@ -65,8 +65,10 @@ modes.
 Validate real wire bytes in both domains, correct count units, narrow primitive
 roles, and enclosure boundaries. Lifecycle changes also require split-stream
 coverage and a contract update. Generated tables target KERIpy
-`450ae1c2a7eac61d92bc7b830cb6883c41e6a798`; changing that baseline is a coordinated
-interop task.
+`450ae1c2a7eac61d92bc7b830cb6883c41e6a798`; live CLI interop uses
+`98b88cf73a746813a8719f05264400467a474c05`. Ordinals follow its Number reader,
+including compact codes and fixed-width `0A`. Changing either baseline is a
+coordinated interop task.
 
 ## Simplification migration
 

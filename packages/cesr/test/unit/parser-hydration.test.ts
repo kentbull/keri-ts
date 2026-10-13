@@ -5,27 +5,28 @@ import { parseAttachmentGroup } from "../../src/parser/attachments.ts";
 import { Cigar } from "../../src/primitives/cigar.ts";
 import { Dater } from "../../src/primitives/dater.ts";
 import { Diger } from "../../src/primitives/diger.ts";
+import { NumberPrimitive } from "../../src/primitives/number.ts";
 import { Prefixer } from "../../src/primitives/prefixer.ts";
 import { isGroupTuple } from "../../src/primitives/primitive.ts";
-import { Seqner } from "../../src/primitives/seqner.ts";
 import { Siger } from "../../src/primitives/siger.ts";
 import { Verfer } from "../../src/primitives/verfer.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, groupV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 
 Deno.test("attachment roles hydrate narrow primitives in both genera and domains", () => {
-  // KERIpy 450ae1c uses Seqner for these ordinals in both versions.
+  // KERIpy CLI interop 98b88cf accepts compact and fixed-width ordinals in both versions.
   for (const major of [1, 2] as const) {
     const codex = major === 1 ? CtrDexV1 : CtrDexV2;
     for (
       const [code, payload, classes] of [
         [codex.ControllerIdxSigs, sigerToken(), [Siger]],
         [codex.NonTransReceiptCouples, token("B") + token("0B"), [Verfer, Cigar]],
-        [codex.FirstSeenReplayCouples, token("0A") + token("1AAG"), [Seqner, Dater]],
-        [codex.SealSourceCouples, token("0A") + token("E"), [Seqner, Diger]],
+        [codex.FirstSeenReplayCouples, token("0A") + token("1AAG"), [NumberPrimitive, Dater]],
+        [codex.SealSourceCouples, token("0A") + token("E"), [NumberPrimitive, Diger]],
+        [codex.SealSourceCouples, token("M") + token("E"), [NumberPrimitive, Diger]],
         [codex.TransReceiptQuadruples, token("B") + token("0A") + token("E") + sigerToken(), [
           Prefixer,
-          Seqner,
+          NumberPrimitive,
           Diger,
           Siger,
         ]],
@@ -52,7 +53,7 @@ Deno.test("known attachment roles reject wrong primitive codes at the CESR bound
       const [code, payload] of [
         [codex.NonTransReceiptCouples, token("E") + token("0B")],
         [codex.NonTransReceiptCouples, token("B") + token("E")],
-        [codex.SealSourceCouples, token("M") + token("E")],
+        [codex.SealSourceCouples, token("B") + token("E")],
         [codex.SealSourceCouples, token("0A") + token("B")],
       ]
     ) {

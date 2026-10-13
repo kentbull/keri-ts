@@ -41,9 +41,10 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    transport shortages. Fixtures must encode payload lengths, not item counts.
    Direct handler maps select separate v1 item-count and v2 payload-exhaustion handlers;
    single-entry parsing and primitive rehydration remain shared. Known attachment
-   roles hydrate narrow primitives at the CESR boundary. The pinned parser uses
-   fixed-width `Seqner` for receipt/replay/source ordinals in both genera;
-   `NumberPrimitive` remains the extended bound-state ordinal.
+   roles hydrate narrow primitives at the CESR boundary. Ordinals use
+   `NumberPrimitive`, accepting fixed-width `0A` and compact numeric codes in
+   both genera. Table baseline 450ae1c used Seqner; live CLI interop baseline
+   98b88cf uses Number. Do not mistake the old reader for the full wire surface.
    ESSR also has separate v1 item-count and v2 payload-length handlers, both
    returning Texters. KERI envelopes reuse hydrated Serders and primitives, validating
    roles at the public frame boundary. Structing views use existing Matter instances

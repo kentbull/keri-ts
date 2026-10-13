@@ -12,7 +12,6 @@ import { OpaqueSpan } from "../primitives/opaque.ts";
 import { parsePather } from "../primitives/pather.ts";
 import { parsePrefixer } from "../primitives/prefixer.ts";
 import type { GroupEntry, Primitive } from "../primitives/primitive.ts";
-import { parseSeqner } from "../primitives/seqner.ts";
 import { parseSiger } from "../primitives/siger.ts";
 import { parseTexter } from "../primitives/texter.ts";
 import { parseVerfer } from "../primitives/verfer.ts";
@@ -213,7 +212,7 @@ function parseSizedGroup(
 
 /** Parse one transferable signature entry: prefix, sequence, digest, and signature list. */
 function parseTransSig(input: Uint8Array, gvrsn: Versionage, domain: CesrDomain): ParsedGroup {
-  const header = parseTuple(input, [parsePrefixer, parseSeqner, parseDiger], domain);
+  const header = parseTuple(input, [parsePrefixer, parseNumber, parseDiger], domain);
   const sigers = parseControllerSigs(input.slice(header.consumed), gvrsn, domain);
   return {
     items: [...header.items, sigers.items],
@@ -402,10 +401,10 @@ const HANDLERS_V1: Readonly<Record<string, GroupParser>> = {
   [CtrDexV1.ControllerIdxSigs]: tuplesV1(parseSiger),
   [CtrDexV1.WitnessIdxSigs]: tuplesV1(parseSiger),
   [CtrDexV1.NonTransReceiptCouples]: tuplesV1(parseVerfer, parseCigar),
-  [CtrDexV1.FirstSeenReplayCouples]: tuplesV1(parseSeqner, parseDater),
-  [CtrDexV1.SealSourceCouples]: tuplesV1(parseSeqner, parseDiger),
-  [CtrDexV1.TransReceiptQuadruples]: tuplesV1(parsePrefixer, parseSeqner, parseDiger, parseSiger),
-  [CtrDexV1.SealSourceTriples]: tuplesV1(parsePrefixer, parseSeqner, parseDiger),
+  [CtrDexV1.FirstSeenReplayCouples]: tuplesV1(parseNumber, parseDater),
+  [CtrDexV1.SealSourceCouples]: tuplesV1(parseNumber, parseDiger),
+  [CtrDexV1.TransReceiptQuadruples]: tuplesV1(parsePrefixer, parseNumber, parseDiger, parseSiger),
+  [CtrDexV1.SealSourceTriples]: tuplesV1(parsePrefixer, parseNumber, parseDiger),
   [CtrDexV1.TransIdxSigGroups]: parseTransSigsV1,
   [CtrDexV1.TransLastIdxSigGroups]: parseLastSigsV1,
   [CtrDexV1.SadPathSig]: parsePathSigs,
@@ -445,18 +444,18 @@ const HANDLERS_V2: Readonly<Record<string, GroupParser>> = {
   [CtrDexV2.BigWitnessIdxSigs]: tuplesV2(parseSiger),
   [CtrDexV2.NonTransReceiptCouples]: tuplesV2(parseVerfer, parseCigar),
   [CtrDexV2.BigNonTransReceiptCouples]: tuplesV2(parseVerfer, parseCigar),
-  [CtrDexV2.FirstSeenReplayCouples]: tuplesV2(parseSeqner, parseDater),
-  [CtrDexV2.BigFirstSeenReplayCouples]: tuplesV2(parseSeqner, parseDater),
-  [CtrDexV2.SealSourceCouples]: tuplesV2(parseSeqner, parseDiger),
-  [CtrDexV2.BigSealSourceCouples]: tuplesV2(parseSeqner, parseDiger),
+  [CtrDexV2.FirstSeenReplayCouples]: tuplesV2(parseNumber, parseDater),
+  [CtrDexV2.BigFirstSeenReplayCouples]: tuplesV2(parseNumber, parseDater),
+  [CtrDexV2.SealSourceCouples]: tuplesV2(parseNumber, parseDiger),
+  [CtrDexV2.BigSealSourceCouples]: tuplesV2(parseNumber, parseDiger),
   [CtrDexV2.BackerRegistrarSealCouples]: tuplesV2(parsePrefixer, parseDiger),
   [CtrDexV2.BigBackerRegistrarSealCouples]: tuplesV2(parsePrefixer, parseDiger),
   [CtrDexV2.TypedDigestSealCouples]: tuplesV2(parseVerser, parseDiger),
   [CtrDexV2.BigTypedDigestSealCouples]: tuplesV2(parseVerser, parseDiger),
-  [CtrDexV2.TransReceiptQuadruples]: tuplesV2(parsePrefixer, parseSeqner, parseDiger, parseSiger),
-  [CtrDexV2.BigTransReceiptQuadruples]: tuplesV2(parsePrefixer, parseSeqner, parseDiger, parseSiger),
-  [CtrDexV2.SealSourceTriples]: tuplesV2(parsePrefixer, parseSeqner, parseDiger),
-  [CtrDexV2.BigSealSourceTriples]: tuplesV2(parsePrefixer, parseSeqner, parseDiger),
+  [CtrDexV2.TransReceiptQuadruples]: tuplesV2(parsePrefixer, parseNumber, parseDiger, parseSiger),
+  [CtrDexV2.BigTransReceiptQuadruples]: tuplesV2(parsePrefixer, parseNumber, parseDiger, parseSiger),
+  [CtrDexV2.SealSourceTriples]: tuplesV2(parsePrefixer, parseNumber, parseDiger),
+  [CtrDexV2.BigSealSourceTriples]: tuplesV2(parsePrefixer, parseNumber, parseDiger),
   [CtrDexV2.SealSourceLastSingles]: tuplesV2(parsePrefixer),
   [CtrDexV2.BigSealSourceLastSingles]: tuplesV2(parsePrefixer),
   [CtrDexV2.DigestSealSingles]: tuplesV2(parseDiger),
