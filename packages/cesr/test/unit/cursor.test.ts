@@ -158,7 +158,7 @@ Deno.test("cursor: abort interrupts blocked next and closes an uncooperative sou
     release = resolve;
   });
   let returns = 0;
-  const generator = (async function* () {
+  const generator = (async function*() {
     nextStarted();
     await gate;
     yield new Uint8Array([1]);
