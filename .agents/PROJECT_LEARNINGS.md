@@ -8,6 +8,9 @@ stay short enough to reread at session start.
 Replay sources and live HTTP replies now have explicit runtime ownership:
 reopen captured first-seen ranges, materialize only one bounded event, and
 release output iterators before database shutdown. See the KEL topic for limits.
+ESSR recipient decisions separate local admission from verification; only success
+transfers plaintext, while infrastructure failures and cancellation remain abrupt.
+See the crypto topic for the raw authentication and owner-cleanup boundary.
 
 ## Current Focus
 

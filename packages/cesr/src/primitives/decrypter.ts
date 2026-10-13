@@ -176,8 +176,8 @@ export class Decrypter extends Matter {
     }
   }
 
-  /** Authenticate and open raw sealed-box bytes, as carried inside an ESSR Texter. */
-  open(ciphertext: Uint8Array): Uint8Array {
+  /** Open raw sealed-box bytes; null means authentication failed, never a storage or key-loading failure. */
+  open(ciphertext: Uint8Array): Uint8Array | null {
     return openSealedBox(ciphertext, boxPublicKeyFromPrivateKey(this.raw), this.raw);
   }
 
@@ -218,6 +218,7 @@ export class Decrypter extends Matter {
     }
 
     const plain = this.open(hydrated.raw);
+    if (plain === null) throw new DeserializeError("Sealed-box authentication failed");
 
     if (bare) {
       return plain;

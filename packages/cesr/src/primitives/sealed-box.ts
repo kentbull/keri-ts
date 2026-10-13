@@ -54,13 +54,18 @@ export function sealBox(
   return new Uint8Array(sodium.crypto_box_seal(plaintext, publicKey));
 }
 
-/** Open one libsodium X25519 sealed-box ciphertext back to raw plaintext bytes. */
+/** Return null only for sealed-box authentication failure; backend/contract failures propagate. */
 export function openSealedBox(
   cipher: Uint8Array,
   publicKey: Uint8Array,
   privateKey: Uint8Array,
-): Uint8Array {
-  return new Uint8Array(
-    sodium.crypto_box_seal_open(cipher, publicKey, privateKey),
-  );
+): Uint8Array | null {
+  try {
+    return new Uint8Array(sodium.crypto_box_seal_open(cipher, publicKey, privateKey));
+  } catch (error) {
+    // libsodium-wrappers-sumo 0.8.4 maps only the native authentication failure
+    // to this Error. Keep argument, allocation, and unexpected backend errors abrupt.
+    if (error instanceof Error && error.message === "incorrect key pair for the given ciphertext") return null;
+    throw error;
+  }
 }

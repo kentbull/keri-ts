@@ -436,9 +436,20 @@ Deno.test("accepted ESSR decrypts, persists, and reopens as a progressive inner 
     );
     await incoming.discard();
     const retained = await hby.db.getEssr(outer.said!);
-    const decoded = await run(() =>
+    const decision = await run(() =>
       new EssrRecipient(recipient, archive.files, 4096).decrypt(outer.said!, retained!.raw)
     );
+    switch (decision.kind) {
+      case "accept":
+        break;
+      case "refuse":
+        throw new Error(`Unexpected ESSR admission refusal: ${decision.reason}`);
+      case "reject":
+        throw new Error(`Unexpected ESSR verification failure: ${decision.reason}`);
+      default:
+        decision satisfies never;
+    }
+    const decoded = decision.message;
     await hby.db.savePlaintext(outer.said!, decoded.plaintext, decoded.plaintext.size - decoded.body.size);
     await decoded.plaintext.discard(); // Archive adoption protects both stored ciphertext and plaintext.
     await run(function*() {

@@ -189,6 +189,15 @@ keeps its admitted ciphertext in bounded memory until decryption; it does not
 automatically spill ciphertext to disk. Intentional evidence/relay retention is
 the separate ciphertext-preserving flow described below.
 
+Recipient `EssrDecision` separates admission `refuse` (`busy`, configured
+`limit`, durable-exchange `unaccepted`) from verification `reject` (`envelope`,
+`digest`, `decrypt`, `framing`). Only `accept` transfers an authenticated message
+and its plaintext owner. Undersized sealed ciphertext is malformed input;
+invalid size metadata is a payload contract exception. Admission occurs before
+ciphertext reads/allocation. Cancellation and unexpected I/O/storage/invariant
+failures remain abrupt and join owner cleanup; no unsuccessful path publishes
+plaintext. Per-recipient finite guards are not shared runtime admission.
+
 KERIpy-compatible `.essrs` values remain qualified Texters where exchange
 evidence, escrow, replay, or relay requires them. Do not replace those values with
 proprietary file pointers or silently overwrite them with plaintext. Retain
@@ -311,18 +320,25 @@ already exceed the budget; slicing it into views does not remove its allocation.
 
 These are acceptance obligations; their tests land with the corresponding phase.
 
-| Behavior             | Required proof                                                                                                           |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Early child delivery | Hold the source before sibling B; receive wrapped child A first, including nested GenericGroups, both domains and genera |
-| Frame boundaries     | Unwrapped attachments wait for lookahead/EOF; single-frame wrappers reject extra children before yielding                |
-| Partial failure      | Valid A survives malformed/truncated B without duplication or deletion of A's payload                                    |
-| Enclosure isolation  | Impossible child extent fails while input is blocked; queued sibling bytes cannot complete it                            |
-| Versions/counts      | Preserve scoped selectors, legacy inference, both count models, big counters, and every-byte split regressions           |
-| Backpressure         | Paused consumer/throttled sink bounds producer reads and pending work                                                    |
-| Cancellation         | Interrupt blocked input and sink writes; close once and remove only unfinished stages                                    |
-| Payload integrity    | Fragmented digest equals KERIpy concatenation; wrong digest or failed decryption publishes no accepted plaintext         |
-| Durable behavior     | Reopen/retry/replay, original `.essrs` interoperability, crash recovery, and orphan cleanup                              |
-| Memory               | Fixed item size with rising aggregate size keeps queues and retained metadata within declared budgets                    |
+- **Early child delivery:** Hold the source before sibling B; receive wrapped child A first,
+  including nested GenericGroups, both domains and genera.
+- **Frame boundaries:** Unwrapped attachments wait for lookahead/EOF; single-frame wrappers reject
+  extra children before yielding.
+- **Partial failure:** Valid A survives malformed/truncated B without duplication or deletion of A's
+  payload.
+- **Enclosure isolation:** Impossible child extent fails while input is blocked; queued sibling
+  bytes cannot complete it.
+- **Versions/counts:** Preserve scoped selectors, legacy inference, both count models, big counters,
+  and every-byte split regressions.
+- **Backpressure:** Paused consumer/throttled sink bounds producer reads and pending work.
+- **Cancellation:** Interrupt blocked input and sink writes; close once and remove only unfinished
+  stages.
+- **Payload integrity:** Fragmented digest equals KERIpy concatenation; wrong digest or failed
+  decryption publishes no accepted plaintext.
+- **Durable behavior:** Reopen/retry/replay, original `.essrs` interoperability, crash recovery, and
+  orphan cleanup.
+- **Memory:** Fixed item size with rising aggregate size keeps queues and retained metadata within
+  declared budgets.
 
 Reference pins for tables, CLI interoperability, and source comparisons remain
 explicit and independent. This migration does not silently upgrade generated

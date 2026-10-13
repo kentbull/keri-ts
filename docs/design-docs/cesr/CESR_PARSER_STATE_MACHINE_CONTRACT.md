@@ -74,16 +74,19 @@ compatibility is not a protocol requirement.
 
 Paths below are relative to `packages/cesr/test/unit/parser`.
 
-| Invariant                                                                 | Tests                                                                                                |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Early children, nested suspension, partial failure, cancellation          | `progressive.test.ts`, `cursor.test.ts`                                                              |
-| Bytewise partitions, empty reads, open attachment sets, closed boundaries | `chunk-completion.test.ts`, `count-units.test.ts`                                                    |
-| EOF emission and terminal rejection                                       | `eof.test.ts`, `complete.test.ts`                                                                    |
-| Genus selection, scope restoration, implicit v1                           | `genus-context.test.ts`, `version-context.test.ts`, `wrapper-version.test.ts`, `implicit-v1.test.ts` |
-| Mixed domains and enclosure order                                         | `mixed-stream.test.ts`, `generic-group.test.ts`, `enclosure-parity.test.ts`                          |
-| Native/opaque hydration and malformed input                               | `external-fixtures.test.ts`, `enclosure-errors.test.ts`, `frames.test.ts`                            |
-| Independent KERIpy facts                                                  | `external-corpus.test.ts`, `attachment-parity.test.ts`                                               |
-| Payload bounds, sink backpressure, and ownership                          | `essr.test.ts`, `effection-frames.test.ts`                                                           |
+- **Early children, nested suspension, partial failure, cancellation:** `progressive.test.ts`,
+  `cursor.test.ts`.
+- **Bytewise partitions, empty reads, open attachment sets, closed boundaries:**
+  `chunk-completion.test.ts`, `count-units.test.ts`.
+- **EOF emission and terminal rejection:** `eof.test.ts`, `complete.test.ts`.
+- **Genus selection, scope restoration, implicit v1:** `genus-context.test.ts`,
+  `version-context.test.ts`, `wrapper-version.test.ts`, `implicit-v1.test.ts`.
+- **Mixed domains and enclosure order:** `mixed-stream.test.ts`, `generic-group.test.ts`,
+  `enclosure-parity.test.ts`.
+- **Native/opaque hydration and malformed input:** `external-fixtures.test.ts`,
+  `enclosure-errors.test.ts`, `frames.test.ts`.
+- **Independent KERIpy facts:** `external-corpus.test.ts`, `attachment-parity.test.ts`.
+- **Payload bounds, sink backpressure, and ownership:** `essr.test.ts`, `effection-frames.test.ts`.
 
 KERI source and complete-record dispatch are covered by
 `packages/keri/test/unit/app/reactor.test.ts`. Contract changes require matching

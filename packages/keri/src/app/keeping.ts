@@ -1369,8 +1369,8 @@ export class Manager {
     return plain;
   }
 
-  /** Open raw ESSR ciphertext with one explicitly selected local verification key. */
-  open(ciphertext: Uint8Array, verfer: Verfer): Uint8Array {
+  /** Open raw ESSR ciphertext; null is authentication failure, while keeper/key failures propagate. */
+  open(ciphertext: Uint8Array, verfer: Verfer): Uint8Array | null {
     const signer = this.getSignerByPub(verfer.qb64);
     if (signer.code !== MtrDex.Ed25519_Seed) {
       throw new Error(`Unsupported ESSR decrypt signer code=${signer.code}.`);

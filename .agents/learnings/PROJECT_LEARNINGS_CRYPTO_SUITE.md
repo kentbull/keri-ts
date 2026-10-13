@@ -7,10 +7,18 @@ signing/verification behavior in `keri-ts`.
 
 ## Current State
 
-`Decrypter.open` authenticates raw sealed-box ciphertext; qualified `decrypt`
-continues to hydrate Cipher inputs. ESSR Texter content is raw ciphertext, not
+`Decrypter.open` and `Manager.open` return null only for raw sealed-box
+authentication failure. The pinned sodium adapter classifies the wrapper's
+native authentication failure narrowly; unexpected backend failures propagate.
+Qualified
+`decrypt` still throws on failed Cipher authentication, so corrupt keeper
+material cannot become an ordinary recipient verification result. ESSR Texter content is raw ciphertext, not
 Cipher qb64. `app/essr.ts` owns recipient admission, SCS framing, and plaintext
 staging after accepted exchange evidence; parser code never decrypts payloads.
+`EssrDecision` transfers plaintext only on `accept`, separates policy `refuse`
+from verification `reject`, and keeps cancellation/storage/invariant failures
+abrupt. Cleanup after finish must dispose any file not transferred to a caller.
+Per-recipient finite guards do not establish shared runtime admission.
 
 1. Primitive semantic parity is tracked against current KERIpy `main`, not older
    bootstrap-era assumptions.
@@ -94,7 +102,8 @@ staging after accepted exchange evidence; parser code never decrypts payloads.
 5. Avoid widening crypto ownership boundaries casually; suite-specific or
    AEID-specific broadening should happen deliberately, not by leakage.
 
-6. Any sodium upgrade must requalify ABI arguments, independent all-tier bytes,
+6. Any sodium upgrade must requalify the raw authentication-failure mapping,
+   ABI arguments, independent all-tier bytes,
    owned allocation failure cleanup, and generated package bindings. Run high-tier
    vectors in a separate explicitly opted-in process because WASM retains its
    high-water memory. Faster derivation does not change application authority,

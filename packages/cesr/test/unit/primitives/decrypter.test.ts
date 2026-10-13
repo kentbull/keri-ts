@@ -1,11 +1,12 @@
 import { assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
-import { UnknownCodeError } from "../../../src/core/errors.ts";
+import { DeserializeError, UnknownCodeError } from "../../../src/core/errors.ts";
 import { Cipher } from "../../../src/primitives/cipher.ts";
 import { MtrDex } from "../../../src/primitives/codex.ts";
 import { Decrypter } from "../../../src/primitives/decrypter.ts";
 import { Encrypter } from "../../../src/primitives/encrypter.ts";
 import { Salter } from "../../../src/primitives/salter.ts";
 import { Signer } from "../../../src/primitives/signer.ts";
+import sodium from "../../../src/primitives/sodium.ts";
 import { Streamer } from "../../../src/primitives/streamer.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
@@ -129,11 +130,34 @@ Deno.test("decrypter: opens raw ESSR ciphertext from pinned KERIpy without quali
       "5BAjAFC7tF1_Xc_TWv-SyxG8b9OurvwJ6DNgQemt4la5B09KN_b52q5lL22bo3hDKTaLdlRHsUGdCMLeEeBH2Lr6d7RTuo0ygSUEGLVCK9v0XViRYQ7x76ywzMqyOddbANVuhtejXjmcGVFU",
   });
   const decrypter = new Decrypter({ seed: "AAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f" });
+  const plaintext = decrypter.open(texter.raw);
+  assertInstanceOf(plaintext, Uint8Array);
   assertEquals(
-    new TextDecoder().decode(decrypter.open(texter.raw)),
+    new TextDecoder().decode(plaintext),
     "XSCSBAOhB7_zzhC-HXDdGOdLwJln5NYwm6UNXx3chmQSVTG44AAA-AAA",
   );
   const corrupted = texter.raw.slice();
   corrupted[corrupted.length - 1] ^= 1;
-  assertThrows(() => decrypter.open(corrupted));
+  assertEquals(decrypter.open(corrupted), null);
+  assertThrows(
+    () => decrypter.decrypt({ cipher: new Cipher({ raw: corrupted, code: MtrDex.X25519_Cipher_L0 }), bare: true }),
+    DeserializeError,
+    "Sealed-box authentication failed",
+  );
+  // Invalid raw API inputs remain contract errors, not ordinary authentication outcomes.
+  assertThrows(() => decrypter.open(new Uint8Array(47)));
+});
+
+Deno.test("decrypter: unexpected backend failures propagate without authentication classification", () => {
+  const decrypter = new Decrypter({ seed: "AAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f" });
+  const failure = new Error("fixture backend failure");
+  const open = sodium.crypto_box_seal_open;
+  sodium.crypto_box_seal_open = () => {
+    throw failure;
+  };
+  try {
+    assertEquals(assertThrows(() => decrypter.open(new Uint8Array(48))), failure);
+  } finally {
+    sodium.crypto_box_seal_open = open;
+  }
 });
