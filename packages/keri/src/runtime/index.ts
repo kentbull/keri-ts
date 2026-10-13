@@ -16,6 +16,7 @@ export * from "../app/credential-workflows.ts";
 export * from "../app/cue-runtime.ts";
 export * from "../app/delegating.ts";
 export * from "../app/endpoint-roleing.ts";
+export * from "../app/essr.ts";
 export * from "../app/exchanging.ts";
 export * from "../app/forwarding.ts";
 export * from "../app/grouping.ts";

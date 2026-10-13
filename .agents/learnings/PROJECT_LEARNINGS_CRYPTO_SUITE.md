@@ -7,6 +7,11 @@ signing/verification behavior in `keri-ts`.
 
 ## Current State
 
+`Decrypter.open` authenticates raw sealed-box ciphertext; qualified `decrypt`
+continues to hydrate Cipher inputs. ESSR Texter content is raw ciphertext, not
+Cipher qb64. `app/essr.ts` owns recipient admission, SCS framing, and plaintext
+staging after accepted exchange evidence; parser code never decrypts payloads.
+
 1. Primitive semantic parity is tracked against current KERIpy `main`, not older
    bootstrap-era assumptions.
 2. Shared primitive codex subsets exist to avoid lossy aliasing when one CESR

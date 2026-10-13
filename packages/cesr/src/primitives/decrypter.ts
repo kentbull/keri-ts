@@ -176,6 +176,11 @@ export class Decrypter extends Matter {
     }
   }
 
+  /** Authenticate and open raw sealed-box bytes, as carried inside an ESSR Texter. */
+  open(ciphertext: Uint8Array): Uint8Array {
+    return openSealedBox(ciphertext, boxPublicKeyFromPrivateKey(this.raw), this.raw);
+  }
+
   /**
    * Decrypt one cipher and rehydrate the plaintext with the requested
    * constructor.
@@ -212,11 +217,7 @@ export class Decrypter extends Matter {
       throw new DeserializeError("Need one of cipher, qb64, or qb2.");
     }
 
-    const plain = openSealedBox(
-      hydrated.raw,
-      boxPublicKeyFromPrivateKey(this.raw),
-      this.raw,
-    );
+    const plain = this.open(hydrated.raw);
 
     if (bare) {
       return plain;

@@ -10,6 +10,7 @@ export * from "./challenging.ts";
 export * from "./configing.ts";
 export * from "./cue-runtime.ts";
 export * from "./endpoint-roleing.ts";
+export * from "./essr.ts";
 export * from "./exchanging.ts";
 export * from "./habbing.ts";
 export * from "./ipex-credentialing.ts";

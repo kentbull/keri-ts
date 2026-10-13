@@ -1369,6 +1369,15 @@ export class Manager {
     return plain;
   }
 
+  /** Open raw ESSR ciphertext with one explicitly selected local verification key. */
+  open(ciphertext: Uint8Array, verfer: Verfer): Uint8Array {
+    const signer = this.getSignerByPub(verfer.qb64);
+    if (signer.code !== MtrDex.Ed25519_Seed) {
+      throw new Error(`Unsupported ESSR decrypt signer code=${signer.code}.`);
+    }
+    return new Decrypter({ seed: signer.qb64b }).open(ciphertext);
+  }
+
   /**
    * Register externally generated key sequences into keeper state.
    *
