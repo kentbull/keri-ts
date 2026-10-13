@@ -2,6 +2,7 @@ import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError } from "../../src/core/errors.ts";
 import { createParser, parseBytes } from "../../src/parser/stream.ts";
+import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY as body } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
@@ -129,6 +130,26 @@ Deno.test("complete v1 attachment enclosures reject truncated items without wait
       assertEquals(events.map((event) => event.type), ["error"]);
       if (events[0].type === "error") assertInstanceOf(events[0].error, GroupSizeError);
       assertEquals(parser.flush(), []);
+    }
+  }
+});
+
+Deno.test("complete non-native body enclosures reject truncated matter without waiting for peers", () => {
+  // The Texter header requires another quadlet outside the declared enclosure.
+  for (
+    const wire of [
+      counterV1(CtrDexV1.NonNativeBodyGroup, 1) + "4BAB",
+      groupV2(CtrDexV2.NonNativeBodyGroup, "4BAB"),
+    ]
+  ) {
+    for (const bytes of [encode, decodeB64]) {
+      for (const peer of ["", body]) {
+        const parser = createParser();
+        const events = parser.feed(bytes(wire + peer));
+        assertEquals(events.map((event) => event.type), ["error"]);
+        if (events[0].type === "error") assertInstanceOf(events[0].error, GroupSizeError);
+        assertEquals(parser.flush(), []);
+      }
     }
   }
 });

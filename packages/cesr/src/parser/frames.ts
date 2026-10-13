@@ -204,9 +204,17 @@ function parseWrappedBody(
   gvrsn: Versionage,
   streamGvrsn: Versionage | null,
 ): FrameStart {
-  const matter = parseMatter(input.slice(offset + headerSize), cold);
-  const bodySize = tokenSize(matter, cold);
   const payloadSize = count * unit;
+  const end = offset + headerSize + payloadSize;
+  if (input.length < end) throw new ShortageError(end, input.length);
+  let matter: ReturnType<typeof parseMatter>;
+  try {
+    matter = parseMatter(input.slice(offset + headerSize, end), cold);
+  } catch (error) {
+    if (error instanceof ShortageError) throw new GroupSizeError("Incomplete primitive inside NonNativeBodyGroup");
+    throw error;
+  }
+  const bodySize = tokenSize(matter, cold);
   if (payloadSize !== bodySize) {
     throw new ColdStartError(
       `NonNativeBodyGroup payload size mismatch: expected=${payloadSize} actual=${bodySize}`,
