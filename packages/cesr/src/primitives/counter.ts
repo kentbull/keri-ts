@@ -1,4 +1,14 @@
-import { b, b64ToInt, codeB2ToB64, codeB64ToB2, concatBytes, intToB64, nabSextets, sceil } from "../core/bytes.ts";
+import {
+  b,
+  b64ToInt,
+  byteString,
+  codeB2ToB64,
+  codeB64ToB2,
+  concatBytes,
+  intToB64,
+  nabSextets,
+  sceil,
+} from "../core/bytes.ts";
 import { DeserializeError, ShortageError, UnknownCodeError, VersionError } from "../core/errors.ts";
 import type { CesrDomain } from "../core/types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
@@ -66,46 +76,46 @@ function parseCounterFromTextData(
   input: Uint8Array,
   version: Versionage,
 ): CounterData {
-  const txt = String.fromCharCode(...input);
-  if (txt.length === 0) {
+  const prefix = byteString(input.subarray(0, 2));
+  if (input.length === 0) {
     throw new ShortageError(1, 0);
   }
-  if (txt[0] !== "-") {
+  if (prefix[0] !== "-") {
     throw new DeserializeError("Invalid counter text input");
   }
-  if (txt.length < 2) {
-    throw new ShortageError(2, txt.length);
+  if (input.length < 2) {
+    throw new ShortageError(2, input.length);
   }
 
   const { sizeTable, nameTable } = getTables(version);
 
-  const hard2 = txt.slice(0, 2);
+  const hard2 = prefix;
   const hs = COUNTER_HARDS.get(hard2);
-  if (!hs && txt.length < 4) {
-    throw new ShortageError(4, txt.length);
+  if (!hs && input.length < 4) {
+    throw new ShortageError(4, input.length);
   }
   if (!hs) {
     throw new UnknownCodeError(
       `Unsupported counter hard code at stream: ${hard2}`,
     );
   }
-  if (txt.length < hs) {
-    throw new ShortageError(hs, txt.length);
+  if (input.length < hs) {
+    throw new ShortageError(hs, input.length);
   }
 
-  const code = txt.slice(0, hs);
+  const code = byteString(input.subarray(0, hs));
   const sizage = sizeTable.get(code);
   if (!sizage) {
     throw new UnknownCodeError(`Unsupported counter code at stream: ${code}`);
   }
 
-  if (txt.length < sizage.fs) {
-    throw new ShortageError(sizage.fs, txt.length);
+  if (input.length < sizage.fs) {
+    throw new ShortageError(sizage.fs, input.length);
   }
 
-  const count = b64ToInt(txt.slice(sizage.hs, sizage.hs + sizage.ss));
+  const qb64 = byteString(input.subarray(0, sizage.fs));
+  const count = b64ToInt(qb64.slice(sizage.hs, sizage.hs + sizage.ss));
   const name = nameTable[code] ?? "UnknownCounter";
-  const qb64 = txt.slice(0, sizage.fs);
 
   return {
     code,

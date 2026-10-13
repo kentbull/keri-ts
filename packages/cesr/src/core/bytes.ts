@@ -51,10 +51,25 @@ export function b64ToInt(text: string): number {
   return out;
 }
 
+/** Map each byte to its code unit without UTF-8 replacement or argument-count limits. */
+export function byteString(data: Uint8Array): string {
+  if (data.length <= 0x8000) return String.fromCharCode(...data);
+  const chunks: string[] = [];
+  for (let offset = 0; offset < data.length; offset += 0x8000) {
+    chunks.push(String.fromCharCode(...data.subarray(offset, offset + 0x8000)));
+  }
+  return chunks.join("");
+}
+
 /** Encode raw bytes to unpadded URL-safe base64 text. */
 export function encodeB64(data: Uint8Array): string {
-  const str = btoa(String.fromCharCode(...data));
-  return str.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  // Three-byte alignment prevents padding between independently encoded chunks.
+  const size = 3 * 8192;
+  const chunks: string[] = [];
+  for (let offset = 0; offset < data.length; offset += size) {
+    chunks.push(btoa(byteString(data.subarray(offset, offset + size))));
+  }
+  return chunks.join("").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 /** Decode unpadded URL-safe base64 text into raw bytes. */

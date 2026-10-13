@@ -73,7 +73,11 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    Generated KERIpy-parity codex objects such as `MtrDex`, `PreDex`, `DigDex`,
    `IdrDex`, `IdxSigDex`, and `TraitDex` are the primary authority. Helper sets
    in `primitives/codex.ts` are derived readability views.
-10. `Matter` and `Indexer` are low-level CESR bases. When semantics are known,
+10. Primitive text readers inspect bounded hard/soft headers before decoding only
+    the declared token; never convert the remaining stream to a string. Byte-to-text
+    and base64 conversion must cap argument spreads, preserve byte values, and
+    report incomplete headers as shortages.
+    `Matter` and `Indexer` are low-level CESR bases. When semantics are known,
     construct the narrow primitive directly instead of returning the superclass.
 11. The same codex-layer rule applies to non-cryptographic and singleton-ish
     primitives such as `Dater`, `Seqner`, `Ilker`, `Verser`, `Noncer`, and

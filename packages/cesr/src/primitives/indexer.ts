@@ -1,6 +1,7 @@
 import {
   b,
   b64ToInt,
+  byteString,
   codeB2ToB64,
   codeB64ToB2,
   concatBytes,
@@ -60,6 +61,9 @@ function parseIndexerCodeFromText(txt: string): { code: string } {
   if (!hs) {
     throw new UnknownCodeError(`Unknown indexer hard selector ${txt[0]}`);
   }
+  if (txt.length < hs) {
+    throw new ShortageError(hs, txt.length);
+  }
 
   const code = txt.slice(0, hs);
   if (!INDEXER_SIZES.has(code)) {
@@ -91,22 +95,25 @@ function parseIndexFields(
 
 /** Inhale one text-domain indexer token into normalized indexer data fields. */
 function parseIndexerFromTextData(input: Uint8Array): IndexerData {
-  const txt = String.fromCharCode(...input);
-  if (txt.length === 0) {
+  const header = byteString(input.subarray(0, 4));
+  if (input.length === 0) {
     throw new ShortageError(1, 0);
   }
 
-  const { code } = parseIndexerCodeFromText(txt);
+  const { code } = parseIndexerCodeFromText(header);
   const sizage = INDEXER_SIZES.get(code)!;
   const cs = sizage.hs + sizage.ss;
-  const soft = txt.slice(sizage.hs, cs);
+  if (input.length < cs) {
+    throw new ShortageError(cs, input.length);
+  }
+  const soft = byteString(input.subarray(sizage.hs, cs));
   const fullSize = sizage.fs ?? (cs + b64ToInt(soft) * 4);
 
-  if (txt.length < fullSize) {
-    throw new ShortageError(fullSize, txt.length);
+  if (input.length < fullSize) {
+    throw new ShortageError(fullSize, input.length);
   }
 
-  const qb64 = txt.slice(0, fullSize);
+  const qb64 = byteString(input.subarray(0, fullSize));
   const ps = cs % 4;
   const raw = decodeB64("A".repeat(ps) + qb64.slice(cs)).slice(ps + sizage.ls);
   const { index, ondex } = parseIndexFields(code, qb64);

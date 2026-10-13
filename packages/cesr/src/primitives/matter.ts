@@ -2,6 +2,7 @@ import {
   b,
   b64ToInt,
   bytesEqual,
+  byteString,
   codeB2ToB64,
   codeB64ToB2,
   concatBytes,
@@ -142,6 +143,9 @@ function parseMatterCodeFromText(txt: string): { code: string; hs: number } {
   if (!hs) {
     throw new UnknownCodeError(`Unknown matter hard selector ${txt[0]}`);
   }
+  if (txt.length < hs) {
+    throw new ShortageError(hs, txt.length);
+  }
 
   let code = txt.slice(0, hs);
   let sizage = MATTER_SIZES.get(code);
@@ -160,29 +164,33 @@ function parseMatterCodeFromText(txt: string): { code: string; hs: number } {
 
 /** Inhale one text-domain CESR primitive into normalized matter data fields. */
 function parseMatterFromTextData(input: Uint8Array): MatterData {
-  const txt = String.fromCharCode(...input);
-  if (txt.length === 0) {
+  const header = byteString(input.subarray(0, 4));
+  if (input.length === 0) {
     throw new ShortageError(1, 0);
   }
 
-  const { code } = parseMatterCodeFromText(txt);
+  const { code } = parseMatterCodeFromText(header);
   const sizage = MATTER_SIZES.get(code)!;
   const cs = sizage.hs + sizage.ss;
-  const soft = sizage.ss > 0 ? txt.slice(sizage.hs, cs).slice(sizage.xs) : "";
+  if (input.length < cs) {
+    throw new ShortageError(cs, input.length);
+  }
+  const soft = byteString(input.subarray(sizage.hs + sizage.xs, cs));
   const fullSize = sizage.fs ?? (cs + b64ToInt(soft) * 4);
-  if (txt.length < fullSize) {
-    throw new ShortageError(fullSize, txt.length);
+  if (input.length < fullSize) {
+    throw new ShortageError(fullSize, input.length);
   }
 
+  const qb64 = byteString(input.subarray(0, fullSize));
   const ps = cs % 4;
-  const body = txt.slice(cs, fullSize);
+  const body = qb64.slice(cs);
   const paw = decodeB64("A".repeat(ps) + body);
   const raw = paw.slice(ps + sizage.ls);
 
   return {
     code,
     raw,
-    qb64: txt.slice(0, fullSize),
+    qb64,
     fullSize,
     fullSizeB2: sceil((fullSize * 3) / 4),
   };
