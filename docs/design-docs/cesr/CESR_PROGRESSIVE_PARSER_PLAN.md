@@ -47,9 +47,8 @@ pending reads and leaves shared runtime reservations to the approved follow-on.
 Finite annotation and streaming CLI consumers merged in
 [#141](https://github.com/kentbull/keri-ts/pull/141).
 Lazy replay sources and runtime-owned replies are merged in
-[#142](https://github.com/kentbull/keri-ts/pull/142). The next transport slice
-migrates exchange/witness delivery and owns fetched response bodies through
-finite Effection scopes. Query-response handoff and incremental mailbox SSE
+[#142](https://github.com/kentbull/keri-ts/pull/142). Exchange/witness delivery and finite
+HTTP response scopes merged in [#143](https://github.com/kentbull/keri-ts/pull/143). Query-response handoff and incremental mailbox SSE
 remain the next consumer slice.
 
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
@@ -63,6 +62,11 @@ KERI/Tufa filesystem code uses native Deno APIs and the existing `@std/path`
 conventions. Keep Node-specific adaptation at npm packaging boundaries. Temporary
 file names may use Web Crypto UUIDs; publication uses the owning protocol SAID or
 a qualified content digest with representation scope where needed.
+
+Phase 12 separates the CESR test/body-hydration migration from the final KERI
+consumer/API removal. This keeps protocol assertion changes reviewable independently
+of Effection call-site changes. CESR tests use the progressive engine directly;
+the remaining atomic engine serves only the not-yet-migrated KERI callers.
 
 The temporary atomic engine exists only for staged migration. Phase 12 removes
 it and obsolete keri-ts API compatibility surfaces. Move semantic regression

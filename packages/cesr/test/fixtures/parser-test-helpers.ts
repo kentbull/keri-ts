@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
-import type { ParseEvent } from "../../src/core/types.ts";
-import { createParser, type ParserOptions } from "../../src/parser/stream.ts";
+import type { CesrFrame } from "../../src/core/types.ts";
+import { parse, type ParseOptions } from "../../src/parser/progressive.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "./counter-token-fixtures.ts";
@@ -39,78 +39,52 @@ export interface ParsedSummaryPair {
   qb2: FrameSummary[];
 }
 
-/**
- * Parse stream bytes through optional chunk boundaries and return all events.
- *
- * Use this helper for finite parser fixtures that validate:
- * - normal feed/flush lifecycle
- * - chunk split determinism
- * - single-frame emission through parser options.
- */
-export function parseEvents(
+/** Collect small hardening fixtures through real async input boundaries; parser errors reject. */
+export async function parseFrames(
   input: Uint8Array,
   boundaries: number[] = [],
-  options?: ParserOptions,
-): ParseEvent[] {
-  const parser = createParser(options);
-  const out: ParseEvent[] = [];
-  for (const chunk of chunkByBoundaries(input, boundaries)) {
-    out.push(...parser.feed(chunk));
+  options?: ParseOptions,
+): Promise<CesrFrame[]> {
+  /** Each split represents a separate producer read, with no feed/flush compatibility adapter. */
+  async function* source(): AsyncGenerator<Uint8Array> {
+    yield* chunkByBoundaries(input, boundaries);
   }
-  out.push(...parser.flush());
-  return out;
+  const frames: CesrFrame[] = [];
+  for await (const frame of parse(source(), options)) frames.push(frame);
+  return frames;
 }
 
 /**
- * Parse events and require error-free extraction.
- *
- * Use this in vectors where parser errors are not the behavior under test.
- * Vectors that intentionally exercise failures should call `parseEvents`
- * directly and assert on emitted `error` events themselves.
- */
-export function parseFramesNoError(
-  input: Uint8Array,
-  boundaries: number[] = [],
-  options?: ParserOptions,
-): ParseEvent[] {
-  const events = parseEvents(input, boundaries, options);
-  const errors = events.filter((event) => event.type === "error");
-  assertEquals(errors.length, 0);
-  return events.filter((event) => event.type === "frame");
-}
-
-/**
- * Normalize frame events into a deterministic comparison shape.
+ * Normalize complete frames into a deterministic comparison shape.
  *
  * The summary intentionally excludes raw bytes and verbose nested payload detail,
  * so vector tests can assert contract-level semantics without overfitting.
  */
-export function summarizeFrames(frames: ParseEvent[]): FrameSummary[] {
+export function summarizeFrames(frames: CesrFrame[]): FrameSummary[] {
   return frames
-    .filter((event) => event.type === "frame")
-    .map((event) => ({
-      kind: event.frame.body.kind,
-      pvrsn: `${event.frame.body.pvrsn.major}.${event.frame.body.pvrsn.minor}`,
-      ilk: event.frame.body.ilk ?? "",
-      said: event.frame.body.said ?? "",
-      nativeBodyCode: event.frame.body.kind === "CESR" && event.frame.body.ked
-        ? new Counter({ qb64b: event.frame.body.raw, version: event.frame.body.gvrsn ?? event.frame.body.pvrsn }).code
+    .map((frame) => ({
+      kind: frame.body.kind,
+      pvrsn: `${frame.body.pvrsn.major}.${frame.body.pvrsn.minor}`,
+      ilk: frame.body.ilk ?? "",
+      said: frame.body.said ?? "",
+      nativeBodyCode: frame.body.kind === "CESR" && frame.body.ked
+        ? new Counter({ qb64b: frame.body.raw, version: frame.body.gvrsn ?? frame.body.pvrsn }).code
         : "",
-      attachments: event.frame.attachments.map((attachment) => `${attachment.code}:${attachment.count}`),
+      attachments: frame.attachments.map((attachment) => `${attachment.code}:${attachment.count}`),
     }));
 }
 
 /** Parse one qb64 stream in both text and qb2 domains and summarize each path. */
-export function parseTxtQb2Summaries(
+export async function parseTxtQb2Summaries(
   txtStream: string,
   boundaries: number[] = [],
-  options?: ParserOptions,
-): ParsedSummaryPair {
+  options?: ParseOptions,
+): Promise<ParsedSummaryPair> {
   const txtBytes = encode(txtStream);
   const qb2Bytes = decodeB64(txtStream);
   return {
-    txt: summarizeFrames(parseFramesNoError(txtBytes, boundaries, options)),
-    qb2: summarizeFrames(parseFramesNoError(qb2Bytes, boundaries, options)),
+    txt: summarizeFrames(await parseFrames(txtBytes, boundaries, options)),
+    qb2: summarizeFrames(await parseFrames(qb2Bytes, boundaries, options)),
   };
 }
 
@@ -120,12 +94,12 @@ export function parseTxtQb2Summaries(
  * Returns the text summary as baseline so callers can add vector-specific
  * assertions (frame count, attachment expectations, version profile, etc).
  */
-export function assertTxtQb2Parity(
+export async function assertTxtQb2Parity(
   txtStream: string,
   boundaries: number[] = [],
-  options?: ParserOptions,
-): FrameSummary[] {
-  const { txt, qb2 } = parseTxtQb2Summaries(txtStream, boundaries, options);
+  options?: ParseOptions,
+): Promise<FrameSummary[]> {
+  const { txt, qb2 } = await parseTxtQb2Summaries(txtStream, boundaries, options);
   assertEquals(qb2, txt);
   return txt;
 }
@@ -296,7 +270,7 @@ export function concatWithAno(parts: Uint8Array[], anoRuns = 2): Uint8Array {
  * Empty output and accepted frames are permitted; this proves neither rejection
  * of every mutation nor a memory/time bound.
  */
-export function assertNoUnexpectedErrorClasses(events: ParseEvent[]): void {
+export function assertExpectedParserError(error: unknown): void {
   const allowed = new Set([
     "ParserError",
     "ShortageError",
@@ -307,12 +281,8 @@ export function assertNoUnexpectedErrorClasses(events: ParseEvent[]): void {
     "DeserializeError",
     "SyntaxParseError",
     "SemanticInterpretationError",
+    "ResourceLimitError",
   ]);
-  for (const event of events) {
-    if (event.type !== "error") continue;
-    assert(
-      allowed.has(event.error.name),
-      `unexpected error class from mutation fuzz: ${event.error.name} (${event.error.message})`,
-    );
-  }
+  assert(error instanceof Error, "mutation must fail with a typed parser error");
+  assert(allowed.has(error.name), `unexpected mutation error: ${error.name} (${error.message})`);
 }

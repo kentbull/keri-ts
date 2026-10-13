@@ -1,31 +1,49 @@
-import { assertEquals } from "jsr:@std/assert";
-import { createParser } from "../../../src/parser/stream.ts";
+import { assert, assertEquals } from "jsr:@std/assert";
 import { CtrDexV1 } from "../../../src/tables/counter-codex.ts";
 import { counterV1 } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
 import {
-  assertNoUnexpectedErrorClasses,
   buildNWaySplitPlans,
   genusVersionCounter,
   mutateTextStream,
-  parseFramesNoError,
+  parseFrames,
   summarizeFrames,
   wrapperHeavyV2Stream,
 } from "../../fixtures/parser-test-helpers.ts";
-import { chunkByBoundaries, encode } from "../../fixtures/stream-byte-fixtures.ts";
+import { encode } from "../../fixtures/stream-byte-fixtures.ts";
+
+/** Mutations may reject, but transport partitioning must never expose native/runtime failures. */
+async function checkErrors(bytes: Uint8Array, boundaries: number[]): Promise<void> {
+  try {
+    await parseFrames(bytes, boundaries);
+  } catch (error) {
+    const allowed = [
+      "ParserError",
+      "ShortageError",
+      "ColdStartError",
+      "VersionError",
+      "UnknownCodeError",
+      "GroupSizeError",
+      "DeserializeError",
+      "SyntaxParseError",
+      "SemanticInterpretationError",
+    ];
+    assert(error instanceof Error && allowed.includes(error.name), `Unexpected mutation failure: ${error}`);
+  }
+}
 
 Deno.test(
   "deterministic N-way split fuzz (3-8 cuts) on wrapper-heavy stream preserves semantic summaries",
-  () => {
+  async () => {
     const stream = wrapperHeavyV2Stream();
     const bytes = encode(stream);
-    const baseline = summarizeFrames(parseFramesNoError(bytes));
+    const baseline = summarizeFrames(await parseFrames(bytes));
 
     // Deterministic seeded split plans avoid flaky CI while still widening
     // boundary coverage beyond simple one/two-cut checks.
     const plans = buildNWaySplitPlans(bytes.length, 3, 8, 3, 0x20_26_03_01);
     for (const plan of plans) {
-      const summary = summarizeFrames(parseFramesNoError(bytes, plan));
+      const summary = summarizeFrames(await parseFrames(bytes, plan));
       assertEquals(summary, baseline);
     }
   },
@@ -33,7 +51,7 @@ Deno.test(
 
 Deno.test(
   "deterministic counter/count/selector mutations emit only known parser error classes",
-  () => {
+  async () => {
     // Corpus spans wrapper-heavy, mixed legacy/current, and explicit-selector
     // streams so mutation probes parser behavior across key state transitions.
     const baseCorpus = [
@@ -48,18 +66,7 @@ Deno.test(
       const variants = mutateTextStream(base, 0x0210_2026, 20);
       for (const mutated of variants) {
         const bytes = encode(mutated);
-        const parser = createParser();
-        const events = [
-          ...parser.feed(
-            bytes.slice(0, Math.max(1, Math.floor(bytes.length / 2))),
-          ),
-          ...parser.feed(
-            bytes.slice(Math.max(1, Math.floor(bytes.length / 2))),
-          ),
-          ...parser.flush(),
-        ];
-        // This checks crash/error taxonomy only; accepted output is not a correctness oracle.
-        assertNoUnexpectedErrorClasses(events);
+        await checkErrors(bytes, [Math.max(1, Math.floor(bytes.length / 2))]);
       }
     }
 
@@ -69,13 +76,7 @@ Deno.test(
     const bytes = encode(stream);
     const plans = buildNWaySplitPlans(bytes.length, 3, 8, 1, 0x0211_2026);
     for (const plan of plans) {
-      const parser = createParser();
-      const events = [];
-      for (const chunk of chunkByBoundaries(bytes, plan)) {
-        events.push(...parser.feed(chunk));
-      }
-      events.push(...parser.flush());
-      assertNoUnexpectedErrorClasses(events);
+      await checkErrors(bytes, plan);
     }
   },
 );

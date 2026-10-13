@@ -1,13 +1,12 @@
 import { assertEquals } from "jsr:@std/assert";
 import { decodeB64 } from "../../../src/core/bytes.ts";
-import type { ParseEvent } from "../../../src/core/types.ts";
-import { createParser } from "../../../src/parser/stream.ts";
 import { CtrDexV1, CtrDexV2 } from "../../../src/tables/counter-codex.ts";
-import { counterV1, counterV2, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
+import { counterV1, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY, KERIPY_V1_JSON_ICP_BODY } from "../../fixtures/external-vectors.ts";
-import { chunkByBoundaries, encode } from "../../fixtures/stream-byte-fixtures.ts";
+import { parseFrames, splitIntoThirds, wrapQuadletGroupV2 } from "../../fixtures/parser-test-helpers.ts";
+import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 
-/** Observable frame identity used by independently expected external vectors. */
+/** Independent expected body and attachment facts from the pinned golden corpus. */
 interface FrameSummary {
   /** Body serialization kind. */
   kind: string;
@@ -21,60 +20,20 @@ interface FrameSummary {
   attachments: string[];
 }
 
-/** Parse a stream through chunk boundaries and require error-free extraction. */
-function parseFrames(
-  input: Uint8Array,
-  boundaries: number[] = [],
-): ParseEvent[] {
-  const parser = createParser();
-  const events: ParseEvent[] = [];
-  for (const chunk of chunkByBoundaries(input, boundaries)) {
-    events.push(...parser.feed(chunk));
-  }
-  events.push(...parser.flush());
-
-  const errors = events.filter((event) => event.type === "error");
-  assertEquals(errors.length, 0);
-  return events.filter((event) => event.type === "frame");
-}
-
-/** Require error-free parsing and compare frame identity and ordered attachment metadata. */
-function summarizeFrames(
-  input: Uint8Array,
-  boundaries: number[] = [],
-): FrameSummary[] {
-  const frames = parseFrames(input, boundaries);
-  return frames
-    .filter((event) => event.type === "frame")
-    .map((event) => ({
-      kind: event.frame.body.kind,
-      pvrsn: `${event.frame.body.pvrsn.major}.${event.frame.body.pvrsn.minor}`,
-      ilk: event.frame.body.ilk ?? "",
-      said: event.frame.body.said ?? "",
-      attachments: event.frame.attachments.map((group) => `${group.code}:${group.count}`),
-    }));
-}
-
-/** Enclose aligned text in the requested v2 group counter. */
-function wrapQuadletGroupV2(code: string, payload: string): string {
-  if (payload.length % 4 !== 0) {
-    throw new Error(`Payload must be quadlet-aligned for ${code}`);
-  }
-  return `${counterV2(code, payload.length / 4)}${payload}`;
-}
-
-/** Use deterministic interior cuts in either wire domain. */
-function splitIntoThirds(input: Uint8Array): number[] {
-  // Deterministic split points used for both txt and qb2 domains so
-  // split-determinism checks are stable across runs and fixture updates.
-  const a = Math.max(1, Math.floor(input.length / 3));
-  const b = Math.max(a + 1, Math.floor((2 * input.length) / 3));
-  return [a, b];
+/** Compare only protocol facts, excluding presentation-domain bytes and parser machinery. */
+async function summarizeFrames(input: Uint8Array, boundaries: number[] = []): Promise<FrameSummary[]> {
+  return (await parseFrames(input, boundaries)).map(({ body, attachments }) => ({
+    kind: body.kind,
+    pvrsn: `${body.pvrsn.major}.${body.pvrsn.minor}`,
+    ilk: body.ilk ?? "",
+    said: body.said ?? "",
+    attachments: attachments.map((group) => `${group.code}:${group.count}`),
+  }));
 }
 
 Deno.test(
   "KERIpy-derived golden corpus preserves txt/qb2 parity and split determinism",
-  () => {
+  async () => {
     const expectedSaid = "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN";
     const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken().repeat(2));
     // Build nested wrapper shapes from the canonical KERIpy v2 native fixture so
@@ -145,12 +104,12 @@ Deno.test(
       const txt = encode(fixture.txt);
       // testing split determinism (same semantic result whether data arrives whole or chunked)
       assertEquals(
-        summarizeFrames(txt),
+        await summarizeFrames(txt),
         fixture.expected,
         `txt baseline mismatch for ${fixture.name}`,
       );
       assertEquals(
-        summarizeFrames(txt, splitIntoThirds(txt)), // split into thirds should not affect calculated result
+        await summarizeFrames(txt, splitIntoThirds(txt)), // split into thirds should not affect calculated result
         fixture.expected,
         `txt split mismatch for ${fixture.name}`,
       );
@@ -159,12 +118,12 @@ Deno.test(
       // Summary parity here guards against domain-specific interpretation drift.
       const bny = decodeB64(fixture.txt);
       assertEquals(
-        summarizeFrames(bny),
+        await summarizeFrames(bny),
         fixture.expected,
         `qb2 baseline mismatch for ${fixture.name}`,
       );
       assertEquals(
-        summarizeFrames(bny, splitIntoThirds(bny)),
+        await summarizeFrames(bny, splitIntoThirds(bny)),
         fixture.expected,
         `qb2 split mismatch for ${fixture.name}`,
       );
@@ -174,14 +133,14 @@ Deno.test(
 
 Deno.test(
   "KERIpy v1 stream parses without an explicit genus selector",
-  () => {
+  async () => {
     const stream = `${KERIPY_V1_JSON_ICP_BODY}${counterV1(CtrDexV1.ControllerIdxSigs, 1)}${sigerToken()}`;
     const bodyEnd = KERIPY_V1_JSON_ICP_BODY.length;
     const counterEnd = bodyEnd
       + counterV1(CtrDexV1.ControllerIdxSigs, 1).length;
     // Stress parser continuation right around legacy body->attachment boundary.
     const boundaries = [bodyEnd - 1, bodyEnd + 1, counterEnd + 1];
-    const summary = summarizeFrames(encode(stream), boundaries);
+    const summary = await summarizeFrames(encode(stream), boundaries);
 
     assertEquals(summary.length, 1);
     assertEquals(summary[0], {

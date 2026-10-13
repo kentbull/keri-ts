@@ -10,7 +10,7 @@ import { Texter } from "../../src/primitives/texter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY, PARSIDE_GROUP_VECTORS } from "../fixtures/external-vectors.ts";
-import { parseFramesNoError, summarizeFrames } from "../fixtures/parser-test-helpers.ts";
+import { parseFrames, summarizeFrames } from "../fixtures/parser-test-helpers.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
@@ -194,9 +194,9 @@ Deno.test(
     const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
     const annotated = await annotate(stream);
     const restored = TEXT_DECODER.decode(denot(annotated));
-    const originalSummary = summarizeFrames(parseFramesNoError(encode(stream)));
+    const originalSummary = summarizeFrames(await parseFrames(encode(stream)));
     const restoredSummary = summarizeFrames(
-      parseFramesNoError(encode(restored)),
+      await parseFrames(encode(restored)),
     );
     // Contract: annotate+denot must preserve parser-observable frame semantics.
     assertEquals(restoredSummary, originalSummary);

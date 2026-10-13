@@ -32,6 +32,9 @@ and use this supplementary adapter at their parsing boundary.
    buffers, scope ends limit all reads, and accepted producer backing buffers count
    toward resource policy. Demand and cancellation belong to the shared cursor;
    generator locals now own nested parse progress in `parser/progressive.ts`.
+   Progressive body hydration and frame-counter recognition live in `parser/body.ts`;
+   that engine no longer calls the atomic frame walker. CESR tests exercise the
+   async engine directly, including terminal rejection and independent genus vectors.
    The async `parse()` entrypoint and frame adapters yield complete GenericGroup
    children early; they retain Serder/ordinary leaf hydration under cursor and `maxFrameBytes`
    limits. Progressive ESSR stores one owned canonical Texter wire sequence with

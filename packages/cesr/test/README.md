@@ -38,19 +38,19 @@ registrations were removed after preserving unique production assertions:
 | `qb2.test.ts`: Matter smoke                                                  | `primitives/matter.test.ts` directly compares `parseMatterFromText` and `parseMatterFromBinary` across canonical vectors                                                             |
 | `qb2.test.ts`: Counter/Indexer smoke                                         | `primitives/counter.test.ts` already compares both public readers across v1/v2 vectors; `primitives/indexer.test.ts` now directly compares both readers across its canonical vectors |
 | `qb2.test.ts`: binary attachment smoke                                       | `parser/count-units.test.ts` preserves text/binary controller signatures and stronger v1-item/v2-length assertions                                                                   |
-| `parser.test.ts`: two native bodies split at the body boundary               | `parser/pending-frame.test.ts` retains emission timing, body kind/ilk, empty attachments and final flush                                                                             |
-| `parser-flush.test.ts`: first pending-frame flush                            | `parser/flush.test.ts` combines body kind/ilk and deferred emission with second-flush idempotency                                                                                    |
-| `parser-flush.test.ts`: first truncated-attachment flush                     | `parser/flush.test.ts` preserves no premature frame, exact ShortageError and second-flush idempotency                                                                                |
+| `parser.test.ts`: two native bodies split at the body boundary               | `parser/chunk-completion.test.ts` checks that the following body completes an open attachment set before EOF                                                                         |
+| `parser-flush.test.ts`: first pending-frame flush                            | `parser/flush.test.ts` checks body kind/ilk, one EOF emission, and repeated iterator completion                                                                                      |
+| `parser-flush.test.ts`: first truncated-attachment flush                     | `parser/flush.test.ts` preserves no premature frame, exact ShortageError, and a finished iterator after rejection                                                                    |
 
 The duplicate SHA assertion in `primitives/registry.test.ts` was also removed;
 its parsing and registry-family assertions remain.
 
-All former hardening cases remain: enclosure/domain parity moved to
+Protocol cases from the former hardening suites remain: enclosure/domain parity moved to
 `parser/enclosure-parity.test.ts`; wrapper selector cases to
 `parser/wrapper-version.test.ts`; heterogeneous ordering to
 `parser/mixed-stream.test.ts`; terminal shortages to `parser/flush.test.ts`;
 invalid enclosure/native-prefix cases to `parser/enclosure-errors.test.ts`;
-reset behavior to `parser/recovery.test.ts`; seeded partitions and the limited
+seeded partitions and the limited
 mutation crash check to `parser/partitions.test.ts`; independent external vectors
 to `parser/external-corpus.test.ts`; codex sentinels to
 `tables/counter-registry.test.ts`; annotation semantics to `unit/annotate.test.ts`.
@@ -62,3 +62,16 @@ names omit retired parser modes and historical phase/priority labels.
 The isolated cleanup ran the same recursive suite before and after: 437 passes
 before, 425 after, no failures; Deno reported 11 seconds for each. These single runs
 are coverage evidence, not a reliable performance comparison or CI speedup claim.
+
+## Progressive migration
+
+Parser tests consume async input or the finite `parseBytes` collector. They assert
+EOF, enclosure boundaries, and thrown parser errors directly. Feed/flush/reset
+and one-frame-per-feed compatibility registrations are removed. Independent
+KERIpy vectors, v1/v2 genus selection, text/binary partitioning, and malformed
+wire rejection retain their original protocol assertions.
+
+`parser/progressive.test.ts` retains already-delivered enclosed siblings before
+a later truncation. `parser/chunk-completion.test.ts` verifies that chunk
+exhaustion does not complete an open attachment set, and that a following body
+or declared enclosure does complete it without waiting for source EOF.

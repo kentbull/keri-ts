@@ -1,56 +1,38 @@
 import { assertEquals } from "jsr:@std/assert";
-import type { ParseEvent } from "../../../src/core/types.ts";
-import { createParser } from "../../../src/parser/stream.ts";
+import { parseBytes } from "../../../src/parser/complete.ts";
+import { parse } from "../../../src/parser/progressive.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 import { v2ify } from "../../fixtures/versioned-body-fixtures.ts";
 
-/** Require error-free parsing and compare frame identity and ordered attachment metadata. */
-function summarizeFrames(events: ParseEvent[]): string[] {
-  const errors = events.filter((event) => event.type === "error");
-  assertEquals(errors.length, 0);
-  return events
-    .filter((event) => event.type === "frame")
-    .map((event) => {
-      if (event.type !== "frame") return "";
-      const body = event.frame.body;
-      const attachments = event.frame.attachments
-        .map((attachment) => `${attachment.code}:${attachment.count}`)
-        .join(",");
-      return `${body.kind}|${body.ilk ?? ""}|${body.said ?? ""}|${attachments}`;
-    });
-}
-
-Deno.test("boundary-shortage matrix is deterministic at header/mid/just-before-complete cuts", () => {
+Deno.test("boundary-shortage matrix is deterministic at header/mid/just-before-complete cuts", async () => {
   const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   const attachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
-  const stream = `${body}${attachment}`;
-  const bytes = encode(stream);
-
-  const baselineParser = createParser();
-  const baseline = summarizeFrames([
-    ...baselineParser.feed(bytes),
-    ...baselineParser.flush(),
-  ]);
+  const bytes = encode(`${body}${attachment}`);
+  const expected = await parseBytes(bytes);
+  assertEquals(expected.length, 1);
+  assertEquals(expected[0].attachments.map((group) => [group.code, group.count]), [["-K", 22]]);
 
   const cuts = [
     body.length + 4, // exactly after attachment counter header
     body.length + 4 + (sigerToken().length / 2), // mid attachment payload
     bytes.length - 1, // one byte before completion
   ];
-
   for (const cut of cuts) {
-    const parser = createParser();
-    const first = parser.feed(bytes.slice(0, cut));
-    const firstErrors = first.filter((event) => event.type === "error");
-    assertEquals(firstErrors.length, 0);
-
-    const events = [
-      ...first,
-      ...parser.feed(bytes.slice(cut)),
-      ...parser.flush(),
-    ];
-    assertEquals(summarizeFrames(events), baseline);
+    let delivered = false;
+    /** Crossing a transport boundary cannot expose the still-open frame. */
+    const chunks = async function*() {
+      yield bytes.slice(0, cut);
+      assertEquals(delivered, false);
+      yield bytes.slice(cut);
+      assertEquals(delivered, false);
+    };
+    const actual = [];
+    for await (const frame of parse(chunks())) {
+      delivered = true;
+      actual.push(frame);
+    }
+    assertEquals(actual, expected);
   }
 });

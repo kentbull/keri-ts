@@ -1,7 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { DeserializeError } from "../../../src/core/errors.ts";
 import { b } from "../../../src/index.ts";
-import { createParser } from "../../../src/parser/stream.ts";
+import { parseBytes } from "../../../src/parser/complete.ts";
 import { Matter } from "../../../src/primitives/matter.ts";
 import { parseSerder, Serder, SerderACDC, SerderKERI, sizeify } from "../../../src/serder/serder.ts";
 import { smell, versify } from "../../../src/serder/smell.ts";
@@ -77,7 +77,7 @@ Deno.test("serder: subtype constructors reject wrong protocol domains", () => {
   );
 });
 
-Deno.test("serder: structor projection classifies attachment families", () => {
+Deno.test("serder: structor projection classifies attachment families", async () => {
   const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"ixn\",\"d\":\"Eabc\"}");
   const aggorPayload = `${token("B")}${token("E")}`;
   const aggor = `${counterV2(CtrDexV2.GenericListGroup, aggorPayload.length / 4)}${aggorPayload}`;
@@ -86,19 +86,13 @@ Deno.test("serder: structor projection classifies attachment families", () => {
   const mediar = groupV2(CtrDexV2.TypedMediaQuadruples, KERIPY_STRUCTOR_VECTORS.mediarTypedMediaPayload);
   const stream = `${body}${aggor}${sealer}${blinder}${mediar}`;
 
-  const parser = createParser();
-  const events = [
-    ...parser.feed(b(stream)),
-    ...parser.flush(),
-  ];
-  const frame = events.find((event) => event.type === "frame");
-  if (!frame || frame.type !== "frame") {
-    throw new Error("expected one parsed frame");
-  }
+  const frames = await parseBytes(b(stream));
+  assertEquals(frames.length, 1);
+  const frame = frames[0];
 
-  assertEquals(frame.frame.body instanceof SerderKERI, true);
-  const serder = frame.frame.body as SerderKERI;
-  const projection = serder.projectStructors(frame.frame);
+  assertEquals(frame.body instanceof SerderKERI, true);
+  const serder = frame.body as SerderKERI;
+  const projection = serder.projectStructors(frame);
 
   assertEquals(projection.aggor.length, 1);
   assertEquals(projection.sealer.length, 1);
@@ -106,7 +100,7 @@ Deno.test("serder: structor projection classifies attachment families", () => {
   assertEquals(projection.mediar.length, 1);
 });
 
-Deno.test("serder: projection traverses nested wrapper groups and preserves other families", () => {
+Deno.test("serder: projection traverses nested wrapper groups and preserves other families", async () => {
   const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"ixn\",\"d\":\"Eabc\"}");
   const sealerPayload = KERIPY_STRUCTOR_VECTORS.sealerTypedDigestPayload;
   const nestedSealer = groupV2(CtrDexV2.TypedDigestSealCouples, sealerPayload);
@@ -115,23 +109,18 @@ Deno.test("serder: projection traverses nested wrapper groups and preserves othe
   const wrapper = `${counterV2(CtrDexV2.AttachmentGroup, wrapperPayload.length / 4)}${wrapperPayload}`;
   const stream = `${body}${wrapper}`;
 
-  const parser = createParser();
-  const events = [
-    ...parser.feed(b(stream)),
-    ...parser.flush(),
-  ];
-  const frame = events.find((event) => event.type === "frame");
-  if (!frame || frame.type !== "frame") {
-    throw new Error("expected one parsed frame");
-  }
+  const frames = await parseBytes(b(stream));
+  assertEquals(frames.length, 1);
+  const frame = frames[0];
 
-  assertEquals(frame.frame.body instanceof SerderKERI, true);
-  const serder = frame.frame.body as SerderKERI;
-  const projection = serder.projectStructors(frame.frame);
+  assertEquals(frame.body instanceof SerderKERI, true);
+  const serder = frame.body as SerderKERI;
+  const projection = serder.projectStructors(frame);
   const otherCodes = new Set(projection.other.map((group) => group.code));
 
   assertEquals(projection.sealer.length, 1);
-  assertEquals(otherCodes.has(CtrDexV2.AttachmentGroup), true);
+  // The progressive parser consumes the structural enclosure and retains its leaves.
+  assertEquals(otherCodes.has(CtrDexV2.AttachmentGroup), false);
   assertEquals(otherCodes.has(CtrDexV2.ControllerIdxSigs), true);
 });
 

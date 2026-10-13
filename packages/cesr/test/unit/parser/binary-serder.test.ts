@@ -1,10 +1,10 @@
 import { encode as encodeMsgpack } from "@msgpack/msgpack";
 import { assertEquals } from "jsr:@std/assert";
 import { encodeKeriCbor } from "../../../src/core/cbor.ts";
-import { createParser } from "../../../src/parser/stream.ts";
+import { parseBytes } from "../../../src/parser/complete.ts";
 import { SerderKERI } from "../../../src/serder/serder.ts";
 
-/** Values accepted by the binary serialization fixture encoders. */
+/** Values supported by both independent binary fixture encoders. */
 type Encodable =
   | string
   | number
@@ -40,7 +40,7 @@ const REAL_ICP_EVENT: Record<string, Encodable> = {
   a: [],
 };
 
-/** Serialize a v1 inception fixture with its correct binary-body length. */
+/** Encode the same v1 body with a byte-accurate serialization header. */
 function buildV1Serder(kind: "MGPK" | "CBOR"): Uint8Array {
   const body = structuredClone(REAL_ICP_EVENT);
   body.v = `KERI10${kind}000000_`;
@@ -53,22 +53,15 @@ function buildV1Serder(kind: "MGPK" | "CBOR"): Uint8Array {
   return raw;
 }
 
-/** Require one parsed body so accessor assertions refer to the intended frame. */
-function parseSingle(raw: Uint8Array) {
-  const parser = createParser();
-  const events = [...parser.feed(raw), ...parser.flush()];
-  const errors = events.filter((event) => event.type === "error");
-  const frames = events.filter((event) => event.type === "frame");
-  assertEquals(errors.length, 0);
+/** Require one hydrated body from complete input, preserving thrown parser failures. */
+async function parseSingle(raw: Uint8Array) {
+  const frames = await parseBytes(raw);
   assertEquals(frames.length, 1);
-  if (frames[0].type !== "frame") {
-    throw new Error("Expected frame event");
-  }
-  return frames[0].frame;
+  return frames[0];
 }
 
-Deno.test("cold-start MGPK Serder body populates ked/ilk/said", () => {
-  const frame = parseSingle(buildV1Serder("MGPK"));
+Deno.test("cold-start MGPK Serder body populates ked/ilk/said", async () => {
+  const frame = await parseSingle(buildV1Serder("MGPK"));
   assertEquals(frame.body.kind, "MGPK");
   assertEquals(frame.body.ilk, "icp");
   assertEquals(frame.body.said, REAL_ICP_EVENT.d);
@@ -78,8 +71,8 @@ Deno.test("cold-start MGPK Serder body populates ked/ilk/said", () => {
   assertEquals((frame.body.ked?.k as unknown[])?.length ?? 0, 2);
 });
 
-Deno.test("cold-start CBOR Serder body populates ked/ilk/said", () => {
-  const frame = parseSingle(buildV1Serder("CBOR"));
+Deno.test("cold-start CBOR Serder body populates ked/ilk/said", async () => {
+  const frame = await parseSingle(buildV1Serder("CBOR"));
   assertEquals(frame.body.kind, "CBOR");
   assertEquals(frame.body.ilk, "icp");
   assertEquals(frame.body.said, REAL_ICP_EVENT.d);
@@ -89,8 +82,8 @@ Deno.test("cold-start CBOR Serder body populates ked/ilk/said", () => {
   assertEquals((frame.body.ked?.k as unknown[])?.length ?? 0, 2);
 });
 
-Deno.test("weighted threshold accessors survive binary serder parsing", () => {
-  const frame = parseSingle(buildV1Serder("CBOR"));
+Deno.test("weighted threshold accessors survive binary serder parsing", async () => {
+  const frame = await parseSingle(buildV1Serder("CBOR"));
   const serder = frame.body as SerderKERI;
   assertEquals(serder.tholder?.sith, ["1/2", "1/2"]);
   assertEquals(serder.ntholder?.sith, ["1/2", "1/2"]);
