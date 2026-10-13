@@ -68,8 +68,9 @@ and use this supplementary adapter at their parsing boundary.
    needed; non-native child bodies use Texters. Default output retains each node's
    genus, explicit output genus applies across the tree, and all ESSR stays borrowed.
    Ordinary leaves, child order, and ESSR item order survive category normalization.
-   Annotation, KERI normalization, and HTTP inspection still reject nests until
-   their separate owned-tree consumer slices close verification/replay semantics. Parsing returns frames directly and rejects on errors. Recursive
+   Finite annotation preserves original wire within root-owned entries. KERI
+   normalization and HTTP inspection still reject nests until their consumer
+   slices close verification/replay semantics. Parsing returns frames directly and rejects on errors. Recursive
    attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
    Opaque wire payloads are one `OpaqueSpan` of original bytes plus domain, not
    arrays of fabricated primitives. Same-domain serialization preserves the bytes.
@@ -112,7 +113,12 @@ and use this supplementary adapter at their parsing boundary.
    hydrate once through Serder; annotation owns token walking and label comments.
    Async annotation validates once with progressive finite parsing, then renders
    original admitted wire to preserve wrapper headers, scoped selectors, and ESSR
-   ordering. Rendering hydrated frame attachments alone loses those wire details.
+   ordering. Annotation emits one entry per independently delivered root, with
+   descendant lines in that entry; child iterators follow ownership rather than
+   a flattened body list. Each hydrated node must be consumed exactly once in
+   its owning scope. Rendering hydrated frame attachments alone loses wire details.
+   LabelCodex values may be routes or empty text, so native annotation only treats
+   attribute-safe text as a candidate label; Serder remains validation authority.
    Annotation and replay benchmarks have explicit configurable finite-input budgets;
    streaming CLI validation releases delivered payloads before pulling another frame.
    There is no parser-native sidecar or advisory metadata agreement pass. A

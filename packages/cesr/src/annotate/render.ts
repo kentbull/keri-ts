@@ -1,13 +1,13 @@
 import { encodeB64 } from "../core/bytes.ts";
 import { DeserializeError, GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
-import { requireFlatFrame } from "../core/frame.ts";
 import type { CesrDomain, CesrFrame } from "../core/types.ts";
 import { parseAttachmentGroup, startsFrame } from "../parser/attachments.ts";
 import { readFrameCounter } from "../parser/body.ts";
 import { sniff } from "../parser/cold-start.ts";
+import { isAttLabel } from "../primitives/codex.ts";
 import { Counter, decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import { Indexer } from "../primitives/indexer.ts";
-import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
+import { isLabelerCode, Labeler } from "../primitives/labeler.ts";
 import { Matter, parseMatter } from "../primitives/matter.ts";
 import { OpaqueSpan } from "../primitives/opaque.ts";
 import { type GroupEntry, isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
@@ -26,8 +26,6 @@ const OPAQUE_WRAPPER_PAYLOAD_COMMENT = "opaque wrapper payload";
 const WRAPPER_GROUP_NAMES = new Set([
   "AttachmentGroup",
   "BigAttachmentGroup",
-  "BodyWithAttachmentGroup",
-  "BigBodyWithAttachmentGroup",
 ]);
 
 /** Stream enclosures contribute indentation without replacing parsed bodies. */
@@ -158,7 +156,7 @@ function renderGroupItems(
   }
 }
 
-/** Render one raw attachment-group span, including nested wrapper groups when present. */
+/** Render one admitted attachment leaf; the owning frame traversal handles enclosures. */
 function renderAttachmentGroupRaw(
   lines: string[],
   raw: Uint8Array,
@@ -171,30 +169,7 @@ function renderAttachmentGroupRaw(
     return 0;
   }
   const counter = parseCounter(raw, version, domain);
-  const headerSize = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
   emitLine(lines, counter.qb64, `${counter.name} count=${counter.count}`, indent, options);
-  if (WRAPPER_GROUP_NAMES.has(counter.name)) {
-    // The parser already validated this finite enclosure; preserve its original header and leaf order.
-    const total = headerSize + counter.count * (domain === "bny" ? 3 : 4);
-    let offset = headerSize;
-    let selected = version;
-    while (offset < total) {
-      const slice = raw.subarray(offset, total);
-      const childDomain = asDomain(slice);
-      if (childDomain !== "txt" && childDomain !== "bny") {
-        throw new DeserializeError("Invalid annotation attachment domain");
-      }
-      const child = parseCounter(slice, selected, childDomain);
-      if (child.name === "KERIACDCGenusVersion") {
-        emitLine(lines, child.qb64, child.name, indent + options.indent, options);
-        selected = decodeGenusVersion(child);
-        offset += childDomain === "bny" ? child.fullSizeB2 : child.fullSize;
-      } else {
-        offset += renderAttachmentGroupRaw(lines, slice, selected, indent + options.indent, options);
-      }
-    }
-    return total;
-  }
   // Primitive rendering is deliberately finite; it is not a second stream parser.
   const parsed = parseAttachmentGroup(raw, version, domain);
   renderGroupItems(lines, parsed.group.items, version, indent + options.indent, options);
@@ -260,7 +235,9 @@ function renderNativeBody(
     const matter = parseMatter(slice, domain);
     const matterSize = domain === "bny" ? matter.fullSizeB2 : matter.fullSize;
     const label = nativeLabelName(pendingLabel);
-    pendingLabel = isLabelerCode(matter.code) ? parseLabeler(slice, domain).label : null;
+    // LabelCodex also encodes routes and empty text values; those are not attribute labels.
+    const text = isLabelerCode(matter.code) ? new Labeler(matter).text : null;
+    pendingLabel = text !== null && isAttLabel(text) ? text : null;
     const primitiveComment = matter instanceof Indexer
       ? `Indexer ${matter.code}`
       : matterCodeName(matter.code);
@@ -304,13 +281,70 @@ export function renderAnnotatedFrames(
   options: RenderOptions,
   input: Uint8Array,
 ): AnnotatedFrame[] {
-  for (const frame of frames) requireFlatFrame(frame, "Annotation");
   const output: AnnotatedFrame[] = [];
-  let next = 0;
+  const visited = new Set<CesrFrame>();
   let prefix: string[] = [];
 
-  /** Preserve enclosure/selector presentation without hydrating or parsing another frame. */
-  function renderStream(raw: Uint8Array, inherited: Versionage | null, indent: number): void {
+  /** Preserve attachment wire while assigning embedded bodies only to their parent's child iterator. */
+  function renderAttachments(
+    raw: Uint8Array,
+    version: Versionage,
+    indent: number,
+    children: Iterator<CesrFrame>,
+    lines: string[],
+    { enclosed = false, insideAttachmentGroup = false }: { enclosed?: boolean; insideAttachmentGroup?: boolean } = {},
+  ): number {
+    let offset = 0;
+    let selected = version;
+    while (offset < raw.length) {
+      const tail = raw.subarray(offset);
+      const domain = sniff(tail);
+      if (domain === "ano") {
+        offset++;
+        continue;
+      }
+      if (domain === "msg") break;
+      if (domain !== "txt" && domain !== "bny") throw new DeserializeError("Invalid annotation domain");
+      // Outside an enclosure, a following body or selector belongs to the independent stream.
+      if (!enclosed && startsFrame(tail, selected, domain)) break;
+      const counter = parseCounter(tail, selected, domain);
+      const header = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+      if (counter.name === "KERIACDCGenusVersion") {
+        emitLine(lines, counter.qb64, counter.name, indent, options);
+        selected = decodeGenusVersion(counter);
+        offset += header;
+      } else if (startsFrame(tail, selected, domain)) {
+        // One owned child consumes its own evidence; later children remain in this parent's scope.
+        offset += renderStream(tail, selected, indent, children, { parentLines: lines, single: true });
+      } else if (WRAPPER_GROUP_NAMES.has(counter.name)) {
+        const end = offset + header + counter.count * (domain === "bny" ? 3 : 4);
+        emitLine(lines, counter.qb64, `${counter.name} count=${counter.count}`, indent, options);
+        renderAttachments(raw.subarray(offset + header, end), selected, indent + options.indent, children, lines, {
+          enclosed: true,
+          insideAttachmentGroup: true,
+        });
+        offset = end;
+        // A complete attachment enclosure closes this frame, not its enclosing parent's child list.
+        if (!insideAttachmentGroup) return offset;
+      } else {
+        offset += renderAttachmentGroupRaw(lines, tail, selected, indent, options);
+      }
+    }
+    return offset;
+  }
+
+  /** Match admitted wire to hydrated nodes without reparsing bodies or flattening owned children. */
+  function renderStream(
+    raw: Uint8Array,
+    inherited: Versionage | null,
+    indent: number,
+    available: Iterator<CesrFrame>,
+    { parentLines, enclosed = false, single = false }: {
+      parentLines?: string[];
+      enclosed?: boolean;
+      single?: boolean;
+    } = {},
+  ): number {
     let offset = 0;
     let selected = inherited;
     while (offset < raw.length) {
@@ -334,25 +368,39 @@ export function renderAnnotatedFrames(
         // Serder raw may be canonical text or omit an opaque enclosure header; source extent stays on wire.
         wireSize = size + counter.count * (domain === "bny" ? 3 : 4);
         if (counter.name === "KERIACDCGenusVersion") {
-          emitLine(prefix, counter.qb64, counter.name, indent, options);
+          emitLine(parentLines ?? prefix, counter.qb64, counter.name, indent, options);
           selected = decodeGenusVersion(counter);
           offset += size;
           continue;
         }
         if (TOP_LEVEL_WRAPPER_GROUP_NAMES.has(counter.name)) {
-          const end = offset + size + counter.count * (domain === "bny" ? 3 : 4);
-          emitLine(prefix, counter.qb64, `${counter.name} count=${counter.count}`, indent, options);
-          renderStream(raw.subarray(offset + size, end), gvrsn, indent + options.indent);
+          const end = offset + wireSize;
+          const ownsAttachments = counter.name === "BodyWithAttachmentGroup"
+            || counter.name === "BigBodyWithAttachmentGroup";
+          emitLine(parentLines ?? prefix, counter.qb64, `${counter.name} count=${counter.count}`, indent, options);
+          // GenericGroup shares its independent sibling iterator; a body wrapper encloses one node's children.
+          renderStream(raw.subarray(offset + size, end), gvrsn, indent + options.indent, available, {
+            parentLines,
+            enclosed: ownsAttachments,
+          });
           offset = end;
+          if (single) return offset;
           continue;
         }
       }
-      const frame = frames[next++];
-      if (!frame) throw new DeserializeError("Annotation body does not match parsed frames");
-      const lines = prefix;
-      prefix = [];
+      const frame = available.next().value;
+      if (!frame || visited.has(frame)) {
+        throw new DeserializeError("Annotation body does not match parsed frame ownership");
+      }
+      visited.add(frame);
+      const lines = parentLines ?? prefix;
+      if (!parentLines) {
+        prefix = [];
+        // Only independently delivered roots get a public annotation entry.
+        output.push({ index: output.length + 1, frame, lines });
+      }
       const bodyLines: string[] = [];
-      let version = selected ?? wireGenus ?? frame.body.gvrsn ?? frame.body.pvrsn;
+      const version = selected ?? wireGenus ?? frame.gvrsn ?? frame.body.gvrsn ?? frame.body.pvrsn;
       if (frame.body.kind === "CESR" && frame.body.ked === null) {
         const wire = raw.subarray(offset, offset + (wireSize ?? frame.body.raw.length));
         emitLine(
@@ -369,27 +417,17 @@ export function renderAnnotatedFrames(
       }
       for (const line of bodyLines) lines.push(`${spaces(indent)}${line}`);
       offset += wireSize ?? frame.body.raw.length;
-      while (offset < raw.length) {
-        const tail = raw.subarray(offset);
-        const attachmentDomain = sniff(tail);
-        if (attachmentDomain === "ano") {
-          offset++;
-          continue;
-        }
-        if (attachmentDomain === "msg") break;
-        if (attachmentDomain !== "txt" && attachmentDomain !== "bny") {
-          throw new DeserializeError("Invalid annotation domain");
-        }
-        // A top-level genus selector starts the next frame's scope; wrapper-local selectors stay nested.
-        if (startsFrame(tail, version, attachmentDomain)) break;
-        offset += renderAttachmentGroupRaw(lines, tail, version, indent, options);
-      }
-      output.push({ index: next, frame, lines });
+      const children = (frame.nests ?? [])[Symbol.iterator]();
+      offset += renderAttachments(raw.subarray(offset), version, indent, children, lines, { enclosed });
+      if (!children.next().done) throw new DeserializeError("Annotation did not consume every owned child");
+      if (single) return offset;
     }
+    return offset;
   }
 
-  renderStream(input, null, 0);
-  if (next !== frames.length) throw new DeserializeError("Annotation did not consume every parsed body");
+  const roots = frames[Symbol.iterator]();
+  renderStream(input, null, 0, roots);
+  if (!roots.next().done) throw new DeserializeError("Annotation did not consume every parsed root");
   if (prefix.length && output.length) output[output.length - 1].lines.push(...prefix);
   return output;
 }

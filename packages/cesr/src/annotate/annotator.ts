@@ -24,7 +24,7 @@ async function discardFrames(frames: readonly CesrFrame[]): Promise<void> {
 
 /**
  * Annotate finite input with the progressive engine and original wrapper wire.
- * Successful callers own the returned frames' ESSR payloads and must discard them.
+ * Successful callers own the returned frame trees and release them with discardFrame.
  * A parse or rendering failure releases every payload before rejecting.
  */
 export async function annotateFrames(

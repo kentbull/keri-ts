@@ -101,6 +101,9 @@ repeated recursive disposal. Runtime boundary coverage is in
 views in both domains/genera, scoped children, independent signatures, repeated
 ESSR reopening and cancellation. `scripts/qualify-nested-serialization.ts` feeds
 actual output to frozen Python, verifies imported source bytes, signature
-ownership, full consumption, and Python subtree reserialization. Nested runtime
-processing/replay and annotation remain explicit rejections at their current
-public boundaries.
+ownership, full consumption, and Python subtree reserialization.
+`test/unit/annotate-nests.test.ts` checks exact frozen Python wire round-trips,
+scoped genera, root/child presentation, exactly-once traversal, and recursive
+ESSR transfer/cleanup on success, failure, and cancellation. Nested runtime
+processing/replay remain explicit rejections at the KERI normalization and HTTP
+inspection boundaries.
