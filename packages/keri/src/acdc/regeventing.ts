@@ -13,6 +13,7 @@ import {
   type SerderKERI,
 } from "cesr-ts";
 import type { Baser } from "../db/basing.ts";
+import { timestampMicros } from "../time/mod.ts";
 
 /** A parsed disclosure belongs to this node; neighboring or parent proofs do not count. */
 export type RegistryDisclosure = BlindState | BoundState;
@@ -154,7 +155,7 @@ function binding(acdc: SerderACDC, state: RegistryState): "mutual" | "oneway" | 
  * A missing anchor anywhere prevents a partial-head success, including before
  * deciding whether competing events constitute anchored duplicity. No writes occur.
  */
-export function vetRegistry(
+export function vet(
   { rip, updates = [], db, sources = new Map(), acdc, blinder }: RegistryEvidence,
 ): RegistryVerification {
   const invalidRip = validateEvent(rip);
@@ -213,19 +214,6 @@ export function vetRegistry(
   return { kind: "verified", state };
 }
 
-/** Historical checks retain microseconds and require explicit RFC3339 timezone offsets. */
-function timestampMicros(value: unknown): bigint | null {
-  if (typeof value !== "string") return null;
-  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/.exec(value);
-  if (!match) return null;
-  const [, base, fraction = "", zone] = match;
-  const local = Date.parse(`${base}Z`);
-  if (!Number.isFinite(local) || new Date(local).toISOString().slice(0, 19) !== base) return null;
-  if (zone !== "Z" && (Number(zone.slice(1, 3)) > 23 || Number(zone.slice(4)) > 59)) return null;
-  const epoch = Date.parse(`${base}${zone}`);
-  return Number.isFinite(epoch) ? BigInt(epoch) * 1000n + BigInt(fraction.padEnd(6, "0")) : null;
-}
-
 /** Node-local disclosures and optional receiver-observed historical cutoff. */
 export interface RegistryBindingEvidence extends Omit<RegistryEvidence, "blinder"> {
   blinders: readonly RegistryDisclosure[];
@@ -240,7 +228,7 @@ export interface RegistryBindingEvidence extends Omit<RegistryEvidence, "blinder
  * head. Every intervening vacuous update needs exactly one authentic disclosure.
  * The caller supplies a trusted receiver timestamp; this creates no KRAM state.
  */
-export function vetRegistryBindings(
+export function vetBinds(
   { rip, updates = [], db, sources = new Map(), acdc, blinders, target, controller, cutoff, requireSource = false }:
     RegistryBindingEvidence,
 ): RegistryVerification {
@@ -257,7 +245,7 @@ export function vetRegistryBindings(
     }
     updates = selected;
   }
-  const result = vetRegistry({ rip, updates, db, sources });
+  const result = vet({ rip, updates, db, sources });
   if (result.kind !== "verified") return result;
   if (controller !== undefined && result.state.issuer !== controller) return { kind: "reject", reason: "binding" };
   const newest = [...updates].sort((a, b) => ordinal(a) > ordinal(b) ? -1 : ordinal(a) < ordinal(b) ? 1 : 0);

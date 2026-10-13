@@ -21,7 +21,10 @@ responsibilities into one vague "VC" layer.
   wallet indexes, and chain policy.
 - `app/ipexing.ts` registers version-specific IPEX policy; `ipex-v2.ts` owns
   disclosure and issuer-proof verification, using `ipex-graph.ts` for graph rules.
-- `db/registry-evidence.ts` owns accepted v2 observer chains, separately from Reger.
+- `acdc/regbasing.ts` owns the public registry paths, LMDB lifecycle and typed
+  `evts`/`tels`/`heads` bindings (physical `evts.`/`tels.`/`heds.`).
+- `db/registry-evidence.ts` extends that same RegBaser owner for accepted v2
+  observer chains, separately from Reger.
 - `app/ipex-credentialing.ts` owns KERIpy-shaped grant/admit credential
   artifacts.
 - `app/verifier-agent.ts` owns Sally-like webhook sending and durable ack/retry
@@ -42,12 +45,15 @@ responsibilities into one vague "VC" layer.
 
 ## V2 Registry Evidence
 
-`vetRegistry` and `vetRegistryBindings` accept parsed Serders and node-local
+`vet` and `vetBinds` accept parsed Serders and node-local
 `BlindState`/`BoundState` values. They return `verified` with complete state,
 `missing` with issuer/event coordinates for a retryable absent anchor, or `reject`
 with a reason. The owning workflow decides whether/how to persist and retry;
 these helpers emit no cues and do no writes. Database and programming failures
-propagate. They are exported from `keri-ts/runtime`.
+propagate. They are exported from `keri-ts/runtime` as `vet` and `vetBinds`, matching the
+reference module names. Pure verification does not acquire or dispose resources.
+The [verified-import preservation record](../../reference/credentials/VERIFIED_IMPORT_SNAPSHOT.md)
+retains the custom store workflow pending its separately owned intake audit.
 
 Every supplied event must have a valid chain position and issuer KEL anchor.
 Verifier anchors compare seal digests, including bare digest seals; sequence
@@ -72,10 +78,19 @@ The [ACDC specification](https://github.com/trustoverip/kswg-acdc-specification/
 defines the controlling KEL and blinded-state commitment basis.
 
 The typed API takes parsed inputs, uses bigint TEL ordinals, and requires numeric
-KEL hints to fit the database's safe-integer API. Cutoff text is restricted to
-timezone-qualified RFC3339 with at most six fractional digits. Python accepts a
-broader datetime grammar. The issuer engine and end-to-end production qualification
-remain unfinished.
+KEL hints to fit the database's safe-integer API. Shared `time/mod.ts` parsing
+restricts cutoff text to timezone-qualified RFC3339 with at most six fractional
+digits and retains exact microseconds; events at the cutoff are included.
+`makeNowIso8601` accepts a caller-supplied `Date` for clock injection, padding its
+milliseconds to six digits. Python accepts a broader datetime grammar. The issuer
+engine and end-to-end production qualification remain unfinished.
+
+Existing #168 stores retain their paths, bodies, 32-digit ordinal keys and head
+markers. Readonly opening binds the existing three tables without rewriting or
+migrating rows. Body presence does not establish acceptance; `tels` contains the
+accepted ordinals and `heads` is their current head cache. Anchor/escrow bindings
+and the full registry service remain later work. Verified import still owns its
+complete-chain check and atomic publication; extraction does not replace it.
 
 ## IPEX
 
