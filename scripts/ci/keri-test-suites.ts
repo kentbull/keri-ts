@@ -19,6 +19,8 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/cesr-egress.test.ts",
       "test/unit/app/replay-source.test.ts",
       "test/unit/app/reply-streams.test.ts",
+      "test/unit/app/witness-transport.test.ts",
+      "test/unit/app/httping.test.ts",
       "test/unit/app/cesr-http.test.ts",
       "test/unit/app/challenge-generate.test.ts",
       "test/unit/app/cli-context.test.ts",

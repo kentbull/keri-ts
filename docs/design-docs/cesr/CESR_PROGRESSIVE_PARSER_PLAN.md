@@ -46,6 +46,11 @@ must hand off outside the active dispatch turn before entering the parser again.
 pending reads and leaves shared runtime reservations to the approved follow-on.
 Finite annotation and streaming CLI consumers merged in
 [#141](https://github.com/kentbull/keri-ts/pull/141).
+Lazy replay sources and runtime-owned replies are merged in
+[#142](https://github.com/kentbull/keri-ts/pull/142). The next transport slice
+migrates exchange/witness delivery and owns fetched response bodies through
+finite Effection scopes. Query-response handoff and incremental mailbox SSE
+remain the next consumer slice.
 
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
 ahead, base it on the predecessor branch and retarget after that predecessor

@@ -24,6 +24,8 @@ import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services
 export interface EgressOptions {
   /** Header mode matches KERIpy; body mode streams the complete qualified frame. */
   bodyMode?: CesrBodyMode;
+  /** Additional transport headers, such as witness Authorization; CESR framing is set by the sender. */
+  headers?: HeadersInit;
   /** Optional endpoint AID carried in CESR-DESTINATION. */
   destination?: string;
   /** Header mode admits at most this many text-qualified attachment bytes; default 64 KiB. */
@@ -178,9 +180,12 @@ export function* requestFrame(url: string, frame: CesrFrame, options: EgressOpti
       const types = mode === "header" ? [CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE] : [CESR_CONTENT_TYPE];
       for (const contentType of types) {
         // Reopening supplies fresh request bytes for a media-type retry without retaining the first upload.
-        const headers: Record<string, string> = { "Content-Type": contentType };
-        if (options.destination) headers[CESR_DESTINATION_HEADER] = options.destination;
-        if (header !== undefined) headers[CESR_ATTACHMENT_HEADER] = header;
+        const headers = new Headers(options.headers);
+        headers.set("Content-Type", contentType);
+        headers.delete(CESR_DESTINATION_HEADER);
+        headers.delete(CESR_ATTACHMENT_HEADER);
+        if (options.destination) headers.set(CESR_DESTINATION_HEADER, options.destination);
+        if (header !== undefined) headers.set(CESR_ATTACHMENT_HEADER, header);
         if (mode === "body") body = requestBody(framePayload(frame), signal);
         // Node requires duplex for streaming uploads; Deno accepts the same standard fetch body.
         const init: RequestInit & { duplex?: "half" } = {

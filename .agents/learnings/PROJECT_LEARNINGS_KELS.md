@@ -365,3 +365,9 @@ participants' next commitments for later recovery.
   delegated group event with `delpre`, anchor it from the delegator, then query
   the delegator KEL with the delegated event anchor and assert the delegate's
   stored delegator field.
+
+Generic witness and signed-exchange HTTP delivery share progressive frame output;
+authorization survives media-type retry while CESR metadata remains serializer
+owned. Receipt responses are explicitly finite proofs (1 MiB), decoded by the
+progressive engine with scoped cancellation. Query reply handoff and mailbox SSE
+collection remain separate work; do not reenter Reactor from its cue consumer.

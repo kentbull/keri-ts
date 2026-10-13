@@ -25,9 +25,9 @@ import { Roles } from "../core/roles.ts";
 import type { FilePayload } from "../db/payload-store.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
-import { buildCesrRequest, type CesrBodyMode, splitCesrStream } from "./cesr-http.ts";
+import { chunkBytes } from "./byte-source.ts";
+import { postCesr } from "./cesr-egress.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 
 const textDecoder = new TextDecoder();
 const EXCHANGE_ESCROW_TIMEOUT_MS = 10_000;
@@ -743,18 +743,10 @@ export function* sendSignedExchangeMessage(
     dig: args.dig,
   });
   const message = hab.endorse(serder, { pipelined: false });
-  const response = yield* postCesrMessage(
-    url,
-    message,
-    "header",
-    args.recipient,
-  );
-  yield* closeResponseBody(response);
-  if (!response.ok) {
-    throw new ValidationError(
-      `Exchange delivery to ${url} failed with HTTP ${response.status}.`,
-    );
-  }
+  yield* postCesr(url, (signal) => chunkBytes(message, { signal }), {
+    bodyMode: "header",
+    destination: args.recipient,
+  });
 
   return { serder, url };
 }
@@ -818,43 +810,6 @@ function normalizeAttachments(
   }));
 }
 
-function* postCesrMessage(
-  url: string,
-  body: Uint8Array,
-  bodyMode: CesrBodyMode,
-  destination?: string,
-): Operation<Response> {
-  const requests = bodyMode === "header" ? splitCesrStream(body) : [body];
-  let lastResponse: Response | null = null;
-
-  for (const currentBody of requests) {
-    const request = buildCesrRequest(currentBody, {
-      bodyMode,
-      destination,
-    });
-    const { response } = yield* fetchResponseHandle(url, {
-      method: "POST",
-      headers: request.headers,
-      body: request.body,
-    });
-
-    if (lastResponse) {
-      yield* closeResponseBody(lastResponse);
-    }
-    lastResponse = response;
-    if (!response.ok) {
-      return response;
-    }
-  }
-
-  if (!lastResponse) {
-    throw new ValidationError(
-      "No CESR HTTP request was generated for delivery.",
-    );
-  }
-
-  return lastResponse;
-}
 function hexToFixedBytes(hex: string, size: number): Uint8Array {
   const normalized = hex.length % 2 === 0 ? hex : `0${hex}`;
   if (!/^[0-9a-f]+$/i.test(normalized)) {

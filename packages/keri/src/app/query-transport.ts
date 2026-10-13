@@ -1,5 +1,5 @@
 import { concatBytes } from "cesr-ts";
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { action, call, type Operation } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Roles } from "../core/roles.ts";
@@ -157,12 +157,15 @@ export function queryTransportSink(
           `No endpoint URL found for query destination ${destination}.`,
         );
       }
-      yield* postQueryMessage(
-        runtime,
-        url,
-        concatBytes(introduce(hab, destination), message),
-        hby.cesrBodyMode,
-        destination,
+      // The cue worker may persist indefinitely; response ownership ends with this delivery.
+      yield* call(() =>
+        postQueryMessage(
+          runtime,
+          url,
+          concatBytes(introduce(hab, destination), message),
+          hby.cesrBodyMode,
+          destination,
+        )
       );
     },
   };
