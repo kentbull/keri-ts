@@ -63,6 +63,7 @@ function bytesCodeForRaw(raw: Uint8Array): string {
  *   characters like `/`
  * - relative routes keep the first segment as-is, while absolute paths are
  *   forced to start with an empty root segment
+ * - Pather owns its `--` escape; Bexter's single-hyphen escaping is disabled
  *
  * Examples:
  * - `makePather("ksn", { relative: true, pathive: false }).qb64 === "4AABAksn"`
@@ -110,7 +111,7 @@ export function makePather(
       bext = `--${bext}`;
     }
     return new Pather({
-      raw: Bexter.rawify(bext),
+      raw: Bexter.rawify(bext, false),
       code: strB64CodeForText(bext),
     });
   }
@@ -139,10 +140,10 @@ export class Pather extends Matter {
     }
   }
 
-  /** Decoded `/`-separated path form regardless of underlying CESR code family. */
+  /** Decode `/`-separated paths, removing only Pather's own double-hyphen escape. */
   get path(): string {
     if (BEXTER_CODES.has(this.code)) {
-      const bext = Bexter.derawify(this.raw, this.code).replace(/^--/, "");
+      const bext = Bexter.derawify(this.raw, this.code, false).replace(/^--/, "");
       return bext.split("-").join("/");
     }
     return t(this.raw);

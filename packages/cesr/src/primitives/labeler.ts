@@ -15,18 +15,15 @@ export function isLabelerCode(code: string): boolean {
 /**
  * Decode a label/text token according to LabelCodex encoding rules.
  *
- * Tag/Bext encodings require specialized decoding logic; all other label forms
- * project directly from raw bytes.
+ * Bext shares Bexter's escape convention for both labels and arbitrary text;
+ * tag encodings decode separately, and other forms project raw bytes.
  */
 function decodeLabelText(matter: Matter): string {
   if (TAG_CODES.has(matter.code)) {
     return new Tagger(matter).tag;
   }
   if (BEXTER_CODES.has(matter.code)) {
-    const bext = Bexter.derawify(matter.raw, matter.code);
-    return bext.startsWith("-") && isAttLabel(bext.slice(1))
-      ? bext.slice(1)
-      : bext;
+    return Bexter.derawify(matter.raw, matter.code);
   }
   return TEXT_DECODER.decode(matter.raw);
 }

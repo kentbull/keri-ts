@@ -1,0 +1,337 @@
+{
+  "reference": "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+  "bexters": [
+    {
+      "text": "",
+      "escapive": true,
+      "qb64": "4AAA",
+      "qb2": "e00000"
+    },
+    {
+      "text": "A",
+      "escapive": true,
+      "qb64": "6AABAAAA",
+      "qb2": "e80001000000"
+    },
+    {
+      "text": "AA",
+      "escapive": true,
+      "qb64": "5AABAAAA",
+      "qb2": "e40001000000"
+    },
+    {
+      "text": "AAA",
+      "escapive": true,
+      "qb64": "4AAB-AAA",
+      "qb2": "e00001f80000"
+    },
+    {
+      "text": "AAAA",
+      "escapive": true,
+      "qb64": "6AACAAA-AAAA",
+      "qb2": "e8000200003e000000"
+    },
+    {
+      "text": "AAAAA",
+      "escapive": true,
+      "qb64": "6AACAAAAAAAA",
+      "qb2": "e80002000000000000"
+    },
+    {
+      "text": "AAAAAA",
+      "escapive": true,
+      "qb64": "5AACAAAAAAAA",
+      "qb2": "e40002000000000000"
+    },
+    {
+      "text": "AAAAAAA",
+      "escapive": true,
+      "qb64": "4AAC-AAAAAAA",
+      "qb2": "e00002f80000000000"
+    },
+    {
+      "text": "AAAAAAAA",
+      "escapive": true,
+      "qb64": "6AADAAA-AAAAAAAA",
+      "qb2": "e8000300003e000000000000"
+    },
+    {
+      "text": "-",
+      "escapive": true,
+      "qb64": "5AABAA--",
+      "qb2": "e40001000fbe"
+    },
+    {
+      "text": "--",
+      "escapive": true,
+      "qb64": "4AABA---",
+      "qb2": "e0000103efbe"
+    },
+    {
+      "text": "---",
+      "escapive": true,
+      "qb64": "4AAB----",
+      "qb2": "e00001fbefbe"
+    },
+    {
+      "text": "----",
+      "escapive": true,
+      "qb64": "6AACAAA-----",
+      "qb2": "e8000200003efbefbe"
+    },
+    {
+      "text": "-abc",
+      "escapive": true,
+      "qb64": "6AACAAA--abc",
+      "qb2": "e8000200003ef9a6dc"
+    },
+    {
+      "text": "-abcd",
+      "escapive": true,
+      "qb64": "5AACAA--abcd",
+      "qb2": "e40002000fbe69b71d"
+    },
+    {
+      "text": "-abcde",
+      "escapive": true,
+      "qb64": "4AACA--abcde",
+      "qb2": "e0000203ef9a6dc75e"
+    },
+    {
+      "text": "-abcdef",
+      "escapive": true,
+      "qb64": "4AAC--abcdef",
+      "qb2": "e00002fbe69b71d79f"
+    },
+    {
+      "text": "b",
+      "escapive": true,
+      "qb64": "6AABAAAb",
+      "qb2": "e8000100001b"
+    },
+    {
+      "text": "bc",
+      "escapive": true,
+      "qb64": "5AABAAbc",
+      "qb2": "e400010006dc"
+    },
+    {
+      "text": "bcd",
+      "escapive": true,
+      "qb64": "4AABAbcd",
+      "qb2": "e0000101b71d"
+    },
+    {
+      "text": "bcde",
+      "escapive": true,
+      "qb64": "4AABbcde",
+      "qb2": "e000016dc75e"
+    },
+    {
+      "text": "_",
+      "escapive": true,
+      "qb64": "6AABAAA_",
+      "qb2": "e8000100003f"
+    },
+    {
+      "text": "_abc",
+      "escapive": true,
+      "qb64": "4AAB_abc",
+      "qb2": "e00001fda6dc"
+    },
+    {
+      "text": "-",
+      "escapive": false,
+      "qb64": "6AABAAA-",
+      "qb2": "e8000100003e"
+    },
+    {
+      "text": "--",
+      "escapive": false,
+      "qb64": "5AABAA--",
+      "qb2": "e40001000fbe"
+    },
+    {
+      "text": "bcd",
+      "escapive": false,
+      "qb64": "4AABAbcd",
+      "qb2": "e0000101b71d"
+    }
+  ],
+  "labels": [
+    {
+      "text": "Abbbbbbbbbbb",
+      "qb64": "6AAEAAA-Abbbbbbbbbbb",
+      "qb2": "e8000400003e01b6db6db6db6db6db"
+    },
+    {
+      "text": "Abbbbbbbbbbbb",
+      "qb64": "6AAEAAAAbbbbbbbbbbbb",
+      "qb2": "e800040000006db6db6db6db6db6db"
+    },
+    {
+      "text": "Abbbbbbbbbbbbb",
+      "qb64": "5AAEAAAbbbbbbbbbbbbb",
+      "qb2": "e4000400001b6db6db6db6db6db6db"
+    },
+    {
+      "text": "Abbbbbbbbbbbbbb",
+      "qb64": "4AAE-Abbbbbbbbbbbbbb",
+      "qb2": "e00004f806db6db6db6db6db6db6db"
+    },
+    {
+      "text": "-bbbbbbbbbbb",
+      "qb64": "6AAEAAA--bbbbbbbbbbb",
+      "qb2": "e8000400003ef9b6db6db6db6db6db"
+    },
+    {
+      "text": "-bbbbbbbbbbbb",
+      "qb64": "5AAEAA--bbbbbbbbbbbb",
+      "qb2": "e40004000fbe6db6db6db6db6db6db"
+    },
+    {
+      "text": "-bbbbbbbbbbbbb",
+      "qb64": "4AAEA--bbbbbbbbbbbbb",
+      "qb2": "e0000403ef9b6db6db6db6db6db6db"
+    },
+    {
+      "text": "-bbbbbbbbbbbbbb",
+      "qb64": "4AAE--bbbbbbbbbbbbbb",
+      "qb2": "e00004fbe6db6db6db6db6db6db6db"
+    },
+    {
+      "text": "_bbbbbbbbbbb",
+      "qb64": "4AAD_bbbbbbbbbbb",
+      "qb2": "e00003fdb6db6db6db6db6db"
+    },
+    {
+      "text": "_bbbbbbbbbbbb",
+      "qb64": "6AAEAAA_bbbbbbbbbbbb",
+      "qb2": "e8000400003f6db6db6db6db6db6db"
+    },
+    {
+      "text": "_bbbbbbbbbbbbb",
+      "qb64": "5AAEAA_bbbbbbbbbbbbb",
+      "qb2": "e40004000fdb6db6db6db6db6db6db"
+    },
+    {
+      "text": "_bbbbbbbbbbbbbb",
+      "qb64": "4AAEA_bbbbbbbbbbbbbb",
+      "qb2": "e0000403f6db6db6db6db6db6db6db"
+    }
+  ],
+  "paths": [
+    {
+      "text": "",
+      "relative": false,
+      "path": "",
+      "qb64": "4AAA",
+      "qb2": "e00000"
+    },
+    {
+      "text": "",
+      "relative": true,
+      "path": "",
+      "qb64": "4AAA",
+      "qb2": "e00000"
+    },
+    {
+      "text": "/",
+      "relative": false,
+      "path": "/",
+      "qb64": "6AABAAA-",
+      "qb2": "e8000100003e"
+    },
+    {
+      "text": "/",
+      "relative": true,
+      "path": "/",
+      "qb64": "6AABAAA-",
+      "qb2": "e8000100003e"
+    },
+    {
+      "text": "A",
+      "relative": false,
+      "path": "/A",
+      "qb64": "5AABAA-A",
+      "qb2": "e40001000f80"
+    },
+    {
+      "text": "A",
+      "relative": true,
+      "path": "A",
+      "qb64": "6AABAAAA",
+      "qb2": "e80001000000"
+    },
+    {
+      "text": "AA",
+      "relative": false,
+      "path": "/AA",
+      "qb64": "4AABA-AA",
+      "qb2": "e0000103e000"
+    },
+    {
+      "text": "AA",
+      "relative": true,
+      "path": "AA",
+      "qb64": "5AABAAAA",
+      "qb2": "e40001000000"
+    },
+    {
+      "text": "AAA",
+      "relative": false,
+      "path": "/AAA",
+      "qb64": "4AAB-AAA",
+      "qb2": "e00001f80000"
+    },
+    {
+      "text": "AAA",
+      "relative": true,
+      "path": "AAA",
+      "qb64": "6AACAAA--AAA",
+      "qb2": "e8000200003ef80000"
+    },
+    {
+      "text": "AAAA",
+      "relative": false,
+      "path": "/AAAA",
+      "qb64": "6AACAAA-AAAA",
+      "qb2": "e8000200003e000000"
+    },
+    {
+      "text": "AAAA",
+      "relative": true,
+      "path": "AAAA",
+      "qb64": "5AACAA--AAAA",
+      "qb2": "e40002000fbe000000"
+    },
+    {
+      "text": "AAA/b",
+      "relative": false,
+      "path": "/AAA/b",
+      "qb64": "5AACAA-AAA-b",
+      "qb2": "e40002000f80000f9b"
+    },
+    {
+      "text": "AAA/b",
+      "relative": true,
+      "path": "AAA/b",
+      "qb64": "6AACAAAAAA-b",
+      "qb2": "e80002000000000f9b"
+    },
+    {
+      "text": "a/b",
+      "relative": false,
+      "path": "/a/b",
+      "qb64": "4AAB-a-b",
+      "qb2": "e00001f9af9b"
+    },
+    {
+      "text": "a/b",
+      "relative": true,
+      "path": "a/b",
+      "qb64": "4AABAa-b",
+      "qb2": "e0000101af9b"
+    }
+  ]
+}

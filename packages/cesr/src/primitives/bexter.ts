@@ -29,26 +29,43 @@ export function isBexterCode(code: string): boolean {
  *
  * Invariant:
  * - `code` must belong to the StrB64/Bexter codex family
+ * - escape a leading `-`, or a leading `A` when padding would be ambiguous
+ * - callers owning another escape convention (Pather) disable `escapive`
  */
 export class Bexter extends Matter {
-  /** Convert bext text into CESR raw payload bytes. */
-  static rawify(bext: string): Uint8Array {
+  /** Whether semantic text uses KERIpy's leading-hyphen escape convention. */
+  readonly escapive: boolean;
+
+  /** Convert Base64-safe text to raw bytes, escaping before calculating padding. */
+  static rawify(bext: string, escapive = true): Uint8Array {
+    // Wrap to 0..3 leading sextets; already aligned text needs zero padding.
+    let ws = (4 - bext.length % 4) % 4;
+    if (escapive && (bext.startsWith("-") || (bext.startsWith("A") && (ws === 0 || ws === 1)))) {
+      bext = `-${bext}`;
+      ws = (4 - bext.length % 4) % 4;
+    }
     const ts = bext.length % 4;
-    const ws = (4 - ts) % 4;
+    // Discard the 0..2 whole bytes introduced by those leading zero sextets.
     const ls = (3 - ts) % 3;
     return decodeB64("A".repeat(ws) + bext).slice(ls);
   }
 
-  /** Decode CESR raw payload bytes back into bext text. */
-  static derawify(raw: Uint8Array, code: string): string {
+  /** Restore text by removing CESR padding first, then at most one escape. */
+  static derawify(raw: Uint8Array, code: string, escapive = true): string {
     const ls = getLeadSize(code);
-    const bext = encodeB64(new Uint8Array([...new Uint8Array(ls), ...raw]));
+    const padded = new Uint8Array(ls + raw.length);
+    padded.set(raw, ls);
+    let bext = encodeB64(padded);
+    // The code records byte padding; recover its sextet count before unescaping.
     const ws = ls === 0 ? (bext.startsWith("A") ? 1 : 0) : (ls + 1) % 4;
-    return bext.slice(ws);
+    bext = bext.slice(ws);
+    return escapive && bext.startsWith("-") ? bext.slice(1) : bext;
   }
 
-  constructor(init: Matter | MatterInit) {
+  /** Hydrate a StrB64 token; escape interpretation is a semantic caller choice. */
+  constructor(init: Matter | MatterInit, escapive = true) {
     super(init);
+    this.escapive = escapive;
     if (!isBexterCode(this.code)) {
       throw new UnknownCodeError(
         `Expected bexter strb64 code, got ${this.code}`,
@@ -56,9 +73,9 @@ export class Bexter extends Matter {
     }
   }
 
-  /** Base64 text payload value without CESR code prefix. */
+  /** Base64 text payload with the configured escape convention removed. */
   get bext(): string {
-    return Bexter.derawify(this.raw, this.code);
+    return Bexter.derawify(this.raw, this.code, this.escapive);
   }
 }
 
