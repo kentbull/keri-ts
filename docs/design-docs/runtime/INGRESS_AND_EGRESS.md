@@ -63,6 +63,18 @@ an explicitly bounded 8 MiB value. `Reactor.processBytes` supplies a finite valu
 path; it owns parsing and dispatch through an Effection operation. No shared
 feed buffer or separate synchronous parser remains.
 
+## Runtime store ownership
+
+AgentRuntime borrows its Habery and injected registry-evidence/TEL stores.
+Readonly Habery construction creates neither default store. A writable Habery
+without an injected store acquires a default in the current Effection scope;
+explicit ownership flags govern runtime.close(). Scope exit also joins database
+close and removes temporary stores, including failed construction and cancellation.
+Explicit close followed by scope exit is harmless. The registry-evidence factory
+owns acquisition cleanup until it transfers the opened store to its caller.
+A finite call scope separates acquisition cancellation from the resource provider,
+so joined factory cleanup cannot resume the provider with an untransferred value.
+
 ## Replay output ownership
 
 KEL `replay` cues and `CueEmission.messages` are reopenable iterables of complete,

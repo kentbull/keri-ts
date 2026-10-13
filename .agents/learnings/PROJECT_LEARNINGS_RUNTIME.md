@@ -22,6 +22,12 @@ escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state.
 
+Runtime store acquisition and ownership must be visible in composition-root
+control flow. Default registry-evidence and TEL stores are scope-owned; readonly
+Haberies get neither, and injected stores remain caller-owned. Factories retain
+cleanup responsibility until returning their opened store. Explicit runtime close
+and scope exit both join cleanup; scope exit after explicit close is harmless.
+
 ## Transport
 
 Direct replies reserve query SAIDs before dispatch; only the final query owns the

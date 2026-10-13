@@ -116,6 +116,13 @@ export function* createRegistryEvidenceStore(
   options: RegistryEvidenceStoreOptions = {},
 ): Operation<RegistryEvidenceStore> {
   const store = new RegistryEvidenceStore(options);
-  yield* store.reopen();
-  return store;
+  let delivered = false;
+  try {
+    yield* store.reopen();
+    delivered = true;
+    return store;
+  } finally {
+    // Acquisition owns the store until it returns; aborts and failures join cleanup.
+    if (!delivered) yield* store.close(store.temp);
+  }
 }
