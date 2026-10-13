@@ -75,7 +75,7 @@ PR check. Manual workflows are dispatched explicitly by the maintainer.
 ## Verified KERIpy selection
 
 The default CLI runtime is the published `kentbull/keripy` mailbox fork
-`4ee94ce8fa3bfb30fa5bf595f8d10dad4c9e0186`, based on upstream main
+`4a744cff0e6369bb5eecc807b8f7e6a3def83fe6`, based on upstream main
 `927c0cb8794d7c84fc17143c67df64aab9deda6c` plus mailbox commands, admission
 checks, and explicit protocol/genus selection for mailbox startup and authorization. This is fork-on-main qualification, not pure upstream parity. Historical
 table-source pins are independent data provenance, not claims about the live peer.
@@ -102,7 +102,7 @@ For the maintained mailbox-on-main qualification, select its exact checkout and 
 
 ```bash
 export KERIPY_INTEROP_ROOT=/Users/kbull/enc/keri/worktrees/keripy/mailbox-main-interop
-export KERIPY_INTEROP_EXPECTED_COMMIT=4ee94ce8fa3bfb30fa5bf595f8d10dad4c9e0186
+export KERIPY_INTEROP_EXPECTED_COMMIT=4a744cff0e6369bb5eecc807b8f7e6a3def83fe6
 export KERIPY_INTEROP_PYTHON="$KERIPY_INTEROP_ROOT/venv/bin/python"
 export LMDB_DATA_V1=true
 export KERI_TEST_TIMINGS_DIR=/tmp/keri-mailbox-main-qualification

@@ -69,7 +69,9 @@ proven duplication or tests without a production contract, retain protocol and
 resource-lifecycle regressions, and simplify test scheduling without hiding
 coverage. Keep production behavior unchanged in that PR.
 
-# Run the complete maintained test inventory, including all manual and long-runningargets. Preserve the frozen upstream-main baseline at`927c0cb8794d7c84fc17143c67df64aab9deda6c`. Final qualification uses the published`kentbull/keripy` fork `4ee94ce8fa3bfb30fa5bf595f8d10dad4c9e0186`: that same mainbase plus standalone mailbox commands/admission and explicit mailbox protocolselection. This is fork-on-main qualification, not pure upstream parity. Verifyexact commit and actual imports, and record every run, skip, failure, topology,and duration. Extended interop and ESSR workflow jobs have a 15-minute limit;only the maintainer dispatches them. Full local qualification still runs everymaintained target, including long topologies.
+# Run the complete maintained test inventory, including all manual and long-runningargets. Preserve the frozen upstream-main baseline at`927c0cb8794d7c84fc17143c67df64aab9deda6c`. Final qualification uses the published`kentbull/keripy` fork `4a744cff0e6369bb5eecc807b8f7e6a3def83fe6`: that same mainbase plus standalone mailbox commands/admission and explicit mailbox protocolselection, plus the receipt-table lookup repair needed for transferable-peer
+
+queries. This is fork-on-main qualification, not pure upstream parity. Verifyexact commit and actual imports, and record every run, skip, failure, topology,and duration. Extended interop and ESSR workflow jobs have a 15-minute limit;only the maintainer dispatches them. Full local qualification still runs everymaintained target, including long topologies.
 
 Continue the progressive parser sequence after preparing that review PR. Any
 interop regressions or missing features discovered against this KERIpy revision
@@ -151,10 +153,11 @@ implementation onto this frozen upstream revision and publishing an immutable
 commit on `kentbull/keripy`. Record that fork commit, upstream parent, mailbox
 delta, and actual import path separately from upstream-main evidence. Preserve
 the existing `mailbox-impl` branch. Published `mailbox-main-interop` commit
-`4ee94ce8fa3bfb30fa5bf595f8d10dad4c9e0186` is based on upstream
+`4a744cff0e6369bb5eecc807b8f7e6a3def83fe6` is based on upstream
 `927c0cb8794d7c84fc17143c67df64aab9deda6c`, ports the original mailbox commits
 `1faba4f2` / `9924fffa`, adapts their handler to nested messages, and adds explicit
-mailbox protocol selection. The #134
+mailbox protocol selection plus the `vrcs` lookup repair in forwarding introductions.
+The #134
 runtime qualification uses this declared fork; protocol-table pins remain
 independently identified. A successful fork run proves that declared combined surface,
 not unmodified upstream-main mailbox behavior.

@@ -157,7 +157,7 @@ const KERIPY_DEMO_WITNESS_NODES: readonly KeriPyWitnessNode[] = [
 ];
 
 /** Mailbox fork on main927; an explicit verified source override takes precedence. */
-export const KERIPY_INTEROP_COMMIT = "4ee94ce8fa3bfb30fa5bf595f8d10dad4c9e0186";
+export const KERIPY_INTEROP_COMMIT = "4a744cff0e6369bb5eecc807b8f7e6a3def83fe6";
 
 const KERIPY_INTEROP_REPO = "https://github.com/kentbull/keripy.git";
 const KERIPY_INTEROP_INSTALL = `git+${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}`;
