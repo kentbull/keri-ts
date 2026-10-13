@@ -5,20 +5,28 @@ import { parse } from "../../packages/cesr/src/parser/progressive.ts";
 import { Texter } from "../../packages/cesr/src/primitives/texter.ts";
 import { corpus, type CorpusOptions } from "./cesr-corpus.ts";
 
+/** One isolated benchmark case supplied by the supervising process. */
 const options: CorpusOptions = JSON.parse(Deno.args[0]);
+/** Independent corpus oracle and bounded chunk producer for this case. */
 const { manifest, chunks } = corpus(options);
+/** Digest only the wire bytes actually admitted by the parser. */
 const wireHash = createHash("sha256");
+/** Completed output and input counters; no frame history is retained. */
 let frames = 0;
 let received = 0;
 let payloadBytes = 0;
+/** First complete child latency and source admission at that instant. */
 let firstFrameMs: number | null = null;
 let firstFrameBytes: number | null = null;
+/** In-process sampled high-water marks, complemented by supervisor RSS sampling. */
 let peakRss = Deno.memoryUsage().rss;
 let peakHeap = Deno.memoryUsage().heapUsed;
 let peakExternal = Deno.memoryUsage().external;
+/** Timed work includes source generation and correctness verification, excluding startup. */
 const start = performance.now();
 const cpuStart = cpuUsage();
 
+/** Sample between parser calls; the supervisor also samples during blocking work. */
 function sampleMemory() {
   const memory = Deno.memoryUsage();
   peakRss = Math.max(peakRss, memory.rss);
@@ -46,6 +54,7 @@ function consume(frame: CesrFrame) {
   frames++;
 }
 
+/** Report parser failures as structured results without claiming successful throughput. */
 let error: { name: string; message: string } | null = null;
 /** Pulling input updates admission counters before the parser can yield a child. */
 async function* source(): AsyncGenerator<Uint8Array> {
@@ -66,6 +75,7 @@ try {
     ? { name: cause.name, message: cause.message }
     : { name: "Error", message: String(cause) };
 }
+// Finish timing before formatting the report so output serialization is excluded.
 const elapsedMs = performance.now() - start;
 sampleMemory();
 console.log(JSON.stringify({

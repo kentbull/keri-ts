@@ -13,6 +13,7 @@ const V2 = { major: 2, minor: 0 } as const;
 
 Deno.test("large input: base64 encoding matches an independent encoder across chunk boundaries", () => {
   const data = Uint8Array.from({ length: 1024 * 1024 + 2 }, (_, i) => i % 256);
+  // Exercise both base64 remainder classes and either side of the 24 KiB encoder slab.
   for (const length of [0, 1, 2, 3, 24575, 24576, 24577, data.length - 2, data.length - 1, data.length]) {
     const raw = data.subarray(0, length);
     const encoded = encodeB64(raw);
@@ -22,6 +23,7 @@ Deno.test("large input: base64 encoding matches an independent encoder across ch
 });
 
 Deno.test("large input: byte conversion preserves every byte without Unicode substitution", () => {
+  // Include every byte value so a UTF-8 decoder cannot hide replacement characters.
   const raw = Uint8Array.from({ length: 1024 * 1024 }, (_, i) => i % 256);
   const text = byteString(raw);
   assertEquals(text.length, raw.length);
@@ -29,6 +31,7 @@ Deno.test("large input: byte conversion preserves every byte without Unicode sub
 });
 
 Deno.test("large input: 1 MiB and 4 MiB Texters roundtrip in both CESR domains", () => {
+  // Cover zero-byte and one-byte alignment padding without a long-running benchmark.
   for (const size of [1024 * 1024, 4 * 1024 * 1024 + 2]) {
     const raw = Uint8Array.from({ length: size }, (_, i) => i % 256);
     const texter = new Texter({ raw, code: MtrDex.Bytes_L0 });
@@ -40,6 +43,7 @@ Deno.test("large input: 1 MiB and 4 MiB Texters roundtrip in both CESR domains",
 });
 
 Deno.test("large input: primitive readers ignore an 8 MiB non-text stream tail", () => {
+  // A small valid token must decode without converting the unrelated binary suffix.
   const tail = new Uint8Array(8 * 1024 * 1024).fill(0xff);
   const primitives = [
     { value: new Matter({ qb64: KERIPY_MATTER_VECTORS.prefixerEd25519N }), parse: parseMatter },
@@ -70,7 +74,9 @@ Deno.test("large input: incomplete hard and soft headers remain shortages in bot
   for (const { qb64, header, parse } of cases) {
     for (const domain of ["txt", "bny"] as const) {
       const encoded = domain === "txt" ? b(qb64) : decodeB64(qb64);
+      // Four base64 characters encode three bytes; partial groups round up.
       const headerSize = domain === "txt" ? header : Math.ceil(header * 3 / 4);
+      // Every incomplete header waits for input rather than reporting an unknown code.
       for (let split = 0; split < headerSize; split++) {
         const error = assertThrows(() => parse(encoded.subarray(0, split), domain), ShortageError);
         assertEquals(error.available, split);
@@ -85,6 +91,7 @@ Deno.test("large input: invalid high bytes inside a token are not replaced durin
   const matter = b(KERIPY_MATTER_VECTORS.prefixerEd25519N);
   const indexer = b(KERIPY_INDEXER_VECTORS.ed25519SigIdx5);
   const counter = b("--AAAQAA");
+  // Corruption inside the token remains invalid, unlike the ignored suffix above.
   matter[10] = 0xff;
   indexer[10] = 0xff;
   counter[5] = 0xff;
