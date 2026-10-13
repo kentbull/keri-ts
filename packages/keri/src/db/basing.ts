@@ -6,10 +6,13 @@ import {
   concatBytes,
   Dater,
   Diger,
+  type EssrPayload,
+  essrPayload,
   Labeler,
   Noncer,
   NumberPrimitive,
   NumDex,
+  type Payload,
   Prefixer,
   Saider,
   SealEvent,
@@ -21,7 +24,8 @@ import {
   Verfer,
   Verser,
 } from "cesr-ts";
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { join } from "jsr:@std/path";
+import { action, call, type Operation } from "npm:effection@^3.6.0";
 import type { Database } from "npm:lmdb@3.5.3";
 import { attachmentCounterPayloadQb64b, attachmentCounterQb64b } from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
@@ -66,10 +70,13 @@ import {
   WellKnownAuthN,
   type WellKnownAuthNShape,
 } from "../core/records.ts";
-import { dgKey } from "./core/keys.ts";
+import { dgKey, unsuffix } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
+import { ExchangeRecord, PlaintextRecord } from "./exchange-records.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
 import { MailboxInbox } from "./mailbox-inbox.ts";
+import { PayloadArchive } from "./payload-archive.ts";
+import { payloadRange } from "./payload-view.ts";
 import {
   B64OnIoDupSuber,
   CatCesrIoSetSuber,
@@ -223,6 +230,122 @@ export class Baser {
   public locs!: Komer<LocationRecord>; // Service endpoint locations keyed by endpoint and scheme.
   public obvs!: Komer<ObservedRecord>; // Observed identifier records keyed by controller, watcher, and observed ID.
   private inbox?: MailboxInbox;
+  /** One lazily opened file owner, shared by parser staging and runtime storage. */
+  private archive?: Promise<PayloadArchive>;
+  /** Private accepted/escrow provenance; protocol evidence stays in KERIpy tables. */
+  private exchangeMetadata?: Komer<ExchangeRecord>;
+  /** Authenticated plaintext offsets used to reconstruct inner-stream views. */
+  private plaintextMetadata?: Komer<PlaintextRecord>;
+
+  /** Private provenance is separate from the KERIpy exchange wire tables. */
+  get exchangeMeta(): Komer<ExchangeRecord> {
+    return this.exchangeMetadata ??= new Komer(this.lmdber, {
+      subkey: "exchange.meta.",
+      recordClass: ExchangeRecord,
+    });
+  }
+
+  /** Open the exclusive file owner lazily and finish recovery before admitting payloads. */
+  openPayloads(signal?: AbortSignal): Promise<PayloadArchive> {
+    signal?.throwIfAborted();
+    if (!this.opened || !this.path) return Promise.reject(new Error("Payload database is closed"));
+    if (this.archive) return this.archive;
+    const opening = this.recoverPayloads(signal);
+    this.archive = opening;
+    // Failed or cancelled recovery owns its cleanup and permits a later fresh admission.
+    void opening.catch(() => {
+      if (this.archive === opening) this.archive = undefined;
+    });
+    return opening;
+  }
+
+  /** Remove interrupted wire rows while the archive still excludes all payload admissions. */
+  private async recoverPayloads(signal?: AbortSignal): Promise<PayloadArchive> {
+    const archive = await PayloadArchive.open(this.lmdber, join(this.path!, "payloads"), signal);
+    try {
+      let previous: string | undefined;
+      let owned = false;
+      let removed = false;
+      // Scan physical keys only: a crashed write can leave arbitrarily many Texter rows.
+      for (const key of this.essrs.sdb.getKeys()) {
+        signal?.throwIfAborted();
+        const [saidKey] = unsuffix(key);
+        const said = t(saidKey);
+        if (said !== previous) {
+          previous = said;
+          // Preserve KERIpy-origin wire evidence without requiring our private metadata.
+          owned = this.exns.sdb.doesExist(saidKey) || this.epse.sdb.doesExist(saidKey);
+        }
+        if (!owned) removed = this.essrs.sdb.removeSync(key) || removed;
+      }
+      if (removed) await this.lmdber.env!.flushed;
+      signal?.throwIfAborted();
+      return archive;
+    } catch (error) {
+      await archive.close();
+      throw error;
+    }
+  }
+
+  /** Reopen canonical wire and its decoded view without hydrating all ESSR Texters. */
+  async getEssr(said: string, signal?: AbortSignal): Promise<EssrPayload | null> {
+    signal?.throwIfAborted();
+    const metadata = this.exchangeMeta.get([said])?.essr;
+    if (!metadata) return null;
+    const wire = await (await this.openPayloads(signal)).get(`essr/${said}`, signal);
+    if (!wire) throw new Error("Exchange ESSR reference is missing");
+    return essrPayload(
+      {
+        size: wire.size,
+        /** Reopen the archive's immutable wire object for each decoded read. */
+        open: (signal) => wire.open(signal),
+        /** The archive retains ownership when a consumer releases this view. */
+        discard: async () => {},
+      },
+      metadata.count,
+      metadata.size,
+      metadata.gvrsn,
+    );
+  }
+
+  /** Persist caller-authenticated recipient output after its signed exchange is accepted. */
+  async savePlaintext(
+    said: string,
+    plaintext: Payload,
+    offset: number,
+    signal?: AbortSignal,
+  ): Promise<{ plaintext: Payload; body: Payload }> {
+    signal?.throwIfAborted();
+    if (!this.exns.get([said])) throw new Error("Cannot store plaintext for an unaccepted exchange");
+    payloadRange(plaintext, offset);
+    const metadata = this.plaintextMetadata ??= new Komer(this.lmdber, {
+      subkey: "plaintext.meta.",
+      recordClass: PlaintextRecord,
+    });
+    const previous = metadata.get([said]);
+    if (previous && previous.offset !== offset) {
+      throw new Error("Plaintext header offset conflicts with its stored value");
+    }
+    const stored = await (await this.openPayloads(signal)).publish(`plain/${said}`, plaintext, () => {
+      metadata.pin([said], { offset });
+    }, signal);
+    return { plaintext: stored, body: payloadRange(stored, offset) };
+  }
+
+  /** Reopen the authenticated inner CESR source independently of ciphertext evidence. */
+  async getPlaintext(said: string, signal?: AbortSignal): Promise<{ plaintext: Payload; body: Payload } | null> {
+    signal?.throwIfAborted();
+    const metadata = this.plaintextMetadata ??= new Komer(this.lmdber, {
+      subkey: "plaintext.meta.",
+      recordClass: PlaintextRecord,
+    });
+    const record = metadata.get([said]);
+    if (!record) return null;
+    const plaintext = await (await this.openPayloads(signal)).get(`plain/${said}`, signal);
+    if (!plaintext) throw new Error("Plaintext reference is missing");
+    return { plaintext, body: payloadRange(plaintext, record.offset) };
+  }
+
   /** Open opt-in consumer storage lazily so legacy/read-only opens require no new subdatabase. */
   get mailboxInbox(): MailboxInbox {
     return this.inbox ??= new MailboxInbox(this.lmdber, this.tops);
@@ -346,6 +469,14 @@ export class Baser {
    * than hand-rolled raw LMDB handles.
    */
   *reopen(options: Partial<BaserOptions> = {}): Operation<boolean> {
+    if (this.archive) {
+      yield* call(async () => {
+        await (await this.archive!.catch(() => null))?.close();
+      });
+    }
+    this.archive = undefined;
+    this.exchangeMetadata = undefined;
+    this.plaintextMetadata = undefined;
     const opened = yield* this.lmdber.reopen(options);
     if (!opened) {
       return false;
@@ -952,6 +1083,14 @@ export class Baser {
 
   /** Close the underlying LMDB resources. */
   *close(clear = false): Operation<boolean> {
+    if (this.archive) {
+      yield* call(async () => {
+        await (await this.archive!.catch(() => null))?.close();
+      });
+    }
+    this.archive = undefined;
+    this.exchangeMetadata = undefined;
+    this.plaintextMetadata = undefined;
     this.kevers.clear();
     this.prefixes.clear();
     this.groups.clear();

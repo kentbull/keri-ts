@@ -29,9 +29,12 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 | 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Pending                                                     |
 | 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                                                     |
 
-Before phase 9, land an Operation propagation preparation PR: dispatch/settlement
-callers and mailbox batch delivery yield through completion, and mailbox endpoint identity
-is passed explicitly. This makes async exchange storage a green, separate change.
+Phase 9 builds on [#135](https://github.com/kentbull/keri-ts/pull/135), which makes
+dispatch/settlement and mailbox batch delivery yield through completion with
+explicit mailbox endpoint identity, and
+[#136](https://github.com/kentbull/keri-ts/pull/136), which publishes durable
+payload references. Those independent foundations must merge before the exchange
+integration PR is published; its review diff contains only the integration.
 
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
 ahead, base it on the predecessor branch and retarget after that predecessor
@@ -56,9 +59,11 @@ later frame fails.
 ## Additional approved review and qualification work
 
 After the open parser PRs through recipient decryption (#129–#133) merge, prepare
-one test cleanup/reorganization PR against current master and leave it open for
-human review. Draft [#134](https://github.com/kentbull/keri-ts/pull/134) is prepared;
-complete current-main qualification is running and the PR remains unmerged. Revalidate the side-chat audit against the new code, remove only
+one test cleanup/reorganization PR against current master.
+Draft [#134](https://github.com/kentbull/keri-ts/pull/134) is prepared and authorized
+to merge after complete pinned-main qualification, including manual and long
+runs, passes. That qualification is running; the PR remains unmerged.
+Revalidate the side-chat audit against the new code, remove only
 proven duplication or tests without a production contract, retain protocol and
 resource-lifecycle regressions, and simplify test scheduling without hiding
 coverage. Keep production behavior unchanged in that PR.

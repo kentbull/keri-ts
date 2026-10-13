@@ -1,6 +1,9 @@
 import { collectPayload, Diger, MtrDex, parseBexter, parsePrefixer, parseTagger, type Payload } from "cesr-ts";
+import { call, type Operation, resource } from "effection";
 import { ValidationError } from "../core/errors.ts";
 import type { FilePayload, PayloadStore } from "../db/payload-store.ts";
+import { payloadRange } from "../db/payload-view.ts";
+import { abortable } from "./abortable.ts";
 import type { Hab } from "./habbing.ts";
 
 /** Expected ESSR admission failures; no failure publishes plaintext. */
@@ -64,7 +67,33 @@ export class EssrRecipient {
    * successful result transfers file ownership to the caller; discarding that
    * file also invalidates body. No complete byte buffer escapes in the result.
    */
-  async decrypt(said: string, ciphertext: Payload, signal?: AbortSignal): Promise<EssrMessage> {
+  decrypt(said: string, ciphertext: Payload, signal?: AbortSignal): Operation<EssrMessage> {
+    return call(() => this.receive(said, ciphertext, signal));
+  }
+
+  /** Isolate cancellation and retain ownership until the consumer receives the result. */
+  private *receive(said: string, ciphertext: Payload, signal?: AbortSignal): Operation<EssrMessage> {
+    let received: EssrMessage | undefined;
+    let transferred = false;
+    // The later I/O child is cancelled and joined before this owner is finalized.
+    yield* resource(function*(provide) {
+      try {
+        yield* provide(undefined);
+      } finally {
+        if (!transferred && received) yield* call(() => received!.plaintext.discard());
+      }
+    });
+    const result = yield* abortable(async (scopeSignal) => {
+      received = await this.decryptMessage(said, ciphertext, scopeSignal);
+      scopeSignal.throwIfAborted();
+      return received;
+    }, signal);
+    transferred = true;
+    return result;
+  }
+
+  /** Own the finite crypto buffer and unfinished file until signal-aware cleanup completes. */
+  private async decryptMessage(said: string, ciphertext: Payload, signal: AbortSignal): Promise<EssrMessage> {
     signal?.throwIfAborted();
     if (this.active >= this.maxConcurrent) throw new EssrError("busy", "ESSR recipient concurrency limit reached");
     if (!Number.isSafeInteger(ciphertext.size) || ciphertext.size < 48 || ciphertext.size > this.maxMessageBytes) {
@@ -111,7 +140,7 @@ export class EssrRecipient {
           await sink.write(plain.subarray(start, start + 65536));
         }
         const plaintext = await sink.finish();
-        return { sender: serder.pre, recipient: this.hab.pre, plaintext, body: bodyView(plaintext, offset) };
+        return { sender: serder.pre, recipient: this.hab.pre, plaintext, body: payloadRange(plaintext, offset) };
       } finally {
         // Successful finish transferred ownership, so this only removes an
         // unfinished stage when writing or cancellation failed.
@@ -139,20 +168,4 @@ function bodyOffset(plain: Uint8Array, sender: string): number {
   } catch (error) {
     throw new EssrError("framing", error instanceof Error ? error.message : "Invalid ESSR SCS framing");
   }
-}
-
-/** Skip the authenticated header on each file read without retaining plaintext. */
-function bodyView(plaintext: Payload, offset: number): Payload {
-  return {
-    size: plaintext.size - offset,
-    /** Reopen the file and skip bounded chunks until the inner stream begins. */
-    async *open(signal?: AbortSignal) {
-      let skip = offset;
-      for await (const chunk of plaintext.open(signal)) {
-        const count = Math.min(skip, chunk.length);
-        skip -= count;
-        if (count < chunk.length) yield chunk.subarray(count);
-      }
-    },
-  };
 }

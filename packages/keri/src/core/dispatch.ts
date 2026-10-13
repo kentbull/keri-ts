@@ -5,6 +5,7 @@ import {
   Cigar,
   Dater,
   Diger,
+  type EssrPayload,
   NumberPrimitive,
   Prefixer,
   type SealEvent,
@@ -13,7 +14,6 @@ import {
   Seqner,
   SerderKERI,
   Siger,
-  Texter,
   type TypeMedia,
 } from "cesr-ts";
 
@@ -200,7 +200,8 @@ export interface KeriDispatchEnvelopeInit {
   ssts?: SealEvent[];
   tdcs?: SealKind[];
   ptds?: PathedMaterialGroup[];
-  essrs?: Texter[];
+  /** Reopenable ESSR wire and decoded view; the dispatch caller owns disposal. */
+  essr?: EssrPayload;
   bsqs?: BlindState[];
   bsss?: BoundState[];
   tmqs?: TypeMedia[];
@@ -237,7 +238,8 @@ export class KeriDispatchEnvelope {
   readonly ssts: SealEvent[];
   readonly tdcs: SealKind[];
   readonly ptds: PathedMaterialGroup[];
-  readonly essrs: Texter[];
+  /** Shared payload views preserve parser ownership through dispatch. */
+  readonly essr?: EssrPayload;
   readonly bsqs: BlindState[];
   readonly bsss: BoundState[];
   readonly tmqs: TypeMedia[];
@@ -257,7 +259,7 @@ export class KeriDispatchEnvelope {
     this.ssts = [...(init.ssts ?? [])];
     this.tdcs = [...(init.tdcs ?? [])];
     this.ptds = [...(init.ptds ?? [])];
-    this.essrs = [...(init.essrs ?? [])];
+    this.essr = init.essr;
     this.bsqs = [...(init.bsqs ?? [])];
     this.bsss = [...(init.bsss ?? [])];
     this.tmqs = [...(init.tmqs ?? [])];
