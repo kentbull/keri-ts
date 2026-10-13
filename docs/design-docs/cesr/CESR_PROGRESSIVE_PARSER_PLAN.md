@@ -3,8 +3,8 @@
 ## Status
 
 Approved for implementation on 2026-10-12. This document records the work and
-acceptance gates; it does not claim any phase is complete. Update the phase
-ledger with PR links and immutable verification evidence as work lands.
+acceptance gates. The phase ledger links merged changes and pending review;
+benchmark artifacts retain immutable revisions and individual observations.
 [ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) and the
 [target contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md) govern the result.
 
@@ -14,20 +14,20 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 
 ## PR sequence
 
-| Phase | Cohesive change                                                      | Required evidence before completion                                                                | Status                                |
-| ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| 1     | Streaming benchmark source and untouched baseline; no parser changes | Immutable commit/runtime/corpus manifest; correctness oracle; bounded isolated runs                | Pending                               |
-| 2     | Large byte-to-text and base64 correctness; exact token decoding      | 1 MiB+ values, small-token/large-tail cases, both domains; decoding-fixed atomic baseline          | Pending                               |
-| 3     | Progressive contract, ownership, limits, and execution plan          | Accurate distinction between current behavior and accepted target                                  | This document; implementation pending |
-| 4     | Segmented input cursor and bounded views                             | No accumulated suffix copying; bounds, split headers, cancellation; cursor checkpoint              | Pending                               |
-| 5     | Async generator frame traversal with `yield*`                        | Early GenericGroup children, exact single-frame enclosures, scopes, partial failure                | Traversal implemented                 |
-| 6     | Payload sinks, reopenable references, and bounded manifests          | Backpressure, stage ownership, finish/abort, runtime filesystem boundary                           | Pending                               |
-| 7     | Progressive ESSR attachment reads and incremental digest             | Both count models/domains; no retained raw envelope or unbounded item list                         | Pending                               |
-| 8     | Bounded recipient decryption and explicit ciphertext retention       | Logical-message limits, authentication before plaintext storage, unchanged crypto wire format      | Pending                               |
-| 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Pending                               |
-| 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | Pending                               |
-| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Pending                               |
-| 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                               |
+| Phase | Cohesive change                                                      | Required evidence before completion                                                                | Status                                                               |
+| ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| 1     | Streaming benchmark source and untouched baseline; no parser changes | Immutable commit/runtime/corpus manifest; correctness oracle; bounded isolated runs                | Merged [#126](https://github.com/kentbull/keri-ts/pull/126)          |
+| 2     | Large byte-to-text and base64 correctness; exact token decoding      | 1 MiB+ values, small-token/large-tail cases, both domains; decoding-fixed atomic baseline          | Merged [#127](https://github.com/kentbull/keri-ts/pull/127)          |
+| 3     | Progressive contract, ownership, limits, and execution plan          | Accurate distinction between current behavior and accepted target                                  | Merged [#128](https://github.com/kentbull/keri-ts/pull/128)          |
+| 4     | Segmented input cursor and bounded views                             | No accumulated suffix copying; bounds, split headers, cancellation; cursor checkpoint              | Merged [#129](https://github.com/kentbull/keri-ts/pull/129)          |
+| 5     | Async generator frame traversal with `yield*`                        | Early GenericGroup children, exact single-frame enclosures, scopes, partial failure                | Merged [#130](https://github.com/kentbull/keri-ts/pull/130)          |
+| 6     | Payload sinks, reopenable references, and bounded manifests          | Backpressure, stage ownership, finish/abort, runtime filesystem boundary                           | Merged [#131](https://github.com/kentbull/keri-ts/pull/131)          |
+| 7     | Progressive ESSR attachment reads and incremental digest             | Both count models/domains; no retained raw envelope or unbounded item list                         | [#132](https://github.com/kentbull/keri-ts/pull/132), awaiting merge |
+| 8     | Bounded recipient decryption and explicit ciphertext retention       | Logical-message limits, authentication before plaintext storage, unchanged crypto wire format      | [#133](https://github.com/kentbull/keri-ts/pull/133), awaiting merge |
+| 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Pending                                                              |
+| 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | Pending                                                              |
+| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Pending                                                              |
+| 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                                                              |
 
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
 ahead, base it on the predecessor branch and retarget after that predecessor
@@ -36,10 +36,39 @@ stack tooling is not an implementation dependency. Merge after the exact head's
 required CI passes. Use empty changesets for tooling/docs and release-impacting
 changesets for package/API changes.
 
+KERI/Tufa filesystem code uses native Deno APIs and the existing `@std/path`
+conventions. Keep Node-specific adaptation at npm packaging boundaries. Temporary
+file names may use Web Crypto UUIDs; publication uses the owning protocol SAID or
+a qualified content digest with representation scope where needed.
+
 The temporary atomic engine exists only for staged migration. Phase 12 removes
 it and obsolete keri-ts API compatibility surfaces. Move semantic regression
 coverage to the new API rather than deleting protocol tests. Do not ship two
-permanent parser strategies.
+permanent parser strategies. Consumers also get a convenient async complete-input
+API over the progressive engine; synchronous `feed`/`flush` is not retained as a
+second implementation. Collection must clean up undelivered owned payloads if a
+later frame fails.
+
+## Additional approved review and qualification work
+
+After the open parser PRs through recipient decryption (#129–#133) merge, prepare
+one test cleanup/reorganization PR against current master and leave it open for
+human review. Revalidate the side-chat audit against the new code, remove only
+proven duplication or tests without a production contract, retain protocol and
+resource-lifecycle regressions, and simplify test scheduling without hiding
+coverage. Keep production behavior unchanged in that PR.
+
+Run the complete maintained test inventory, including all manual and long-running
+targets, using the local KERIpy main checkout at
+`927c0cb8794d7c84fc17143c67df64aab9deda6c`. Verify the harness actually imports
+that checkout. Record every run, skip, failure, topology, and duration. Heavy
+qualification remains outside required merge CI.
+
+Continue the progressive parser sequence after preparing that review PR. Any
+interop regressions or missing features discovered against this KERIpy revision
+must have an evidence-backed follow-up list and sequenced implementation plan.
+Execute those follow-ups after the progressive parser work; do not disguise
+production repairs as test cleanup.
 
 ## Benchmark protocol
 
@@ -86,3 +115,28 @@ never become required checks for merging to master. Run and preserve their
 evidence for this implementation goal without adding them to the testing
 critical path. Performance claims name their checkpoint and workload;
 parser-only measurements do not establish the full runtime's memory bound.
+
+## Post-progressive KERIpy main alignment
+
+The test qualification pins `927c0cb8` and records actual execution failures in
+its report. Initial source inspection already found two differences from current
+keri-ts tables; these are not yet claims of a failed live interoperability run:
+
+1. Align v2 `-N` / `--N` with KERIpy's `NonceSealSingles` /
+   `BigNonceSealSingles`, updating generated tables, semantic hydration, encoding,
+   and independent vectors together. Preserve v1 transferable receipt support.
+2. Align the GramHead family and its widths with KERIpy's `b` code rather than
+   replacing the current `0Q` literal in isolation. Verify native body and both
+   text/binary forms against the pinned reference.
+3. Address additional reproduced failures in dependency order: primitive tables,
+   message serialization, event/storage semantics, then CLI/network flows.
+   Keep original failing assertions and participant topology.
+4. Qualify the separately pinned DID Webs resolver environment explicitly. Its
+   embedded KERI dependency is not upgraded by selecting a different KLI binary.
+   Record and resolve reference-environment incompatibilities separately from
+   protocol implementation defects.
+
+Execute these cohesive follow-up PRs after phase 12. Test cleanup may fix harness
+provenance and selection now, but must not conceal protocol repairs in moved or
+weakened tests. The verified source locations are KERIpy `counting.py:228–229`
+and `coring.py:263`, compared with the generated CESR counter and Matter tables.

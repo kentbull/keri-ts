@@ -33,9 +33,12 @@ and use this supplementary adapter at their parsing boundary.
    toward resource policy. Demand and cancellation belong to the shared cursor;
    generator locals now own nested parse progress in `parser/progressive.ts`.
    The async `parse()` entrypoint and frame adapters yield complete GenericGroup
-   children early; they retain existing Serder/attachment hydration under cursor
-   and `maxFrameBytes` admission limits. ESSR sinks and runtime migration remain
-   later phases, so frame traversal alone is not an end-to-end memory claim.
+   children early; they retain Serder/ordinary leaf hydration under cursor and `maxFrameBytes`
+   limits. Progressive ESSR stores one owned canonical Texter wire sequence with
+   a reopenable decoded view, per-frame byte/item limits, and awaited sink writes.
+   Internal one-frame candidates remain parser-owned until the public yield;
+   malformed enclosures abort all undelivered stages. Runtime migration remains
+   later work, so parser measurements alone are not an end-to-end memory claim.
    `CesrFrame` is the body-plus-attachments payload; `ParseEvent` is the frame/error
    union. Recursive attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
    Opaque wire payloads are one `OpaqueSpan` of original bytes plus domain, not
@@ -63,8 +66,8 @@ and use this supplementary adapter at their parsing boundary.
    `NumberPrimitive`, accepting fixed-width `0A` and compact numeric codes in
    both genera. Table baseline 450ae1c used Seqner; live CLI interop baseline
    98b88cf uses Number. Do not mistake the old reader for the full wire surface.
-   ESSR also has separate v1 item-count and v2 payload-length handlers, both
-   returning Texters. KERI envelopes reuse hydrated Serders and primitives, validating
+   ESSR also has separate v1 item-count and v2 payload-length handlers, the atomic path returning Texters and the progressive path staging canonical
+   wire without arrays. KERI envelopes reuse hydrated Serders and primitives, validating
    roles at the public frame boundary. Structing views use existing Matter instances
    when their semantic class differs, never a qb64 round trip. Nested transferable signatures require the controller
    counter, matching the pinned reference (including its exclusion of big inner

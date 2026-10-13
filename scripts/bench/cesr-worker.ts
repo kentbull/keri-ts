@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { cpuUsage } from "node:process";
 import type { CesrFrame } from "../../packages/cesr/src/core/types.ts";
 import { parse } from "../../packages/cesr/src/parser/progressive.ts";
-import { Texter } from "../../packages/cesr/src/primitives/texter.ts";
 import { corpus, type CorpusOptions } from "./cesr-corpus.ts";
 
 /** One isolated benchmark case supplied by the supervising process. */
@@ -35,23 +34,40 @@ function sampleMemory() {
 }
 
 /** Check each delivered frame before counting it as a usable result. */
-function consume(frame: CesrFrame) {
+async function consume(frame: CesrFrame) {
   sampleMemory();
   if (firstFrameMs === null) {
     firstFrameMs = performance.now() - start;
     firstFrameBytes = received;
   }
-  const values = frame.attachments.flatMap((group) => group.items);
-  if (values.length !== 1 || !(values[0] instanceof Texter)) throw new Error("Unexpected ESSR graph");
-  const raw = values[0].raw;
-  if (new DataView(raw.buffer, raw.byteOffset, 8).getBigUint64(0) !== BigInt(frames)) {
-    throw new Error("Wrong frame order");
+  const essr = frame.essr;
+  if (!essr || essr.count !== 1 || frame.attachments.length) throw new Error("Unexpected ESSR graph");
+  // Only the sequence prefix is retained; every decoded block goes straight into the oracle hash.
+  const prefix = new Uint8Array(8);
+  const hash = createHash("sha256");
+  let size = 0;
+  try {
+    for await (const chunk of essr.raw.open()) {
+      const take = Math.min(chunk.length, Math.max(0, 8 - size));
+      if (take) {
+        prefix.set(chunk.subarray(0, take), size);
+        if (size + take === 8) {
+          if (new DataView(prefix.buffer).getBigUint64(0) !== BigInt(frames)) throw new Error("Wrong frame order");
+          // Restore the corpus template only after verifying the actual frame sequence.
+          for (let i = 0; i < 8; i++) prefix[i] = i;
+          hash.update(prefix);
+        }
+      }
+      hash.update(chunk.subarray(take));
+      size += chunk.length;
+    }
+    if (size < 8 || hash.digest("hex") !== manifest.itemSha256) throw new Error("Wrong payload digest");
+    payloadBytes += size;
+    frames++;
+  } finally {
+    // One output credit owns one payload; releasing it prevents benchmark history from accumulating.
+    await essr.discard();
   }
-  // Check the sequence ID above, then restore the common hash template.
-  for (let i = 0; i < 8; i++) raw[i] = i;
-  if (createHash("sha256").update(raw).digest("hex") !== manifest.itemSha256) throw new Error("Wrong payload digest");
-  payloadBytes += raw.length;
-  frames++;
 }
 
 /** Report parser failures as structured results without claiming successful throughput. */
@@ -68,7 +84,7 @@ async function* source(): AsyncGenerator<Uint8Array> {
 
 try {
   // One next() is one output credit; no array of sibling frames is retained.
-  for await (const frame of parse(source())) consume(frame);
+  for await (const frame of parse(source())) await consume(frame);
   if (frames !== manifest.items || payloadBytes !== options.payloadBytes) throw new Error("Incomplete parse output");
 } catch (cause) {
   error = cause instanceof Error
