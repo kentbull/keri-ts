@@ -1,11 +1,12 @@
 /** Internal local TEL acceptance; registry facades own instance naming and scheduling. */
-import { Diger, NumberPrimitive, type SerderACDC } from "cesr-ts";
+import { Diger, Ilks, NumberPrimitive, type SerderACDC } from "cesr-ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
 import {
   type RegistryEvent,
   type RegistryEventValidation,
   validateRip,
+  validateUpdate,
   verifyRegistryAnchor,
 } from "./regeventing.ts";
 import type { RegistryStore } from "./registering.ts";
@@ -13,12 +14,13 @@ import type { RegistryStore } from "./registering.ts";
 /** Expected event outcomes; persistence, corruption and programming failures throw. */
 export type RegistryEventDecision =
   | { kind: "accept" | "duplicate"; event: RegistryEvent }
-  | { kind: "escrow"; reason: "anchor"; event: RegistryEvent }
+  | { kind: "escrow"; reason: "anchor" | "order"; event: RegistryEvent }
+  | { kind: "reject"; reason: "ordinalRange" }
   | Extract<RegistryEventValidation, { kind: "reject" }>;
 
 /**
  * Borrow the issuer's accepted KEL and registry store; no keys or handles are acquired.
- * The complete inception path is internal until the registry facade is available.
+ * Event processing is internal until the registry facade is available.
  * Publication is atomic; binding this instance happens only after successful commit.
  */
 export class RegistryEventer {
@@ -29,13 +31,55 @@ export class RegistryEventer {
     public regk: string | null = null,
   ) {}
 
+  /** Process one parsed event; automatic escrow progression is owned by the retry pass. */
+  processEvent(serder: SerderACDC): RegistryEventDecision {
+    if (this.regk === null || serder.ilk === Ilks.rip) return this.processInception(serder);
+    const result = validateUpdate(serder, this.regk);
+    if (result.kind === "reject") return result;
+    const event = result.event;
+    // Preserve protocol precision until the existing ordinal storage seam can represent it.
+    if (event.sn > BigInt(Number.MAX_SAFE_INTEGER)) return { kind: "reject", reason: "ordinalRange" };
+    const prior = this.acceptedAt(event.regid, Number(event.sn) - 1);
+    if (prior && prior.said !== event.prior) return { kind: "reject", reason: "prior" };
+    const previous = this.acceptedEvent(event);
+    if (previous) return previous;
+    const env = this.store.baser.env;
+    if (!env) throw new DatabaseNotOpenError("Registry acceptance requires an open backing store.");
+    this.store.baser.initializeStorage();
+    return env.transactionSync((): RegistryEventDecision => {
+      const prior = this.acceptedAt(event.regid, Number(event.sn) - 1);
+      if (prior && prior.said !== event.prior) return { kind: "reject", reason: "prior" };
+      const previous = this.acceptedEvent(event);
+      if (previous) return previous;
+      this.store.putEvent(serder);
+      this.discoverAnchor(event);
+      if (!this.store.anchor(event.said)) {
+        this.store.escrowMissingAnchor(event.regid, Number(event.sn), event.said);
+        return { kind: "escrow", reason: "anchor", event };
+      }
+      this.store.baser.maes!.rem(event.regid, Number(event.sn), [event.said]);
+      if (!prior) {
+        this.store.escrowOutOfOrder(event.regid, Number(event.sn), event.said);
+        return { kind: "escrow", reason: "order", event };
+      }
+      const head = this.store.head(event.regid);
+      if (head) {
+        const body = this.store.event(head.qb64);
+        if (!body || body.said !== head.qb64) throw new Error("Corrupt registry head.");
+        if (BigInt(`0x${body.sad!.n}`) >= event.sn) throw new Error("Registry update would downgrade accepted head.");
+      }
+      this.commit(event);
+      return { kind: "accept", event };
+    });
+  }
+
   /** Validate, anchor and accept one inception, or retain its body in anchor escrow. */
-  processInception(serder: SerderACDC): RegistryEventDecision {
+  private processInception(serder: SerderACDC): RegistryEventDecision {
     const result = validateRip(serder, this.issuer);
     if (result.kind === "reject") return result;
     const event = result.event;
     if (this.regk !== null && this.regk !== event.regid) return { kind: "reject", reason: "registry" };
-    const previous = this.acceptedInception(event);
+    const previous = this.acceptedEvent(event);
     if (previous) {
       if (previous.kind === "duplicate") this.regk = event.regid;
       return previous;
@@ -45,7 +89,7 @@ export class RegistryEventer {
     // Bind named tables before the rollback-capable event transaction owns their rows.
     this.store.baser.initializeStorage();
     const decision = env.transactionSync((): RegistryEventDecision => {
-      const previous = this.acceptedInception(event);
+      const previous = this.acceptedEvent(event);
       if (previous) return previous;
       if (this.store.head(event.regid)) throw new Error("Registry head exists without its accepted inception.");
       this.store.putEvent(serder);
@@ -54,9 +98,7 @@ export class RegistryEventer {
         this.store.escrowMissingAnchor(event.regid, 0, event.said);
         return { kind: "escrow", reason: "anchor", event };
       }
-      this.store.accept(event.regid, 0, serder);
-      this.store.baser.maes!.rem(event.regid, 0);
-      this.store.baser.ooes!.rem(event.regid, 0);
+      this.commit(event);
       return { kind: "accept", event };
     });
     if (decision.kind !== "reject") this.regk = event.regid;
@@ -64,13 +106,29 @@ export class RegistryEventer {
   }
 
   /** Replay is read-only; first acceptance repeats this check under its write transaction. */
-  private acceptedInception(event: RegistryEvent): RegistryEventDecision | null {
-    const accepted = this.store.seqSaider(event.regid, 0);
-    if (!accepted) return null;
-    const existing = this.store.event(accepted.qb64);
-    if (!existing || existing.said !== accepted.qb64) throw new Error("Corrupt accepted registry inception.");
-    if (accepted.qb64 !== event.said) return { kind: "reject", reason: "duplicity" };
+  private acceptedEvent(event: RegistryEvent): RegistryEventDecision | null {
+    const existing = this.acceptedAt(event.regid, Number(event.sn));
+    if (!existing) return null;
+    if (existing.said !== event.said) return { kind: "reject", reason: "duplicity" };
     return { kind: "duplicate", event };
+  }
+
+  /** Accepted markers require a matching body at the exact ordinal, unlike mere staged bodies. */
+  private acceptedAt(regid: string, sn: number): SerderACDC | null {
+    const marker = this.store.seqSaider(regid, sn);
+    if (!marker) return null;
+    const body = this.store.event(marker.qb64);
+    if (!body || body.said !== marker.qb64 || BigInt(`0x${body.sad!.n}`) !== BigInt(sn)) {
+      throw new Error("Corrupt accepted registry event.");
+    }
+    return body;
+  }
+
+  /** Publish one verified winner and remove all siblings from its decided slot atomically. */
+  private commit(event: RegistryEvent): void {
+    this.store.accept(event.regid, Number(event.sn), event.serder);
+    this.store.baser.maes!.rem(event.regid, Number(event.sn));
+    this.store.baser.ooes!.rem(event.regid, Number(event.sn));
   }
 
   /** Keep an already verified anchor or discover the earliest fully witnessed seal. */

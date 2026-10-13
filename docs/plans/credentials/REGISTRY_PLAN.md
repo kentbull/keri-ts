@@ -31,7 +31,10 @@ them. Runtime acquisition retains explicit scopes and joined failure cleanup.
 | Complete-chain assembly      | IPEX through RegistryStore                         |
 | Runtime acquisition          | Explicit `acdc.rgy` ownership                      |
 
-Pure verifier names match `vet`/`vetBinds`; the processing engine and orchestration remain unfinished.
+Pure verifier names match `vet`/`vetBinds`; the internal engine accepts anchored
+inceptions/updates with protected slots and heads. Retry and public orchestration
+remain unfinished; processing ordinals above the safe-integer storage range is
+explicitly unsupported pending the storage phase.
 The [import preservation record][import-record] retains the exact original code.
 
 Use `evts/ancs/tels/heads/maes/ooes`; accepted heads use physical `heds.` and
