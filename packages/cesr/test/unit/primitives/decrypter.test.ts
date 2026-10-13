@@ -120,3 +120,20 @@ Deno.test("decrypter: rejects non-X25519 private codes", () => {
     UnknownCodeError,
   );
 });
+
+Deno.test("decrypter: opens raw ESSR ciphertext from pinned KERIpy without qualified Cipher framing", () => {
+  // Generated with KERIpy927c0cb StreamPoster framing and pysodium.crypto_box_seal.
+  // This Texter holds raw ciphertext; feeding its raw bytes as qb64 would fail.
+  const texter = new Texter({
+    qb64:
+      "5BAjAFC7tF1_Xc_TWv-SyxG8b9OurvwJ6DNgQemt4la5B09KN_b52q5lL22bo3hDKTaLdlRHsUGdCMLeEeBH2Lr6d7RTuo0ygSUEGLVCK9v0XViRYQ7x76ywzMqyOddbANVuhtejXjmcGVFU",
+  });
+  const decrypter = new Decrypter({ seed: "AAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f" });
+  assertEquals(
+    new TextDecoder().decode(decrypter.open(texter.raw)),
+    "XSCSBAOhB7_zzhC-HXDdGOdLwJln5NYwm6UNXx3chmQSVTG44AAA-AAA",
+  );
+  const corrupted = texter.raw.slice();
+  corrupted[corrupted.length - 1] ^= 1;
+  assertThrows(() => decrypter.open(corrupted));
+});
