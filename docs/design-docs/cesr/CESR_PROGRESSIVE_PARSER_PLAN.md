@@ -14,7 +14,7 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 
 ## Acceptance matrix for the remaining parser gaps
 
-Current verified master: `6019f5ab7391402cd499c5eafe78589d909d84ad` after #162
+Current verified master: `60fbf597adecec0b6888315cd81f8ea218dec1ba` after #163
 (starting boundary was `876d24b4` after #159); frozen upstream authority `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
 The seven follow-on phases below are distinct from the original twelve migration
 steps. Follow-on phase 1's identified tables/semantics and phase 2's parent-owned
@@ -28,8 +28,9 @@ matrix refer to the follow-on sequence, except where a GitHub PR is named.
 | ---------------- | -------------------- | ---------- | ----------------------------------- | -------------------- |
 | Multisig         | Merged #160–161      | 3d         | [Proofs/retry][nested-gates]        | Four routes          |
 | IPEX             | Proofs merged #162   | 3e         | [Grant/admit][nested-gates]         | DAG/VDR pending      |
+| Exchange proofs  | #162 gaps identified | 3e cleanup | [Policy/cues][proof-cleanup]        | Correction pending   |
 | v2 admission     | Direct dispatch      | 3f         | [Sender/KRAM][nested-gates]         | Reference stubs      |
-| ESSR outcomes    | Refactor in review   | After #162 | [Outcomes/cleanup][nested-gates]    | Local limits         |
+| ESSR outcomes    | Merged #163          | After #162 | [Outcomes/cleanup][nested-gates]    | Local limits         |
 | Shared admission | Local guards         | 4          | [Concurrent load][resource-gates]   | Allocation gaps      |
 | Storage/recovery | Wire retained        | 5, with 4  | [Crash/reopen][storage-gates]       | Whole-row reads      |
 | Transport        | Streaming foundation | 6          | [Usable child][transport-gates]     | Paths incomplete     |
@@ -37,6 +38,7 @@ matrix refer to the follow-on sequence, except where a GitHub PR is named.
 | Qualification    | Small corpora        | 7          | [Full matrix][qualification-gates]  | Runtime unqualified  |
 | Mapper SAID      | Stale claim accepted | Final      | [Valid/tampered][mapper-gate]       | Disclosure semantics |
 
+[proof-cleanup]: #exchange-proof-correction-after-162
 [nested-gates]: #follow-on-pr-3-nested-consumers-split-by-ownership-boundary
 [resource-gates]: #follow-on-pr-4-shared-runtime-resource-policy
 [storage-gates]: #follow-on-pr-5-reconcile-durable-storage-and-reopenreplay
@@ -646,12 +648,11 @@ replay rechecks every retained factor. Route dependency decisions can escrow
 without accepting the EXN. The qualification probe passes 15 v1/v2
 JSON/CBOR/MGPK storage/replay cases through actually imported unmodified upstream
 modules. This custom proof-route probe does not qualify any IPEX workflow.
-Legacy v1 intake still requires signatures. Missing explicit sender source
-coordinates are retained in TS escrow; unresolved last-establishment coordinates
-require KEL recovery and retransmission. Consolidated upstream processMsg/KRAM
-intake and its exact recovery policy remain 3f.
+Legacy v1 intake still requires signatures. Missing explicit sender source coordinates and supplemental missing state currently
+have broader TS escrow behavior than frozen Python. The dedicated correction
+below closes those mismatches; consolidated processMsg/KRAM intake remains 3f.
 
-**Dedicated ESSR refactor (in review after #162):** separates normal
+**Dedicated ESSR refactor (merged [#163](https://github.com/kentbull/keri-ts/pull/163)):** separates normal
 recipient outcomes into successful authenticated message/owner transfer,
 admission refusal (`busy`, configured size, exchange-acceptance prerequisite),
 and verification failure (envelope, digest, authenticated decryption, framing).
@@ -674,6 +675,38 @@ through sink cleanup and is disposed if handoff fails. Tests retain the real
 keys, independent pinned KERIpy ciphertext, durable exchange/reopen workflow,
 and participant topology; they add pre-read size classifications, repeated busy
 refusal/later admission, joined cancellation, and storage/keeper failure probes.
+
+#### Exchange-proof correction after #162
+
+After the focused live-LMDB test repair, publish one proof-policy cleanup before
+further IPEX implementation. Recheck frozen `peer/exchanging.py` `processEvent`,
+`verifyAttachments`, `verify`, `escrowPSEvent` and missing-state queries, plus
+`acdc/ipexing.py` handler flags, `verifyEvidence` and dependency handling.
+
+- Restore exact persistence effects: missing sender source state escrows only
+  for `acceptsSscs`; missing supplemental state without `acceptsMissingEvidence`
+  queries and rejects without escrow. Keep missing signatures, source state,
+  unresolved last-establishment references and route `MissingChainError` distinct.
+- Add explicit `acceptsEvidence`. A selection hook alone must not expose its
+  selected non-sender factors to route verification. Keep selection, delivery,
+  source-couple delivery and missing-evidence opt-ins independent.
+- Name retained authentication factors and selected supplemental factors clearly;
+  use a result-oriented proof-verification name and consolidate only redundant
+  intermediate records. Retain the typed route dependency outcome, mapped to
+  `MissingChainError`, without a generic proof framework or compatibility layer.
+- Preserve the intentional leader correction excluding foreign endorsements;
+  label JS/database ordinal bounds as runtime constraints. Match coordinate
+  query deduplication, historical proofs, `ests.`/`eidx.`, cigar verifier recovery,
+  stored-proof verification and parent/child separation.
+- Test decisions, escrow/evidence rows, query/proof cues, route verification and
+  handling, and exact opted-in/legacy arguments. Cover reference-established
+  retry/reopen and preservation of accepted evidence on incomplete/rejected
+  duplicates. Use independent frozen-Python branch comparisons where practical.
+
+Update contracts, learnings and parity notes in that PR. Generic proof handlers
+remain machinery tests; unsupported nested IPEX and unfinished processMsg/KRAM
+stay guarded. This is a correction within 3e's proof prerequisite, not another
+IPEX or admission implementation project.
 
 **Remaining runtime slices:** IPEX workflow evidence and the affected v2
 `processMsg` policy remain separate PRs. TS dispatch still bypasses the reference's consolidated non-event
@@ -743,6 +776,10 @@ remain readable with their actual insertion-order/deduplication semantics.
 LMDB currently obtains a complete nested row before its size check. The finite
 24 MiB wire-copy ceiling does not prove pre-allocation admission. Phases 4–5 must
 close that native allocation boundary and account for runtime-wide copies.
+Also reconcile runtime handle ownership: LMDB V1 disallows concurrent environment
+handles for the same path in one process. The focused live-agent test repair uses
+separate CLI/inspection processes with unchanged endpoint assertions and protocol
+participants; it does not add shared handles or complete runtime admission.
 
 Persist/reopen through streaming iteration or finite batches, remove bulk
 `getAll`/join operations from the selected large-transfer path, and bound staging,
