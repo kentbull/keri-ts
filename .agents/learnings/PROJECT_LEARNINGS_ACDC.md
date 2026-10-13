@@ -35,6 +35,12 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
    KERIpy notifier payloads, and v1 EXN builders for apply/offer/agree/grant/
    admit/spurn. Nested v2 IPEX remains guarded: its upstream `acdc/ipexing.py`
    disclosure DAG and v2 registry vetting differ from the legacy workflow.
+   `acdc/regeventing.ts` now verifies supplied v2 registry chains and node-local
+   blinded/bound disclosures against accepted KELs. It returns complete verified
+   state, retryable missing anchors, or rejection without persistence/fetching.
+   Exact target, issuer and optional rd bindings are independent; historical
+   cutoff comparisons preserve microseconds. This verifier does not supply KRAM
+   timestamps, an issuer registry engine, or IPEX workflow acceptance.
    The shared EXN proof seam verifies source anchors and route-selected foreign
    endorsements independently, freezes last-establishment coordinates before
    escrow, and preserves `ests.`/`eidx.` through retry/replay. An EXN proof never

@@ -87,3 +87,5 @@ export * from "../vdr/eventing.ts";
 export { type QueryReply } from "../app/query-replies.ts";
 
 export { abortable } from "../app/abortable.ts";
+
+export * from "../acdc/regeventing.ts";
