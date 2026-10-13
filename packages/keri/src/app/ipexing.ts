@@ -10,8 +10,8 @@
  * - credential/TEL artifact ingestion remains VDR/runtime work
  */
 import type { Kind, SerderKERI, Versionage } from "cesr-ts";
+import type { RegistryStore } from "../acdc/registering.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
-import type { RegistryEvidenceReader } from "../db/registry-evidence.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { IpexV2Handler } from "./ipex-v2.ts";
@@ -56,7 +56,9 @@ interface RawMessage {
 export interface IpexHandlerOptions {
   notifier?: Notifier | null;
   /** Optional accepted v2 observer evidence, owned by the caller/runtime. */
-  registry?: RegistryEvidenceReader | null;
+  registry?: RegistryStore | null;
+  /** Finite accepted-chain collection ceiling, including inception; not a shared runtime budget. */
+  maxRegistryEvents?: number;
 }
 
 export interface IpexBuilderOptions {
@@ -160,7 +162,9 @@ export function loadIpexHandlers(
 ): void {
   for (const route of IPEX_ROUTES) {
     exchanger.addHandler(new IpexHandler(route, hby, options.notifier ?? null));
-    exchanger.addHandler(new IpexV2Handler(route, hby, options.notifier ?? null, options.registry ?? null));
+    exchanger.addHandler(
+      new IpexV2Handler(route, hby, options.notifier ?? null, options.registry ?? null, options.maxRegistryEvents),
+    );
   }
 }
 

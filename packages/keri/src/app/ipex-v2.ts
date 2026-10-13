@@ -4,15 +4,17 @@ import {
   Diger,
   NumberPrimitive,
   Prefixer,
+  ResourceLimitError,
   type SealEvent,
   type SealSource,
   SerderACDC,
   type SerderKERI,
 } from "cesr-ts";
-import { vetBinds } from "../acdc/regeventing.ts";
+import { validateRip, validateUpdate, vetBinds } from "../acdc/regeventing.ts";
+import type { RegistryStore } from "../acdc/registering.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
+import { DatabaseOperationError } from "../core/errors.ts";
 import { type ExchangeFactors, verifyExchangeProofs } from "../core/exchange-proofing.ts";
-import type { RegistryEvidenceReader } from "../db/registry-evidence.ts";
 import type { ExchangeRouteHandler, ExchangeRouteVerification } from "./exchanging.ts";
 import type { Habery } from "./habbing.ts";
 import {
@@ -69,8 +71,12 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     readonly resource: string,
     private readonly hby: Habery,
     private readonly notifier: Notifier | null = null,
-    private readonly registry: RegistryEvidenceReader | null = null,
+    private readonly registry: RegistryStore | null = null,
+    private readonly maxRegistryEvents = 16384,
   ) {
+    if (!Number.isSafeInteger(maxRegistryEvents) || maxRegistryEvents < 1) {
+      throw new RangeError("IPEX maxRegistryEvents must be a positive safe integer.");
+    }
     this.acceptsMissingEvidence = resource === "/ipex/grant";
     this.acceptsNests = resource === "/ipex/grant" || resource === "/ipex/offer";
   }
@@ -253,6 +259,47 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     return event.seals.some((seal) => record(seal) && seal.d === serder.said);
   }
 
+  /** Assemble accepted ordinals only; a missing head is retryable, contradictory durable rows are corrupt. */
+  private registryEvidence(regid: string): { rip: SerderACDC; updates: SerderACDC[] } | null {
+    const store = this.registry!;
+    const marker = store.head(regid);
+    if (!marker) return null;
+    const rip = store.seqEvent(regid, 0), head = store.headEvent(regid);
+    if (
+      !rip || !head || head.said !== marker.qb64 || typeof head.sad?.n !== "string"
+      || !/^[0-9a-f]+$/.test(head.sad.n)
+    ) {
+      throw new DatabaseOperationError("Accepted registry evidence has a missing or corrupt head/inception.");
+    }
+    const last = BigInt(`0x${head.sad.n}`);
+    // Check credit before collecting any updates or converting the ordinal to the storage number API.
+    if (last >= BigInt(this.maxRegistryEvents)) {
+      throw new ResourceLimitError("IPEX registry evidence exceeds configured event limit.");
+    }
+    if (validateRip(rip).kind !== "valid" || rip.said !== regid || store.seqSaider(regid, 0)?.qb64 !== regid) {
+      throw new DatabaseOperationError("Accepted registry inception is inconsistent.");
+    }
+    const updates: SerderACDC[] = [];
+    let prior = rip.said;
+    for (let sn = 1; sn <= Number(last); sn++) {
+      const item = store.seqEvent(regid, sn);
+      if (!item) throw new DatabaseOperationError("Accepted registry evidence has a missing sequence entry.");
+      const checked = validateUpdate(item, regid);
+      if (
+        checked.kind !== "valid" || checked.event.sn !== BigInt(sn) || checked.event.prior !== prior
+        || store.seqSaider(regid, sn)?.qb64 !== item.said
+      ) {
+        throw new DatabaseOperationError("Accepted registry sequence is inconsistent.");
+      }
+      updates.push(item);
+      prior = item.said;
+    }
+    if ((updates.at(-1) ?? rip).said !== marker.qb64) {
+      throw new DatabaseOperationError("Registry head and sequence disagree.");
+    }
+    return { rip, updates };
+  }
+
   /** A declared registry, then supplied anchors, take precedence over current signatures. */
   private issuer(frame: CesrFrame & { body: SerderACDC }): ExchangeRouteVerification {
     const serder = frame.body;
@@ -260,7 +307,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (serder.regid) {
       const proofs = [...envelope.bsqs, ...envelope.bsss];
       if (!proofs.length || !this.registry) return false;
-      const chain = this.registry.read(serder.regid);
+      const chain = this.registryEvidence(serder.regid);
       if (!chain) return missing(`Missing local TEL evidence for ${serder.regid}.`);
       const result = vetBinds({
         ...chain,

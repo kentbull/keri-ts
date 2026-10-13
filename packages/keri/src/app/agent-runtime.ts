@@ -1,4 +1,5 @@
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
+import { RegistryStore } from "../acdc/registering.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
@@ -230,7 +231,10 @@ export function* createAgentRuntime(
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);
   loadMultisigHandlers(hby, reactor.exchanger, { notifier });
-  loadIpexHandlers(hby, reactor.exchanger, { notifier, registry: registryEvidence });
+  loadIpexHandlers(hby, reactor.exchanger, {
+    notifier,
+    registry: registryEvidence ? new RegistryStore(registryEvidence) : null,
+  });
   const mailboxDirector = new MailboxDirector(
     hby,
     mailboxer ? { mailboxer } : {},

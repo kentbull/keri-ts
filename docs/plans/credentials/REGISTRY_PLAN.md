@@ -67,7 +67,8 @@ meaningful verification and relevant contract update.
 | R9a  | Staged frontier, blind updates and pipelined commitments           |
 | R9b  | Registrar present/vacate operations and facade                     |
 | R10  | Actual public evidence intake and custom import disposition        |
-| R11  | IPEX accepted-chain assembly and dependency retry/replay           |
+| R11a | IPEX-owned bounded accepted-chain assembly through RegistryStore   |
+| R11b | Receiver cutoff and presentation dependency retry/replay           |
 | R12  | Runtime acdc/vdr grouping and scoped service ownership             |
 
 Stack dependency-coupled units on their predecessors; merge in dependency order.
