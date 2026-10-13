@@ -128,6 +128,14 @@ export interface QueryEnvelope {
   cigars?: Cigar[];
 }
 
+/** Initial v2 non-event sender policy; Kevery owns mutable copies of these sets. */
+export interface MessagePolicy {
+  /** Empty permits all senders except those explicitly denied. */
+  allowList?: ReadonlySet<string>;
+  /** Denial takes precedence over allowance; neither list authenticates a sender. */
+  denyList?: ReadonlySet<string>;
+}
+
 /**
  * Receipt envelope subset consumed by `Kevery.processReceipt()`.
  *
@@ -167,6 +175,9 @@ export class Kevery {
   readonly lax: boolean;
   readonly local: boolean;
   readonly rvy?: Revery;
+  /** Policy applies to claimed v2 non-event senders before route processing. */
+  readonly allowList: Set<string>;
+  readonly denyList: Set<string>;
 
   constructor(
     db: Baser,
@@ -175,11 +186,13 @@ export class Kevery {
       lax = true,
       local = false,
       rvy,
+      messagePolicy = {},
     }: {
       cues?: Deck<AgentCue>;
       lax?: boolean;
       local?: boolean;
       rvy?: Revery;
+      messagePolicy?: MessagePolicy;
     } = {},
   ) {
     this.db = db;
@@ -187,6 +200,8 @@ export class Kevery {
     this.lax = lax;
     this.local = local;
     this.rvy = rvy;
+    this.allowList = new Set(messagePolicy.allowList);
+    this.denyList = new Set(messagePolicy.denyList);
   }
 
   /** Live accepted-state cache delegated from the backing `Baser`. */

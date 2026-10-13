@@ -53,7 +53,9 @@ share the same readonly replay reference. Reservations are released on response,
 failure, and cancellation. Only a query at the end of the request controls the
 HTTP response. Earlier queries retain ordinary reply delivery; their reserved
 reply moves to guarded delivery before the reservation is released. Mailbox
-authorization uses the final query frame's exact signatures.
+authorization uses the final query frame's exact signatures and dispatch decision.
+A current sender refusal prevents opening a response even when an earlier matching
+query cue exists. See [v2 message admission](../exchange/MESSAGE_ADMISSION.md).
 
 The generic HTTP route consumes its request body progressively and appends a
 separately bounded CESR attachment header. Administrative requests still collect

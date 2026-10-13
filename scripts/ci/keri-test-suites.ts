@@ -41,6 +41,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/ipexing.test.ts",
       "test/unit/app/ipex-v2.test.ts",
       "test/unit/app/nested-frame-boundary.test.ts",
+      "test/unit/app/message-admission.test.ts",
       "test/unit/app/notifications-cli.test.ts",
       "test/unit/app/notifying.test.ts",
       "test/unit/app/parsering-essr.test.ts",

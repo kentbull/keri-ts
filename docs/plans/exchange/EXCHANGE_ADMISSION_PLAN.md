@@ -2,12 +2,23 @@
 
 Owner: roadmap **3f**, reusing proof work from **3e** (#162/165) and nested
 runtime consumers (#159–168). The [proof contract][proof] is implemented;
-consolidated non-event admission remains incomplete.
+sender filtering and non-event routing are implemented; optional KRAM remains incomplete.
 
-## Required processing boundary
+## Current boundary
 
-Reconcile frozen KERIpy `Kevery.processMsg` for v2 `qry/rpy/exn/xip/pro/bar`:
-sender allow/deny policy, optional KRAM intake and actual route ownership.
+The [admission contract](../../design-docs/exchange/MESSAGE_ADMISSION.md) owns
+sender policy, proof prerequisites, query source/processor routing and explicit
+reference-stub refusals. Evidence: signed frozen-reference delegation fixtures,
+real runtime acceptance/invalid-signature tests, joined owner disposal and HTTP
+refusal/readmission. Built-in TEL query processing remains unavailable.
+
+## Remaining processing boundary
+
+The next cohesive **3f KRAM** PR owns optional intake, durable replay caches,
+partial-signature accumulation, configuration/pruning and receiver-observed time.
+It must integrate before route processing without replacing Exchanger proof policy.
+3f also owns built-in TEL query processing; the injected dispatch seam alone does
+not qualify `tels/tsn` behavior.
 Inspect `core/parsing.py`, `core/eventing.py` and `core/kraming.py` at
 `927c0cb8794d7c84fc17143c67df64aab9deda6c` before editing. Verify the imported
 modules in each evidence run. `processXip`, `processPro` and `processBar` are

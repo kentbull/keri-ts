@@ -44,7 +44,10 @@ and child evidence belong in one parent enclosure; constructing it authenticates
 
 ## Follow-ups and contracts
 
-Consolidated sender policy and optional KRAM are [3f](../../docs/plans/exchange/EXCHANGE_ADMISSION_PLAN.md).
+V2 non-event sender policy precedes proof prerequisites; allow/deny sets do not
+authenticate signatures. Raw query sigers use the claimed sender only when no
+last-establishment group is present. Optional KRAM remains
+[3f](../../docs/plans/exchange/EXCHANGE_ADMISSION_PLAN.md).
 Do not invent xip/pro/bar processing: frozen upstream has stubs. Native outer EXN
 empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
 not prove that path. Full runtime/resource qualification remains open.

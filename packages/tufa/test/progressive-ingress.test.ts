@@ -1,12 +1,32 @@
 // @file-test-lane app-fast-parallel
 
-import { b, collectPayload, concatBytes, Counter, CtrDexV1, Diger, parseBytes, SerderKERI, Texter } from "cesr-ts";
+import {
+  b,
+  collectPayload,
+  concatBytes,
+  Counter,
+  CtrDexV1,
+  Diger,
+  parseBytes,
+  SerderKERI,
+  Texter,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { call, run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";
-import { createAgentRuntime, createHabery, cueDo, exchange, type Hab, type Habery } from "keri-ts/runtime";
+import {
+  createAgentRuntime,
+  createHabery,
+  cueDo,
+  exchange,
+  type Hab,
+  type Habery,
+  query,
+} from "keri-ts/runtime";
 import { abortable } from "../../keri/src/app/abortable.ts";
 import { acceptedEventReplayMessage } from "../../keri/src/app/habbing.ts";
+import { messagize } from "../../keri/src/core/protocol-serialization.ts";
 import { createProtocolHandler } from "../src/http/protocol-handler.ts";
 
 /** Bound a protocol-progress assertion so an atomic-parser regression fails instead of hanging. */
@@ -351,6 +371,48 @@ Deno.test("HTTP cancellation removes an in-progress ESSR stage before returning"
       assertEquals(Array.from(Deno.readDirSync(join(hby.db.path!, "payloads", "staging"))).length, 0);
       assertEquals(yield* call(() => hby.db.getEssr(frame.serder.said!)), null);
       assertEquals(body.locked, false);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("v2 sender refusal cannot reopen a previously authorized HTTP mailbox query", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender");
+    const runtime = yield* createAgentRuntime(hby, {
+      enableMailboxStore: true,
+      messagePolicy: { allowList: new Set([sender.pre]) },
+    });
+    try {
+      const handler = createProtocolHandler(runtime, { serviceHab: sender });
+      const body = query("mbx", { i: sender.pre, src: sender.pre, topics: { "/reply": 0 } }, {
+        pre: sender.pre,
+        pvrsn: Vrsn_2_0,
+      });
+      const wire = messagize(body, { sigers: sender.sign(body.raw, true), gvrsn: Vrsn_2_0 });
+      /** Reuse the exact signed SAID so an earlier stream cue cannot authorize denied intake. */
+      const post = () =>
+        handler(
+          new Request("http://localhost/", {
+            method: "POST",
+            headers: { "content-type": "application/cesr" },
+            body: new Uint8Array(wire),
+          }),
+        );
+      const accepted = yield* call(post);
+      assertEquals(accepted.status, 200);
+      yield* call(() => accepted.body?.cancel());
+      runtime.reactor.kevery.denyList.add(sender.pre);
+      const refused = yield* call(post);
+      assertEquals(refused.status, 403);
+      assertEquals(yield* call(() => refused.text()), "Query requester is not authorized");
+      runtime.reactor.kevery.denyList.clear();
+      const readmitted = yield* call(post);
+      assertEquals(readmitted.status, 200);
+      yield* call(() => readmitted.body?.cancel());
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
