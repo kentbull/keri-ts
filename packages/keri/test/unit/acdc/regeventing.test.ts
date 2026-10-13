@@ -7,12 +7,14 @@ import {
   discardFrame,
   NumberPrimitive,
   parseBytes,
+  ResourceLimitError,
   Saider,
   SerderACDC,
 } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
+import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { RegistryEventer } from "../../../src/acdc/regengine.ts";
 import {
   type RegistryDisclosure,
@@ -25,7 +27,7 @@ import {
 } from "../../../src/acdc/regeventing.ts";
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
 import { createRegery } from "../../../src/acdc/registraring.ts";
-import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { receipt } from "../../../src/core/protocol-eventing.ts";
 import { makeNowIso8601, timestampMicros } from "../../../src/time/mod.ts";
@@ -38,8 +40,8 @@ function disclosure(name: string): RegistryDisclosure {
 }
 
 /** Process only real signed bootstrap material and release each parsed frame. */
-async function ingest(hby: Habery, wire: string): Promise<void> {
-  for (const frame of await parseBytes(b(wire))) {
+async function ingest(hby: Habery, wire: string | Uint8Array): Promise<void> {
+  for (const frame of await parseBytes(typeof wire === "string" ? b(wire) : wire)) {
     try {
       await run(() => dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery));
     } finally {
@@ -705,6 +707,145 @@ Deno.test("registry blind updates extend one staged frontier across reopen and r
     } finally {
       yield* baser.close(true);
       yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("public registry intake retries pre-inception updates from foreign public KEL after reopen", async () => {
+  await run(function*() {
+    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    try {
+      const store = new RegistryStore(baser), witness = source.makeHab("witness", undefined, { transferable: false });
+      const issuer = source.makeHab("issuer", undefined, { wits: [witness.pre], toad: 1 }), rip = regcept(issuer.pre);
+      /** Verify a real foreign witness signature through the ordinary public receipt processor. */
+      const witnessReceipt = () => {
+        const anchor = issuer.kever!.serder;
+        hby.kevery.processReceipt({
+          serder: receipt(issuer.pre, anchor.sn!, anchor.said!),
+          cigars: witness.sign(anchor.raw, false),
+          wigers: [],
+          tsgs: [],
+          local: false,
+        });
+        hby.kevery.processEscrows();
+      };
+      const regid = rip.said!, blid = fixture.disclosures.issued.d;
+      const first = blindate(regid, regid, blid), second = blindate(regid, first.said!, blid, { sn: 2 });
+      let observer = new RegistryObserver(hby.db, store, { maxEvents: 3 });
+      for (const regid of ["", "not-a-SAID"]) {
+        const invalid = blindate(regid, rip.said!, blid);
+        assertEquals(invalid.verify(), true, "body SAID verification does not validate the registry reference");
+        assertEquals(observer.processEvent(invalid), { kind: "reject", reason: "registry" });
+        assertEquals(store.event(invalid.said!), null);
+      }
+      for (const event of [second, first]) {
+        const decision = observer.processEvent(event);
+        assertEquals(decision.kind === "escrow" && decision.reason, "inception");
+        assertEquals(store.event(event.said!)!.raw, event.raw);
+      }
+      observer.processEscrows(regid);
+      assertEquals([store.head(regid), store.seqSaider(regid, 0)], [null, null]);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      observer = new RegistryObserver(hby.db, store, { maxEvents: 3 });
+      const pending = observer.processEvent(rip);
+      assertEquals(pending.kind === "escrow" && pending.reason, "anchor");
+      assertEquals([store.head(regid), ...[0, 1, 2].map((sn) => store.seqSaider(regid, sn))], [null, null, null, null]);
+      yield* call(() => ingest(hby, acceptedEventReplayMessage(source, issuer.pre, 0).message));
+      witnessReceipt();
+      yield* call(() => ingest(hby, issuer.interact({ data: [regid] })));
+      witnessReceipt();
+      assertEquals(vet({ db: hby.db, rip }).kind, "verified", "digest-only observer vet is deliberately weaker");
+      observer.processEscrows(regid);
+      assertEquals(store.head(regid), null, "digest-only seals do not authorize public engine intake");
+      const anchored = issuer.interact({
+        data: [rip, first, second].map((event) => ({ i: regid, s: event.sad!.n, d: event.said! })),
+      });
+      yield* call(() => ingest(hby, anchored));
+      observer.processEscrows(regid);
+      assertEquals(store.head(regid), null, "full tuples without witness receipts remain unaccepted");
+      witnessReceipt();
+      observer.processEscrows(regid);
+      assertEquals([0, 1, 2].map((sn) => store.seqSaider(regid, sn)!.qb64), [regid, first.said, second.said]);
+      assertEquals(store.head(regid)!.qb64, second.said);
+      assertEquals([...baser.maes!.getTopItemIter(regid), ...baser.ooes!.getTopItemIter(regid)], []);
+      assertEquals(hby.habs.size, 0, "the observer has no local controlling habitat");
+      assertEquals(store.records, null, "public intake creates no local aliases");
+      assertEquals(observer.processEvent(rip).kind, "duplicate");
+      assertEquals(observer.processEvent(first).kind, "duplicate");
+      assertEquals(store.head(regid)!.qb64, second.said, "old prefix replay cannot downgrade the head");
+      const wrong = blindate(regid, regid, blid, { sn: 2 });
+      assertEquals(observer.processEvent(wrong), { kind: "reject", reason: "prior" });
+      assertEquals(store.event(wrong.said!), null);
+      const wrongRegistry = blindate(first.said!, first.said!, blid);
+      assertEquals(observer.processEvent(wrongRegistry), { kind: "reject", reason: "registry" });
+      assertEquals(store.event(wrongRegistry.said!), null);
+      const competitor = blindate(regid, first.said!, blid, { sn: 2, stamp: "2026-10-13T01:00:00Z" });
+      assertEquals(observer.processEvent(competitor), { kind: "reject", reason: "duplicity" });
+      assertEquals(store.head(regid)!.qb64, second.said);
+      assertThrows(() => new RegistryObserver(hby.db, store, { maxEvents: 0 }), RangeError);
+      const third = blindate(regid, second.said!, blid, { sn: 3 });
+      assertThrows(() => observer.processEvent(third), ResourceLimitError);
+      assertEquals(store.event(third.said!), null, "finite admission precedes staging");
+      const larger = new RegistryObserver(hby.db, store, { maxEvents: 4 });
+      assertEquals(larger.processEvent(third).kind, "escrow");
+      assertThrows(() => observer.processEscrows(regid), ResourceLimitError, "event limit");
+      assertEquals(store.head(regid)!.qb64, second.said, "tightening cannot advance previously staged rows");
+
+      // A later acceptance fault preserves the earlier prefix and its existing staged successor.
+      yield* call(() => ingest(hby, issuer.interact({ data: [{ i: regid, s: "3", d: third.said! }] })));
+      witnessReceipt();
+      const accept = store.accept;
+      store.accept = function(...args) {
+        accept.apply(this, args);
+        throw new Error("observer acceptance fault");
+      };
+      try {
+        assertThrows(() => larger.processEscrows(regid), Error, "observer acceptance fault");
+      } finally {
+        store.accept = accept;
+      }
+      assertEquals([store.head(regid)!.qb64, store.seqSaider(regid, 3)], [second.said, null]);
+      assertEquals(store.event(third.said!)!.raw, third.raw);
+      larger.processEscrows(regid);
+      assertEquals(store.head(regid)!.qb64, third.said);
+      assertEquals(larger.processEvent(first).kind, "duplicate");
+      assertEquals(store.head(regid)!.qb64, third.said);
+
+      // Missing-inception staging also owns one rollback-capable transaction.
+      const orphanRip = regcept(issuer.pre), orphan = blindate(orphanRip.said!, orphanRip.said!, blid);
+      const escrow = store.escrowMissingAnchor;
+      store.escrowMissingAnchor = function(...args) {
+        escrow.apply(this, args);
+        throw new Error("observer staging fault");
+      };
+      try {
+        assertThrows(() => larger.processEvent(orphan), Error, "observer staging fault");
+      } finally {
+        store.escrowMissingAnchor = escrow;
+      }
+      assertEquals([store.event(orphan.said!), store.head(orphanRip.said!)], [null, null]);
+      assertEquals(baser.maes!.get(orphanRip.said!, 1), []);
+      baser.evts.pin(regid, orphanRip);
+      assertThrows(() => larger.processEscrows(regid), Error, "Corrupt observer registry inception");
+      assertEquals(store.head(regid)!.qb64, third.said);
+      baser.evts.pin(regid, rip);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true, readonly: true });
+      observer = new RegistryObserver(hby.db, store, { maxEvents: 4 });
+      assertEquals(observer.processEvent(second).kind, "duplicate", "readonly accepted replay opens no writer");
+      assertThrows(() => observer.processEvent(orphan), Error, "readonly");
+      assertEquals(
+        [baser.opened, hby.db.opened, source.db.opened],
+        [true, true, true],
+        "intake borrows all lifecycle owners",
+      );
+    } finally {
+      yield* baser.close(true);
+      yield* hby.close(true);
+      yield* source.close(true);
     }
   });
 });
