@@ -61,6 +61,13 @@ separate from foreign proof groups. Known foreign last references freeze receipt
 coordinates; unresolved markers survive reopen without retaining their signatures.
 Factor cleanup excludes cache, accepted exchange and snapshot/handoff ownership.
 
+Private KRAM `kpnd.` snapshots retain complete nested/ESSR wire until downstream
+consumption. Scalar factors hydrate independently; snapshot parent attachments do
+not reconstruct authentication inputs. Incoming trees stay borrowed; reopened
+file owners remain Effection-scoped. Cancellation joins serialization/parser work
+before disposal, and scope exit attempts every descendant owner. Parent/child
+storage does not accept either message or publish ordinary exchange wire.
+
 ## Open boundary
 
 Whole LMDB rows are allocated before current size checks. Finite row ceilings and

@@ -3,21 +3,24 @@ import {
   b,
   type CesrFrame,
   collectPayload,
+  concatBytes,
   Dater,
   Diger,
   discardFrame,
+  type EssrPayload,
   essrPayload,
   MemoryPayloadSink,
   nestedPayload,
   parse,
   parseBytes,
   Prefixer,
+  ResourceLimitError,
   SerderKERI,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run } from "effection";
-import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { call, run, suspend } from "effection";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import depthVector from "../../../../cesr/test/fixtures/nested-depth.json" with { type: "json" };
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
 import { ForwardHandler } from "../../../src/app/forwarding.ts";
@@ -25,10 +28,17 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import { openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
-import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { KeriDispatchEnvelope, TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { serializeMessage } from "../../../src/core/protocol-serialization.ts";
 import { chargeNests, discardNests, loadNests, publishNests, stageNests } from "../../../src/db/exchange-nests.ts";
+import { MAX_NESTED_WIRE_BYTES } from "../../../src/db/exchange-nests.ts";
+import {
+  removeKramSnapshot,
+  snapshotKram,
+  storeKramSnapshot,
+  withKramHydration,
+} from "../../../src/db/kram-snapshots.ts";
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 
 /** Share a real habitat and authorized witness mailbox across each independent scenario. */
@@ -401,5 +411,291 @@ Deno.test("nested recovery removes abandoned staging and unowned wire, retaining
     await run(() => exchanger.processEscrows());
     assertEquals(hby.db.enst.get([input.serder.said!]), []);
     assertEquals(hby.db.epse.get([input.serder.said!]), null);
+  });
+});
+
+Deno.test("private KRAM snapshots reopen scalar factors and independent children without accepting wire", async () => {
+  await scenario(async (hby, sender, recipient, provider) => {
+    const nest = await child(sender, "partial-child");
+    const input = forward(sender, recipient, provider, nest);
+    const [parent] = await parseBytes(
+      serializeMessage(input.serder, { tsgs: input.tsgs, gvrsn: Vrsn_2_0, genusify: true }),
+    );
+    parent.nests = [nest];
+    const originalWire = await attachEssr(parent), childWire = await attachEssr(nest);
+    const incoming = envelopeFromFrame(parent), key = [sender.pre, parent.body.said!];
+    const snapshot = await run(() => snapshotKram(incoming));
+    assertExists(snapshot);
+    hby.db.env!.transactionSync(() => {
+      hby.db.pmkm.pin(key, input.serder);
+      hby.db.pmks.put(key, input.tsgs![0].sigers);
+      storeKramSnapshot(hby.db, key, snapshot);
+    });
+    const retry = new KeriDispatchEnvelope({ serder: input.serder, attachmentGroups: [], local: false });
+    assertEquals(await run(() => snapshotKram(retry)), undefined);
+    storeKramSnapshot(hby.db, key, undefined);
+    assertEquals(hby.db.kpnd.get(key), snapshot);
+    await discardFrame(parent);
+    await run(() => hby.db.reopen());
+    let owned!: EssrPayload;
+    await run(() =>
+      withKramHydration(hby.db, key, retry, function*(restored) {
+        assertEquals(restored.sigers.map((sig) => sig.qb64), input.tsgs![0].sigers.map((sig) => sig.qb64));
+        assertEquals(restored.tsgs, [], "snapshot parent signatures are not reconstructed into scalar factors");
+        assertEquals(restored.nests[0].body.raw, nest.body.raw);
+        assertEquals(restored.nests[0].attachments, nest.attachments);
+        assertEquals(yield* call(() => collectPayload(restored.nests[0].essr!.wire, 1024)), childWire);
+        owned = restored.essr!;
+        assertEquals(yield* call(() => collectPayload(owned.wire, 1024)), originalWire);
+        assertEquals(yield* call(() => collectPayload(owned.raw, 1024)), b("abcabcxyz"));
+        assertEquals(hby.db.exns.get([parent.body.said!]), null);
+        assertEquals(hby.db.exns.get([nest.body.said!]), null);
+        assertEquals(hby.db.enst.get([parent.body.said!]), []);
+      })
+    );
+    await assertRejects(() => collectPayload(owned.wire, 1024));
+    for (const failConsumer of [false, true]) {
+      let disposals = 0;
+      const failure = await assertRejects(() =>
+        run(() =>
+          withKramHydration(hby.db, key, retry, function*(restored) {
+            const discard = restored.essr!.discard.bind(restored.essr);
+            restored.essr!.discard = async () => {
+              disposals++;
+              await discard();
+              throw new Error("owner disposal fault");
+            };
+            if (failConsumer) throw new Error("consumer fault");
+          })
+        ), AggregateError);
+      assertEquals(disposals, 1);
+      if (failConsumer) assertEquals((failure.cause as Error).message, "consumer fault");
+      assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
+    }
+    const fresh = await child(sender, "fresh");
+    await attachEssr(fresh);
+    const freshInput = new KeriDispatchEnvelope({ ...retry, attachmentGroups: [], nests: [fresh], essr: fresh.essr });
+    await run(() =>
+      withKramHydration(hby.db, key, freshInput, function*(restored) {
+        assertStrictEquals(restored.nests, freshInput.nests);
+        assertStrictEquals(restored.essr, freshInput.essr);
+      })
+    );
+    assertEquals(await collectPayload(fresh.essr!.wire, 1024), childWire);
+    await discardFrame(fresh);
+    for (const bad of [concatBytes(snapshot, snapshot), snapshot.slice(0, -4)]) {
+      storeKramSnapshot(hby.db, key, bad);
+      await assertRejects(() => run(() => withKramHydration(hby.db, key, retry, function*() {})));
+      assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
+    }
+    storeKramSnapshot(hby.db, key, snapshot);
+    await assertRejects(
+      () =>
+        run(() =>
+          withKramHydration(
+            hby.db,
+            key,
+            new KeriDispatchEnvelope({
+              ...retry,
+              attachmentGroups: [],
+              serder: exchange("/different", {}, { sender: sender.pre, pvrsn: Vrsn_2_0 })[0],
+            }),
+            function*() {},
+          )
+        ),
+      Error,
+      "body mismatch",
+    );
+    assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
+    assertThrows(() => storeKramSnapshot(hby.db, key, new Uint8Array(MAX_NESTED_WIRE_BYTES + 1)), ResourceLimitError);
+    assertEquals(hby.db.kpnd.get(key), snapshot);
+    await assertRejects(() =>
+      run(() =>
+        snapshotKram(
+          new KeriDispatchEnvelope({
+            ...incoming,
+            attachmentGroups: Array(4097).fill(incoming.attachmentGroups[0]),
+          }),
+        )
+      ), ResourceLimitError);
+    await assertRejects(() =>
+      run(() =>
+        snapshotKram(
+          new KeriDispatchEnvelope({
+            ...incoming,
+            attachmentGroups: [],
+            essr: { ...incoming.essr!, count: 16385 },
+          }),
+        )
+      ), ResourceLimitError);
+    const invalid = { ...incoming.essr!, count: NaN };
+    for (const nested of [false, true]) {
+      await assertRejects(() =>
+        run(() =>
+          snapshotKram(
+            new KeriDispatchEnvelope({
+              ...incoming,
+              attachmentGroups: [],
+              essr: nested ? undefined : invalid,
+              nests: nested ? [{ ...nest, essr: invalid }] : [],
+            }),
+          )
+        ), RangeError);
+    }
+    removeKramSnapshot(hby.db, key);
+    assertEquals(hby.db.kpnd.get(key), null);
+    assertExists(hby.db.pmkm.get(key));
+  });
+});
+
+Deno.test("KRAM snapshot cancellation joins serialization and every scoped owner before returning", async () => {
+  await scenario(async (hby, sender, recipient, provider) => {
+    const nest = await child(sender, "cancel-private");
+    const wire = await attachEssr(nest), owner = nest.essr!;
+    const input = forward(sender, recipient, provider, nest);
+    const incoming = new KeriDispatchEnvelope({
+      serder: input.serder,
+      nests: input.nests,
+      attachmentGroups: [],
+      local: false,
+    });
+    const key = [sender.pre, input.serder.said!];
+    let entered!: () => void, abort!: () => void, release!: () => void;
+    const reading = new Promise<void>((resolve) => entered = resolve);
+    const aborted = new Promise<void>((resolve) => abort = resolve);
+    const cleanup = new Promise<void>((resolve) => release = resolve);
+    let closed = false, published = false;
+    nest.essr = {
+      ...owner,
+      wire: {
+        size: owner.wire.size,
+        /** Gate a real serializer read and its cleanup across cancellation. */
+        async *open(signal) {
+          entered();
+          try {
+            await new Promise<void>((resolve) =>
+              signal!.addEventListener("abort", () => {
+                abort();
+                resolve();
+              }, { once: true })
+            );
+            signal!.throwIfAborted();
+            yield b("");
+          } finally {
+            await cleanup;
+            closed = true;
+          }
+        },
+      },
+    };
+    const task = run(function*() {
+      const snapshot = yield* snapshotKram(incoming);
+      storeKramSnapshot(hby.db, key, snapshot);
+      published = true;
+    });
+    await reading;
+    let halted = false;
+    const halting = task.halt().then(() => halted = true);
+    await aborted;
+    assertEquals([halted, closed, published], [false, false, false]);
+    release();
+    await halting;
+    assertEquals([closed, published], [true, false]);
+    assertEquals(hby.db.kpnd.get(key), null);
+    assertEquals(await collectPayload(owner.wire, 1024), wire, "serialization borrows incoming owners");
+    nest.essr = owner;
+    storeKramSnapshot(hby.db, key, await run(() => snapshotKram(incoming)));
+    let hydrated!: () => void, discarding!: () => void, dispose!: () => void;
+    const ready = new Promise<void>((resolve) => hydrated = resolve);
+    const disposing = new Promise<void>((resolve) => discarding = resolve);
+    const disposed = new Promise<void>((resolve) => dispose = resolve);
+    const retry = new KeriDispatchEnvelope({ serder: input.serder, attachmentGroups: [], local: false });
+    const consumer = run(() =>
+      withKramHydration(hby.db, key, retry, function*(restored) {
+        const reopened = restored.nests[0].essr!, discard = reopened.discard.bind(reopened);
+        reopened.discard = async () => {
+          discarding();
+          await disposed;
+          await discard();
+        };
+        hydrated();
+        yield* suspend();
+      })
+    );
+    await ready;
+    let joined = false;
+    const stopping = consumer.halt().then(() => joined = true);
+    await disposing;
+    assertEquals(joined, false);
+    assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 1);
+    dispose();
+    await stopping;
+    assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
+    assertExists(hby.db.kpnd.get(key), "scope exit does not consume durable pending wire");
+    await discardFrame(nest);
+  });
+});
+
+Deno.test("cancelling private KRAM hydration joins parser writes and deletes unfinished owned files", async () => {
+  await scenario(async (hby, sender, recipient, provider) => {
+    const nest = await child(sender, "cancel-parse");
+    await attachEssr(nest);
+    const input = forward(sender, recipient, provider, nest), key = [sender.pre, input.serder.said!];
+    const incoming = new KeriDispatchEnvelope({
+      serder: input.serder,
+      nests: input.nests,
+      attachmentGroups: [],
+      local: false,
+    });
+    storeKramSnapshot(hby.db, key, await run(() => snapshotKram(incoming)));
+    const files = (await hby.db.openPayloads()).files, stage = files.stage.bind(files);
+    let writing!: () => void, aborted!: () => void, release!: () => void;
+    const entered = new Promise<void>((resolve) => writing = resolve);
+    const stopped = new Promise<void>((resolve) => aborted = resolve);
+    const cleanup = new Promise<void>((resolve) => release = resolve);
+    let closed = false, continued = false;
+    /** Block an actual private file sink write while the parser owns its unfinished stage. */
+    files.stage = async (limit, signal) => {
+      const sink = await stage(limit, signal);
+      sink.write = async () => {
+        writing();
+        try {
+          await new Promise<void>((resolve) =>
+            signal!.addEventListener("abort", () => {
+              aborted();
+              resolve();
+            }, { once: true })
+          );
+          signal!.throwIfAborted();
+        } finally {
+          await cleanup;
+          closed = true;
+        }
+      };
+      return sink;
+    };
+    const retry = new KeriDispatchEnvelope({ serder: input.serder, attachmentGroups: [], local: false });
+    const task = run(function*() {
+      yield* withKramHydration(hby.db, key, retry, function*() {});
+      continued = true;
+    });
+    try {
+      await entered;
+      let halted = false;
+      const halting = task.halt().then(() => halted = true);
+      await stopped;
+      assertEquals([halted, closed, continued], [false, false, false]);
+      release();
+      await halting;
+      assertEquals([closed, continued], [true, false]);
+      assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
+      assertExists(hby.db.kpnd.get(key));
+      assertEquals(await collectPayload(nest.essr!.raw, 1024), b("abcabcxyz"));
+    } finally {
+      release();
+      await task.halt();
+      files.stage = stage;
+      await discardFrame(nest);
+    }
   });
 });
