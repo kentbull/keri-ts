@@ -158,7 +158,7 @@ same references incrementally.
 Generator `.return()` alone cannot interrupt an in-flight awaited source
 `.next()`. Owned HTTP/file adapters, cursor reads, and sinks must honor a shared
 abort signal. Cancellation interrupts pending I/O, then `finally` closes the
-source once and aborts unfinished stages. Effection shutdown owns the same
+source once and aborts unfinished stages. KERI/Tufa Effection scopes own the same
 cancellation; an async iterable must not escape its runtime lifetime. A supplied
 generic async source must cooperate with cancellation to stop its own I/O; the
 parser cannot force an arbitrary pending promise to settle. Parser cancellation
@@ -190,3 +190,10 @@ These are acceptance obligations; their tests land with the corresponding phase.
 Reference pins for tables, CLI interoperability, and source comparisons remain
 explicit and independent. This migration does not silently upgrade generated
 codices to a newer KERIpy revision.
+
+## Framework boundary
+
+CESR exposes async iterables and AbortSignal without importing Effection. KERI
+and Tufa use Operation scopes to own parsing, dispatch, and transport lifetimes.
+Their bridges must abort pending input and join cleanup before their scope exits;
+merely awaiting a Promise with `call` does not cancel the underlying I/O.
