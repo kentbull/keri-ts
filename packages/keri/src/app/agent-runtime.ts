@@ -1,4 +1,4 @@
-import { type Operation, resource, spawn } from "npm:effection@^3.6.0";
+import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
@@ -201,13 +201,7 @@ export function* createAgentRuntime(
   const vdr: VdrRuntimeServices = { ...(options.vdr ?? {}) };
   let ownsReger = false;
   if (!vdr.reger && !hby.readonly) {
-    vdr.reger = yield* createReger({
-      name: hby.name,
-      base: hby.base,
-      temp: hby.temp,
-      headDirPath: hby.headDirPath,
-      compat: hby.compat,
-    });
+    vdr.reger = yield* openRegerForHabery(hby);
     ownsReger = true;
   }
   const reger = vdr.reger instanceof Reger ? vdr.reger : null;
@@ -225,23 +219,12 @@ export function* createAgentRuntime(
       cues,
     });
   }
-  const registryEvidence = options.registryEvidence
-    ?? (!hby.readonly
-      ? yield* resource<RegistryEvidenceStore>(function*(provide) {
-        const store = yield* createRegistryEvidenceStore({
-          name: hby.name,
-          base: hby.base,
-          temp: hby.temp,
-          headDirPath: hby.headDirPath,
-          compat: hby.compat,
-        });
-        try {
-          yield* provide(store);
-        } finally {
-          if (store.opened) yield* store.close(hby.temp);
-        }
-      })
-      : null);
+  let registryEvidence = options.registryEvidence ?? null;
+  let ownsRegistryEvidence = false;
+  if (registryEvidence === null && !hby.readonly) {
+    registryEvidence = yield* openRegistryEvidenceForHabery(hby);
+    ownsRegistryEvidence = true;
+  }
   const reactor = new Reactor(hby, { cues, vdr, messagePolicy: options.messagePolicy });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
@@ -319,7 +302,7 @@ export function* createAgentRuntime(
       if (ownsMailboxer && mailboxer?.opened) {
         yield* mailboxer.close();
       }
-      if (!options.registryEvidence && registryEvidence?.opened) {
+      if (ownsRegistryEvidence && registryEvidence?.opened) {
         yield* registryEvidence.close(hby.temp);
       }
       if (ownsReger && reger?.opened) {
@@ -327,6 +310,46 @@ export function* createAgentRuntime(
       }
     },
   };
+}
+
+/** Open registry evidence owned by the current Effection scope. */
+function* openRegistryEvidenceForHabery(hby: Habery): Operation<RegistryEvidenceStore> {
+  return yield* resource<RegistryEvidenceStore>(function*(provide) {
+    const store = yield* call(() =>
+      createRegistryEvidenceStore({
+        name: hby.name,
+        base: hby.base,
+        temp: hby.temp,
+        headDirPath: hby.headDirPath,
+        compat: hby.compat,
+      })
+    );
+    try {
+      yield* provide(store);
+    } finally {
+      if (store.opened) yield* store.close(hby.temp);
+    }
+  });
+}
+
+/** Open the runtime's default TEL store with the same scope-owned lifetime. */
+function* openRegerForHabery(hby: Habery): Operation<Reger> {
+  return yield* resource<Reger>(function*(provide) {
+    const store = yield* call(() =>
+      createReger({
+        name: hby.name,
+        base: hby.base,
+        temp: hby.temp,
+        headDirPath: hby.headDirPath,
+        compat: hby.compat,
+      })
+    );
+    try {
+      yield* provide(store);
+    } finally {
+      if (store.opened) yield* store.close(hby.temp);
+    }
+  });
 }
 
 /**

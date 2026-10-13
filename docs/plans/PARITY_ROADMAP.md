@@ -1,7 +1,7 @@
 # KERIpy parity and bounded runtime roadmap
 
-Verified boundary: keri-ts `cd6648ebda092bf2940aa9503e21f013294c64b8` after
-[#169][pr169]. Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+Verified boundary: keri-ts `be32f24b83c7c1c75b849e8f40e44ba5fb9e5014` after
+[#170][pr170]. Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
 completed PR evidence are summarized in the [delivery report][delivered].
@@ -33,8 +33,9 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 
 ## Publication sequence
 
-1. Documentation reorganization is delivered in #169. Sender admission is the
-   current 3f slice; its contract and tests are linked above.
+1. Documentation reorganization (#169) and sender admission (#170) are delivered.
+   The dedicated runtime store-ownership cleanup precedes the remaining 3f work;
+   its [lifecycle contract][ownership] preserves caller-owned stores.
 2. Finish 3f KRAM admission and its dependent 3e presentation
    path. Keep unimplemented consumers guarded; `xip/pro/bar` are reference stubs.
 3. Shared admission (4), storage/recovery (5), production backpressure (6).
@@ -54,7 +55,8 @@ Passing parser tests or finite per-recipient guards cannot close phases 4–7.
 Long qualification stays outside required merge CI; only the maintainer dispatches
 hosted extended jobs, whose existing 15-minute cap remains unchanged.
 
-[pr169]: https://github.com/kentbull/keri-ts/pull/169
+[pr170]: https://github.com/kentbull/keri-ts/pull/170
+[ownership]: ../design-docs/runtime/INGRESS_AND_EGRESS.md#runtime-store-ownership
 [intake]: ../design-docs/exchange/MESSAGE_ADMISSION.md
 [delivered]: ../reports/parity/DELIVERED_THROUGH_168.md
 [cesr]: cesr/CESR_PROGRESSIVE_PARSER_PLAN.md
