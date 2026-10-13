@@ -94,26 +94,6 @@ function kliStoreArgs(store: KliStore): string[] {
   return ["--name", store.name, "--base", store.base, "--passcode", store.passcode];
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await Deno.stat(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function interopVerifierRoot(ctx: InteropContext): Promise<string> {
-  const localRoot = `${ctx.repoRoot.replace(/\/$/, "")}/../../../verifier/apps/interop-verifier`;
-  if (
-    await pathExists(`${localRoot}/src/interop_verifier/app/cli.py`)
-    && await pathExists(`${localRoot}/scripts/interop-verifier-incept-no-wits.json`)
-  ) {
-    return localRoot;
-  }
-  return await ensureInteropVerifierFixtureRoot();
-}
-
 function withPythonPath(
   env: Record<string, string>,
   path: string,
@@ -136,11 +116,14 @@ async function startInteropVerifier(
     schemas?: string[];
   },
 ): Promise<SpawnedChild> {
-  const root = await interopVerifierRoot(ctx);
+  // Use the published fixture pin on every host; a nearby checkout may be stale.
+  const root = await ensureInteropVerifierFixtureRoot();
   const verifierArgs = [
     "-m",
     "interop_verifier.app.cli",
     "start",
+    "--protocol-version",
+    "1.0",
     "--name",
     args.name,
     "--head-dir",

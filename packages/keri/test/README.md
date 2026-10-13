@@ -90,6 +90,12 @@ This is fork-on-main qualification, not pure upstream parity. Historical
 table-source pins are independent data provenance, not claims about the live peer.
 No test silently switches to a sibling checkout, PATH `kli`, or another Python.
 
+Mixed-chain tests use the published `kentbull/interop-verifier` fixture
+`14658341afd47beb0cd8f4dd9f4f636239bb1bbd`, explicitly selecting v1. The fixture
+keeps inception, ingress, and OOBIs in one version, rehydrates embedded proofs
+with protocol-specific Serders, and projects issuer AIDs to strings for webhook
+JSON. A nearby verifier checkout never overrides this pin.
+
 Existing Tufa CLI parity fixtures select KERI 1.0 explicitly at KLI call sites
 that expose protocol selection. Body protocol and attachment genus remain
 independent: an explicit v1 body does not force a v1 replay enclosure. Keep
