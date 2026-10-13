@@ -73,7 +73,9 @@ The offset advances only through stream consumption, until reset. Nested groups
 remain atomic: the parser waits for the entire counted payload before parsing
 it. Native bodies hydrate once through `Serder`; annotation walks tokens only
 when rendering. `CesrBody` has no native token sidecar. A shortage within the
-complete body payload raises `GroupSizeError` immediately.
+complete body payload raises `GroupSizeError` immediately. Non-native body
+wrappers likewise bound their Matter primitive before decoding; a complete wrapper
+cannot wait for or read bytes outside that payload.
 
 Complete-record callers (HTTP requests/responses, locally serialized messages,
 and queued runtime ingress) must finish parsing with `flush()` or the existing
