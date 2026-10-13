@@ -2,6 +2,7 @@ import type { AttachmentGroup } from "cesr-ts";
 import {
   type BlindState,
   type BoundState,
+  type CesrFrame,
   Cigar,
   Diger,
   type EssrPayload,
@@ -173,6 +174,8 @@ export interface KeriDispatchEnvelopeInit {
   ptds?: PathedMaterialGroup[];
   /** Reopenable ESSR wire and decoded view; the dispatch caller owns disposal. */
   essr?: EssrPayload;
+  /** Borrowed child trees retain separate evidence and caller-owned payloads. */
+  nests?: readonly CesrFrame[];
   bsqs?: BlindState[];
   bsss?: BoundState[];
   tmqs?: TypeMedia[];
@@ -211,10 +214,13 @@ export class KeriDispatchEnvelope {
   readonly ptds: PathedMaterialGroup[];
   /** Shared payload views preserve parser ownership through dispatch. */
   readonly essr?: EssrPayload;
+  /** Child evidence is route-specific and never merged into parent signatures. */
+  readonly nests: readonly CesrFrame[];
   readonly bsqs: BlindState[];
   readonly bsss: BoundState[];
   readonly tmqs: TypeMedia[];
 
+  /** Project parent evidence while borrowing complete child trees from the dispatch owner. */
   constructor(init: KeriDispatchEnvelopeInit) {
     this.serder = init.serder;
     this.attachmentGroups = [...init.attachmentGroups];
@@ -231,6 +237,7 @@ export class KeriDispatchEnvelope {
     this.tdcs = [...(init.tdcs ?? [])];
     this.ptds = [...(init.ptds ?? [])];
     this.essr = init.essr;
+    this.nests = init.nests ?? [];
     this.bsqs = [...(init.bsqs ?? [])];
     this.bsss = [...(init.bsss ?? [])];
     this.tmqs = [...(init.tmqs ?? [])];

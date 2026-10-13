@@ -12,7 +12,19 @@
  * - sender retry durability is optional via `Outboxer`
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
-import { concatBytes, Counter, parsePather, ResourceLimitError, SerderACDC, SerderKERI } from "cesr-ts";
+import {
+  type CesrFrame,
+  collectPayload,
+  concatBytes,
+  Counter,
+  Diger,
+  nestedPayload,
+  parsePather,
+  ResourceLimitError,
+  SerderACDC,
+  SerderKERI,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { action, call, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
@@ -20,6 +32,7 @@ import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } 
 import { exchange } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
+import { MAX_NESTED_WIRE_BYTES } from "../db/exchange-nests.ts";
 import {
   DEFAULT_MAILBOX_INBOX_LIMITS,
   MailboxAdmissionError,
@@ -29,6 +42,7 @@ import {
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
+import { abortable } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
 import { buildCesrRequest } from "./cesr-http.ts";
@@ -575,6 +589,8 @@ export class Poster {
 export class ForwardHandler implements ExchangeRouteHandler {
   static readonly resource = "/fwd";
   readonly resource = ForwardHandler.resource;
+  /** This route binds a single v2 child body; recipient processors authenticate its evidence. */
+  readonly acceptsNests = true;
   readonly mailboxDirector: MailboxDirector;
 
   constructor(mailboxDirector: MailboxDirector) {
@@ -588,11 +604,22 @@ export class ForwardHandler implements ExchangeRouteHandler {
   verify(args: {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
+    nests?: readonly CesrFrame[];
   }): boolean {
     const modifiers = args.serder.ked?.q as Record<string, unknown> | undefined;
-    return typeof modifiers?.pre === "string"
-      && typeof modifiers?.topic === "string"
-      && extractForwardedMessage(args.serder, args.attachments) !== null;
+    if (typeof modifiers?.pre !== "string" || typeof modifiers?.topic !== "string") return false;
+    if (args.serder.pvrsn.major < 2) {
+      return !args.nests?.length && extractForwardedMessage(args.serder, args.attachments) !== null;
+    }
+    if (args.nests?.length !== 1) return false;
+    const signed = (args.serder.a as Record<string, unknown>)?.evt;
+    const child = args.nests[0].body;
+    if (typeof signed !== "string" || !(child instanceof SerderKERI || child instanceof SerderACDC)) return false;
+    try {
+      return child.verify() && new Diger({ qb64: signed }).verify(child.raw);
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -610,15 +637,18 @@ export class ForwardHandler implements ExchangeRouteHandler {
   handle(args: {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
+    /** Borrowed child wire remains live for this awaited handler operation. */
+    nests?: readonly CesrFrame[];
     /** Receiving hosted endpoint whose authority must cover the addressed recipient. */
     mailboxAid?: string | null;
-  }): void {
+  }): void | Operation<void> {
     const modifiers = args.serder.ked?.q as Record<string, unknown> | undefined;
     const recipient = typeof modifiers?.pre === "string" ? modifiers.pre : null;
     const topic = typeof modifiers?.topic === "string" ? modifiers.topic : null;
-    const forwarded = extractForwardedMessage(args.serder, args.attachments);
+    const child = args.serder.pvrsn.major >= 2 ? args.nests?.[0] : undefined;
+    const forwarded = child ? null : extractForwardedMessage(args.serder, args.attachments);
     const mailboxAid = args.mailboxAid;
-    if (!recipient || !topic || !forwarded) {
+    if (!recipient || !topic || (!child && !forwarded)) {
       return;
     }
 
@@ -642,7 +672,15 @@ export class ForwardHandler implements ExchangeRouteHandler {
     } else if (!hasLocalStoreForwardHost(hby, recipient, recipientKever)) {
       return;
     }
-    this.mailboxDirector.publish(recipient, topic, forwarded);
+    if (child) {
+      // Mailbox LMDB accepts a finite row; collect one admitted child, never the whole exchange stream.
+      return abortable(async (signal) => {
+        const wire = await collectPayload(nestedPayload(child, Vrsn_2_0), MAX_NESTED_WIRE_BYTES, signal);
+        signal.throwIfAborted();
+        this.mailboxDirector.publish(recipient, topic, wire);
+      });
+    }
+    this.mailboxDirector.publish(recipient, topic, forwarded!);
   }
 }
 

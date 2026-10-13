@@ -1,4 +1,6 @@
 import {
+  type AttachmentGroup,
+  type CesrFrame,
   type Cigar,
   Dater,
   Diger,
@@ -6,6 +8,7 @@ import {
   type EssrPayload,
   essrPayload,
   essrTexters,
+  framePayload,
   Prefixer,
   Saider,
   Seqner,
@@ -20,8 +23,17 @@ import { PathedMaterialGroup, TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
 import { exchange as exchangeMessage } from "../core/protocol-exchanging.ts";
-import { serializeMessage } from "../core/protocol-serialization.ts";
+import { messageAttachmentGroups, serializeMessage } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
+import {
+  chargeNests,
+  discardNests,
+  hasNests,
+  loadNests,
+  type NestBudget,
+  publishNests,
+  stageNests,
+} from "../db/exchange-nests.ts";
 import type { FilePayload } from "../db/payload-store.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
@@ -44,12 +56,16 @@ export interface ExchangeAttachment {
 /** Route-handler contract for accepted exchange messages. */
 export interface ExchangeRouteHandler {
   readonly resource: string;
+  /** Opt in only after route-specific child validation and durable replay are implemented. */
+  readonly acceptsNests?: boolean;
   /** Validate route policy before publishing accepted evidence. */
   verify?(args: {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
     /** Borrowed payload views valid for this route invocation. */
     essr?: EssrPayload;
+    /** Borrowed children, with evidence kept on its original message. */
+    nests?: readonly CesrFrame[];
     /** Hosted endpoint provenance, distinct from the signed sender. */
     mailboxAid?: string | null;
   }): boolean | Operation<boolean>;
@@ -59,6 +75,8 @@ export interface ExchangeRouteHandler {
     attachments: ExchangeAttachment[];
     /** Borrowed payload views valid for this route invocation. */
     essr?: EssrPayload;
+    /** Borrowed children, with evidence kept on its original message. */
+    nests?: readonly CesrFrame[];
     /** Hosted endpoint provenance, distinct from the signed sender. */
     mailboxAid?: string | null;
   }): void | Operation<void>;
@@ -76,6 +94,8 @@ export interface ExchangeInput {
   ptds?: readonly PathedMaterialGroup[];
   /** Caller-owned wire; successful publication transfers local file ownership. */
   essr?: EssrPayload;
+  /** Parent-owned children; admission borrows and snapshots their original wire. */
+  nests?: readonly CesrFrame[];
   /** Hosted endpoint provenance, retained across escrow. */
   mailboxAid?: string | null;
 }
@@ -190,6 +210,9 @@ export class Exchanger {
     // A foreign or in-memory wire is snapshotted before verification and disposed on rejection.
     let staged: FilePayload | undefined;
     let evidenceStarted = false;
+    let nestStage: string | undefined;
+    let reopenedNests: CesrFrame[] = [];
+    let nests: readonly CesrFrame[] = args.nests ?? [];
     // Resources unwind in reverse order: I/O, payload cleanup, then admission release.
     yield* this.admission();
     yield* resource(function*(this: Exchanger, provide: Provide<void>) {
@@ -197,7 +220,12 @@ export class Exchanger {
         yield* provide(undefined);
       } finally {
         if (evidenceStarted && !this.hby.db.exchangeMeta.get([said])?.essr) this.hby.db.essrs.rem([said]);
-        if (staged) yield* call(() => staged!.discard());
+        if (nestStage) this.hby.db.enstStaging.rem([nestStage]);
+        try {
+          yield* call(() => discardNests(reopenedNests));
+        } finally {
+          if (staged) yield* call(() => staged!.discard());
+        }
       }
     }.bind(this));
     if (args.serder.ilk !== "exn") return reject(`Unsupported exchange ilk ${args.serder.ilk}.`);
@@ -293,17 +321,50 @@ export class Exchanger {
         return reject(`Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    // An already accepted exchange cannot be downgraded into signature escrow.
-    if (signatures.kind !== "verified" && this.complete(said)) return { kind: "accept", said };
     const attachments = normalizeAttachments(args.ptds ?? []);
     const handler = this.routes.get(args.serder.route ?? "");
+    let retainedNests = hasNests(this.hby.db, said);
+    if (args.nests?.length || retainedNests) {
+      // Recover only nested work; ordinary flat exchanges need no file archive.
+      yield* abortable((signal) => this.hby.db.openPayloads(signal));
+      retainedNests = hasNests(this.hby.db, said);
+    }
+    if (
+      (args.nests?.length || retainedNests)
+      && (args.serder.pvrsn.major < 2 || args.serder.route !== "/fwd" || !handler?.acceptsNests)
+    ) {
+      return reject("Nested exchange route is not implemented.");
+    }
+    if (args.nests?.length) {
+      try {
+        chargeNests(args.nests, this.nestBudget(args, essr));
+      } catch (error) {
+        return reject(error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (retainedNests && !args.nests?.length) {
+      // Signature-only retries reopen the durable evidence; fresh parsed children stay hydrated.
+      yield* abortable(async (signal) => {
+        reopenedNests = await loadNests(this.hby.db, said, this.nestBudget(args, essr), signal);
+      });
+      nests = reopenedNests;
+    }
     const mailboxAid = args.mailboxAid ?? previous?.mailboxAid ?? null;
     if (signatures.kind === "verified" && handler?.verify) {
-      const verified = yield* call(() => handler.verify!({ serder: args.serder, attachments, essr, mailboxAid }));
+      const verified = yield* call(() =>
+        handler.verify!({ serder: args.serder, attachments, essr, nests, mailboxAid })
+      );
       if (!verified) return reject(`Exchange route ${args.serder.route ?? ""} failed handler verification.`);
+    }
+    // An already accepted exchange cannot be downgraded by an incomplete duplicate.
+    if (signatures.kind !== "verified" && this.complete(said)) return { kind: "accept", said };
+    if (args.nests?.length) {
+      nestStage = crypto.randomUUID();
+      yield* abortable((signal) => stageNests(this.hby.db, nestStage!, nests, signal));
     }
     /** Publish ordinary evidence and private provenance in the archive transaction. */
     const commit = () => {
+      if (nestStage) publishNests(this.hby.db, said, nestStage);
       if (signatures.kind === "verified") {
         this.clearEscrow(said, true);
         this.logAcceptedEvent({
@@ -363,7 +424,9 @@ export class Exchanger {
     }
     if (signatures.kind !== "verified") return signatures;
     if (handler) {
-      yield* call(() => handler.handle({ serder: args.serder, attachments, essr: stored ?? undefined, mailboxAid }));
+      yield* call(() =>
+        handler.handle({ serder: args.serder, attachments, essr: stored ?? undefined, nests, mailboxAid })
+      );
     }
     return { kind: "accept", said };
   }
@@ -395,7 +458,27 @@ export class Exchanger {
     }
   }
 
-  /** Stream accepted signatures and canonical ESSR wire without concatenating the message. */
+  /** Share parent metadata and ESSR credit across all retained child rows. */
+  private nestBudget(
+    args: ExchangeInput,
+    essr?: EssrPayload | null,
+    prepared?: readonly AttachmentGroup[],
+  ): NestBudget {
+    const groups = prepared ?? messageAttachmentGroups({
+      tsgs: args.tsgs,
+      cigars: args.cigars,
+      pathed: (args.ptds ?? []).map((group) => group.raw),
+    }, resolveAttachmentGvrsn(args.serder));
+    return {
+      bytes: 8 * 1024 ** 2 - args.serder.raw.length - groups.reduce((size, group) => size + group.raw.length, 0),
+      groups: 4096 - groups.length,
+      nodes: 255,
+      essrBytes: this.maxEssrBytes - (essr?.raw.size ?? 0),
+      essrItems: this.maxEssrItems - (essr?.count ?? 0),
+    };
+  }
+
+  /** Stream accepted evidence; reopened child ESSR stages survive until output cancellation or completion. */
   async *replay(said: string, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
     signal?.throwIfAborted();
     const serder = this.hby.db.exns.get([said]);
@@ -405,15 +488,33 @@ export class Exchanger {
       maxEssrItems: this.maxEssrItems,
     });
     const gvrsn = resolveAttachmentGvrsn(serder, essr?.gvrsn);
-    yield serializeMessage(serder, {
+    const args = {
+      serder,
       tsgs: this.rebuildEscrowedGroups(said),
       cigars: this.hby.db.ecigs.get([said]).map(([, cigar]) => cigar),
-      pathed: this.hby.db.epath.get([said]),
-      gvrsn,
-      genusify: gvrsn.major >= 2,
-    });
-    if (essr) {
-      yield* essrChunks(essr, { gvrsn, signal });
+      ptds: this.hby.db.epath.get([said]).map((text) => PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))),
+    };
+    const evidence = { tsgs: args.tsgs, cigars: args.cigars, pathed: args.ptds.map((group) => group.raw) };
+    const nested = hasNests(this.hby.db, said);
+    const groups = nested ? messageAttachmentGroups(evidence, gvrsn) : [];
+    const nests = nested ? await loadNests(this.hby.db, said, this.nestBudget(args, essr, groups), signal) : [];
+    try {
+      if (nests.length) {
+        // Reuse the stored Serder and hydrated endorsements; the shared encoder builds real leaf groups.
+        const parent: CesrFrame = {
+          body: serder,
+          attachments: groups,
+          gvrsn,
+          nests,
+          essr: essr ?? undefined,
+        };
+        yield* framePayload(parent).open(signal);
+      } else {
+        yield serializeMessage(serder, { ...evidence, gvrsn, genusify: gvrsn.major >= 2 });
+        if (essr) yield* essrChunks(essr, { gvrsn, signal });
+      }
+    } finally {
+      await discardNests(nests);
     }
   }
 
@@ -688,6 +789,7 @@ export class Exchanger {
     this.hby.db.epath.rem([said]);
     if (!keepEvidence) {
       this.hby.db.essrs.rem([said]);
+      this.hby.db.enst.rem([said]);
       this.hby.db.exchangeMeta.rem([said]);
     }
   }

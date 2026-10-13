@@ -109,3 +109,33 @@ frame genus, so its reconstruction starts with v1 and replay raises the counter
 genus when required by the body. Repetitions already deduplicated by KERIpy cannot
 be reconstructed; the signed digest still decides whether the retained bytes
 are valid.
+
+## Nested exchange substreams
+
+`enst.` retains KERIpy-compatible qualified CESR child substreams, in insertion
+order with exact-value deduplication. It contains no file pointers or private
+metadata. `db/exchange-nests.ts` prepares candidate rows in private `enst.stage.`
+buckets keyed by a fresh admission UUID; the exchange transaction replaces the
+public rows alongside accepted/escrow evidence. Rejection or cancellation removes
+only that admission's candidate bucket. Exclusive archive startup clears abandoned
+private stages and public rows without accepted/escrow ownership; Python-origin
+owned rows require no private metadata.
+
+Each row is one finite LMDB wire allocation. Aggregate nested wire is capped at
+24 MiB; ordinary metadata, ESSR decoded bytes/items, nodes, and depth retain the
+existing parent-tree budgets (8 MiB, 8 MiB/16,384, 256, 64). Reopening subtracts
+parent credit and diminishes it across rows; non-native body hydration is charged
+conservatively for its Texter encoding. The LMDB API returns a complete row before
+its size can be checked. This finite row copy and the mailbox's finite child-row
+copy are explicit storage costs; they do not establish shared runtime memory
+admission. Reads release key cursors before suspension and stage ESSR in files,
+without retaining a second array of complete ciphertext fragments.
+
+Fresh parsed children remain hydrated through verification and handler execution.
+Escrow retry and replay reopen stored child frames; their temporary ESSR stages
+are released on completion, rejection, cancellation, or later-row corruption.
+Successful verified duplicates replace the child row set and invoke forwarding
+again, matching frozen Python `927c0cb8`. Failed replacement rolls back to the
+previous public rows. Parent `/fwd` verification checks exactly one child's valid
+body and the signed `a.evt` digest; child signature authentication belongs to its
+recipient. No recursive dispatch occurs at the forwarder.

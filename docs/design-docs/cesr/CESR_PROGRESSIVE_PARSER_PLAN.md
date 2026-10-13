@@ -473,48 +473,47 @@ regressions cover root ordinals, indentation, missing/extra/repeated child nodes
 and recursive payload transfer or cleanup after rendering failure, collection
 failure, and cancellation. Finite annotation retains its 8 MiB default admission;
 `annotateFrames` callers release entire trees through `discardFrame`. KERI
-normalization and HTTP inspection guards remain until the runtime slice proves
-verification, dispatch, replay, and ownership behavior.
+normalization retains guards for other nested routes; the v2 forwarding slice
+below closes its own verification, dispatch, replay, and ownership behavior.
 
-**Remaining runtime dependencies:** `packages/keri/src/app/parsering.ts:435`
-currently rejects nests before dispatch. Its dispatch at line 128 bypasses the
-reference's consolidated v2 `processMsg` boundary; current TS has no KRAM intake
-implementation. Source-ground that missing non-event policy in its own narrow
-slice before claiming full frozen-reference runtime alignment. Carry hydrated
-child evidence through `ExchangeInput`/route contracts in
-`packages/keri/src/app/exchanging.ts:45`, then add bounded persistent child
-substreams alongside existing payload storage (`packages/keri/src/db/basing.ts`).
-TS exchange retry at line 378 and replay at line 400 currently have no nested
-storage readback. Persistent storage, retry, duplicate/reject cleanup and replay
-must land together before accepting nests that can escrow. Route-specific
-multisig/IPEX/forwarding checks then receive retained children and enforce their
-actual source commitments, dependencies and evidence. Enable normalization only
-for those completed paths; no recursive child dispatch or invented authorization
-rule may fill absent runtime behavior. Keep HTTP inspection's rejection until
-its consumer contract supports the same ownership and forwarding behavior.
+**3c — forwarding and persistence (implemented):** Runtime normalization admits
+nested protocol-v2 `/fwd` messages only. `ExchangeInput` and handlers borrow the
+hydrated children; `ForwardHandler` requires one valid child body and verifies
+its digest against the parent's signed `a.evt`. The recipient authenticates the
+child's signatures; forwarding never recursively dispatches it.
 
-Publish the remaining runtime work as four reviewable slices:
+Actual nested serializer output enters KERIpy-compatible `enst.` IoSet rows.
+Private per-admission staging permits atomic replacement with accepted/escrow
+metadata, preserving earlier rows on rejection, cancellation and transaction
+failure. Verified duplicates replace rows and invoke the handler again, as the
+frozen Python probe proves. Reopen/retry/replay parse stored rows with shared
+remaining parent-tree credit and temporary file-backed ESSR, releasing owners
+on errors and cancellation. Fresh parsed children are reused. Bounded row reads
+and writes preserve original qualified ciphertext, order and IoSet deduplication;
+`payload-store.md` records the 24 MiB aggregate wire-copy ceiling and the native
+LMDB allocation-before-size-check limitation. No second whole ESSR array or
+private wire pointers are introduced.
 
-- **3c — forwarding and exchange persistence:** implement the v2 `/fwd` child
-  commitment, bounded `enst.` evidence, escrow/retry, reopen/replay, and failure
-  cleanup together before enabling that normalization path.
-- **3d — multisig:** carry children through the actual route-specific commitment,
-  evidence, coordination, and retry rules.
-- **3e — IPEX:** extend the applicable credential exchange handlers with nested
-  verification and processing, retaining their distinct dependency rules.
-- **3f — affected v2 dispatch policy:** reconcile non-event routing and admission
-  with the frozen reference, distinguishing optional KRAM behavior and explicit
-  reference stubs from implemented processing.
+`exchanging-nests.test.ts` exercises the real handler, normalization, child and
+parent proof separation, signature/commitment failures, missing sender state,
+escrow/retry, duplicate replacement, atomic rollback, concurrent cancellation,
+recovery and durable replay. `packages/keri/scripts/qualify-nested-exchange.ts`
+qualifies actual stored rows with frozen Python `927c0cb8`, checking nested
+signature ownership and Python's replacement/handler semantics.
 
-After these slices, follow-ons 4–7 remain resource policy, durable recovery,
-transport backpressure, and final qualification. The standalone Mapper repair
-recorded above follows qualification. Together with annotation, this is ten
-remaining publication units at the #157 boundary; reproduced qualification
-failures may require additional focused repairs.
+**Remaining runtime slices:** Route-specific multisig checks and dependency
+handling, IPEX workflow evidence, and the affected v2 `processMsg` policy remain
+separate PRs. TS dispatch still bypasses the reference's consolidated non-event
+allow/deny and optional KRAM intake; no full frozen-runtime parity is claimed.
+Normalization continues to reject other nested roots, including the reference's
+unimplemented `xip/pro/bar` processing stubs. HTTP inspection keeps its own guard
+until its ownership/forwarding consumer is completed. Shared runtime reservations
+and final end-to-end resource qualification remain follow-ons.
 
-Acceptance for runtime slices requires real handlers, signature/commitment
-failures, missing dependencies, escrow/retry/duplicates, durable reopen/replay and
-failed-publication cleanup. Serialization success alone is no authorization claim.
+Remaining publication units are **3d multisig**, **3e IPEX**, **3f affected v2
+dispatch policy**, follow-ons **4–7**, and the standalone **Mapper** repair.
+That is eight units after forwarding lands; qualification may reveal additional
+focused repairs. The existing source-grounded acceptance gates still apply.
 
 ### Follow-on PR 4: shared runtime resource policy
 

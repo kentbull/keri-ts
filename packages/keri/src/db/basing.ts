@@ -273,18 +273,22 @@ export class Baser {
     try {
       let previous: string | undefined;
       let owned = false;
-      let removed = false;
+      // Exclusive startup proves all private staging rows belong to interrupted admissions.
+      let removed = this.enstStaging.trim();
       // Scan physical keys only: a crashed write can leave arbitrarily many Texter rows.
-      for (const key of this.essrs.sdb.getKeys()) {
-        signal?.throwIfAborted();
-        const [saidKey] = unsuffix(key);
-        const said = t(saidKey);
-        if (said !== previous) {
-          previous = said;
-          // Preserve KERIpy-origin wire evidence without requiring our private metadata.
-          owned = this.exns.sdb.doesExist(saidKey) || this.epse.sdb.doesExist(saidKey);
+      for (const table of [this.essrs, this.enst]) {
+        previous = undefined;
+        for (const key of table.sdb.getKeys()) {
+          signal?.throwIfAborted();
+          const [saidKey] = unsuffix(key);
+          const said = t(saidKey);
+          if (said !== previous) {
+            previous = said;
+            // Preserve KERIpy-origin wire evidence without requiring our private metadata.
+            owned = this.exns.sdb.doesExist(saidKey) || this.epse.sdb.doesExist(saidKey);
+          }
+          if (!owned) removed = table.sdb.removeSync(key) || removed;
         }
-        if (!owned) removed = this.essrs.sdb.removeSync(key) || removed;
       }
       if (removed) await this.lmdber.env!.flushed;
       signal?.throwIfAborted();
@@ -444,6 +448,10 @@ export class Baser {
   public erpy!: CesrSuber<Saider>; // Forward pointers to provided reply messages.
   public esigs!: CesrIoSetSuber<Siger>; // Exchange-message indexed signatures.
   public ecigs!: CatCesrIoSetSuber<VerferCigarCouple>; // Exchange-message non-indexed signature couples.
+  /** Qualified nested substreams in KERIpy insertion order with exact-value deduplication. */
+  public enst!: IoSetSuber<string>;
+  /** Private provisional wire rows, atomically moved to enst. with the accepted/escrow marker. */
+  public enstStaging!: IoSetSuber<string>;
   public epath!: IoSetSuber<string>; // Exchange-message pathed attachments.
   public essrs!: CesrIoSetSuber<Texter>; // ESSR payloads keyed by exchange digest.
   public chas!: CesrIoSetSuber<Diger>; // Accepted signed challenge-response exchange SAIDs.
@@ -860,6 +868,9 @@ export class Baser {
 
       // Exchange-message pathed attachments.
       this.epath = new IoSetSuber<string>(this.lmdber, { subkey: ".epath" });
+
+      this.enst = new IoSetSuber<string>(this.lmdber, { subkey: "enst." });
+      this.enstStaging = new IoSetSuber<string>(this.lmdber, { subkey: "enst.stage." });
 
       // Encrypt-Sender-Sign-Receiver payloads keyed by exchange digest.
       this.essrs = new CesrIoSetSuber<Texter>(this.lmdber, {

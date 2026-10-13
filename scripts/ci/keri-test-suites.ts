@@ -30,6 +30,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/cue-runtime.test.ts",
       "test/unit/app/exchanging.test.ts",
       "test/unit/app/exchanging-payload.test.ts",
+      "test/unit/app/exchanging-nests.test.ts",
       "test/unit/app/essr.test.ts",
       "test/unit/app/oobi-local-state.test.ts",
       "test/unit/app/group-members.test.ts",
