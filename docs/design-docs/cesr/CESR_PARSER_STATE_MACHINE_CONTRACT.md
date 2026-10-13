@@ -30,89 +30,53 @@ reason about lifecycle behavior without re-deriving rules from control flow.
 - Attachment group: post-body trailing group parsed by attachment dispatch.
 - Annotation separator byte (`ano`): delimiter byte consumed between parse
   units, not itself a frame payload unit.
-- Deferred frame lifecycle: `pendingFrame` is the oldest incomplete top-level
-  frame continuation; `queuedFrames` are additional already-complete enclosed
-  frames emitted after `pendingFrame` to preserve stream order.
+- Open frame: a parsed body whose trailing attachment set has no proven end.
+- Complete enclosure: `BodyWithAttachmentGroup`, `GenericGroup`, or a trailing
+  `AttachmentGroup` (including big forms). Individual signature/receipt groups
+  bound only their own payloads, not the whole frame.
 
-## State Variables
+## State and Completion
 
-- `state.buffer`: unconsumed stream bytes.
-- `state.offset`: absolute consumed-byte position. Must be monotonic.
-- `streamVersion`: active top-level version context.
-- `pendingFrame`: older top-level frame waiting for continuation bytes or
-  terminal flush.
-- `queuedFrames`: additional complete enclosed frames parsed from one
-  `GenericGroup` payload.
-- `framed`: emission policy mode (`true` bounded, `false` greedy/unframed).
+`CesrParser` owns the stream buffer, consumed offset and version, one `pending`
+open frame, and `queued` complete siblings returned by a `GenericGroup`.
+There is no customizable frame-boundary policy or separate deferred-state object.
 
-## Derived Parser States
+An open frame completes only at:
 
-- `Idle`: `buffer` empty, `pendingFrame` null, `queuedFrames` empty.
-- `Buffered`: `buffer` non-empty with no deferred frame state.
-- `PendingOnly`: `pendingFrame` set, `queuedFrames` empty.
-- `QueuedOnly`: `pendingFrame` null, `queuedFrames` non-empty.
-- `PendingAndQueued`: both `pendingFrame` and `queuedFrames` set.
-- `ErroredAndReset`: non-shortage error emitted; parser state reset to defaults.
-- `Flushed`: after `flush()` returns, terminal remainder is consumed; repeated
-  flush is idempotent.
+1. a following message/body boundary;
+2. the end of an enclosure defining the entire frame or attachment set; or
+3. explicit `flush()` at the end of a complete record or stream.
 
-## Transition Table
+Exhausting a network chunk never completes an open frame, even after one or
+more fully parsed attachment groups. Initial and resumed attachment collection
+use the same code. Annotation separators do not close frames.
 
-| Trigger                            | Precondition                                  | Action                                                                                                       | Postcondition                              | Emits                         |
-| ---------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | ----------------------------- |
-| `feed(chunk)`                      | any                                           | append to `buffer`, call `drain()`                                                                           | depends on `drain()` loop                  | zero or more `frame`/`error`  |
-| `drain()` start                    | `buffer` has leading `ano`                    | consume separators                                                                                           | stays in current deferred state            | none                          |
-| `drain()` pending branch           | `pendingFrame` exists                         | call `resumePendingFrame()`                                                                                  | pending resolved, extended, or paused      | maybe one `frame`             |
-| `drain()` queued branch            | no pending, `queuedFrames` exists             | shift one queued frame                                                                                       | queued length decreases                    | one `frame`                   |
-| `drain()` base parse               | no pending/queued, bytes available            | call `parseFrame()`                                                                                          | base body consumed; stream context updated | none yet                      |
-| `drain()` attachment collect       | base parsed                                   | greedily parse trailing attachments (policy-aware)                                                           | complete frame or deferred pending         | zero or one `frame`           |
-| `drain()` shortage in collect      | attachment parse shortage                     | set `pendingFrame` with accumulated frame                                                                    | enters `PendingOnly` or `PendingAndQueued` | none                          |
-| `drain()` non-shortage parse error | parse failure not `ShortageError`             | emit normalized error, `reset()`                                                                             | `ErroredAndReset`                          | one `error`                   |
-| `resumePendingFrame()` boundary    | next token is `msg` or frame-boundary counter | emit pending frame, clear pending                                                                            | pending removed                            | one `frame`                   |
-| `resumePendingFrame()` attachment  | next token is attachment material             | append attachment group to pending frame                                                                     | pending retained or emitted (framed mode)  | maybe one `frame`             |
-| `resumePendingFrame()` pause       | insufficient bytes / continuation unresolved  | return pause                                                                                                 | pending kept                               | none                          |
-| `parseGenericGroup()`              | counted payload complete                      | parse bounded payload via `parseFrameSequence()`                                                             | return first frame, queue rest             | none directly                 |
-| `parseFrameSequence()`             | bounded payload                               | parse enclosed frames in order                                                                               | returns ordered frame list                 | none directly                 |
-| `parseCompleteFrame()`             | bounded substream                             | parse one complete enclosed frame                                                                            | returns frame + consumed bytes             | none directly                 |
-| `flush()`                          | any deferred state                            | emit deferred frames in contract order; emit terminal shortage if buffer remainder exists; consume remainder | `Flushed`                                  | `frame` and maybe one `error` |
-| `reset()`                          | any                                           | clear `buffer`, `pendingFrame`, `queuedFrames`, reset version                                                | `Idle`                                     | none                          |
+## Lifecycle (Normative)
 
-## Emission Rules (Normative)
+| Operation                 | Behavior                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `feed(chunk)`             | Append bytes, resume pending attachments, emit queued complete frames, then parse new bodies in order.                   |
+| Open body parsed          | Consume the body and retain it as `pending`; collect all following attachments until a completion boundary or shortage.  |
+| Complete enclosure parsed | Return complete frames in stream order; queue any siblings before parsing outside the enclosure.                         |
+| Transport shortage        | Retain the unfinished bytes and pending frame for the next feed.                                                         |
+| `flush()`                 | Drain all complete frames regardless of `framed`; finalize an open frame only if no incomplete attachment remains.       |
+| Terminal shortage         | Emit one `ShortageError`, discard the incomplete pending frame and remaining bytes, preserve earlier complete emissions. |
+| Other parse error         | Emit one error and reset parser state.                                                                                   |
+| `reset()`                 | Clear buffer, pending frame and queued frames; restore default version and offset.                                       |
 
-1. During `drain()`, `pendingFrame` always has higher priority than
-   `queuedFrames`.
-2. During `drain()`, `queuedFrames` emit before starting a new parse from
-   `buffer`.
-3. During `flush()`, deferred frame order preserves stream order:
-   - emit `pendingFrame` first,
-   - then emit `queuedFrames`.
-4. `flush()` emits at most one terminal `ShortageError`, only when remainder
-   bytes still exist.
-5. Repeated `flush()` calls after terminal emission are idempotent (no duplicate
-   frame/error emission).
+Repeated `flush()` calls are idempotent. A closed enclosure cannot absorb
+attachments outside its declared boundary. Complete bounded payloads containing
+incomplete inner items/frames raise `GroupSizeError`; additional network bytes
+cannot repair them.
 
-## Invariants
+The offset advances only through stream consumption, until reset. Nested groups
+remain atomic: the parser waits for the entire counted payload before parsing
+it. Native body success requires full `Serder` hydration, not metadata alone.
 
-- `state.offset` is monotonic and increases only through `consume(...)`.
-- No silent byte loss: bytes are either consumed into parsed artifacts or
-  retained for later continuation/terminal shortage.
-- Counted group parse is bounded and atomic for nested payloads (`GenericGroup`,
-  wrapper groups, body+attachment groups).
-- Enclosed frame order is preserved (`parseFrameSequence()` and queued emission
-  ordering).
-- Stream order is preserved when both `pendingFrame` and `queuedFrames` exist.
-- When `parseFrame()` classifies a top-level native `FixBodyGroup` or
-  `MapBodyGroup` as a message body, success means full `Serder` hydration;
-  metadata-only native-body success is not a valid parser outcome for that
-  frame-start branch.
-
-## Error Semantics
-
-- `ShortageError` in `feed` path is non-terminal: parser pauses and waits for
-  more bytes.
-- `ShortageError` in `flush` path is terminal for buffered remainder: error
-  emitted once, remainder consumed.
-- Non-shortage parser errors emit one `error` event and trigger `reset()`.
+Complete-record callers (HTTP requests/responses, locally serialized messages,
+and queued runtime ingress) must finish parsing with `flush()` or the existing
+`Reactor.processCompleteChunk()`. Raw streaming callers use `feed()` or
+`Reactor.processChunk()` and retain state across network chunks.
 
 ## Attachment Count Units
 
@@ -180,29 +144,27 @@ v1 signatures. Paths are relative to `packages/cesr`.
 
 ## Framed vs Unframed
 
-- `framed=false`: greedy lookahead and attachment collection; may defer
-  body-only end-of-buffer frame until more bytes or `flush()`.
-- `framed=true`: bounded emission per drain cycle; may emit earlier and stop
-  after first frame/attachment boundary work unit.
+`framed=true` emits at most one complete frame per `feed()` call;
+`framed=false` emits all available complete frames. Both use identical frame
+completion rules. `flush()` drains everything in either mode. This flag controls
+emission cadence, not whether the caller supplied a complete transport record.
 
 ## Contract-to-Test Matrix
 
-| Contract Item                                                               | Test Coverage                                                                                                          |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Pending continuation treats body-group counter as new frame boundary        | `packages/cesr/test/unit/parser-pending-frame.test.ts` (`V-P1-001`)                                                    |
-| Flush emits pending frame without remainder error                           | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P0-008`)                                                            |
-| Flush emits pending frame then terminal shortage when tail remains          | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P0-009`)                                                            |
-| Flush idempotency (frame/error not duplicated)                              | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P1-012`)                                                            |
-| Framed-mode bounded one-frame drain behavior                                | `packages/cesr/test/unit/parser-framed-mode.test.ts` (`V-P0-007`)                                                      |
-| GenericGroup parsing and split determinism                                  | `packages/cesr/test/unit/parity-generic-group.test.ts` (`V-P0-001`, `V-P0-002`)                                        |
-| Version selector at top-level and enclosed scopes                           | `packages/cesr/test/unit/parser-version-context.test.ts` (`V-P0-003`..`V-P0-005`)                                      |
-| Nested wrapper version-context behavior                                     | `packages/cesr/test/unit/parser-wrapper-version-context.test.ts` (`V-P1-007`, `V-P1-008`, `V-P1-010`)                  |
-| Legacy implicit-v1 behavior without selectors                               | `packages/cesr/test/unit/parser-legacy-v1-implicit-version.test.ts`                                                    |
-| Mixed multi-frame order determinism across splits                           | `packages/cesr/test/unit/parser-mixed-stream.test.ts` (`V-P1-005`)                                                     |
-| Non-shortage error recovery via automatic reset                             | `packages/cesr/test/unit/parser-recovery.test.ts` (`V-P1-011`)                                                         |
-| Leading/repeated `ano` separator handling                                   | `packages/cesr/test/unit/parser.test.ts` (`V-P0-010`)                                                                  |
-| Top-level native body groups either hydrate to `Serder` or emit parse error | `packages/cesr/test/unit/external-fixtures.test.ts`, `packages/cesr/test/hardening/parser-native-body-breadth.test.ts` |
-| `pendingFrame` + `queuedFrames` coexistence preserves stream order at flush | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P1-014`)                                                            |
+| Contract Item                                                             | Test Coverage (under `packages/cesr/test`)                                                                                             |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Every byte split, bytewise feeds, empty feeds, v1/v2 and text/binary      | `unit/parser-chunk-completion.test.ts`                                                                                                 |
+| Enclosures close promptly and exclude outside attachments                 | `unit/parser-chunk-completion.test.ts`                                                                                                 |
+| Partial attachments cannot emit incomplete frames                         | `unit/parser-chunk-completion.test.ts`, `unit/parser-flush.test.ts`                                                                    |
+| Flush drains complete siblings before terminal shortage and is idempotent | `unit/parser-flush.test.ts`                                                                                                            |
+| Framed emission cadence                                                   | `unit/parser-framed-mode.test.ts`                                                                                                      |
+| GenericGroup atomic parsing and split determinism                         | `unit/parity-generic-group.test.ts`                                                                                                    |
+| Version scopes, selectors, implicit v1 and wrapper scopes                 | `unit/parser-version-context.test.ts`, `unit/parser-wrapper-version-context.test.ts`, `unit/parser-legacy-v1-implicit-version.test.ts` |
+| Mixed frame order and error reset                                         | `unit/parser-mixed-stream.test.ts`, `unit/parser-recovery.test.ts`                                                                     |
+| Native hydration                                                          | `unit/external-fixtures.test.ts`, `hardening/parser-native-body-breadth.test.ts`                                                       |
+
+Runtime complete-record versus raw-stream coverage:
+`packages/keri/test/unit/app/reactor.test.ts`.
 
 ## Change Control
 

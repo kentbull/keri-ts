@@ -26,7 +26,7 @@ function firstEnvelope(
     framed: false,
     attachmentDispatchMode: "compat",
   });
-  const envelopes = envelopesFromFrames(parser.feed(bytes), false);
+  const envelopes = envelopesFromFrames([...parser.feed(bytes), ...parser.flush()], false);
   const envelope = envelopes[0];
   if (!envelope) {
     throw new Error("Expected one parsed CESR envelope.");

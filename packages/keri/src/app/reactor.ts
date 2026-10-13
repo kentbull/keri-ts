@@ -1,4 +1,4 @@
-import { type CesrParser, Cigar, createParser, Ilks, SerderKERI, Siger, Verfer } from "cesr-ts";
+import { type CesrParser, Cigar, createParser, Ilks, parseBytes, SerderKERI, Siger, Verfer } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
@@ -68,7 +68,7 @@ export class Reactor {
   }
 
   /**
-   * Queue one CESR/KERI message byte sequence for later parsing.
+   * Queue one complete CESR/KERI record for later parsing.
    *
    * This is the transient ingress seam used by both local synthetic messages
    * and remotely fetched OOBI artifacts.
@@ -78,7 +78,7 @@ export class Reactor {
   }
 
   /**
-   * Parse and dispatch one already-collected CESR/KERI byte chunk immediately.
+   * Feed a raw stream chunk and dispatch only frames with proven boundaries.
    *
    * This keeps the parser lifecycle owned by `Reactor` while letting higher
    * level hosts choose whether one ingress source should be treated as local or
@@ -94,20 +94,15 @@ export class Reactor {
   /**
    * Parse and dispatch one complete CESR/KERI record.
    *
-   * Mailbox SSE entries are delivered as bounded records rather than an
-   * open-ended stream. A fresh parser plus terminal flush lets body-only
-   * records emit without waiting for a later chunk while keeping the shared
-   * streaming parser untouched for long-lived ingress.
+   * HTTP bodies, mailbox SSE entries, and local messages have an explicit end.
+   * A fresh parser plus flush completes their open attachment sets without
+   * waiting for another record or affecting the shared streaming parser.
    */
   processCompleteChunk(
     chunk: Uint8Array,
     { local = this.local }: { local?: boolean } = {},
   ): void {
-    const parser = createParser({
-      framed: false,
-      attachmentDispatchMode: "compat",
-    });
-    this.dispatchParsedFrames([...parser.feed(chunk), ...parser.flush()], local);
+    this.dispatchParsedFrames(parseBytes(chunk), local);
   }
 
   private dispatchParsedFrames(
@@ -145,7 +140,7 @@ export class Reactor {
       if (!chunk) {
         continue;
       }
-      this.processChunk(chunk);
+      this.processCompleteChunk(chunk);
     }
   }
 

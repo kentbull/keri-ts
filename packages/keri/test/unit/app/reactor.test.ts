@@ -35,6 +35,15 @@ Deno.test("app/reactor - query parsing normalizes transferable last-establishmen
         seen = envelope;
       }) as typeof reactor.kevery.processQuery;
 
+      const query = hab.endorse(makeQuerySerder("ksn", { i: hab.pre, src: hab.pre }), { pipelined: false });
+      reactor.processChunk(query.slice(0, -1));
+      assertEquals(seen, null);
+      reactor.processChunk(query.slice(-1));
+      assertEquals(seen, null, "Chunk exhaustion must not dispatch an open attachment set");
+      reactor.processChunk(query);
+      assertExists(seen, "The following body closes the previous query");
+      seen = null;
+      // Queued complete records finish independently of the open stream.
       reactor.ingest(hab.query(hab.pre, hab.pre, {}, "ksn"));
       reactor.processOnce();
 

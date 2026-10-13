@@ -270,7 +270,7 @@ function* buildForwardMessage(
     });
     return concatBytes(
       sender.replyEndRole(sender.pre),
-      sender.endorse(wrapped.serder),
+      sender.endorse(wrapped.serder, { pipelined: false }),
       wrapped.attachments,
     );
   } finally {
@@ -835,9 +835,9 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
         http,
       );
       assertEquals(response.status, 400);
-      assertEquals(
+      assertStringIncludes(
         yield* textOp(response),
-        "Mailbox authorization reply field must contain exactly one CESR message",
+        "Invalid mailbox authorization reply:",
       );
     } finally {
       yield* runtime.close();

@@ -14,10 +14,12 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    that contract and its tests.
 3. Parser architecture remains intentionally atomic/bounded-substream first.
    Nested incremental parsing is deferred behind explicit performance evidence.
-4. The frame lifecycle model is stable: `pendingFrame` means unresolved
-   top-level continuation, `queuedFrames` means already-complete enclosed
-   frames, and stream-order preservation when both coexist is part of the
-   contract.
+4. Chunk exhaustion never completes an open attachment set. A following body,
+   a complete frame/attachment enclosure, or explicit `flush()` does. Initial and
+   resumed collection share one path; `framed` only caps emissions per feed.
+   Terminal partial attachments emit a shortage without exposing their pending
+   frame. Complete-record runtime callers finish explicitly; raw streams retain
+   parser state. Do not append peer attachments after a closed enclosure.
 5. Attachment dispatch decodes only the selected genus version; unknown codes
    and primitive failures never trigger a cross-major retry. Strict/compat mode
    controls opaque wrapper-tail recovery only. Explicit genus selectors and

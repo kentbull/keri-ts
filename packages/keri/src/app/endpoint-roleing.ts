@@ -75,7 +75,7 @@ export function* proposeGroupEndpointRole(
     { pre: groupHab.pre },
   );
   const localRpy = groupEndorseReply(runtime.hby, groupHab.pre, rpySerder);
-  runtime.reactor.processChunk(localRpy, { local: true });
+  runtime.reactor.processCompleteChunk(localRpy, { local: true });
   runtime.reactor.processEscrowsOnce();
 
   const [exn, attachments] = multisigRpyExn(groupHab, member, localRpy);

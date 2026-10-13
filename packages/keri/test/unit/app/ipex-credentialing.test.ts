@@ -216,7 +216,7 @@ Deno.test("IPEX credential artifacts settle in a fresh holder verifier and admit
         },
       });
       for (const message of grant.support) {
-        holderReactor.processChunk(message);
+        holderReactor.processCompleteChunk(message);
       }
       holderReactor.processEscrowsOnce();
       processCredentialPresentationArtifacts(holderReactor, grant.artifacts);

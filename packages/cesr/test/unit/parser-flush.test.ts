@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert";
 import { ShortageError } from "../../src/core/errors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
@@ -22,7 +22,7 @@ Deno.test("V-P0-008: flush emits pending frame and no error when no remainder by
   }
 });
 
-Deno.test("V-P0-009: flush emits pending frame then ShortageError when truncated tail remains", () => {
+Deno.test("V-P0-009: flush rejects the pending frame when a truncated attachment remains", () => {
   const parser = createParser();
   // Declares one AttachmentGroup quadlet payload but omits payload bytes.
   // This guarantees an attachment-group shortage path.
@@ -34,11 +34,10 @@ Deno.test("V-P0-009: flush emits pending frame then ShortageError when truncated
   assertEquals(feedOut.length, 0);
 
   const flushed = parser.flush();
-  assertEquals(flushed.length, 2);
-  assertEquals(flushed[0].type, "frame");
-  assertEquals(flushed[1].type, "error");
-  if (flushed[1].type === "error") {
-    assertEquals(flushed[1].error instanceof ShortageError, true);
+  assertEquals(flushed.length, 1);
+  assertEquals(flushed[0].type, "error");
+  if (flushed[0].type === "error") {
+    assertEquals(flushed[0].error instanceof ShortageError, true);
   }
 });
 
@@ -63,52 +62,30 @@ Deno.test("V-P1-012: flush idempotency emits terminal shortage only once", () =>
   assertEquals(feedOut.length, 0);
 
   const first = parser.flush();
-  assertEquals(first.length, 2);
-  assertEquals(first[0].type, "frame");
-  assertEquals(first[1].type, "error");
-  if (first[1].type === "error") {
-    assertEquals(first[1].error instanceof ShortageError, true);
+  assertEquals(first.length, 1);
+  assertEquals(first[0].type, "error");
+  if (first[0].type === "error") {
+    assertEquals(first[0].error instanceof ShortageError, true);
   }
 
   const second = parser.flush();
   assertEquals(second.length, 0);
 });
 
-Deno.test("V-P1-014: flush preserves stream order when pendingFrame and queuedFrames coexist", () => {
-  const parser = createParser();
-  const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
-  const firstEnclosed = KERIPY_NATIVE_V2_ICP_FIX_BODY;
-  const secondEnclosed = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
-  const genericPayload = `${firstEnclosed}${secondEnclosed}`;
-  const generic = `${counterV2(CtrDexV2.GenericGroup, genericPayload.length / 4)}${genericPayload}`;
-
-  // Truncated top-level attachment token triggers shortage after first enclosed
-  // frame is selected, leaving second enclosed frame queued.
-  const stream = `${generic}-CAB`;
-  const feedOut = parser.feed(encode(stream));
-  assertEquals(feedOut.length, 0);
-
-  // Empty follow-up feed must remain deterministic and not force emission.
-  const followUp = parser.feed(new Uint8Array(0));
-  assertEquals(followUp.length, 0);
-
-  const flushed = parser.flush();
-  assertEquals(flushed.length, 3);
-  assertEquals(flushed[0].type, "frame");
-  assertEquals(flushed[1].type, "frame");
-  assertEquals(flushed[2].type, "error");
-
-  if (flushed[0].type === "frame" && flushed[1].type === "frame") {
-    // First enclosed frame had no nested attachments.
-    assertEquals(flushed[0].frame.attachments.length, 0);
-    // Second enclosed frame carried one nested attachment group.
-    assertEquals(flushed[1].frame.attachments.length, 1);
-    assertEquals(
-      flushed[1].frame.attachments[0].code,
-      CtrDexV2.ControllerIdxSigs,
-    );
+Deno.test("flush preserves completed enclosed siblings before a truncated next body", () => {
+  const first = KERIPY_NATIVE_V2_ICP_FIX_BODY;
+  const second = first + groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
+  const generic = groupV2(CtrDexV2.GenericGroup, first + second);
+  const parser = createParser({ framed: true });
+  const events = [
+    ...parser.feed(encode(generic + first.slice(0, -4))),
+    ...parser.flush(),
+  ];
+  assertEquals(events.map((event) => event.type), ["frame", "frame", "error"]);
+  if (events[0].type === "frame" && events[1].type === "frame") {
+    assertEquals(events[0].frame.attachments.length, 0);
+    assertEquals(events[1].frame.attachments.length, 1);
   }
-  if (flushed[2].type === "error") {
-    assertEquals(flushed[2].error instanceof ShortageError, true);
-  }
+  if (events[2].type === "error") assertEquals(events[2].error instanceof ShortageError, true);
+  assertEquals(parser.flush(), []);
 });

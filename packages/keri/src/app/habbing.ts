@@ -15,10 +15,10 @@
 import {
   Cigar,
   concatBytes,
-  createParser,
   Diger,
   Ilks,
   NumberPrimitive,
+  parseBytes,
   Prefixer,
   SealLast,
   SerderKERI,
@@ -505,11 +505,7 @@ export class Hab {
    * remotely received wire messages.
    */
   private ingestLocalCesr(ims: Uint8Array): void {
-    const parser = createParser({
-      framed: false,
-      attachmentDispatchMode: "compat",
-    });
-    for (const envelope of envelopesFromFrames(parser.feed(ims), true)) {
+    for (const envelope of envelopesFromFrames(parseBytes(ims), true)) {
       dispatchEnvelope(envelope, this.rvy, this.kvy);
     }
   }

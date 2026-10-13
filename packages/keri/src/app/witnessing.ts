@@ -18,9 +18,9 @@ import {
   Cigar,
   concatBytes,
   Counter,
-  createParser,
   CtrDexV1,
   Ilks,
+  parseBytes,
   type SerderKERI,
   type Siger,
 } from "cesr-ts";
@@ -215,11 +215,7 @@ function buildWitnessReceiptMessage(
 function inspectReceiptMessage(
   bytes: Uint8Array,
 ): { serder: SerderKERI; wigers: readonly Siger[]; cigars: readonly Cigar[] } {
-  const parser = createParser({
-    framed: false,
-    attachmentDispatchMode: "compat",
-  });
-  const envelopes = envelopesFromFrames(parser.feed(bytes), false);
+  const envelopes = envelopesFromFrames(parseBytes(bytes), false);
   const envelope = envelopes[0];
   if (!envelope) {
     throw new ValidationError("Expected one witness receipt message.");

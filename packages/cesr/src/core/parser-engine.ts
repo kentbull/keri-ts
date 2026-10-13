@@ -1,10 +1,9 @@
 import type { AttachmentDispatchOptions } from "../parser/group-dispatch.ts";
+import type { Versionage } from "../tables/table-types.ts";
 import { ParserError, ShortageError } from "./errors.ts";
 import { AttachmentCollector } from "./parser-attachment-collector.ts";
 import { DEFAULT_VERSION } from "./parser-constants.ts";
-import { DeferredFrameLifecycle } from "./parser-deferred-frames.ts";
 import { FrameParser } from "./parser-frame-parser.ts";
-import { createFrameBoundaryPolicy, type FrameBoundaryPolicy } from "./parser-policy.ts";
 import { ParserStreamState } from "./parser-stream-state.ts";
 import type { CesrFrame, CesrMessage } from "./types.ts";
 
@@ -12,12 +11,10 @@ import type { CesrFrame, CesrMessage } from "./types.ts";
  * Parser construction options for emission and wrapper-tail recovery.
  */
 export interface ParserOptions {
-  /** Legacy framed toggle; used only when `frameBoundaryPolicy` is not injected. */
+  /** Emit at most one complete frame per feed; never treat a chunk as a frame. */
   framed?: boolean;
   /** Wrapper-tail recovery mode; attachment dispatch never retries versions. */
   attachmentDispatchMode?: AttachmentDispatchOptions["mode"];
-  /** Explicit frame-boundary strategy override (preferred for new integrations). */
-  frameBoundaryPolicy?: FrameBoundaryPolicy;
 }
 
 /**
@@ -27,29 +24,25 @@ export interface ParserOptions {
 export class CesrParser {
   /**
    * Parser state contract (normative):
-   * `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+   * `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
    */
-  private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
+  private readonly framed: boolean;
   private readonly stream: ParserStreamState;
-  private readonly deferred: DeferredFrameLifecycle;
+  private pending: { frame: CesrMessage; version: Versionage } | null = null;
+  private queued: CesrMessage[] = [];
   private readonly frameParser: FrameParser;
   private readonly attachmentCollector: AttachmentCollector;
 
-  /** Compose emission policy and attachment parsing collaborators. */
+  /** Configure frame parsing and attachment collection. */
   constructor(options: ParserOptions = {}) {
-    this.frameBoundaryPolicy = options.frameBoundaryPolicy
-      ?? createFrameBoundaryPolicy(options.framed ?? false);
+    this.framed = options.framed ?? false;
     const attachmentDispatchMode = options.attachmentDispatchMode ?? "compat";
 
     this.stream = new ParserStreamState(DEFAULT_VERSION);
-    this.deferred = new DeferredFrameLifecycle();
     this.frameParser = new FrameParser({
-      frameBoundaryPolicy: this.frameBoundaryPolicy,
       attachmentDispatchMode,
-      onEnclosedFrames: (frames) => this.deferred.enqueueQueued(frames),
     });
     this.attachmentCollector = new AttachmentCollector({
-      frameBoundaryPolicy: this.frameBoundaryPolicy,
       attachmentDispatchMode,
       isFrameBoundaryAhead: (input, version, cold) => this.frameParser.isFrameBoundaryAhead(input, version, cold),
     });
@@ -61,136 +54,72 @@ export class CesrParser {
     return this.drain();
   }
 
-  /** Flush pending state at end-of-stream, emitting frame/error if needed. */
+  /** Finish a complete record or stream, emitting complete frames or a terminal shortage. */
   flush(): CesrFrame[] {
-    const out = this.deferred.flushDeferred();
-    if (this.stream.buffer.length === 0) {
-      return out;
-    }
-
-    const remainder = this.stream.buffer.length;
-    out.push({
-      type: "error",
-      error: new ShortageError(
-        remainder + 1,
-        remainder,
-        this.stream.offset,
-      ),
-    });
-    this.stream.consume(remainder);
-    return out;
+    return this.drain(true);
   }
 
   reset(): void {
     this.stream.reset(DEFAULT_VERSION);
-    this.deferred.reset();
+    this.pending = null;
+    this.queued = [];
   }
 
-  /**
-   * Core streaming loop. Emit pending frames, then queued frames, then new base frame with trailing attachments.
-   * Contract invariants:
-   * - `pendingFrame` is always resumed before any queued enclosed frame emits.
-   * - `queuedFrames` are emitted before starting a new parse from `buffer`.
-   */
-  private drain(): CesrFrame[] {
+  /** Resume open attachments or emit enclosed frames before parsing another body. */
+  private drain(terminal = false): CesrFrame[] {
     const out: CesrFrame[] = [];
-
-    while (this.stream.buffer.length > 0) {
+    while (this.stream.buffer.length > 0 || this.queued.length > 0 || (terminal && this.pending)) {
       try {
         this.stream.consumeLeadingAno();
-        if (this.stream.buffer.length === 0) {
-          break;
-        }
-
-        const pending = this.deferred.pending;
+        const pending = this.pending;
         if (pending) {
-          const resume = this.attachmentCollector.resumePendingFrame(
+          const collected = this.attachmentCollector.collectTrailingAttachments(
             this.stream.buffer,
-            pending.frame,
             pending.version,
             this.stream.streamVersion,
+            pending.frame.attachments,
+            terminal,
           );
-          if (resume.consumed > 0) {
-            this.stream.consume(resume.consumed);
-          }
-          if (resume.emitPending) {
-            out.push({ type: "frame", frame: pending.frame });
-            this.deferred.clearPending();
-          }
-          if (!resume.shouldContinue) {
+          this.stream.consume(collected.consumed);
+          pending.frame.attachments = collected.attachments;
+          if (!collected.complete) {
+            if (terminal) {
+              throw new ShortageError(this.stream.buffer.length + 1, this.stream.buffer.length, this.stream.offset);
+            }
             break;
           }
-          continue;
-        }
-
-        if (this.deferred.hasQueued()) {
-          const frame = this.deferred.shiftQueued();
-          if (frame) {
-            out.push({ type: "frame", frame });
-            if (
-              this.frameBoundaryPolicy.shouldStopAfterQueuedFrameEmission()
-            ) {
-              break;
-            }
+          out.push({ type: "frame", frame: pending.frame });
+          this.pending = null;
+        } else if (this.queued.length > 0) {
+          out.push({ type: "frame", frame: this.queued.shift()! });
+        } else {
+          if (this.stream.buffer.length === 0) break;
+          const base = this.frameParser.parseFrame(this.stream.buffer, this.stream.streamVersion);
+          this.stream.consume(base.consumed);
+          this.stream.streamVersion = base.streamVersion;
+          if (!base.complete) {
+            this.pending = { frame: base.frame, version: base.version };
+            continue;
           }
-          continue;
+          this.queued.push(...(base.siblings ?? []));
+          out.push({ type: "frame", frame: base.frame });
         }
-
-        const base = this.frameParser.parseFrame(
-          this.stream.buffer,
-          this.stream.streamVersion,
-        );
-        this.stream.consume(base.consumed);
-        this.stream.streamVersion = base.streamVersion;
-
-        const collected = this.attachmentCollector.collectTrailingAttachments(
-          this.stream.buffer,
-          base.version,
-          base.streamVersion,
-          base.frame.attachments,
-        );
-        if (collected.consumed > 0) {
-          this.stream.consume(collected.consumed);
-        }
-
-        if (collected.pausedForShortage) {
-          this.deferred.setPending(
-            { body: base.frame.body, attachments: collected.attachments },
-            base.version,
-          );
-          break;
-        }
-
-        const completed: CesrMessage = {
-          body: base.frame.body,
-          attachments: collected.attachments,
-        };
-
-        // when in greedy attachment collection mode and a complete body has
-        // been received then set the current base frame as the pending frame to
-        // wait for attachments to arrive.
-        if (
-          this.frameBoundaryPolicy.shouldDeferBodyOnlyFrame(
-            completed.attachments.length,
-            this.stream.buffer.length,
-          )
-        ) {
-          this.deferred.setPending(completed, base.version);
-          break;
-        }
-
-        // Once all attachments have arrived then emit the current completed frame
-        out.push({ type: "frame", frame: completed });
-        if (this.frameBoundaryPolicy.shouldStopAfterCompletedFrameEmission()) {
-          break;
-        }
+        if (!terminal && this.framed) break;
       } catch (error) {
-        // Shortage Errors are expected when waiting for bytes to arrive for
-        // either message bodies (base) frames or attachment frames.
         if (error instanceof ShortageError) {
+          if (!terminal) break;
+          out.push({
+            type: "error",
+            error: new ShortageError(
+              this.stream.buffer.length + 1,
+              this.stream.buffer.length,
+              this.stream.offset,
+            ),
+          });
+          this.stream.consume(this.stream.buffer.length);
+          this.pending = null;
           break;
         }
-        // For any other error, push a ParserError, emit an error frame, and reset
         const normalized = error instanceof ParserError
           ? error
           : new ParserError(String(error), this.stream.offset);
@@ -199,7 +128,6 @@ export class CesrParser {
         break;
       }
     }
-
     return out;
   }
 }

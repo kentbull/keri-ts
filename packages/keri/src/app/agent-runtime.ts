@@ -296,7 +296,7 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
 }
 
 /**
- * Parse and settle one or more newly arrived KERI/CESR messages immediately.
+ * Parse and settle one or more complete KERI/CESR records immediately.
  *
  * This is the shared ingress-settlement seam for mailbox-delivered batches and
  * HTTP request payloads that should advance parser and escrow state together.
@@ -305,7 +305,7 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
  * - this helper is intentionally route-policy-free
  * - callers decide whether a message should be treated as `local` or ordinary
  *   remote ingress before calling it
- * - once called, it always does the same two things: feed the parser and run
+ * - once called, it always does the same two things: finish each record and run
  *   one escrow replay turn
  *
  * Why `local` matters:
@@ -325,7 +325,7 @@ export function settleRuntimeIngress(
   } = {},
 ): void {
   for (const message of messages) {
-    runtime.reactor.processChunk(message, { local });
+    runtime.reactor.processCompleteChunk(message, { local });
   }
   runtime.reactor.processEscrowsOnce();
 }
