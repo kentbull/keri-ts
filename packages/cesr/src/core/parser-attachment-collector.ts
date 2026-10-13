@@ -9,7 +9,7 @@ import type { AttachmentGroup, CesrDomain } from "./types.ts";
 /** Attachment decoding mode and recognition of the next body. */
 interface AttachmentCollectorOptions {
   attachmentDispatchMode: AttachmentDispatchMode;
-  isFrameBoundaryAhead: (
+  startsFrame: (
     input: Uint8Array,
     gvrsn: Versionage,
     cold: CesrDomain,
@@ -26,7 +26,7 @@ export interface CollectAttachmentsResult {
 /** Collect a message's attachments identically on initial and resumed feeds. */
 export class AttachmentCollector {
   private readonly attachmentDispatchMode: AttachmentDispatchMode;
-  private readonly isFrameBoundaryAhead: (
+  private readonly startsFrame: (
     input: Uint8Array,
     gvrsn: Versionage,
     cold: CesrDomain,
@@ -34,7 +34,7 @@ export class AttachmentCollector {
 
   constructor(options: AttachmentCollectorOptions) {
     this.attachmentDispatchMode = options.attachmentDispatchMode;
-    this.isFrameBoundaryAhead = options.isFrameBoundaryAhead;
+    this.startsFrame = options.startsFrame;
   }
 
   /**
@@ -67,7 +67,7 @@ export class AttachmentCollector {
 
       try {
         if (
-          this.isFrameBoundaryAhead(
+          this.startsFrame(
             input.slice(offset),
             gvrsn,
             nextCold,

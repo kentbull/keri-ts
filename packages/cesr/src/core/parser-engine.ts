@@ -45,7 +45,7 @@ export class CesrParser {
     });
     this.attachmentCollector = new AttachmentCollector({
       attachmentDispatchMode,
-      isFrameBoundaryAhead: (input, gvrsn, cold) => this.frameParser.isFrameBoundaryAhead(input, gvrsn, cold),
+      startsFrame: (input, gvrsn, cold) => this.frameParser.startsFrame(input, gvrsn, cold),
     });
   }
 
@@ -109,7 +109,7 @@ export class CesrParser {
           out.push({ type: "frame", frame: this.queued.shift()! });
         } else {
           if (this.buffer.length === 0) break;
-          const base = this.frameParser.parseFrame(this.buffer, this.streamGvrsn);
+          const base = this.frameParser.parseFrameStart(this.buffer, this.streamGvrsn);
           this.consume(base.consumed);
           this.streamGvrsn = base.streamGvrsn;
           if (!base.complete) {

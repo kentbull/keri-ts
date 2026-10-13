@@ -54,9 +54,9 @@ Canonical parser lifecycle/state-machine contract:
 1. `CesrParserCore.feed()` appends bytes and calls `drain()`.
 2. `drain()` repeatedly:
    - consumes annotation separator bytes (`ano`),
-   - parses a base frame (`parseFrame()`),
+   - parses a base frame (`parseFrameStart()`),
    - appends attachment groups until the next frame boundary or shortage.
-3. `parseFrame()` chooses one of:
+3. `parseFrameStart()` chooses one of:
    - message-domain Serder frame (`reapSerder`),
    - body-with-attachments wrapper,
    - non-native body group,

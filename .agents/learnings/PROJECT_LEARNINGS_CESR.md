@@ -47,9 +47,8 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    and enclosure context is authoritative for children. Version compatibility
    checks precede non-native opaque recovery. Selected counter probes never
    retry another major. Selector fixtures use `Counter.makeGVC`.
-7. Syntax and semantic failures are intentionally separated on high-coupling
-   paths so parser errors explain whether bytes were malformed or interpretation
-   failed.
+7. Frame starts dispatch directly after domain/counter recognition. Native body
+   and Mapper syntax interpretation still report their own parse failures.
 8. Binary serder cold-start support exists for JSON, MGPK, and CBOR. Local Deno
    source graphs must carry CESR-owned npm/import-map entries when they load
    local CESR source.
