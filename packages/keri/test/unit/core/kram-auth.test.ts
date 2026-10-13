@@ -1,13 +1,30 @@
 /** Parsed frozen observations exercise source decisions against genuinely accepted KELs. */
-import { b, discardFrame, parseBytes, type SerderKERI } from "cesr-ts";
+import {
+  b,
+  Diger,
+  discardFrame,
+  type EssrPayload,
+  essrPayload,
+  MemoryPayloadSink,
+  NumberPrimitive,
+  parseBytes,
+  Prefixer,
+  SerderKERI,
+  Siger,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertExists, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { KeriDispatchEnvelope } from "../../../src/core/dispatch.ts";
 import { authenticateKramSource } from "../../../src/core/kram-auth.ts";
+import { KramPolicy } from "../../../src/core/kram-policy.ts";
 import { verifyKramSignatures } from "../../../src/core/kram-signatures.ts";
+import { stageKram } from "../../../src/core/kram-staging.ts";
+import { CacheTypeRecord } from "../../../src/core/records.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+import { removeKramFactors } from "../../../src/db/kram-factors.ts";
 import signatureFixture from "../../fixtures/kram-signatures-927.json" with { type: "json" };
 import fixture from "../../fixtures/kram-source-auth-927.json" with { type: "json" };
 
@@ -186,6 +203,207 @@ Deno.test("KRAM sender normalization and signatures preserve frozen factor order
         yield* call(() => discardFrame(child));
       }
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts and discards rotated partials", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const receipt = "2026-10-13T12:00:02.000000+00:00", later = "2026-10-13T12:00:03.000000+00:00";
+    const policy = new KramPolicy(hby.db, {
+      enabled: true,
+      caches: { "~": [1000, 3000, 10000, 60000, 3000, 10000, 60000] },
+    });
+    const proofs: Record<string, string> = signatureFixture.proofs;
+    const body = new SerderKERI({ raw: b(fixture.bodies.wrong) }), key = [body.pre!, body.said!];
+    const child = { body: new SerderKERI({ raw: b(signatureFixture.bodies.foreign) }), attachments: [] };
+    const input = (names: string[]) =>
+      new KeriDispatchEnvelope({
+        serder: body,
+        sigers: names.map((name) => new Siger({ qb64: proofs[name] })),
+        attachmentGroups: [],
+        local: false,
+      });
+    let owner: EssrPayload | undefined;
+    const unexpected = function*() {
+      throw new Error("pending invoked consumer");
+    };
+    try {
+      // Inception-only state first: the frozen prior proof becomes stale at the real accepted rotation.
+      for (const wire of [fixture.kel[0]]) {
+        const [frame] = yield* call(() => parseBytes(b(wire)));
+        try {
+          yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
+        } finally {
+          yield* call(() => discardFrame(frame));
+        }
+      }
+      const prior = new KeriDispatchEnvelope({
+        serder: new SerderKERI({ raw: b(signatureFixture.bodies.prior) }),
+        attachmentGroups: [],
+        local: false,
+        sigers: [new Siger({ qb64: proofs.prior0 })],
+      });
+      const priorKey = [prior.serder.pre!, prior.serder.said!];
+      assertEquals(yield* stageKram(hby.db, policy, prior, receipt, unexpected), { kind: "pending", key: priorKey });
+      for (const wire of [...fixture.kel.slice(1), ...signatureFixture.kel]) {
+        const [frame] = yield* call(() => parseBytes(b(wire)));
+        try {
+          yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
+        } finally {
+          yield* call(() => discardFrame(frame));
+        }
+      }
+      assertEquals(yield* stageKram(hby.db, policy, prior, later, unexpected), { kind: "drop", reason: "replay" });
+      assertExists(hby.db.msgc.get(priorKey));
+      assertEquals([
+        hby.db.pmkm.get(priorKey),
+        hby.db.pmsk.get(priorKey),
+        hby.db.pmks.get(priorKey),
+        hby.db.kready.get(priorKey),
+      ], [null, null, [], null]);
+      const first = new KeriDispatchEnvelope({
+        ...input(["sender0", "sender0Only"]),
+        attachmentGroups: [],
+        nests: [child],
+      });
+      assertEquals(yield* stageKram(hby.db, policy, first, receipt, unexpected), { kind: "pending", key });
+      assertEquals(hby.db.pmks.get(key).map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only]);
+      assertEquals(hby.db.kready.get(key), null, "same-index variants do not satisfy threshold");
+      const snapshot = hby.db.kpnd.get(key);
+      assertExists(snapshot);
+      const foreign = new SerderKERI({ raw: b(signatureFixture.bodies.single) }).pre!;
+      const repeat = new KeriDispatchEnvelope({
+        ...input(["sender0"]),
+        attachmentGroups: [],
+        ssts: [{ i: new Prefixer({ qb64: foreign }), s: NumberPrimitive.fromNum(0n), d: new Diger({ qb64: foreign }) }],
+      });
+      assertEquals(yield* stageKram(hby.db, policy, repeat, later, unexpected), { kind: "pending", key });
+      assertEquals(hby.db.ssts.get(key).map(([prefix]) => prefix.qb64), [foreign]);
+      assertEquals(hby.db.kpnd.get(key), snapshot, "retry preserves independent saved child");
+      const ready = yield* stageKram(hby.db, policy, input(["sender1"]), later, function*(envelope, stagedKey, clock) {
+        assertEquals(stagedKey, key);
+        assertEquals(clock, later);
+        assertEquals(envelope.sigers.map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only, proofs.sender1]);
+        assertEquals(envelope.nests[0].body.raw, child.body.raw);
+        assertEquals(envelope.ssts.map((triple) => triple.i.qb64), [foreign]);
+        assertEquals(hby.db.msgc.get([child.body.pre!, child.body.said!]), null, "parent admission never admits child");
+        assertEquals(hby.db.kready.get(key), later, "publication precedes scoped consumption");
+        return "consumed";
+      });
+      assertEquals(ready, { kind: "ready", key, receiverTime: later, value: "consumed" });
+      const sink = new MemoryPayloadSink(8);
+      yield* call(() => sink.write(b("4BABYWJj")));
+      owner = essrPayload(yield* call(() => sink.finish()), 1, 3, Vrsn_2_0);
+      const wire = owner.wire;
+      const changedReceipt = new KeriDispatchEnvelope({
+        ...input(["sender1"]),
+        attachmentGroups: [],
+        essr: {
+          ...owner,
+          wire: {
+            size: wire.size,
+            async *open(signal?: AbortSignal) {
+              hby.db.kready.pin(key, receipt);
+              yield* wire.open(signal);
+            },
+          },
+        },
+      });
+      yield* call(() =>
+        assertRejects(
+          () => run(() => stageKram(hby.db, policy, changedReceipt, later, unexpected)),
+          Error,
+          "ready receipt changed",
+        )
+      );
+      hby.db.kready.pin(key, later);
+      yield* call(() => hby.db.reopen());
+      const retry = yield* stageKram(hby.db, policy, input(["sender1"]), receipt, function*(_envelope, _key, clock) {
+        return clock;
+      });
+      assertEquals(
+        retry,
+        { kind: "ready", key, receiverTime: later, value: later },
+        "reopen freezes first ready receipt",
+      );
+      const failConsumer = function*() {
+        throw new Error("handoff failed");
+      };
+      yield* call(() =>
+        assertRejects(
+          () => run(() => stageKram(hby.db, policy, input(["sender1"]), receipt, failConsumer)),
+          Error,
+          "handoff failed",
+        )
+      );
+      assertEquals(hby.db.kready.get(key), later, "consumer failure retains ready ownership");
+      hby.db.env!.transactionSync(() => {
+        removeKramFactors(hby.db, key);
+        hby.db.kpnd.rem(key);
+        hby.db.kready.rem(key);
+      });
+      assertEquals(yield* stageKram(hby.db, policy, first, later, unexpected), { kind: "drop", reason: "replay" });
+      // Re-admit only after removing the replay row, then fail the last publication write.
+      hby.db.msgc.rem(key);
+      const pin = hby.db.kready.pin.bind(hby.db.kready);
+      hby.db.kready.pin = (keys, value) => {
+        pin(keys, value);
+        throw new Error("ready write failed");
+      };
+      try {
+        const complete = new KeriDispatchEnvelope({
+          ...input(["sender0", "sender1"]),
+          attachmentGroups: [],
+          nests: [child],
+        });
+        yield* call(() =>
+          assertRejects(
+            () => run(() => stageKram(hby.db, policy, complete, receipt, unexpected)),
+            Error,
+            "ready write failed",
+          )
+        );
+      } finally {
+        hby.db.kready.pin = pin;
+      }
+      assertEquals([
+        hby.db.msgc.get(key),
+        hby.db.pmkm.get(key),
+        hby.db.pmsk.get(key),
+        hby.db.pmks.get(key),
+        hby.db.kpnd.get(key),
+        hby.db.kready.get(key),
+      ], [null, null, null, [], null, null]);
+      // A real serializer read changes current policy before the transaction rechecks admission.
+      const original = hby.db.ctyp.get("~")!;
+      const changed = new KeriDispatchEnvelope({
+        ...input(["sender0", "sender1"]),
+        attachmentGroups: [],
+        essr: {
+          ...owner,
+          wire: {
+            size: wire.size,
+            async *open(signal?: AbortSignal) {
+              hby.db.ctyp.pin("~", new CacheTypeRecord({ d: 0, sl: 1, ll: 1, xl: 1, psl: 1, pll: 1, pxl: 1 }));
+              yield* wire.open(signal);
+            },
+          },
+        },
+      });
+      try {
+        assertEquals(yield* stageKram(hby.db, policy, changed, later, unexpected), {
+          kind: "drop",
+          reason: "timeliness",
+        });
+        assertEquals([hby.db.msgc.get(key), hby.db.pmkm.get(key), hby.db.kpnd.get(key)], [null, null, null]);
+      } finally {
+        hby.db.ctyp.pin("~", original);
+      }
+    } finally {
+      if (owner) yield* call(() => owner!.discard());
       yield* hby.close(true);
     }
   });
