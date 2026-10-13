@@ -2,12 +2,16 @@
 import {
   b,
   type CesrFrame,
+  collectPayload,
   concatBytes,
   Counter,
   Diger,
   discardFrame,
   essrPayload,
+  framePayload,
   MemoryPayloadSink,
+  nestedPayload,
+  type OwnedPayload,
   parseBytes,
   Prefixer,
   SerderKERI,
@@ -15,14 +19,17 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
 import {
   loadMultisigHandlers,
+  multisigExnBody,
   multisigInceptExn,
   multisigInteractExn,
   multisigRotateExn,
+  type MultisigRoute,
   multisigRpyExn,
+  prepareMultisigEventExn,
 } from "../../../src/app/grouping.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
@@ -233,6 +240,15 @@ Deno.test("nested multisig builders and public normalization preserve all four r
         assertEquals(normalized.nests.length, 1);
         assertEquals(normalized.tsgs.length, 1);
         const child = frame.nests![0];
+        const direct = multisigExnBody(
+          bob.pre,
+          serder.route as MultisigRoute,
+          child.body as SerderKERI,
+          serder.a as Record<string, unknown>,
+          { ...options, stamp: serder.ked!.dt as string },
+        );
+        assertEquals(direct.raw, serder.raw);
+        assertEquals(await collectPayload(nestedPayload(child, Vrsn_2_0), 8192), nested);
         assertEquals((serder.a as Record<string, unknown>)[serder.route!.split("/").at(-1)!], child.body.said);
         assertEquals(mux.verify(serder, [child]), true);
         await run(() => dispatchEnvelope(normalized, left.rvy, left.kevery, exchanger));
@@ -397,6 +413,146 @@ Deno.test("approved nested rotation interaction and reply use child verification
       assertEquals(left.db.getEvtSerder(subject.pre, frames[1].body.said!)?.raw, frames[1].body.raw);
     } finally {
       for (const frame of frames) await discardFrame(frame);
+    }
+  });
+});
+
+Deno.test("multisig body construction borrows a parsed child without reading or authenticating its evidence", async () => {
+  await participants(async (_left, _right, alice, bob) => {
+    const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
+    const sink = new MemoryPayloadSink(8);
+    await sink.write(b("4BABYWJj"));
+    const owner = await sink.finish();
+    let readable = false;
+    let reads = 0;
+    child.essr = essrPayload(
+      {
+        size: owner.size,
+        /** Fail if construction attempts to read borrowed evidence. */
+        async *open(signal) {
+          if (!readable) throw new Error("Premature payload read");
+          reads++;
+          yield* owner.open(signal);
+        },
+        /** Only the owning frame's final disposal may release this evidence. */
+        discard: () => owner.discard(),
+      },
+      1,
+      3,
+      child.gvrsn!,
+    );
+    try {
+      const attrs = { smids: [alice.pre, bob.pre], rmids: [alice.pre, bob.pre] };
+      const options = { stamp: "2026-10-13T00:00:00.000000+00:00" };
+      const parent = multisigExnBody(bob.pre, "/multisig/icp", child.body as SerderKERI, attrs, options);
+      const borrowed = nestedPayload(child, Vrsn_2_0);
+      assertEquals(reads, 0);
+      assertEquals((parent.a as Record<string, unknown>).icp, child.body.said);
+      // The same body can be constructed without signatures; acceptance remains the processor's responsibility.
+      assertEquals(multisigExnBody(bob.pre, "/multisig/icp", child.body as SerderKERI, attrs, options).raw, parent.raw);
+      assertThrows(
+        () => multisigExnBody(bob.pre, "/multisig/rot", child.body as SerderKERI, attrs),
+        Error,
+        "child kind",
+      );
+      assertThrows(
+        () => multisigExnBody(bob.pre, "/multisig/exn", child.body as SerderKERI, attrs),
+        Error,
+        "child kind",
+      );
+      readable = true;
+      const nested = await collectPayload(borrowed, 8192);
+      assertEquals(reads, 1);
+      // A borrowed serializer never disposes the frame; a second read remains valid.
+      assertEquals(await collectPayload(borrowed, 8192), nested);
+      const wire = await collectPayload(framePayload(child), 8192);
+      const [prepared, preparedNested] = await run(() =>
+        prepareMultisigEventExn(bob.pre, "/multisig/icp", attrs, wire, { ...options, pvrsn: Vrsn_2_0 })
+      );
+      assertEquals(prepared.raw, parent.raw);
+      assertEquals(preparedNested, nested);
+      assertEquals(await collectPayload(owner, 8), b("4BABYWJj"));
+    } finally {
+      await discardFrame(child);
+    }
+    await assertRejects(() => collectPayload(owner, 8), Error, "discarded");
+  });
+});
+
+Deno.test("multisig byte preparation aborts payload reads and joins disposal before cancellation returns", async () => {
+  await participants(async (_left, _right, alice, bob) => {
+    const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
+    const sink = new MemoryPayloadSink(8);
+    await sink.write(b("4BABYWJj"));
+    child.essr = essrPayload(await sink.finish(), 1, 3, child.gvrsn!);
+    const wire = await collectPayload(framePayload(child), 8192);
+    await discardFrame(child);
+    const finish = MemoryPayloadSink.prototype.finish;
+    const owners: OwnedPayload[] = [];
+    let entered!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release!: () => void;
+    const cleanup = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let closed = false;
+    let discarded = 0;
+    let continued = false;
+    // Observe the real default sink; no test-only parser or payload factory is introduced.
+    MemoryPayloadSink.prototype.finish = async function() {
+      const owner = await finish.call(this);
+      owners.push(owner);
+      return {
+        size: owner.size,
+        /** Hold the serializer's actual read until its Effection scope aborts. */
+        async *open(signal) {
+          try {
+            entered();
+            await new Promise<void>((_resolve, reject) => {
+              signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+            });
+            yield* owner.open(signal);
+          } finally {
+            await cleanup;
+            closed = true;
+          }
+        },
+        /** Count owner release only after the aborted reader has joined. */
+        async discard() {
+          assertEquals(closed, true);
+          discarded++;
+          await owner.discard();
+        },
+      };
+    };
+    const task = run(function*() {
+      yield* prepareMultisigEventExn(bob.pre, "/multisig/icp", { smids: [alice.pre, bob.pre] }, wire, {
+        pvrsn: Vrsn_2_0,
+      });
+      continued = true;
+    });
+    try {
+      await reading;
+      let halted = false;
+      const halt = task.halt().then(() => {
+        halted = true;
+      });
+      await Promise.resolve();
+      assertEquals(halted, false);
+      assertEquals(discarded, 0);
+      release();
+      await halt;
+      assertEquals(closed, true);
+      assertEquals(discarded, 1);
+      assertEquals(continued, false);
+      assertEquals(owners.length, 1);
+      await assertRejects(() => collectPayload(owners[0], 8), Error, "discarded");
+    } finally {
+      release();
+      await task.halt();
+      MemoryPayloadSink.prototype.finish = finish;
     }
   });
 });

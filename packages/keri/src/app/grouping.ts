@@ -17,6 +17,7 @@ import {
   parseBytes,
   parsePather,
   Prefixer,
+  ResourceLimitError,
   Saider,
   SerderKERI,
   type Versionage,
@@ -118,10 +119,7 @@ export function* multisigInceptExn(
   delegator?: string | null,
   options: MultisigBuilderOptions = {},
 ): Operation<MultisigMessage> {
-  const icpBytes = rawMessage(icp);
-  const serder = new SerderKERI({ raw: icpBytes });
   const attrs: Record<string, unknown> = {
-    gid: requireString(serder.pre, "group inception prefix"),
     smids: [...smids],
     rmids: [...(rmids ?? smids)],
   };
@@ -129,7 +127,7 @@ export function* multisigInceptExn(
     attrs.delegator = delegator;
   }
 
-  return yield* multisigEventExn(member, MULTISIG_ICP_ROUTE, attrs, icpBytes, options);
+  return yield* prepareMultisigEventExn(member.pre, MULTISIG_ICP_ROUTE, attrs, rawMessage(icp), options);
 }
 
 /** Coordinate one proposed group rotation event. */
@@ -141,8 +139,8 @@ export function* multisigRotateExn(
   rot: Uint8Array | RawMessage,
   options: MultisigBuilderOptions = {},
 ): Operation<MultisigMessage> {
-  return yield* multisigEventExn(
-    member,
+  return yield* prepareMultisigEventExn(
+    member.pre,
     MULTISIG_ROT_ROUTE,
     {
       gid: groupPrefix(group),
@@ -162,8 +160,8 @@ export function* multisigInteractExn(
   ixn: Uint8Array | RawMessage,
   options: MultisigBuilderOptions = {},
 ): Operation<MultisigMessage> {
-  return yield* multisigEventExn(
-    member,
+  return yield* prepareMultisigEventExn(
+    member.pre,
     MULTISIG_IXN_ROUTE,
     {
       gid: groupPrefix(group),
@@ -244,8 +242,8 @@ export function* multisigRpyExn(
   rpy: Uint8Array | RawMessage,
   options: MultisigBuilderOptions = {},
 ): Operation<MultisigMessage> {
-  return yield* multisigEventExn(
-    member,
+  return yield* prepareMultisigEventExn(
+    member.pre,
     MULTISIG_RPY_ROUTE,
     {
       gid: groupPrefix(group),
@@ -270,34 +268,80 @@ export function multisigExn(
   });
 }
 
-/** Build one finite proposal using legacy pathed evidence or the frozen v2 signed-child commitment. */
-function* multisigEventExn(
-  member: Hab,
+/**
+ * Construct only the v2 parent body from an already parsed KERI child.
+ * This synchronous boundary checks the route/ilk and commits the child's SAID;
+ * it neither authenticates child proofs nor reads, adopts, or disposes any payload.
+ * Callers with a CesrFrame borrow its wire through nestedPayload(frame, Vrsn_2_0).
+ */
+export function multisigExnBody(
+  sender: string,
+  route: MultisigRoute,
+  child: SerderKERI,
+  attrs: Record<string, unknown>,
+  options: Omit<MultisigBuilderOptions, "childGvrsn"> = {},
+): SerderKERI {
+  const pvrsn = options.pvrsn ?? options.version ?? Vrsn_2_0;
+  if (pvrsn.major !== 2) throw new Error("Nested multisig bodies require protocol v2.");
+  if (!child.said || !nestedMultisigIlks(route)?.includes(child.ilk ?? "")) {
+    throw new Error("Multisig proposal requires a supported route and child kind.");
+  }
+  const field = route.slice(route.lastIndexOf("/") + 1);
+  const payload = route === MULTISIG_ICP_ROUTE
+    ? { gid: requireString(child.pre, "group inception prefix"), ...attrs, [field]: child.said }
+    : { ...attrs, [field]: child.said };
+  return exchange(route, payload, { ...options, sender, pvrsn })[0];
+}
+
+/**
+ * Own finite byte-input preparation: parse once, construct the body, consume wire, dispose.
+ * The v1 pathed path retains its established encoding; v2 delegates parsing to parseBytes
+ * and borrows the resulting child only until nestedPayload has been fully consumed.
+ * No lazy owner escapes. Effection cancellation aborts reads and joins finally cleanup.
+ * Sending v2 requires enclosing these bytes and the parent's signatures together.
+ */
+export function* prepareMultisigEventExn(
+  sender: string,
   route: MultisigRoute,
   attrs: Record<string, unknown>,
   wire: Uint8Array,
-  options: MultisigBuilderOptions,
+  options: MultisigBuilderOptions = {},
 ): Operation<MultisigMessage> {
   const version = options.pvrsn ?? options.version ?? Vrsn_1_0;
   const field = route.slice(route.lastIndexOf("/") + 1);
   if (version.major === 1) {
-    return exchange(route, attrs, { ...exchangeOptions(member, options), embeds: { [field]: wire } });
+    const payload = route === MULTISIG_ICP_ROUTE
+      ? { gid: requireString(new SerderKERI({ raw: wire }).pre, "group inception prefix"), ...attrs }
+      : attrs;
+    return exchange(route, payload, { ...options, sender, embeds: { [field]: wire } });
   }
   return yield* abortable(async (signal) => {
-    const body = new SerderKERI({ raw: wire });
-    const genus = options.childGvrsn ?? body.gvrsn ?? body.pvrsn;
-    // This complete-input builder is finite; large transfer consumers serialize owned frames directly.
-    const frames = await parseBytes(concatBytes(Counter.makeGVC(genus), wire), { signal });
+    // Let the parser infer body genus; only an explicit counter override adds a selector.
+    const selector = options.childGvrsn ? Counter.makeGVC(options.childGvrsn) : new Uint8Array();
+    if (wire.length > 8 * 1024 ** 2 - selector.length) {
+      throw new ResourceLimitError("Multisig input exceeds collection limit");
+    }
+    const input = selector.length ? concatBytes(selector, wire) : wire;
+    const frames = await parseBytes(input, { signal });
+    const errors: unknown[] = [];
     try {
       const child = frames[0];
-      if (
-        frames.length !== 1 || !child.body.said || !nestedMultisigIlks(route)?.includes(child.body.ilk ?? "")
-        || child.nests?.length
-      ) throw new Error("Multisig proposal requires one supported direct child.");
-      const serder = exchange(route, { ...attrs, [field]: child.body.said }, exchangeOptions(member, options))[0];
+      if (frames.length !== 1 || !(child.body instanceof SerderKERI) || child.nests?.length) {
+        throw new Error("Multisig proposal requires one supported direct child.");
+      }
+      const serder = multisigExnBody(sender, route, child.body, attrs, options);
       return [serder, await collectPayload(nestedPayload(child, Vrsn_2_0), 8 * 1024 ** 2, signal)] as const;
+    } catch (error) {
+      errors.push(error);
+      throw error;
     } finally {
-      for (const frame of frames) await discardFrame(frame);
+      // Even rejected multi-frame input must join every owner's cleanup if one discard fails.
+      const results = await Promise.allSettled(frames.map(discardFrame));
+      const failures = results.filter((result) => result.status === "rejected");
+      if (failures.length) {
+        // deno-lint-ignore no-unsafe-finally -- Retain construction failure alongside every joined cleanup failure.
+        throw new AggregateError([...errors, ...failures.map((result) => result.reason)], "Multisig cleanup failed");
+      }
     }
   });
 }

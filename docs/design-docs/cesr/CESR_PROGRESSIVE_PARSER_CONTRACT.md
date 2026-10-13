@@ -247,6 +247,24 @@ response cleanup. Failed-response diagnostics retain at most 16 KiB by default.
 for its next output. These policies do not yet migrate replay cues, CLI
 annotation, or retained mailbox queues; those remain later phase-11 slices.
 
+### Proposal construction boundary
+
+Multisig v2 body construction is synchronous: `multisigExnBody()` receives the
+parsed child's `SerderKERI`, checks the supported route/child ilk, and commits its
+SAID. It performs no byte parsing, payload I/O, storage access, or disposal, and
+cannot authenticate child signatures. Already-parsed callers retain their
+`CesrFrame` and use `nestedPayload()` plus the existing serializer; these views
+borrow every owner until consumption completes.
+
+Byte callers use `prepareMultisigEventExn()` through the route convenience
+operations. It owns `parseBytes()` results, delegates body construction, collects
+nested wire under the existing 8 MiB ceiling, and joins all frame disposal in
+`finally`. Cancellation aborts underlying reads and joins their cleanup before
+returning. Its result is finite bytes, with no lazy owner escaping. V1 callers
+retain established pathed encoding. Parent signatures and nested evidence must
+remain within one parent attachment enclosure. Apply the same split to IPEX
+construction as its route processing is implemented.
+
 ## Cancellation and resource policy
 
 Generator `.return()` alone cannot interrupt an in-flight awaited source
