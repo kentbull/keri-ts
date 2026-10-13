@@ -1,26 +1,53 @@
 import { call, run } from "effection";
-import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import {
   b,
+  BlindState,
+  BoundState,
   CtrDexV1,
+  Dater,
   Diger,
   FirstSeen,
+  Labeler,
   Noncer,
   NumberPrimitive,
   parseBytes,
   parseCounterFromText,
   Prefixer,
+  ResourceLimitError,
+  SealEvent,
   SealKind,
+  SealSource,
+  Seqner,
   SerderKERI,
   Siger,
   Signer,
+  Texter,
+  TypeMedia,
+  Verser,
   Vrsn_1_0,
+  Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import structingVectors from "../../../../cesr/test/fixtures/current-structing-vectors.json" with { type: "json" };
+import { createHabery } from "../../../src/app/habbing.ts";
+import {
+  KeriDispatchEnvelope,
+  PathedMaterialGroup,
+  TransIdxSigGroup,
+  TransLastIdxSigGroup,
+  TransReceiptQuadruple,
+} from "../../../src/core/dispatch.ts";
 import { incept } from "../../../src/core/protocol-eventing.ts";
+import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { loadEvent } from "../../../src/core/protocol-serialization.ts";
 import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+import {
+  rehydrateKramFactors,
+  removeKramFactors,
+  storeKramFactors,
+  validateKramFactors,
+} from "../../../src/db/kram-factors.ts";
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 import replayVectors from "../../fixtures/replay-927.json" with { type: "json" };
 
@@ -243,6 +270,192 @@ Deno.test("db/basing - current typed-seal nonce roles and first-seen tuples surv
       );
     } finally {
       yield* baser.close(true);
+    }
+  });
+});
+
+Deno.test("db/basing - partial factors preserve independent owners, qualified tuples and frozen last state", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `factors-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      const alice = hby.makeHab("sender"),
+        bob = hby.makeHab("foreign"),
+        carol = hby.makeHab("cigar", undefined, { transferable: false });
+      const db = hby.db;
+      const body = exchange("/factors", {}, { sender: alice.pre, pvrsn: Vrsn_2_0 })[0];
+      const keys = [alice.pre, body.said!];
+      const sender = alice.sign(body.raw, true)[0], foreign = bob.sign(body.raw, true)[0];
+      const pre = new Prefixer({ qb64: bob.pre }), dig = new Diger({ qb64: bob.kever!.lastEst.d });
+      const ordinal = NumberPrimitive.fromNum(0n), oldDigest = dig.qb64;
+      const explicit = new TransIdxSigGroup(pre, ordinal, dig, [foreign]);
+      const first = FirstSeen.fromTuple([ordinal, new Dater({ qb64: "1AAG2026-03-29T10c20c30d000000p00c00" })]);
+      const typed = SealKind.fromTuple([
+        new Verser({ qb64: "YKERICAA" }),
+        new Noncer({ code: dig.code, raw: dig.raw }),
+      ]);
+      const nonce = new Noncer({ qb64: "0AAxyHwW6htOZ_rANOaZb2N2" }), empty = new Noncer({ qb64: "1AAP" });
+      const label = new Labeler({ qb64: "0J_i" });
+      const envelope = new KeriDispatchEnvelope({
+        serder: body,
+        attachmentGroups: [],
+        local: false,
+        sigers: [foreign],
+        tsgs: [new TransIdxSigGroup(new Prefixer({ qb64: alice.pre }), ordinal, dig, [sender])],
+        ssgs: [new TransLastIdxSigGroup(pre, [foreign])],
+        cigars: [carol.sign(body.raw, false)[0]],
+        trqs: [new TransReceiptQuadruple(pre, new Seqner({ code: "0A", raw: new Uint8Array(16) }), dig, foreign)],
+        sscs: [SealSource.fromTuple([ordinal, dig])],
+        ssts: [SealEvent.fromTuple([pre, ordinal, dig])],
+        frcs: [first],
+        tdcs: [typed],
+        ptds: [PathedMaterialGroup.fromRaw(new Uint8Array([0xff]))],
+        bsqs: [BlindState.fromTuple([nonce, nonce, empty, label])],
+        bsss: [BoundState.fromTuple([nonce, nonce, empty, label, ordinal, empty])],
+        tmqs: [TypeMedia.fromTuple([typed.d, nonce, label, new Texter({ qb64: "4BABAAAA" })])],
+      });
+      db.env!.transactionSync(() => {
+        db.pmkm.pin(keys, body);
+        db.pmks.add(keys, sender);
+        db.pmsk.pin(keys, [ordinal, new Diger({ qb64: alice.kever!.lastEst.d })]);
+        storeKramFactors(db, keys, envelope);
+        validateKramFactors(db, keys);
+      });
+      assertEquals(db.pmks.get(keys).map((s) => s.qb64), [sender.qb64]);
+      assertEquals(db.tsgs.get(keys).length, 1);
+      assertEquals(db.cigs.get(keys).length, 1);
+      bob.rotate();
+      yield* db.close(false);
+      yield* db.reopen({ reuse: true });
+      const incoming = new KeriDispatchEnvelope({
+        serder: body,
+        attachmentGroups: [],
+        local: false,
+        tsgs: [
+          explicit,
+          new TransIdxSigGroup(pre, new Seqner({ code: "0A", raw: new Uint8Array(16) }), dig, [foreign]),
+        ],
+        ptds: [PathedMaterialGroup.fromRaw(new Uint8Array([0xfe]))],
+        nests: envelope.nests,
+      });
+      const restored = rehydrateKramFactors(db, keys, incoming);
+      assertThrows(
+        () =>
+          rehydrateKramFactors(
+            db,
+            keys,
+            new KeriDispatchEnvelope({
+              ...incoming,
+              attachmentGroups: [],
+              serder: incept([Signer.random().verfer.qb64]),
+            }),
+          ),
+        Error,
+        "body mismatch",
+      );
+      assertEquals(restored.sigers.map((s) => s.qb64), [sender.qb64]);
+      assertEquals(restored.tsgs.map((g) => [g.sn, g.said, g.sigers.map((s) => s.qb64)]), [[0n, oldDigest, [
+        foreign.qb64,
+      ]]]);
+      assertEquals(restored.cigars[0].verfer?.qb64, carol.pre);
+      assertEquals(restored.cigars[0].qb64, envelope.cigars[0].qb64);
+      assertEquals(restored.ptds.map((v) => [...v.raw]), [[0xff], [0xfe]]);
+      for (const name of ["ssts", "frcs", "tdcs", "bsqs", "bsss", "tmqs"] as const) {
+        assertEquals(restored[name], envelope[name]);
+      }
+      assertEquals(restored.trqs[0].sn, 0n);
+      assertEquals(restored.sscs, []);
+      assertEquals(db.sscs.get(keys), []);
+      assertStrictEquals(restored.nests, incoming.nests);
+      assertEquals(db.pmsk.get(keys)![1].qb64, alice.kever!.lastEst.d);
+      const unknown = hby.makeHab("unknown"), unknownPre = new Prefixer({ qb64: unknown.pre });
+      const unknownState = db.states.get([unknown.pre])!, unknownSigs = unknown.sign(body.raw, true);
+      db.kevers.delete(unknown.pre);
+      db.states.rem([unknown.pre]);
+      storeKramFactors(
+        db,
+        keys,
+        new KeriDispatchEnvelope({
+          ...incoming,
+          attachmentGroups: [],
+          ssgs: [new TransLastIdxSigGroup(unknownPre, unknownSigs)],
+        }),
+      );
+      db.states.pin([unknown.pre], unknownState);
+      yield* db.close(false);
+      yield* db.reopen({ reuse: true });
+      const unresolved = rehydrateKramFactors(db, keys, incoming);
+      assertExists(db.getKever(unknown.pre));
+      assertEquals(unresolved.unresolvedLast.map((p) => p.qb64), [unknown.pre]);
+      assertEquals(unresolved.tsgs.some((g) => g.pre === unknown.pre), false);
+      db.msgc.pin(keys, { mdt: "2026-03-29T10:20:30.000000+00:00", d: 1, ml: 1, pml: 1, xl: 1, pxl: 1 });
+      removeKramFactors(db, keys);
+      assertEquals([db.pmkm.get(keys), db.pmsk.get(keys)], [null, null]);
+      assertEquals(
+        rehydrateKramFactors(db, keys, new KeriDispatchEnvelope({ serder: body, attachmentGroups: [], local: false }))
+          .sigers,
+        [],
+      );
+      assertExists(db.msgc.get(keys));
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("db/basing - partial factor limits bound the union and transaction refusal preserves rows", async () => {
+  await run(function*() {
+    const db = yield* createBaser({ name: `factor-limits-${crypto.randomUUID()}`, temp: true });
+    try {
+      const body = incept([Signer.random().verfer.qb64]);
+      const key = [body.pre!, body.said!];
+      const empty = new KeriDispatchEnvelope({ serder: body, attachmentGroups: [], local: false });
+      const rows = Array.from({ length: 4096 }, (_, i) => new Uint8Array([i >> 8, i & 255]));
+      db.ptds.put(key, rows);
+      validateKramFactors(db, key);
+      assertEquals(
+        rehydrateKramFactors(
+          db,
+          key,
+          new KeriDispatchEnvelope({ ...empty, attachmentGroups: [], ptds: [PathedMaterialGroup.fromRaw(rows[0])] }),
+        ).ptds.length,
+        4096,
+      );
+      const sig = new Siger({ raw: new Uint8Array(64), code: "A", index: 0 });
+      assertThrows(
+        () =>
+          rehydrateKramFactors(db, key, new KeriDispatchEnvelope({ ...empty, attachmentGroups: [], sigers: [sig] })),
+        ResourceLimitError,
+      );
+      assertThrows(() =>
+        db.env!.transactionSync(() => {
+          db.pmks.add(key, sig);
+          validateKramFactors(db, key);
+        }), ResourceLimitError);
+      assertEquals(db.pmks.get(key), []);
+      assertEquals(db.ptds.cnt(key), 4096);
+      db.ptds.pin(key, [new Uint8Array(8 * 1024 ** 2)]);
+      validateKramFactors(db, key);
+      assertThrows(() =>
+        db.env!.transactionSync(() => {
+          db.pmks.add(key, sig);
+          validateKramFactors(db, key);
+        }), ResourceLimitError);
+      assertThrows(
+        () =>
+          rehydrateKramFactors(db, key, new KeriDispatchEnvelope({ ...empty, attachmentGroups: [], sigers: [sig] })),
+        ResourceLimitError,
+      );
+      assertEquals(db.pmks.get(key), []);
+      assertEquals(db.ptds.get(key)[0].length, 8 * 1024 ** 2);
+      db.ptds.pin(key, [new Uint8Array(8 * 1024 ** 2 + 1)]);
+      assertThrows(() => validateKramFactors(db, key), ResourceLimitError);
+      db.ptds.rem(key);
+      // Corrupt qualified rows remain parser/invariant failures, not resource refusals.
+      db.cigs.sdb.putSync(b(`${key.join(".")}.${"0".repeat(32)}`), b("!"));
+      assertEquals(assertThrows(() => validateKramFactors(db, key)) instanceof ResourceLimitError, false);
+      assertEquals(assertThrows(() => rehydrateKramFactors(db, key, empty)) instanceof ResourceLimitError, false);
+    } finally {
+      yield* db.close(true);
     }
   });
 });

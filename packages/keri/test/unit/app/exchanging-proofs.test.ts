@@ -441,6 +441,23 @@ Deno.test("EXN strict supplemental state failures query without persistence or r
       }]);
       hby.db.evts.pin([bob.pre, event.said!], event);
       hby.db.states.pin([bob.pre], state);
+      if (factor === "last") {
+        // KEL recovery cannot reinterpret an unresolved reference from an earlier receipt.
+        assertExists(hby.db.getKever(bob.pre));
+        exchanger.cues.clear();
+        assertEquals(
+          (await run(() =>
+            exchanger.processEvent({
+              serder,
+              tsgs: [endorse(alice, serder)],
+              unresolvedLast: [group.prefixer],
+            })
+          )).kind,
+          "reject",
+        );
+        assertUnstored(hby, serder.said!);
+        assertEquals(exchanger.cues.toArray(), [{ kin: "query", pre: bob.pre, q: { r: "logs", pre: bob.pre } }]);
+      }
     }
   });
 });
