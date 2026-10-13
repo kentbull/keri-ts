@@ -56,6 +56,14 @@ Every supplied event must have a valid chain position and issuer KEL anchor.
 Verifier anchors compare seal digests, including bare digest seals; sequence
 hints in the seal are not load-bearing. This differs from issuer-side local TEL
 anchor processing, which requires the full seal tuple and witnessed event.
+Shared `validateRip`/`validateUpdate` helpers return parsed facts or a typed
+rejection. They check inception issuer and optional update predecessor without
+accepting an event or deciding continuity against a stored head. `vet` reuses
+these field rules; `regcept`/`blindate` remain the existing pure constructors.
+`verifyRegistryAnchor` checks an explicit Number/Diger couple against the last
+accepted KEL event, its witness threshold and the exact registry/ordinal/digest
+seal. An absent, mismatched or unrepresentable KEL location returns false;
+storage failures propagate. These helpers provide no TEL persistence or escrow.
 Distinct anchored candidates at one ordinal are duplicity; a candidate whose
 anchor is still absent prevents an early conclusion. This authenticates only
 the evidence supplied, not the global freshness of the registry.

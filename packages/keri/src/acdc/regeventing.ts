@@ -8,7 +8,9 @@ import {
   type BoundState,
   commitBlindState,
   commitBoundState,
+  type Diger,
   Ilks,
+  type NumberPrimitive,
   type SerderACDC,
   type SerderKERI,
 } from "cesr-ts";
@@ -41,6 +43,7 @@ export type RegistryRefusal =
       | "sequence"
       | "prior"
       | "registry"
+      | "issuer"
       | "anchor"
       | "rootSeal"
       | "duplicity"
@@ -65,22 +68,83 @@ function ordinal(event: SerderACDC): bigint {
   return BigInt(`0x${event.sad!.n}`);
 }
 
+/** Parsed facts shared by observer validation and local TEL processing. */
+export interface RegistryEvent {
+  serder: SerderACDC;
+  said: string;
+  ilk: typeof Ilks.rip | typeof Ilks.bup;
+  regid: string;
+  sn: bigint;
+  prior: string | null;
+  issuer: string | null;
+}
+/** Field validity alone establishes neither KEL anchoring nor TEL acceptance. */
+export type RegistryEventValidation =
+  | { kind: "valid"; event: RegistryEvent }
+  | Extract<RegistryRefusal, { kind: "reject" }>;
+
 /** Registry rules supplement, rather than replace, Serder field/order/SAID validation. */
-function validateEvent(event: SerderACDC, rip?: SerderACDC): RegistryRefusal | null {
+function normalizeEvent(event: SerderACDC): RegistryEventValidation {
   if (!event.verify() || (event.ilk !== Ilks.rip && event.ilk !== Ilks.bup)) return { kind: "reject", reason: "event" };
   const sequence = event.sad?.n;
   if (typeof sequence !== "string" || !/^[0-9a-fA-F]+$/.test(sequence) || ordinal(event) >= 2n ** 128n) {
     return { kind: "reject", reason: "sequence" };
   }
-  if (!rip) {
-    if (event.ilk !== Ilks.rip) return { kind: "reject", reason: "event" };
-    if (ordinal(event) !== 0n) return { kind: "reject", reason: "sequence" };
-  } else {
-    if (event.ilk !== Ilks.bup) return { kind: "reject", reason: "event" };
-    if (event.sad!.rd !== rip.said) return { kind: "reject", reason: "registry" };
-    if (ordinal(event) < 1n) return { kind: "reject", reason: "sequence" };
-  }
-  return null;
+  return {
+    kind: "valid",
+    event: {
+      serder: event,
+      said: event.said!,
+      ilk: event.ilk,
+      regid: event.ilk === Ilks.rip ? event.said! : event.sad!.rd as string,
+      sn: ordinal(event),
+      prior: event.ilk === Ilks.rip ? null : event.sad!.p as string,
+      issuer: event.issuer,
+    },
+  };
+}
+
+/** Validate inception fields and, for a local processor, its controlling issuer. */
+export function validateRip(serder: SerderACDC, issuer?: string): RegistryEventValidation {
+  const result = normalizeEvent(serder);
+  if (result.kind === "reject") return result;
+  const event = result.event;
+  if (event.ilk !== Ilks.rip) return { kind: "reject", reason: "event" };
+  if (event.sn !== 0n) return { kind: "reject", reason: "sequence" };
+  if (issuer !== undefined && event.issuer !== issuer) return { kind: "reject", reason: "issuer" };
+  return result;
+}
+
+/** Validate update fields; ordering against an accepted head belongs to the processor. */
+export function validateUpdate(serder: SerderACDC, regid: string, prior?: string): RegistryEventValidation {
+  const result = normalizeEvent(serder);
+  if (result.kind === "reject") return result;
+  const event = result.event;
+  if (event.ilk !== Ilks.bup) return { kind: "reject", reason: "event" };
+  if (event.regid !== regid) return { kind: "reject", reason: "registry" };
+  if (event.sn < 1n) return { kind: "reject", reason: "sequence" };
+  if (prior !== undefined && event.prior !== prior) return { kind: "reject", reason: "prior" };
+  return result;
+}
+
+/**
+ * Check a local TEL anchor against the last accepted, fully witnessed KEL event.
+ * Unlike observer vetting, this requires the full registry/ordinal/digest tuple.
+ * Missing or mismatched evidence returns false; database failures propagate.
+ */
+export function verifyRegistryAnchor(
+  event: RegistryEvent,
+  { db, issuer, number, diger }: { db: Baser; issuer: string; number?: NumberPrimitive; diger?: Diger },
+): boolean {
+  if (!number || !diger || number.num > BigInt(Number.MAX_SAFE_INTEGER)) return false;
+  const said = db.kels.getLast(issuer, Number(number.num));
+  const anchor = said ? db.getEvtSerder(issuer, said) : null;
+  if (!anchor || anchor.said !== diger.qb64 || !db.fullyWitnessed(anchor)) return false;
+  return anchor.seals.some((seal) =>
+    !!seal && typeof seal === "object" && !Array.isArray(seal)
+    && "i" in seal && "s" in seal && "d" in seal
+    && seal.i === event.regid && seal.s === event.serder.sad!.n && seal.d === event.said
+  );
 }
 
 /** Verifier anchors match digests; a seal's TEL sequence hint is not authoritative. */
@@ -157,11 +221,11 @@ function binding(acdc: SerderACDC, state: RegistryState): "mutual" | "oneway" | 
 export function vet(
   { rip, updates = [], db, sources = new Map(), acdc, blinder }: RegistryEvidence,
 ): RegistryVerification {
-  const invalidRip = validateEvent(rip);
-  if (invalidRip) return invalidRip;
+  const inception = validateRip(rip);
+  if (inception.kind === "reject") return inception;
   for (const update of updates) {
-    const invalid = validateEvent(update, rip);
-    if (invalid) return invalid;
+    const result = validateUpdate(update, inception.event.regid);
+    if (result.kind === "reject") return result;
   }
   const issuer = rip.issuer!;
   const told = new Set([rip.said!, ...updates.map((event) => event.said!)]);

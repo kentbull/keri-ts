@@ -38,6 +38,9 @@ store and workflow. Supplied anchored prefixes cannot hide an unanchored suffix.
 Disclosed issuer/target/rd, blinded/bound state and historical cutoff are separate
 checks. Supplied chain authentication does not prove global freshness. IPEX
 presentation cutoffs require receiver-observed KRAM time, still pending.
+Share parsed rip/bup field validation across observer and local processing, but
+retain their anchor rules: observer digest seals do not satisfy the local full
+tuple plus witness-receipt requirement. Field validity is not TEL acceptance.
 
 IPEX conversations, issuer proofs and wallet acceptance remain separate. Follow
 [exchange learnings](PROJECT_LEARNINGS_EXCHANGE.md) for v2 nested routes and
