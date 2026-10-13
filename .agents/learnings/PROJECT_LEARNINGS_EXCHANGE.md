@@ -63,6 +63,14 @@ Do not substitute Kever's index-sorted verifier: distinct encodings may share an
 index, so intake thresholds must use unique indices. Historical sender groups
 are diagnostic only; normalization borrows owners and leaves foreign proofs separate.
 
+KRAM staging publishes cache, verified pool/state, factors, private wire and first
+ready receiver time atomically after async rechecks. Never return hydrated owners
+through a generic callback result. Preserve ready rows until the handoff owner joins
+consumption/disposal and acknowledges the exact receipt/body; failures can replay
+callback side effects. Rotation clears partial ownership, retaining replay cache.
+Only a fresh foreign last group known at receipt clears its earlier unresolved
+marker; later KEL recovery alone cannot reinterpret unknown saved signatures.
+
 Do not invent xip/pro/bar processing: frozen upstream has stubs. Native outer EXN
 empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
 not prove that path. Full runtime/resource qualification remains open.
