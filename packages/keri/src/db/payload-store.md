@@ -43,6 +43,10 @@ implementations that await external input must themselves honor that signal.
 Calling `return()` on an async generator alone cannot interrupt its pending
 `next()` call.
 
+The npm build translates these Deno calls through its packaging shim, including
+file and directory fsync. Its installed-package smoke test exercises this path;
+the native Deno implementation has no Node filesystem imports.
+
 Final IDs are flat, at most 240 characters, and contain ASCII letters, digits,
 underscores, hyphens, and nonempty dot-separated scopes. The caller supplies and
 verifies the identity; the file store does not interpret protocol content or
