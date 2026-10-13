@@ -59,7 +59,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["parseFrame(input, inheritedVersion)"] --> B["Skip leading ano bytes"]
+    A["parseFrameStart(input, inheritedGvrsn)"] --> B["Skip leading ano bytes"]
     B --> C{"Cold domain"}
     C -- "msg" --> D["reapSerder()"]
     D --> E["Return frame body, consumed, version, streamVersion"]
@@ -70,10 +70,10 @@ flowchart TD
     G --> I["resolveFrameStartCounter(selected genus or legacy inference)"]
     H --> I
     I --> J{"Frame start type (counter.name)"}
-    J -- "BodyWithAttachmentGroup" --> K["parseBodyWithAttachmentGroup()"]
-    J -- "NonNativeBodyGroup" --> L["parseNonNativeBodyGroup()"]
-    J -- "FixBodyGroup or MapBodyGroup" --> M["parseNativeBodyGroup()"]
-    J -- "GenericGroup" --> N["parseGenericGroup()"]
+    J -- "BodyWithAttachmentGroup" --> K["parseEnclosedFrame()"]
+    J -- "NonNativeBodyGroup" --> L["parseWrappedBody()"]
+    J -- "FixBodyGroup or MapBodyGroup" --> M["parseNativeBody()"]
+    J -- "GenericGroup" --> N["parseEnclosedFrames()"]
     J -- "other" --> O["ColdStartError"]
 ```
 
@@ -99,8 +99,8 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["parseGenericGroup()"] --> B["Bound payload by count"]
-    B --> C["parseFrameSequence(payload, inheritedVersion)"]
+    A["parseEnclosedFrames()"] --> B["Bound payload by count"]
+    B --> C["parseFrames(payload, inheritedGvrsn)"]
     C --> D["First enclosed frame"]
     C --> E["Remaining enclosed frames"]
     D --> F["Return first as current parse result"]
@@ -135,7 +135,7 @@ sequenceDiagram
     C->>P: "feed(chunk-1)"
     P->>S: "append bytes"
     P->>P: "drain()"
-    P->>P: "parseFrame(...)"
+    P->>P: "parseFrameStart(...)"
     alt "insufficient bytes for frame or group"
         P-->>C: "[] (no emit yet)"
     else "enough bytes"
@@ -157,14 +157,14 @@ sequenceDiagram
 sequenceDiagram
     participant C as Caller
     participant P as CesrParser
-    participant G as "parseBodyWithAttachmentGroup"
-    participant F as "parseCompleteFrame(payload)"
+    participant G as "parseEnclosedFrame"
+    participant F as "parseFrame(payload)"
 
     C->>P: "feed(stream)"
-    P->>P: "parseFrame(...) sees BodyWithAttachmentGroup counter"
-    P->>G: "parseBodyWithAttachmentGroup(input, count)"
+    P->>P: "parseFrameStart(...) sees BodyWithAttachmentGroup counter"
+    P->>G: "parseEnclosedFrame(input, count)"
     G->>G: "ensure full payload count * unit"
-    G->>F: "parseCompleteFrame(bounded payload)"
+    G->>F: "parseFrame(bounded payload)"
     F-->>G: "enclosed complete frame + consumed"
     G-->>P: "frame + consumed"
     P-->>C: "[frame event]"
