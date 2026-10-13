@@ -3,13 +3,13 @@ import {
   BlindState,
   BoundState,
   type CesrFrame,
-  type CesrMessage,
   Cigar,
   type GroupEntry,
   Ilks,
   isCounterGroupLike,
-  isPrimitiveTuple,
+  isGroupTuple,
   isQualifiedPrimitive,
+  type ParseEvent,
   parseSerder,
   SealEvent,
   SealKind,
@@ -100,7 +100,7 @@ export interface VdrDispatchServices {
  *   `dispatchEnvelope(...)`
  */
 export function envelopesFromFrames(
-  frames: readonly CesrFrame[],
+  frames: readonly ParseEvent[],
   local = false,
 ): KeriDispatchEnvelope[] {
   const envelopes: KeriDispatchEnvelope[] = [];
@@ -234,7 +234,7 @@ function acdcEnvelopeFromDispatch(
   };
 }
 
-function smellageFromMessage(message: CesrMessage): Smellage {
+function smellageFromMessage(message: CesrFrame): Smellage {
   return {
     proto: message.body.proto,
     pvrsn: message.body.pvrsn,
@@ -245,7 +245,7 @@ function smellageFromMessage(message: CesrMessage): Smellage {
 }
 
 function normalizeTupleIndexers(entry: GroupEntry | undefined): Siger[] {
-  if (!entry || !isPrimitiveTuple(entry)) {
+  if (!entry || !isGroupTuple(entry)) {
     return [];
   }
   const out: Siger[] = [];
@@ -286,7 +286,7 @@ function normalizeAttachmentGroup(
     case "ControllerIdxSigs":
     case "BigControllerIdxSigs":
       for (const item of group.items) {
-        if (isPrimitiveTuple(item)) {
+        if (isGroupTuple(item)) {
           envelope.sigers.push(...normalizeTupleIndexers(item));
           continue;
         }
@@ -299,7 +299,7 @@ function normalizeAttachmentGroup(
     case "WitnessIdxSigs":
     case "BigWitnessIdxSigs":
       for (const item of group.items) {
-        if (isPrimitiveTuple(item)) {
+        if (isGroupTuple(item)) {
           envelope.wigers.push(...normalizeTupleIndexers(item));
           continue;
         }
@@ -312,7 +312,7 @@ function normalizeAttachmentGroup(
     case "NonTransReceiptCouples":
     case "BigNonTransReceiptCouples":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 2) {
+        if (!isGroupTuple(item) || item.length < 2) {
           continue;
         }
         const [verfer, cigar] = item;
@@ -327,7 +327,7 @@ function normalizeAttachmentGroup(
     case "TransReceiptQuadruples":
     case "BigTransReceiptQuadruples":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 4) {
+        if (!isGroupTuple(item) || item.length < 4) {
           continue;
         }
         const [prefixer, seqner, diger, siger] = item;
@@ -352,7 +352,7 @@ function normalizeAttachmentGroup(
     case "TransIdxSigGroups":
     case "BigTransIdxSigGroups":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 4) {
+        if (!isGroupTuple(item) || item.length < 4) {
           continue;
         }
         const [prefixer, seqner, diger, sigers] = item;
@@ -374,7 +374,7 @@ function normalizeAttachmentGroup(
     case "TransLastIdxSigGroups":
     case "BigTransLastIdxSigGroups":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 2) {
+        if (!isGroupTuple(item) || item.length < 2) {
           continue;
         }
         const [prefixer, sigers] = item;
@@ -392,7 +392,7 @@ function normalizeAttachmentGroup(
     case "FirstSeenReplayCouples":
     case "BigFirstSeenReplayCouples":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 2) {
+        if (!isGroupTuple(item) || item.length < 2) {
           continue;
         }
         const [fn, dater] = item;
@@ -407,7 +407,7 @@ function normalizeAttachmentGroup(
     case "SealSourceCouples":
     case "BigSealSourceCouples":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 2) {
+        if (!isGroupTuple(item) || item.length < 2) {
           continue;
         }
         const [seqner, diger] = item;
@@ -422,7 +422,7 @@ function normalizeAttachmentGroup(
     case "SealSourceTriples":
     case "BigSealSourceTriples":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 3) {
+        if (!isGroupTuple(item) || item.length < 3) {
           continue;
         }
         const [prefixer, seqner, diger] = item;
@@ -445,7 +445,7 @@ function normalizeAttachmentGroup(
     case "TypedDigestSealCouples":
     case "BigTypedDigestSealCouples":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 2) {
+        if (!isGroupTuple(item) || item.length < 2) {
           continue;
         }
         const [verser, diger] = item;
@@ -473,7 +473,7 @@ function normalizeAttachmentGroup(
     case "BlindedStateQuadruples":
     case "BigBlindedStateQuadruples":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 4) {
+        if (!isGroupTuple(item) || item.length < 4) {
           continue;
         }
         const [blid, uuid, acdc, state] = item;
@@ -498,7 +498,7 @@ function normalizeAttachmentGroup(
     case "BoundStateSextuples":
     case "BigBoundStateSextuples":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 6) {
+        if (!isGroupTuple(item) || item.length < 6) {
           continue;
         }
         const [blid, uuid, acdc, state, number, bound] = item;
@@ -527,7 +527,7 @@ function normalizeAttachmentGroup(
     case "TypedMediaQuadruples":
     case "BigTypedMediaQuadruples":
       for (const item of group.items) {
-        if (!isPrimitiveTuple(item) || item.length < 4) {
+        if (!isGroupTuple(item) || item.length < 4) {
           continue;
         }
         const [blid, uuid, mediaType, mediaValue] = item;
@@ -555,7 +555,7 @@ function normalizeAttachmentGroup(
 }
 
 function envelopeFromMessage(
-  message: CesrMessage,
+  message: CesrFrame,
   local = false,
 ): KeriDispatchEnvelope {
   const serder = parseSerder(

@@ -37,12 +37,12 @@ export type CipherHydratableCtor<
   T extends CipherHydratable = CipherHydratable,
 > = new(...args: any[]) => T;
 /** Ordered tuple payload used by grouped attachments (for fixed small tuples). */
-export type PrimitiveTuple = readonly GroupEntry[];
+export type GroupTuple = readonly GroupEntry[];
 /** Recursive parser graph entry for attachment/native payloads. */
-export type GroupEntry = Primitive | PrimitiveTuple | CounterGroupLike;
+export type GroupEntry = Primitive | GroupTuple | CounterGroupLike;
 
 /** Runtime guard for tuple-shaped group entries. */
-export function isPrimitiveTuple(entry: GroupEntry): entry is PrimitiveTuple {
+export function isGroupTuple(entry: GroupEntry): entry is GroupTuple {
   return Array.isArray(entry);
 }
 

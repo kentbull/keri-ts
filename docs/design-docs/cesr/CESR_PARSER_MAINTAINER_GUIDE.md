@@ -14,7 +14,7 @@ Canonical parser lifecycle/state-machine contract:
 
 - Frame: one parser emission unit (`type: "frame"`) containing one body plus
   zero or more trailing attachment groups.
-- `CesrMessage`: historical public type name for the frame payload object
+- `CesrFrame`: historical public type name for the frame payload object
   (`body` + `attachments`); retained for API stability.
 - Message-domain frame: frame whose body starts with cold-start code `msg` and
   is parsed via Serder reaping.

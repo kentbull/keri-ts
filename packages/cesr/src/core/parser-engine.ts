@@ -4,7 +4,7 @@ import { ParserError, ShortageError } from "./errors.ts";
 import { AttachmentCollector } from "./parser-attachment-collector.ts";
 import { FrameParser } from "./parser-frame-parser.ts";
 import { ParserStreamState } from "./parser-stream-state.ts";
-import type { CesrFrame, CesrMessage } from "./types.ts";
+import type { CesrFrame, ParseEvent } from "./types.ts";
 
 /**
  * Parser construction options for emission and wrapper-tail recovery.
@@ -27,8 +27,8 @@ export class CesrParser {
    */
   private readonly framed: boolean;
   private readonly stream: ParserStreamState;
-  private pending: { frame: CesrMessage; version: Versionage } | null = null;
-  private queued: CesrMessage[] = [];
+  private pending: { frame: CesrFrame; version: Versionage } | null = null;
+  private queued: CesrFrame[] = [];
   private readonly frameParser: FrameParser;
   private readonly attachmentCollector: AttachmentCollector;
 
@@ -48,13 +48,13 @@ export class CesrParser {
   }
 
   /** Append bytes and emit any complete parse events. */
-  feed(chunk: Uint8Array): CesrFrame[] {
+  feed(chunk: Uint8Array): ParseEvent[] {
     this.stream.append(chunk);
     return this.drain();
   }
 
   /** Finish a complete record or stream, emitting complete frames or a terminal shortage. */
-  flush(): CesrFrame[] {
+  flush(): ParseEvent[] {
     return this.drain(true);
   }
 
@@ -65,8 +65,8 @@ export class CesrParser {
   }
 
   /** Resume open attachments or emit enclosed frames before parsing another body. */
-  private drain(terminal = false): CesrFrame[] {
-    const out: CesrFrame[] = [];
+  private drain(terminal = false): ParseEvent[] {
+    const out: ParseEvent[] = [];
     while (this.stream.buffer.length > 0 || this.queued.length > 0 || (terminal && this.pending)) {
       try {
         this.stream.consumeLeadingAno();
@@ -139,7 +139,7 @@ export function createParser(options: ParserOptions = {}): CesrParser {
 export function parseBytes(
   bytes: Uint8Array,
   options: ParserOptions = {},
-): CesrFrame[] {
+): ParseEvent[] {
   const parser = createParser(options);
   return [...parser.feed(bytes), ...parser.flush()];
 }

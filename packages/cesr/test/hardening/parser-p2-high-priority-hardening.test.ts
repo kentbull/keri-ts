@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { createParser, type ParserOptions } from "../../src/core/parser-engine.ts";
-import type { CesrFrame } from "../../src/core/types.ts";
+import type { ParseEvent } from "../../src/core/types.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
@@ -23,9 +23,9 @@ function parseEvents(
   input: Uint8Array,
   boundaries: number[] = [],
   options?: ParserOptions,
-): CesrFrame[] {
+): ParseEvent[] {
   const parser = createParser(options);
-  const out: CesrFrame[] = [];
+  const out: ParseEvent[] = [];
   for (const chunk of chunkByBoundaries(input, boundaries)) {
     out.push(...parser.feed(chunk));
   }
@@ -44,7 +44,7 @@ function parseFramesNoError(
   return events.filter((event) => event.type === "frame");
 }
 
-function summarizeFrames(frames: CesrFrame[]): FrameSummary[] {
+function summarizeFrames(frames: ParseEvent[]): FrameSummary[] {
   return frames
     .filter((event) => event.type === "frame")
     .map((event) => ({

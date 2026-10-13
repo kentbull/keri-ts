@@ -28,7 +28,7 @@ import { parseNoncer } from "../primitives/noncer.ts";
 import { NumberPrimitive } from "../primitives/number.ts";
 import { makePather, parsePather } from "../primitives/pather.ts";
 import type { GroupEntry } from "../primitives/primitive.ts";
-import { isCounterGroupLike, isPrimitiveTuple } from "../primitives/primitive.ts";
+import { isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
 import { Structor } from "../primitives/structor.ts";
 import { Texter } from "../primitives/texter.ts";
 import { Tholder, type ThresholdSith } from "../primitives/tholder.ts";
@@ -442,7 +442,7 @@ function encodeValue(
  * attachment/group decoder.
  */
 function decodeEntry(entry: GroupEntry, gvrsn: Versionage): MapperValue {
-  if (isPrimitiveTuple(entry)) {
+  if (isGroupTuple(entry)) {
     return entry.map((item) => decodeEntry(item, gvrsn));
   }
   if (isCounterGroupLike(entry)) {

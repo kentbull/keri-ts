@@ -6,7 +6,7 @@ import { Matter } from "../../../src/primitives/matter.ts";
 import {
   type GroupEntry,
   isCounterGroupLike,
-  isPrimitiveTuple,
+  isGroupTuple,
   isQualifiedPrimitive,
 } from "../../../src/primitives/primitive.ts";
 import { UnknownPrimitive } from "../../../src/primitives/unknown.ts";
@@ -25,7 +25,7 @@ Deno.test("primitive guards: detects tuple and counter-group entries", () => {
   const tuple: GroupEntry = [counter];
 
   assertEquals(isCounterGroupLike(group), true);
-  assertEquals(isPrimitiveTuple(tuple), true);
+  assertEquals(isGroupTuple(tuple), true);
   assertEquals(isCounterGroupLike(tuple), false);
   assertEquals(isQualifiedPrimitive(group), false);
   assertEquals(isQualifiedPrimitive(tuple), false);
@@ -49,7 +49,7 @@ Deno.test("primitive guards: unknown primitive is not tuple/group", () => {
     b("ABCD"),
     "txt",
   );
-  assertEquals(isPrimitiveTuple(unknown), false);
+  assertEquals(isGroupTuple(unknown), false);
   assertEquals(isCounterGroupLike(unknown), false);
   assertEquals(isQualifiedPrimitive(unknown), false);
 });

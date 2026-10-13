@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
-import type { CesrFrame } from "../../src/core/types.ts";
+import type { ParseEvent } from "../../src/core/types.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
@@ -12,9 +12,9 @@ import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
 function parseFrames(
   input: Uint8Array,
   boundaries: number[],
-): Array<CesrFrame> {
+): Array<ParseEvent> {
   const parser = createParser();
-  const events: CesrFrame[] = [];
+  const events: ParseEvent[] = [];
   for (const chunk of chunkByBoundaries(input, boundaries)) {
     events.push(...parser.feed(chunk));
   }

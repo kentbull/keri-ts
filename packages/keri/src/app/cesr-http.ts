@@ -13,7 +13,7 @@
  *   the header
  */
 import {
-  type CesrMessage,
+  type CesrFrame,
   concatBytes,
   parseBytes,
   parseSerder,
@@ -321,7 +321,7 @@ function arrayBufferFromBytes(bytes: Uint8Array): ArrayBuffer {
 }
 
 function smellageFromMessage(
-  message: CesrMessage,
+  message: CesrFrame,
 ): Smellage {
   return {
     proto: message.body.proto,

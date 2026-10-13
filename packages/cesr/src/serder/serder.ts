@@ -2,7 +2,7 @@ import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpa
 import { b, t } from "../core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
-import type { CesrBody, CesrMessage, Smellage } from "../core/types.ts";
+import type { CesrBody, CesrFrame, Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
 import { Aggor, isAggorCode } from "../primitives/aggor.ts";
 import { Blinder, isBlinderCode } from "../primitives/blinder.ts";
@@ -23,7 +23,7 @@ import {
   type CounterGroupLike,
   type GroupEntry,
   isCounterGroupLike,
-  isPrimitiveTuple,
+  isGroupTuple,
 } from "../primitives/primitive.ts";
 import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
@@ -1321,7 +1321,7 @@ function collectNestedGroups(
   out: CounterGroupLike[],
 ): void {
   for (const entry of entries) {
-    if (isPrimitiveTuple(entry)) {
+    if (isGroupTuple(entry)) {
       collectNestedGroups(entry, out);
       continue;
     }
@@ -1334,7 +1334,7 @@ function collectNestedGroups(
 
 /** Extract all top-level + nested counted groups from one parsed message. */
 function collectMessageGroups(
-  message: Pick<CesrMessage, "attachments">,
+  message: Pick<CesrFrame, "attachments">,
 ): CounterGroupLike[] {
   const groups: CounterGroupLike[] = [];
   for (const attachment of message.attachments) {
@@ -1645,7 +1645,7 @@ export class Serder implements CesrBody {
    * immediately need typed structor families after frame parsing.
    */
   projectStructors(
-    message: Pick<CesrMessage, "attachments">,
+    message: Pick<CesrFrame, "attachments">,
   ): SerderStructorProjection {
     const groups = collectMessageGroups(message);
     const projection: SerderStructorProjection = {
