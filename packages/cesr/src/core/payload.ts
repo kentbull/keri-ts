@@ -1,18 +1,24 @@
 /** Reopenable content whose bytes need not reside in memory together. */
 export interface Payload {
+  /** Exact content length; readers must neither truncate nor exceed it. */
   readonly size: number;
+  /** Reopen from byte zero, honoring cancellation and yielding immutable chunks. */
   open(signal?: AbortSignal): AsyncIterable<Uint8Array>;
 }
 
 /** A completed payload whose storage lifetime belongs to its consumer. */
 export interface OwnedPayload extends Payload {
+  /** Release owned storage and invalidate all future reads; safe to repeat. */
   discard(): Promise<void>;
 }
 
 /** Awaited writes apply backpressure; finish transfers ownership to the caller. */
 export interface PayloadSink {
+  /** Resolve only after accepting this chunk; callers await before writing again. */
   write(chunk: Uint8Array): Promise<void>;
+  /** Complete staging and transfer storage ownership to the returned payload. */
   finish(): Promise<OwnedPayload>;
+  /** Dispose unfinished storage; completed payload ownership stays with its caller. */
   abort(reason?: unknown): Promise<void>;
 }
 
@@ -38,14 +44,20 @@ export async function collectPayload(payload: Payload, limit: number, signal?: A
 
 /** Bounded staging in fixed-size slabs, independent of incoming chunk count. */
 export class MemoryPayloadSink implements PayloadSink {
+  /** Fixed-size storage slabs; count is bounded by maxBytes rather than input chunk count. */
   private chunks: Uint8Array[] = [];
+  /** Accepted content bytes across every slab. */
   private size = 0;
+  /** Occupied prefix of the final slab. */
   private used = 0;
+  /** Only open sinks accept operations; finish transfers ownership irreversibly. */
   private state: "open" | "finished" | "aborted" = "open";
+  /** Abort unfinished storage when caller cancellation arrives between writes. */
   private readonly cancel = () => {
     void this.abort();
   };
 
+  /** Bind a finite allocation budget and optional cancellation to one stage. */
   constructor(private readonly maxBytes: number, private readonly signal?: AbortSignal) {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Invalid payload limit");
     signal?.throwIfAborted();
@@ -86,6 +98,7 @@ export class MemoryPayloadSink implements PayloadSink {
       this.chunks = [];
       return {
         size,
+        /** Yield copies so a reader cannot mutate retained canonical bytes. */
         async *open(signal?: AbortSignal) {
           if (discarded) throw new Error("Payload is discarded");
           let remaining = size;
@@ -99,6 +112,7 @@ export class MemoryPayloadSink implements PayloadSink {
           signal?.throwIfAborted();
           if (discarded) throw new Error("Payload is discarded");
         },
+        /** Drop all owning slab references without waiting for garbage collection. */
         discard(): Promise<void> {
           discarded = true;
           chunks.length = 0;
@@ -118,6 +132,7 @@ export class MemoryPayloadSink implements PayloadSink {
     return Promise.resolve();
   }
 
+  /** Reject cancellation and any operation after ownership has transferred. */
   private check(): void {
     this.signal?.throwIfAborted();
     if (this.state !== "open") throw new Error(`Payload sink is ${this.state}`);
