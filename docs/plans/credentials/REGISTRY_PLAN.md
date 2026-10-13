@@ -28,7 +28,8 @@ ownership; retain its finite acquisition scopes and joined failure cleanup.
 | Complete-chain assembly      | IPEX through RegistryStore                         |
 | Runtime acquisition          | Explicit `acdc.rgy` ownership                      |
 
-Rename `vetRegistry`/`vetRegistryBindings` to module-qualified `vet`/`vetBinds`.
+Pure verifier names now match `vet`/`vetBinds`; storage/engine extraction remains.
+The [import preservation record][import-record] retains the exact original code.
 
 Use `evts/ancs/tels/heads/maes/ooes`; accepted heads use physical `heds.` and
 local aliases `regs.`. Event-body presence is not acceptance: escrowed bodies
@@ -135,3 +136,4 @@ Long hosted qualification remains maintainer-only with the 15-minute cap.
 [contract]: ../../design-docs/credentials/ACDC_TEL_VERIFIER.md
 [ipex]: ../exchange/IPEX_PLAN.md
 [kram]: ../exchange/KRAM_PLAN.md
+[import-record]: ../../reference/credentials/VERIFIED_IMPORT_SNAPSHOT.md
