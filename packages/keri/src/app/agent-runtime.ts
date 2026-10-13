@@ -315,19 +315,22 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
  * - witness hosting relies on that distinction so accepted witness-targeted
  *   events emit witness cues rather than ordinary remote receipt cues
  */
-export function settleRuntimeIngress(
+export function* settleRuntimeIngress(
   runtime: AgentRuntime,
   messages: Iterable<Uint8Array>,
   {
     local,
+    mailboxAid,
   }: {
     local?: boolean;
+    /** Receiving hosted endpoint; passed through each dispatch rather than stored globally. */
+    mailboxAid?: string | null;
   } = {},
-): void {
+): Operation<void> {
   for (const message of messages) {
-    runtime.reactor.processCompleteChunk(message, { local });
+    yield* runtime.reactor.processCompleteChunk(message, { local, mailboxAid });
   }
-  runtime.reactor.processEscrowsOnce();
+  yield* runtime.reactor.processEscrowsOnce();
 }
 
 /**
@@ -336,14 +339,14 @@ export function settleRuntimeIngress(
  * Local and remote poll results are intentionally processed batch-by-batch so
  * follow-on escrow progress can occur before the next source is consumed.
  */
-export function settleMailboxPollBatch(
+export function* settleMailboxPollBatch(
   runtime: AgentRuntime,
   batch: MailboxPollBatch,
-): void {
+): Operation<void> {
   for (const message of batch.messages) {
-    runtime.reactor.processCompleteChunk(message);
+    yield* runtime.reactor.processCompleteChunk(message);
   }
-  runtime.reactor.processEscrowsOnce();
+  yield* runtime.reactor.processEscrowsOnce();
 }
 
 /**
@@ -364,7 +367,7 @@ export function* processMailboxTurn(
     budgetMs: options.budgetMs,
   });
   for (const batch of batches) {
-    settleMailboxPollBatch(runtime, batch);
+    yield* settleMailboxPollBatch(runtime, batch);
   }
   return batches;
 }
@@ -396,7 +399,7 @@ export function* processRuntimeTurn(
   } = {},
 ): Operation<void> {
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
-  runtime.reactor.processOnce();
+  yield* runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
   yield* runtime.authenticator.processOnce();
   yield* runtime.poster.processPending();
@@ -407,7 +410,7 @@ export function* processRuntimeTurn(
   }
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
-  runtime.reactor.processEscrowsOnce();
+  yield* runtime.reactor.processEscrowsOnce();
   yield* runtime.delegating.processAllOnce();
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
@@ -598,9 +601,7 @@ export function* runAgentRuntime(
       }
     }),
     yield* spawn(function*() {
-      yield* runtime.mailboxPoller.pollDo((batch) => {
-        settleMailboxPollBatch(runtime, batch);
-      });
+      yield* runtime.mailboxPoller.pollDo((batch) => settleMailboxPollBatch(runtime, batch));
     }),
     yield* spawn(function*() {
       while (true) {

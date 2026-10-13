@@ -11,6 +11,7 @@
  * visibility, matching the roadmap contract.
  */
 import { Dater, Ilks, Prefixer, SerderACDC } from "cesr-ts";
+import type { Operation } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -18,6 +19,7 @@ import type { VcStateRecordShape } from "../core/records.ts";
 import type { Reger } from "../db/reger.ts";
 import type { VerifierCueBaser } from "../db/verifier-cueing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import { abortable } from "./abortable.ts";
 import type { Habery } from "./habbing.ts";
 import {
   credentialSaidFromGrant,
@@ -94,7 +96,8 @@ export class VerifierAgent {
     this.requireKnownSchemas = options.requireKnownSchemas ?? false;
   }
 
-  async processOnce(): Promise<VerifierAgentProcessResult> {
+  /** Settle verified artifacts and deliver queued webhooks within the caller's operation. */
+  *processOnce(): Operation<VerifierAgentProcessResult> {
     const result: VerifierAgentProcessResult = {
       grantsQueued: 0,
       revocationsQueued: 0,
@@ -105,18 +108,19 @@ export class VerifierAgent {
       rejected: 0,
     };
 
-    result.grantsQueued += this.scanAcceptedGrants();
+    result.grantsQueued += yield* this.scanAcceptedGrants();
     result.revocationsQueued += this.processRevokedCues();
-    this.reactor.processEscrowsOnce();
+    yield* this.reactor.processEscrowsOnce();
     result.revocationsQueued += this.scanPersistedRevocations();
     result.presentationsReady += this.processPresentations();
     result.revocationsReady += this.processRevocations();
-    result.webhooksSent += await this.processReady(this.cdb.recv, "iss", result);
-    result.webhooksSent += await this.processReady(this.cdb.revk, "rev", result);
+    result.webhooksSent += yield* this.processReady(this.cdb.recv, "iss", result);
+    result.webhooksSent += yield* this.processReady(this.cdb.revk, "rev", result);
     return result;
   }
 
-  private scanAcceptedGrants(): number {
+  /** Settle grant artifacts before queuing their verified credentials for webhook delivery. */
+  private *scanAcceptedGrants(): Operation<number> {
     let queued = 0;
     for (const [, grant] of this.hby.db.exns.getTopItemIter()) {
       if (grant.route !== IPEX_GRANT_ROUTE || !grant.said) {
@@ -128,7 +132,7 @@ export class VerifierAgent {
       }
 
       const artifacts = storedGrantArtifacts(this.hby, grant);
-      processCredentialPresentationArtifacts(this.reactor, artifacts);
+      yield* processCredentialPresentationArtifacts(this.reactor, artifacts);
       const creder = this.reger.creds.get([credentialSaid]);
       if (!creder) {
         throw new ValidationError(`Credential ${credentialSaid} was not saved after grant artifact processing.`);
@@ -261,11 +265,12 @@ export class VerifierAgent {
     return ready;
   }
 
-  private async processReady(
+  /** Deliver each ready webhook before recording success or applying its expiry policy. */
+  private *processReady(
     db: VerifierCueBaser["recv"] | VerifierCueBaser["revk"],
     action: "iss" | "rev",
     result: VerifierAgentProcessResult,
-  ): Promise<number> {
+  ): Operation<number> {
     let sent = 0;
     for (const [keys, creder] of [...db.getTopItemIter()]) {
       const [said, daterQb64] = keys;
@@ -274,8 +279,8 @@ export class VerifierAgent {
       }
 
       const payload = webhookBody(this.reger, creder, action);
-      const response = await this.postWebhook(payload);
-      if (response.ok) {
+      const accepted = yield* this.postWebhook(payload);
+      if (accepted) {
         db.rem([said, daterQb64]);
         if (action === "iss") {
           this.cdb.ack.pin([said], creder);
@@ -295,16 +300,26 @@ export class VerifierAgent {
     return sent;
   }
 
-  private async postWebhook(body: VerifierWebhookBody): Promise<Response> {
+  /** Bind webhook transport cancellation and completion to the enclosing operation. */
+  private *postWebhook(body: VerifierWebhookBody): Operation<boolean> {
     const raw = JSON.stringify(body);
-    return await this.services.http.fetch(this.hook, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "sally-resource": String(body.data.schema ?? ""),
-        "sally-timestamp": new Date(this.services.clock.now()).toISOString(),
-      },
-      body: raw,
+    return yield* abortable(async (signal) => {
+      const response = await this.services.http.fetch(this.hook, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "sally-resource": String(body.data.schema ?? ""),
+          "sally-timestamp": new Date(this.services.clock.now()).toISOString(),
+        },
+        body: raw,
+        signal,
+      });
+      try {
+        return response.ok;
+      } finally {
+        // Webhooks use only the status; release an unread response before this leaf completes.
+        await response.body?.cancel();
+      }
     });
   }
 

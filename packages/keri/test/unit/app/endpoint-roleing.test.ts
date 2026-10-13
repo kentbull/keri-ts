@@ -46,8 +46,8 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       const runtime = {
         hby,
         reactor: {
-          processCompleteChunk() {},
-          processEscrowsOnce() {},
+          *processCompleteChunk() {},
+          *processEscrowsOnce() {},
         },
         poster: {
           *sendExchange(

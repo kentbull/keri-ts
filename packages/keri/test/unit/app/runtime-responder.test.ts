@@ -193,10 +193,10 @@ Deno.test("app/runtime-responder - witness ingress drains through responder inst
   const runtime = {
     cues: [],
     reactor: {
-      processCompleteChunk(bytes: Uint8Array, { local }: { local?: boolean } = {}) {
+      *processCompleteChunk(bytes: Uint8Array, { local }: { local?: boolean } = {}) {
         chunks.push({ bytes, local: local ?? false });
       },
-      processEscrowsOnce() {
+      *processEscrowsOnce() {
         return;
       },
     },

@@ -19,6 +19,13 @@ digest, authentication, and SCS framing before plaintext staging. Ciphertext
 evidence remains in `.essrs`; the returned body is a non-owning file view.
 See `packages/keri/src/app/essr.md` for ownership and admission limits.
 
+Runtime dispatch and settlement are Effection operations; mailbox batch callbacks may return an operation. Finish
+one dispatch before advancing its source or marking a mailbox batch handed off.
+The receiving mailbox AID travels as an explicit per-message argument; never
+store it in mutable request-global state across a suspension. Local habitat bootstrap
+configuration remains synchronous because it processes only its own endpoint
+replies directly through Revery.
+
 Mailbox `mbx` queries authorize recipient-private bytes: requester identity must
 match the recipient and its signatures must satisfy the current accepted signing
 threshold. Naming a prefix in attachment material and correlating a stream cue

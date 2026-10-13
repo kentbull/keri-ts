@@ -1,6 +1,6 @@
 // @file-test-lane core-fast-a
 
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import {
@@ -552,7 +552,7 @@ Deno.test("Kevery stores non-transferable receipt escrows under snKey and replay
 
       const reactor = new Reactor(remote);
       reactor.ingest(receiptor.receipt(event));
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       const kvy = reactor.kevery;
       assertEquals(remote.db.ures.cnt(), 1);

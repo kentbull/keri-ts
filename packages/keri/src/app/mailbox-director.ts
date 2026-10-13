@@ -50,7 +50,6 @@ export class MailboxDirector {
   readonly mailboxer: Mailboxer | null;
   readonly queryCues: Deck<StreamCue>;
   readonly topics: Set<string>;
-  private activeMailboxAid: string | null = null;
   private readonly streamCleanups = new Set<() => void>();
 
   constructor(
@@ -81,34 +80,6 @@ export class MailboxDirector {
     if (topic.length > 0) {
       this.topics.add(topic);
     }
-  }
-
-  /**
-   * Run one request-scoped block with the addressed hosted mailbox AID set.
-   *
-   * `/fwd` handling needs this so it can verify mailbox authorization against
-   * the mailbox AID that actually received the request instead of guessing from
-   * payload contents alone.
-   */
-  withActiveMailboxAid<T>(
-    aid: string | null,
-    fn: () => T,
-  ): T {
-    const prior = this.activeMailboxAid;
-    this.activeMailboxAid = aid;
-    try {
-      return fn();
-    } finally {
-      this.activeMailboxAid = prior;
-    }
-  }
-
-  /**
-   * Return the mailbox AID currently associated with the in-flight request, if
-   * any.
-   */
-  currentMailboxAid(): string | null {
-    return this.activeMailboxAid;
   }
 
   /** Snapshot the currently configured mailbox topic set. */

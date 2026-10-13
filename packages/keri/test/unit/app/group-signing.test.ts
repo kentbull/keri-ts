@@ -15,7 +15,7 @@ Deno.test("group query signs only its local member at current index3", async () 
       const peers = [0, 1, 2].map((i) => remote.makeHab(`peer${i}`));
       for (const peer of peers) {
         for (const bytes of remote.db.clonePreIter(peer.pre, 0)) {
-          runtime.reactor.processCompleteChunk(bytes, { local: true });
+          yield* runtime.reactor.processCompleteChunk(bytes, { local: true });
         }
       }
       const member = local.makeHab("user");

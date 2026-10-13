@@ -197,7 +197,7 @@ export function* vcImportCommand(args: Record<string, unknown>): Operation<void>
     inPath: args.inPath as string | undefined,
   };
   yield* withVcRuntime(vcArgs, function*({ runtime, reger }) {
-    console.log(JSON.stringify(importCredentialStream(runtime, reger, readBytes(vcArgs.inPath))));
+    console.log(JSON.stringify(yield* importCredentialStream(runtime, reger, readBytes(vcArgs.inPath))));
   });
 }
 

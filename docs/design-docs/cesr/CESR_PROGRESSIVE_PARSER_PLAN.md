@@ -29,6 +29,10 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 | 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Pending                               |
 | 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                               |
 
+Before phase 9, land an Operation propagation preparation PR: dispatch/settlement
+callers and mailbox batch delivery yield through completion, and mailbox endpoint identity
+is passed explicitly. This makes async exchange storage a green, separate change.
+
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
 ahead, base it on the predecessor branch and retarget after that predecessor
 merges. Native GitHub stacks are optional if they preserve this review boundary;

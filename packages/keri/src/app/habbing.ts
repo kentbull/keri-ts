@@ -66,7 +66,7 @@ import {
   normalizeSaltQb64,
   saltySigner,
 } from "./keeping.ts";
-import { dispatchEnvelope, envelopesFromFrames } from "./parsering.ts";
+import { envelopesFromFrames } from "./parsering.ts";
 
 /** Reserved alias for the local signatory habitat record. */
 export const SIGNER = "__signatory__";
@@ -506,7 +506,9 @@ export class Hab {
    */
   private ingestLocalCesr(ims: Uint8Array): void {
     for (const envelope of envelopesFromFrames(parseBytes(ims), true)) {
-      dispatchEnvelope(envelope, this.rvy, this.kvy);
+      // Bootstrap configuration contains only locally generated endpoint replies.
+      if (envelope.serder.ilk !== "rpy") throw new ValidationError("Expected a local configuration reply");
+      this.rvy.processReply({ serder: envelope.serder, cigars: envelope.cigars, tsgs: envelope.tsgs });
     }
   }
 

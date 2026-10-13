@@ -1,10 +1,4 @@
-import {
-  concatBytes,
-  parseSerder,
-  SerderKERI,
-  smell,
-  type Versionage,
-} from "cesr-ts";
+import { concatBytes, parseSerder, SerderKERI, smell, type Versionage } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -166,8 +160,8 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     const group = isLocalGroupHab(hby, hab);
     if (group) {
       const partialGrant = groupIpexPartial(hby, hab, grant.grant, undefined, grant.attachments);
-      runtime.reactor.processCompleteChunk(partialGrant, { local: true });
-      runtime.reactor.processEscrowsOnce();
+      yield* runtime.reactor.processCompleteChunk(partialGrant, { local: true });
+      yield* runtime.reactor.processEscrowsOnce();
 
       const deliveries = yield* publishGroupIpexProposal(
         runtime,
@@ -295,8 +289,8 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
       const batches = yield* processMailboxTurn(runtime, { hab, budgetMs: pollBudgetMs });
       batchesSeen += batches.length;
       messagesSeen += batches.reduce((total, batch) => total + batch.messages.length, 0);
-      processStoredCredentialGrants(hby, runtime, reger);
-      runtime.reactor.processEscrowsOnce();
+      yield* processStoredCredentialGrants(hby, runtime, reger);
+      yield* runtime.reactor.processEscrowsOnce();
       if (newIpexMessages(hby, beforeExns).length > 0 || newSavedCredentials(reger, beforeSaved).length > 0) {
         break;
       }
@@ -531,11 +525,12 @@ function newSavedCredentials(reger: Reger, before: Set<string>): string[] {
   return [...savedCredentials(reger)].filter((said) => !before.has(said));
 }
 
-function processStoredCredentialGrants(
+/** Settle accepted grant artifacts before the poll command reports newly saved credentials. */
+function* processStoredCredentialGrants(
   hby: Habery,
   runtime: AgentRuntime,
   reger: Reger,
-): void {
+): Operation<void> {
   for (const [, grant] of hby.db.exns.getTopItemIter()) {
     if (grant.route !== IPEX_GRANT_ROUTE) {
       continue;
@@ -544,7 +539,7 @@ function processStoredCredentialGrants(
     if (!credentialSaid || reger.saved.get([credentialSaid])) {
       continue;
     }
-    processCredentialPresentationArtifacts(
+    yield* processCredentialPresentationArtifacts(
       runtime.reactor,
       storedGrantArtifacts(hby, grant),
     );
