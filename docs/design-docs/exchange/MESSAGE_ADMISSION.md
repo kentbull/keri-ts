@@ -50,6 +50,14 @@ Missing coordinates retain `bigint` precision, including beyond the database's
 safe-number range; the eventual intake owner emits exact hexadecimal queries.
 This read-only helper emits no cues and enables no public Kramer/runtime intake.
 
+Internal KRAM time plans preserve inclusive microsecond admission/lifetime windows,
+XIP own-SAID openers, sender-local/shared XID precedence and original cached windows.
+Completed replay is refused before source queries; multi-key partials remain resumable.
+Transaction `rdt` records receiver-observed completion time, distinct from message
+`mdt`, and remains frozen on ready handoff retries. Plans publish no state: intake
+must atomically recheck policy, current keys, caches and durable readiness before
+publishing cache/opener/receipt, partial factors and snapshot together.
+
 ## Ownership and HTTP
 
 Dispatch borrows the envelope, including separate parent and child proof owners.

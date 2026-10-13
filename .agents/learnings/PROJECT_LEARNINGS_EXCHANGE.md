@@ -62,6 +62,10 @@ Do not invent xip/pro/bar processing: frozen upstream has stubs. Native outer EX
 empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
 not prove that path. Full runtime/resource qualification remains open.
 
+KRAM time plans are read-only: cached multi partials reuse original windows; receipt
+time freezes on completion. Recheck plans atomically with current keys and durable
+readiness before publication so competing receipts cannot replace the first one.
+
 [Proofs](../../docs/design-docs/exchange/EXCHANGE_PROOFS.md),
 [multisig](../../docs/design-docs/exchange/MULTISIG.md),
 [IPEX](../../docs/design-docs/exchange/IPEX.md),
