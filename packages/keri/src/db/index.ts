@@ -2,6 +2,7 @@
  * Database module exports
  */
 
+export * from "../acdc/regbasing.ts";
 export * from "./basing.ts";
 export * from "./core/index.ts";
 export * from "./escrowing.ts";

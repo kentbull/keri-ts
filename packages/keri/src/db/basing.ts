@@ -87,6 +87,7 @@ import { PayloadArchive } from "./payload-archive.ts";
 import { payloadRange } from "./payload-view.ts";
 import {
   B64OnIoDupSuber,
+  BytesIoSetSuber,
   CatCesrIoSetSuber,
   CatCesrSuber,
   CesrIoSetSuber,
@@ -490,6 +491,8 @@ export class Baser {
   public ctyp!: Komer<CacheTypeRecord>; // KRAM cache-type records.
   public msgc!: Komer<MsgCacheRecord>; // KRAM message-cache records.
   public tmsc!: Komer<TxnMsgCacheRecord>; // KRAM transactioned message-cache records.
+  public ulgs!: CesrIoSetSuber<Prefixer>; // Foreign last references unresolved at original receipt.
+  public cigs!: CatCesrIoSetSuber<VerferCigarCouple>; // Independently owned foreign cigar proofs.
   public pmkm!: SerderSuber<SerderKERI>; // KRAM partially signed multi-key messages.
   public pmks!: CesrIoSetSuber<Siger>; // KRAM partially signed multi-key signatures.
   public pmsk!: CatCesrSuber<EventSealTuple>; // KRAM partially signed multi-key sender key-state seals.
@@ -499,7 +502,7 @@ export class Baser {
   public ssts!: CatCesrIoSetSuber<SourceSealTriple>; // Source seal triples.
   public frcs!: CatCesrIoSetSuber<FirstSeenReplayCouple>; // First-seen replay couples.
   public tdcs!: CatCesrIoSetSuber<TypedDigestSealCouple>; // Typed digest seal couples.
-  public ptds!: IoSetSuber<string>; // Pathed streams stored as raw bytes.
+  public ptds!: BytesIoSetSuber; // Pathed streams stored as raw bytes.
   public bsqs!: CatCesrIoSetSuber<BlindedStateQuadrupleTuple>; // Blind state quadruples.
   public bsss!: CatCesrIoSetSuber<BoundStateSextuple>; // Bound state sextuples.
   public tmqs!: CatCesrIoSetSuber<TypedMediaQuadrupleTuple>; // Type-media quadruples.
@@ -1091,6 +1094,9 @@ export class Baser {
         },
       );
 
+      this.ulgs = new CesrIoSetSuber<Prefixer>(this.lmdber, { subkey: "ulgs.", ctor: Prefixer });
+      this.cigs = new CatCesrIoSetSuber<VerferCigarCouple>(this.lmdber, { subkey: "cigs.", ctor: [Verfer, Cigar] });
+
       // KRAM partially signed multi-key messages keyed by `(AID, MID)`.
       this.pmkm = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "pmkm." });
 
@@ -1150,27 +1156,27 @@ export class Baser {
       });
 
       // Pathed streams stored as raw bytes.
-      this.ptds = new IoSetSuber<string>(this.lmdber, { subkey: "ptds." });
+      this.ptds = new BytesIoSetSuber(this.lmdber, { subkey: "ptds." });
 
       // Blind state quadruples.
       this.bsqs = new CatCesrIoSetSuber<BlindedStateQuadrupleTuple>(
         this.lmdber,
         {
           subkey: "bsqs.",
-          ctor: [Diger, Noncer, Noncer, Labeler],
+          ctor: [Noncer, Noncer, Noncer, Labeler],
         },
       );
 
       // Bound state sextuples.
       this.bsss = new CatCesrIoSetSuber<BoundStateSextuple>(this.lmdber, {
         subkey: "bsss.",
-        ctor: [Diger, Noncer, Noncer, Labeler, NumberPrimitive, Noncer],
+        ctor: [Noncer, Noncer, Noncer, Labeler, NumberPrimitive, Noncer],
       });
 
       // Type-media quadruples.
       this.tmqs = new CatCesrIoSetSuber<TypedMediaQuadrupleTuple>(this.lmdber, {
         subkey: "tmqs.",
-        ctor: [Diger, Noncer, Labeler, Texter],
+        ctor: [Noncer, Noncer, Labeler, Texter],
       });
 
       this.reloadKevers();

@@ -9,7 +9,7 @@ import {
   SerderACDC,
   type SerderKERI,
 } from "cesr-ts";
-import { vetRegistryBindings } from "../acdc/regeventing.ts";
+import { vetBinds } from "../acdc/regeventing.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { type ExchangeFactors, verifyExchangeProofs } from "../core/exchange-proofing.ts";
 import type { RegistryEvidenceReader } from "../db/registry-evidence.ts";
@@ -262,7 +262,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       if (!proofs.length || !this.registry) return false;
       const chain = this.registry.read(serder.regid);
       if (!chain) return missing(`Missing local TEL evidence for ${serder.regid}.`);
-      const result = vetRegistryBindings({
+      const result = vetBinds({
         ...chain,
         db: this.hby.db,
         blinders: proofs,

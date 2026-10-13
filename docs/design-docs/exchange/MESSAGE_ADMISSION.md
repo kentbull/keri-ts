@@ -30,6 +30,17 @@ are stubs: they report `referenceStub`, never acceptance. Route-specific decisio
 retain their meanings; an absent decision is not evidence of acceptance.
 Infrastructure failures and cancellation propagate unchanged.
 
+Internal `KramPolicy` selects exact ilk/route, ilk, then catchall cache records.
+Exemptions retain frozen compact-prefix semantics, including V2 OOBI replies;
+they bypass only KRAM, leaving sender policy and downstream verification intact.
+Invalid configuration and coverage holes fail before publication. Acceptance
+expansions wait for receiver-clocked delays; pure decreases apply immediately.
+Active acceptance and pruning remain ordered, and existing drift stays fixed.
+Atomic `ctyp.`/private `hbys.` transition metadata survives reopen and refreshes
+stale owners. These restart and active-window guarantees strengthen the frozen
+reference, which stores pending transitions only in memory. No Kramer intake or
+runtime enablement is exported; cache windows are not a shared runtime budget.
+
 Internal `authenticateKramSource` returns valid, known-invalid, or missing-state
 source decisions. It checks the last source couple or sender-matching triple
 against the accepted sender KEL digest and an event seal containing the message

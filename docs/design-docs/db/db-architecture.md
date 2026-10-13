@@ -158,6 +158,33 @@ Design intent:
 1. If payload is CESR primitive domain data, use Suber-family semantics.
 2. If payload is structured non-CESR record data, use Komer-family semantics.
 
+Opaque wire values need a byte-preserving adapter: `BytesSuber` for single
+values and `BytesIoSetSuber` for insertion-ordered sets. `Baser.ptds` uses the
+latter for pathed evidence keyed by `(AID, MID)` in the existing `ptds.` table.
+Distinct binary inputs such as `0xff` and `0xfe` must survive without UTF-8
+replacement, retaining insertion order and deduplicating only exact bytes.
+This honors frozen KERIpy `927c0cb8`'s documented raw-byte table contract while
+correcting its inherited text-decoding read path. A byte-oriented type does not
+establish zero-copy LMDB access; see the
+[byte ownership reference](../../reference/db/MEMORYVIEW_UINT8ARRAY.md).
+
+`db/kram-factors.ts` stages and rehydrates partial evidence keyed by `(AID, MID)`.
+Callers authenticate and stage the sender body, `pmks` pool and `pmsk` seal; foreign
+proofs remain independent. Call `storeKramFactors` and `validateKramFactors` inside
+the same transaction before commit so `ResourceLimitError` rolls back the union.
+Rehydration merges exact qualified members with shared 4096-item/8 MiB credits.
+Known foreign last groups freeze receipt-time coordinates; `ulgs.` retains unknown
+prefixes without old signatures, and `cigs.` retains foreign cigar verifier context.
+`unresolvedLast` remains missing evidence for Exchanger even after KEL recovery.
+`removeKramFactors` removes body, sender pool/seal and factors only. Nested/ESSR
+snapshots, cache transitions, authentication and complete handoff remain later units.
+Blind/bound/media `d` fields reopen as `Noncer`, matching their current typed
+record domain (including nonce/empty/digest encodings). This deliberately corrects
+frozen KERIpy's narrower `Diger` constructors without changing qualified row bytes.
+Sender seal couples/triples remain authentication inputs and are excluded from
+factor staging, as in frozen `_storeNonAuthData`.
+These finite limits do not bound whole-row LMDB allocation or the shared runtime.
+
 ## Key Ordering Conventions
 
 1. Use fixed-width hex ordinals where lexicographic order must match numeric
