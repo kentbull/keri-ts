@@ -34,7 +34,11 @@ no throughput result. A fast rejection is never a performance improvement.
 Compare five immutable revisions with identical manifests: untouched parser,
 large-input decoding fix, byte cursor, progressive generators, and the complete
 transport/crypto/storage path. Preserve raw runs and variance. Small exhaustive
-split tests belong in CI; large qualification runs are explicit and bounded.
+split tests belong in ordinary CI. Large benchmarks and endurance tests are
+manual-only qualification: select `essr-qualification` in the **KERI Extended
+Interop** workflow, or use `gh workflow run keri-extended-interop.yml -f target=essr-qualification`. Raw JSONL evidence is uploaded even when a case fails.
+This job has no PR trigger, is not a dependency of the PR stage gate, and must
+not be configured as a required check for merging to master.
 
 The phase sequence is: baseline; safe decoding; lifecycle/ownership contract;
 byte cursor; generator traversal; payload sinks; streaming ESSR; recipient
