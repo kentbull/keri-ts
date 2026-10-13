@@ -1,10 +1,9 @@
 /** Durable verifier-side v2 registry evidence; distinct from legacy Reger state. */
 import { ResourceLimitError, Saider, SerderACDC } from "cesr-ts";
 import type { Operation } from "effection";
+import { RegBaser, type RegBaserOptions } from "../acdc/regbasing.ts";
 import { type RegistryEvidence, type RegistryVerification, vet } from "../acdc/regeventing.ts";
 import { DatabaseOperationError } from "../core/errors.ts";
-import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
-import { CesrOnSuber, CesrSuber, SerderSuber } from "./subing.ts";
 
 /** Parsed, contiguous evidence borrowed by an IPEX verifier. */
 export interface RegistryChain {
@@ -16,8 +15,7 @@ export interface RegistryEvidenceReader {
   read(regid: string): RegistryChain | null;
 }
 /** Existing finite item policy applies to a single registry evidence load. */
-export interface RegistryEvidenceStoreOptions extends LMDBerOptions {
-  compat?: boolean;
+export interface RegistryEvidenceStoreOptions extends RegBaserOptions {
   maxEvents?: number;
 }
 
@@ -26,38 +24,14 @@ export interface RegistryEvidenceStoreOptions extends LMDBerOptions {
  * importEvidence verifies the complete merged chain before any durable write.
  * This is not the issuer's local registry engine or an automatic parser route.
  */
-export class RegistryEvidenceStore extends LMDBer implements RegistryEvidenceReader {
-  private events!: SerderSuber<SerderACDC>;
-  private sequence!: CesrOnSuber<Saider>;
-  private heads!: CesrSuber<Saider>;
+export class RegistryEvidenceStore extends RegBaser implements RegistryEvidenceReader {
   private readonly maxEvents: number;
 
   constructor(options: RegistryEvidenceStoreOptions = {}) {
-    super(options, {
-      tailDirPath: "keri/acdc/reg",
-      cleanTailDirPath: "keri/clean/acdc/reg",
-      altTailDirPath: options.compat ? ".keri/acdc/reg" : ".tufa/acdc/reg",
-      altCleanTailDirPath: options.compat ? ".keri/clean/acdc/reg" : ".tufa/clean/acdc/reg",
-      tempPrefix: "keri_acdc_reg_",
-    });
+    super(options);
     this.maxEvents = options.maxEvents ?? 16384;
     if (!Number.isSafeInteger(this.maxEvents) || this.maxEvents < 1) {
       throw new RangeError("Registry maxEvents must be a positive safe integer.");
-    }
-  }
-
-  /** Rebind typed readers after the environment's joined lifecycle opens it. */
-  override *reopen(options: Partial<RegistryEvidenceStoreOptions> = {}): Operation<boolean> {
-    const opened = yield* super.reopen(options);
-    if (!opened) return false;
-    try {
-      this.events = new SerderSuber(this, { subkey: "evts.", ctor: SerderACDC });
-      this.sequence = new CesrOnSuber(this, { subkey: "tels.", ctor: Saider });
-      this.heads = new CesrSuber(this, { subkey: "heds.", ctor: Saider });
-      return true;
-    } catch (error) {
-      yield* this.close();
-      throw error;
     }
   }
 
@@ -65,7 +39,7 @@ export class RegistryEvidenceStore extends LMDBer implements RegistryEvidenceRea
   read(regid: string): RegistryChain | null {
     const head = this.heads.get(regid);
     if (!head) return null;
-    const event = this.events.get(head.qb64);
+    const event = this.evts.get(head.qb64);
     if (!event) throw new DatabaseOperationError("Registry head body is missing.");
     const last = BigInt(`0x${event.sad!.n}`);
     if (last >= BigInt(this.maxEvents)) {
@@ -73,8 +47,8 @@ export class RegistryEvidenceStore extends LMDBer implements RegistryEvidenceRea
     }
     const events: SerderACDC[] = [];
     for (let sn = 0; sn <= Number(last); sn++) {
-      const said = this.sequence.getOn(regid, sn);
-      const item = said ? this.events.get(said.qb64) : null;
+      const said = this.tels.getOn(regid, sn);
+      const item = said ? this.evts.get(said.qb64) : null;
       if (!item) throw new DatabaseOperationError("Accepted registry evidence has a missing sequence entry.");
       events.push(item);
     }
@@ -102,8 +76,8 @@ export class RegistryEvidenceStore extends LMDBer implements RegistryEvidenceRea
       if (result.kind !== "verified") return result;
       for (const event of [rip, ...merged]) {
         const said = new Saider({ qb64: event.said! });
-        this.events.pin(event.said!, event);
-        this.sequence.putOn(result.state.regid, Number(BigInt(`0x${event.sad!.n}`)), said);
+        this.evts.pin(event.said!, event);
+        this.tels.putOn(result.state.regid, Number(BigInt(`0x${event.sad!.n}`)), said);
       }
       this.heads.pin(result.state.regid, new Saider({ qb64: result.state.said }));
       return result;
