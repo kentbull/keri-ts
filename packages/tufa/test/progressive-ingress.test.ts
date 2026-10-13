@@ -7,26 +7,36 @@ import {
   Counter,
   CtrDexV1,
   Diger,
+  discardFrame,
+  NumberPrimitive,
   parseBytes,
+  Prefixer,
+  SealEvent,
   SerderKERI,
   Texter,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run, sleep, spawn } from "effection";
+import { call, run, sleep, spawn, suspend } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";
 import {
   createAgentRuntime,
   createHabery,
   cueDo,
+  envelopeFromFrame,
   exchange,
   type Hab,
   type Habery,
+  processRuntimeTurn,
   query,
+  queryEnvelopeFromDispatch,
+  readCesrRequestBytes,
 } from "keri-ts/runtime";
 import { abortable } from "../../keri/src/app/abortable.ts";
 import { acceptedEventReplayMessage } from "../../keri/src/app/habbing.ts";
-import { messagize } from "../../keri/src/core/protocol-serialization.ts";
+import { queryTransportSink } from "../../keri/src/app/query-transport.ts";
+import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
+import { messagize, serializeMessage } from "../../keri/src/core/protocol-serialization.ts";
 import { createProtocolHandler } from "../src/http/protocol-handler.ts";
 
 /** Bound a protocol-progress assertion so an atomic-parser regression fails instead of hanging. */
@@ -413,6 +423,136 @@ Deno.test("v2 sender refusal cannot reopen a previously authorized HTTP mailbox 
       const readmitted = yield* call(post);
       assertEquals(readmitted.status, 200);
       yield* call(() => readmitted.body?.cancel());
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and refuses pending, denied and replayed requests", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender", undefined, { icount: 3, isith: "2", ncount: 3, nsith: "2" });
+    const outgoing: Uint8Array[] = [];
+    const runtime = yield* createAgentRuntime(hby, {
+      services: {
+        http: {
+          fetch: async (url, init) => {
+            outgoing.push(await readCesrRequestBytes(new Request(url, init)));
+            return new Response(null, { status: 204 });
+          },
+        },
+      },
+      enableMailboxStore: true,
+      messagePolicy: { denyList: new Set([sender.pre]) },
+      kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+    });
+    try {
+      const handler = createProtocolHandler(runtime, { serviceHab: sender });
+      let body = query("mbx", { i: sender.pre, src: sender.pre, topics: { "/reply": 0 } }, {
+        pre: sender.pre,
+        pvrsn: Vrsn_2_0,
+      });
+      const post = (index: number, sourceSeals: readonly SealEvent[] = []) =>
+        handler(
+          new Request("http://localhost/", {
+            method: "POST",
+            headers: { "content-type": "application/cesr" },
+            body: new Uint8Array(
+              serializeMessage(body, {
+                tsgs: [
+                  new TransIdxSigGroup(
+                    new Prefixer({ qb64: sender.pre }),
+                    sender.kever!.sner,
+                    new Diger({ qb64: sender.kever!.said }),
+                    [sender.sign(body.raw, true)[index]],
+                  ),
+                ],
+                sourceSeals,
+                gvrsn: Vrsn_2_0,
+              }),
+            ),
+          }),
+        );
+      const key = [sender.pre, body.said!];
+      const denied = yield* call(() => post(0));
+      assertEquals(denied.status, 403);
+      yield* call(() => denied.text());
+      assertEquals(hby.db.msgc.get(key), null, "sender denial precedes KRAM durable effects");
+      runtime.reactor.kevery.denyList.clear();
+      const pending = yield* call(() => post(0));
+      assertEquals(pending.status, 403);
+      yield* call(() => pending.text());
+      assertExists(hby.db.pmkm.get(key));
+      assertEquals(hby.db.pmks.get(key).map((s) => s.index), [0]);
+      const ready = yield* call(() => post(1));
+      assertEquals(ready.status, 200, "the combined two-signature pool authorizes this HTTP attempt");
+      yield* call(() => ready.body?.cancel());
+      assertEquals(hby.db.pmkm.get(key), null);
+      assertExists(hby.db.msgc.get(key));
+      const replay = yield* call(() => post(1));
+      assertEquals(replay.status, 403, "an old matching mailbox cue cannot override KRAM replay refusal");
+      yield* call(() => replay.text());
+      body = query("mbx", { i: sender.pre, src: sender.pre, topics: { "/reply": 0 }, probe: "guards" }, {
+        pre: sender.pre,
+        pvrsn: Vrsn_2_0,
+      });
+      const [valid] = yield* call(() =>
+        parseBytes(messagize(body, { sigers: sender.sign(body.raw, true), gvrsn: Vrsn_2_0 }))
+      );
+      try {
+        runtime.reactor.kevery.processQuery(queryEnvelopeFromDispatch(envelopeFromFrame(valid)));
+        const source = SealEvent.fromTuple([
+          new Prefixer({ qb64: sender.pre }),
+          NumberPrimitive.fromNum(99n),
+          new Diger({ qb64: sender.kever!.said }),
+        ]);
+        const missing = yield* call(() => post(0, [source]));
+        assertEquals(missing.status, 403, "an older authorized cue cannot override missing source state");
+        yield* call(() => missing.text());
+        assertEquals(
+          runtime.querying.pending.peekHead()?.query.s,
+          "63",
+          "HTTP preserves the exact missing-state query",
+        );
+        yield* runtime.reactor.processBytes(sender.makeEndRole(sender.pre, "controller", true));
+        yield* runtime.reactor.processBytes(sender.makeLocScheme("http://example.test/", sender.pre, "http"));
+        yield* processRuntimeTurn(runtime, {
+          hab: sender,
+          pollMailbox: false,
+          sink: queryTransportSink(runtime, hby, sender),
+        });
+        assertEquals(
+          outgoing.length,
+          5,
+          "normal transport sends its KEL/location/role introduction before the recovery query",
+        );
+        const queryFrames = yield* call(() => parseBytes(outgoing.at(-1)!));
+        try {
+          assertEquals((queryFrames.at(-1)!.body.ked?.q as Record<string, unknown>).s, "63");
+        } finally {
+          yield* call(() => Promise.all(queryFrames.map(discardFrame)));
+        }
+        assertEquals(runtime.querying.hasPendingWork(), false);
+        const started = Promise.withResolvers<void>();
+        const held = yield* spawn(() =>
+          runtime.reactor.kevery.kramer!.intake(envelopeFromFrame(valid), function*() {
+            started.resolve();
+            yield* suspend();
+          })
+        );
+        try {
+          yield* call(() => started.promise);
+          const busy = yield* call(() => post(0));
+          assertEquals(busy.status, 403, "an older authorized cue cannot override live intake refusal");
+          yield* call(() => busy.text());
+        } finally {
+          yield* held.halt();
+        }
+      } finally {
+        yield* call(() => discardFrame(valid));
+      }
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

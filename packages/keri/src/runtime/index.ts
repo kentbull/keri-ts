@@ -93,3 +93,5 @@ export { abortable } from "../app/abortable.ts";
 export * from "../acdc/regeventing.ts";
 
 export * from "../db/registry-evidence.ts";
+
+export { type KramConfig, Kramer, type KramRefusal } from "../core/kraming.ts";
