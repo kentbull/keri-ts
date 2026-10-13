@@ -14,6 +14,7 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    that contract and its tests.
 3. Parser architecture remains intentionally atomic/bounded-substream first.
    `CesrParser` directly owns its buffer, offset, and selected stream genus.
+   Frame parsing uses stateless functions; no collector or frame-parser objects.
    Nested incremental parsing is deferred behind explicit performance evidence.
    `CesrFrame` is the body-plus-attachments payload; `ParseEvent` is the frame/error
    union. Recursive attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
@@ -23,7 +24,7 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    Parser genus context uses `gvrsn`/`streamGvrsn`; protocol metadata keeps `pvrsn`.
 4. Chunk exhaustion never completes an open attachment set. A following body,
    a complete frame/attachment enclosure, or explicit `flush()` does. Initial and
-   resumed collection share one path; `framed` only caps emissions per feed.
+   resumed collection and bounded frames share `parseAttachments`; `framed` only caps emissions per feed.
    Terminal partial attachments emit a shortage without exposing their pending
    frame. Complete-record runtime callers finish explicitly; raw streams retain
    parser state. Do not append peer attachments after a closed enclosure.
@@ -34,7 +35,7 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    Non-shortage errors emit the normal parser error event and reset; recovery
    has no separate diagnostic callback API. V1 signature/tuple counters count
    items; v2 payload counters count quadlets/triplets, including nested signature
-   groups. Complete v2 payloads with incomplete items are boundary errors, not
+   groups. Complete sized payloads with incomplete items are boundary errors, not
    transport shortages. Fixtures must encode payload lengths, not item counts.
    Direct handler maps select separate v1 item-count and v2 payload-exhaustion handlers;
    single-entry parsing and primitive rehydration remain shared. Known attachment

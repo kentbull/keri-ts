@@ -504,9 +504,10 @@ export function parseAttachmentGroup(
     );
   }
 
-  // V2 counts payload quadlets/triplets; the genus selector carries a version,
-  // not a payload length. Bound before parsing so siblings cannot fill a group.
-  const bounded = gvrsn.major === 2 && counter.code !== CtrDexV2.KERIACDCGenusVersion;
+  // V2 groups and v1 sized groups count payload units. The genus selector
+  // carries a version instead. Bound here so peers cannot fill incomplete items.
+  const bounded = parser === parseSizedGroup
+    || (gvrsn.major === 2 && counter.code !== CtrDexV2.KERIACDCGenusVersion);
   if (bounded) {
     const end = tokenSize(counter, domain) + counter.count * unitBytes(domain);
     if (input.length < end) {
