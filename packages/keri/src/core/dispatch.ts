@@ -19,7 +19,6 @@ import {
 
 /** Fixed-width or compact ordinal primitive accepted by runtime dispatch groups. */
 export type DispatchOrdinal = Seqner | NumberPrimitive;
-type Qb64b = Uint8Array;
 
 /** One transferable receipt quadruple carried in parser dispatch state. */
 export class TransReceiptQuadruple {
@@ -44,21 +43,6 @@ export class TransReceiptQuadruple {
     tuple: readonly [Prefixer, DispatchOrdinal, Diger, Siger],
   ): TransReceiptQuadruple {
     return new TransReceiptQuadruple(tuple[0], tuple[1], tuple[2], tuple[3]);
-  }
-
-  /**
-   * Hydrate one parser-facing transferable receipt quadruple from qb64b
-   * primitives.
-   */
-  static fromQb64bTuple(
-    tuple: readonly [Qb64b, Qb64b, Qb64b, Qb64b],
-  ): TransReceiptQuadruple {
-    return new TransReceiptQuadruple(
-      new Prefixer({ qb64b: tuple[0] }),
-      new NumberPrimitive({ qb64b: tuple[1] }),
-      new Diger({ qb64b: tuple[2] }),
-      new Siger({ qb64b: tuple[3] }),
-    );
   }
 
   toTuple(): [Prefixer, DispatchOrdinal, Diger, Siger] {
@@ -107,22 +91,6 @@ export class TransIdxSigGroup {
     return new TransIdxSigGroup(tuple[0], tuple[1], tuple[2], tuple[3]);
   }
 
-  /**
-   * Hydrate one parser-facing transferable indexed-signature group from qb64b
-   * primitives plus already-normalized `Siger` members.
-   */
-  static fromQb64bTuple(
-    tuple: readonly [Qb64b, Qb64b, Qb64b],
-    sigers: readonly Siger[],
-  ): TransIdxSigGroup {
-    return new TransIdxSigGroup(
-      new Prefixer({ qb64b: tuple[0] }),
-      new NumberPrimitive({ qb64b: tuple[1] }),
-      new Diger({ qb64b: tuple[2] }),
-      sigers,
-    );
-  }
-
   toTuple(): [Prefixer, DispatchOrdinal, Diger, Siger[]] {
     return [this.prefixer, this.seqner, this.diger, [...this.sigers]];
   }
@@ -164,20 +132,6 @@ export class TransLastIdxSigGroup {
     return new TransLastIdxSigGroup(tuple[0], tuple[1]);
   }
 
-  /**
-   * Hydrate one parser-facing last-establishment signature group from qb64b
-   * prefix material plus already-normalized `Siger` members.
-   */
-  static fromQb64bTuple(
-    prefixerQb64b: Qb64b,
-    sigers: readonly Siger[],
-  ): TransLastIdxSigGroup {
-    return new TransLastIdxSigGroup(
-      new Prefixer({ qb64b: prefixerQb64b }),
-      sigers,
-    );
-  }
-
   toTuple(): [Prefixer, Siger[]] {
     return [this.prefixer, [...this.sigers]];
   }
@@ -201,16 +155,6 @@ export class FirstSeenReplayCouple {
     tuple: readonly [NumberPrimitive, Dater],
   ): FirstSeenReplayCouple {
     return new FirstSeenReplayCouple(tuple[0], tuple[1]);
-  }
-
-  /** Hydrate one parser-facing first-seen replay couple from qb64b primitives. */
-  static fromQb64bTuple(
-    tuple: readonly [Qb64b, Qb64b],
-  ): FirstSeenReplayCouple {
-    return new FirstSeenReplayCouple(
-      new NumberPrimitive({ qb64b: tuple[0] }),
-      new Dater({ qb64b: tuple[1] }),
-    );
   }
 
   toTuple(): [NumberPrimitive, Dater] {

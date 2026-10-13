@@ -4,13 +4,18 @@ import {
   BoundState,
   type CesrFrame,
   Cigar,
+  Dater,
+  Diger,
   type GroupEntry,
   Ilks,
   isCounterGroupLike,
   isGroupTuple,
-  isQualifiedPrimitive,
+  Labeler,
+  Noncer,
+  NumberPrimitive,
   type ParseEvent,
   parseSerder,
+  Prefixer,
   SealEvent,
   SealKind,
   SealSource,
@@ -21,6 +26,7 @@ import {
   Texter,
   TypeMedia,
   Verfer,
+  Verser,
 } from "cesr-ts";
 import {
   FirstSeenReplayCouple,
@@ -244,217 +250,160 @@ function smellageFromMessage(message: CesrFrame): Smellage {
   };
 }
 
-function normalizeTupleIndexers(entry: GroupEntry | undefined): Siger[] {
-  if (!entry || !isGroupTuple(entry)) {
-    return [];
-  }
-  const out: Siger[] = [];
-  for (const item of entry) {
-    if (!isQualifiedPrimitive(item)) {
-      continue;
-    }
-    out.push(new Siger({ qb64b: item.qb64b }));
-  }
-  return out;
+/** Require the primitive role promised by the parser graph at the public frame boundary. */
+function primitive<T>(entry: GroupEntry | undefined, Type: new(...args: any[]) => T): T {
+  if (!(entry instanceof Type)) throw new TypeError(`Expected parsed ${Type.name}`);
+  return entry;
 }
 
-function cigarFromQb64bCouple(
-  verferQb64b: Uint8Array,
-  cigarQb64b: Uint8Array,
-): Cigar {
-  return new Cigar(
-    { qb64b: cigarQb64b },
-    new Verfer({ qb64b: verferQb64b }),
-  );
+/** Read a nested signature list without decoding its bytes again. */
+function signatureTuple(entry: GroupEntry | undefined): Siger[] {
+  if (!entry || !isGroupTuple(entry)) throw new TypeError("Expected signature tuple");
+  return entry.map((item) => primitive(item, Siger));
 }
 
-function normalizeAttachmentGroup(
-  group: AttachmentGroup,
-  envelope: KeriDispatchEnvelope,
-): void {
+/** Collect already hydrated attachment values into the runtime envelope. */
+function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelope): void {
   switch (group.name) {
     case "AttachmentGroup":
     case "BigAttachmentGroup":
     case "BodyWithAttachmentGroup":
     case "BigBodyWithAttachmentGroup":
       for (const item of group.items) {
-        if (isCounterGroupLike(item)) {
-          normalizeAttachmentGroup(item as AttachmentGroup, envelope);
-        }
+        if (isCounterGroupLike(item)) collectAttachments(item, envelope);
       }
       return;
     case "ControllerIdxSigs":
     case "BigControllerIdxSigs":
-      for (const item of group.items) {
-        if (isGroupTuple(item)) {
-          envelope.sigers.push(...normalizeTupleIndexers(item));
-          continue;
-        }
-        if (!isQualifiedPrimitive(item)) {
-          continue;
-        }
-        envelope.sigers.push(new Siger({ qb64b: item.qb64b }));
-      }
-      return;
     case "WitnessIdxSigs":
-    case "BigWitnessIdxSigs":
+    case "BigWitnessIdxSigs": {
+      const target = group.name.includes("Witness") ? envelope.wigers : envelope.sigers;
       for (const item of group.items) {
-        if (isGroupTuple(item)) {
-          envelope.wigers.push(...normalizeTupleIndexers(item));
-          continue;
-        }
-        if (!isQualifiedPrimitive(item)) {
-          continue;
-        }
-        envelope.wigers.push(new Siger({ qb64b: item.qb64b }));
+        target.push(...(isGroupTuple(item) ? signatureTuple(item) : [primitive(item, Siger)]));
       }
       return;
+    }
     case "NonTransReceiptCouples":
     case "BigNonTransReceiptCouples":
       for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 2) {
-          continue;
-        }
-        const [verfer, cigar] = item;
-        if (!isQualifiedPrimitive(verfer) || !isQualifiedPrimitive(cigar)) {
-          continue;
-        }
-        envelope.cigars.push(
-          cigarFromQb64bCouple(verfer.qb64b, cigar.qb64b),
-        );
+        if (!isGroupTuple(item) || item.length !== 2) throw new TypeError("Expected receipt couple");
+        const verfer = primitive(item[0], Verfer);
+        const cigar = primitive(item[1], Cigar);
+        // Attach verifier context from the couple; copying a Matter instance does not decode bytes.
+        envelope.cigars.push(new Cigar(cigar, verfer));
       }
       return;
     case "TransReceiptQuadruples":
     case "BigTransReceiptQuadruples":
       for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 4) {
-          continue;
-        }
-        const [prefixer, seqner, diger, siger] = item;
-        if (
-          !isQualifiedPrimitive(prefixer)
-          || !isQualifiedPrimitive(seqner)
-          || !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(siger)
-        ) {
-          continue;
-        }
-        envelope.trqs.push(
-          TransReceiptQuadruple.fromQb64bTuple([
-            prefixer.qb64b,
-            seqner.qb64b,
-            diger.qb64b,
-            siger.qb64b,
-          ]),
-        );
+        if (!isGroupTuple(item) || item.length !== 4) throw new TypeError("Expected TransReceiptQuadruples tuple");
+        envelope.trqs.push(TransReceiptQuadruple.fromTuple([
+          primitive(item[0], Prefixer),
+          primitive(item[1], NumberPrimitive),
+          primitive(item[2], Diger),
+          primitive(item[3], Siger),
+        ]));
       }
       return;
     case "TransIdxSigGroups":
     case "BigTransIdxSigGroups":
       for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 4) {
-          continue;
-        }
-        const [prefixer, seqner, diger, sigers] = item;
-        if (
-          !isQualifiedPrimitive(prefixer)
-          || !isQualifiedPrimitive(seqner)
-          || !isQualifiedPrimitive(diger)
-        ) {
-          continue;
-        }
-        envelope.tsgs.push(
-          TransIdxSigGroup.fromQb64bTuple(
-            [prefixer.qb64b, seqner.qb64b, diger.qb64b],
-            normalizeTupleIndexers(sigers),
-          ),
-        );
+        if (!isGroupTuple(item) || item.length !== 4) throw new TypeError("Expected TransIdxSigGroups tuple");
+        envelope.tsgs.push(TransIdxSigGroup.fromTuple([
+          primitive(item[0], Prefixer),
+          primitive(item[1], NumberPrimitive),
+          primitive(item[2], Diger),
+          signatureTuple(item[3]),
+        ]));
       }
       return;
     case "TransLastIdxSigGroups":
     case "BigTransLastIdxSigGroups":
       for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 2) {
-          continue;
-        }
-        const [prefixer, sigers] = item;
-        if (!isQualifiedPrimitive(prefixer)) {
-          continue;
-        }
-        envelope.ssgs.push(
-          TransLastIdxSigGroup.fromQb64bTuple(
-            prefixer.qb64b,
-            normalizeTupleIndexers(sigers),
-          ),
-        );
+        if (!isGroupTuple(item) || item.length !== 2) throw new TypeError("Expected TransLastIdxSigGroups tuple");
+        envelope.ssgs.push(TransLastIdxSigGroup.fromTuple([
+          primitive(item[0], Prefixer),
+          signatureTuple(item[1]),
+        ]));
       }
       return;
     case "FirstSeenReplayCouples":
     case "BigFirstSeenReplayCouples":
       for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 2) {
-          continue;
-        }
-        const [fn, dater] = item;
-        if (!isQualifiedPrimitive(fn) || !isQualifiedPrimitive(dater)) {
-          continue;
-        }
-        envelope.frcs.push(
-          FirstSeenReplayCouple.fromQb64bTuple([fn.qb64b, dater.qb64b]),
-        );
+        if (!isGroupTuple(item) || item.length !== 2) throw new TypeError("Expected FirstSeenReplayCouples tuple");
+        envelope.frcs.push(FirstSeenReplayCouple.fromTuple([
+          primitive(item[0], NumberPrimitive),
+          primitive(item[1], Dater),
+        ]));
       }
       return;
     case "SealSourceCouples":
     case "BigSealSourceCouples":
       for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 2) {
-          continue;
-        }
-        const [seqner, diger] = item;
-        if (!isQualifiedPrimitive(seqner) || !isQualifiedPrimitive(diger)) {
-          continue;
-        }
-        envelope.sscs.push(
-          SealSource.fromQb64bTuple([seqner.qb64b, diger.qb64b]),
-        );
+        if (!isGroupTuple(item) || item.length !== 2) throw new TypeError("Expected SealSourceCouples tuple");
+        envelope.sscs.push(SealSource.fromTuple([
+          primitive(item[0], NumberPrimitive),
+          primitive(item[1], Diger),
+        ]));
       }
       return;
     case "SealSourceTriples":
     case "BigSealSourceTriples":
       for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 3) {
-          continue;
-        }
-        const [prefixer, seqner, diger] = item;
-        if (
-          !isQualifiedPrimitive(prefixer)
-          || !isQualifiedPrimitive(seqner)
-          || !isQualifiedPrimitive(diger)
-        ) {
-          continue;
-        }
-        envelope.ssts.push(
-          SealEvent.fromQb64bTuple([
-            prefixer.qb64b,
-            seqner.qb64b,
-            diger.qb64b,
-          ]),
-        );
+        if (!isGroupTuple(item) || item.length !== 3) throw new TypeError("Expected SealSourceTriples tuple");
+        envelope.ssts.push(SealEvent.fromTuple([
+          primitive(item[0], Prefixer),
+          primitive(item[1], NumberPrimitive),
+          primitive(item[2], Diger),
+        ]));
       }
       return;
     case "TypedDigestSealCouples":
     case "BigTypedDigestSealCouples":
       for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 2) {
-          continue;
-        }
-        const [verser, diger] = item;
-        if (!isQualifiedPrimitive(verser) || !isQualifiedPrimitive(diger)) {
-          continue;
-        }
-        envelope.tdcs.push(
-          SealKind.fromQb64bTuple([verser.qb64b, diger.qb64b]),
-        );
+        if (!isGroupTuple(item) || item.length !== 2) throw new TypeError("Expected TypedDigestSealCouples tuple");
+        envelope.tdcs.push(SealKind.fromTuple([
+          primitive(item[0], Verser),
+          primitive(item[1], Diger),
+        ]));
+      }
+      return;
+    case "BlindedStateQuadruples":
+    case "BigBlindedStateQuadruples":
+      for (const item of group.items) {
+        if (!isGroupTuple(item) || item.length !== 4) throw new TypeError("Expected BlindedStateQuadruples tuple");
+        envelope.bsqs.push(BlindState.fromTuple([
+          new Noncer(primitive(item[0], Diger)),
+          primitive(item[1], Noncer),
+          primitive(item[2], Noncer),
+          primitive(item[3], Labeler),
+        ]));
+      }
+      return;
+    case "BoundStateSextuples":
+    case "BigBoundStateSextuples":
+      for (const item of group.items) {
+        if (!isGroupTuple(item) || item.length !== 6) throw new TypeError("Expected BoundStateSextuples tuple");
+        envelope.bsss.push(BoundState.fromTuple([
+          new Noncer(primitive(item[0], Diger)),
+          primitive(item[1], Noncer),
+          primitive(item[2], Noncer),
+          primitive(item[3], Labeler),
+          primitive(item[4], NumberPrimitive),
+          primitive(item[5], Noncer),
+        ]));
+      }
+      return;
+    case "TypedMediaQuadruples":
+    case "BigTypedMediaQuadruples":
+      for (const item of group.items) {
+        if (!isGroupTuple(item) || item.length !== 4) throw new TypeError("Expected TypedMediaQuadruples tuple");
+        envelope.tmqs.push(TypeMedia.fromTuple([
+          new Noncer(primitive(item[0], Diger)),
+          primitive(item[1], Noncer),
+          primitive(item[2], Labeler),
+          primitive(item[3], Texter),
+        ]));
       }
       return;
     case "PathedMaterialCouples":
@@ -463,91 +412,7 @@ function normalizeAttachmentGroup(
       return;
     case "ESSRPayloadGroup":
     case "BigESSRPayloadGroup":
-      for (const item of group.items) {
-        if (!isQualifiedPrimitive(item)) {
-          continue;
-        }
-        envelope.essrs.push(new Texter({ qb64b: item.qb64b }));
-      }
-      return;
-    case "BlindedStateQuadruples":
-    case "BigBlindedStateQuadruples":
-      for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 4) {
-          continue;
-        }
-        const [blid, uuid, acdc, state] = item;
-        if (
-          !isQualifiedPrimitive(blid)
-          || !isQualifiedPrimitive(uuid)
-          || !isQualifiedPrimitive(acdc)
-          || !isQualifiedPrimitive(state)
-        ) {
-          continue;
-        }
-        envelope.bsqs.push(
-          BlindState.fromQb64bTuple([
-            blid.qb64b,
-            uuid.qb64b,
-            acdc.qb64b,
-            state.qb64b,
-          ]),
-        );
-      }
-      return;
-    case "BoundStateSextuples":
-    case "BigBoundStateSextuples":
-      for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 6) {
-          continue;
-        }
-        const [blid, uuid, acdc, state, number, bound] = item;
-        if (
-          !isQualifiedPrimitive(blid)
-          || !isQualifiedPrimitive(uuid)
-          || !isQualifiedPrimitive(acdc)
-          || !isQualifiedPrimitive(state)
-          || !isQualifiedPrimitive(number)
-          || !isQualifiedPrimitive(bound)
-        ) {
-          continue;
-        }
-        envelope.bsss.push(
-          BoundState.fromQb64bTuple([
-            blid.qb64b,
-            uuid.qb64b,
-            acdc.qb64b,
-            state.qb64b,
-            number.qb64b,
-            bound.qb64b,
-          ]),
-        );
-      }
-      return;
-    case "TypedMediaQuadruples":
-    case "BigTypedMediaQuadruples":
-      for (const item of group.items) {
-        if (!isGroupTuple(item) || item.length < 4) {
-          continue;
-        }
-        const [blid, uuid, mediaType, mediaValue] = item;
-        if (
-          !isQualifiedPrimitive(blid)
-          || !isQualifiedPrimitive(uuid)
-          || !isQualifiedPrimitive(mediaType)
-          || !isQualifiedPrimitive(mediaValue)
-        ) {
-          continue;
-        }
-        envelope.tmqs.push(
-          TypeMedia.fromQb64bTuple([
-            blid.qb64b,
-            uuid.qb64b,
-            mediaType.qb64b,
-            mediaValue.qb64b,
-          ]),
-        );
-      }
+      for (const item of group.items) envelope.essrs.push(primitive(item, Texter));
       return;
     default:
       return;
@@ -558,17 +423,16 @@ function envelopeFromMessage(
   message: CesrFrame,
   local = false,
 ): KeriDispatchEnvelope {
-  const serder = parseSerder(
-    message.body.raw,
-    smellageFromMessage(message),
-  ) as SerderKERI;
+  const serder = (message.body instanceof SerderKERI || message.body instanceof SerderACDC)
+    ? message.body as SerderKERI
+    : parseSerder(message.body.raw, smellageFromMessage(message)) as SerderKERI;
   const envelope = new KeriDispatchEnvelope({
     serder,
     attachmentGroups: message.attachments,
     local,
   });
   for (const group of message.attachments) {
-    normalizeAttachmentGroup(group, envelope);
+    collectAttachments(group, envelope);
   }
   return envelope;
 }

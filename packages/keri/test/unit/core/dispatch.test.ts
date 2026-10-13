@@ -77,27 +77,9 @@ Deno.test("core/dispatch - named dispatch value objects round-trip tuples and de
         diger,
         sigers[0],
       ]);
-      const trqFromQb64b = TransReceiptQuadruple.fromQb64bTuple([
-        prefixer.qb64b,
-        firner.qb64b,
-        diger.qb64b,
-        sigers[0].qb64b,
-      ]);
       const tsg = TransIdxSigGroup.fromTuple([prefixer, seqner, diger, sigers]);
-      const tsgFromQb64b = TransIdxSigGroup.fromQb64bTuple(
-        [prefixer.qb64b, firner.qb64b, diger.qb64b],
-        sigers,
-      );
       const ssg = TransLastIdxSigGroup.fromTuple([prefixer, sigers]);
-      const ssgFromQb64b = TransLastIdxSigGroup.fromQb64bTuple(
-        prefixer.qb64b,
-        sigers,
-      );
       const frc = FirstSeenReplayCouple.fromTuple([firner, dater]);
-      const frcFromQb64b = FirstSeenReplayCouple.fromQb64bTuple([
-        firner.qb64b,
-        dater.qb64b,
-      ]);
       const ssc = SealSource.fromTuple([firner, diger]);
       const sscFromQb64b = SealSource.fromQb64bTuple([
         firner.qb64b,
@@ -161,17 +143,13 @@ Deno.test("core/dispatch - named dispatch value objects round-trip tuples and de
       assertEquals(trq.pre, prefixer.qb64);
       assertEquals(trq.snh, seqner.snh);
       assertEquals(trq.said, diger.qb64);
-      assertEquals(trqFromQb64b.snh, firner.numh);
       assertEquals(
         tsg.routeKey,
         `${prefixer.qb64}.${seqner.snh}.${diger.qb64}`,
       );
-      assertEquals(tsgFromQb64b.snh, firner.numh);
       assertEquals(tsg.toTuple()[3][0].qb64, sigers[0].qb64);
       assertEquals(ssg.pre, prefixer.qb64);
-      assertEquals(ssgFromQb64b.pre, prefixer.qb64);
       assertEquals(frc.fnh, firner.numh);
-      assertEquals(frcFromQb64b.fnh, firner.numh);
       assertEquals(frc.toTuple()[1].qb64, dater.qb64);
       assertEquals(ssc.d.qb64, diger.qb64);
       assertEquals(sscFromQb64b.s.numh, firner.numh);

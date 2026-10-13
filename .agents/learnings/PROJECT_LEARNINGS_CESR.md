@@ -43,7 +43,9 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    both genera. Table baseline 450ae1c used Seqner; live CLI interop baseline
    98b88cf uses Number. Do not mistake the old reader for the full wire surface.
    ESSR also has separate v1 item-count and v2 payload-length handlers, both
-   returning Texters. Nested transferable signatures require the controller
+   returning Texters. KERI envelopes reuse hydrated Serders and primitives, validating
+   roles at the public frame boundary. Structing views use existing Matter instances
+   when their semantic class differs, never a qb64 round trip. Nested transferable signatures require the controller
    counter, matching the pinned reference (including its exclusion of big inner
    counters). Genus selectors decode both minor sextets and reject unsupported
    versions inside wrappers as well.
