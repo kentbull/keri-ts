@@ -33,7 +33,7 @@ Verifier owns cached schemas, registry/schema/chain dependencies and saved index
 direct revoked saves and revoked-chain rejection are distinct. Regery/Registry/
 Registrar/Credentialer compose issuer-side operations. Normal outcomes stay typed.
 
-V2 observer registry verification is read-only; import/persistence belongs to its
+V2 `regeventing.vet/vetBinds` observer verification is read-only; import/persistence belongs to its
 store and workflow. Supplied anchored prefixes cannot hide an unanchored suffix.
 Disclosed issuer/target/rd, blinded/bound state and historical cutoff are separate
 checks. Supplied chain authentication does not prove global freshness. IPEX

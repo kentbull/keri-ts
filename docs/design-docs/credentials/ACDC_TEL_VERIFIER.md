@@ -42,12 +42,15 @@ responsibilities into one vague "VC" layer.
 
 ## V2 Registry Evidence
 
-`vetRegistry` and `vetRegistryBindings` accept parsed Serders and node-local
+`vet` and `vetBinds` accept parsed Serders and node-local
 `BlindState`/`BoundState` values. They return `verified` with complete state,
 `missing` with issuer/event coordinates for a retryable absent anchor, or `reject`
 with a reason. The owning workflow decides whether/how to persist and retry;
 these helpers emit no cues and do no writes. Database and programming failures
-propagate. They are exported from `keri-ts/runtime`.
+propagate. They are exported from `keri-ts/runtime` as `vet` and `vetBinds`, matching the
+reference module names. Pure verification does not acquire or dispose resources.
+The [verified-import preservation record](../../reference/credentials/VERIFIED_IMPORT_SNAPSHOT.md)
+retains the custom store workflow pending its separately owned intake audit.
 
 Every supplied event must have a valid chain position and issuer KEL anchor.
 Verifier anchors compare seal digests, including bare digest seals; sequence
