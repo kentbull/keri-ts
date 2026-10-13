@@ -78,10 +78,12 @@ The [ACDC specification](https://github.com/trustoverip/kswg-acdc-specification/
 defines the controlling KEL and blinded-state commitment basis.
 
 The typed API takes parsed inputs, uses bigint TEL ordinals, and requires numeric
-KEL hints to fit the database's safe-integer API. Cutoff text is restricted to
-timezone-qualified RFC3339 with at most six fractional digits. Python accepts a
-broader datetime grammar. The issuer engine and end-to-end production qualification
-remain unfinished.
+KEL hints to fit the database's safe-integer API. Shared `time/mod.ts` parsing
+restricts cutoff text to timezone-qualified RFC3339 with at most six fractional
+digits and retains exact microseconds; events at the cutoff are included.
+`makeNowIso8601` accepts a caller-supplied `Date` for clock injection, padding its
+milliseconds to six digits. Python accepts a broader datetime grammar. The issuer
+engine and end-to-end production qualification remain unfinished.
 
 Existing #168 stores retain their paths, bodies, 32-digit ordinal keys and head
 markers. Readonly opening binds the existing three tables without rewriting or
