@@ -275,7 +275,8 @@ try {
       },
       homepage: "https://github.com/kentbull/keri-ts",
       type: "module",
-      sideEffects: false,
+      // The npm-only shim installs missing FsFile durability methods before callers open files.
+      sideEffects: ["**/deno-shim.js"],
       main: NPM_MAIN_PATH,
       module: NPM_MAIN_PATH,
       types: NPM_TYPES_PATH,
