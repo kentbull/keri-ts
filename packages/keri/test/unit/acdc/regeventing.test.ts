@@ -832,6 +832,15 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
       assertThrows(() => larger.processEscrows(regid), Error, "Corrupt observer registry inception");
       assertEquals(store.head(regid)!.qb64, third.said);
       baser.evts.pin(regid, rip);
+      const head = store.head(regid)!;
+      baser.evts.rem(regid);
+      assertThrows(() => larger.processEvent(first), Error, "Corrupt observer registry inception");
+      baser.heads.rem(regid);
+      assertThrows(() => larger.processEscrows(regid), Error, "Corrupt observer registry inception");
+      assertEquals(store.event(regid), null, "accepted markers cannot turn body loss into missing-inception staging");
+      assertEquals(store.seqSaider(regid, 0)!.qb64, regid);
+      baser.heads.pin(regid, head);
+      baser.evts.pin(regid, rip);
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true, readonly: true });
       observer = new RegistryObserver(hby.db, store, { maxEvents: 4 });

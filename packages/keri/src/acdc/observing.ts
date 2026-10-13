@@ -1,5 +1,5 @@
 /** Explicit public registry intake; this TypeScript integration is beyond frozen KERIpy 927. */
-import { Diger, Ilks, ResourceLimitError, type SerderACDC } from "cesr-ts";
+import { Diger, Ilks, ParserError, ResourceLimitError, type SerderACDC } from "cesr-ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
 import { type RegistryEventDecision, RegistryEventer } from "./regengine.ts";
@@ -36,7 +36,8 @@ export class RegistryObserver {
     // Unknown registry routing cannot rely on a stored RIP to validate its qualified SAID.
     try {
       if (new Diger({ qb64: event.regid }).qb64 !== event.regid) return { kind: "reject", reason: "registry" };
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ParserError) || error instanceof ResourceLimitError) throw error;
       return { kind: "reject", reason: "registry" };
     }
     this.checkOrdinal(event.sn);
@@ -72,7 +73,12 @@ export class RegistryObserver {
   private engine(regid: string): RegistryEventer | { kind: "reject"; reason: "registry" } | null {
     if (!this.store.baser.env) throw new DatabaseNotOpenError("Registry observer store is closed.");
     const rip = this.store.event(regid);
-    if (!rip) return null;
+    if (!rip) {
+      if (this.store.head(regid) || this.store.seqSaider(regid, 0)) {
+        throw new Error("Corrupt observer registry inception.");
+      }
+      return null;
+    }
     if (rip.said !== regid) throw new Error("Corrupt observer registry inception.");
     // evts also owns valid BUP bodies; naming one as a registry is remote misuse, not store corruption.
     if (rip.ilk !== Ilks.rip && rip.verify()) return { kind: "reject", reason: "registry" };
