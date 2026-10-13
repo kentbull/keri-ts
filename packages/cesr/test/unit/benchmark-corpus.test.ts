@@ -1,10 +1,9 @@
-import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
-import { createHash } from "node:crypto";
+import { assertEquals, assertExists } from "jsr:@std/assert";
 import { corpus } from "../../../../scripts/bench/cesr-corpus.ts";
-import { parseBytes } from "../../src/parser/stream.ts";
-import { Texter } from "../../src/primitives/texter.ts";
+import { collectPayload } from "../../src/core/payload.ts";
+import { parseBytes } from "../../src/parser/complete.ts";
 
-Deno.test("streaming benchmark corpus has legal counts and stable item bytes in both genera and domains", () => {
+Deno.test("streaming benchmark corpus has legal counts and stable item bytes in both genera and domains", async () => {
   for (const genus of [1, 2] as const) {
     for (const binary of [false, true]) {
       for (const depth of [0, 1, 3]) {
@@ -24,17 +23,24 @@ Deno.test("streaming benchmark corpus has legal counts and stable item bytes in 
           offset += chunk.length;
         }
         assertEquals(offset, input.length);
-        const events = parseBytes(input);
-        assertEquals(events.length, manifest.items);
-        for (const [index, event] of events.entries()) {
-          if (event.type === "error") throw event.error;
-          const item = event.frame.attachments[0].items[0];
-          assertInstanceOf(item, Texter);
-          const raw = item.raw;
-          assertEquals(new DataView(raw.buffer, raw.byteOffset, 8).getBigUint64(0), BigInt(index));
-          // Verify ordering first, then normalize the ID for the common digest oracle.
-          for (let i = 0; i < 8; i++) raw[i] = i;
-          assertEquals(createHash("sha256").update(raw).digest("hex"), manifest.itemSha256);
+        const frames = await parseBytes(input);
+        try {
+          assertEquals(frames.length, manifest.items);
+          for (const [index, frame] of frames.entries()) {
+            assertExists(frame.essr);
+            assertEquals(frame.essr.count, 1);
+            const raw = await collectPayload(frame.essr.raw, 256);
+            assertEquals(new DataView(raw.buffer, raw.byteOffset, 8).getBigUint64(0), BigInt(index));
+            // Verify ordering first, then normalize the ID for the common digest oracle.
+            for (let i = 0; i < 8; i++) raw[i] = i;
+            const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(raw).buffer));
+            assertEquals(
+              Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(""),
+              manifest.itemSha256,
+            );
+          }
+        } finally {
+          for (const frame of frames) await frame.essr?.discard();
         }
       }
     }

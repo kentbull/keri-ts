@@ -1,8 +1,9 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { decodeB64 } from "../../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
-import { createParser } from "../../../src/parser/stream.ts";
+import { parseBytes } from "../../../src/parser/complete.ts";
+import { parse } from "../../../src/parser/progressive.ts";
 import { CtrDexV1, CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV1, groupV2, sigerToken, token } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
@@ -99,24 +100,20 @@ Deno.test("versioned transferable groups preserve item counts, payload bounds, a
   }
 });
 
-Deno.test("v2 length-counted signature frames are deterministic at every byte split", () => {
+Deno.test("v2 length-counted signature frames are deterministic at every byte split", async () => {
   for (const domain of domains) {
     for (const code of [CtrDexV2.ControllerIdxSigs, CtrDexV2.WitnessIdxSigs]) {
       const wire = bytes(KERIPY_NATIVE_V2_ICP_FIX_BODY + groupV2(code, sigerToken() + bigSiger), domain);
-      const baseline = createParser();
-      const expected = [...baseline.feed(wire), ...baseline.flush()];
-      assertEquals(expected.map((event) => event.type), ["frame"]);
+      const expected = await parseBytes(wire);
+      assertEquals(expected.length, 1);
+      assertEquals(expected[0].attachments[0].items.length, 2);
       for (let split = 0; split <= wire.length; split++) {
-        const parser = createParser();
-        assertEquals(
-          [
-            ...parser.feed(wire.slice(0, split)),
-            ...parser.feed(wire.slice(split)),
-            ...parser.flush(),
-          ],
-          expected,
-          `${domain} ${code} split=${split}`,
-        );
+        /** Split even inside hard/soft headers without changing frame boundaries. */
+        const chunks = async function*() {
+          yield wire.slice(0, split);
+          yield wire.slice(split);
+        };
+        assertEquals(await Array.fromAsync(parse(chunks())), expected, `${domain} ${code} split=${split}`);
       }
     }
   }
@@ -150,12 +147,15 @@ Deno.test("v2 tuple families exhaust payload lengths rather than repeat the wire
   }
 });
 
-Deno.test("a complete malformed v2 signature group errors during feed without waiting for flush", () => {
-  const parser = createParser();
-  const events = parser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY + "-KAB" + sigerToken()));
-  assertEquals(events.map((event) => event.type), ["error"]);
-  if (events[0].type === "error") assertEquals(events[0].error instanceof GroupSizeError, true);
-  assertEquals(parser.flush(), []);
+Deno.test("a complete malformed v2 signature group fails without requesting EOF", async () => {
+  /** The invalid group must fail before reading any later transport data. */
+  async function* source() {
+    yield encode(KERIPY_NATIVE_V2_ICP_FIX_BODY + "-KAB" + sigerToken());
+    throw new Error("Parser read beyond a malformed bounded group");
+  }
+  const parser = parse(source());
+  await assertRejects(() => parser.next(), GroupSizeError);
+  assertEquals((await parser.next()).done, true);
 });
 
 Deno.test("v2 big signature counters handle payloads beyond the small-counter limit", () => {

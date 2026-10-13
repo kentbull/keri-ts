@@ -5,11 +5,11 @@ import { decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import { smell } from "../serder/smell.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { parseAttachmentGroup, startsFrame } from "./attachments.ts";
+import { parseBody, readFrameCounter } from "./body.ts";
 import { sniff } from "./cold-start.ts";
 import { DEFAULT_GVRSN, FRAME_GROUPS, FRAME_LISTS, FRAME_STARTS, GENUS_VERSION_CODE } from "./common.ts";
 import { Cursor, type CursorOptions } from "./cursor.ts";
 import { essrFactory, type EssrOptions, type EssrWriter } from "./essr.ts";
-import { parseFrameStart, readFrameCounter } from "./frames.ts";
 
 /** Resource limits and cancellation for one progressive stream invocation. */
 export interface ParseOptions extends CursorOptions, EssrOptions {
@@ -185,10 +185,10 @@ async function* frames(
       needsBody = false;
       const size = await messageSize(input);
       if (size > limit) throw new ResourceLimitError("Body exceeds frame limit", input.offset);
-      const base = parseFrameStart(await input.peek(size), selected);
+      const base = parseBody(await input.peek(size), selected);
       await consume(input, base.consumed);
       // Keep stage ownership separate from the public frame until its boundary is proven.
-      const pending = { frame: base.frame, gvrsn: base.gvrsn, resident: size };
+      const pending: PendingFrame = { frame: { body: base.body, attachments: [] }, gvrsn: base.gvrsn, resident: size };
       await attachments(input, pending, base.gvrsn, context);
       count++;
       yield pending;
@@ -231,11 +231,11 @@ async function* frames(
     // Bodies are admitted finite values; Serder keeps authority over hydration.
     const size = headerSize + payloadSize;
     if (size > limit) throw new ResourceLimitError("Body exceeds frame limit", input.offset);
-    const base = parseFrameStart(await input.peek(size), gvrsn);
+    const base = parseBody(await input.peek(size), gvrsn);
     if (base.consumed !== size) throw new GroupSizeError("Body did not consume its declared extent", input.offset);
     await consume(input, size);
     // Native bodies use the same ownership boundary as non-native messages.
-    const pending = { frame: base.frame, gvrsn: base.gvrsn, resident: size };
+    const pending: PendingFrame = { frame: { body: base.body, attachments: [] }, gvrsn: base.gvrsn, resident: size };
     await attachments(input, pending, base.gvrsn, context);
     count++;
     yield pending;

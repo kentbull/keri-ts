@@ -19,7 +19,7 @@ flowchart TD
     S --> F["frames.ts: parseFrameStart"]
     S --> A["attachments.ts: parseAttachments"]
     F --> A
-    F --> B["Serder: hydrate body once"]
+    F --> B["body.ts: hydrate with Serder once"]
     A --> G["parseAttachmentGroup: selected v1/v2 handler"]
     G --> P["Narrow primitives or one opaque span"]
     S --> E["ParseEvent: CesrFrame or error"]

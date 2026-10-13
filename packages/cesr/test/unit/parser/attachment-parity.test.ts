@@ -1,8 +1,8 @@
-import { assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import { decodeB64 } from "../../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError, UnknownCodeError, VersionError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
-import { parseBytes } from "../../../src/parser/stream.ts";
+import { parseBytes } from "../../../src/parser/complete.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
 import { counterV1, groupV2, sigerToken, token } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
@@ -42,20 +42,16 @@ Deno.test("ESSR distinguishes transport shortage from an incomplete bounded Text
   }
 });
 
-Deno.test("genus selectors reject unsupported majors and both minor sextets at every dispatch boundary", () => {
+Deno.test("genus selectors reject unsupported majors and both minor sextets at every dispatch boundary", async () => {
   for (const domain of domains) {
     for (const suffix of ["AAA", "DAA", "CAB", "CBA"]) {
       const selector = "-_AAA" + suffix;
-      const events = parseBytes(bytes(selector + KERIPY_NATIVE_V2_ICP_FIX_BODY, domain));
-      assertEquals(events.length, 1);
-      assertEquals(events[0].type, "error");
-      if (events[0].type === "error") assertInstanceOf(events[0].error, VersionError);
+      await assertRejects(() => parseBytes(bytes(selector + KERIPY_NATIVE_V2_ICP_FIX_BODY, domain)), VersionError);
       for (const stream of [selector, groupV2("-C", selector)]) {
         assertThrows(() => parseAttachmentGroup(bytes(stream, domain), V2, domain), VersionError);
       }
     }
-    const events = parseBytes(bytes("-_AAACAA" + KERIPY_NATIVE_V2_ICP_FIX_BODY, domain));
-    assertEquals(events.map((event) => event.type), ["frame"]);
+    assertEquals((await parseBytes(bytes("-_AAACAA" + KERIPY_NATIVE_V2_ICP_FIX_BODY, domain))).length, 1);
   }
 });
 

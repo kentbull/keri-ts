@@ -1,8 +1,10 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../../src/core/bytes.ts";
-import { UnknownCodeError } from "../../../src/core/errors.ts";
+import { ParserError, ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
+import type { CesrFrame } from "../../../src/core/types.ts";
 import { sniff } from "../../../src/parser/cold-start.ts";
-import { createParser } from "../../../src/parser/stream.ts";
+import { parseBytes } from "../../../src/parser/complete.ts";
+import { parse } from "../../../src/parser/progressive.ts";
 import { smell } from "../../../src/serder/smell.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { COUNTER_CODE_NAMES_V1 } from "../../../src/tables/counter.tables.generated.ts";
@@ -11,7 +13,7 @@ import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.t
 import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 import { minimalV1CborBody, minimalV1MgpkBody, v1ify } from "../../fixtures/versioned-body-fixtures.ts";
 
-/** Choose a v2-only counter so selected-v1 rejection cannot pass by code overlap. */
+/** Pick a genuinely v2-only enclosure so rejection cannot depend on a shared code's other meaning. */
 function selectV2OnlyQuadletGroupCode(): string {
   const candidates = [
     CtrDexV2.ESSRWrapperGroup,
@@ -26,10 +28,17 @@ function selectV2OnlyQuadletGroupCode(): string {
     CtrDexV2.BigGenericListGroup,
   ];
   const code = candidates.find((value) => !(value in COUNTER_CODE_NAMES_V1));
-  if (!code) {
-    throw new Error("No v2-only quadlet-group code found for version rejection tests");
-  }
+  if (!code) throw new Error("No v2-only quadlet-group code found for version rejection tests");
   return code;
+}
+
+/** Consume small fixture chunks through the actual progressive engine and its terminal error channel. */
+async function parseChunks(...chunks: Uint8Array[]): Promise<CesrFrame[]> {
+  /** Preserve each producer boundary while source exhaustion supplies the genuine end of input. */
+  async function* source(): AsyncGenerator<Uint8Array> {
+    yield* chunks;
+  }
+  return await Array.fromAsync(parse(source()));
 }
 
 Deno.test("sniff detects message and text counters", () => {
@@ -53,184 +62,101 @@ Deno.test("smell parses v1 MGPK/CBOR version strings at cold start", () => {
   assertEquals(mgpk.kind, "MGPK");
   assertEquals(mgpk.size, minimalV1MgpkBody().length);
   assertEquals(mgpk.pvrsn.major, 1);
-
   const cbor = smell(minimalV1CborBody()).smellage;
   assertEquals(cbor.kind, "CBOR");
   assertEquals(cbor.size, minimalV1CborBody().length);
   assertEquals(cbor.pvrsn.major, 1);
 });
 
-Deno.test("parser emits frames for cold-start MGPK/CBOR bodies", () => {
-  const parser = createParser();
-  const out = [
-    ...parser.feed(minimalV1MgpkBody()),
-    ...parser.feed(minimalV1CborBody()),
-    ...parser.flush(),
-  ];
-  const frames = out.filter((event) => event.type === "frame");
+Deno.test("parser emits frames for cold-start MGPK/CBOR bodies", async () => {
+  const frames = await parseChunks(minimalV1MgpkBody(), minimalV1CborBody());
   assertEquals(frames.length, 2);
-  if (frames[0].type === "frame") {
-    assertEquals(frames[0].frame.body.kind, "MGPK");
-    assertEquals(frames[0].frame.body.raw.length, minimalV1MgpkBody().length);
-  }
-  if (frames[1].type === "frame") {
-    assertEquals(frames[1].frame.body.kind, "CBOR");
-    assertEquals(frames[1].frame.body.raw.length, minimalV1CborBody().length);
-  }
+  assertEquals(frames[0].body.kind, "MGPK");
+  assertEquals(frames[0].body.raw.length, minimalV1MgpkBody().length);
+  assertEquals(frames[1].body.kind, "CBOR");
+  assertEquals(frames[1].body.raw.length, minimalV1CborBody().length);
 });
 
-Deno.test("parser emits frame with nested attachment group", () => {
+Deno.test("parser emits the semantic leaf inside a nested attachment group", async () => {
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  const nested = `-AAB${sigerToken()}`; // v1 ControllerIdxSigs count=1
-  const ims = `${body}${counterV1("-V", nested.length / 4)}${nested}`;
-
-  const parser = createParser();
-  const frames = parser.feed(encode(ims));
-
+  const nested = `-AAB${sigerToken()}`; // v1 ControllerIdxSigs counts one item.
+  const frames = await parseBytes(encode(`${body}${counterV1("-V", nested.length / 4)}${nested}`));
   assertEquals(frames.length, 1);
-  assertEquals(frames[0].type, "frame");
-  if (frames[0].type === "frame") {
-    assertEquals(frames[0].frame.body.ilk, "icp");
-    assertEquals(frames[0].frame.attachments.length, 1);
-    assertEquals(frames[0].frame.attachments[0].code, "-V");
-    assertEquals(frames[0].frame.attachments[0].count, nested.length / 4);
-  }
+  assertEquals(frames[0].body.ilk, "icp");
+  // Structural wrappers validate their extent but do not survive as duplicate raw attachment trees.
+  assertEquals(frames[0].attachments.length, 1);
+  assertEquals(frames[0].attachments[0].code, "-A");
+  assertEquals(frames[0].attachments[0].count, 1);
 });
 
-Deno.test("parser fail-fast on malformed attachment stream", () => {
+Deno.test("parser rejects a truncated attachment stream", async () => {
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  const ims = `${body}-AAB`; // truncated group payload
-
-  const parser = createParser();
-  const frames = [...parser.feed(encode(ims)), ...parser.flush()];
-  assertEquals(frames.some((e) => e.type === "error"), true);
+  await assertRejects(() => parseBytes(encode(`${body}-AAB`)), ShortageError);
 });
 
-Deno.test("parser rejects attachments with undeclared major versions", () => {
+Deno.test("parser rejects attachments requiring an undeclared major version", async () => {
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   const v2OnlyAttachment = `${counterV2(selectV2OnlyQuadletGroupCode(), 1)}AAAA`;
-  const ims = `${body}${v2OnlyAttachment}`;
-
-  const parser = createParser();
-  const frames = [...parser.feed(encode(ims)), ...parser.flush()];
-  assertEquals(frames.some((e) => e.type === "error"), true);
+  await assertRejects(() => parseBytes(encode(`${body}${v2OnlyAttachment}`)), ParserError);
 });
 
-Deno.test("parser fail-fast on NonNativeBodyGroup payload size mismatch", () => {
-  const ims = `-HAB${sigerToken()}`; // declares 1 quadlet, provides much larger body token
-  const parser = createParser();
-  const frames = parser.feed(encode(ims));
+Deno.test("parser rejects a NonNativeBodyGroup payload size mismatch", async () => {
+  const ims = `-HAB${sigerToken()}`; // One declared quadlet cannot contain this much larger token.
+  await assertRejects(() => parseBytes(encode(ims)), ParserError);
+});
+
+Deno.test("parser emits opaque CESR body for size-consistent NonNativeBodyGroup non-serder payload", async () => {
+  const ims = `${CtrDexV2.NonNativeBodyGroup}ABMAAA`; // One quadlet encodes two opaque raw bytes.
+  const frames = await parseBytes(encode(ims));
   assertEquals(frames.length, 1);
-  assertEquals(frames[0].type, "error");
+  assertEquals(frames[0].attachments.length, 0);
+  assertEquals(frames[0].body.kind, "CESR");
+  assertEquals(frames[0].body.ked, null);
+  assertEquals(frames[0].body.ilk, null);
+  assertEquals(frames[0].body.said, null);
+  assertEquals(frames[0].body.pvrsn.major, 2);
+  assertEquals(frames[0].body.raw.length, 2);
 });
 
-Deno.test("parser emits opaque CESR body for size-consistent NonNativeBodyGroup non-serder payload", () => {
-  const ims = `${CtrDexV2.NonNativeBodyGroup}ABMAAA`; // count=1 quadlet, payload decodes to raw non-serder bytes
-  const parser = createParser();
-  const events = [...parser.feed(encode(ims)), ...parser.flush()];
-  const errors = events.filter((event) => event.type === "error");
-  const frames = events.filter((event) => event.type === "frame");
-
-  assertEquals(errors.length, 0);
-  assertEquals(frames.length, 1);
-  assertEquals(frames[0].frame.attachments.length, 0);
-  assertEquals(frames[0].frame.body.kind, "CESR");
-  assertEquals(frames[0].frame.body.ked, null);
-  assertEquals(frames[0].frame.body.ilk, null);
-  assertEquals(frames[0].frame.body.said, null);
-  assertEquals(frames[0].frame.body.pvrsn.major, 2);
-  assertEquals(frames[0].frame.body.raw.length, 2);
-});
-
-Deno.test("parser handles chunked input", () => {
+Deno.test("parser handles chunked input", async () => {
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   const nested = `-AAB${sigerToken()}`;
   const ims = `${body}${counterV1("-V", nested.length / 4)}${nested}`;
-  const parser = createParser();
-
-  const first = parser.feed(encode(ims.slice(0, 10)));
-  assertEquals(first.length, 0);
-  const second = parser.feed(encode(ims.slice(10)));
-  assertEquals(second.length, 1);
-  assertEquals(second[0].type, "frame");
+  const frames = await parseChunks(encode(ims.slice(0, 10)), encode(ims.slice(10)));
+  assertEquals(frames.length, 1);
+  assertEquals(frames[0].body.ilk, "icp");
+  assertEquals(frames[0].attachments[0].count, 1);
 });
 
-Deno.test("parser ignores annotation-domain separator bytes between frames", () => {
-  const parser = createParser();
-  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}\n`;
-  const frames = [...parser.feed(encode(ims)), ...parser.flush()];
-  const messages = frames.filter((e) => e.type === "frame");
-  const errors = frames.filter((e) => e.type === "error");
-  assertEquals(errors.length, 0);
-  assertEquals(messages.length, 1);
+Deno.test("parser ignores annotation-domain separator bytes between frames", async () => {
+  const frames = await parseBytes(encode(`${KERIPY_NATIVE_V2_ICP_FIX_BODY}\n`));
+  assertEquals(frames.length, 1);
 });
 
-Deno.test("parser ignores leading and repeated annotation bytes before first frame", () => {
-  const baselineParser = createParser();
-  const baseline = [
-    ...baselineParser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY)),
-    ...baselineParser.flush(),
-  ];
-  const baselineFrames = baseline.filter((event) => event.type === "frame");
-  const baselineErrors = baseline.filter((event) => event.type === "error");
-  assertEquals(baselineErrors.length, 0);
-  assertEquals(baselineFrames.length, 1);
-
-  const prefixed = `\n\n\n${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
-  const prefixedParser = createParser();
-  const prefixedEvents = [
-    ...prefixedParser.feed(encode(prefixed)),
-    ...prefixedParser.flush(),
-  ];
-  const prefixedFrames = prefixedEvents.filter((event) => event.type === "frame");
-  const prefixedErrors = prefixedEvents.filter((event) => event.type === "error");
-  assertEquals(prefixedErrors.length, 0);
-  assertEquals(prefixedFrames.length, 1);
-
-  const dec = new TextDecoder();
-  assertEquals(
-    dec.decode(prefixedFrames[0].frame.body.raw),
-    dec.decode(baselineFrames[0].frame.body.raw),
-  );
-
-  // Chunked continuation case: leading annotation bytes may arrive separately.
-  const chunkedParser = createParser();
-  const first = chunkedParser.feed(encode("\n\n"));
-  const second = chunkedParser.feed(
-    encode(`\n${KERIPY_NATIVE_V2_ICP_FIX_BODY}`),
-  );
-  const tail = chunkedParser.flush();
-  const chunkedEvents = [...first, ...second, ...tail];
-  const chunkedFrames = chunkedEvents.filter((event) => event.type === "frame");
-  const chunkedErrors = chunkedEvents.filter((event) => event.type === "error");
-  assertEquals(chunkedErrors.length, 0);
-  assertEquals(chunkedFrames.length, 1);
-  assertEquals(
-    dec.decode(chunkedFrames[0].frame.body.raw),
-    dec.decode(baselineFrames[0].frame.body.raw),
-  );
+Deno.test("parser ignores leading and repeated annotation bytes before first frame", async () => {
+  const baseline = await parseBytes(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
+  const prefixed = await parseBytes(encode(`\n\n\n${KERIPY_NATIVE_V2_ICP_FIX_BODY}`));
+  const chunked = await parseChunks(encode("\n\n"), encode(`\n${KERIPY_NATIVE_V2_ICP_FIX_BODY}`));
+  assertEquals(baseline.length, 1);
+  // Annotation bytes may arrive in their own transport read and must not become a frame boundary.
+  for (const frames of [prefixed, chunked]) {
+    assertEquals(frames.length, 1);
+    assertEquals(frames[0].body.raw, baseline[0].body.raw);
+  }
 });
 
-Deno.test("parser fail-fast on malformed native fix-body payload tokenization", () => {
-  const parser = createParser();
+Deno.test("parser rejects malformed native fix-body payload tokenization", async () => {
   const bad = `${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(0, 4)}!${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(5)}`;
-  const frames = [...parser.feed(encode(bad)), ...parser.flush()];
-  assertEquals(frames.some((e) => e.type === "error"), true);
+  await assertRejects(() => parseBytes(encode(bad)), ParserError);
 });
 
 Deno.test("sniff throws on empty buffer", () => {
   assertThrows(() => sniff(new Uint8Array(0)));
 });
 
-Deno.test("default parser rejects malformed v1 signatures without emitting a frame", () => {
+Deno.test("parser rejects malformed v1 signatures without emitting a frame", async () => {
   const body = encode(v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}"));
   for (const attachment of [encode("-AABzzzz"), decodeB64("-AABzzzz")]) {
-    const parser = createParser();
-    const events = [...parser.feed(concatBytes(body, attachment)), ...parser.flush()];
-    assertEquals(events.length, 1);
-    assertEquals(events[0].type, "error");
-    if (events[0].type === "error") {
-      assertEquals(events[0].error instanceof UnknownCodeError, true);
-    }
+    await assertRejects(() => parseBytes(concatBytes(body, attachment)), UnknownCodeError);
   }
 });

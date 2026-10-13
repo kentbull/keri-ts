@@ -1,13 +1,13 @@
 import { assertEquals } from "jsr:@std/assert";
 import { decodeB64 } from "../../../src/core/bytes.ts";
-import type { ParseEvent } from "../../../src/core/types.ts";
-import { createParser } from "../../../src/parser/stream.ts";
+import type { CesrFrame } from "../../../src/core/types.ts";
+import { parseBytes } from "../../../src/parser/complete.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
 import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 
-/** Enclose aligned text in the requested v2 group counter. */
+/** Write a requested large counter around an aligned v2 enclosure. */
 function wrapQuadletGroupV2(code: string, payload: string): string {
   if (payload.length % 4 !== 0) {
     throw new Error(`Payload must be quadlet-aligned for ${code}`);
@@ -15,29 +15,15 @@ function wrapQuadletGroupV2(code: string, payload: string): string {
   return `${counterV2(code, payload.length / 4)}${payload}`;
 }
 
-/** Feed a finite stream and flush its final frame or terminal error. */
-function parseEvents(stream: Uint8Array): ParseEvent[] {
-  const parser = createParser();
-  return [...parser.feed(stream), ...parser.flush()];
+/** Compare semantic body/attachment results independently of input encoding domain. */
+function summarizeFrames(frames: CesrFrame[]): string[] {
+  return frames.map(({ body, attachments }) => {
+    const groups = attachments.map((attachment) => `${attachment.code}:${attachment.count}`).join(",");
+    return `${body.kind}|${body.ilk ?? ""}|${body.said ?? ""}|${groups}`;
+  });
 }
 
-/** Require error-free parsing and compare frame identity and ordered attachment metadata. */
-function summarizeFrames(events: ParseEvent[]): string[] {
-  const errors = events.filter((event) => event.type === "error");
-  assertEquals(errors.length, 0);
-  return events
-    .filter((event) => event.type === "frame")
-    .map((event) => {
-      if (event.type !== "frame") return "";
-      const body = event.frame.body;
-      const attachments = event.frame.attachments
-        .map((attachment) => `${attachment.code}:${attachment.count}`)
-        .join(",");
-      return `${body.kind}|${body.ilk ?? ""}|${body.said ?? ""}|${attachments}`;
-    });
-}
-
-Deno.test("big wrapper counters (--A/--B/--C) preserve txt/qb2 parity", () => {
+Deno.test("big wrapper counters (--A/--B/--C) preserve txt/qb2 parity", async () => {
   const nestedSigGroup = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
 
   const bigBodyPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedSigGroup}`;
@@ -65,8 +51,8 @@ Deno.test("big wrapper counters (--A/--B/--C) preserve txt/qb2 parity", () => {
   ];
 
   for (const testCase of cases) {
-    const txt = summarizeFrames(parseEvents(encode(testCase.stream)));
-    const bny = summarizeFrames(parseEvents(decodeB64(testCase.stream)));
+    const txt = summarizeFrames(await parseBytes(encode(testCase.stream)));
+    const bny = summarizeFrames(await parseBytes(decodeB64(testCase.stream)));
     assertEquals(bny, txt, `txt/qb2 parity failed for ${testCase.name}`);
   }
 });

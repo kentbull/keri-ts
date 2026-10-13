@@ -1,14 +1,14 @@
 import { assertEquals } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../../src/core/bytes.ts";
-import type { ParseEvent } from "../../../src/core/types.ts";
-import { createParser } from "../../../src/parser/stream.ts";
+import type { CesrFrame } from "../../../src/core/types.ts";
+import { parse } from "../../../src/parser/progressive.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
 import {
   concatWithAno,
   genusVersionCounter,
-  parseFramesNoError,
+  parseFrames as collectFrames,
   summarizeFrames as summarizeDetails,
   wrapQuadletGroupV2,
 } from "../../fixtures/parser-test-helpers.ts";
@@ -16,34 +16,26 @@ import { chunkByBoundaries, encode } from "../../fixtures/stream-byte-fixtures.t
 import { minimalV1CborBody, minimalV1MgpkBody, v2ify } from "../../fixtures/versioned-body-fixtures.ts";
 
 /** Parse stream chunks and require error-free frame output for parity assertions. */
-function parseFrames(
-  input: Uint8Array,
-  boundaries: number[],
-): Array<ParseEvent> {
-  const parser = createParser();
-  const events: ParseEvent[] = [];
-  for (const chunk of chunkByBoundaries(input, boundaries)) {
-    events.push(...parser.feed(chunk));
+async function parseFrames(input: Uint8Array, boundaries: number[]): Promise<CesrFrame[]> {
+  /** Model producer chunk boundaries without adding a second parser lifecycle. */
+  async function* chunks() {
+    yield* chunkByBoundaries(input, boundaries);
   }
-  events.push(...parser.flush());
-  const errors = events.filter((event) => event.type === "error");
-  assertEquals(errors.length, 0);
-  return events.filter((event) => event.type === "frame");
+  return await Array.fromAsync(parse(chunks()));
 }
 
 /** Compact semantic summary for split-determinism and domain parity comparisons. */
-function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
-  return parseFrames(input, boundaries).map((event) => {
-    if (event.type !== "frame") return "";
-    const body = event.frame.body;
-    const attachments = event.frame.attachments
+async function summarizeFrames(input: Uint8Array, boundaries: number[]): Promise<string[]> {
+  return (await parseFrames(input, boundaries)).map((frame) => {
+    const body = frame.body;
+    const attachments = frame.attachments
       .map((attachment) => `${attachment.code}:${attachment.count}`)
       .join(",");
     return `${body.kind}|${body.ilk ?? ""}|${body.said ?? ""}|${attachments}`;
   });
 }
 
-Deno.test("mixed qb64/qb2 parity for JSON body + attachments stream", () => {
+Deno.test("mixed qb64/qb2 parity for JSON body + attachments stream", async () => {
   const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   const attachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
 
@@ -53,14 +45,14 @@ Deno.test("mixed qb64/qb2 parity for JSON body + attachments stream", () => {
   const txtStream = encode(`${body}${attachment}`);
   const bnyStream = concatBytes(encode(body), decodeB64(attachment));
 
-  const txtSummary = summarizeFrames(txtStream, []);
-  const bnySummary = summarizeFrames(bnyStream, []);
+  const txtSummary = await summarizeFrames(txtStream, []);
+  const bnySummary = await summarizeFrames(bnyStream, []);
   assertEquals(txtSummary, bnySummary);
   assertEquals(txtSummary.length, 1);
   assertEquals(txtSummary[0], "JSON|icp|Eabc|-K:22");
 });
 
-Deno.test("multi-message mixed stream ordering is split-deterministic", () => {
+Deno.test("multi-message mixed stream ordering is split-deterministic", async () => {
   const jsonBody = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   const jsonAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const jsonFrame = `${jsonBody}${jsonAttachment}`;
@@ -73,7 +65,7 @@ Deno.test("multi-message mixed stream ordering is split-deterministic", () => {
     `${jsonFrame}${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedFrame}`,
   );
 
-  const baseline = summarizeFrames(stream, []);
+  const baseline = await summarizeFrames(stream, []);
 
   // Verification 1: baseline order across three distinct frame types.
   assertEquals(baseline.length, 3);
@@ -98,18 +90,18 @@ Deno.test("multi-message mixed stream ordering is split-deterministic", () => {
     [frame1End - 1, frame2End + 1],
   ];
   for (const splitPoints of targetedSplits) {
-    assertEquals(summarizeFrames(stream, splitPoints), baseline);
+    assertEquals(await summarizeFrames(stream, splitPoints), baseline);
   }
 
   // Verification 3: exhaustive single-split determinism across the full stream.
   for (let split = 1; split < stream.length; split++) {
-    assertEquals(summarizeFrames(stream, [split]), baseline);
+    assertEquals(await summarizeFrames(stream, [split]), baseline);
   }
 });
 
 Deno.test(
   "long heterogeneous stream (JSON + MGPK + CBOR + native + wrapper) parses in order",
-  () => {
+  async () => {
     const json = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
     const wrappedNative = wrapQuadletGroupV2(
       CtrDexV2.BodyWithAttachmentGroup,
@@ -130,7 +122,7 @@ Deno.test(
       part1.length + part2.length + part3.length,
       part1.length + part2.length + part3.length + 1,
     ];
-    const summary = summarizeDetails(parseFramesNoError(stream, boundaries));
+    const summary = summarizeDetails(await collectFrames(stream, boundaries));
 
     assertEquals(summary.length, 5);
     assertEquals(summary.map((frame) => frame.kind), [
@@ -153,7 +145,7 @@ Deno.test(
 
 Deno.test(
   "interleaved annotation bytes between heterogeneous domains and wrapper styles preserve ordering",
-  () => {
+  async () => {
     // JSON + CESR-wrapper + MGPK with `ano` separators exercises domain
     // transitions that commonly break if `ano` skipping becomes stateful/leaky.
     const json = encode(
@@ -174,7 +166,7 @@ Deno.test(
       Math.floor((4 * stream.length) / 5),
     ];
 
-    const summary = summarizeDetails(parseFramesNoError(stream, boundaries));
+    const summary = summarizeDetails(await collectFrames(stream, boundaries));
     assertEquals(summary.length, 3);
     assertEquals(summary.map((frame) => frame.kind), ["JSON", "CESR", "MGPK"]);
     assertEquals(summary[1].attachments, [`${CtrDexV2.ControllerIdxSigs}:22`]);

@@ -1,7 +1,8 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertRejects } from "jsr:@std/assert";
 import { decodeB64, t } from "../../../src/core/bytes.ts";
+import { DeserializeError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
-import { createParser } from "../../../src/parser/stream.ts";
+import { parseBytes } from "../../../src/parser/complete.ts";
 import { CtrDexV1, CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY, PARSIDE_GROUP_VECTORS } from "../../fixtures/external-vectors.ts";
@@ -75,104 +76,49 @@ Deno.test("parside fixtures have qb64/qb2 dispatch parity", () => {
   }
 });
 
-Deno.test("KERIpy native v2 fix-body fixture parses as top-level frame", () => {
-  const parser = createParser();
-  const first = parser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
-  assertEquals(first.length, 0);
-  const frames = parser.flush();
+Deno.test("KERIpy native v2 fix-body fixture parses as top-level frame", async () => {
+  const frames = await parseBytes(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
   assertEquals(frames.length, 1);
-  assertEquals(frames[0].type, "frame");
-  if (frames[0].type === "frame") {
-    const raw = t(frames[0].frame.body.raw);
-    assertEquals(raw, KERIPY_NATIVE_V2_ICP_FIX_BODY);
-    assertEquals(frames[0].frame.body.kind, "CESR");
-    assertEquals(frames[0].frame.body.pvrsn.major, 2);
-    assertEquals(frames[0].frame.body.ilk, "icp");
-    assertEquals(frames[0].frame.body.ked?.t, "icp");
-    assertEquals(
-      frames[0].frame.body.said,
-      "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
-    );
-    assertEquals(frames[0].frame.attachments.length, 0);
-  }
+  const { body, attachments } = frames[0];
+  assertEquals(t(body.raw), KERIPY_NATIVE_V2_ICP_FIX_BODY);
+  assertEquals(body.kind, "CESR");
+  assertEquals(body.pvrsn.major, 2);
+  assertEquals(body.ilk, "icp");
+  assertEquals(body.ked?.t, "icp");
+  assertEquals(body.said, "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN");
+  assertEquals(attachments.length, 0);
 });
 
-Deno.test("qb2 BodyWithAttachmentGroup parses nested native body", () => {
-  const payload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+Deno.test("qb2 BodyWithAttachmentGroup parses nested native body", async () => {
+  const payload = KERIPY_NATIVE_V2_ICP_FIX_BODY;
   assertEquals(payload.length % 4, 0);
-
-  const wrapped = `${
-    counterV2(
-      CtrDexV2.BodyWithAttachmentGroup,
-      payload.length / 4,
-    )
-  }${payload}`;
-
-  const parser = createParser();
-  const first = parser.feed(decodeB64(wrapped));
-  const frames = first.length > 0 ? first : parser.flush();
+  const wrapped = counterV2(CtrDexV2.BodyWithAttachmentGroup, payload.length / 4) + payload;
+  const frames = await parseBytes(decodeB64(wrapped));
   assertEquals(frames.length, 1);
-  assertEquals(frames[0].type, "frame");
-  if (frames[0].type === "frame") {
-    assertEquals(frames[0].frame.body.kind, "CESR");
-    assertEquals(frames[0].frame.attachments.length, 0);
-  }
+  assertEquals(frames[0].body.kind, "CESR");
+  assertEquals(frames[0].attachments.length, 0);
 });
 
-Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with attachments", () => {
-  const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
-  const payload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
+Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with attachments", async () => {
+  const payload = KERIPY_NATIVE_V2_ICP_FIX_BODY + groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   assertEquals(payload.length % 4, 0);
-
-  const wrapped = `${
-    counterV2(
-      CtrDexV2.BodyWithAttachmentGroup,
-      payload.length / 4,
-    )
-  }${payload}`;
-
-  const txtParser = createParser();
-  const txtFirst = txtParser.feed(encode(wrapped));
-  const txt = txtFirst.length > 0 ? txtFirst : txtParser.flush();
+  const wrapped = counterV2(CtrDexV2.BodyWithAttachmentGroup, payload.length / 4) + payload;
+  const txt = await parseBytes(encode(wrapped));
+  const bny = await parseBytes(decodeB64(wrapped));
   assertEquals(txt.length, 1);
-  assertEquals(txt[0].type, "frame");
-  if (txt[0].type === "frame") {
-    assertEquals(txt[0].frame.body.kind, "CESR");
-    assertEquals(txt[0].frame.body.ilk, "icp");
-  }
-
-  const qb2Parser = createParser();
-  const qb2First = qb2Parser.feed(decodeB64(wrapped));
-  const bny = qb2First.length > 0 ? qb2First : qb2Parser.flush();
   assertEquals(bny.length, 1);
-  assertEquals(bny[0].type, "frame");
-  if (txt[0].type === "frame" && bny[0].type === "frame") {
-    assertEquals(bny[0].frame.body.kind, "CESR");
-    assertEquals(bny[0].frame.body.ilk, txt[0].frame.body.ilk);
-    assertEquals(bny[0].frame.body.said, txt[0].frame.body.said);
-    assertEquals(
-      bny[0].frame.attachments.length,
-      txt[0].frame.attachments.length,
-    );
-  }
+  assertEquals(txt[0].body.kind, "CESR");
+  assertEquals(txt[0].body.ilk, "icp");
+  assertEquals(bny[0].body.kind, "CESR");
+  assertEquals(bny[0].body.ilk, txt[0].body.ilk);
+  assertEquals(bny[0].body.said, txt[0].body.said);
+  assertEquals(bny[0].attachments.length, txt[0].attachments.length);
 });
 
-Deno.test("top-level native MapBodyGroup without version field is rejected as non-message", () => {
-  const base = KERIPY_NATIVE_V2_ICP_FIX_BODY;
-  const payload = base.slice(4);
+Deno.test("top-level native MapBodyGroup without version field is rejected as non-message", async () => {
+  const payload = KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(4);
   const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${payload.slice(12, 16)}0J_d${payload.slice(16)}`;
-  const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)}${mapPayload}`;
-
-  const parser = createParser();
-  const events = [...parser.feed(encode(mapBody)), ...parser.flush()];
-  const frames = events.filter((event) => event.type === "frame");
-  const errors = events.filter((event) => event.type === "error");
-
-  // This payload is still a useful native-map corpus for lower-level mapper
-  // tests, but it is not a valid top-level protocol message: it has no `v`
-  // field and therefore KERIpy-style frame parsing must reject it instead of
-  // returning a metadata-only pseudo-serder.
-  assertEquals(frames.length, 0);
-  assertEquals(errors.length, 1);
-  assertEquals(errors[0].error.name, "DeserializeError");
+  const mapBody = counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4) + mapPayload;
+  // Lower-level maps are useful primitive fixtures, but no protocol body exists without v.
+  await assertRejects(() => parseBytes(encode(mapBody)), DeserializeError);
 });

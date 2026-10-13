@@ -5,7 +5,7 @@ import { counterV2, groupV2, sigerToken, token } from "../../fixtures/counter-to
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
 import {
   assertTxtQb2Parity,
-  parseFramesNoError,
+  parseFrames,
   splitIntoThirds,
   summarizeFrames,
   wrapperHeavyV2Stream,
@@ -15,7 +15,7 @@ import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 
 Deno.test(
   "big BodyWithAttachmentGroup counter with opaque body and twenty signatures preserves txt/qb2 parity",
-  () => {
+  async () => {
     const opaqueMatter = token("1AAE");
     const bigOpaqueBody = `${counterV2(CtrDexV2.NonNativeBodyGroup, opaqueMatter.length / 4)}${opaqueMatter}${
       counterV2(CtrDexV2.ControllerIdxSigs, 20 * sigerToken().length / 4)
@@ -25,8 +25,8 @@ Deno.test(
       bigOpaqueBody,
     );
 
-    const txtSummary = summarizeFrames(parseFramesNoError(encode(wrapped)));
-    const qb2Summary = summarizeFrames(parseFramesNoError(decodeB64(wrapped)));
+    const txtSummary = summarizeFrames(await parseFrames(encode(wrapped)));
+    const qb2Summary = summarizeFrames(await parseFrames(decodeB64(wrapped)));
     assertEquals(qb2Summary, txtSummary);
     assertEquals(txtSummary.length, 1);
     assertEquals(txtSummary[0].kind, "CESR");
@@ -39,7 +39,7 @@ Deno.test(
 
 Deno.test(
   "deep nested GenericGroup chain with mixed wrapper children remains split-deterministic",
-  () => {
+  async () => {
     const nestedSigGroup = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
     const wrappedBody = wrapQuadletGroupV2(
       CtrDexV2.BodyWithAttachmentGroup,
@@ -63,9 +63,9 @@ Deno.test(
     );
     const input = encode(g1);
 
-    const baseline = summarizeFrames(parseFramesNoError(input));
+    const baseline = summarizeFrames(await parseFrames(input));
     const split = summarizeFrames(
-      parseFramesNoError(input, splitIntoThirds(input)),
+      await parseFrames(input, splitIntoThirds(input)),
     );
     assertEquals(split, baseline);
 
@@ -88,7 +88,7 @@ Deno.test(
 
 Deno.test(
   "same semantic wrapper-heavy corpus preserves txt/qb2 summary and metadata parity",
-  () => {
+  async () => {
     const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken().repeat(2));
     const wrapped = wrapQuadletGroupV2(
       CtrDexV2.BodyWithAttachmentGroup,
@@ -103,10 +103,10 @@ Deno.test(
     const txtInput = encode(corpus);
     const qb2Input = decodeB64(corpus);
     const txtSummary = summarizeFrames(
-      parseFramesNoError(txtInput, splitIntoThirds(txtInput)),
+      await parseFrames(txtInput, splitIntoThirds(txtInput)),
     );
     const qb2Summary = summarizeFrames(
-      parseFramesNoError(qb2Input, splitIntoThirds(qb2Input)),
+      await parseFrames(qb2Input, splitIntoThirds(qb2Input)),
     );
 
     assertEquals(qb2Summary, txtSummary);
@@ -119,9 +119,9 @@ Deno.test(
 
 Deno.test(
   "mixed short and big wrapper counters in one top-level stream preserve txt/qb2 parity",
-  () => {
+  async () => {
     // Contract: same semantic frame extraction regardless of text/qb2 domain.
-    const summary = assertTxtQb2Parity(wrapperHeavyV2Stream());
+    const summary = await assertTxtQb2Parity(wrapperHeavyV2Stream());
     // Fixture shape: six CESR-native frames emitted from mixed wrapper forms.
     assertEquals(summary.length, 6);
     // Four frames carry explicit attachment groups in this fixture.
@@ -140,10 +140,10 @@ Deno.test(
 
 Deno.test(
   "wrapper payload boundary ending immediately before next wrapper start remains split-deterministic",
-  () => {
+  async () => {
     const stream = wrapperHeavyV2Stream();
     const bytes = encode(stream);
-    const base = summarizeFrames(parseFramesNoError(bytes));
+    const base = summarizeFrames(await parseFrames(bytes));
 
     // Contract: exact payload-end => next-wrapper-start transition is stable
     // across deterministic chunk cuts.
@@ -153,15 +153,15 @@ Deno.test(
       Math.floor((bytes.length * 3) / 4),
     );
     const splitSummary = summarizeFrames(
-      parseFramesNoError(bytes, [firstCut, secondCut]),
+      await parseFrames(bytes, [firstCut, secondCut]),
     );
     assertEquals(splitSummary, base);
 
     // Same boundary contract must hold on qb2/binary domain path.
     const qb2SplitSummary = summarizeFrames(
-      parseFramesNoError(decodeB64(stream), splitIntoThirds(decodeB64(stream))),
+      await parseFrames(decodeB64(stream), splitIntoThirds(decodeB64(stream))),
     );
-    const qb2Base = summarizeFrames(parseFramesNoError(decodeB64(stream)));
+    const qb2Base = summarizeFrames(await parseFrames(decodeB64(stream)));
     assertEquals(qb2SplitSummary, qb2Base);
   },
 );

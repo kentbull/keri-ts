@@ -1,3 +1,5 @@
+import { DeserializeError } from "./errors.ts";
+
 /** Shared UTF-8 encoder used by CESR and DB byte helpers. */
 export const encoder = new TextEncoder();
 /** Shared UTF-8 decoder used by CESR and DB byte helpers. */
@@ -75,7 +77,13 @@ export function encodeB64(data: Uint8Array): string {
 /** Decode unpadded URL-safe base64 text into raw bytes. */
 export function decodeB64(text: string): Uint8Array {
   const padded = text + "===".slice((text.length + 3) % 4);
-  const raw = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+  let raw: string;
+  try {
+    raw = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+  } catch {
+    // Keep malformed wire in the parser error taxonomy without wrapping source or sink failures.
+    throw new DeserializeError("Invalid base64 payload");
+  }
   const out = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) {
     out[i] = raw.charCodeAt(i);

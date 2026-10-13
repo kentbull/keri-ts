@@ -1,28 +1,15 @@
 import { isCesrDomain, tokenSize, unitBytes } from "../core/domain.ts";
-import {
-  ColdStartError,
-  DeserializeError,
-  GroupSizeError,
-  ShortageError,
-  UnknownCodeError,
-  VersionError,
-} from "../core/errors.ts";
-import type { CesrBody, CesrDomain, CesrFrame, Smellage } from "../core/types.ts";
-import { decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
-import type { Counter } from "../primitives/counter.ts";
-import { parseMatter } from "../primitives/matter.ts";
-import { reapSerder } from "../serder/serdery.ts";
-import { smell } from "../serder/smell.ts";
-import { resolveCounterSizeTable } from "../tables/counter-version-registry.ts";
+import { ColdStartError, GroupSizeError, ShortageError } from "../core/errors.ts";
+import type { CesrDomain, CesrFrame } from "../core/types.ts";
+import { type Counter, decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { Kinds, Protocols } from "../tables/versions.ts";
 import { parseAttachments } from "./attachments.ts";
+import { parseBody, readFrameCounter } from "./body.ts";
 import { sniff } from "./cold-start.ts";
 import {
   DEFAULT_GVRSN,
   FRAME_GROUPS,
   FRAME_LISTS,
-  FRAME_STARTS,
   GENUS_VERSION_CODE,
   NATIVE_BODIES,
   WRAPPED_BODIES,
@@ -75,11 +62,11 @@ export function parseFrameStart(
   }
 
   if (cold === "msg") {
-    const { serder, consumed } = reapSerder(input.slice(offset));
+    const { body, consumed, gvrsn } = parseBody(input.subarray(offset), activeGvrsn);
     return {
-      frame: { body: serder, attachments: [] },
+      frame: { body, attachments: [] },
       consumed: offset + consumed,
-      gvrsn: bodyGenus(serder, activeGvrsn),
+      gvrsn,
       streamGvrsn: activeGvrsn,
     };
   }
@@ -102,11 +89,9 @@ export function parseFrameStart(
   if (FRAME_GROUPS.has(counter.name)) {
     return parseEnclosedFrame(input, offset, counter, cold, frameGvrsn, activeGvrsn);
   }
-  if (WRAPPED_BODIES.has(counter.name)) {
-    return parseWrappedBody(input, offset, counter, cold, frameGvrsn, activeGvrsn);
-  }
-  if (NATIVE_BODIES.has(counter.name)) {
-    return parseNativeBody(input, offset, counter, cold, frameGvrsn, activeGvrsn);
+  if (WRAPPED_BODIES.has(counter.name) || NATIVE_BODIES.has(counter.name)) {
+    const { body, consumed, gvrsn } = parseBody(input.subarray(offset), frameGvrsn);
+    return { frame: { body, attachments: [] }, consumed: offset + consumed, gvrsn, streamGvrsn: activeGvrsn };
   }
   if (FRAME_LISTS.has(counter.name)) {
     return parseEnclosedFrames(input, offset, counter, cold, frameGvrsn, activeGvrsn);
@@ -147,123 +132,6 @@ function parseEnclosedFrame(
   return {
     frame: nested.frame,
     complete: true,
-    consumed: offset + total,
-    gvrsn,
-    streamGvrsn,
-  };
-}
-
-/**
- * Parse `NonNativeBodyGroup` payload, preserving opaque-body fallback behavior
- * when Serder decode is not possible.
- * Returns only a body object (Serder) with no attachments.
- */
-function parseWrappedBody(
-  input: Uint8Array,
-  offset: number,
-  counter: Counter,
-  cold: CesrDomain,
-  gvrsn: Versionage,
-  streamGvrsn: Versionage | null,
-): FrameStart {
-  const headerSize = tokenSize(counter, cold);
-  const payloadSize = counter.count * unitBytes(cold);
-  const end = offset + headerSize + payloadSize;
-  if (input.length < end) throw new ShortageError(end, input.length);
-  let matter: ReturnType<typeof parseMatter>;
-  try {
-    matter = parseMatter(input.slice(offset + headerSize, end), cold);
-  } catch (error) {
-    if (error instanceof ShortageError) throw new GroupSizeError("Incomplete primitive inside NonNativeBodyGroup");
-    throw error;
-  }
-  const bodySize = tokenSize(matter, cold);
-  if (payloadSize !== bodySize) {
-    throw new ColdStartError(
-      `NonNativeBodyGroup payload size mismatch: expected=${payloadSize} actual=${bodySize}`,
-    );
-  }
-
-  // A recognizable body header must satisfy the enclosure's genus even if
-  // the remaining body cannot be hydrated and would otherwise stay opaque.
-  let metadata: Smellage | undefined;
-  try {
-    metadata = smell(matter.raw).smellage;
-  } catch {
-    // Opaque non-native material need not contain a message version string.
-  }
-  if (metadata) bodyGenus(metadata, gvrsn);
-  let serder: CesrBody;
-  try {
-    ({ serder } = reapSerder(matter.raw));
-  } catch (_error) {
-    // Non-native body groups wrap one Matter primitive. If Serder hydration
-    // fails, expose the primitive body bytes only; callers that inspect the
-    // fallback should not see the surrounding group counter envelope.
-    const raw = matter.raw;
-    return {
-      frame: {
-        body: {
-          raw,
-          ked: null,
-          proto: Protocols.keri,
-          kind: Kinds.cesr,
-          size: raw.length,
-          pvrsn: gvrsn,
-          gvrsn: gvrsn,
-          ilk: null,
-          said: null,
-        },
-        attachments: [],
-      },
-      consumed: offset + headerSize + bodySize,
-      gvrsn,
-      streamGvrsn,
-    };
-  }
-  return {
-    frame: { body: serder, attachments: [] },
-    consumed: offset + headerSize + bodySize,
-    gvrsn,
-    streamGvrsn,
-  };
-}
-
-/** Bound a native body and let Serder decode its fields once. */
-function parseNativeBody(
-  input: Uint8Array,
-  offset: number,
-  counter: Counter,
-  cold: CesrDomain,
-  gvrsn: Versionage,
-  streamGvrsn: Versionage | null,
-): FrameStart {
-  const headerSize = tokenSize(counter, cold);
-  const payloadSize = counter.count * unitBytes(cold);
-  const total = headerSize + payloadSize;
-  if (input.length < offset + total) {
-    throw new ShortageError(offset + total, input.length);
-  }
-  const raw = input.slice(offset, offset + total);
-  // KERIpy parity rule: once the frame parser has classified a top-level
-  // FixBodyGroup/MapBodyGroup as a native message body, the result must be a
-  // real Serder or a parse error. Arbitrary native map/list corpora still
-  // belong to lower-level CESR-native surfaces such as Mapper/Aggor.
-  let serder: CesrBody;
-  try {
-    ({ serder } = reapSerder(raw));
-  } catch (error) {
-    if (error instanceof ShortageError) {
-      throw new GroupSizeError("Incomplete field inside native body payload");
-    }
-    throw error;
-  }
-  bodyGenus(serder, gvrsn);
-  return {
-    frame: {
-      body: serder,
-      attachments: [],
-    },
     consumed: offset + total,
     gvrsn,
     streamGvrsn,
@@ -374,74 +242,4 @@ function parseFrame(
     frame: { body: base.frame.body, attachments },
     consumed: base.consumed + consumed,
   };
-}
-
-/** Infer unselected legacy bodies, otherwise validate metadata against the stream genus. */
-function bodyGenus(body: Pick<CesrBody, "pvrsn" | "gvrsn">, selected: Versionage | null): Versionage {
-  const genus = selected ?? body.gvrsn
-    ?? (body.pvrsn.major === 1 ? { major: 1, minor: 0 } : DEFAULT_GVRSN);
-  resolveCounterSizeTable(genus);
-  if (body.pvrsn.major > genus.major) {
-    throw new VersionError(
-      `Protocol ${body.pvrsn.major}.${body.pvrsn.minor} exceeds stream genus ${genus.major}.${genus.minor}`,
-    );
-  }
-  if (body.gvrsn) {
-    resolveCounterSizeTable(body.gvrsn);
-    if (body.gvrsn.major > genus.major || body.gvrsn.minor > genus.minor) {
-      throw new VersionError(
-        `Body genus ${body.gvrsn.major}.${body.gvrsn.minor} exceeds stream genus ${genus.major}.${genus.minor}`,
-      );
-    }
-  }
-  return genus;
-}
-
-/** Resolve frame counters in the selected genus; infer legacy forms only when unselected. */
-export function readFrameCounter(
-  input: Uint8Array,
-  preferredGvrsn: Versionage,
-  cold: CesrDomain,
-  inferLegacy: boolean,
-): { counter: Counter; gvrsn: Versionage } {
-  const alternate: Versionage = preferredGvrsn.major >= 2
-    ? { major: 1, minor: 0 }
-    : { major: 2, minor: 0 };
-  const attempts = inferLegacy ? [preferredGvrsn, alternate] : [preferredGvrsn];
-  let firstParsed: { counter: Counter; gvrsn: Versionage } | null = null;
-  let firstError: Error | null = null;
-
-  for (const attempt of attempts) {
-    try {
-      const counter = parseCounter(input, attempt, cold);
-      if (!firstParsed) {
-        firstParsed = { counter, gvrsn: attempt };
-      }
-      if (FRAME_STARTS.has(counter.name)) {
-        return { counter, gvrsn: attempt };
-      }
-    } catch (error) {
-      if (error instanceof ShortageError) {
-        throw error;
-      }
-      if (
-        error instanceof UnknownCodeError
-        || error instanceof DeserializeError
-      ) {
-        if (!firstError) {
-          firstError = error;
-        }
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  if (firstParsed) {
-    return firstParsed;
-  }
-  if (firstError) {
-    throw firstError;
-  }
-  throw new ColdStartError("Unable to resolve frame-start counter");
 }

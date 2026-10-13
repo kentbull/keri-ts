@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import { toAsyncFrames } from "../../../src/adapters/async-iterable.ts";
 import { concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
 import {
@@ -9,12 +9,13 @@ import {
   ShortageError,
 } from "../../../src/core/errors.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
+import { parseBytes } from "../../../src/parser/complete.ts";
 import { parse } from "../../../src/parser/progressive.ts";
-import { parseBytes } from "../../../src/parser/stream.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
+import { Siger } from "../../../src/primitives/siger.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../../src/tables/counter-codex.ts";
-import { counterV1, counterV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
+import { counterV1, counterV2, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import {
   KERIPY_NATIVE_V2_ICP_FIX_BODY as native,
   KERIPY_V1_JSON_ICP_BODY as json,
@@ -120,11 +121,20 @@ Deno.test("progressive traversal matches finite successful frames at every text/
     const wire = selector + group("GenericGroup", frame + group("GenericGroup", body + sig)) + frame;
     for (const bytes of [encode, decodeB64]) {
       const input = bytes(wire);
-      // Keep the atomic parser as a successful-result oracle during migration.
-      const expected = parseBytes(input).map((event) => {
-        if (event.type === "error") throw event.error;
-        return event.frame;
-      });
+      const expected = await parseBytes(input);
+      // Independent wire facts constrain the baseline before comparing chunk partitions.
+      assertEquals(expected.length, 3);
+      for (const parsed of expected) {
+        assertEquals(parsed.body.kind, major === 1 ? "JSON" : "CESR");
+        assertEquals(parsed.body.ilk, "icp");
+        assertEquals(parsed.attachments.map((group) => [group.code, group.count]), [
+          [major === 1 ? "-A" : "-K", major === 1 ? 1 : sigerToken().length / 4],
+        ]);
+        const tuple = parsed.attachments[0].items[0];
+        assert(Array.isArray(tuple));
+        assertInstanceOf(tuple[0], Siger);
+        assertEquals(tuple[0].qb64, sigerToken());
+      }
       for (let split = 0; split <= input.length; split++) {
         assertEquals(
           await collect(parse(chunks(input.slice(0, split), new Uint8Array(), input.slice(split)))),
@@ -152,6 +162,17 @@ Deno.test("earlier children survive malformed siblings and truncated enclosures"
     await assertRejects(() => truncated.next(), ShortageError);
     assertEquals((await truncated.next()).done, true);
   }
+});
+
+Deno.test("completed enclosed siblings remain delivered before a truncated following body", async () => {
+  const signed = native + groupV2("-K", sigerToken());
+  const complete = groupV2("-A", native + signed);
+  const parser = parse(chunks(encode(complete + native.slice(0, -4))));
+  // The first body's boundary is the next body; the second closes with its GenericGroup.
+  assertEquals((await parser.next()).value?.attachments.length, 0);
+  assertEquals((await parser.next()).value?.attachments.length, 1);
+  await assertRejects(() => parser.next(), ShortageError);
+  assertEquals((await parser.next()).done, true);
 });
 
 Deno.test("single-frame enclosures validate exact contents before exposing any child", async () => {
