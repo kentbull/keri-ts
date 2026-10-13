@@ -31,6 +31,67 @@ export class RegistryEventer {
     public regk: string | null = null,
   ) {}
 
+  /** Retry newly visible anchors, then advance the contiguous accepted chain. */
+  processEscrows(): void {
+    this.processMissingAnchors();
+    this.processQueued();
+  }
+
+  /** Authenticate a complete explicit source couple or discover one for a stored event. */
+  anchorMsg(said: string, number?: NumberPrimitive, diger?: Diger): RegistryEventDecision {
+    const serder = this.store.event(said);
+    if (!serder) return { kind: "reject", reason: "event" };
+    if (serder.said !== said) throw new Error("Corrupt escrowed registry event.");
+    const result = this.regk === null || serder.ilk === Ilks.rip
+      ? validateRip(serder, this.issuer)
+      : validateUpdate(serder, this.regk);
+    if (result.kind === "reject") return result;
+    const event = result.event;
+    if (this.regk !== null && event.regid !== this.regk) return { kind: "reject", reason: "registry" };
+    if (event.sn > BigInt(Number.MAX_SAFE_INTEGER)) return { kind: "reject", reason: "ordinalRange" };
+    const occupied = this.acceptedEvent(event);
+    if (occupied?.kind === "reject") return occupied;
+    const prior = event.sn > 0n ? this.acceptedAt(event.regid, Number(event.sn) - 1) : null;
+    if (prior && prior.said !== event.prior) return { kind: "reject", reason: "prior" };
+    if ((number === undefined) !== (diger === undefined)) return { kind: "reject", reason: "anchor" };
+    if (number && diger) {
+      if (!verifyRegistryAnchor(event, { db: this.db, issuer: this.issuer, number, diger })) {
+        return { kind: "reject", reason: "anchor" };
+      }
+      this.store.putAnchor(said, number, diger);
+    } else {
+      this.discoverAnchor(event);
+    }
+    if (!this.store.anchor(said)) return { kind: "reject", reason: "anchor" };
+    return this.processEvent(serder);
+  }
+
+  /** Advance only the next ordinal, committing one verified winner per transaction. */
+  private processQueued(): void {
+    if (this.regk === null) return;
+    while (true) {
+      const marker = this.store.head(this.regk);
+      if (!marker) return;
+      const head = this.store.event(marker.qb64);
+      if (!head || head.said !== marker.qb64) throw new Error("Corrupt registry head.");
+      const sn = BigInt(`0x${head.sad!.n}`) + 1n;
+      if (sn > BigInt(Number.MAX_SAFE_INTEGER)) return;
+      const candidates = this.store.baser.ooes?.get(this.regk, Number(sn)).map(([said]) => said) ?? [];
+      candidates.sort((a, b) => this.compareAnchors(a, b));
+      let advanced = false;
+      for (const said of candidates) {
+        const event = this.replayCandidate(said, Number(sn));
+        if (!event || !this.store.anchor(said)) continue;
+        const decision = this.processOne(event.serder);
+        if (decision.kind === "accept") {
+          advanced = true;
+          break;
+        }
+      }
+      if (!advanced) return;
+    }
+  }
+
   /** Retry anchor escrow by ordinal, arbitrating siblings before entering normal acceptance. */
   processMissingAnchors(): void {
     if (this.regk === null) return;
@@ -95,8 +156,15 @@ export class RegistryEventer {
     return left < right ? -1 : left > right ? 1 : 0;
   }
 
-  /** Process one parsed event; automatic escrow progression is owned by the retry pass. */
+  /** Accept one parsed event, then advance ready successors without recursive replay. */
   processEvent(serder: SerderACDC): RegistryEventDecision {
+    const decision = this.processOne(serder);
+    if (decision.kind === "accept") this.processQueued();
+    return decision;
+  }
+
+  /** Decide and persist one event; callers own subsequent chain progression. */
+  private processOne(serder: SerderACDC): RegistryEventDecision {
     if (this.regk === null || serder.ilk === Ilks.rip) return this.processInception(serder);
     const result = validateUpdate(serder, this.regk);
     if (result.kind === "reject") return result;
