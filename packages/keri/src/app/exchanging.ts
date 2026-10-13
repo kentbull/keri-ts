@@ -31,7 +31,7 @@ import {
   verifyExchangeProofs,
 } from "../core/exchange-proofing.ts";
 import { Kever } from "../core/kever.ts";
-import { exchange as exchangeMessage, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
+import { exchange as exchangeMessage, nestedIpexRoute, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
 import {
@@ -84,6 +84,8 @@ interface AuthenticatedExchange {
 /** Route-handler contract for accepted exchange messages. */
 export interface ExchangeRouteHandler {
   readonly resource: string;
+  /** Optional protocol-major specialization; omitted handlers remain the route default. */
+  readonly protocolMajor?: number;
   /** Opt in only after route-specific child validation and durable replay are implemented. */
   readonly acceptsNests?: boolean;
   /** Opt in to verified sender source coordinates required by the v2 IPEX workflow. */
@@ -192,6 +194,7 @@ export class Exchanger {
   readonly hby: Habery;
   readonly cues: Deck<AgentCue>;
   readonly routes = new Map<string, ExchangeRouteHandler>();
+  private readonly versionedRoutes = new Map<string, Map<number, ExchangeRouteHandler>>();
   /** At most one active admission; the runtime owns bounded waiting and backpressure. */
   private processing = false;
   /** Finite decoded-byte limit, independent of total stream length. */
@@ -228,6 +231,20 @@ export class Exchanger {
 
   /** Register one route handler for accepted exchange messages. */
   addHandler(handler: ExchangeRouteHandler): void {
+    if (handler.protocolMajor !== undefined) {
+      if (!Number.isSafeInteger(handler.protocolMajor) || handler.protocolMajor < 1) {
+        throw new ValidationError("Exchange protocol major must be a positive integer.");
+      }
+      const versions = this.versionedRoutes.get(handler.resource) ?? new Map<number, ExchangeRouteHandler>();
+      if (versions.has(handler.protocolMajor)) {
+        throw new ValidationError(
+          `Exchange route ${handler.resource} v${handler.protocolMajor} is already registered.`,
+        );
+      }
+      versions.set(handler.protocolMajor, handler);
+      this.versionedRoutes.set(handler.resource, versions);
+      return;
+    }
     if (this.routes.has(handler.resource)) {
       throw new ValidationError(
         `Exchange route ${handler.resource} is already registered.`,
@@ -289,7 +306,8 @@ export class Exchanger {
     if (args.serder.ilk !== "exn") return reject(`Unsupported exchange ilk ${args.serder.ilk}.`);
     const sender = args.serder.pre;
     if (!sender || !args.serder.said) return reject("Exchange message is missing sender or SAID.");
-    const handler = this.routes.get(args.serder.route ?? "");
+    const route = args.serder.route ?? "";
+    const handler = this.versionedRoutes.get(route)?.get(args.serder.pvrsn.major) ?? this.routes.get(route);
     const resolved = this.resolveProofs(args);
     const authentication = yield* this.authenticate(args.serder, resolved, handler);
     if (authentication.kind === "reject") return authentication;
@@ -394,7 +412,8 @@ export class Exchanger {
     if (
       (args.nests?.length || retainedNests)
       && (args.serder.pvrsn.major < 2 || !handler?.acceptsNests
-        || (args.serder.route !== "/fwd" && !nestedMultisigIlks(args.serder.route ?? "")))
+        || (args.serder.route !== "/fwd" && !nestedMultisigIlks(args.serder.route ?? "")
+          && !nestedIpexRoute(args.serder.route ?? "")))
     ) {
       return reject("Nested exchange route is not implemented.");
     }

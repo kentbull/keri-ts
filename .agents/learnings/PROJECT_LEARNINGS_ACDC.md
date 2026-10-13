@@ -30,21 +30,15 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 5. ACDC storage/indexing work should inherit the same DB invariants used by the
    rest of the project; duplicate-order and idempotence assumptions live in the
    shared DB architecture contract, not in ad hoc credential-local lore.
-6. The registry-backed IPEX route family now exists in `app/ipexing.ts` with
-   KERIpy route graph validation, `erpy` one-response-per-prior enforcement,
-   KERIpy notifier payloads, and v1 EXN builders for apply/offer/agree/grant/
-   admit/spurn. Nested v2 IPEX remains guarded: its upstream `acdc/ipexing.py`
-   disclosure DAG and v2 registry vetting differ from the legacy workflow.
-   `acdc/regeventing.ts` now verifies supplied v2 registry chains and node-local
-   blinded/bound disclosures against accepted KELs. It returns complete verified
-   state, retryable missing anchors, or rejection without persistence/fetching.
-   Exact target, issuer and optional rd bindings are independent; historical
-   cutoff comparisons preserve microseconds. This verifier does not supply KRAM
-   timestamps, an issuer registry engine, or IPEX workflow acceptance.
-   The shared EXN proof seam verifies source anchors and route-selected foreign
-   endorsements independently, freezes last-establishment coordinates before
-   escrow, and preserves `ests.`/`eidx.` through retry/replay. An EXN proof never
-   authenticates its nested credential; each node needs its own evidence.
+6. IPEX has separate v1 and v2 route policies. V2 offer/grant uses parsed nested
+   frames, negotiated disclosure graphs, and independent per-node issuer proofs.
+   Registry evidence takes precedence over anchors, then current issuer keys.
+   Exchanger owns durable parent acceptance, dependency escrow and replay;
+   nested nodes are not independently accepted credentials. The observer store
+   atomically imports verified chains and preserves newer heads. Presentation
+   registries remain guarded until receiver-owned KRAM time exists. See the
+   [ownership contract](../../docs/design-docs/keri/ACDC_TEL_IPEX_VERIFIER_MAINTAINER_GUIDE.md#v2-ipex-runtime)
+   for builder, serializer, store, reference and qualification boundaries.
 7. Parser/runtime VDR dispatch is now fakeable: TEL ilks route through injected
    `tvy.processEvent` with the last `SealSourceCouples` source, ACDC bodies
    route through injected `vry.processACDC` with the last `SealSourceTriples`

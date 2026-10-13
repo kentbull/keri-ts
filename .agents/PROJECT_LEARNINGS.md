@@ -12,9 +12,9 @@ ESSR recipient decisions separate local admission from verification; only succes
 transfers plaintext, while infrastructure failures and cancellation remain abrupt.
 See the crypto topic for the raw authentication and owner-cleanup boundary.
 Canonical disclosure construction remains separate from credential authentication;
-the CESR topic describes the Compactor/Pather prerequisite for pending nested IPEX.
-The ACDC topic records v2 registry evidence verification; verified supplied
-evidence remains distinct from durable workflow acceptance and global freshness.
+the CESR topic covers Compactor/Pather rules. The ACDC topic records nested IPEX
+issuer proofs and observer registry imports; parent conversation acceptance,
+credential acceptance and global registry freshness remain distinct.
 
 ## Current Focus
 

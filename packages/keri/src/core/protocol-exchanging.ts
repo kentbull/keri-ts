@@ -259,3 +259,8 @@ export function nestedMultisigIlks(route: string): readonly string[] | null {
       return null;
   }
 }
+
+/** V2 routes whose handlers own direct disclosed ACDC children. */
+export function nestedIpexRoute(route: string): boolean {
+  return route === "/ipex/offer" || route === "/ipex/grant";
+}
