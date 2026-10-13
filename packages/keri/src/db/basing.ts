@@ -491,6 +491,8 @@ export class Baser {
   public ctyp!: Komer<CacheTypeRecord>; // KRAM cache-type records.
   public msgc!: Komer<MsgCacheRecord>; // KRAM message-cache records.
   public tmsc!: Komer<TxnMsgCacheRecord>; // KRAM transactioned message-cache records.
+  public ulgs!: CesrIoSetSuber<Prefixer>; // Foreign last references unresolved at original receipt.
+  public cigs!: CatCesrIoSetSuber<VerferCigarCouple>; // Independently owned foreign cigar proofs.
   public pmkm!: SerderSuber<SerderKERI>; // KRAM partially signed multi-key messages.
   public pmks!: CesrIoSetSuber<Siger>; // KRAM partially signed multi-key signatures.
   public pmsk!: CatCesrSuber<EventSealTuple>; // KRAM partially signed multi-key sender key-state seals.
@@ -1092,6 +1094,9 @@ export class Baser {
         },
       );
 
+      this.ulgs = new CesrIoSetSuber<Prefixer>(this.lmdber, { subkey: "ulgs.", ctor: Prefixer });
+      this.cigs = new CatCesrIoSetSuber<VerferCigarCouple>(this.lmdber, { subkey: "cigs.", ctor: [Verfer, Cigar] });
+
       // KRAM partially signed multi-key messages keyed by `(AID, MID)`.
       this.pmkm = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "pmkm." });
 
@@ -1158,20 +1163,20 @@ export class Baser {
         this.lmdber,
         {
           subkey: "bsqs.",
-          ctor: [Diger, Noncer, Noncer, Labeler],
+          ctor: [Noncer, Noncer, Noncer, Labeler],
         },
       );
 
       // Bound state sextuples.
       this.bsss = new CatCesrIoSetSuber<BoundStateSextuple>(this.lmdber, {
         subkey: "bsss.",
-        ctor: [Diger, Noncer, Noncer, Labeler, NumberPrimitive, Noncer],
+        ctor: [Noncer, Noncer, Noncer, Labeler, NumberPrimitive, Noncer],
       });
 
       // Type-media quadruples.
       this.tmqs = new CatCesrIoSetSuber<TypedMediaQuadrupleTuple>(this.lmdber, {
         subkey: "tmqs.",
-        ctor: [Diger, Noncer, Labeler, Texter],
+        ctor: [Noncer, Noncer, Labeler, Texter],
       });
 
       this.reloadKevers();

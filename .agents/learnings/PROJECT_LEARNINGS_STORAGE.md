@@ -47,6 +47,13 @@ Opaque pathed evidence uses byte-preserving insertion-ordered storage. UTF-8
 replacement can merge different binary members; never decode wire just to obtain
 a storage or deduplication key. `Baser.ptds` retains raw bytes through reopen.
 
+KRAM factor helpers stage rows inside the caller's transaction; validate the full
+stored union before commit. Hydration shares 4096-item/8 MiB credits across the
+incoming and durable union, compares qualified bytes, and keeps sender pmks
+separate from foreign proof groups. Known foreign last references freeze receipt
+coordinates; unresolved markers survive reopen without retaining their signatures.
+Factor cleanup excludes cache, accepted exchange and snapshot/handoff ownership.
+
 ## Open boundary
 
 Whole LMDB rows are allocated before current size checks. Finite row ceilings and
