@@ -13,6 +13,8 @@ transfers plaintext, while infrastructure failures and cancellation remain abrup
 See the crypto topic for the raw authentication and owner-cleanup boundary.
 Canonical disclosure construction remains separate from credential authentication;
 the CESR topic describes the Compactor/Pather prerequisite for pending nested IPEX.
+The ACDC topic records v2 registry evidence verification; verified supplied
+evidence remains distinct from durable workflow acceptance and global freshness.
 
 ## Current Focus
 

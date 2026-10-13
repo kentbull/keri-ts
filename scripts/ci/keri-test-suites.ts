@@ -128,6 +128,7 @@ export const suites: Record<string, TestSuite> = {
     jobs: 2,
     files: [
       "test/unit/acdc/messaging.test.ts",
+      "test/unit/acdc/regeventing.test.ts",
       "test/unit/core/deck.test.ts",
       "test/unit/core/eventing.test.ts",
       "test/unit/core/kevery-receipt.test.ts",

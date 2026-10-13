@@ -261,6 +261,19 @@ behavior. Unresolved sender last groups remain guarded pending consolidated
 processMsg admission. These proof facilities do not enable guarded nested IPEX
 routes or complete sender/KRAM admission policy.
 
+## Registry evidence verification
+
+V2 `rip`/`bup` verification consumes parsed child Serders and node-local semantic
+disclosures. Parent EXN acceptance supplies no implicit credential or registry
+proof. `vetRegistry`/`vetRegistryBindings` return complete verified state,
+retryable missing-anchor coordinates, or refusal, and never write accepted
+registry/credential state or escrow. The owning IPEX workflow retains those
+responsibilities and the nested IPEX guard remains until that integration works.
+A historical cutoff must originate in receiver-observed acceptance state.
+
+See the [registry ownership contract](../keri/ACDC_TEL_IPEX_VERIFIER_MAINTAINER_GUIDE.md#v2-registry-evidence)
+for chain, source, binding, precision, and explicit reference/API boundaries.
+
 ## Canonical disclosure prerequisite
 
 `Compactor` retains canonical child maps throughout full compaction and restores
