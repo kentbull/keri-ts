@@ -70,11 +70,9 @@ export class RegistryEventer {
   private processQueued(): void {
     if (this.regk === null) return;
     while (true) {
-      const marker = this.store.head(this.regk);
-      if (!marker) return;
-      const head = this.store.event(marker.qb64);
-      if (!head || head.said !== marker.qb64) throw new Error("Corrupt registry head.");
-      const sn = BigInt(`0x${head.sad!.n}`) + 1n;
+      const head = this.acceptedHead(this.regk);
+      if (!head) return;
+      const sn = head.sn + 1n;
       if (sn > BigInt(Number.MAX_SAFE_INTEGER)) return;
       const candidates = this.store.baser.ooes?.get(this.regk, Number(sn)).map(([said]) => said) ?? [];
       candidates.sort((a, b) => this.compareAnchors(a, b));
@@ -194,12 +192,8 @@ export class RegistryEventer {
         this.store.escrowOutOfOrder(event.regid, Number(event.sn), event.said);
         return { kind: "escrow", reason: "order", event };
       }
-      const head = this.store.head(event.regid);
-      if (head) {
-        const body = this.store.event(head.qb64);
-        if (!body || body.said !== head.qb64) throw new Error("Corrupt registry head.");
-        if (BigInt(`0x${body.sad!.n}`) >= event.sn) throw new Error("Registry update would downgrade accepted head.");
-      }
+      const head = this.acceptedHead(event.regid);
+      if (head && head.sn >= event.sn) throw new Error("Registry update would downgrade accepted head.");
       this.commit(event);
       return { kind: "accept", event };
     });
@@ -250,10 +244,36 @@ export class RegistryEventer {
     const marker = this.store.seqSaider(regid, sn);
     if (!marker) return null;
     const body = this.store.event(marker.qb64);
-    if (!body || body.said !== marker.qb64 || BigInt(`0x${body.sad!.n}`) !== BigInt(sn)) {
+    if (!body) throw new Error("Corrupt accepted registry event.");
+    const result = body.ilk === Ilks.rip
+      ? validateRip(body, this.issuer)
+      : validateUpdate(body, regid);
+    if (
+      result?.kind !== "valid" || result.event.said !== marker.qb64
+      || result.event.sn !== BigInt(sn) || result.event.regid !== regid
+    ) {
       throw new Error("Corrupt accepted registry event.");
     }
-    return body;
+    return result.event.serder;
+  }
+
+  /** An accepted head must identify this registry's body and its matching accepted ordinal. */
+  private acceptedHead(regid: string): RegistryEvent | null {
+    const marker = this.store.head(regid);
+    if (!marker) return null;
+    const body = this.store.event(marker.qb64);
+    if (!body) throw new Error("Corrupt registry head.");
+    const result = body.ilk === Ilks.rip
+      ? validateRip(body, this.issuer)
+      : validateUpdate(body, regid);
+    if (
+      result?.kind !== "valid" || result.event.said !== marker.qb64 || result.event.regid !== regid
+      || result.event.sn > BigInt(Number.MAX_SAFE_INTEGER)
+    ) throw new Error("Corrupt registry head.");
+    if (this.acceptedAt(regid, Number(result.event.sn))?.said !== marker.qb64) {
+      throw new Error("Corrupt registry head ordinal.");
+    }
+    return result.event;
   }
 
   /** Publish one verified winner and remove all siblings from its decided slot atomically. */
