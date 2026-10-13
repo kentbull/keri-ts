@@ -255,20 +255,30 @@ The native nonce-seal registry omission in the frozen reference is a documented
 admission boundary: structing support does not imply native event or attachment
 support. Broader current-reference parity still depends on the following slices.
 
-### Follow-on PR 1a: current-reference text and semantic primitives
+### Follow-on PR 1a: current-reference text escapes
 
-The source audit and a direct frozen-reference probe reproduced another wire
-mismatch: KERIpy `Bexter(bext="AAA")` emits `4AAB-AAA`; current TS decodes that
-as `-AAA`. Leading `A` and `-` inputs also fail. Update Bexter's explicit escape
-semantics together with Labeler and Pather consumers; Pather deliberately uses
-unescaped Bexter conversion and must retain its own path escaping rules. Preserve
-independent qb64/qb2 vectors and large-input decoding coverage.
+Bexter and Labeler now implement frozen `927c0cb8` escaping: `AAA` emits
+`4AAB-AAA` and decodes back to `AAA`; leading hyphens are escaped independently
+of length. Pather explicitly opts out and retains its own path escaping.
+This slice is limited to those text semantics and their consumers.
+
+`reference-text-vectors.py` verifies its imported source and emits literal
+qb64/qb2 fixtures for empty text, leading `A`/`-`, all length-modulo-four cases,
+and relative/absolute paths. `current-text-vectors.ts` independently emits TS
+tokens; the Python verifier consumed 108 tokens with matching semantics and
+exact extents. The full CESR suite passed 449 tests, including native, path,
+threshold, protocol v1/v2 consumers, and a 1 MiB Bexter decode through both domains.
+
+### Remaining current-reference primitive and Serder slices
 
 Audit the remaining primitive/Serder delta at the same frozen revision before
 claiming parity: threshold/path validation limits, version-aware SAID derivation,
 nonce/first-seen structures, and changed ACDC/KERI semantic accessors. The table
 audit also found `SealKind.d` and `TypedDigestSealCouples` now use `Noncer` in the
-frozen reference; their existing TS `Diger` roles remain a follow-on 1a gap. Separate
+frozen reference. A direct probe accepts an empty nonce in Python's `SealKind`
+but TS rejects it as a digest. Separate probes confirm TS accepts 1,001 threshold
+leaves and a 65,537-character JSON sith that the reference's deployment limits
+reject. These are deferred gaps, not part of the text-escape repair. Separate
 API naming differences from reproduced wire or validation gaps. Implement actual
 gaps in cohesive dependent slices, retaining protocol v1/v2 fixtures and avoiding
 old keri-ts compatibility aliases. Pure diagnostic wording and Python-specific

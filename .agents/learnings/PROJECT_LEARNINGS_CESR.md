@@ -110,6 +110,11 @@ and use this supplementary adapter at their parsing boundary.
     the declared token; never convert the remaining stream to a string. Byte-to-text
     and base64 conversion must cap argument spreads, preserve byte values, and
     report incomplete headers as shortages.
+    Bexter and Labeler share current KERIpy's single-hyphen escape convention:
+    escape leading `-`, and leading `A` only when length padding is ambiguous.
+    Pather disables that convention because it owns path separators and its
+    double-hyphen escape. Frozen `927c0cb8` literals and reverse Python probes cover
+    both wire domains; big Bexter decoding uses byte buffers without expanded arrays.
     `Matter` and `Indexer` are low-level CESR bases. When semantics are known,
     construct the narrow primitive directly instead of returning the superclass.
 11. The same codex-layer rule applies to non-cryptographic and singleton-ish
