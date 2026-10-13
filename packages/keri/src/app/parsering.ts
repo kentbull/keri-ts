@@ -304,8 +304,8 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
         envelope.cigars.push(new Cigar(cigar, verfer));
       }
       return;
+    // Historical protocol v1 receipt tuples remain valid; v2 -N means nonce seals.
     case "TransReceiptQuadruples":
-    case "BigTransReceiptQuadruples":
       for (const item of group.items) {
         if (!isGroupTuple(item) || item.length !== 4) throw new TypeError("Expected TransReceiptQuadruples tuple");
         envelope.trqs.push(TransReceiptQuadruple.fromTuple([

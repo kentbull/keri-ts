@@ -24,12 +24,6 @@ Deno.test("attachment roles hydrate narrow primitives in both genera and domains
         [codex.FirstSeenReplayCouples, token("0A") + token("1AAG"), [NumberPrimitive, Dater]],
         [codex.SealSourceCouples, token("0A") + token("E"), [NumberPrimitive, Diger]],
         [codex.SealSourceCouples, token("M") + token("E"), [NumberPrimitive, Diger]],
-        [codex.TransReceiptQuadruples, token("B") + token("0A") + token("E") + sigerToken(), [
-          Prefixer,
-          NumberPrimitive,
-          Diger,
-          Siger,
-        ]],
       ] as const
     ) {
       const wire = major === 1 ? counterV1(code, 1) + payload : groupV2(code, payload);

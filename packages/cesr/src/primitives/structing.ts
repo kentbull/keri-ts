@@ -183,6 +183,7 @@ function encodeLabelText(text: string): string {
  *
  * Maintainer rule:
  * - `fromSad()` does not blindly assume `qb64`
+ * - Noncer qb64 casts require qualified tokens; nonce casts permit empty text
  * - it must rebuild the primitive from the same string property selected by
  *   the field's cast metadata
  *
@@ -197,7 +198,7 @@ function hydrateStructingField(
     return hydrateNumber(value);
   }
   if (spec.kls === Noncer) {
-    return value === ""
+    return spec.ipn === "nonce" && value === ""
       ? new Noncer({ code: NonceDex.Empty, raw: new Uint8Array() })
       : new Noncer({ qb64: value });
   }
@@ -263,7 +264,9 @@ function invertClanCodens<TClan extends string, TCoden extends string>(
   return Object.freeze(out);
 }
 
+/** Semantic names for fixed-field structures, independent of attachment admission. */
 export type StructingCoden =
+  | "NonceSealSingles"
   | "DigestSealSingles"
   | "MerkleRootSealSingles"
   | "SealSourceCouples"
@@ -434,6 +437,53 @@ export const SealRoot = withSadProjection(
     },
     qb2(value: SealRoot): Uint8Array {
       return serializeTupleQb2([value.rd]);
+    },
+  } as const,
+);
+
+/** Crew representation preserves Empty as its qualified token, matching Castage(Noncer). */
+type SealNonceCrew = Readonly<{ nd: string }>;
+/** Nonce seals carry exactly one field and no independent digest field. */
+const SEAL_NONCE_FIELDS = Object.freeze(["nd"] as const);
+/** Unlike blind-state nonces, SealNonce projects qb64 rather than nonce text. */
+const SEAL_NONCE_CAST = Object.freeze({ nd: castage(Noncer) } as const);
+
+/** Fixed-field nonce seal; a salt, digest, or Empty Noncer is valid sealed data. */
+export type SealNonce = Readonly<{ nd: Noncer }>;
+/** Tuple/SAD codec for SealNonce; grouped transport belongs to Sealer. */
+export const SealNonce = withSadProjection(
+  {
+    name: "SealNonce",
+    fields: SEAL_NONCE_FIELDS,
+    cast: SEAL_NONCE_CAST,
+    coden: "NonceSealSingles" as const,
+    /** Preserve the supplied semantic nonce in a frozen record. */
+    fromTuple([nd]: readonly [Noncer]): SealNonce {
+      return freezeRecord({ nd });
+    },
+    /** Validate the sole token through Noncer before admitting a record. */
+    fromQb64bTuple([nd]: readonly [Qb64b]): SealNonce {
+      return freezeRecord({ nd: new Noncer({ qb64b: nd }) });
+    },
+    /** Return the one-field CESR tuple in wire order. */
+    toTuple(value: SealNonce): readonly [Noncer] {
+      return [value.nd] as const;
+    },
+    /** Keep Empty qualified as 1AAP in the raw SAD/crew. */
+    toCrew(value: SealNonce): SealNonceCrew {
+      return buildCrew(SEAL_NONCE_FIELDS, SEAL_NONCE_CAST, value);
+    },
+    /** Serialize the uncounted tuple in qb64. */
+    qb64(value: SealNonce): string {
+      return serializeTupleQb64([value.nd]);
+    },
+    /** Serialize the uncounted tuple as qb64 bytes. */
+    qb64b(value: SealNonce): Uint8Array {
+      return serializeTupleQb64b([value.nd]);
+    },
+    /** Serialize the uncounted tuple as qb2 bytes. */
+    qb2(value: SealNonce): Uint8Array {
+      return serializeTupleQb2([value.nd]);
     },
   } as const,
 );
@@ -993,7 +1043,7 @@ export const EClanDom = EmptyClanDom;
 /** KERIpy alias for `EmptyCastDom`. */
 export const ECastDom = EmptyCastDom;
 
-/** Seal-struct clan registry (`SealDigest` through `SealKind`). */
+/** Seal-struct clan registry (including nonce seals; native event admission is narrower). */
 export const SealClanDom = Object.freeze(
   {
     SealDigest,
@@ -1003,6 +1053,7 @@ export const SealClanDom = Object.freeze(
     SealLast,
     SealBack,
     SealKind,
+    SealNonce,
   } as const,
 );
 /** KERIpy alias for `SealClanDom`. */
@@ -1018,6 +1069,7 @@ export const SealCastDom = Object.freeze(
     SealLast: SealLast.cast,
     SealBack: SealBack.cast,
     SealKind: SealKind.cast,
+    SealNonce: SealNonce.cast,
   } as const,
 );
 /** KERIpy alias for `SealCastDom`. */
@@ -1094,7 +1146,8 @@ export type SealRecord =
   | SealEvent
   | SealLast
   | SealBack
-  | SealKind;
+  | SealKind
+  | SealNonce;
 
 /** Fixed-field structing record union. */
 export type StructingRecord =
@@ -1113,6 +1166,7 @@ export const SealDescriptors = Object.freeze(
     SealLast,
     SealBack,
     SealKind,
+    SealNonce,
   ] as const,
 );
 
@@ -1131,6 +1185,7 @@ export const ClanToCodens = Object.freeze(
     SealLast: SealLast.coden,
     SealBack: SealBack.coden,
     SealKind: SealKind.coden,
+    SealNonce: SealNonce.coden,
     BlindState: BlindState.coden,
     BoundState: BoundState.coden,
     TypeMedia: TypeMedia.coden,

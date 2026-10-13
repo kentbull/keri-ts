@@ -6,30 +6,27 @@ import {
   renderStringCodexes,
 } from "./table-renderers.ts";
 
-/** Same reference as PR interop CI; codex changes require an intentional baseline upgrade. */
-export const KERIPY_TABLE_BASELINE = "450ae1c2a7eac61d92bc7b830cb6883c41e6a798";
+/** Immutable table source; runtime interop pins are independent of this reference. */
+export const KERIPY_TABLE_BASELINE = "927c0cb8794d7c84fc17143c67df64aab9deda6c";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+/** Historical protocol v1 codes retained only in the extended wire tables. */
 const LEGACY_V1_COUNTER_NAME_ALIASES: Record<string, string> = {
+  "-D": "TransReceiptQuadruples",
   "-J": "SadPathSig",
   "-K": "SadPathSigGroup",
 };
 
+/** Historical v1 item-count headers; never project these meanings into v2. */
 const LEGACY_V1_COUNTER_SIZE_ALIASES: Record<
   string,
   { hs: number; ss: number; fs: number }
 > = {
+  "-D": { hs: 2, ss: 2, fs: 4 },
   "-J": { hs: 2, ss: 2, fs: 4 },
   "-K": { hs: 2, ss: 2, fs: 4 },
-};
-
-const COMPAT_V2_COUNTER_SIZE_ALIASES: Record<
-  string,
-  { hs: number; ss: number; fs: number }
-> = {
-  "-J": { hs: 2, ss: 2, fs: 4 },
 };
 
 type StringCodexSpec = {
@@ -387,6 +384,7 @@ function parseCounterCodexes(
   return { v1, v2 };
 }
 
+/** Parse active reference rows, allowing Python trailing commas but excluding comments. */
 function parseCounterSizes(
   text: string,
 ): {
@@ -406,7 +404,7 @@ function parseCounterSizes(
 
   // Match Counter size rows shaped like `'code': Cizage(hs=..., ss=..., fs=...)`
   // and capture the code plus numeric fields.
-  const regex = /'([^']+)':\s+Cizage\(hs=(\d+),\s*ss=(\d+),\s*fs=(\d+)\)/g;
+  const regex = /^\s*'([^']+)':\s+Cizage\(hs=(\d+),\s*ss=(\d+),\s*fs=(\d+),?\)/gm;
 
   const parseBlock = (
     block: string,
@@ -425,6 +423,7 @@ function parseCounterSizes(
   return { v1: parseBlock(v1Block), v2: parseBlock(v2Block) };
 }
 
+/** Extend only the v1 wire table for established historical protocol interoperability. */
 function applyLegacyV1CounterAliases(
   sizes: Record<string, { hs: number; ss: number; fs: number }>,
   names: Record<string, string>,
@@ -449,19 +448,7 @@ function applyLegacyV1CounterAliases(
   return { sizes: outSizes, names: outNames };
 }
 
-function applyCompatV2CounterSizeAliases(
-  sizes: Record<string, { hs: number; ss: number; fs: number }>,
-  names: Record<string, string>,
-): Record<string, { hs: number; ss: number; fs: number }> {
-  const outSizes = { ...sizes };
-  for (const [code, size] of Object.entries(COMPAT_V2_COUNTER_SIZE_ALIASES)) {
-    if (names[code] && !outSizes[code]) {
-      outSizes[code] = size;
-    }
-  }
-  return outSizes;
-}
-
+/** Generate all artifacts from the frozen source plus documented v1 protocol extensions. */
 export async function buildGeneratedArtifacts(
   keripyPath = resolveKeripyPath(),
 ): Promise<Record<string, string>> {
@@ -530,10 +517,6 @@ export async function buildGeneratedArtifacts(
     counterSizes.v1,
     counterNames.v1,
   );
-  const compatV2Sizes = applyCompatV2CounterSizeAliases(
-    counterSizes.v2,
-    counterNames.v2,
-  );
 
   const artifacts = {
     "packages/cesr/src/tables/matter.tables.generated.ts": renderMatterTables(
@@ -561,7 +544,7 @@ export async function buildGeneratedArtifacts(
     ),
     "packages/cesr/src/tables/counter.tables.generated.ts": renderCounterTables(
       compatV1.sizes,
-      compatV2Sizes,
+      counterSizes.v2,
       compatV1.names,
       counterNames.v2,
     ),

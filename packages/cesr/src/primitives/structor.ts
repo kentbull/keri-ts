@@ -16,7 +16,7 @@
 import { b, codeB64ToB2, concatBytes, encodeB64, t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { CesrDomain } from "../core/types.ts";
-import { parseAttachmentGroup } from "../parser/attachments.ts";
+import { parseStructingGroup } from "../parser/attachments.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CounterGroup } from "./counter.ts";
 import type { Counter } from "./counter.ts";
@@ -119,7 +119,7 @@ export class Structor extends CounterGroup {
 }
 
 /**
- * Parse one counted attachment group and hydrate it as `Structor`.
+ * Parse counted structing transport without granting its codes attachment admission.
  *
  * Optional `allowedCodes` guard narrows acceptable group families for
  * subclass parsers (`Sealer`, `Blinder`, `Mediar`, `Aggor`).
@@ -131,7 +131,7 @@ export function parseStructor(
   allowedCodes?: ReadonlySet<string>,
   expectedFamily = "structor",
 ): Structor {
-  const parsed = parseAttachmentGroup(input, version, cold);
+  const parsed = parseStructingGroup(input, version, cold);
   if (allowedCodes && !allowedCodes.has(parsed.group.code)) {
     throw new UnknownCodeError(
       `Expected ${expectedFamily} group code, got ${parsed.group.code}`,

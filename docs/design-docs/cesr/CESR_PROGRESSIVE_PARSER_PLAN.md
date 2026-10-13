@@ -187,7 +187,8 @@ The initial evidence was keri-ts `517dd4c3e85b15fa0f84ac829c9a7400594cbbd8`
 and KERIpy main `927c0cb8794d7c84fc17143c67df64aab9deda6c` on 2026-10-13.
 Resolve the applicable upstream main once at this sequence's start and freeze its
 full SHA. Record the actual starting TypeScript revision, Python/runtime versions,
-import paths, fixture provenance, and every harness pin. Historical generated tables and PR table verification use `450ae1c`; runtime
+import paths, fixture provenance, and every harness pin. The original generated tables used `450ae1c`; follow-on PR 1 upgrades table
+verification to the frozen upstream `927c0cb8`. Runtime
 qualification uses the fork pin below. Keep those environments distinct and never
 label old table verification current-main parity or chase a moving main during a run.
 
@@ -248,6 +249,12 @@ semantic roles, and consumed extents; small/big forms, malformed lengths, and
 split headers; and generated-table verification against the immutable pin.
 Still-older runtime pins remain explicitly labeled until separately upgraded.
 
+Implementation and independent table/wire evidence are recorded in
+[`CESR_CURRENT_REFERENCE_TABLES.md`](CESR_CURRENT_REFERENCE_TABLES.md).
+The native nonce-seal registry omission in the frozen reference is a documented
+admission boundary: structing support does not imply native event or attachment
+support. Broader current-reference parity still depends on the following slices.
+
 ### Follow-on PR 1a: current-reference text and semantic primitives
 
 The source audit and a direct frozen-reference probe reproduced another wire
@@ -259,7 +266,9 @@ independent qb64/qb2 vectors and large-input decoding coverage.
 
 Audit the remaining primitive/Serder delta at the same frozen revision before
 claiming parity: threshold/path validation limits, version-aware SAID derivation,
-nonce/first-seen structures, and changed ACDC/KERI semantic accessors. Separate
+nonce/first-seen structures, and changed ACDC/KERI semantic accessors. The table
+audit also found `SealKind.d` and `TypedDigestSealCouples` now use `Noncer` in the
+frozen reference; their existing TS `Diger` roles remain a follow-on 1a gap. Separate
 API naming differences from reproduced wire or validation gaps. Implement actual
 gaps in cohesive dependent slices, retaining protocol v1/v2 fixtures and avoiding
 old keri-ts compatibility aliases. Pure diagnostic wording and Python-specific

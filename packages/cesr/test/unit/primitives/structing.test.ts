@@ -46,6 +46,7 @@ Deno.test("primitives/structing - registry metadata mirrors KERIpy clan and code
     "SealLast",
     "SealBack",
     "SealKind",
+    "SealNonce",
   ]);
   assertEquals(Object.keys(BSClanDom), ["BlindState", "BoundState"]);
   assertEquals(Object.keys(TMClanDom), ["TypeMedia"]);
@@ -57,6 +58,7 @@ Deno.test("primitives/structing - registry metadata mirrors KERIpy clan and code
     "SealLast",
     "SealBack",
     "SealKind",
+    "SealNonce",
     "BlindState",
     "BoundState",
     "TypeMedia",
@@ -75,6 +77,7 @@ Deno.test("primitives/structing - registry metadata mirrors KERIpy clan and code
     SealLast: "SealSourceLastSingles",
     SealBack: "BackerRegistrarSealCouples",
     SealKind: "TypedDigestSealCouples",
+    SealNonce: "NonceSealSingles",
     BlindState: "BlindedStateQuadruples",
     BoundState: "BoundStateSextuples",
     TypeMedia: "TypedMediaQuadruples",
@@ -87,6 +90,7 @@ Deno.test("primitives/structing - registry metadata mirrors KERIpy clan and code
     SealSourceLastSingles: "SealLast",
     BackerRegistrarSealCouples: "SealBack",
     TypedDigestSealCouples: "SealKind",
+    NonceSealSingles: "SealNonce",
     BlindedStateQuadruples: "BlindState",
     BoundStateSextuples: "BoundState",
     TypedMediaQuadruples: "TypeMedia",

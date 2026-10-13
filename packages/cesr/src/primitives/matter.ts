@@ -26,6 +26,8 @@ import { DIGEST_CODES, NON_TRANSFERABLE_CODES, PREFIX_CODES } from "./codex.ts";
 export interface MatterInit {
   raw?: Uint8Array;
   code?: string;
+  /** Fixed-size special soft metadata; variable-size soft counts remain derived. */
+  soft?: string;
   qb64b?: Uint8Array;
   qb64?: string;
   qb2?: Uint8Array;
@@ -267,8 +269,8 @@ function parseMatterFromBinaryData(input: Uint8Array): MatterData {
   };
 }
 
-/** Exhale raw bytes plus code into fully qualified CESR matter encodings. */
-function encodeMatterFromRaw(code: string, raw: Uint8Array): MatterData {
+/** Exhale raw bytes with explicit special metadata or a derived variable-size count. */
+function encodeMatterFromRaw(code: string, raw: Uint8Array, specialSoft = ""): MatterData {
   code = normalizeVariableMatterCode(code, raw);
   const sizage = MATTER_SIZES.get(code);
   if (!sizage) {
@@ -286,11 +288,20 @@ function encodeMatterFromRaw(code: string, raw: Uint8Array): MatterData {
     if (softLen < 0) {
       throw new DeserializeError(`Invalid sizage soft width for code ${code}`);
     }
-    const count = sizage.fs === null ? body.length / 4 : (sizage.fs - cs) / 4;
-    if (!Number.isInteger(count) || count < 0) {
-      throw new DeserializeError(`Invalid computed count for code ${code}`);
+    if (sizage.fs === null) {
+      const count = body.length / 4;
+      if (!Number.isInteger(count) || count < 0) {
+        throw new DeserializeError(`Invalid computed count for code ${code}`);
+      }
+      soft = intToB64(count, softLen);
+    } else {
+      // Fixed soft text is metadata, never a payload count (for example GramHead PVI).
+      const supplied = specialSoft.slice(0, softLen);
+      if (supplied.length !== softLen || !/^[A-Za-z0-9_-]+$/.test(supplied)) {
+        throw new DeserializeError(`Expected ${softLen} base64 soft characters for ${code}`);
+      }
+      soft = "_".repeat(sizage.xs) + supplied;
     }
-    soft = "_".repeat(sizage.xs) + intToB64(count, softLen);
   }
 
   const qb64 = `${code}${soft}${body}`;
@@ -313,7 +324,7 @@ function encodeMatterFromRaw(code: string, raw: Uint8Array): MatterData {
 /** Normalize the supported constructor variants into one shared matter payload. */
 function parseMatterInit(init: MatterInit): MatterData {
   if (init.raw && init.code) {
-    return encodeMatterFromRaw(init.code, init.raw);
+    return encodeMatterFromRaw(init.code, init.raw, init.soft);
   }
   if (init.qb64b) {
     return parseMatterFromTextData(init.qb64b);

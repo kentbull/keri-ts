@@ -25,7 +25,8 @@ Deno.test("registry: rejects malformed primitive text", () => {
 
 Deno.test("primitive registry includes extended KERIpy codex entries", () => {
   const codes = supportedPrimitiveCodes();
-  assert(codes.includes("0P")); // GramHeadNeck
+  assert(codes.includes("b")); // Current GramHead
+  assertEquals(codes.includes("0P"), false);
   assert(codes.includes("7AAF")); // HPKEBase_Cipher_Big_L0
   assert(codes.includes("9AAH")); // Decimal_Big_L2
   assert(codes.includes("1___")); // TBD testing code

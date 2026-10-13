@@ -153,7 +153,9 @@ export function resolveTable<T>(
   };
 }
 
+/** Current reference codex excludes historical v1 wire extensions. */
 const CtrDex_1_0 = omitCodexEntries(CtrDexV1, [
+  "TransReceiptQuadruples",
   "SadPathSig",
   "SadPathSigGroup",
 ]);
@@ -268,12 +270,13 @@ export const COUNTER_CODE_NAMES_BY_VERSION: VersionedRegistry<
   2: Object.freeze({ 0: COUNTER_CODE_NAMES_V2 }),
 });
 
-/** Explicit compatibility-only alias codes retained for interop continuity. */
+/** Historical protocol v1 wire extensions absent from the frozen reference codex. */
 export const LEGACY_COMPAT_COUNTER_CODES_BY_VERSION: VersionedRegistry<
   ReadonlySet<string>
 > = Object.freeze({
   1: Object.freeze({
     0: new Set<string>([
+      CtrDexV1.TransReceiptQuadruples,
       CtrDexV1.SadPathSig,
       CtrDexV1.SadPathSigGroup,
     ]),

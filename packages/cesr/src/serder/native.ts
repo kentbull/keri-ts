@@ -30,6 +30,7 @@ import { OpaqueSpan } from "../primitives/opaque.ts";
 import { makePather, parsePather } from "../primitives/pather.ts";
 import type { GroupEntry } from "../primitives/primitive.ts";
 import { isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
+import { SealNonce } from "../primitives/structing.ts";
 import { Structor } from "../primitives/structor.ts";
 import { Texter } from "../primitives/texter.ts";
 import { Tholder, type ThresholdSith } from "../primitives/tholder.ts";
@@ -1349,7 +1350,8 @@ function parseNativeField(
 
 /**
  * Encode one semantic SAD field back into the native field-family form
- * declared in the support matrix.
+ * declared in the support matrix. Nonce seals remain structing-only: the frozen
+ * reference does not admit them through its native event seal registry.
  */
 function encodeNativeFieldValue(
   value: unknown,
@@ -1451,6 +1453,9 @@ function encodeNativeFieldValue(
   }
   if (spec.kind === "seal-list-or-mapper") {
     if (Array.isArray(value)) {
+      if (value.some((entry) => SealNonce.isSad(entry))) {
+        throw new SerializeError("NonceSealSingles is not supported in native event seal lists");
+      }
       return encodeList(value.map((entry) => encodeValue(entry, gvrsn)), gvrsn);
     }
     if (value && typeof value === "object") {

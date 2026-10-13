@@ -1,0 +1,780 @@
+{
+  "reference": "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+  "gramHead": {
+    "code": "b",
+    "soft": "ABC",
+    "raw": "010203",
+    "fullSize": 8,
+    "fullSizeB2": 6,
+    "qb64": "bABCAQID",
+    "qb2": "6c0042010203"
+  },
+  "nonces": [
+    {
+      "code": "1AAP",
+      "raw": "",
+      "sad": {
+        "nd": "1AAP"
+      },
+      "qb64": "1AAP",
+      "qb2": "d4000f"
+    },
+    {
+      "code": "0A",
+      "raw": "000102030405060708090a0b0c0d0e0f",
+      "sad": {
+        "nd": "0AAAAQIDBAUGBwgJCgsMDQ4P"
+      },
+      "qb64": "0AAAAQIDBAUGBwgJCgsMDQ4P",
+      "qb2": "d000000102030405060708090a0b0c0d0e0f"
+    },
+    {
+      "code": "a",
+      "raw": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "sad": {
+        "nd": "aAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f"
+      },
+      "qb64": "aAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+      "qb2": "68000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "code": "E",
+      "raw": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "sad": {
+        "nd": "EAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f"
+      },
+      "qb64": "EAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+      "qb2": "10000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    }
+  ],
+  "groups": [
+    {
+      "code": "-N",
+      "count": 29,
+      "qb64": "-NAd1AAP0AAAAQIDBAUGBwgJCgsMDQ4PaAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fEAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+      "qb2": "f8d01dd4000fd000000102030405060708090a0b0c0d0e0f68000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f10000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "code": "--N",
+      "count": 29,
+      "qb64": "--NAAAAd1AAP0AAAAQIDBAUGBwgJCgsMDQ4PaAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fEAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+      "qb2": "fbe34000001dd4000fd000000102030405060708090a0b0c0d0e0f68000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f10000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    }
+  ],
+  "counters": [
+    {
+      "requestedCode": "-N",
+      "code": "-N",
+      "count": 0,
+      "name": "NonceSealSingles",
+      "fullSize": 4,
+      "qb64": "-NAA",
+      "qb2": "f8d000"
+    },
+    {
+      "requestedCode": "-N",
+      "code": "-N",
+      "count": 1,
+      "name": "NonceSealSingles",
+      "fullSize": 4,
+      "qb64": "-NAB",
+      "qb2": "f8d001"
+    },
+    {
+      "requestedCode": "-N",
+      "code": "-N",
+      "count": 4095,
+      "name": "NonceSealSingles",
+      "fullSize": 4,
+      "qb64": "-N__",
+      "qb2": "f8dfff"
+    },
+    {
+      "requestedCode": "-N",
+      "code": "--N",
+      "count": 4096,
+      "name": "BigNonceSealSingles",
+      "fullSize": 8,
+      "qb64": "--NAABAA",
+      "qb2": "fbe340001000"
+    },
+    {
+      "requestedCode": "--N",
+      "code": "--N",
+      "count": 0,
+      "name": "BigNonceSealSingles",
+      "fullSize": 8,
+      "qb64": "--NAAAAA",
+      "qb2": "fbe340000000"
+    },
+    {
+      "requestedCode": "--N",
+      "code": "--N",
+      "count": 1,
+      "name": "BigNonceSealSingles",
+      "fullSize": 8,
+      "qb64": "--NAAAAB",
+      "qb2": "fbe340000001"
+    },
+    {
+      "requestedCode": "--N",
+      "code": "--N",
+      "count": 4095,
+      "name": "BigNonceSealSingles",
+      "fullSize": 8,
+      "qb64": "--NAAA__",
+      "qb2": "fbe340000fff"
+    },
+    {
+      "requestedCode": "--N",
+      "code": "--N",
+      "count": 4096,
+      "name": "BigNonceSealSingles",
+      "fullSize": 8,
+      "qb64": "--NAABAA",
+      "qb2": "fbe340001000"
+    },
+    {
+      "requestedCode": "-G",
+      "code": "-G",
+      "count": 0,
+      "name": "MapBodyGroup",
+      "fullSize": 4,
+      "qb64": "-GAA",
+      "qb2": "f86000"
+    },
+    {
+      "requestedCode": "-G",
+      "code": "-G",
+      "count": 1,
+      "name": "MapBodyGroup",
+      "fullSize": 4,
+      "qb64": "-GAB",
+      "qb2": "f86001"
+    },
+    {
+      "requestedCode": "-G",
+      "code": "-G",
+      "count": 4095,
+      "name": "MapBodyGroup",
+      "fullSize": 4,
+      "qb64": "-G__",
+      "qb2": "f86fff"
+    },
+    {
+      "requestedCode": "-G",
+      "code": "--G",
+      "count": 4096,
+      "name": "BigMapBodyGroup",
+      "fullSize": 8,
+      "qb64": "--GAABAA",
+      "qb2": "fbe180001000"
+    },
+    {
+      "requestedCode": "--G",
+      "code": "--G",
+      "count": 0,
+      "name": "BigMapBodyGroup",
+      "fullSize": 8,
+      "qb64": "--GAAAAA",
+      "qb2": "fbe180000000"
+    },
+    {
+      "requestedCode": "--G",
+      "code": "--G",
+      "count": 1,
+      "name": "BigMapBodyGroup",
+      "fullSize": 8,
+      "qb64": "--GAAAAB",
+      "qb2": "fbe180000001"
+    },
+    {
+      "requestedCode": "--G",
+      "code": "--G",
+      "count": 4095,
+      "name": "BigMapBodyGroup",
+      "fullSize": 8,
+      "qb64": "--GAAA__",
+      "qb2": "fbe180000fff"
+    },
+    {
+      "requestedCode": "--G",
+      "code": "--G",
+      "count": 4096,
+      "name": "BigMapBodyGroup",
+      "fullSize": 8,
+      "qb64": "--GAABAA",
+      "qb2": "fbe180001000"
+    },
+    {
+      "requestedCode": "-J",
+      "code": "-J",
+      "count": 0,
+      "name": "GenericListGroup",
+      "fullSize": 4,
+      "qb64": "-JAA",
+      "qb2": "f89000"
+    },
+    {
+      "requestedCode": "-J",
+      "code": "-J",
+      "count": 1,
+      "name": "GenericListGroup",
+      "fullSize": 4,
+      "qb64": "-JAB",
+      "qb2": "f89001"
+    },
+    {
+      "requestedCode": "-J",
+      "code": "-J",
+      "count": 4095,
+      "name": "GenericListGroup",
+      "fullSize": 4,
+      "qb64": "-J__",
+      "qb2": "f89fff"
+    },
+    {
+      "requestedCode": "-J",
+      "code": "--J",
+      "count": 4096,
+      "name": "BigGenericListGroup",
+      "fullSize": 8,
+      "qb64": "--JAABAA",
+      "qb2": "fbe240001000"
+    },
+    {
+      "requestedCode": "--J",
+      "code": "--J",
+      "count": 0,
+      "name": "BigGenericListGroup",
+      "fullSize": 8,
+      "qb64": "--JAAAAA",
+      "qb2": "fbe240000000"
+    },
+    {
+      "requestedCode": "--J",
+      "code": "--J",
+      "count": 1,
+      "name": "BigGenericListGroup",
+      "fullSize": 8,
+      "qb64": "--JAAAAB",
+      "qb2": "fbe240000001"
+    },
+    {
+      "requestedCode": "--J",
+      "code": "--J",
+      "count": 4095,
+      "name": "BigGenericListGroup",
+      "fullSize": 8,
+      "qb64": "--JAAA__",
+      "qb2": "fbe240000fff"
+    },
+    {
+      "requestedCode": "--J",
+      "code": "--J",
+      "count": 4096,
+      "name": "BigGenericListGroup",
+      "fullSize": 8,
+      "qb64": "--JAABAA",
+      "qb2": "fbe240001000"
+    }
+  ],
+  "counterTables": {
+    "1": {
+      "names": {
+        "-A": "ControllerIdxSigs",
+        "-B": "WitnessIdxSigs",
+        "-C": "NonTransReceiptCouples",
+        "-E": "FirstSeenReplayCouples",
+        "-F": "TransIdxSigGroups",
+        "-G": "SealSourceCouples",
+        "-H": "TransLastIdxSigGroups",
+        "-I": "SealSourceTriples",
+        "-L": "PathedMaterialCouples",
+        "--L": "BigPathedMaterialCouples",
+        "-T": "GenericGroup",
+        "--T": "BigGenericGroup",
+        "-U": "BodyWithAttachmentGroup",
+        "--U": "BigBodyWithAttachmentGroup",
+        "-V": "AttachmentGroup",
+        "--V": "BigAttachmentGroup",
+        "-W": "NonNativeBodyGroup",
+        "--W": "BigNonNativeBodyGroup",
+        "-Z": "ESSRPayloadGroup",
+        "--Z": "BigESSRPayloadGroup",
+        "-_AAA": "KERIACDCGenusVersion"
+      },
+      "sizes": {
+        "-A": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "-B": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "-C": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "-E": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "-F": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "-G": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "-H": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "-I": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "-L": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--L": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-T": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--T": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-U": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--U": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-V": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--V": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-W": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--W": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-Z": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--Z": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-_AAA": {
+          "hs": 5,
+          "ss": 3,
+          "fs": 8
+        }
+      }
+    },
+    "2": {
+      "names": {
+        "-A": "GenericGroup",
+        "--A": "BigGenericGroup",
+        "-B": "BodyWithAttachmentGroup",
+        "--B": "BigBodyWithAttachmentGroup",
+        "-C": "AttachmentGroup",
+        "--C": "BigAttachmentGroup",
+        "-D": "DatagramSegmentGroup",
+        "--D": "BigDatagramSegmentGroup",
+        "-E": "ESSRWrapperGroup",
+        "--E": "BigESSRWrapperGroup",
+        "-F": "FixBodyGroup",
+        "--F": "BigFixBodyGroup",
+        "-G": "MapBodyGroup",
+        "--G": "BigMapBodyGroup",
+        "-H": "NonNativeBodyGroup",
+        "--H": "BigNonNativeBodyGroup",
+        "-I": "GenericMapGroup",
+        "--I": "BigGenericMapGroup",
+        "-J": "GenericListGroup",
+        "--J": "BigGenericListGroup",
+        "-K": "ControllerIdxSigs",
+        "--K": "BigControllerIdxSigs",
+        "-L": "WitnessIdxSigs",
+        "--L": "BigWitnessIdxSigs",
+        "-M": "NonTransReceiptCouples",
+        "--M": "BigNonTransReceiptCouples",
+        "-N": "NonceSealSingles",
+        "--N": "BigNonceSealSingles",
+        "-O": "FirstSeenReplayCouples",
+        "--O": "BigFirstSeenReplayCouples",
+        "-P": "PathedMaterialCouples",
+        "--P": "BigPathedMaterialCouples",
+        "-Q": "DigestSealSingles",
+        "--Q": "BigDigestSealSingles",
+        "-R": "MerkleRootSealSingles",
+        "--R": "BigMerkleRootSealSingles",
+        "-S": "SealSourceCouples",
+        "--S": "BigSealSourceCouples",
+        "-T": "SealSourceTriples",
+        "--T": "BigSealSourceTriples",
+        "-U": "SealSourceLastSingles",
+        "--U": "BigSealSourceLastSingles",
+        "-V": "BackerRegistrarSealCouples",
+        "--V": "BigBackerRegistrarSealCouples",
+        "-W": "TypedDigestSealCouples",
+        "--W": "BigTypedDigestSealCouples",
+        "-X": "TransIdxSigGroups",
+        "--X": "BigTransIdxSigGroups",
+        "-Y": "TransLastIdxSigGroups",
+        "--Y": "BigTransLastIdxSigGroups",
+        "-Z": "ESSRPayloadGroup",
+        "--Z": "BigESSRPayloadGroup",
+        "-a": "BlindedStateQuadruples",
+        "--a": "BigBlindedStateQuadruples",
+        "-b": "BoundStateSextuples",
+        "--b": "BigBoundStateSextuples",
+        "-c": "TypedMediaQuadruples",
+        "--c": "BigTypedMediaQuadruples",
+        "-_AAA": "KERIACDCGenusVersion"
+      },
+      "sizes": {
+        "-A": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--A": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-B": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--B": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-C": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--C": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-D": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--D": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-E": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--E": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-F": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--F": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-G": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--G": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-H": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--H": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-I": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--I": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-J": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--J": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-K": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--K": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-L": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--L": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-M": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--M": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-N": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--N": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-O": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--O": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-P": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--P": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-Q": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--Q": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-R": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--R": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-S": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--S": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-T": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--T": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-U": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--U": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-V": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--V": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-W": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--W": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-X": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--X": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-Y": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--Y": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-Z": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--Z": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-a": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--a": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-b": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--b": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-c": {
+          "hs": 2,
+          "ss": 2,
+          "fs": 4
+        },
+        "--c": {
+          "hs": 3,
+          "ss": 5,
+          "fs": 8
+        },
+        "-_AAA": {
+          "hs": 5,
+          "ss": 3,
+          "fs": 8
+        }
+      }
+    }
+  },
+  "boundaries": {
+    "nativeNonceSeal": "unsupported",
+    "attachmentNonceSeal": "unsupported"
+  }
+}
