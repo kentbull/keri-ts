@@ -48,6 +48,11 @@ V2 non-event sender policy precedes proof prerequisites; allow/deny sets do not
 authenticate signatures. Raw query sigers use the claimed sender only when no
 last-establishment group is present. Optional KRAM remains
 [3f](../../docs/plans/exchange/EXCHANGE_ADMISSION_PLAN.md).
+Internal cache policy owns exact route/ilk/catchall selection and compact exemptions.
+Persist staged windows with cache rows; reconfigure from active windows, preserve
+drift and keep pruning at least as long as active acceptance. Restart safety and
+stale-owner refresh strengthen the frozen reference; intake remains pending.
+
 Do not invent xip/pro/bar processing: frozen upstream has stubs. Native outer EXN
 empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
 not prove that path. Full runtime/resource qualification remains open.

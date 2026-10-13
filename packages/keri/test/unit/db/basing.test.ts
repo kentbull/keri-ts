@@ -79,6 +79,29 @@ Deno.test("db/basing - Baser binds DB-backed state and record stores", async () 
   });
 });
 
+Deno.test("db/basing - raw pathed evidence retains binary identity and order after reopen", async () => {
+  await run(function*() {
+    const baser = yield* createBaser({ name: `ptds-${crypto.randomUUID()}`, temp: true });
+    try {
+      const keys = ["AID", "MID"];
+      const first = new Uint8Array([0xff, 0x00, 0x80]);
+      const second = new Uint8Array([0xfe, 0x00, 0x80]);
+      assertEquals(baser.ptds.put(keys, [first, second]), true);
+      assertEquals(baser.ptds.add(keys, first.slice()), false);
+      assertEquals(baser.ptds.get(keys), [first, second]);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      assertEquals(baser.ptds.get(keys), [first, second]);
+      assertEquals([...baser.ptds.getItemIter(keys)], [[keys, first], [keys, second]]);
+      assertEquals(baser.ptds.getLast(keys), second);
+      assertEquals(baser.ptds.add(keys, second.slice()), false);
+      assertEquals(baser.ptds.cnt(keys), 2);
+    } finally {
+      yield* baser.close(true);
+    }
+  });
+});
+
 Deno.test("db/basing - BaserDoer reopens closed basers and clears temp stores on exit", async () => {
   let tempPath: string | null = null;
 
