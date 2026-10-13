@@ -99,53 +99,17 @@ export function parseFrameStart(
     cold,
     activeGvrsn === null,
   );
-  const headerSize = tokenSize(counter, cold);
-  const unit = unitBytes(cold);
-
   if (FRAME_GROUPS.has(counter.name)) {
-    return parseEnclosedFrame(
-      input,
-      offset,
-      headerSize,
-      counter.count,
-      unit,
-      frameGvrsn,
-      activeGvrsn,
-    );
+    return parseEnclosedFrame(input, offset, counter, cold, frameGvrsn, activeGvrsn);
   }
   if (WRAPPED_BODIES.has(counter.name)) {
-    return parseWrappedBody(
-      input,
-      offset,
-      headerSize,
-      counter.count,
-      unit,
-      cold,
-      frameGvrsn,
-      activeGvrsn,
-    );
+    return parseWrappedBody(input, offset, counter, cold, frameGvrsn, activeGvrsn);
   }
   if (NATIVE_BODIES.has(counter.name)) {
-    return parseNativeBody(
-      input,
-      offset,
-      headerSize,
-      counter.count,
-      unit,
-      frameGvrsn,
-      activeGvrsn,
-    );
+    return parseNativeBody(input, offset, counter, cold, frameGvrsn, activeGvrsn);
   }
   if (FRAME_LISTS.has(counter.name)) {
-    return parseEnclosedFrames(
-      input,
-      offset,
-      headerSize,
-      counter.count,
-      unit,
-      frameGvrsn,
-      activeGvrsn,
-    );
+    return parseEnclosedFrames(input, offset, counter, cold, frameGvrsn, activeGvrsn);
   }
   throw new ColdStartError(
     `Unsupported body-group counter at frame start: ${counter.code}`,
@@ -156,13 +120,13 @@ export function parseFrameStart(
 function parseEnclosedFrame(
   input: Uint8Array,
   offset: number,
-  headerSize: number,
-  count: number,
-  unit: number,
+  counter: Counter,
+  cold: CesrDomain,
   gvrsn: Versionage,
   streamGvrsn: Versionage | null,
 ): FrameStart {
-  const payloadSize = count * unit;
+  const headerSize = tokenSize(counter, cold);
+  const payloadSize = counter.count * unitBytes(cold);
   const total = headerSize + payloadSize;
   if (input.length < offset + total) {
     throw new ShortageError(offset + total, input.length);
@@ -197,14 +161,13 @@ function parseEnclosedFrame(
 function parseWrappedBody(
   input: Uint8Array,
   offset: number,
-  headerSize: number,
-  count: number,
-  unit: number,
+  counter: Counter,
   cold: CesrDomain,
   gvrsn: Versionage,
   streamGvrsn: Versionage | null,
 ): FrameStart {
-  const payloadSize = count * unit;
+  const headerSize = tokenSize(counter, cold);
+  const payloadSize = counter.count * unitBytes(cold);
   const end = offset + headerSize + payloadSize;
   if (input.length < end) throw new ShortageError(end, input.length);
   let matter: ReturnType<typeof parseMatter>;
@@ -270,13 +233,13 @@ function parseWrappedBody(
 function parseNativeBody(
   input: Uint8Array,
   offset: number,
-  headerSize: number,
-  count: number,
-  unit: number,
+  counter: Counter,
+  cold: CesrDomain,
   gvrsn: Versionage,
   streamGvrsn: Versionage | null,
 ): FrameStart {
-  const payloadSize = count * unit;
+  const headerSize = tokenSize(counter, cold);
+  const payloadSize = counter.count * unitBytes(cold);
   const total = headerSize + payloadSize;
   if (input.length < offset + total) {
     throw new ShortageError(offset + total, input.length);
@@ -314,13 +277,13 @@ function parseNativeBody(
 function parseEnclosedFrames(
   input: Uint8Array,
   offset: number,
-  headerSize: number,
-  count: number,
-  unit: number,
+  counter: Counter,
+  cold: CesrDomain,
   gvrsn: Versionage,
   streamGvrsn: Versionage | null,
 ): FrameStart {
-  const payloadSize = count * unit;
+  const headerSize = tokenSize(counter, cold);
+  const payloadSize = counter.count * unitBytes(cold);
   const total = headerSize + payloadSize;
   if (input.length < offset + total) {
     throw new ShortageError(offset + total, input.length);
