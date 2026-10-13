@@ -103,6 +103,8 @@ async function assertKliCredentialListed(
       [
         "vc",
         "list",
+        "--version",
+        "1.0",
         ...kliStoreArgs(name, passcode),
         "--alias",
         "holder",
@@ -791,6 +793,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "vc",
               "list",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",

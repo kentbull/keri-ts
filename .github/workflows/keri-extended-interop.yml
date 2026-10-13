@@ -39,7 +39,7 @@ env:
   DENO_DIR: ${{ github.workspace }}/.deno-cache
   DENO_VERSION: "2.8.2"
   KERIPY_GIT_URL: https://github.com/kentbull/keripy.git
-  KERIPY_INTEROP_EXPECTED_COMMIT: 5044ecc64306348dbe12c6a8ce30a348538d06f2
+  KERIPY_INTEROP_EXPECTED_COMMIT: b08ddeb047fd865d60affe82a0dc77f5efaf4672
   KERIPY_INTEROP_ROOT: ${{ github.workspace }}/.cache/keripy-mailbox-main
   KERIPY_INTEROP_PYTHON: ${{ github.workspace }}/.cache/keripy-venv/bin/python
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv

@@ -72,7 +72,7 @@ coverage. Keep production behavior unchanged in that PR.
 Run the complete maintained test inventory, including all manual and long-running
 targets. Preserve the frozen upstream-main baseline at
 `927c0cb8794d7c84fc17143c67df64aab9deda6c`. Final qualification uses the published
-`kentbull/keripy` fork `5044ecc64306348dbe12c6a8ce30a348538d06f2`: that same main
+`kentbull/keripy` fork `b08ddeb047fd865d60affe82a0dc77f5efaf4672`: that same main
 base plus standalone mailbox commands/admission, explicit mailbox protocol
 selection, the transferable receipt-table lookup repair, and explicit VC export
 genus selection, and JSON mailbox queries for topic names that cannot be native
@@ -174,7 +174,7 @@ implementation onto this frozen upstream revision and publishing an immutable
 commit on `kentbull/keripy`. Record that fork commit, upstream parent, mailbox
 delta, and actual import path separately from upstream-main evidence. Preserve
 the existing `mailbox-impl` branch. Published `mailbox-main-interop` commit
-`5044ecc64306348dbe12c6a8ce30a348538d06f2` is based on upstream
+`b08ddeb047fd865d60affe82a0dc77f5efaf4672` is based on upstream
 `927c0cb8794d7c84fc17143c67df64aab9deda6c`, ports the original mailbox commits
 `1faba4f2` / `9924fffa`, adapts their handler to nested messages, and adds explicit
 mailbox protocol selection, the `vrcs` lookup repair in forwarding introductions,
