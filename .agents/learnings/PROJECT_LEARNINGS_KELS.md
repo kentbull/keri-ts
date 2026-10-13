@@ -44,6 +44,20 @@ have actual accepted storage/replay and Python return-path evidence.
 CLI proposal/join remains v1, as in the frozen reference. Preserve its first-notice
 behavior; repeated notices for indexed proposals cause approval re-publication.
 
+Exchange proof policy follows frozen `peer.exchanging` independently of IPEX:
+selection (`verifyEvidence`), delivery (`acceptsEvidence`), nonempty sender-couple
+delivery (`acceptsSscs`) and optional missing extras (`acceptsMissingEvidence`)
+are separate capabilities. Strict missing extras query/reject without creating
+escrow; missing sender seals escrow only with the sender-couple opt-in.
+`MissingSignatureError` counterparts preserve an existing escrow, while route
+rejection may remove it. Signature-query and dependency-proof cues follow new
+escrow insertion. Normalize signature storage ordinals to 32-digit hex regardless
+of the wire Number/Seqner representation; otherwise retries duplicate rows.
+An incomplete duplicate remains pending without changing prior
+accepted rows. Never infer current-attempt success from `complete(said)`.
+Group leadership deliberately excludes foreign endorsements; JS/database ordinal
+bounds are runtime constraints. Proof-route probes do not establish IPEX support.
+
 Exchange retry reads one key at a time up to a captured initial horizon, closing
 the LMDB cursor before awaiting or removing rows. Mutating a suspended live range
 iterator can skip the following escrow. Cross-runtime retry admission remains

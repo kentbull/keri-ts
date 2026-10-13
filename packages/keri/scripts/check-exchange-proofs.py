@@ -25,6 +25,12 @@ class ProofRoute:
     """Exercise the existing evidence-selection seam without claiming IPEX workflow coverage."""
     resource = "/proof"
     acceptsSscs = True
+    acceptsEvidence = False
+
+    def __init__(self):
+        self.verified = 0
+        self.handled = 0
+        self.has_sender_seal = False
 
     def verifyEvidence(self, serder, tsgs, cigars, sourceSeals, invalid):
         """Retain only factors independently authenticated by the reference kernel."""
@@ -32,10 +38,16 @@ class ProofRoute:
 
     def verify(self, serder, **kwa):
         """This probe qualifies exchange proofs; route-specific credential validation comes later."""
+        self.verified += 1
+        assert ("evidence" in kwa) == self.acceptsEvidence
+        assert ("sscs" in kwa) == (self.acceptsSscs and self.has_sender_seal)
         return True
 
     def handle(self, serder, **kwa):
         """Durable rows, not a synthetic handler success, supply the assertions below."""
+        self.handled += 1
+        assert "evidence" not in kwa
+        assert ("sscs" in kwa) == (self.acceptsSscs and self.has_sender_seal)
 
 
 corpus = json.load(sys.stdin)
@@ -46,8 +58,10 @@ with habbing.openHby(name="ts-exchange-proofs", temp=True) as hby:
         parsing.Parser(version=Vrsn_1_0).parse(ims=stream, kvy=hby.kvy, local=True)
         assert not stream
     hby.kvy.kramer = None  # Qualify the reference-supported optional-KRAM-disabled intake.
-    exc = exchanging.Exchanger(hby=hby, handlers=[ProofRoute()])
+    route = ProofRoute()
+    exc = exchanging.Exchanger(hby=hby, handlers=[route])
     for row in corpus["rows"]:
+        route.has_sender_seal = bool(row["seals"] and not row["endorsers"])
         stream = bytearray(row["wire"])
         parsing.Parser(version=Vrsn_1_0).parse(ims=stream, kvy=hby.kvy, exc=exc)
         assert not stream
@@ -62,4 +76,23 @@ with habbing.openHby(name="ts-exchange-proofs", temp=True) as hby:
         for endorser in row["endorsers"]:
             assert row["said"] in [d.qb64 for d in hby.db.eidx.get(keys=(endorser,))]
         returned.append(dict(said=row["said"], wire=list(exchanging.serializeMessage(hby, row["said"], framed=True))))
+    # Independently exercise capability delivery on already verified wire. This
+    # generic route is proof machinery only, not an IPEX workflow implementation.
+    plain = next(row for row in corpus["rows"] if row["cigars"] and not row["endorsers"])
+    for select, deliver in [(False, False), (True, False), (False, True), (True, True)]:
+        policy = ProofRoute()
+        policy.acceptsEvidence = deliver
+        if not select:
+            policy.verifyEvidence = None
+        probe = exchanging.Exchanger(hby=hby, handlers=[policy])
+        parsing.Parser(version=Vrsn_1_0).parse(ims=bytearray(plain["wire"]), kvy=hby.kvy, exc=probe)
+        assert (policy.verified, policy.handled) == (1, 1)
+    sealed = next(row for row in corpus["rows"] if row["seals"] and not row["endorsers"])
+    for receive in (False, True):
+        policy = ProofRoute()
+        policy.acceptsSscs = receive
+        policy.has_sender_seal = True
+        probe = exchanging.Exchanger(hby=hby, handlers=[policy])
+        parsing.Parser(version=Vrsn_1_0).parse(ims=bytearray(sealed["wire"]), kvy=hby.kvy, exc=probe)
+        assert (policy.verified, policy.handled) == (1, 1)
 json.dump(returned, sys.stdout)

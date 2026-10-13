@@ -68,8 +68,8 @@ await run(function*() {
         resource: "/proof",
         acceptsSscs: true,
         /** Qualify the route-selection seam while keeping credential workflow claims out of this probe. */
-        verifyEvidence({ evidence }) {
-          return evidence.invalid ? null : evidence;
+        verifyEvidence({ factors, invalid }) {
+          return invalid ? null : factors;
         },
         /** Assertions inspect durable proof rows after this callback. */
         handle() {},
