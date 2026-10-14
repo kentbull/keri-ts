@@ -221,6 +221,12 @@ runtime/owners through joined directional cleanup. RX EOF cannot end TX; TX EOF
 starts the absolute drain deadline. Concurrent children belong to the abortable
 I/O scope so cancellation reaches both before either cleanup waits. A drained
 connection/dispatch count proves neither verified replies nor remote acceptance.
+WitnessReceiptor preserves HTTP-first selection and uses local same-socket intake
+for TCP-only witnesses; explicit Receiptor endpoint calls remain HTTP-only. Success requires persisted wigs at the requested witness
+index before complementary fanout. Receiptor/catchup borrow an explicitly supplied
+runtime or own one scoped receiver; borrowed cleanup leaves its stores open.
+Generic sendWitnessMessage remains transmit-only without receiver context. Never
+open a second runtime merely to receive replies over an existing runtime's Habery.
 
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove
