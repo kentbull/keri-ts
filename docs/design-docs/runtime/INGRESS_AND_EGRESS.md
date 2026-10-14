@@ -79,10 +79,12 @@ and permits one pending pull. Do not mix data/flow readers with it. Abort, failu
 and early return destroy and join socket close; genuine receive EOF releases only
 read ownership, preserving the writable half. The connection owner must handle
 socket errors before acquisition and after EOF, and own output drain/final close.
-Before pulling, admit the connection and both the native-returned read buffer and
-independent copy (conservatively twice the configured chunk ceiling), retaining
-credit through parser/source cleanup. Existing readable high-water/native/kernel
-buffers remain separately qualified overhead; this adapter supplies no RSS bound.
+Before pulling, admit the connection and two bounded materialized read/copy
+allocations, retaining credit through parser/source cleanup. A native-returned
+view may pin pool/socket backing larger than a small configured chunk ceiling:
+twice that ceiling does not cover all native backing. The host must separately
+account for fixed pools, readable/native/kernel buffering and qualify its actual
+configuration; this adapter supplies no full native or RSS bound.
 
 The guard protects protocol interpretation, signing, routing snapshots and local
 DB side effects. Network waits and capacity waits belong outside it. Transfer a

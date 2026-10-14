@@ -11,8 +11,9 @@ export interface SocketSourceOptions extends SourceOptions {
 
 /**
  * Borrow exclusive binary readable ownership on first pull; yield independent finite backing buffers.
- * The caller admits connection and two maxChunkBytes read/copy allowances before pulling. Existing
- * socket/OS buffering is separate overhead, not a hard bound supplied by readableHighWaterMark.
+ * The caller admits connection and two maxChunkBytes materialized read/copy allowances before pulling.
+ * A returned view can pin larger native/pool backing; the host accounts for that and socket/OS buffers
+ * separately. Neither twice the chunk ceiling nor readableHighWaterMark is a full native/RSS bound.
  * Abort, failure or early return destroys and joins the socket. Genuine receive EOF leaves its writable
  * half intact; the caller must own later socket errors, output drain and final close (allowHalfOpen).
  */
