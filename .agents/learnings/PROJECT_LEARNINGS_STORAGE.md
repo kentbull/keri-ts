@@ -115,3 +115,9 @@ reply reconstruction uses 714 key-ordered groups and exactly one optional cigar;
 source construction does not authenticate those proofs for the receiver.
 
 [db]: ../../docs/design-docs/db/db-architecture.md
+
+Mailbox publication commits opaque body and ordered topic together. Identical
+bodies overwrite successfully while repeated topic appearances keep distinct
+ordinals; zero is a valid first ordinal. False pin/invalid ordinal is an invariant
+failure and rolls back publication. This is a TS atomicity extension over714's
+two-write storeMsg, not a shared-copy/native admission claim.

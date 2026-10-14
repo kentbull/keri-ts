@@ -22,11 +22,15 @@ export interface CreateTufaAppOptions {
  */
 export function createTufaApp(
   options: CreateTufaAppOptions = {},
-): Hono {
+): Hono & { close(): Promise<void> } {
   const app = new Hono();
   const policy = resolveTufaHttpAppPolicy(options.app);
-  const handler = options.protocolHandler
-    ?? createProtocolHandler(options.runtime, options.protocolPolicy ?? {});
+  let handler = options.protocolHandler;
+  let ownsHandler = false;
+  if (!handler) {
+    handler = createProtocolHandler(options.runtime, options.protocolPolicy ?? {});
+    ownsHandler = true;
+  }
 
   installTufaHttpPolicy(app, policy);
   installTufaHttpErrorHandling(app, policy);
@@ -35,5 +39,10 @@ export function createTufaApp(
     return await handler(context.req.raw);
   });
 
-  return app;
+  return Object.assign(app, {
+    /** Join the default protocol handler's file responses; injected handlers stay caller-owned. */
+    async close() {
+      if (ownsHandler) await handler.close?.();
+    },
+  });
 }

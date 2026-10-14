@@ -13,8 +13,9 @@ The [runtime contract][runtime] distinguishes current behavior from the target.
   still returns a bounded aggregate of emissions.
 - Generic HTTP ingress already parses progressively, but HTTP/witness/runtime
   cue drains can await `Respondant` network delivery under the Reactor guard.
-- The TCP sender shares a finite/source writer (#243), but has no
-  same-socket reply consumer. Existing replies use mailbox/direct routing.
+- The TCP sender shares a finite/source/frame writer and explicit same-socket
+  reply processing (#271). Actual conversation callers remain S8; mailbox/direct
+  routing remains the default.
 
 Reuse the active admission stack: HTTP frame/output work (#224–225), finite TCP
 ownership (#230), parser scheduling (#231), and mailbox stream admission.
@@ -58,10 +59,10 @@ source, response, admission and lifecycle facilities.
 | ----------------------- | ---------------------------- | --------------------------------- |
 | [Hosts][hosts]          | HTTP/TCP streams             | S8: explicit TCP conversations    |
 | [Delivery][delivery]    | Shared sends; guarded drains | S1–3, S7–8: owned workers/replies |
-| [Queries][queries]      | Lazy POST; GET collects      | S1–3: demand-driven GET replay    |
+| [Queries][queries]      | Lazy POST/GET replay         | S1–3: owned delivery and proofs   |
 | [Mailbox][mailbox-path] | Demand-driven SSE            | S1–3: cue/worker credit and stop  |
 | [OOBI][oobi-path]       | Incremental CESR intake      | S2: lazy replay serving           |
-| [DID Webs][did-path]    | Collected fetch/generation   | S2: streamed CESR artifacts       |
+| [DID Webs][did-path]    | Streamed intake/static files | S2: lazy generation/export        |
 | [Commands][commands]    | Mixed services/lifetimes     | S1–8: shared runtime wiring       |
 | [JSON edges][json-path] | Finite documents/status      | S2: bounded exception audit       |
 
@@ -191,10 +192,11 @@ collectors must declare and enforce their caps.
 | Recovery         | Optional mailbox outbox    | Phase 5 | Atomic/recoverable obligations |
 | Production proof | Parser/focused cases       | S9      | All applicable stack paths     |
 
-The npm manifest advertises Node >=18. Existing query delivery, TCP writer and
-HTTP host use `Promise.withResolvers`, unavailable at that floor; repair those
-paths and run actual packed floor smoke before release. Node 25 qualification
-does not establish Node 18 support. New listener admission uses ordinary Promises.
+KERI/Tufa npm manifests advertise Node >=18.17. Query delivery, TCP output and
+HTTP shutdown use ordinary Promises; packed secure randomness is initialized
+before sodium (#270). Installed Node 18.17 probes cover these paths and static
+file response shutdown. S9 still requires the composed package/runtime matrix;
+neither newer-runtime checks nor a focused floor probe qualifies the whole stack.
 
 S9 extends existing transport/runtime tests for decisive regressions:
 
@@ -243,11 +245,11 @@ is not a hard memory ceiling; qualify actual Deno and packed Node paths.
 [storage]: ../db/STORAGE_RECOVERY_PLAN.md
 [gleif]: https://github.com/GLEIF-IT/keripy/blob/a55a712d1dd92121ab659d76ee71942155f6caa9/src/keri/app/directing.py
 [buffering]: https://nodejs.org/api/stream.html#buffering
-[hosts]: ../../../packages/tufa/src/host
-[delivery]: ../../../packages/keri/src/app/forwarding.ts
-[queries]: ../../../packages/keri/src/app/witnessing.ts
-[mailbox-path]: ../../../packages/keri/src/app/forwarding.ts
-[oobi-path]: ../../../packages/keri/src/app/oobiery.ts
-[did-path]: ../../../packages/keri/src/did/webs
-[commands]: ../../../packages/tufa/src/cli
-[json-path]: ../../../packages/keri/src/app/verifier-agent.ts
+[hosts]: ../../../../packages/tufa/src/host
+[delivery]: ../../../../packages/keri/src/app/forwarding.ts
+[queries]: ../../../../packages/keri/src/app/witnessing.ts
+[mailbox-path]: ../../../../packages/keri/src/app/forwarding.ts
+[oobi-path]: ../../../../packages/keri/src/app/oobiery.ts
+[did-path]: ../../../../packages/keri/src/did/webs
+[commands]: ../../../../packages/tufa/src/cli
+[json-path]: ../../../../packages/keri/src/app/verifier-agent.ts

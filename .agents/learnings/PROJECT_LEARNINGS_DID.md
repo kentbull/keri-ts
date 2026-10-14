@@ -1,5 +1,9 @@
 # DID learnings
 
+Static Tufa artifact files are response-owned: admit before open, read only on demand,
+and join pending file work/close before returning credit. The request signal owns
+acquisition only; host shutdown closes unconsumed bodies. File extent capture is not a content snapshot.
+
 DID Webs resolution ingests keri.cesr, reconstructs the document from KERI/VDR
 state and compares hosted did.json. Hosted JSON alone is not verification.
 CESR resolution streams through the runtime Reactor with its exact services/policy;

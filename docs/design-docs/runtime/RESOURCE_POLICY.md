@@ -209,6 +209,15 @@ before publication. Pending Broker proofs and prior accepted BADA evidence retai
 their existing owners, including credential registry/attester/TEL dependency migration.
 Semantic rejection never applies the new proof plan.
 
+Legacy Verifier admits each actual dependency or saved cue before credential body,
+source proof, escrow date or saved-index writes. Registry/schema queries follow new
+membership; missing/stale chain queries preserve their every-attempt policy. Exact
+membership is checked synchronously before publication. Busy/configured-limit refusal
+on replay preserves the existing escrow family. Typed remote decisions control family
+cleanup; thrown infrastructure/invariant failures propagate unchanged. Unexpected post-write failures release
+unpublished credit without DB rollback. Ordinary Deck keeps its original count guard.
+Credential constructors, proof/native copies and durable cue recovery remain phase 4/5 gates.
+
 Oobiery.resolve admits its actual queued cue before the queue write. Multi-URL
 fanout validates and stages every child record, then admits the exact ordered cue
 batch before any child queue or parent moobi mutation. Parent completion admits
@@ -226,12 +235,12 @@ current selection/retry uses row presence, without an attempt-date TTL filter.
 CESR responses hold their actual prospective resolved cue as an earlier scope
 resource before queue metadata, the streaming marker and Reactor body reads. Credit survives
 joined parser/body cleanup; cancellation or failure releases unpublished credit
-while preserving queued work and earlier accepted events. Full retrieval publishes
-the result before terminal/contact effects and does not prove universal acceptance.
+while preserving queued work and earlier accepted events. Full retrieval applies terminal/contact effects under admitted result ownership,
+then publishes the result; it does not prove universal acceptance.
 HTTP, schema and invalid JSON results prepare actual batches before schema or
 terminal writes. Busy refusal uses the existing queued worker; configured limits
 and infrastructure failures propagate. The ordinary post-intake guard remains.
 Constructor allocation and native copy admission remain broader phase 4/5
-qualification. EXN/KRAM and legacy credential/TEL producers remain open.
+qualification. EXN/KRAM and legacy TEL producers remain open.
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.

@@ -95,7 +95,12 @@ HTTP success, verified replies and durable acceptance are different outcomes.
 
 Poster route snapshots and synchronous target preparation own habitat/DB work;
 prepared sending owns HTTP only. Keep borrowed wire alive through joined cleanup.
-The extraction alone does not move runtime callers outside their guard or admit copies.
+An explicit target cap validates backing and bounds introduction plus forwarded wire
+before their final concatenation; direct wire becomes an independent copy. The
+caller must reserve preparation/copy credit first and retain it through joined send.
+Actual HTTP refusal observation is invocation-local; source/fetch/cleanup failures
+retain their original identity. These facilities do not yet move runtime callers
+outside their guard or admit all decoded/native preparation copies.
 Admitted cue interpretation is synchronous: destination item admission precedes
 preparation, and atomic acceptance precedes ordinary source removal. Existing
 CueDeck credit transfers/requeues; lazy replay stays unopened. The accepting
@@ -157,6 +162,8 @@ connection/dispatch count proves neither verified replies nor remote acceptance.
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove
 the signal path. Otherwise active responses can force SIGKILL.
+After headers are sent, a body failure must terminate the HTTP transfer and report
+the original error; attempting a replacement status can leave the peer waiting.
 
 OOBI CESR intake streams through Reactor; JSON/schema collection remains finite.
 Keep the queued row through full intake, clear in-flight markers on failure, and

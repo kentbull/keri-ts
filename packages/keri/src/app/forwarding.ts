@@ -44,7 +44,7 @@ import type { OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
-import { postCesr } from "./cesr-egress.ts";
+import { type CesrHttpRefusal, postCesr } from "./cesr-egress.ts";
 import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -104,9 +104,19 @@ export type PreparedCesrTarget =
 export function* sendPreparedCesrTarget(
   target: PreparedCesrTarget,
   services: RuntimeServices,
+  signal?: AbortSignal,
+  onHttpRefusal?: (error: CesrHttpRefusal) => void,
 ): Operation<void> {
   if (target.kind === "http") {
-    yield* postCesrMessage(target.url, target.message, target.bodyMode, target.destination, services);
+    yield* postCesrMessage(
+      target.url,
+      target.message,
+      target.bodyMode,
+      target.destination,
+      services,
+      signal,
+      onHttpRefusal,
+    );
   }
 }
 
@@ -410,21 +420,34 @@ export class Poster {
     throw new ValidationError(`No end roles for ${recipient} to send raw CESR payload.`);
   }
 
-  /** Prepare one target under the guard; the caller retains borrowed bytes through joined sending. */
+  /** Guarded preparation; an explicit finite cap copies direct wire for independently credited retention. */
   prepareBytesTarget(
     hab: Hab,
     route: RawCesrRoute,
     index: number,
     message: Uint8Array,
+    maxBytes?: number,
   ): PreparedCesrTarget {
+    if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
+      throw new RangeError("Invalid cue target byte limit");
+    }
+    if (maxBytes !== undefined && message.buffer.byteLength > maxBytes) {
+      throw new ResourceLimitError("Cue target backing exceeds limit");
+    }
     if (hab.pre !== route.sender) throw new Error("CESR route belongs to another sender");
     const endpoint = route.targets[index];
     if (!Number.isSafeInteger(index) || !endpoint) throw new RangeError("Invalid CESR delivery target");
     if (route.kind !== "direct") {
-      const forwarded = this.prepareForwardedTarget(hab, route.recipient, route.topic, message, endpoint);
+      const forwarded = this.prepareForwardedTarget(hab, route.recipient, route.topic, message, endpoint, maxBytes);
       return forwarded.kind === "stored" ? forwarded : { ...forwarded, bodyMode: route.bodyMode };
     }
-    return { kind: "http", url: endpoint.url, destination: endpoint.eid, message, bodyMode: route.bodyMode };
+    return {
+      kind: "http",
+      url: endpoint.url,
+      destination: endpoint.eid,
+      message: maxBytes === undefined ? message : message.slice(),
+      bodyMode: route.bodyMode,
+    };
   }
 
   /**
@@ -560,20 +583,23 @@ export class Poster {
     topic: string,
     message: Uint8Array,
     endpoint: { eid: string; url: string },
+    maxBytes?: number,
   ): PreparedCesrTarget {
     if (this.hby.db.prefixes.has(endpoint.eid)) {
-      this.requireMailboxer().storeMsg(
+      const stored = this.requireMailboxer().storeMsg(
         mailboxTopicKey(recipient, topic),
-        mailboxReplyPayload(hab, recipient, topic, message),
+        mailboxReplyPayload(hab, recipient, topic, message, maxBytes),
       );
+      if (!stored) throw new Error("Mailbox publication did not complete");
       return { kind: "stored" };
     }
-    const forwarded = buildForwardedDelivery(hab, { recipient, topic, message });
+    const forwarded = buildForwardedDelivery(hab, { recipient, topic, message }, maxBytes);
+    const intro = introduce(hab, endpoint.eid, maxBytes === undefined ? undefined : maxBytes - forwarded.length);
     return {
       kind: "http",
       url: endpoint.url,
       destination: endpoint.eid,
-      message: concatBytes(introduce(hab, endpoint.eid), forwarded),
+      message: concatBytes(intro, forwarded),
       bodyMode: this.hby.cesrBodyMode,
     };
   }
@@ -1166,6 +1192,7 @@ function buildForwardedDelivery(
     topic: string;
     message: Uint8Array;
   },
+  maxBytes = Infinity,
 ): Uint8Array {
   const [serder, attachments] = exchange(
     "/fwd",
@@ -1176,7 +1203,11 @@ function buildForwardedDelivery(
       embeds: { evt: args.message },
     },
   );
-  return concatBytes(hab.endorse(serder, { pipelined: false }), attachments);
+  const endorsed = hab.endorse(serder, { pipelined: false });
+  if (endorsed.length + attachments.length > maxBytes) {
+    throw new ResourceLimitError("Cue forwarded wire exceeds limit");
+  }
+  return concatBytes(endorsed, attachments);
 }
 
 /**
@@ -1192,11 +1223,12 @@ function mailboxReplyPayload(
   recipient: string,
   topic: string,
   message: Uint8Array,
+  maxBytes = Infinity,
 ): Uint8Array {
   if (topic !== "/reply" && topic !== "reply") {
     return message;
   }
-  const introduction = introduce(hab, recipient);
+  const introduction = introduce(hab, recipient, maxBytes - message.length);
   return introduction.length === 0 ? message : concatBytes(introduction, message);
 }
 
@@ -1565,8 +1597,16 @@ export function* postCesrMessage(
   bodyMode: "header" | "body",
   destination?: string,
   services: RuntimeServices = defaultRuntimeServices,
+  signal?: AbortSignal,
+  onHttpRefusal?: (error: CesrHttpRefusal) => void,
 ): Operation<void> {
-  yield* postCesr(url, (signal) => chunkBytes(body, { signal }), { bodyMode, destination, services });
+  yield* postCesr(url, (signal) => chunkBytes(body, { signal }), {
+    bodyMode,
+    destination,
+    services,
+    signal,
+    onHttpRefusal,
+  });
 }
 
 /** Shared EXN send helper used by CLI commands that want KERIpy-style behavior. */

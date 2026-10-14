@@ -1,6 +1,6 @@
-import { ResourceLimitError } from "cesr-ts";
+import { Diger, MtrDex, ResourceLimitError } from "cesr-ts";
 import { run } from "effection";
-import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { DatabaseNotOpenError } from "../../../src/core/errors.ts";
 import { createBaser } from "../../../src/db/basing.ts";
@@ -18,6 +18,57 @@ Deno.test("db/mailboxing - admitted stream reads reject an oversized native row 
       "byte ceiling",
     );
     assertEquals(Array.from(mailboxer.cloneTopicIter("aid/reply"))[0][2], bytes);
+  });
+});
+
+Deno.test("db/mailboxing - body and ordered topic publication commit together across failure and reopen", async () => {
+  await run(function*() {
+    const mailboxer = yield* createMailboxer({ name: `atomic-mailbox-${crypto.randomUUID()}`, temp: true });
+    const first = Uint8Array.of(0xff, 0, 1), second = Uint8Array.of(0xfe, 0, 2), topic = "aid/reply";
+    const digest = new Diger({ raw: Diger.digest(second, MtrDex.Blake3_256), code: MtrDex.Blake3_256 }).qb64;
+    try {
+      assertEquals(mailboxer.storeMsg(topic, first), true);
+      assertEquals(mailboxer.storeMsg(topic, first), true, "identical bodies still publish another ordered appearance");
+      assertEquals(Array.from(mailboxer.msgs.getTopItemIter()).length, 1);
+      const expected: [number, string, Uint8Array][] = [[0, topic, first], [1, topic, first]];
+      assertEquals(Array.from(mailboxer.cloneTopicIter(topic)), expected);
+      const fault = new Error("late mailbox publication failed");
+      const pin = mailboxer.msgs.pin.bind(mailboxer.msgs), append = mailboxer.appendToTopic.bind(mailboxer);
+      for (const phase of ["topic", "body", "falseBody", "badOrdinal"]) {
+        if (phase === "topic") {
+          mailboxer.appendToTopic = (key, value) => {
+            append(key, value);
+            throw fault;
+          };
+        }
+        if (phase === "body") {
+          mailboxer.msgs.pin = (key, value) => {
+            pin(key, value);
+            throw fault;
+          };
+        }
+        if (phase === "falseBody") mailboxer.msgs.pin = () => false;
+        if (phase === "badOrdinal") mailboxer.appendToTopic = () => -1;
+        try {
+          const error = assertThrows(() => mailboxer.storeMsg(topic, second));
+          if (phase === "topic" || phase === "body") assertStrictEquals(error, fault);
+        } finally {
+          mailboxer.msgs.pin = pin;
+          mailboxer.appendToTopic = append;
+        }
+        assertEquals(Array.from(mailboxer.cloneTopicIter(topic)), expected);
+        assertEquals(mailboxer.msgs.get(digest), null, "failed publication cannot leave orphan bytes");
+        assertEquals(mailboxer.tpcs.cntOn(topic), 2, "failed publication cannot leave a dangling topic");
+      }
+      yield* mailboxer.close();
+      yield* mailboxer.reopen({ reuse: true });
+      assertEquals(Array.from(mailboxer.cloneTopicIter(topic)), expected);
+      assertEquals(mailboxer.storeMsg(topic, second), true);
+      assertEquals(Array.from(mailboxer.cloneTopicIter(topic)), [...expected, [2, topic, second]]);
+      assertEquals(Array.from(mailboxer.msgs.getTopItemIter()).length, 2);
+    } finally {
+      yield* mailboxer.close(true);
+    }
   });
 });
 
