@@ -179,7 +179,11 @@ parser-owned return must not be mistaken for peer failure. Native rejection hand
 and pool/kernel buffering remain explicit finite/qualification boundaries.
 
 Direct replies reserve query SAIDs before dispatch; only the final query owns the
-HTTP response. Earlier responses transfer to ordinary delivery. A response scope
+HTTP response. Final direct replies prepare the bounded TSN pair atomically before
+slot removal; one interpreted proof is borrowed by response and queued targets
+until both cleanups finish. Missing target routes allow response-only ownership;
+source/signer/storage failures propagate. Earlier responses still use ordinary delivery.
+A response scope
 outlives fetch headers and must not inherit a request signal that aborts when the
 handler returns. requestFrame/postCesr retain frame owners until consumption ends.
 

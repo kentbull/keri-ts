@@ -116,28 +116,6 @@ function querySseResponse(
   );
 }
 
-/** Open lazy direct reply bytes under runtime ownership; the request signal ends with ingress. */
-function directQueryResponse(
-  runtime: AgentRuntime,
-  emissions: readonly CueEmission[],
-  release: () => void,
-): Response | null {
-  const replies = emissions.filter((emission) =>
-    emission.kind === "wire" && (emission.cue.kin === "replay" || emission.cue.kin === "reply")
-  );
-  if (replies.length === 0) return null;
-  const messages = {
-    /** Reopening preserves each reserved cue's order without concatenating its replay. */
-    *[Symbol.iterator]() {
-      for (const reply of replies) yield* reply.messages;
-    },
-  };
-  return new Response(runtime.replyStreams.open(messages, release), {
-    status: 200,
-    headers: { "Content-Type": "application/cesr" },
-  });
-}
-
 /** Wait for this request's reserved response while other runtime turns continue fairly. */
 function* deferredDirectQueryResponse(
   context: ProtocolRequestContext,
@@ -149,16 +127,16 @@ function* deferredDirectQueryResponse(
   do {
     let response: Response | null = null;
     yield* runtime.reactor.settle(undefined, { escrows: true }, function*() {
-      const batch = reply.takeAll();
-      if (batch) {
-        try {
-          response = directQueryResponse(
-            runtime,
-            yield* drainRuntimeCues(runtime, context.policy.serviceHab, batch.cues),
-            batch.release,
-          );
-        } finally {
-          if (!response) batch.release();
+      const habitats = runtime.hby.habs.values();
+      const first = habitats.next();
+      const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
+      if (hab) {
+        const stream = runtime.deliveries.openReply(runtime, hab, reply);
+        if (stream) {
+          response = new Response(stream, {
+            status: 200,
+            headers: { "Content-Type": "application/cesr" },
+          });
         }
       }
     });

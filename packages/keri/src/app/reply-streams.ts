@@ -16,6 +16,7 @@ export class ReplyStreams {
   private readonly readers = new Set<(reason?: unknown) => void>();
   /** Shutdown permanently closes this runtime's response admission. */
   private closed = false;
+  private prepared = 0;
   /** Finite concurrent response metadata admission. */
   private readonly maxStreams: number;
   /** Finite materialized event admission; replay aggregates remain unbounded in length. */
@@ -49,6 +50,48 @@ export class ReplyStreams {
     return this.maxMessageBytes;
   }
 
+  /** Captured byte floor for combined direct-reply preparation admission. */
+  get preparationByteFloor(): number {
+    return this.reservationBytes;
+  }
+
+  /** Admit a synchronous direct-reply preparation before signing; open transfers, release abandons. */
+  prepare(): {
+    open(messages: Iterable<Uint8Array>, dispose: () => void): ReadableStream<Uint8Array>;
+    release(): void;
+  } {
+    if (this.closed) throw new Error("Reply streams are closed");
+    if (this.readers.size + this.prepared >= this.maxStreams) {
+      throw new ResourceAdmissionError("Too many active HTTP replies", "busy");
+    }
+    const admitted = this.resources.reserve({ streams: 1, bytes: this.reservationBytes });
+    if (admitted.kind === "refuse") {
+      throw new ResourceAdmissionError("Reply preparation admission refused", admitted.reason);
+    }
+    this.prepared++;
+    let live = true;
+    const release = () => {
+      if (!live) return;
+      live = false;
+      this.prepared--;
+      admitted.reservation.release();
+    };
+    return {
+      release,
+      open: (messages, dispose) => {
+        if (!live) throw new Error("Reply preparation is released");
+        live = false;
+        this.prepared--;
+        try {
+          return this.openChecked(messages, dispose, false, admitted)!;
+        } catch (error) {
+          admitted.reservation.release();
+          throw error;
+        }
+      },
+    };
+  }
+
   /** Borrow a reopenable source without advancing until HTTP requests bytes.
    * Transfer the optional disposer through source closure, including admission/acquisition refusal.
    */
@@ -66,6 +109,7 @@ export class ReplyStreams {
     messages: Iterable<Uint8Array>,
     dispose: (() => void) | undefined,
     requireContent: boolean,
+    admitted?: Extract<ReturnType<ResourcePolicy["reserve"]>, { kind: "reserve" }>,
   ): ReadableStream<Uint8Array> | null {
     const release = () => {
       const owned = dispose;
@@ -73,7 +117,7 @@ export class ReplyStreams {
       owned?.();
     };
     try {
-      return this.openOwned(messages, release, requireContent);
+      return this.openOwned(messages, release, requireContent, admitted);
     } catch (error) {
       try {
         release();
@@ -89,10 +133,13 @@ export class ReplyStreams {
     messages: Iterable<Uint8Array>,
     release: () => void,
     requireContent: boolean,
+    admitted?: Extract<ReturnType<ResourcePolicy["reserve"]>, { kind: "reserve" }>,
   ): ReadableStream<Uint8Array> | null {
     if (this.closed) throw new Error("Reply streams are closed");
-    if (this.readers.size >= this.maxStreams) throw new ResourceAdmissionError("Too many active HTTP replies", "busy");
-    const credit = this.resources.reserve({ streams: 1, bytes: this.reservationBytes });
+    if (!admitted && this.readers.size + this.prepared >= this.maxStreams) {
+      throw new ResourceAdmissionError("Too many active HTTP replies", "busy");
+    }
+    const credit = admitted ?? this.resources.reserve({ streams: 1, bytes: this.reservationBytes });
     if (credit.kind === "refuse") {
       throw new ResourceAdmissionError(`Reply ${credit.resource} admission refused: ${credit.reason}`, credit.reason);
     }
