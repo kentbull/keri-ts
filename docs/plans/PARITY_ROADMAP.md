@@ -1,6 +1,9 @@
 # KERIpy parity and bounded in-flight runtime roadmap
 
-Verified boundary: keri-ts `a6999579` after #322; cue activation and qualification remain open.
+Pre-release checkpoint (2026-10-14): `8497ebb6` after #333–339. The completed inventory on
+`576064bf` (tree identical to `1aa470fd`) has five failed commands/twelve cases.
+Targeted #336–339 qualification closes those original failures and the additional
+KLI case. Docs/static closure, final installed packages and publication remain open.
 Frozen upstream: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
@@ -20,30 +23,29 @@ without inventing a general durable-delivery guarantee to claim KERIpy parity.
 Each linked owner contains the evidence gate and unresolved limitations. Phase
 numbers refer to the seven follow-on phases, not the earlier migration steps.
 
-| Requirement       | Current boundary | Owner                     | Evidence                | Open limit            |
-| ----------------- | ---------------- | ------------------------- | ----------------------- | --------------------- |
-| CESR parsing      | Delivered        | [1–2][cesr]               | [Wire/tree][delivered]  | Accessor audit        |
-| Multisig          | Four routes      | [3d][multisig]            | [#160–161][delivered]   | Native/CLI scope      |
-| IPEX              | Proofs/cutoffs   | [3e][ipex]                | [R11/S1–3][registry]    | Full workflow         |
-| V1/V2 registries  | Runtime/observer | [Qualification][registry] | [R1–R12][registry]      | Wire/store matrix     |
-| EXN proofs        | Implemented      | [3e/3f][exchange]         | [#162/165][delivered]   | Full workflow         |
-| v2 intake         | Optional KRAM    | [TEL/TSN][exchange]       | [K1–K10][kram]          | TEL/TSN/stubs         |
-| ESSR outcomes     | Shared admission | [4 integration][essr]     | [Policy][resource]      | Native copies         |
-| Shared budget     | Trees/queues     | [4 stack][resource]       | [Policy][resource]      | Copies/metadata       |
-| Storage/recovery  | Nested preflight | [5][storage]              | [#214][native-rows]     | Other rows/recovery   |
-| Transport         | HTTP/TCP engines | [6/S1–9][transport]       | [Boundary][transport]   | Stack/guard/duplex    |
-| Reference pins    | Imports audited  | [7][qualification]        | [Inventory][pins]       | Actual workflows      |
-| Qualification     | Small corpora    | [7][qualification]        | [Matrix][qualification] | Full runtime          |
-| Mapper/schema IDs | Implemented      | [Qualification][mapper]   | [Claims/IDs][mapper]    | Default-builder scope |
-| npm release       | Pending          | [#104][release]           | Published artifacts     | Final goal gate       |
+| Area          | Implementation                                                     | Qualification / limit      |
+| ------------- | ------------------------------------------------------------------ | -------------------------- |
+| Parser/Mapper | [Engine][cesr], [claims/IDs][mapper]                               | API limits                 |
+| Protocol      | [Protocol owners][protocol-owners]                                 | Route limits               |
+| Runtime       | [ESSR][essr], [shared admission][resource], [transport][transport] | Installed artifacts        |
+| Storage       | [Adopted reads/recovery][storage]                                  | Caller/native limits       |
+| Qualification | [Reference pins][pins], [two observations][qualification]          | Source closed; packed gate |
+| Release       | [Three packages][release]                                          | Registry artifacts         |
+
+The [closeout report](../reports/parity/RUNTIME_PARITY_2026-10-14.md) distinguishes
+supported, unfinished, intentional differences, reference stubs and unqualified
+claims. Owner plans retain their exact boundaries; targeted source closure does not qualify
+final physical packs. After docs/static closure, [#104][release] and its linked release
+artifacts own final installed-package and publication evidence for this checkpoint.
 
 ## Publication sequence
 
 1. KRAM K1–K10, registry R1–R12, IPEX cutoffs and schema gates S1–S3 are
    implemented. Qualify their composed workflows; do not recreate foundations.
    The retired #172 snapshot remains recoverable evidence.
-2. Finish real frozen-reference TEL/TSN processors in small query/reply units.
-   Registry/credential TSN query and independent receiving composition is implemented;
+2. Legacy TEL/TSN query and independent registry/credential receiving composition
+   and adopted bounded TEL replay are implemented.
+   Qualify these actual paths in the final composition;
    retain the full workflow qualification gate. `xip/pro/bar` remain reference stubs.
 3. Complete shared admission (4), storage/recovery (5) and production
    backpressure (6) through the active stack below and its remaining owner gates.
@@ -152,3 +154,4 @@ do not close the goal on a merged version PR or a successful build alone.
 [pins]: qualification/REFERENCE_ENVIRONMENTS.md
 [mapper]: cesr/MAPPER_PLAN.md
 [upstream-gaps]: ../reference/credentials/UPSTREAM_REGISTRY_GAPS.md
+[protocol-owners]: ../reports/parity/RUNTIME_PARITY_2026-10-14.md#classification

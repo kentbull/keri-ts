@@ -1,88 +1,41 @@
 # Shared in-flight resource policy plan
 
-Owner: roadmap **4**. Existing parser/tree/recipient/runtime guards are finite
-but independent. This phase must establish one admission policy across streams,
-habitats, recipients, decryptions, queues, storage copies and pending descendants.
-The next-release requirement bounds in-flight work, not total resident accepted
-state. Accepted-state cache eviction and public borrowing API redesign are deferred;
-report their growth separately rather than claiming a process-wide RSS ceiling.
-The ledger, runtime stream/cursor admission and explicit ESSR recipient
-reservations share one policy. Ordinary trees and queued ingress retain the same
-credit through ownership and cleanup, including finite ESSR staging; storage
-and additional copies remain open.
-See the [reservation contract](../../design-docs/runtime/RESOURCE_POLICY.md).
-Coordinate the native row boundary with [storage phase 5](../db/STORAGE_RECOVERY_PLAN.md).
+Owner: roadmap **4**, coordinated with [storage phase 5](../db/STORAGE_RECOVERY_PLAN.md).
+The default Baser policy is shared by Reactor, recipients and runtime output owners.
+The release claim bounds cooperating in-flight work; accepted caches, native/mapped
+residency and arbitrary external mutation do not have a total-RSS guarantee.
+See the [reservation contract](../../design-docs/runtime/RESOURCE_POLICY.md) for
+ownership details and the [closeout report](../../reports/parity/RUNTIME_PARITY_2026-10-14.md)
+for exact evidence, exceptions and pending gates.
 
-## Review units
+## Implemented boundaries
 
-Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
+- Trees, parent-owned descendants, ingress copies and ESSR stages retain one shared
+  policy through scoped consumption and joined cleanup. Source admission precedes
+  producer/cursor acquisition; deterministic work checkpoints cover tiny/empty input.
+- Progressive JSON/MGPK/CBOR base-token and decoded-body admission precedes the
+  cooperating allocation boundary. JS-only CBOR expansion is guarded; exhaustive
+  arithmetic/share/extension accounting remains deferred and explicitly unqualified.
+- KEL/reply/TEL/TSN/Verifier/EXN/OOBI producers admit concrete cue batches before
+  effects. Captured KEL/TEL extents retain metadata, not an open reader or body.
+- QueryReplies, mailbox correlation, continuations, delivery, custom sinks, HTTP,
+  witness and notification consumers transfer existing owners. Signing/local
+  preparation runs in short Reactor turns; network waits run outside them.
+- Default CueDeck activation landed in #328. It borrows Baser policy, retains
+  the existing 1,024-item ceiling, is acquired after stores and clears queued
+  credit after joined consumers. Injected/standalone services
+  retain their explicit caller-owned contracts.
 
-1. Shared reservation ledger with atomic refusal and idempotent release is implemented;
-   owners still need to acquire/transfer/release its credit at their actual boundaries.
-2. Runtime streams reserve producer/cursor backing before source acquisition;
-   ordinary tree allowances now transfer to consumer owners.
-3. Ordinary tree reservations follow completed roots and parent-owned descendants
-   through parser and consumer cleanup; queued record copies retain shared credit
-   through retry and joined processing. ESSR sinks reserve their finite wire cap
-   before acquisition; extra hydrated and reader copies remain open.
-4. ESSR recipients borrow the exposed runtime policy; measured native-copy
-   qualification remains open.
-5. Progressive JSON/MGPK/CBOR decoded-body admission precedes codec allocation and
-   avoidable raw copying, sharing cumulative logical credit with the root and its
-   descendants through parser/consumer cleanup. MGPK declared array/map capacity
-   and pinned decoder work are admitted before members. CBOR-A admits declared/base
-   tokens and bounded standard view/record work. CBOR-B1 clears configured message
-   globals before returning ownership; B2 guards actual unqualified JS tag expansion
-   while preserving bounded unknown Tag fallback and standalone behavior. Standard
-   exhaustive bignum/fraction/share/extension accounting is deferred. Report its
-   unqualified envelope rather than inventing codec behavior or a full allocation
-   claim. Qualify the supported in-flight paths and existing finite guards; native
-   transient copies remain a measurement boundary, not a cache redesign project. Storage/hydration copy charges coordinate with phase 5. Mailbox providers
-   reserve one shared stream/copy lease through joined close and preflight native
-   rows; retained query cues and remote-worker handles remain open.
-6. Parser input checkpoints yield after 64 KiB or 4,096 pull/consume operations,
-   including empty producers, with one cancellation-owned timer. Pending
-   metadata/handles and bounded escrow scan work remain separately owned.
-   Default Runtime scopes held cue batches/owned references under the shared policy.
-   Prospective KEL/clone/state and decision-carried duplicate/escrow
-   producers admit concrete batches before effects in Runtime or an explicit CueDeck.
-   Revery's own query batches likewise precede BADA/proof/escrow writes, using
-   finite proof planning. Semantic /ksn admits its actual keyStateSaved child
-   before proof/state writes while retaining prepared reply/query ownership.
-   Frozen KEL and fixed single/pair TEL ranges are inspectable without opening event readers.
-   KEL query source-seal repair follows concrete output admission on live/retry paths.
-   Registry and credential TSN admit exact new dependency queries or txnStateSaved
-   children before proof/Broker writes, preserving external escrow and prior proof
-   ownership. Legacy credential Verifier admits actual dependency/saved cues before
-   body/proof/date/index writes, retaining current families on replay resource refusal.
-   Registry/schema membership and every-attempt chain cue distinctions remain exact.
-   EXN pending sender/proof/schema batches precede nested staging and durable evidence,
-   archive and escrow publication; earlier owners survive joined async cleanup and
-   commit checks reject changed membership. EXN authentication queries admit their
-   per-invocation ordered deduplicated batch after charged metadata scratch and
-   unique-item preflight. Earlier coordinate arrays/native reads, KRAM/IPEX
-   notification ports and private verification snapshots remain open.
-   Constructors/native copies, crash recovery and capture-time allocations remain
-   open. OOBI queueing, staged
-   multi-URL fanout and multi-parent completion admit exact batches before
-   queue/terminal/contact effects; introductions hold prepared reply/query
-   ownership while admitting queued children before proof/queue writes. CESR
-   result credit survives joined stream/parser cleanup; HTTP/schema/JSON results
-   admit before schema/terminal writes. Other durable producers remain open,
-   followed by qualification of query/mailbox/delivery ownership transfers. Default
-   runtime queue lifecycle does not fund accepted caches or other storage scans.
+## Remaining qualification
 
-S2 OOBI HTTP now consumes lazy Hab messages with shared admission before metadata
-capture and finite per-message preparation. Forwarding introduction convenience
-callers now use finite collection over captured KEL and lazy endpoint messages.
-Large-history forwarding transport adoption, native metadata/proof allocation and
-complete-stack qualification remain open. Active 714 Hab helpers collect output; TS streaming preserves its
-existing role/source topology and body-driven genus selection.
-
-Each is a 300–500-line-or-smaller target with focused existing-test extensions.
-Split further before publication if a complete boundary needs more. Qualification
-uses existing scenarios and uncommitted pressure probes rather than a new suite
-by default. These units jointly establish the in-flight bound; no partial unit does.
+Qualify the final composed inventory and installed hosts under existing policy.
+Candidate 16/256 MiB observations kept the admitted peak identical. Their later
+accessor/TEL deltas are recorded by scope, not an all-files equivalence claim.
+The complete inventory retains twelve original failures, closed by targeted #336–339
+qualification, including the additional KLI case. Final artifact closure remains open. Do not repeat successful paths or infer native allocation bounds from leases.
+Adopted TEL pre-copy/proof-bucket closure landed in #331. Other native hydration,
+constructor/capture-time allocations and physical-corrupt-row behavior retain
+specific limits in the storage owner; they do not authorize cache/API redesign.
 
 ## Deferred accepted-state residency
 

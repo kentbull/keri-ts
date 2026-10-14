@@ -54,12 +54,7 @@ ordinary/ESSR reservations through scoped consumer disposal. No file owner wrapp
 is introduced, and synchronous publication retains its collected wire credit.
 Configured KEL replay body reads now preflight native row size; lazy HTTP readers
 reserve reconstruction copies before opening an iterator. Companion proof-row reads
-and allocation measurements remain separate boundaries. Adopted TEL replay likewise
-preflights body rows before copies and consumes fixed-size native dupsort signatures
-incrementally, checking its message ceiling before payload retention. The existing
-reply lease precedes source acquisition and survives joined reader cleanup; ordinary
-standalone collection and native/mapped residency remain outside this claim.
-Broader KEL/reply replay (`clonePreIter`,
+and allocation measurements remain separate boundaries. Broader KEL/reply replay (`clonePreIter`,
 `replyEndRole`), parent factors and query preparation/retained introductions still
 require native-row and copy audits. Queue/stream credit alone does not prove their
 pre-read boundary.
@@ -73,6 +68,18 @@ coexistence must cover these categories before a runtime-total/RSS claim.
 LMDB V1 inspection must use the existing owner or a separate process. The #164
 test repair moved the live CLI host and inspector into separate processes without
 changing participants/assertions; it did not solve row allocation or shared budgets.
+
+## Source-audited remaining envelope
+
+Adopted TEL replay now preflights body rows and incrementally caps native dupsort
+proof retention (#331). Its existing reconstruction lease precedes source acquisition.
+KEL/stored reply bodies already preflight native extent. Their signature/receipt
+iteration is capped before aggregate retention; canonical tuples and native
+511-byte duplicate records are finite. This is not corrupt-row/native-scratch parity.
+Legacy Verifier `verifyChain`/escrow retries still hydrate accepted credentials
+through ordinary reads. Finite IPEX support/export collectors, standalone DB APIs,
+other outbox scans and accepted-state residency retain explicit caller/native
+limits. Do not claim all storage is admitted or create a general scan/cache redesign.
 
 ## Required acceptance
 
