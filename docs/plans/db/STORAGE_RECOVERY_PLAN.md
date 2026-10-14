@@ -24,8 +24,9 @@ an explicit limitation rather than becoming an after-allocation size assertion.
 
 Nested wire now uses the pinned NAPI size preflight before owned row copies,
 including aggregate 24 MiB credit during comparisons, publication and hydration.
-Other LMDB reads still return whole rows before size checks; mailbox's 4 MiB row
-check and replay's finite event limits do not prove admission before allocation.
+Mailbox provider reads use native size preflight before copies, backed by shared
+message/chunk/metadata admission. Other LMDB reads still return whole rows before
+size checks; replay's finite event limits do not prove admission before allocation.
 Shared leases must also account for pre-existing scratch and every admitted copy
 before claiming bounded runtime memory.
 

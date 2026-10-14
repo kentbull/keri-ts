@@ -35,7 +35,7 @@ import {
 import { loadMultisigHandlers } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { loadIpexHandlers } from "./ipexing.ts";
-import { MailboxDirector } from "./mailbox-director.ts";
+import { MailboxDirector, type MailboxStreamLimits } from "./mailbox-director.ts";
 import { openMailboxerForHabery } from "./mailboxing.ts";
 import { Notifier, openNoterForHabery } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
@@ -126,6 +126,7 @@ export interface AgentRuntimeOptions {
   mailboxPollTransport?: MailboxPollTransport;
   /** Finite reply concurrency/event/chunk admission, independent of replay length. */
   replyLimits?: ReplyStreamLimits;
+  mailboxStreamLimits?: MailboxStreamLimits;
   /** Raw-byte retention limits; reaching capacity pauses admission without losing cursors. */
   mailboxAdmission?: { mode: "durable"; limits?: Partial<MailboxInboxLimits> };
   vdr?: VdrRuntimeServices;
@@ -259,10 +260,18 @@ export function* createAgentRuntime(
     notifier,
     registry: acdc.rgy?.store ?? null,
   });
-  const mailboxDirector = new MailboxDirector(
-    hby,
-    mailboxer ? { mailboxer } : {},
-  );
+  const mailboxDirector = yield* resource<MailboxDirector>(function*(provide) {
+    const director = new MailboxDirector(hby, {
+      ...(mailboxer ? { mailboxer } : {}),
+      resources,
+      streamLimits: options.mailboxStreamLimits,
+    });
+    try {
+      yield* provide(director);
+    } finally {
+      yield* call(() => director.close());
+    }
+  });
   const poster = new Poster(hby, { mailboxer, services });
   const respondant = new Respondant(hby, { poster, mailboxDirector });
   if (mailboxer) {
@@ -323,24 +332,39 @@ export function* createAgentRuntime(
     services,
     *close(): Operation<void> {
       reactor.clearIngress();
-      yield* queryDeliveries.close();
-      try {
-        replyStreams.close();
-      } finally {
-        mailboxDirector.close();
-        if (ownsNoter && noter?.opened) {
-          yield* noter.close();
-        }
-        if (ownsMailboxer && mailboxer?.opened) {
-          yield* mailboxer.close();
-        }
-        if (ownsAcdcRegery && acdcRegery?.store.opened) {
-          yield* acdcRegery.close();
-        }
-        if (ownsReger && reger?.opened) {
-          yield* reger.close(hby.temp);
+      const failures: unknown[] = [];
+      const cleanup = [
+        function*() {
+          yield* queryDeliveries.close();
+        },
+        function*() {
+          yield* call(() => Promise.resolve(replyStreams.close()));
+        },
+        function*() {
+          yield* call(() => mailboxDirector.close());
+        },
+        function*() {
+          if (ownsNoter && noter?.opened) yield* noter.close();
+        },
+        function*() {
+          if (ownsMailboxer && mailboxer?.opened) yield* mailboxer.close();
+        },
+        function*() {
+          if (ownsAcdcRegery && acdcRegery?.store.opened) yield* acdcRegery.close();
+        },
+        function*() {
+          if (ownsReger && reger?.opened) yield* reger.close(hby.temp);
+        },
+      ];
+      for (const close of cleanup) {
+        try {
+          yield* close();
+        } catch (error) {
+          failures.push(error);
         }
       }
+      if (failures.length === 1) throw failures[0];
+      if (failures.length) throw new AggregateError(failures, "Runtime cleanup failed");
     },
   };
 }

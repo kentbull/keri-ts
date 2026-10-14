@@ -24,7 +24,9 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    before acquisition; extra hydrated and reader copies remain open.
 4. ESSR recipients borrow the exposed runtime policy; measured native-copy
    qualification remains open.
-5. Storage/hydration copy charges, coordinated with phase 5.
+5. Storage/hydration copy charges, coordinated with phase 5. Mailbox providers
+   reserve one shared stream/copy lease through joined close and preflight native
+   rows; retained query cues and remote-worker handles remain open.
 6. Pending metadata, handles/waiters and consumed-work checkpoints.
 
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.

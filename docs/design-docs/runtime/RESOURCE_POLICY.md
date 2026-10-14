@@ -99,3 +99,17 @@ Additional hydrated representations, reader copies, storage and object/handle/wo
 limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
 Counter totals alone are not an RSS or native/mapped-memory guarantee.
+
+Mailbox provider responses borrow the runtime policy. Each query response and its
+nested mailbox stream share one lease, acquired before stream construction or row
+reads: `2 * maxMessageBytes + maxChunkBytes + 4 * maxMetadataBytes + 512` bytes and
+one stream. Defaults are 4 MiB per message, 64 KiB per chunk/metadata and 64 topics;
+these are configured local policy, not protocol maxima. Topic count, labels and
+ordinals are checked before copying cursors. The pinned NAPI row preflight rejects
+oversized values before native target growth and owned copies. Ordinary unbounded
+Mailboxer iteration remains available to non-stream callers.
+Cancellation and asynchronous director/runtime close join nested reads before
+returning credit or closing stores. Cleanup failures propagate after all owners
+are attempted. Retained query cues and configured remote workers remain separate
+unfunded owners. This TS admission policy does not change the normative upstream
+7143832813cac6a394ab1faf9be83bb3372be87c mailbox routing contract.
