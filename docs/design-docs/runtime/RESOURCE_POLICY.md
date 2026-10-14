@@ -277,3 +277,19 @@ private ESSR verification snapshots and native/copy admission remain open.
 
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.
+
+Internal DID alias-ID capture holds `4 * maxMetadataBytes + 64 * maxIds + 1024`
+bytes from the exact runtime policy before native duplicate iteration. Defaults
+are 4096 examined issuer IDs, 1 MiB metadata and 128 bytes per ID: tunable local
+work/retention policy, not protocol maxima. Count and extent are checked before
+an owned row copy/array growth; exact schema-index membership avoids a schema-ID
+Set. The 3.5.3 NAPI decoder receives key-size-bounded native scratch without the
+ordinary binary slice, then makes the admitted copy before any nested lookup.
+Read-only facades retain the original database/environment and never escape capture.
+Frozen ID primitives exclude later index insertions; release follows iterator
+cleanup. This is not an active-state, endpoint-proof or cross-process snapshot.
+Selected credential bodies and 512-byte local anchor rows use native preflight;
+synchronous consumers borrow hydrated values through `8 * maxBodyBytes + 4096`
+credit and must not retain them. That conservative allowance is not a qualified
+bound on arbitrary CBOR/MGPK decoding/projection. Whole wallet arrays and actual
+DID CESR host/export adoption remain open in transport S2.

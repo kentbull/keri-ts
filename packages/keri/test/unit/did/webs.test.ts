@@ -1,4 +1,4 @@
-import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy, ShortageError } from "cesr-ts";
+import { b, ResourceAdmissionError, ResourceLimitError, ResourcePolicy, ShortageError } from "cesr-ts";
 import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
@@ -6,6 +6,7 @@ import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+import type { Reger } from "../../../src/db/reger.ts";
 import {
   bindDesignatedAliases,
   DEFAULT_DESIGNATED_ALIASES_REGISTRY_NAME,
@@ -18,6 +19,7 @@ import {
   pinDesignatedAliasesSchema,
   resolveDidWebs,
 } from "../../../src/did/index.ts";
+import { CapturedAliasIds, consumeAliasCredential } from "../../../src/did/webs/alias-credentials.ts";
 
 Deno.test("did/webs - parses DID Webs host, path, AID, and artifact URLs", () => {
   const parsed = parseDid("did:webs:127.0.0.1%3A7678:dws:EAid?meta=true");
@@ -76,6 +78,63 @@ Deno.test("did/webs - pins DA schema from JSON resource and rebinds active alias
       });
       assertEquals(second.revoked, [first.issued]);
 
+      // IDs capture index membership, including revoked entries; active-state selection is later.
+      const baseline = runtime.resources.used;
+      const captured = CapturedAliasIds.capture(runtime, hab.pre);
+      assertEquals([...captured], [first.issued, second.issued].sort());
+      assertEquals(runtime.resources.used.bytes > baseline.bytes, true);
+      const reger = runtime.vdr.reger as Reger;
+      const extra = "E" + "A".repeat(43);
+      reger.issus.sdb.putSync(b(hab.pre), b(extra));
+      assertEquals([...captured], [first.issued, second.issued].sort(), "Later IDs cannot join a capture");
+      const fresh = CapturedAliasIds.capture(runtime, hab.pre);
+      assertEquals([...fresh], [...captured], "Issuer-only IDs do not satisfy schema membership");
+      fresh.release();
+      captured.release();
+      captured.release();
+      assertThrows(() => [...captured], Error, "released");
+      assertEquals(runtime.resources.used, baseline);
+      assertThrows(() => CapturedAliasIds.capture(runtime, hab.pre, { maxIds: 1 }), ResourceLimitError);
+      assertEquals(runtime.resources.used, baseline);
+      // The duplicate decoder checks extent before owned copy, even for non-schema candidates.
+      reger.issus.sdb.putSync(b(hab.pre), b("Z".repeat(450)));
+      assertThrows(() => CapturedAliasIds.capture(runtime, hab.pre), ResourceLimitError);
+      reger.issus.sdb.removeSync(b(hab.pre), b("Z".repeat(450)));
+      const expected = reger.cloneCred(second.issued);
+      const fault = new Error("borrowed credential callback failed");
+      const caught = assertThrows(
+        () =>
+          consumeAliasCredential(runtime, second.issued, ([credential, prefix]) => {
+            assertEquals(credential.said, second.issued);
+            assertEquals(prefix.qb64, expected[1].qb64);
+            throw fault;
+          }),
+        Error,
+        fault.message,
+      );
+      assertEquals(caught, fault);
+      assertThrows(() => consumeAliasCredential(runtime, second.issued, () => {}, 1), ResourceLimitError);
+      assertThrows(() => consumeAliasCredential(runtime, "missing", () => {}), ValidationError);
+      assertEquals(runtime.resources.used, baseline);
+      const held = runtime.resources.reserve({ bytes: runtime.resources.limits.bytes - baseline.bytes });
+      assertEquals(held.kind, "reserve");
+      if (held.kind === "reserve") {
+        const getValues = reger.issus.sdb.getValues;
+        let touched = false;
+        reger.issus.sdb.getValues = () => {
+          touched = true;
+          throw new Error("unadmitted read");
+        };
+        try {
+          assertThrows(() => CapturedAliasIds.capture(runtime, hab.pre), ResourceAdmissionError);
+          assertThrows(() => consumeAliasCredential(runtime, second.issued, () => {}), ResourceAdmissionError);
+          assertEquals(touched, false);
+        } finally {
+          reger.issus.sdb.getValues = getValues;
+          held.reservation.release();
+        }
+      }
+      assertEquals(runtime.resources.used, baseline);
       const active = listActiveDesignatedAliasCredentials(runtime, hab.pre);
       assertEquals(active.map((item) => item.creder.said), [second.issued]);
       assertEquals(active.flatMap((item) => item.aliases), [
