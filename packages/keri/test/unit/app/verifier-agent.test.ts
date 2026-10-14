@@ -1,10 +1,13 @@
-import { action, type Operation, run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { action, call, type Operation, run } from "effection";
+import { assertEquals, assertExists, assertStrictEquals } from "jsr:@std/assert";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
+import { Reactor } from "../../../src/app/reactor.ts";
 import { VerifierAgent } from "../../../src/app/verifier-agent.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { createVerifierCueBaser, type VerifierCueBaser } from "../../../src/db/verifier-cueing.ts";
@@ -236,7 +239,49 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
       }
       yield* runtime.reactor.processEscrowsOnce();
 
-      const result = yield* agent.processOnce();
+      const revoked = runtime.cues.toArray().find((cue) => cue.kin === "revoked");
+      assertExists(revoked, "actual accepted TEL processing must produce the borrowed revocation");
+      const unrelated: AgentCue[] = [
+        { kin: "oobiQueued", url: "https://peer.test/first" },
+        { kin: "oobiFailed", url: "https://peer.test/last", reason: "gone" },
+      ];
+      const cues = new CueDeck(runtime.resources, 4), duplicate = { ...revoked };
+      cues.extend([unrelated[0], revoked, unrelated[1], duplicate]);
+      const ownedAgent = new VerifierAgent({
+        hby: verifierHby,
+        reger: verifierReger,
+        cdb,
+        reactor: new Reactor(verifierHby, { cues, resources: runtime.resources }),
+        cues,
+        services: runtime.services,
+        hook: agent.hook,
+      });
+      const before = runtime.resources.used.bytes, pin = cdb.rev.pin;
+      for (const failure of [new Error("revocation storage fault"), undefined]) {
+        cdb.rev.pin = () => {
+          throw failure;
+        };
+        let caught = false;
+        try {
+          yield* call(() => run(() => ownedAgent.processOnce()));
+        } catch (error) {
+          caught = true;
+          assertStrictEquals(error, failure);
+        } finally {
+          cdb.rev.pin = pin;
+        }
+        assertEquals(caught, true, "storage failure must preserve its exact identity");
+        assertEquals(cues.toArray(), [unrelated[0], revoked, unrelated[1], duplicate]);
+        assertEquals(runtime.resources.used.bytes, before, "failure requeues original credit without reacquisition");
+        assertEquals(cdb.rev.get([fixture.creder.said!]), null);
+        assertEquals(requests.length, 1, "failed publication must not send a webhook");
+      }
+      const result = yield* ownedAgent.processOnce();
+      assertEquals(cues.toArray(), unrelated, "unrelated cues preserve order after duplicate consumption");
+      cues.checkSpace(2); // Processed and duplicate revocations returned their held item slots.
+      assertEquals(runtime.resources.used.bytes, before, "shared batch survives with its unrelated owners");
+      cues.clear();
+      assertEquals(runtime.resources.used.bytes, 0);
 
       assertEquals(result.revocationsQueued, 1);
       assertEquals(result.revocationsReady, 1);
