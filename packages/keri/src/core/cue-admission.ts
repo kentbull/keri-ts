@@ -23,6 +23,7 @@ export class OwnedCue {
     private value: AgentCue | undefined,
     private dispose: (() => void) | undefined,
     private duplicate: (() => OwnedCue) | undefined,
+    readonly retainedBytes: number,
   ) {}
   get cue(): AgentCue {
     if (!this.live) throw new Error("Cue owner is released or transferred");
@@ -31,7 +32,7 @@ export class OwnedCue {
   /** Move ownership after optional synchronous atomic target admission, without returning credit. */
   transfer(accept?: (next: OwnedCue) => void): OwnedCue {
     const cue = this.cue;
-    const next = new OwnedCue(cue, this.dispose, this.duplicate);
+    const next = new OwnedCue(cue, this.dispose, this.duplicate, this.retainedBytes);
     ownerDecks.set(next, ownerDecks.get(this)!);
     try {
       accept?.(next);
@@ -150,7 +151,7 @@ export function reserveCueBytes(
   resources: ResourcePolicy,
   cues: readonly AgentCue[],
   maxNodes = 65536,
-): ResourceReservation {
+): ResourceReservation & { readonly bytes: number } {
   if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) throw new RangeError("Invalid cue inspection limit");
   // Logical Set/descriptor/stack allowance precedes even the metadata walk.
   const inspection = resources.reserve({ bytes: 128 * maxNodes + 16 * cues.length + 16384 });
@@ -158,9 +159,10 @@ export function reserveCueBytes(
     throw new ResourceAdmissionError("Cue inspection admission refused", inspection.reason);
   }
   try {
-    const retained = resources.reserve({ bytes: retainedBytes(cues, maxNodes) });
+    const bytes = retainedBytes(cues, maxNodes);
+    const retained = resources.reserve({ bytes });
     if (retained.kind === "refuse") throw new ResourceAdmissionError("Cue byte admission refused", retained.reason);
-    return retained.reservation;
+    return { bytes, release: () => retained.reservation.release() };
   } finally {
     inspection.reservation.release();
   }
@@ -189,6 +191,11 @@ export class CueDeck extends Deck<AgentCue> {
   /** Retention and interpretation must share this exact ledger. */
   get resourcePolicy(): ResourcePolicy {
     return this.resources;
+  }
+  /** Batch credit cannot return while this queued head has a live owner; inspect without opening its evidence. */
+  headRetentionBytes(): number {
+    const cue = this.peekHead();
+    return cue ? this.owners.get(cue)![0].retainedBytes : 0;
   }
   override get capacity(): number {
     return super.capacity;
@@ -239,7 +246,7 @@ export class CueDeck extends Deck<AgentCue> {
           duplicate.reservation.release();
           throw error;
         }
-      });
+      }, credit.bytes + (extra ? 128 : 0));
       ownerDecks.set(owner, this);
       return owner;
     };

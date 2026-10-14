@@ -192,6 +192,8 @@ The extraction itself adds no queue or shared allocation guarantee.
 24 MiB interpretation allowance before calling it. These local policy ceilings
 match QueryDeliveries; output is checked afterward, not a decoded/capture/native
 allocation bound. Lazy replay metadata/store ownership stays borrowed and unopened.
+The queued source-owned floor includes its irreducible shared-batch credit;
+inspect that stored amount without walking stores or opening replay.
 Accept must immediately/atomically retain the owner or throw without publication;
 it cannot be async, mutate the source deck or release early. Refusal preserves
 input/credit; successful transfer frees the ordinary Deck slot and retains credit

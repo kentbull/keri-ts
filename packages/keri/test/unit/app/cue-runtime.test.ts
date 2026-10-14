@@ -198,6 +198,19 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
           ResourceAdmissionError,
         );
         assertEquals(combined.reason, "limit");
+        const sourcePolicy = new ResourcePolicy({ bytes: 40 * 1024 ** 2 });
+        const source = new CueDeck(sourcePolicy, 1);
+        source.push({ kin: "replay", messages: [new Uint8Array(9 * 1024 ** 2)] });
+        const sourceBytes = sourcePolicy.used.bytes;
+        const ownedFloor = assertThrows(
+          () => prepareCueEmission(hab, source, sourcePolicy, () => undefined),
+          ResourceAdmissionError,
+        );
+        assertEquals(ownedFloor.reason, "limit");
+        assertEquals(source.length, 1);
+        assertEquals(sourcePolicy.used.bytes, sourceBytes);
+        source.clear();
+        assertEquals(sourcePolicy.used.bytes, 0);
         assertEquals(calls, 0);
         assertStrictEquals(ordinary.peekHead(), cue);
       } finally {

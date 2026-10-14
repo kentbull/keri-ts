@@ -33,7 +33,8 @@ export function prepareCueEmission(
   if (cues instanceof CueDeck && cues.resourcePolicy !== resources) {
     throw new RangeError("Cue interpretation requires the source deck's exact policy");
   }
-  if (wireBytes + preparationBytes > resources.limits.bytes) {
+  const heldInput = cues instanceof CueDeck ? cues.headRetentionBytes() : 0;
+  if (heldInput + wireBytes + preparationBytes > resources.limits.bytes) {
     throw new ResourceAdmissionError("Cue interpretation exceeds shared byte capacity", "limit");
   }
   let input: ResourceReservation | undefined, output: ResourceReservation | undefined;
