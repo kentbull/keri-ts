@@ -20,7 +20,13 @@ are immutable snapshots, not writable controls.
 This ledger is an admission primitive, not an allocation interceptor. Callers
 must charge copies, backing buffers and retained metadata before acquiring them.
 ESSR recipients require an explicit shared policy and retain their crypto credit
-through joined cleanup. `AgentRuntime.resources` is shared with its Reactor and
+through joined cleanup. `Baser.resources` is fixed at construction, before reopen or local Habery state
+loads. Supply a deployment policy through Habery/CLI opening options.
+AgentRuntime inherits that exact policy and rejects distinct runtime or service
+policies before acquiring resources. Runtime shutdown borrows Habery and does not
+release Baser-owned reservations. Accepted-state/cache admission is still pending;
+policy installation alone does not account those allocations.
+`AgentRuntime.resources` is shared with its Reactor and
 must be passed to hosted ESSR recipients. Inject the same policy into multiple
 runtimes when they share one deployment boundary; independent defaults do not
 establish a process-wide budget.

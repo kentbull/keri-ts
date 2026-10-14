@@ -25,6 +25,7 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
     const hby = yield* createHabery(habitatOptions);
     try {
       const runtime = yield* createAgentRuntime(hby);
+      assertEquals(runtime.resources, hby.db.resources);
       assertEquals(runtime.reactor.resources, runtime.resources);
       assertEquals(runtime.services.resources, runtime.resources);
       assertEquals(runtime.delegating.services, runtime.services);
@@ -54,13 +55,13 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
 });
 
 Deno.test("runtime stores - injected stores survive explicit close and scope exit", async () => {
-  const hby = await run(() => createHabery(habitatOptions));
+  const resources = new ResourcePolicy({ streams: 3 });
+  const hby = await run(() => createHabery({ ...habitatOptions, resources }));
   const rgy = await run(() => createAcdcRegery({ hby, name: "borrowed", temp: true }));
   const registry = rgy.baser;
   const reger = await run(() => createReger({ name: "borrowed", temp: true }));
   try {
     await run(function*() {
-      const resources = new ResourcePolicy({ streams: 3 });
       const runtime = yield* createAgentRuntime(hby, { acdc: { rgy }, vdr: { reger }, resources });
       assertEquals(runtime.resources, resources);
       assertEquals(runtime.services.resources, resources);
@@ -80,6 +81,43 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
       yield* reger.close(true);
       yield* hby.close(true);
     });
+  }
+});
+
+Deno.test("runtime stores - policy is fixed before opening and survives borrowed runtime close", async () => {
+  const resources = new ResourcePolicy();
+  const hby = await run(() => createHabery({ ...habitatOptions, resources }));
+  const other = new ResourcePolicy();
+  try {
+    for (
+      const options of [{ resources: other }, { services: { resources: other } }, {
+        resources,
+        services: { resources: other },
+      }]
+    ) {
+      await assertRejects(() => run(() => createAgentRuntime(hby, options)), RangeError, "Baser resource policy");
+    }
+    await assertRejects(() => run(() => hby.db.reopen({ resources: other })), RangeError, "original resource policy");
+    assertEquals(hby.db.opened, true);
+    assertEquals(hby.db.resources, resources);
+    const held = resources.reserve({ bytes: 1 });
+    if (held.kind !== "reserve") throw new Error("Expected policy admission");
+    try {
+      await run(function*() {
+        const runtime = yield* createAgentRuntime(hby, { services: { resources } });
+        yield* runtime.close();
+        assertEquals(resources.used.bytes, 1, "runtime cannot release another owner's credit");
+        hby.makeHab("after-runtime-close");
+      });
+    } finally {
+      held.reservation.release();
+    }
+    await run(() => hby.db.close());
+    await run(() => hby.db.reopen({ resources }));
+    assertEquals(hby.db.resources, resources);
+    assertEquals(hby.db.prefixes.has(hby.habByName("after-runtime-close")!.pre), true);
+  } finally {
+    await run(() => hby.close(true));
   }
 });
 

@@ -41,6 +41,11 @@ shares its one store with IPEX and Reactor; keep it separate from `vdr.rgy`. Fac
 cleanup responsibility until returning their opened store. Explicit runtime close
 and scope exit both join cleanup; scope exit after explicit close is harmless.
 
+Baser fixes its ResourcePolicy before reopen and local Habery/signator construction.
+CLI opening forwards it; AgentRuntime inherits it and rejects policy mismatches.
+Borrowed runtime shutdown leaves Baser ownership intact. Accepted cache/native
+admission and public borrowing adoption remain open in resource phase 4/storage phase 5.
+
 Shared ResourcePolicy credit belongs to an owner until consumption and joined
 cleanup complete. One shared instance is required; separate ledgers do not bound
 a runtime. Reactor reserves stream/cursor/producer credit before source acquisition
