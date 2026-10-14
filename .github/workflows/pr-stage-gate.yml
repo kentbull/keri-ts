@@ -235,7 +235,7 @@ jobs:
 
       - name: smoke test exact packages on the minimum Node version
         env:
-          SMOKE_NODE_IMAGE: node:20.3.0-bullseye-slim
+          SMOKE_NODE_IMAGE: node:20.3.0-bookworm-slim
         run: |
           bash scripts/smoke-test-pr-packages-npm.sh \
             "packages/keri/npm/${{ steps.pack.outputs.keri }}" \
