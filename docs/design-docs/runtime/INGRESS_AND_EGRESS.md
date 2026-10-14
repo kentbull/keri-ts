@@ -332,8 +332,10 @@ transfers to caller ownership; resolution credit ends after joined cleanup.
 Only default native fetch-header TypeError and non-ok HTTP responses may try the
 existing alternate URL; injected client TypeError, body/parser/storage/admission
 and cancellation failures propagate. HTTP-refusal cleanup failure prevents fallback.
-The shared `streamBytes` reader still suppresses cancel rejection; propagation is
-a separate shared cleanup follow-on, not a DID-specific reader. Existing
+The shared `streamBytes` reader joins one cancel Promise and always releases its
+lock. A single failure keeps its identity; distinct read/cancel/unlock failures
+propagate together as an AggregateError. Parent cancellation/error reporting
+remains part of composed owner qualification. Existing
 HTTP scheme fallback remains a compatibility policy, not strict TLS qualification.
 Artifact generation/serving still collects histories and remains transport S2 work.
 Finite JSON documents and receipt proofs retain whole-document semantics with
