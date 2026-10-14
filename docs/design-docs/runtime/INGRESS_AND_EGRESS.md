@@ -199,7 +199,11 @@ finite messages. `Baser.replay` captures prefix/first-seen ranges, including at
 most 32 delegators by default, and releases each LMDB cursor before yielding an
 event. Its default 8 MiB event limit is admission policy, not a KERI wire limit.
 Later accepted events do not extend a captured replay; stored proofs are read
-when that replay is consumed.
+when that replay is consumed. Its frozen `CapturedKelReplay` exposes only captured
+ranges and the message ceiling for cue admission; the Baser stays borrowed and
+must remain open. Taking/fanning out the cue retains its metadata credit until
+final consumption and joined cleanup. Inspection never opens the event iterator.
+Other replay sources and capture-time allocations remain separate admission work.
 
 `ReplyStreams` owns up to eight live HTTP replies by default. Each pull copies at
 most 64 KiB from one event; transport cancellation or runtime closure releases

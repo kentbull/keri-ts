@@ -33,7 +33,10 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    Internal held cue batches/owned references are available but not wired into
    Runtime. Prospective KEL/clone/state and decision-carried duplicate/escrow
    producers now admit concrete batches before effects when explicitly injected.
-   Port remaining durable producers, then query/mailbox/delivery ownership transfers.
+   Frozen KEL replay ranges are inspectable for retained cue admission without
+   opening event readers. Capture-time credit, query/source-seal effects, TEL/composed
+   sources and query/mailbox/delivery ownership transfers remain open.
+   Port remaining durable producers before Runtime activation.
 
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.
 Split further before publication if a complete boundary needs more. Qualification

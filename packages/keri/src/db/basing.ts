@@ -81,6 +81,7 @@ import {
 import { dgKey, splitOnKey, suffix, unsuffix } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { ExchangeRecord, PlaintextRecord } from "./exchange-records.ts";
+import { CapturedKelReplay, type KelReplayRange } from "./kel-replay.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
 import { MailboxInbox } from "./mailbox-inbox.ts";
 import { PayloadArchive } from "./payload-archive.ts";
@@ -1748,7 +1749,7 @@ export class Baser {
     pre: string,
     fn = 0,
     { maxDepth = 32, maxMessageBytes = 8 * 1024 * 1024 }: { maxDepth?: number; maxMessageBytes?: number } = {},
-  ): Iterable<Uint8Array> | null {
+  ): CapturedKelReplay | null {
     if (!Number.isSafeInteger(fn) || fn < 0) throw new RangeError("Replay ordinal must be a non-negative safe integer");
     for (const limit of [maxDepth, maxMessageBytes]) {
       if (!Number.isSafeInteger(limit) || limit < 1) {
@@ -1756,7 +1757,7 @@ export class Baser {
       }
     }
     // Each range is a small immutable identity/ordinal tuple; no event body is read during capture.
-    const ranges: Array<readonly [string, number, number]> = [];
+    const ranges: KelReplayRange[] = [];
     const ancestors: string[] = [];
     const visited = new Set([pre]);
     let parent = this.getKever(pre)?.delpre;
@@ -1776,42 +1777,42 @@ export class Baser {
       if (end !== null && from <= end) ranges.push([current, from, end]);
     }
     if (ranges.length === 0) return null;
-    // deno-lint-ignore no-this-alias -- The returned iterator borrows this databaser without retaining a cursor.
-    const db = this;
-    return {
-      /** Reopen each range independently; a suspended consumer holds only its current complete event. */
-      *[Symbol.iterator]() {
-        for (const [current, from, end] of ranges) {
-          let next = from;
-          while (next <= end) {
-            const rows = db.fels.getAllItemIter(current, next);
-            let row: [string[], number, string] | undefined;
-            try {
-              row = rows.next().value;
-            } finally {
-              // LMDB read ownership ends before an event is yielded to a potentially slow transport.
-              rows.return(undefined);
-            }
-            if (!row || row[1] > end) break;
-            const [, ordinal, said] = row;
-            next = ordinal + 1;
-            // Native admission/I/O failures are outside the corrupt-record reconstruction skip boundary.
-            const stored = db.getValBounded(db.evtsRaw, dgKey(current, said), maxMessageBytes);
-            if (!stored) continue;
-            let message: Uint8Array;
-            try {
-              message = db.cloneStoredEvtMsg(current, ordinal, said, stored, maxMessageBytes);
-            } catch (error) {
-              // Resource policy is terminal; only corrupt/incomplete replay records are skipped.
-              if (error instanceof ResourceLimitError) throw error;
-              // KERIpy clonePreIter skips individual corrupt/incomplete replay records.
-              continue;
-            }
-            yield message;
-          }
-        }
-      },
-    };
+    return new CapturedKelReplay(this, ranges, maxMessageBytes);
+  }
+
+  /** Read one captured range, retaining only a current event and releasing its cursor before each yield. */
+  *replayRange([current, from, end]: KelReplayRange, maxMessageBytes: number): Generator<Uint8Array> {
+    if (
+      typeof current !== "string" || !current || !Number.isSafeInteger(from) || from < 0
+      || !Number.isSafeInteger(end) || end < from || !Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1
+    ) throw new RangeError("Invalid captured KEL replay range or message limit");
+    let next = from;
+    while (next <= end) {
+      const rows = this.fels.getAllItemIter(current, next);
+      let row: [string[], number, string] | undefined;
+      try {
+        row = rows.next().value;
+      } finally {
+        // LMDB read ownership ends before an event is yielded to a potentially slow transport.
+        rows.return(undefined);
+      }
+      if (!row || row[1] > end) break;
+      const [, ordinal, said] = row;
+      next = ordinal + 1;
+      // Native admission/I/O failures are outside the corrupt-record reconstruction skip boundary.
+      const stored = this.getValBounded(this.evtsRaw, dgKey(current, said), maxMessageBytes);
+      if (!stored) continue;
+      let message: Uint8Array;
+      try {
+        message = this.cloneStoredEvtMsg(current, ordinal, said, stored, maxMessageBytes);
+      } catch (error) {
+        // Resource policy is terminal; only corrupt/incomplete replay records are skipped.
+        if (error instanceof ResourceLimitError) throw error;
+        // KERIpy clonePreIter skips individual corrupt/incomplete replay records.
+        continue;
+      }
+      yield message;
+    }
   }
 
   /** Seek the captured last first-seen ordinal without scanning or retaining a read transaction. */
