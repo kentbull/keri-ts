@@ -60,6 +60,9 @@ Haberies get neither, and injected services remain caller-owned. The v2 manager
 shares its one store with IPEX and Reactor; keep it separate from `vdr.rgy`. Factories retain
 cleanup responsibility until returning their opened store. Explicit runtime close
 and scope exit both join cleanup; scope exit after explicit close is harmless.
+Runtime-created Noter/Mailboxer stores are acquired before cancellable reopen and
+close with the Habery temp policy. Failed/unreturned acquisition is owned too;
+injected sidecars and standalone helper lifetimes remain caller-owned.
 
 Baser fixes its ResourcePolicy before reopen and local Habery/signator construction.
 CLI opening forwards it; AgentRuntime inherits it and rejects policy mismatches.

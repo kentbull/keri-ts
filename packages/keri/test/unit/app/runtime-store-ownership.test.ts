@@ -6,25 +6,44 @@ import { openRegistry } from "../../../src/acdc/registering.ts";
 import { createRegery as createAcdcRegery, Regery as AcdcRegery } from "../../../src/acdc/registraring.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
+import { openNoterForHabery } from "../../../src/app/notifying.ts";
+import { LMDBer } from "../../../src/db/core/lmdber.ts";
+import { PathManager } from "../../../src/db/core/path-manager.ts";
 import { MailboxAdmissionError } from "../../../src/db/mailbox-inbox.ts";
+import { Mailboxer } from "../../../src/db/mailboxing.ts";
+import { Noter } from "../../../src/db/noting.ts";
 import { createReger, Reger } from "../../../src/db/reger.ts";
 
 const habitatOptions = { name: "runtime-ownership", temp: true, skipConfig: true, skipSignator: true };
 
 /** Assert native close has joined before a temporary owner is released. */
-function assertReleased(store: RegBaser | Reger): void {
+function assertReleased(store: RegBaser | Reger | Noter | Mailboxer): void {
   assertEquals(store.opened, false);
   assertEquals(store.env, null);
-  assertThrows(() => Deno.statSync(store.path!), Deno.errors.NotFound);
+  // close clears store.path; check the real temp directory rather than stat(null).
+  const ctor = store instanceof Noter
+    ? Noter
+    : store instanceof Mailboxer
+    ? Mailboxer
+    : store instanceof Reger
+    ? Reger
+    : RegBaser;
+  const directory = `${
+    Deno.env.get("TMPDIR") ?? Deno.env.get("TMP") ?? Deno.env.get("TEMP") ?? "/tmp"
+  }/${ctor.TempPrefix}${store.name}${LMDBer.TempSuffix}`;
+  assertThrows(() => Deno.statSync(directory), Deno.errors.NotFound);
 }
 
 Deno.test("runtime stores - default owners close explicitly and scope exit is harmless", async () => {
   let registry!: RegBaser;
   let reger!: Reger;
+  let noter!: Noter;
+  let mailboxer!: Mailboxer;
   await run(function*() {
-    const hby = yield* createHabery(habitatOptions);
+    const hby = yield* createHabery({ ...habitatOptions, skipSignator: false });
     try {
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       assertEquals(runtime.resources, hby.db.resources);
       assertEquals(runtime.reactor.resources, runtime.resources);
       assertEquals(runtime.services.resources, runtime.resources);
@@ -33,6 +52,10 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
       assertEquals(runtime.resources.limits.streams, 2);
       registry = runtime.acdc.rgy!.baser;
       reger = runtime.vdr.reger as Reger;
+      noter = runtime.noter!;
+      mailboxer = runtime.mailboxer!;
+      assertEquals(noter.opened, true);
+      assertEquals(mailboxer.opened, true);
       assertEquals(registry.opened, true);
       assertEquals(reger.opened, true);
       assertEquals(registry.path === reger.path, false, "v1 and v2 use separate environments");
@@ -45,6 +68,8 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
       yield* runtime.close();
       assertReleased(registry);
       assertReleased(reger);
+      assertReleased(noter);
+      assertReleased(mailboxer);
       assertEquals(hby.db.opened, true, "runtime borrows its Habery");
     } finally {
       yield* hby.close(true);
@@ -52,6 +77,8 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
   });
   assertReleased(registry);
   assertReleased(reger);
+  assertReleased(noter);
+  assertReleased(mailboxer);
 });
 
 Deno.test("runtime stores - injected stores survive explicit close and scope exit", async () => {
@@ -60,9 +87,11 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
   const rgy = await run(() => createAcdcRegery({ hby, name: "borrowed", temp: true }));
   const registry = rgy.baser;
   const reger = await run(() => createReger({ name: "borrowed", temp: true }));
+  const noter = await run(() => openNoterForHabery(hby));
+  const mailboxer = await run(() => openMailboxerForHabery(hby));
   try {
     await run(function*() {
-      const runtime = yield* createAgentRuntime(hby, { acdc: { rgy }, vdr: { reger }, resources });
+      const runtime = yield* createAgentRuntime(hby, { acdc: { rgy }, vdr: { reger }, resources, noter, mailboxer });
       assertEquals(runtime.resources, resources);
       assertEquals(runtime.services.resources, resources);
       assertEquals(runtime.reactor.resources, resources);
@@ -72,13 +101,19 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
       yield* runtime.close();
       assertEquals(registry.opened, true);
       assertEquals(reger.opened, true);
+      assertEquals(noter.opened, true);
+      assertEquals(mailboxer.opened, true);
     });
+    assertExists(noter.env);
+    assertExists(mailboxer.env);
     assertExists(registry.env);
     assertExists(reger.env);
   } finally {
     await run(function*() {
       yield* rgy.close();
       yield* reger.close(true);
+      yield* noter.close(true);
+      yield* mailboxer.close(true);
       yield* hby.close(true);
     });
   }
@@ -189,6 +224,17 @@ Deno.test("runtime stores - construction failure releases acquired default store
   const regerReopen = Reger.prototype.reopen;
   let registry!: RegBaser;
   let reger!: Reger;
+  let noter!: Noter;
+  let mailboxer!: Mailboxer;
+  const noterReopen = Noter.prototype.reopen, mailboxerReopen = Mailboxer.prototype.reopen;
+  Noter.prototype.reopen = function*(options) {
+    noter = this;
+    return yield* noterReopen.call(this, options);
+  };
+  Mailboxer.prototype.reopen = function*(options) {
+    mailboxer = this;
+    return yield* mailboxerReopen.call(this, options);
+  };
   RegBaser.prototype.reopen = function*(options) {
     const opened = yield* registryReopen.call(this, options);
     registry = this;
@@ -199,18 +245,23 @@ Deno.test("runtime stores - construction failure releases acquired default store
     reger = this;
     return opened;
   };
-  const hby = await run(() => createHabery(habitatOptions));
+  const hby = await run(() => createHabery({ ...habitatOptions, skipSignator: false }));
   try {
     await assertRejects(() =>
       run(() =>
         createAgentRuntime(hby, {
+          enableMailboxStore: true,
           mailboxAdmission: { mode: "durable", limits: { maxRecordBytes: 0 } },
         })
       ), MailboxAdmissionError);
     assertReleased(registry);
     assertReleased(reger);
+    assertReleased(noter);
+    assertReleased(mailboxer);
     assertEquals(hby.db.opened, true);
   } finally {
+    Noter.prototype.reopen = noterReopen;
+    Mailboxer.prototype.reopen = mailboxerReopen;
     RegBaser.prototype.reopen = registryReopen;
     Reger.prototype.reopen = regerReopen;
     await run(() => hby.close(true));
@@ -264,6 +315,58 @@ Deno.test("runtime stores - cancellation during acquisition joins unreturned sto
   }
 });
 
+Deno.test("runtime stores - failed pre-native and cancelled unreturned sidecar acquisition closes paths", async () => {
+  const original = Noter.prototype.reopen;
+  const ready = Promise.withResolvers<void>();
+  let noter!: Noter;
+  Noter.prototype.reopen = function*(options) {
+    noter = this;
+    yield* original.call(this, options);
+    ready.resolve();
+    yield* action<void>(() => () => {});
+    return true;
+  };
+  const mailboxReopen = Mailboxer.prototype.reopen;
+  let mailboxer!: Mailboxer;
+  Mailboxer.prototype.reopen = function*(options) {
+    mailboxer = this;
+    return yield* mailboxReopen.call(this, options);
+  };
+  const hby = await run(() => createHabery({ ...habitatOptions, skipSignator: false }));
+  const pathReopen = PathManager.prototype.reopen;
+  const failure = new Error("notification path acquired before native open");
+  PathManager.prototype.reopen = function*(options) {
+    const opened = yield* pathReopen.call(this, options);
+    if (this.path?.includes("/keri_not_")) {
+      assertEquals(noter.env, null);
+      throw failure;
+    }
+    return opened;
+  };
+  let task: ReturnType<typeof run> | undefined;
+  try {
+    assertStrictEquals(
+      await assertRejects(() => run(() => createAgentRuntime(hby, { enableMailboxStore: true }))),
+      failure,
+    );
+    assertReleased(noter);
+    assertReleased(mailboxer);
+    PathManager.prototype.reopen = pathReopen;
+    task = run(() => createAgentRuntime(hby, { enableMailboxStore: true }));
+    await ready.promise;
+    await task.halt();
+    assertReleased(noter);
+    assertReleased(mailboxer);
+    assertEquals(hby.db.opened, true);
+  } finally {
+    Noter.prototype.reopen = original;
+    Mailboxer.prototype.reopen = mailboxReopen;
+    PathManager.prototype.reopen = pathReopen;
+    await task?.halt();
+    await run(() => hby.close(true));
+  }
+});
+
 Deno.test("runtime stores - cancelling a live runtime joins output before scope-owned stores", async () => {
   const hby = await run(() =>
     createHabery({
@@ -288,6 +391,7 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
   }, { highWaterMark: 0 });
   const task = run(function*() {
     runtime = yield* createAgentRuntime(hby, {
+      enableMailboxStore: true,
       services: { http: { fetch: () => Promise.resolve(new Response(body)) } },
     });
     const reader = runtime.replyStreams.open({
@@ -333,6 +437,8 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     await cleanup.promise;
     assertEquals(runtime.acdc.rgy!.baser.opened, true);
     assertEquals((runtime.vdr.reger as Reger).opened, true);
+    assertEquals(runtime.noter!.opened, true);
+    assertEquals(runtime.mailboxer!.opened, true);
     assertEquals(runtime.resources.used.bytes > 0, true);
     assertEquals(replyClosed, false);
     release.resolve();
@@ -341,6 +447,8 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     assertEquals(replyClosed, true);
     assertReleased(runtime.acdc.rgy!.baser);
     assertReleased(runtime.vdr.reger as Reger);
+    assertReleased(runtime.noter!);
+    assertReleased(runtime.mailboxer!);
     assertEquals(runtime.resources.used.bytes, 0);
     assertEquals(hby.db.opened, true);
   } finally {
