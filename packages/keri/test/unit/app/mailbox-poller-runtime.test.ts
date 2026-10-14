@@ -6,7 +6,7 @@ import { MailboxPoller, type MailboxPollingTimeoutPolicy } from "../../../src/ap
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import type { MailboxSseMessage } from "../../../src/app/mailbox-sse.ts";
-import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { mailboxDeliveryEndpoints, mailboxPollEndpoints, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { runtimeTurn } from "../../../src/app/runtime-turn.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { Roles } from "../../../src/core/roles.ts";
@@ -137,7 +137,7 @@ Deno.test("MailboxPoller.processOnce returns cleanly when the request-open timeo
     const transport = new FakeMailboxPollTransport([{ advanceMs: 20 }], clock);
 
     try {
-      const { poller } = makePollerFixture(hby, {
+      const { hab, poller, endpoints } = makePollerFixture(hby, {
         clock,
         transport,
         timeouts: {
@@ -147,12 +147,36 @@ Deno.test("MailboxPoller.processOnce returns cleanly when the request-open timeo
         },
       });
 
+      const mailbox = endpoints[0]!, tcp = "tcp://remote.mailbox.test:5620";
+      const witness = "available-witness", witnessUrl = "https://available.witness.test/";
+      hby.db.ends.pin([hab.pre, Roles.witness, witness], { allowed: true });
+      hby.db.locs.pin([witness, "https"], { url: witnessUrl });
+      hby.db.locs.rem([mailbox.eid, "http"]);
+      hby.db.locs.pin([mailbox.eid, "tcp"], { url: tcp });
+      assertEquals(mailboxDeliveryEndpoints(hab, hab.pre), [{ eid: mailbox.eid, url: tcp }]);
+      assertEquals(mailboxPollEndpoints(hby, hab), [], "TCP-only mailbox must retain precedence over HTTP witness");
+      assertEquals(yield* poller.processOnce(), []);
+      assertEquals(transport.polls.length, 0, "SSE must not attempt a TCP endpoint");
+      const defaultPoller = new MailboxPoller(hby, new MailboxDirector(hby));
+      defaultPoller.registerTopic("/challenge");
+      assertEquals(yield* defaultPoller.processOnce(), [], "default HTTP transport waits for an HTTP mailbox URL");
+      hby.db.locs.pin([mailbox.eid, "http"], { url: mailbox.url });
       const batches = yield* poller.processOnce();
 
       assertEquals(batches, []);
       assertEquals(transport.polls.length, 1);
       assertEquals(transport.polls[0]!.timeouts.requestOpenTimeoutMs, 20);
       assertEquals(clock.now(), 20);
+      assertEquals(transport.polls[0]!.endpoint.url, mailbox.url);
+      const https = "https://remote.mailbox.test/";
+      hby.db.locs.pin([mailbox.eid, "https"], { url: https });
+      assertEquals(mailboxPollEndpoints(hby, hab)[0].url, https);
+      assertEquals(mailboxDeliveryEndpoints(hab, hab.pre)[0].url, https);
+      hby.db.ends.rem([hab.pre, Roles.mailbox, mailbox.eid]);
+      assertEquals(mailboxPollEndpoints(hby, hab)[0].url, witnessUrl);
+      hby.db.locs.rem([witness, "https"]);
+      hby.db.locs.pin([witness, "tcp"], { url: "tcp://available.witness.test:5620" });
+      assertEquals(mailboxPollEndpoints(hby, hab), [], "TCP-only witness has no SSE transport");
     } finally {
       yield* hby.close();
     }
