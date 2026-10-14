@@ -8,6 +8,7 @@ import {
   framePayload,
   type ParseOptions,
   type Payload,
+  ResourceAdmissionError,
 } from "cesr-ts";
 import { toEffectionFrames } from "cesr-ts/effection";
 import { call, each, type Operation, resource, scoped } from "npm:effection@^3.6.0";
@@ -99,9 +100,12 @@ async function errorText(response: Response, limit: number, signal: AbortSignal)
   if (!response.body) return "";
   // Diagnostics are metadata, not a reason to buffer an arbitrary peer response.
   const reader = response.body.getReader();
+  let closing: Promise<void> | undefined;
+  /** Repeated cancel calls do not join the first underlying stream cancellation. */
+  const close = () => closing ??= reader.cancel(signal.reason);
   /** Cancellation wakes a blocked read even for an injected response disconnected from fetch. */
   const cancel = () => {
-    void reader.cancel(signal.reason).catch(() => undefined);
+    void close().catch(() => undefined);
   };
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
@@ -122,7 +126,7 @@ async function errorText(response: Response, limit: number, signal: AbortSignal)
   } finally {
     signal.removeEventListener("abort", cancel);
     try {
-      await reader.cancel();
+      await close();
     } finally {
       reader.releaseLock();
     }
@@ -133,6 +137,14 @@ async function errorText(response: Response, limit: number, signal: AbortSignal)
 function byteLimit(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 0) throw new RangeError(`${name} must be a non-negative safe integer`);
   return value;
+}
+
+/** Inspect already parsed metadata without qualifying or reading any payload. */
+function ordinaryBytes(root: CesrFrame): number {
+  let size = root.body.raw.length;
+  for (const group of root.attachments) size += group.raw.length;
+  for (const child of root.nests ?? []) size += ordinaryBytes(child);
+  return byteLimit(size, "output metadata bytes");
 }
 
 /**
@@ -155,6 +167,15 @@ export function* requestFrame(url: string, frame: CesrFrame, options: EgressOpti
     // Validate both finite metadata budgets before creating any network or payload reader.
     const headerLimit = byteLimit(options.maxHeaderBytes ?? 64 * 1024, "maxHeaderBytes");
     const errorLimit = byteLimit(options.maxErrorBytes ?? 16 * 1024, "maxErrorBytes");
+    // Retain conservative qualification/header/diagnostic copies plus bounded serializer reader/output backing.
+    const bytes = 8 * ordinaryBytes(frame) + 6 * headerLimit + 4 * errorLimit + 2 * 1024 ** 2;
+    const credit = services.resources.reserve({ streams: 1, bytes });
+    if (credit.kind === "refuse") {
+      throw new ResourceAdmissionError(
+        `HTTP output ${credit.resource} admission refused: ${credit.reason}`,
+        credit.reason,
+      );
+    }
     // Each Promise leaf remains tracked until cancellation has joined its cleanup.
     let preparing: Promise<Uint8Array> | undefined;
     // Upload cleanup is independent of whether fetch has already returned response headers.
@@ -213,18 +234,25 @@ export function* requestFrame(url: string, frame: CesrFrame, options: EgressOpti
         throw new ValidationError(`CESR delivery to ${url} failed with HTTP ${response.status}: ${detail}`);
       }
     } finally {
-      // Abort first so blocked fetch/payload reads can settle before their owners are joined.
-      controller.abort();
-      if (fetching) {
-        yield* call(async () => {
-          // A late successful response still has an owned body that must be closed.
-          const completed = await fetching!.catch(() => undefined);
-          if (completed?.body && !completed.body.locked) await completed.body.cancel().catch(() => undefined);
-        });
+      try {
+        // Abort first so blocked fetch/payload reads can settle before their owners are joined.
+        controller.abort();
+        try {
+          if (fetching) {
+            yield* call(async () => {
+              // A late successful response still has an owned body that must be closed.
+              const completed = await fetching!.catch(() => undefined);
+              if (completed?.body && !completed.body.locked) await completed.body.cancel();
+            });
+          }
+        } finally {
+          if (preparing) yield* call(() => preparing!.then(() => {}, () => {}));
+          if (reading) yield* call(() => reading!.then(() => {}, () => {}));
+          if (body) yield* call(() => body!.close());
+        }
+      } finally {
+        credit.reservation.release();
       }
-      if (preparing) yield* call(() => preparing!.then(() => {}, () => {}));
-      if (reading) yield* call(() => reading!.then(() => {}, () => {}));
-      if (body) yield* call(() => body!.close());
     }
   });
 }
