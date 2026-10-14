@@ -19,6 +19,8 @@
   owner once, including shared credit on ordinary frames. A suspended generator
   also retains its output: credit returns after consumer disposal and generator
   resumption/closure. Sink finish transfers ownership; abort cannot revoke it.
+  A writer disposes its finished sink owner if ESSR qualification fails before
+  transfer, and propagates joined disposal failures alongside the primary error.
 - `Payload.open(signal)` must cooperate with cancellation. Generator return alone
   cannot interrupt blocked I/O. CESR root has no Effection import; its optional
   adapter owns one subscription, abort and joined cleanup.

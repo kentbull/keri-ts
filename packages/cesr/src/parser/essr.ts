@@ -194,7 +194,18 @@ export class EssrWriter {
 
   /** Finish exactly once after all containing one-frame enclosures validate. */
   async finish(): Promise<EssrPayload> {
-    return essrPayload(await this.sink.finish(), this.count, this.size, this.gvrsn);
+    const wire = await this.sink.finish();
+    try {
+      return essrPayload(wire, this.count, this.size, this.gvrsn);
+    } catch (error) {
+      // Sink ownership has transferred, but no qualified ESSR owner reached the parser yet.
+      try {
+        await wire.discard();
+      } catch (cleanup) {
+        throw new AggregateError([error, cleanup], "ESSR finalization cleanup failed", { cause: error });
+      }
+      throw error;
+    }
   }
 
   /** Abandon every parser-owned stage on malformed input, cancellation, or return. */
