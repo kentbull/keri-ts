@@ -212,7 +212,7 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
 
 Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation without masking failures", async () => {
   await run(function*() {
-    const resources = new ResourcePolicy();
+    const resources = new ResourcePolicy({ streams: 2 });
     const issuer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, resources });
     const source = yield* createAgentRuntime(issuer);

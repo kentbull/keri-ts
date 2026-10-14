@@ -18,7 +18,7 @@ export type ResourceDecision =
   | { kind: "refuse"; reason: "limit" | "busy"; resource: keyof ResourceLimits };
 
 const dimensions = ["bytes", "streams", "decryptions"] as const;
-const defaults: Readonly<ResourceLimits> = { bytes: 256 * 1024 ** 2, streams: 2, decryptions: 1 };
+const defaults: Readonly<ResourceLimits> = { bytes: 256 * 1024 ** 2, streams: 8, decryptions: 1 };
 
 /**
  * One synchronous reservation ledger shared by cooperating runtime components.

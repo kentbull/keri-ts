@@ -41,5 +41,5 @@ Deno.test("resource policy validates credit and preserves exact arithmetic at it
   assertThrows(() => policy.reserve({}), RangeError);
   held.reservation.release();
   assertEquals(policy.used.bytes, 0);
-  assertEquals(new ResourcePolicy().limits, { bytes: 256 * 1024 ** 2, streams: 2, decryptions: 1 });
+  assertEquals(new ResourcePolicy().limits, { bytes: 256 * 1024 ** 2, streams: 8, decryptions: 1 });
 });

@@ -430,7 +430,12 @@ Deno.test("TCP source rejects overlapping pulls, errors and early close; abort a
 
 Deno.test("TCP conversation owns concurrent signed replies, directional failure and joined cancellation", async () => {
   await run(function*() {
-    const receiving = yield* createHabery({ name: `tcp-replies-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const receiving = yield* createHabery({
+      name: `tcp-replies-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+      resources: new ResourcePolicy({ streams: 2 }),
+    });
     const producing = yield* createHabery({ name: `tcp-proof-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const sender = producing.makeHab("sender", undefined, { transferable: true });
     const timers: number[] = [];

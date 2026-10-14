@@ -6,7 +6,7 @@
  * startup, and bounded runtime pumping. Scenario files should use these helpers
  * so protocol assertions stay separate from subprocess plumbing.
  */
-import { type Operation, run } from "npm:effection@^3.6.0";
+import { type Operation, race, run, sleep } from "npm:effection@^3.6.0";
 import { type AgentRuntime, createAgentRuntime, processRuntimeUntil } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import {
@@ -932,6 +932,7 @@ export async function pumpTufaRuntimeUntil(
   options: {
     maxTurns?: number;
     pollMailbox?: boolean;
+    timeoutMs?: number;
   } = {},
 ): Promise<void> {
   await run(function*(): Operation<void> {
@@ -947,15 +948,23 @@ export async function pumpTufaRuntimeUntil(
       const hab = store.alias ? hby.habByName(store.alias) ?? undefined : undefined;
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       try {
-        yield* processRuntimeUntil(
-          runtime,
-          () => done({ hby, runtime, hab }),
-          {
+        const process = () =>
+          processRuntimeUntil(runtime, () => done({ hby, runtime, hab }), {
             hab,
             maxTurns: options.maxTurns ?? 128,
             pollMailbox: options.pollMailbox ?? true,
-          },
-        );
+          });
+        if (options.timeoutMs !== undefined) {
+          yield* race([
+            process(),
+            (function*() {
+              yield* sleep(options.timeoutMs!);
+              throw new Error(`Tufa runtime did not converge within ${options.timeoutMs}ms.`);
+            })(),
+          ]);
+        } else {
+          yield* process();
+        }
       } finally {
         yield* runtime.close();
       }
