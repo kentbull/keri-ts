@@ -28,32 +28,74 @@ export function* toEffectionFrames(
     options.signal?.addEventListener("abort", cancel, { once: true });
     if (options.signal?.aborted) cancel();
     // The factory is invoked lazily inside the parser so construction failures still close the resource.
+    let sourceFailure: { error: unknown } | undefined;
     async function* input(): AsyncGenerator<Uint8Array> {
-      yield* source(controller.signal);
+      try {
+        yield* source(controller.signal);
+      } catch (error) {
+        sourceFailure = { error };
+        throw error;
+      }
     }
     const iterator = input(); // Retain source lifetime separately from the cursor's interruptible read.
     const parser = parse(iterator, { ...options, signal: controller.signal });
     let subscribed = false; // One source has one position; this stream is not a broadcast channel.
     let pending: Promise<IteratorResult<CesrFrame, void>> | undefined;
     let closing: Promise<void> | undefined;
+    let reported: { error: unknown } | undefined;
 
     /** Abort before joining, allowing a blocked cooperative source to finish its finally block. */
     function close(): Promise<void> {
       return closing ??= (async () => {
         controller.abort();
-        const unclaimed = await pending?.catch(() => undefined);
-        // Cancellation may win after parsing completes but before next() hands
-        // ownership to its Operation caller. Dispose that one undelivered frame.
+        const errors: unknown[] = [];
+        const reportedErrors = new Set<unknown>();
+        const collectReported = (error: unknown): void => {
+          if (reportedErrors.has(error)) return;
+          reportedErrors.add(error);
+          if (error instanceof AggregateError) for (const child of error.errors) collectReported(child);
+        };
+        if (reported) {
+          collectReported(reported.error);
+          if (reportedErrors.has(controller.signal.reason)) {
+            for (const error of reportedErrors) {
+              if (error !== controller.signal.reason && !(error instanceof AggregateError)) errors.push(error);
+            }
+          } else errors.push(reported.error);
+        }
+        const visited = new Set<unknown>();
+        const note = (error: unknown) => {
+          if (visited.has(error) || reportedErrors.has(error) || error === controller.signal.reason) return;
+          visited.add(error);
+          if (error instanceof AggregateError) for (const child of error.errors) note(child);
+          else errors.push(error);
+        };
+        let unclaimed: IteratorResult<CesrFrame, void> | undefined;
+        try {
+          unclaimed = await pending;
+        } catch (error) {
+          note(error);
+        }
+        // Parsing can complete while cancellation wins; this owner must dispose the undelivered frame.
         try {
           if (unclaimed && !unclaimed.done) await discardFrame(unclaimed.value);
-        } finally {
-          try {
-            await parser.return(undefined);
-          } finally {
-            // Cursor abort wakes locally; the cooperative adapter also joins source cleanup.
-            await iterator.return(undefined);
-          }
+        } catch (error) {
+          note(error);
         }
+        try {
+          await parser.return(undefined);
+        } catch (error) {
+          note(error);
+        }
+        // Cursor abort wakes locally; the source may still be finishing its asynchronous cleanup.
+        try {
+          await iterator.return(undefined);
+        } catch (error) {
+          note(error);
+        }
+        if (sourceFailure) note(sourceFailure.error);
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "Frame channel cleanup failed");
       })();
     }
 
@@ -73,14 +115,29 @@ export function* toEffectionFrames(
                   if (pending) throw new Error("Frame channel cannot read concurrently");
                   pending = parser.next();
                   let delivered = false;
+                  // Earlier resource teardown preserves late close failure even when this next() is halted.
+                  yield* resource<void>(function*(hold) {
+                    try {
+                      yield* hold();
+                    } finally {
+                      if (!delivered) {
+                        try {
+                          yield* call(close);
+                        } finally {
+                          pending = undefined;
+                        }
+                      }
+                    }
+                  });
                   try {
                     const result = yield* call(() => pending!);
                     delivered = true;
                     return result;
+                  } catch (error) {
+                    reported = { error };
+                    throw error;
                   } finally {
-                    // Halting only this next() must also cancel the in-flight parser read.
-                    if (!delivered) yield* call(close);
-                    pending = undefined;
+                    if (delivered) pending = undefined;
                   }
                 });
               },
