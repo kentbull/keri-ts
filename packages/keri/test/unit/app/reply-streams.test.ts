@@ -1,9 +1,11 @@
-import { ResourceLimitError } from "cesr-ts";
+import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { ReplyStreams } from "../../../src/app/reply-streams.ts";
 
 Deno.test("HTTP replay pulls one bounded chunk and closes its iterator on cancellation", async () => {
-  const replies = new ReplyStreams({ maxStreams: 1, maxChunkBytes: 2 });
+  const resources = new ResourcePolicy({ bytes: 5, streams: 2 });
+  const replies = new ReplyStreams({ maxStreams: 1, maxMessageBytes: 3, maxChunkBytes: 2 }, resources);
+  const other = new ReplyStreams({ maxMessageBytes: 3, maxChunkBytes: 2 }, resources);
   let events = 0;
   let closed = false;
   const messages = {
@@ -14,11 +16,26 @@ Deno.test("HTTP replay pulls one bounded chunk and closes its iterator on cancel
         events++;
         yield Uint8Array.of(4);
       } finally {
+        assertEquals(resources.used.bytes, 5, "credit outlives source cleanup");
         closed = true;
       }
     },
   };
   const body = replies.open(messages);
+  let opened = false;
+  assertThrows(
+    () =>
+      other.open({
+        [Symbol.iterator]() {
+          opened = true;
+          return [][Symbol.iterator]();
+        },
+      }),
+    ResourceAdmissionError,
+    "busy",
+  );
+  assertEquals(opened, false);
+  assertEquals(resources.used.bytes, 5);
   // A Response may wait indefinitely before the client requests any bytes.
   await Promise.resolve();
   assertEquals(events, 0);
@@ -31,14 +48,34 @@ Deno.test("HTTP replay pulls one bounded chunk and closes its iterator on cancel
   await reader.cancel();
   reader.releaseLock();
   assertEquals(closed, true);
+  assertEquals(resources.used.bytes, 0);
+  assertThrows(
+    () =>
+      other.open({
+        [Symbol.iterator]() {
+          throw new Error("source unavailable");
+        },
+      }),
+    Error,
+    "source unavailable",
+  );
+  assertEquals(resources.used.bytes, 0);
+  assertThrows(
+    () => new ReplyStreams({ maxMessageBytes: 6, maxChunkBytes: 1 }, resources).open([]),
+    ResourceAdmissionError,
+    "limit",
+  );
   // Cancelling the first response returns its admission credit without advancing to event two.
-  const next = replies.open([]);
-  await next.cancel();
+  const next = other.open([]);
+  assertEquals((await next.getReader().read()).done, true);
+  assertEquals(resources.used.bytes, 0);
   replies.close();
+  other.close();
 });
 
 Deno.test("runtime shutdown errors live replies and releases every replay iterator", async () => {
-  const replies = new ReplyStreams();
+  const resources = new ResourcePolicy();
+  const replies = new ReplyStreams({}, resources);
   let closed = 0;
   const messages = {
     *[Symbol.iterator]() {
@@ -54,6 +91,7 @@ Deno.test("runtime shutdown errors live replies and releases every replay iterat
   for (const reader of readers) await reader.read();
   replies.close();
   assertEquals(closed, 2);
+  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   for (const reader of readers) {
     await assertRejects(() => reader.read(), DOMException, "Runtime closed");
     reader.releaseLock();

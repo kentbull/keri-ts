@@ -56,6 +56,14 @@ only queued records and invalidates late retries; processing retains credit unti
 joined cleanup. Runtime close and scope exit clear queued ownership. Parser backing
 credit is acquired separately, so both charges coexist during processing.
 
+Lazy HTTP replies borrow the runtime policy and reserve one stream plus their
+maximum retained event and outgoing chunk before acquiring a replay iterator.
+Credit lasts through source cleanup on EOF, cancellation, failure and runtime
+shutdown. Local reply limits still apply. This accounts for retained replay/output
+buffers; the storage source must separately admit its native and hydration copies.
+Temporary shared admission refusal maps to HTTP 503; configured size refusal
+remains 413. Neither response creates a retry queue.
+
 Additional hydrated representations, reader copies, storage and object/handle/work
 limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
