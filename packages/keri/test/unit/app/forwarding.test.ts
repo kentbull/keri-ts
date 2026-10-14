@@ -622,6 +622,20 @@ Deno.test("Poster.sendExchange falls back to local witness mailbox storage", asy
           new SerderKERI({ raw: stored[0]! }).route,
           DELEGATE_REQUEST_ROUTE,
         );
+        const mailboxer = runtime.mailboxer!;
+        const publish = mailboxer.storeMsg;
+        const route = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: DELEGATE_MAILBOX_TOPIC });
+        mailboxer.storeMsg = () => false;
+        try {
+          assertThrows(
+            () => poster.prepareBytesTarget(sender, route, 0, stored[0]!),
+            Error,
+            "publication did not complete",
+          );
+        } finally {
+          mailboxer.storeMsg = publish;
+        }
+        assertEquals(mailboxer.getTopicMsgs(mailboxTopicKey(recipient.pre, DELEGATE_MAILBOX_TOPIC)).length, 1);
       } finally {
         yield* runtime.close();
       }

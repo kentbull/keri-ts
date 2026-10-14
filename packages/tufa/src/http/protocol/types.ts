@@ -1,7 +1,10 @@
 import type { AgentRuntime, Hab, HostedRouteResolution, ProtocolHostPolicy } from "keri-ts/runtime";
 
 /** Shared request handler contract consumed by both Deno and Node hosts. */
-export type ProtocolHandler = (req: Request) => Promise<Response>;
+export type ProtocolHandler = ((req: Request) => Promise<Response>) & {
+  /** Owned handlers close file responses before host drain; injected handlers may own no files. */
+  close?: () => Promise<void>;
+};
 
 /** One parsed OOBI route request. */
 export interface OobiRouteRequest {

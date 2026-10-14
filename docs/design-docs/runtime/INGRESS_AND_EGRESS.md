@@ -186,6 +186,10 @@ wire through the shared HTTP sender without habitat or DB access. Its bytes stay
 caller-owned through joined cleanup. Existing `sendBytes` composes these steps;
 S1–3 still owns admitted handoff, guard-free runtime callers and delivery outcomes.
 The extraction itself adds no queue or shared allocation guarantee.
+Local stored delivery requires completed body/topic publication in one mailbox
+transaction. Repeated body appearances preserve topic order and raw deduplication;
+false publication cannot acknowledge delivery. This strengthens714 storeMsg's
+atomicity while retaining its layout, and adds no shared-copy/native admission.
 
 `Hab.interpretCue` synchronously borrows one cue without dequeuing. Internal
 `prepareCueEmission` pre-admits input retention and 8 MiB finite output plus
@@ -413,7 +417,19 @@ lock. A single failure keeps its identity; distinct read/cancel/unlock failures
 propagate together as an AggregateError. Parent cancellation/error reporting
 remains part of composed owner qualification. Existing
 HTTP scheme fallback remains a compatibility policy, not strict TLS qualification.
-Artifact generation/serving still collects histories and remains transport S2 work.
+Static Tufa artifacts reserve one shared stream and 1 MiB of logical handle/metadata
+allowance plus two 64 KiB buffers before opening a regular file. Response demand
+causes each read; no source prefetch or whole-file allocation occurs. Capture the
+opened file's extent, ignore later growth, and fail on truncation; this is not a
+content snapshot. Static JSON additionally checks its 8 MiB ceiling before reads.
+Request abort owns acquisition only. Cancellation/host close stop new reads and
+join pending filesystem work and descriptor close before returning credit.
+The protocol handler and Hono app expose close; default handlers are owned while
+injected handlers remain caller-owned. OS reads are joined, not forcibly interrupted;
+native/filesystem residency still requires qualification. Dynamic generation/export
+still collects histories and remains transport S2 work.
+The Node host terminates a failing post-header body and reports its original error;
+it cannot replace already transmitted 200 headers with a new status.
 Finite JSON documents and receipt proofs retain whole-document semantics with
 bounded admission and joined cancellation. Mailbox admin response metadata admits
 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those finite

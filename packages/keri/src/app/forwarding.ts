@@ -562,10 +562,11 @@ export class Poster {
     endpoint: { eid: string; url: string },
   ): PreparedCesrTarget {
     if (this.hby.db.prefixes.has(endpoint.eid)) {
-      this.requireMailboxer().storeMsg(
+      const stored = this.requireMailboxer().storeMsg(
         mailboxTopicKey(recipient, topic),
         mailboxReplyPayload(hab, recipient, topic, message),
       );
+      if (!stored) throw new Error("Mailbox publication did not complete");
       return { kind: "stored" };
     }
     const forwarded = buildForwardedDelivery(hab, { recipient, topic, message });
