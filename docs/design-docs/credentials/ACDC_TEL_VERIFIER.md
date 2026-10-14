@@ -41,7 +41,11 @@ responsibilities into one vague "VC" layer.
   lanes. Do not apply v2 most-compact top-level SAID rules to v1 KERIpy
   registry credentials.
 - TEL decisions should stay typed: accepted, duplicate, escrowed, or rejected.
-  Expected retry paths are not exception control flow.
+  Expected retry paths are not exception control flow. With an injected CueDeck,
+  actual revocation output is prepared before body, anchor, date and ordinal writes;
+  publication retains its credit until consumer cleanup. Actual owned publication
+  failures propagate with their original identity rather than becoming protocol
+  rejection. Ordinary Deck count and decision behavior stay unchanged.
 - IPEX is EXN conversation state. It should not own TEL acceptance or wallet
   persistence.
 - Verifier webhooks are not notifier state. `Notifier` gives operator

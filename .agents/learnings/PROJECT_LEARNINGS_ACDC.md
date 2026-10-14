@@ -29,6 +29,10 @@ record schemas in structing.ts and counted transport in wrappers.
 ## TEL, verifier and IPEX
 
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless escrow.
+Injected CueDeck prepares the actual rev/brv revoked cue before accepted TEL writes;
+its synchronous publication failures retain exact identity through router catches.
+Ordinary Deck keeps its existing count/decision behavior. TSN pairs and captured
+TEL replay use the existing atomic CueDeck extend/append publication.
 Verifier owns cached schemas, registry/schema/chain dependencies and saved indexes;
 direct revoked saves and revoked-chain rejection are distinct. Injected CueDeck admits
 actual dependency/saved cues before credential proof, escrow dates or saved indexes.
