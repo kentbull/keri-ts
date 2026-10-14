@@ -39,7 +39,7 @@ import {
   TransReceiptQuadruple,
 } from "../core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
-import type { KramRefusal } from "../core/kraming.ts";
+import { type KramReceipt, kramReceipt, type KramRefusal } from "../core/kraming.ts";
 import { nestedIpexRoute, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
 import type { ExchangeDecision } from "./exchanging.ts";
@@ -64,6 +64,8 @@ export interface ExchangerLike {
     nests?: readonly CesrFrame[];
     /** Hosted endpoint that received this message, independent of its claimed sender. */
     mailboxAid?: string | null;
+    /** Scoped receiver authority; never a timestamp supplied by signed wire. */
+    receipt?: KramReceipt;
   }): Operation<void | ExchangeDecision>;
 }
 
@@ -323,6 +325,7 @@ function* dispatchExchange(
     essr: envelope.essr,
     nests: envelope.nests,
     mailboxAid,
+    receipt: kramReceipt(envelope),
   });
 }
 

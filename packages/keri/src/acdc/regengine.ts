@@ -21,6 +21,7 @@ import {
   verifyRegistryAnchor,
 } from "./regeventing.ts";
 import type { RegistryStore } from "./registering.ts";
+import { FailedSchemaValidationError, MissingSchemaError, validateSchema } from "./scheming.ts";
 
 /** Expected event outcomes; persistence, corruption and programming failures throw. */
 export type RegistryEventDecision =
@@ -73,6 +74,9 @@ export class RegistryEventer {
     }
     if (acdc.regid !== this.regk) throw new ValidationError("Credential belongs to another registry.");
     if (acdc.issuer !== this.issuer) throw new ValidationError("Credential belongs to another issuer.");
+    const schema = validateSchema(acdc, this.db);
+    if (schema.kind === "missing") throw new MissingSchemaError(schema.said);
+    if (schema.kind === "invalid") throw new FailedSchemaValidationError(schema.reason);
     return this.blindTarget(acdc.said!, state, options);
   }
 

@@ -85,7 +85,11 @@ can postpone cleanup. Remove the shared opener only after the final participant.
 
 Optional runtime KRAM keeps the transport consumer inside scoped ready handoff;
 never return hydrated owners or authorize HTTP from an older cue after refusal.
-Receiver receipt propagation to presentation cutoffs remains independently guarded.
+Private envelope-bound receipt authority expires with the consumer and requires
+completed nonexempt intake. Freeze first exchange receiverTime through route proof
+escrow, retry and reopen; recheck publication against competing receipt writes.
+Signed dt, disabled/exempt/v1 intake and forged capabilities never confer cutoffs.
+Presentation registry processing remains independently guarded.
 
 [Proofs](../../docs/design-docs/exchange/EXCHANGE_PROOFS.md),
 [multisig](../../docs/design-docs/exchange/MULTISIG.md),

@@ -132,6 +132,10 @@ for LMDB_DIR in "${LMDB_DIRS[@]}"; do
     # this env var can produce a native addon that passes compilation but fails
     # at runtime or behaves incompatibly with the stores our tests create.
     export LMDB_DATA_V1=true
+    # Node-header V8 symbols can load successfully in Deno, then terminate the
+    # process when a row exceeds the 16 MiB shared-buffer threshold. The official
+    # NAPI build avoids that runtime-specific ABI while retaining data-v1 layout.
+    export ENABLE_V8_FUNCTIONS=false
     if [[ -n "${NODE_GYP}" ]]; then
       node "${NODE_GYP}" "${NODE_GYP_ARGS[@]}"
     else

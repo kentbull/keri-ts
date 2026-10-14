@@ -1,6 +1,7 @@
 /** Real forwarding admission, durable child evidence, and ownership at failure/replay boundaries. */
 import {
   b,
+  bytesEqual,
   type CesrFrame,
   collectPayload,
   concatBytes,
@@ -36,6 +37,7 @@ import { isKramHandoffActive, KramHandoff } from "../../../src/core/kram-handoff
 import { KramPolicy } from "../../../src/core/kram-policy.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../../src/core/protocol-serialization.ts";
+import { suffix } from "../../../src/db/core/keys.ts";
 import { chargeNests, discardNests, loadNests, publishNests, stageNests } from "../../../src/db/exchange-nests.ts";
 import { MAX_NESTED_WIRE_BYTES } from "../../../src/db/exchange-nests.ts";
 import {
@@ -302,6 +304,70 @@ Deno.test("imported nested rows retain Python insertion order and dedup with agg
     await discardFrame(first);
     await discardFrame(second);
     assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
+  });
+});
+
+Deno.test("nested row admission bounds remaining wire before hydration, comparisons and writer publication", async () => {
+  await scenario(async (hby, sender) => {
+    const first = await child(sender, "bounded-row");
+    await attachEssr(first);
+    const owner = exchange("/fwd", {}, { sender: sender.pre, pvrsn: Vrsn_2_0 })[0];
+    const key = suffix(b(owner.said!), 0), extra = suffix(b(owner.said!), 1);
+    const stage = crypto.randomUUID(), compare = crypto.randomUUID();
+    hby.db.epse.pin([owner.said!], owner);
+    try {
+      await stageNests(hby.db, stage, [first, first]);
+      hby.db.env!.transactionSync(() => publishNests(hby.db, owner.said!, stage));
+      const original = hby.db.getValBounded(hby.db.enst.sdb, key, MAX_NESTED_WIRE_BYTES)!;
+      // Each row fits the individual cap, but the second cannot fit the remaining aggregate credit.
+      hby.db.enst.sdb.putSync(extra, new Uint8Array(MAX_NESTED_WIRE_BYTES));
+      const native = hby.db.enst.sdb as unknown as {
+        getBinary(key: Uint8Array, options?: object): Uint8Array | undefined;
+      };
+      const read = native.getBinary;
+      let oversizedCopies = 0;
+      native.getBinary = function(key, options) {
+        if (bytesEqual(key, extra)) oversizedCopies++;
+        return read.call(this, key, options);
+      };
+      try {
+        await assertRejects(() => loadNests(hby.db, owner.said!, budget()), ResourceLimitError);
+      } finally {
+        native.getBinary = read;
+      }
+      assertEquals(oversizedCopies, 0, "remaining credit refuses before the public native copy");
+      assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
+      hby.db.enst.sdb.removeSync(extra);
+      await stageNests(hby.db, stage, [first]);
+      hby.db.enstStaging.sdb.putSync(suffix(b(stage), 1), new Uint8Array(MAX_NESTED_WIRE_BYTES));
+      assertThrows(
+        () => hby.db.env!.transactionSync(() => publishNests(hby.db, owner.said!, stage)),
+        ResourceLimitError,
+      );
+      assertEquals(hby.db.getValBounded(hby.db.enst.sdb, key, MAX_NESTED_WIRE_BYTES), original);
+      assertEquals(hby.db.getValBounded(hby.db.enst.sdb, extra, MAX_NESTED_WIRE_BYTES), null);
+      assertEquals(hby.db.enstStaging.cnt([stage]), 2, "writer failure preserves private rows for cleanup");
+      const wire = first.essr!.wire;
+      first.essr = {
+        ...first.essr!,
+        wire: {
+          ...wire,
+          /** Simulate a corrupted stage arriving during the borrowed input read. */
+          async *open(signal) {
+            hby.db.enstStaging.sdb.putSync(suffix(b(compare), 0), new Uint8Array(MAX_NESTED_WIRE_BYTES + 1));
+            yield* wire.open(signal);
+          },
+        },
+      };
+      await assertRejects(() => stageNests(hby.db, compare, [first]), ResourceLimitError);
+      const loaded = await loadNests(hby.db, owner.said!, budget());
+      await assertTree(loaded[0], first);
+      await discardNests(loaded);
+    } finally {
+      hby.db.enstStaging.rem([stage]);
+      hby.db.enstStaging.rem([compare]);
+      await discardFrame(first);
+    }
   });
 });
 
