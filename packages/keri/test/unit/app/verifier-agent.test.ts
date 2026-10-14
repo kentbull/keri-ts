@@ -3,7 +3,6 @@ import { assertEquals, assertExists, assertStrictEquals } from "jsr:@std/assert"
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
-import { Reactor } from "../../../src/app/reactor.ts";
 import { VerifierAgent } from "../../../src/app/verifier-agent.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
@@ -245,18 +244,15 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
         { kin: "oobiQueued", url: "https://peer.test/first" },
         { kin: "oobiFailed", url: "https://peer.test/last", reason: "gone" },
       ];
-      const cues = new CueDeck(runtime.resources, 4), duplicate = { ...revoked };
-      const otherOwnerBytes = runtime.resources.used.bytes;
-      cues.extend([unrelated[0], revoked, unrelated[1], duplicate]);
-      const ownedAgent = new VerifierAgent({
-        hby: verifierHby,
-        reger: verifierReger,
-        cdb,
-        reactor: new Reactor(verifierHby, { cues, resources: runtime.resources }),
-        cues,
-        services: runtime.services,
-        hook: agent.hook,
-      });
+      if (!(runtime.cues instanceof CueDeck)) throw new Error("Expected admitted runtime cues");
+      const cues = runtime.cues, duplicate = { ...revoked }, originals = [];
+      while (!cues.empty) originals.push(cues.takeOwned()!);
+      try {
+        cues.extend([unrelated[0], revoked, unrelated[1], duplicate]);
+      } finally {
+        for (const owner of originals) owner.release();
+      }
+      const otherOwnerBytes = runtime.resources.used.bytes - cues.headRetentionBytes();
       const before = runtime.resources.used.bytes, pin = cdb.rev.pin;
       for (const failure of [new Error("revocation storage fault"), undefined]) {
         cdb.rev.pin = () => {
@@ -264,7 +260,7 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
         };
         let caught = false;
         try {
-          yield* call(() => run(() => ownedAgent.processOnce()));
+          yield* call(() => run(() => agent.processOnce()));
         } catch (error) {
           caught = true;
           assertStrictEquals(error, failure);
@@ -277,7 +273,7 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
         assertEquals(cdb.rev.get([fixture.creder.said!]), null);
         assertEquals(requests.length, 1, "failed publication must not send a webhook");
       }
-      const result = yield* ownedAgent.processOnce();
+      const result = yield* agent.processOnce();
       assertEquals(cues.toArray(), unrelated, "unrelated cues preserve order after duplicate consumption");
       cues.checkSpace(2); // Processed and duplicate revocations returned their held item slots.
       assertEquals(runtime.resources.used.bytes, before, "shared batch survives with its unrelated owners");
@@ -362,9 +358,7 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
         yield* runtime.reactor.processBytes(message);
       }
       yield* runtime.reactor.processEscrowsOnce();
-      while (!runtime.cues.empty) {
-        runtime.cues.pull();
-      }
+      runtime.cues.clear();
 
       const result = yield* agent.processOnce();
       const repeat = yield* agent.processOnce();

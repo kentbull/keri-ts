@@ -14,7 +14,7 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { type AgentRuntime, createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
@@ -39,6 +39,17 @@ import { CredentialStateReceiver } from "../../../src/vdr/credential-tsn.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 import { RegistryStateReceiver } from "../../../src/vdr/registry-tsn.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
+
+/** Assert borrowed data while its actual default-runtime owner is live, then return its credit. */
+function assertRuntimeCue(runtime: AgentRuntime, expected: AgentCue | AgentCue["kin"], message?: string): void {
+  if (!(runtime.cues instanceof CueDeck)) throw new Error("Expected admitted runtime cues");
+  const owner = runtime.cues.takeOwned();
+  try {
+    assertEquals(typeof expected === "string" ? owner?.cue.kin : owner?.cue, expected, message);
+  } finally {
+    owner?.release();
+  }
+}
 
 import { expectKind } from "../../private-access.ts";
 
@@ -338,6 +349,7 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
     const issuer = hby.makeHab("issuer");
     const runtime = yield* createAgentRuntime(hby);
     const reger = runtime.vdr.reger! as Reger, tvy = runtime.vdr.tvy! as Tevery;
+    const batches: Array<{ release(): void }> = [];
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
       const credential = makeCredential(issuer.pre);
@@ -359,7 +371,10 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
           });
           yield* runtime.reactor.processBytes(wire);
           runtime.reactor.replies.capture(runtime.cues);
-          const cue = reply.take();
+          const batch = reply.takeAll();
+          assertExists(batch);
+          batches.push(batch);
+          const [cue] = batch.cues;
           assertExists(cue);
           if (cue.kin !== "replay") throw new Error("Expected TEL replay");
           assertEquals([cue.querySaid, cue.src, cue.dest], [request.said, issuer.pre, issuer.pre]);
@@ -408,12 +423,12 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
           }
         }
       }
-      assertEquals(runtime.cues.pull()?.kin, "revoked", "Accepted later revocation keeps its independent cue");
+      assertRuntimeCue(runtime, "revoked", "Accepted later revocation keeps its independent cue");
       const request = (ri = vcp.pre!, i = "", route = "tels") =>
         query(route, { ri, src: issuer.pre, i }, { pre: issuer.pre, pvrsn: Vrsn_2_0 });
       const source = new Prefixer({ qb64: issuer.pre });
       assertEquals(tvy.processQuery({ serder: request(), source }), undefined);
-      assertEquals(runtime.cues.pull()?.kin, "replay");
+      assertRuntimeCue(runtime, "replay");
       assertEquals(tvy.processQuery({ serder: request(issuer.pre), source }), undefined);
       assertEquals(runtime.cues.length, 0, "Unknown TEL has no response or query escrow");
       assertEquals(tvy.processQuery({ serder: request(), source: undefined }), {
@@ -422,16 +437,17 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
       });
       assertEquals(tvy.processQuery({ serder: request(""), source }), { kind: "drop", reason: "invalidQuery" });
       assertEquals(tvy.processQuery({ serder: request(vcp.pre!, "", "tsn"), source }), undefined);
-      assertEquals(runtime.cues.pull()?.kin, "reply");
+      assertRuntimeCue(runtime, "reply");
       const unsigned = hby.makeHab("nontransferable", undefined, { transferable: false });
       const serder = request();
       assertEquals(tvy.processQuery({ serder, cigars: unsigned.sign(serder.raw, false) }), undefined);
-      assertEquals(runtime.cues.pull()?.kin, "replay");
+      assertRuntimeCue(runtime, "replay");
       yield* reger.close();
       assertThrows(() => [...responses[0]], Error, "not open");
       yield* reger.reopen();
       assertEquals([...responses[0]].length, 2, "Captured response reopens independently of query processing");
     } finally {
+      for (const batch of batches) batch.release();
       yield* runtime.close();
       yield* hby.close(true);
     }
@@ -561,7 +577,7 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
       const valid = notice();
       yield* runtime.reactor.processBytes(issuer.endorse(valid));
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, valid.said, "Pointer is outer reply SAID");
-      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      assertRuntimeCue(runtime, "txnStateSaved");
       assertEquals(tvy.cues.length, 0, "Borrowed Tevery does not capture reply-owned notifications");
       yield* runtime.reactor.processBytes(issuer.endorse(notice(state, oldStamp)));
       assertEquals(
@@ -591,9 +607,18 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
       const watcher = notice(state, newStamp, outsider);
       yield* runtime.reactor.processBytes(outsider.endorse(watcher));
       assertEquals(reger.txnsb.current([vcp.pre!, outsider.pre])?.qb64, watcher.said);
-      assertEquals([...issuer.processCuesIter(runtime.cues)].map((emission) => [emission.kind, emission.cue.kin]), [
-        ["notify", "txnStateSaved"],
-      ]);
+      if (!(runtime.cues instanceof CueDeck)) throw new Error("Expected admitted runtime cues");
+      const notification = runtime.cues.takeOwned()!;
+      try {
+        assertEquals(
+          [...issuer.processCuesIter([notification.cue])].map((emission) => [emission.kind, emission.cue.kin]),
+          [
+            ["notify", "txnStateSaved"],
+          ],
+        );
+      } finally {
+        notification.release();
+      }
       habRecord.watchers = [];
       hby.db.habs.pin(issuer.pre, habRecord);
       const backed = inceptRegistry(issuer.pre, { baks: [outsider.pre], toad: 1 });
@@ -611,7 +636,7 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
         backerNotice.said,
         "Accepted registry backers supply trust independently of watcher configuration",
       );
-      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      assertRuntimeCue(runtime, "txnStateSaved");
       const wrong = notice(
         {
           ...state,
@@ -903,7 +928,7 @@ Deno.test("registry TSN partial proof ownership stays in finite Broker retry", a
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, serder.said);
       assertEquals(reger.txnsb.escrowdb.cnt(), 0);
       assertEquals(hby.db.rpes.cnt(), 0);
-      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      assertRuntimeCue(runtime, "txnStateSaved");
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
@@ -930,7 +955,7 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
       const valid = notice();
       yield* runtime.reactor.processBytes(issuer.endorse(valid));
       assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, valid.said);
-      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      assertRuntimeCue(runtime, "txnStateSaved");
       const resources = new ResourcePolicy(), ownedCues = new CueDeck(resources, 1);
       const receiver = new CredentialStateReceiver(tvy, new Revery(hby.db, { cues: ownedCues }));
       const est = hby.db.getEvtSerder(issuer.pre, hby.db.kels.getLast(issuer.pre, 0)!)!;
@@ -1021,10 +1046,10 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
       const watcher = notice(state, stamp, outsider);
       yield* runtime.reactor.processBytes(outsider.endorse(watcher));
       assertEquals(reger.txnsb.current([credential.said!, outsider.pre])?.qb64, watcher.said);
-      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      assertRuntimeCue(runtime, "txnStateSaved");
       const rev = revoke(credential.said!, vcp.pre!, iss.said!);
       assertEquals(tvy.processEvent({ serder: rev, ...anchorTel(issuer, rev) }).kind, "accept");
-      assertEquals(runtime.cues.pull()?.kin, "revoked");
+      assertRuntimeCue(runtime, "revoked");
       const stale = notice(state, stamp.replace(/2\+00:00$/, "5+00:00"));
       yield* runtime.reactor.processBytes(issuer.endorse(stale));
       assertEquals(
@@ -1044,7 +1069,7 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
         null,
         "Replacement releases old accepted proof only after publication",
       );
-      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      assertRuntimeCue(runtime, "txnStateSaved");
       const backed = inceptRegistry(issuer.pre, { baks: [outsider.pre], toad: 1 });
       assertEquals(
         tvy.processEvent({ serder: backed, ...anchorTel(issuer, backed), wigers: outsider.sign(backed.raw, true) })
@@ -1067,7 +1092,7 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
         backedNotice.said,
         "Accepted backers authenticate independent credential notice",
       );
-      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      assertRuntimeCue(runtime, "txnStateSaved");
       yield* reger.close();
       let failure: unknown;
       try {
@@ -1134,7 +1159,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       assertEquals(reger.txnsb.daterdb.get([notice.said!]), null);
       yield* runtime.reactor.processBytes(issuer.endorse(notice));
       assertEquals(reger.txnsb.escrowdb.get(["credential-mre", credential.said!, issuer.pre]).length, 1);
-      assertEquals(runtime.cues.pull(), {
+      assertRuntimeCue(runtime, {
         kin: "query",
         pre: issuer.pre,
         src: issuer.pre,
@@ -1171,7 +1196,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       yield* runtime.reactor.processEscrowsOnce();
       assertEquals(reger.txnsb.escrowdb.get(["credential-mre", credential.said!, issuer.pre]).length, 0);
       assertEquals(reger.txnsb.escrowdb.get(["credential-ooo", credential.said!, issuer.pre]).length, 1);
-      assertEquals(runtime.cues.pull(), {
+      assertRuntimeCue(runtime, {
         kin: "query",
         pre: issuer.pre,
         src: issuer.pre,
@@ -1184,7 +1209,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       yield* runtime.reactor.processEscrowsOnce();
       assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, notice.said);
       assertEquals(reger.txnsb.escrowdb.cnt(), 0);
-      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      assertRuntimeCue(runtime, "txnStateSaved");
       issuer.rotate({ ncount: 2, nsith: "2" });
       const fresh = reply(`/tsn/credential/${issuer.pre}`, notice.ked!.a as Record<string, unknown>, {
         pre: issuer.pre,
@@ -1259,43 +1284,53 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
       for (const event of [vcp, iss]) yield* target.reactor.processBytes(reger.cloneTvt(event.pre!, event.said!));
       const queryWire = requester.query(issuer.pre, issuer.pre, { ri: vcp.pre, i: credential.said }, "tsn");
       yield* runtime.reactor.processBytes(queryWire);
-      const replies = [...issuer.processCuesIter(runtime.cues)];
-      assertEquals(
-        replies.map((emission) => [emission.cue.kin, emission.cue.kin === "reply" ? emission.cue.dest : undefined]),
-        [["reply", requester.pre], [
-          "reply",
-          requester.pre,
-        ]],
-      );
-      const bodies = [];
-      for (const emission of replies) {
-        const [frame] = yield* call(() => parseBytes([...emission.messages][0]));
-        try {
-          bodies.push(envelopeFromFrame(frame).serder);
-        } finally {
-          yield* call(() => discardFrame(frame));
+      if (!(runtime.cues instanceof CueDeck)) throw new Error("Expected admitted runtime cues");
+      const owners = [];
+      while (!runtime.cues.empty) owners.push(runtime.cues.takeOwned()!);
+      try {
+        const replies = [...issuer.processCuesIter(owners.map((owner) => owner.cue))];
+        assertEquals(
+          replies.map((emission) => [emission.cue.kin, emission.cue.kin === "reply" ? emission.cue.dest : undefined]),
+          [["reply", requester.pre], [
+            "reply",
+            requester.pre,
+          ]],
+        );
+        const bodies = [];
+        for (const emission of replies) {
+          const [frame] = yield* call(() => parseBytes([...emission.messages][0]));
+          try {
+            bodies.push(envelopeFromFrame(frame).serder);
+          } finally {
+            yield* call(() => discardFrame(frame));
+          }
         }
+        assertEquals(bodies.map((body) => body.route), [
+          `/tsn/registry/${issuer.pre}`,
+          `/tsn/credential/${issuer.pre}`,
+        ]);
+        yield* target.reactor.processBytes([...replies[0].messages][0]);
+        assertEquals(received.txnsb.current([vcp.pre!, issuer.pre])?.qb64, bodies[0].said);
+        assertEquals(
+          received.txnsb.current([credential.said!, issuer.pre]),
+          null,
+          "Registry reply cannot authenticate child state",
+        );
+        yield* target.reactor.processBytes(requester.endorse(bodies[1]));
+        assertEquals(
+          received.txnsb.current([credential.said!, issuer.pre]),
+          null,
+          "Foreign proof cannot authenticate credential attester",
+        );
+        yield* target.reactor.processBytes([...replies[1].messages][0]);
+        assertEquals(received.txnsb.current([credential.said!, issuer.pre])?.qb64, bodies[1].said);
+        yield* received.close();
+        yield* received.reopen();
+        yield* target.reactor.processBytes([...replies[1].messages][0]);
+        assertEquals(received.txnsb.current([credential.said!, issuer.pre])?.qb64, bodies[1].said);
+      } finally {
+        for (const owner of owners) owner.release();
       }
-      assertEquals(bodies.map((body) => body.route), [`/tsn/registry/${issuer.pre}`, `/tsn/credential/${issuer.pre}`]);
-      yield* target.reactor.processBytes([...replies[0].messages][0]);
-      assertEquals(received.txnsb.current([vcp.pre!, issuer.pre])?.qb64, bodies[0].said);
-      assertEquals(
-        received.txnsb.current([credential.said!, issuer.pre]),
-        null,
-        "Registry reply cannot authenticate child state",
-      );
-      yield* target.reactor.processBytes(requester.endorse(bodies[1]));
-      assertEquals(
-        received.txnsb.current([credential.said!, issuer.pre]),
-        null,
-        "Foreign proof cannot authenticate credential attester",
-      );
-      yield* target.reactor.processBytes([...replies[1].messages][0]);
-      assertEquals(received.txnsb.current([credential.said!, issuer.pre])?.qb64, bodies[1].said);
-      yield* received.close();
-      yield* received.reopen();
-      yield* target.reactor.processBytes([...replies[1].messages][0]);
-      assertEquals(received.txnsb.current([credential.said!, issuer.pre])?.qb64, bodies[1].said);
       yield* runtime.reactor.processBytes(
         requester.query(issuer.pre, issuer.pre, { ri: vcp.pre, i: requester.pre }, "tsn"),
       );

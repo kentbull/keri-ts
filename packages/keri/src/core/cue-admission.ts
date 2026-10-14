@@ -1,4 +1,4 @@
-/** Internal cue retention admission; production runtime wiring waits for every producer/consumer port. */
+/** Shared cue retention admission; the default runtime scopes queued owners through joined consumer cleanup. */
 import {
   Indexer,
   Matter,

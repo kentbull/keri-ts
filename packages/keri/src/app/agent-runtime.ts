@@ -1,8 +1,9 @@
 import type { ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
+import { CueDeck } from "../core/cue-admission.ts";
 import type { AgentCue } from "../core/cues.ts";
-import { Deck } from "../core/deck.ts";
+import type { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import type { MessagePolicy } from "../core/eventing.ts";
 import type { KramConfig } from "../core/kraming.ts";
@@ -85,6 +86,7 @@ export interface AgentRuntime {
   noter: Noter | null;
   notifier: Notifier | null;
   signaler: Signaler | null;
+  /** Default runtime cues retain shared byte/item credit until transferred owners finish cleanup. */
   cues: Deck<AgentCue>;
   reactor: Reactor;
   oobiery: Oobiery;
@@ -215,7 +217,6 @@ export function* createAgentRuntime(
     && noter !== null;
   const notifier = options.notifier
     ?? (noter && signaler ? new Notifier(hby, { noter, signaler }) : null);
-  const cues = new Deck<AgentCue>();
   const vdr: VdrRuntimeServices = { ...(options.vdr ?? {}) };
   let ownsReger = false;
   if (!vdr.reger && !hby.readonly) {
@@ -223,6 +224,22 @@ export function* createAgentRuntime(
     ownsReger = true;
   }
   const reger = vdr.reger instanceof Reger ? vdr.reger : null;
+  const acdc: AcdcRuntimeServices = { ...(options.acdc ?? {}) };
+  let ownsAcdcRegery = false;
+  if (acdc.rgy == null && !hby.readonly) {
+    acdc.rgy = yield* openAcdcRegeryForHabery(hby);
+    ownsAcdcRegery = true;
+  }
+  const acdcRegery = acdc.rgy;
+  // Acquire after stores, before processors/consumers: reverse teardown joins consumers, clears cues, closes stores.
+  const cues = yield* resource<CueDeck>(function*(provide) {
+    const owned = new CueDeck(resources);
+    try {
+      yield* provide(owned);
+    } finally {
+      owned.clear();
+    }
+  });
   if (reger && !vdr.tvy) {
     vdr.tvy = new Tevery({ db: hby.db, reger, cues });
   }
@@ -237,13 +254,6 @@ export function* createAgentRuntime(
       cues,
     });
   }
-  const acdc: AcdcRuntimeServices = { ...(options.acdc ?? {}) };
-  let ownsAcdcRegery = false;
-  if (acdc.rgy == null && !hby.readonly) {
-    acdc.rgy = yield* openAcdcRegeryForHabery(hby);
-    ownsAcdcRegery = true;
-  }
-  const acdcRegery = acdc.rgy;
   // Reverse scope teardown joins borrowed output evidence before its backing stores close.
   const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
     const streams = new ReplyStreams(options.replyLimits, resources);
@@ -380,6 +390,9 @@ export function* createAgentRuntime(
         },
         function*() {
           yield* call(() => mailboxDirector.close());
+        },
+        function*() {
+          cues.clear();
         },
         function*() {
           if (ownsNoter && noter?.opened) yield* noter.close();

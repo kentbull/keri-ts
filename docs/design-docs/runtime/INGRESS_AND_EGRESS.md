@@ -292,8 +292,8 @@ and resolves/signs incomplete queries within that admitted preparation and final
 finite output check; `sendPrepared` performs no repeated local preparation.
 Actual runtime/host callers enter this drain outside an enclosing Reactor turn.
 `processPending(runtime)` also guards fallback signing before custom delivery;
-standalone/custom pending queries retain caller-owned byte bounds. Runtime default
-CueDeck activation remains dependent on the remaining producer/consumer ports.
+standalone/custom pending queries retain caller-owned byte bounds. Default runtime
+cues retain byte/item credit through transfer and joined consumer cleanup.
 
 Prepared Poster targets preserve HTTP/HTTPS priority and select the shared TCP
 engine for TCP-only endpoints, with the same introduction and forwarded bytes.
@@ -638,5 +638,7 @@ external mutation remain outside this transient owner contract.
 
 Runtime output resources are acquired after their backing registry stores so
 reverse scope teardown joins delivery cancellation and closes lazy replies before
-store cleanup. Explicit close keeps the same ordering and failure aggregation;
-injected stores remain borrowed. Default CueDeck activation is still deferred.
+store cleanup. The scoped default CueDeck follows backing stores and precedes
+processors/output consumers, clearing queued owners after joined outputs.
+Explicit-close callers first join request/runtime tasks; close keeps that ordering
+and failure aggregation, and injected stores remain borrowed.
