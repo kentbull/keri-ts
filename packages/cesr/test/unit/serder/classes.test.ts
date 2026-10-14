@@ -1,10 +1,12 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { decodeHex } from "jsr:@std/encoding/hex";
-import { DeserializeError } from "../../../src/core/errors.ts";
+import { DeserializeError, ResourceAdmissionError } from "../../../src/core/errors.ts";
 import { b } from "../../../src/index.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { Matter } from "../../../src/primitives/matter.ts";
+import { admitJson } from "../../../src/serder/json-admission.ts";
 import { parseSerder, Serder, SerderACDC, SerderKERI, sizeify } from "../../../src/serder/serder.ts";
+import { reapSerder } from "../../../src/serder/serdery.ts";
 import { smell, versify } from "../../../src/serder/smell.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { Vrsn_2_0 } from "../../../src/tables/versions.ts";
@@ -586,4 +588,54 @@ Deno.test("serder: stale explicit schema claims cannot enter verification fallba
     assertEquals(new SerderACDC({ ...options, sad: changed, verify: false }).verify(), false);
     assertEquals(new SerderACDC({ ...options, sad: changed, makify: true }).schema, valid.schema);
   }
+});
+
+Deno.test("JSON admission counts lexical containers, references, fields, scalars and UTF-16 upper bounds", () => {
+  const raw = b("{\"a\":[0,\"é\",{},true,null],\"a\":\"\\u0041\"}");
+  const charges: number[] = [];
+  const budget = { jsonBytes: 428, admitStage: (bytes: number) => charges.push(bytes) };
+  admitJson(raw, budget);
+  assertEquals(charges, [64 + 2 * raw.length, 428]);
+  assertEquals(budget.jsonBytes, 0);
+  assertEquals(JSON.parse(new TextDecoder().decode(raw)), { a: "A" }); // Duplicate keys and escapes keep native semantics.
+});
+
+Deno.test("admitted JSON reuses only stable independent exact backing and admits before suffix copies", () => {
+  const raw = b(v2ify("{\"v\":\"KERI20JSON000000_\",\"a\":\"\\\"[]{}:é\"}"));
+  const budget = () => ({ jsonBytes: 10000 });
+  assertEquals(reapSerder(raw, budget()).serder.raw === raw, true);
+  assertEquals(reapSerder(raw).serder.raw === raw, false, "standalone reap retains its copy contract");
+  const oversized = new Uint8Array(raw.length + 1);
+  oversized.set(raw);
+  const view = oversized.subarray(0, raw.length);
+  const copied = reapSerder(view, budget()).serder;
+  assertEquals(copied.raw === view, false);
+  assertEquals(copied.raw.buffer.byteLength, raw.length);
+  assertEquals(copied.ked, JSON.parse(new TextDecoder().decode(raw)));
+  const resizable = new Uint8Array(new ArrayBuffer(raw.length, { maxByteLength: raw.length + 1 }));
+  resizable.set(raw);
+  assertEquals(reapSerder(resizable, budget()).serder.raw === resizable, false);
+  const shared = new Uint8Array(new SharedArrayBuffer(raw.length));
+  shared.set(raw);
+  assertEquals(reapSerder(shared, budget()).serder.raw === shared, false);
+  const refusal = new ResourceAdmissionError("copy refused", "busy");
+  let slices = 0;
+  const slice = view.slice.bind(view);
+  view.slice = (start, end) => {
+    if (end === 256) return slice(start, end); // Existing bounded version-header probe.
+    slices++;
+    throw new Error("body copy must not precede admission");
+  };
+  assertEquals(
+    assertThrows(() =>
+      reapSerder(view, {
+        jsonBytes: 10000,
+        admitStage: () => {
+          throw refusal;
+        },
+      })
+    ),
+    refusal,
+  );
+  assertEquals(slices, 0);
 });

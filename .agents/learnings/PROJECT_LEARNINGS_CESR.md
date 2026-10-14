@@ -14,7 +14,11 @@
   ordinary bytes/leaves, decoded ESSR/items, nodes and depth. No full raw envelope
   or per-Texter manifest is retained. Optional shared ordinary-wire and finite ESSR-stage reservations
   belong to delivered roots, never independently to nested children. They do not
-  account for all hydrated copies or heap overhead.
+  account for all hydrated copies or heap overhead. Progressive JSON separately
+  admits lexical logical decoded/work charges before text/JSON decoding, retaining
+  them with root credit; this leaves wrapped Matter, binary/native, standalone
+  verification and store/cache allocation boundaries open. Native syntax owns JSON
+  semantics; only locally created syntax refusals permit opaque JSON fallback.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each
   owner once, including shared credit on ordinary frames. A suspended generator
   also retains its output: credit returns after consumer disposal and generator
@@ -31,6 +35,10 @@
   After 64 KiB or 4,096 pull/consume operations, yield a host turn; empty producer
   chunks count. Abort clears the single checkpoint timer and retains source-error
   identity. This is local scheduling policy, not a wire limit or RSS guarantee.
+
+Tree admission observers report only errors created by that parse invocation.
+Reserve, source, sink and observer exceptions retain identity; preserve their
+external provenance when intrinsic wire classification is enabled.
 
 ## Wire and version rules
 

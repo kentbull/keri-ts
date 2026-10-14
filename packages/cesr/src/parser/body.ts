@@ -10,6 +10,7 @@ import {
 import type { CesrBody, CesrDomain, Smellage } from "../core/types.ts";
 import { type Counter, parseCounter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
+import { isJsonSyntaxFailure, type JsonBudget } from "../serder/json-admission.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { smell } from "../serder/smell.ts";
 import { resolveCounterSizeTable } from "../tables/counter-version-registry.ts";
@@ -32,10 +33,10 @@ interface ParsedBody {
  * Hydrate an admitted body without parsing enclosures, selectors, or attachments.
  * Progressive traversal owns those stream boundaries and supplies the selected genus.
  */
-export function parseBody(input: Uint8Array, selected: Versionage | null): ParsedBody {
+export function parseBody(input: Uint8Array, selected: Versionage | null, jsonBudget?: JsonBudget): ParsedBody {
   const domain = sniff(input);
   if (domain === "msg") {
-    const { serder, consumed } = reapSerder(input);
+    const { serder, consumed } = reapSerder(input, jsonBudget);
     return { body: serder, consumed, gvrsn: bodyGenus(serder, selected) };
   }
   if (!isCesrDomain(domain)) throw new ColdStartError(`Expected a body but got ${domain}`);
@@ -45,7 +46,7 @@ export function parseBody(input: Uint8Array, selected: Versionage | null): Parse
   const size = header + counter.count * unitBytes(domain);
   if (input.length < size) throw new ShortageError(size, input.length);
   if (WRAPPED_BODIES.has(counter.name)) {
-    return { body: wrappedBody(input.subarray(header, size), domain, gvrsn), consumed: size, gvrsn };
+    return { body: wrappedBody(input.subarray(header, size), domain, gvrsn, jsonBudget), consumed: size, gvrsn };
   }
   if (NATIVE_BODIES.has(counter.name)) {
     let body: CesrBody;
@@ -63,7 +64,7 @@ export function parseBody(input: Uint8Array, selected: Versionage | null): Parse
 }
 
 /** Unwrap exactly one Matter value, preserving opaque non-native material. */
-function wrappedBody(input: Uint8Array, domain: CesrDomain, gvrsn: Versionage): CesrBody {
+function wrappedBody(input: Uint8Array, domain: CesrDomain, gvrsn: Versionage, jsonBudget?: JsonBudget): CesrBody {
   let matter: ReturnType<typeof parseMatter>;
   try {
     matter = parseMatter(input, domain);
@@ -80,13 +81,15 @@ function wrappedBody(input: Uint8Array, domain: CesrDomain, gvrsn: Versionage): 
   let metadata: Smellage | undefined;
   try {
     metadata = smell(matter.raw).smellage;
-  } catch {
+  } catch (error) {
+    if (!(error instanceof ShortageError || error instanceof VersionError)) throw error;
     // Opaque non-native material need not contain a message version string.
   }
   if (metadata) bodyGenus(metadata, gvrsn);
   try {
-    return reapSerder(matter.raw).serder;
-  } catch {
+    return reapSerder(matter.raw, jsonBudget).serder;
+  } catch (error) {
+    if (metadata?.kind === Kinds.json && !isJsonSyntaxFailure(error)) throw error;
     return {
       raw: matter.raw,
       ked: null,

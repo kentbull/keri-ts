@@ -139,6 +139,13 @@ rather than being wrapped in a CESR POST. A finite collector needs a semantic
 reason and enforced admission/cap, not merely a legacy byte-input API.
 The [stack adoption inventory][transport-plan] marks remaining callers explicitly.
 
+Default library, host and command composition follows these same ownership
+boundaries. A convenience wrapper must not silently select a private collector,
+separate policy or detached transport task. Finite document/proof exceptions
+retain their framing but expose an enforced ceiling, admission owner and
+cancellable joined response lifetime. Document the reason at the owning API;
+byte-input convenience alone does not justify buffering an entire history.
+
 Two engines own transport work: CESR HTTP request/response scopes and an owned
 TCP connection with directional I/O. Small Effection operations/resources expose
 finite-message and source inputs. TCP adapters share one writer with optional owned
@@ -191,7 +198,10 @@ then has independent backing; its caller must reserve copy/preparation credit
 first and retain it through joined cleanup. Decoding, signing and native replay
 allocations remain separate qualification boundaries. An invocation-local HTTP
 refusal observer identifies only the actual non-ok response, after bounded
-diagnostic cleanup; injected source/fetch/cleanup errors and aborts propagate.
+diagnostic cleanup; injected source/fetch/cleanup errors and aborts propagate. Admission observations
+likewise identify only engine-created source/tree/output refusals. Prepared target
+attempts join cleanup before returning local complete/refused/busy; foreign
+same-class errors and external observer failures propagate unchanged.
 The preparation facility adds no queue, automatic retry or runtime handoff.
 Local stored delivery requires completed body/topic publication in one mailbox
 transaction. Repeated body appearances preserve topic order and raw deduplication;

@@ -69,6 +69,9 @@ iterator and returns it only after source cleanup. Busy HTTP admission returns 5
 configured size refusal remains 413. Neither creates retry scheduling.
 Nonempty response detection primes one bounded event under that same owner;
 empty sources close before returning null and runtime close drops primed bytes.
+OOBI serving captures bounded endpoint/delegation descriptors only after admission,
+closes metadata cursors before hydration, and borrows Hab/store through cleanup.
+Fresh preparation caps are conservative; native metadata/proof allocation remains open.
 RuntimeDeliveries owns the existing finite query queue; retained cue adoption
 uses this same owner rather than adding a parallel queue. Query producers run
 only after preparation/request admission. Queued requests retain
@@ -87,6 +90,9 @@ and CLI callers. Adopt the shared engines/response owners rather than private
 collectors; pass the runtime's exact services/policy. Finite JSON/receipt semantics
 require enforced caps, cancellation and joined cleanup. OOBI/DID completion still
 requires full evidence; processing before EOF does not imply artifact success.
+Close adoption through default library/host/CLI callers, not only engine tests.
+Every finite exception needs a semantic reason, ceiling, admission owner and
+joined response lifetime; audit newly introduced I/O on the final release head.
 The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
@@ -102,8 +108,10 @@ and failed target packets. Retain exact independent wire until joined delivery o
 shutdown; one target per pass keeps admitted siblings progressing. Route metadata
 has its own pre-admitted finite credit. Retired owners are local progress, not
 protocol success or durable retry. Runtime cue callers still require adoption.
-Actual HTTP refusal observation is invocation-local; source/fetch/cleanup failures
-retain their original identity. These facilities do not yet move runtime callers
+Actual HTTP and source/tree/output admission refusal observation is invocation-local;
+source/fetch/sink/cleanup and external observer failures retain original identity.
+Prepared target attempts return local complete/refused/busy only after joined
+cleanup, matching observed engine-created errors rather than foreign classes. These facilities do not yet move runtime callers
 outside their guard or admit all decoded/native preparation copies.
 Admitted cue interpretation is synchronous: destination item admission precedes
 preparation, and atomic acceptance precedes ordinary source removal. Existing

@@ -20,6 +20,7 @@ import {
   Diger,
   nestedPayload,
   parsePather,
+  ResourceAdmissionError,
   ResourceLimitError,
   SerderACDC,
   SerderKERI,
@@ -106,6 +107,7 @@ export function* sendPreparedCesrTarget(
   services: RuntimeServices,
   signal?: AbortSignal,
   onHttpRefusal?: (error: CesrHttpRefusal) => void,
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): Operation<void> {
   if (target.kind === "http") {
     yield* postCesrMessage(
@@ -116,7 +118,32 @@ export function* sendPreparedCesrTarget(
       services,
       signal,
       onHttpRefusal,
+      onAdmissionRefusal,
     );
+  }
+}
+
+/** Join a prepared target attempt; local completion/refusal/busy never implies protocol acceptance. */
+export function* attemptPreparedCesrTarget(
+  target: PreparedCesrTarget,
+  services: RuntimeServices,
+  signal?: AbortSignal,
+): Operation<"complete" | "refused" | "busy"> {
+  let observed: CesrHttpRefusal | ResourceAdmissionError | undefined;
+  try {
+    yield* call(() =>
+      sendPreparedCesrTarget(target, services, signal, (error) => observed = error, (error) => observed = error)
+    );
+    signal?.throwIfAborted();
+    return "complete";
+  } catch (error) {
+    if (!observed || error !== observed) throw error;
+    signal?.throwIfAborted();
+    if (error instanceof ResourceAdmissionError) {
+      if (error.reason === "busy") return "busy";
+      throw error;
+    }
+    return "refused";
   }
 }
 
@@ -1599,6 +1626,7 @@ export function* postCesrMessage(
   services: RuntimeServices = defaultRuntimeServices,
   signal?: AbortSignal,
   onHttpRefusal?: (error: CesrHttpRefusal) => void,
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): Operation<void> {
   yield* postCesr(url, (signal) => chunkBytes(body, { signal }), {
     bodyMode,
@@ -1606,6 +1634,7 @@ export function* postCesrMessage(
     services,
     signal,
     onHttpRefusal,
+    onAdmissionRefusal,
   });
 }
 

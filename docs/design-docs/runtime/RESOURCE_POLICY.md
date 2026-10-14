@@ -70,6 +70,18 @@ residency remain separately audited boundaries.
 Temporary shared admission refusal maps to HTTP 503; configured size refusal
 remains 413. Neither response creates a retry queue.
 
+OOBI HTTP output uses the same response owner, priming one bounded message after
+admission for 404 readiness. Selector inputs are borrowed, immutable until admitted
+acquisition. Metadata cursors close before hydration/yield; local
+ceilings default to 4,096 inspected descriptors, 32 delegation levels and one
+message ceiling of retained metadata. Captured FEL identities exclude later
+acceptances; proofs and signing keys remain current. Fresh flat-field/signature
+preparation uses a conservative allowance before construction. Native Komer,
+proof/key copies and existing no-SN corrupt-proof skipping remain phase 5 gaps.
+Finite Hab adapters cap total output at 8 MiB; forwarding caller adaptation remains
+open. This preserves TS role/source selection, including endpoint KELs and its
+existing witness authorization condition, rather than claiming full 714 wire parity.
+
 Query delivery reserves 24 MiB of preparation credit and 8 MiB of retained request
 credit before invoking its synchronous wire producer. The preparation allowance
 covers bounded query wire, introduction events and their joined buffer; native
@@ -98,6 +110,15 @@ uses this same owner, leaving the second default stream slot for response ingres
 Configured parser and HTTP policies must agree. Source and payload cleanup join
 before their respective reservations return; callers must still wire the owning
 runtime services into every standalone exchange/witness sender.
+
+Progressive JSON adds measured logical decoded charges to this same tree owner
+before raw copying/text decoding/JSON.parse; descendants share its cumulative cap
+(the policy byte capacity). The CESR contract defines its 64/16/8/2 vocabulary and
+conservative working retention. Wire allowances alone do not bound decoded JSON.
+Tree admission checks its aggregate own reservations against capacity before each
+shared request: an impossible tree is `limit`; competing owners cause `busy`.
+This does not admit wrapped Matter preparation, binary/native hydration, standalone
+verification, storage/cache copies or every JavaScript/native allocation.
 
 Additional hydrated representations, reader copies, storage and object/handle/work
 limits remain in the

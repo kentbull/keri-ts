@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
 import { toEffectionFrames } from "../../../effection.ts";
 import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
@@ -202,15 +202,19 @@ Deno.test("ESSR streams mixed Texter lengths in both genera/domains and reopens 
 Deno.test("shared ESSR stages refuse before sink acquisition and retain credit with the root", async () => {
   const v = vector(2);
   const wire = b(v.selector + v.group("BodyWithAttachmentGroup", v.body + v.essr("4BABYWJj", 1)));
-  const resources = new ResourcePolicy({ bytes: 2 * 1024 + 16 });
+  // The unchanged 299-byte JSON vector holds its 1488-byte logical tree plus workspace/text.
+  const jsonCredit = 64 + 2 * KERIPY_V1_JSON_ICP_BODY.length + 1488;
+  const retained = 1024 + jsonCredit + 16;
+  const resources = new ResourcePolicy({ bytes: 2 * (1024 + jsonCredit) + 16 });
   const observed = tracking();
   const options = { resources, maxFrameBytes: 1024, maxEssrBytes: 3, maxEssrItems: 1, payloadSink: observed.factory };
   const parser = parse(chunks(wire), options);
   const frame = (await parser.next()).value!;
   await parser.return(undefined);
-  assertEquals(resources.used.bytes, 1024 + 16);
+  assertEquals(resources.used.bytes, retained);
   let payloadReads = 0;
   let sinks = 0;
+  let refusal: ResourceAdmissionError | undefined;
   const second = parse(
     (async function*() {
       yield wire.slice(0, -8);
@@ -219,20 +223,26 @@ Deno.test("shared ESSR stages refuse before sink acquisition and retain credit w
     })(),
     {
       ...options,
+      onAdmissionRefusal: (error) => refusal = error,
       payloadSink(limit, signal) {
         sinks++;
         return observed.factory(limit, signal);
       },
     },
   );
-  await assertRejects(() => second.next(), ResourceAdmissionError, "busy");
+  assertStrictEquals(await assertRejects(() => second.next(), ResourceAdmissionError, "busy"), refusal);
   assertEquals([sinks, payloadReads], [0, 0]);
-  assertEquals(resources.used.bytes, 1024 + 16);
+  assertEquals(resources.used.bytes, retained);
   await discardFrame(frame);
   assertEquals(resources.used.bytes, 0);
 
-  const tooLarge = parse(chunks(wire), { ...options, maxEssrBytes: 2048 });
-  await assertRejects(() => tooLarge.next(), ResourceAdmissionError, "limit");
+  refusal = undefined;
+  const tooLarge = parse(chunks(wire), {
+    ...options,
+    maxEssrBytes: resources.limits.bytes,
+    onAdmissionRefusal: (error) => refusal = error,
+  });
+  assertStrictEquals(await assertRejects(() => tooLarge.next(), ResourceAdmissionError, "limit"), refusal);
   assertEquals(resources.used.bytes, 0);
   await assertRejects(
     () =>
@@ -246,11 +256,42 @@ Deno.test("shared ESSR stages refuse before sink acquisition and retain credit w
     "stage unavailable",
   );
   assertEquals(resources.used.bytes, 0);
+  refusal = undefined;
+  const foreign = new ResourceAdmissionError("foreign sink busy", "busy");
+  assertStrictEquals(
+    await assertRejects(() =>
+      parse(chunks(wire), {
+        ...options,
+        classifyWireErrors: true,
+        onAdmissionRefusal: (error) => refusal = error,
+        payloadSink() {
+          throw foreign;
+        },
+      }).next()
+    ),
+    foreign,
+  );
+  assertEquals(refusal, undefined);
+  const observerFailure = new ParserError("observer failed");
+  assertStrictEquals(
+    await assertRejects(() =>
+      parse(chunks(wire), {
+        ...options,
+        maxEssrBytes: resources.limits.bytes,
+        classifyWireErrors: true,
+        onAdmissionRefusal() {
+          throw observerFailure;
+        },
+      }).next()
+    ),
+    observerFailure,
+  );
+  assertEquals(resources.used.bytes, 0);
   const retry = parse(chunks(wire), options);
   const accepted = (await retry.next()).value!;
   assertEquals(await collectPayload(accepted.essr!.raw, 3), b("abc"));
   await discardFrame(accepted);
-  assertEquals(resources.used.bytes, 1024 + 16, "suspended parser retains the complete tree allowance");
+  assertEquals(resources.used.bytes, retained, "suspended parser retains the complete tree allowance");
   await retry.return(undefined);
   assertEquals(resources.used.bytes, 0);
 });
