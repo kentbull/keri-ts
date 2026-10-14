@@ -236,6 +236,27 @@ Deno.test("serder: SerderKERI exposes KERIpy-style numeric, threshold, and backe
   assertEquals(serder.berfers.map((verfer) => verfer.qb64), [backer]);
   assertEquals(serder.genus, "-_AAA");
   assertEquals(serder.mucodes.FixBodyGroup, CtrDexV2.FixBodyGroup);
+  assertEquals([serder.uuid, serder.nonce], [null, null], "inception next-key digests are not a nonce");
+  const nonce = "0AAxyHwW6htOZ_rANOaZb2N2";
+  const legacy = new SerderKERI({ sad: { t: "vcp", ii: key, n: nonce }, makify: true });
+  const reopened = new SerderKERI({ raw: legacy.raw });
+  assertEquals([legacy.uuid, legacy.nonce, reopened.uuid, reopened.nonce], [nonce, nonce, nonce, nonce]);
+  // Unchecked hydration can supply both fields; the reference prefers even an empty u.
+  const hydrated = new SerderKERI({
+    raw: legacy.raw,
+    smellage: smell(legacy.raw).smellage,
+    ked: { ...legacy.sad, u: "" },
+    ilk: legacy.ilk,
+    said: legacy.said,
+  });
+  assertEquals([hydrated.uuid, hydrated.nonce], ["", ""]);
+  const current = new SerderKERI({
+    sad: { t: "xip", i: key, u: nonce },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    makify: true,
+  });
+  assertEquals([current.uuid, current.nonce], [nonce, nonce], "current u and its alias retain the same value");
 });
 
 Deno.test("serder: SerderKERI hydrates weighted threshold accessors from semantic arrays", () => {
