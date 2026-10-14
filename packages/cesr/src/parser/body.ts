@@ -1,3 +1,4 @@
+import { isCborSyntaxFailure } from "../core/cbor.ts";
 import { isCesrDomain, tokenSize, unitBytes } from "../core/domain.ts";
 import {
   ColdStartError,
@@ -98,6 +99,7 @@ function wrappedBody(
   } catch (error) {
     if (metadata?.kind === Kinds.json && !isJsonSyntaxFailure(error)) throw error;
     if (bodyBudget && metadata?.kind === Kinds.mgpk && !isMsgpackSyntaxFailure(error)) throw error;
+    if (bodyBudget && metadata?.kind === Kinds.cbor && !isCborSyntaxFailure(error)) throw error;
     return {
       raw: matter.raw,
       ked: null,

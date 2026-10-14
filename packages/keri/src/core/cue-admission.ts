@@ -152,8 +152,12 @@ export function reserveCueBytes(
   cues: readonly AgentCue[],
   maxNodes = 65536,
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+  limits: { additionalBytes?: number; maxBytes?: number } = {},
 ): ResourceReservation & { readonly bytes: number } {
   if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) throw new RangeError("Invalid cue inspection limit");
+  const { additionalBytes = 0, maxBytes = Number.MAX_SAFE_INTEGER } = limits;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Invalid cue byte limit");
+  if (!Number.isSafeInteger(additionalBytes) || additionalBytes < 0) throw new RangeError("Invalid cue byte floor");
   // Logical Set/descriptor/stack allowance precedes even the metadata walk.
   const inspection = resources.reserve({ bytes: 128 * maxNodes + 16 * cues.length + 16384 });
   if (inspection.kind === "refuse") {
@@ -163,6 +167,12 @@ export function reserveCueBytes(
   }
   try {
     const bytes = retainedBytes(cues, maxNodes);
+    if (bytes > maxBytes) throw new ResourceLimitError("Cue retention exceeds finite byte limit");
+    if (bytes > resources.limits.bytes - additionalBytes) {
+      const refusal = new ResourceAdmissionError("Cue retention exceeds combined byte capacity", "limit");
+      onAdmissionRefusal?.(refusal);
+      throw refusal;
+    }
     const retained = resources.reserve({ bytes });
     if (retained.kind === "refuse") {
       const refusal = new ResourceAdmissionError("Cue byte admission refused", retained.reason);
