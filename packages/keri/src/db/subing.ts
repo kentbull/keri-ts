@@ -272,6 +272,11 @@ export class Suber<T = string> extends SuberBase<T> {
     return this._des(this.db.getVal(this.sdb, this._tokey(keys)));
   }
 
+  /** Admit native row bytes before copying and decoding; caller owns copy/decoded credit. */
+  getBounded(keys: Keys, maxBytes: number, beforeCopy?: (bytes: number) => void): T | null {
+    return this._des(this.db.getValBounded(this.sdb, this._tokey(keys), maxBytes, beforeCopy));
+  }
+
   /** Remove one single-value record by its effective key. */
   rem(keys: Keys): boolean {
     return this.db.delVal(this.sdb, this._tokey(keys));
@@ -487,7 +492,7 @@ export class OnSuber<T = string> extends OnSuberBase<T> {}
  */
 export class BytesSuber extends Suber<Uint8Array> {
   /** Read bounded raw bytes with this table's key encoding and optional pre-copy admission. */
-  getBounded(keys: Keys, maxBytes: number, beforeCopy?: (bytes: number) => void): Uint8Array | null {
+  override getBounded(keys: Keys, maxBytes: number, beforeCopy?: (bytes: number) => void): Uint8Array | null {
     return this._des(this.db.getValBounded(this.sdb, this._tokey(keys), maxBytes, beforeCopy));
   }
 

@@ -136,7 +136,9 @@ Apply these remaining ports within the existing units, in dependency order:
 - **S2 DID artifacts:** `generateDidWebsCesr`, dynamic CESR hosting and DID export
   use captured KEL/TEL/alias extents and demand-driven output. JSON-only construction
   and streamed static files are delivered; whole-history generation and
-  credential-list capture still need replacement/admission.
+  credential-list callers still need replacement/admission. Internal owned ID
+  capture and bounded selected-row reads are prerequisites; they do not close
+  active-state/proof capture or actual artifact callers.
 - **S2 receipt/catchup and mailbox administration:** thread the exact runtime
   services/policy into response readers and Receiptor; close database cursors
   before network suspension. Stream replay-sized mailbox submissions and admit

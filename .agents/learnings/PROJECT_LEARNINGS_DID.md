@@ -25,6 +25,15 @@ CESR replay. JSON preparation admission and CESR generation/export remain open.
 Universal Resolver path handling accepts encoded DID input
 without decoding method-specific host-port %3A into a raw DID separator.
 
+Internal alias-ID capture reserves runtime metadata credit before native duplicate
+copies, freezes lexical issuer/schema membership and releases after source cleanup.
+The pinned NAPI decoder checks extent/count before copying; copy the admitted row
+before nested schema lookup reuses native scratch. Selected credential body/anchor
+reads preflight raw rows before decode under a conservative hydration allowance.
+Arbitrary CBOR/MGPK decoded growth remains unqualified. Existing wallet collectors,
+active-state/endpoint-proof capture and dynamic CESR/export caller adoption remain
+S2 work; ID membership alone does not establish an active alias cutoff.
+
 Designated aliases use ordinary registry-backed credentials and a SAID-checked
 JSON schema. Current binding revokes the issuer/schema's active credentials before
 issuing replacement; read the actual designated-aliases.ts contract before changing
