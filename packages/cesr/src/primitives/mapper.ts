@@ -766,7 +766,7 @@ export class Mapper {
       }
       this._mad = mad;
       if (init.verify ?? true) {
-        verifyMapRoundTrip(this);
+        this.verify(init.makify ?? false);
       }
       return;
     }
@@ -785,7 +785,7 @@ export class Mapper {
       this.totalSizeB2 = this.raw.length;
       this.fields = buildFieldProjection(this._mad, this.strict);
       if (init.verify ?? true) {
-        verifyMapRoundTrip(this);
+        this.verify(init.makify ?? false);
       }
       return;
     }
@@ -829,7 +829,30 @@ export class Mapper {
     this.fields = buildFieldProjection(mad, this.strict);
     this._mad = mad;
     if (init.verify ?? true) {
-      verifyMapRoundTrip(this);
+      this.verify(init.makify ?? false);
+    }
+  }
+
+  /** All constructor inputs verify their wire projection and any unchanged SAID claims. */
+  protected verify(makify: boolean): void {
+    verifyMapRoundTrip(this);
+    if (this.saidive && !makify) this.verifySaidClaims();
+  }
+
+  /** Standalone maps bind each present configured top-level claim to the map's own format. */
+  protected verifySaidClaims(): void {
+    const computed = Mapper.fromSad(this.mad, {
+      strict: this.strict,
+      saidive: true,
+      saids: this.saids,
+      kind: this.kind,
+      makify: true,
+      verify: false,
+    });
+    for (const label of Object.keys(this.saids)) {
+      if (Object.hasOwn(this.mad, label) && this.mad[label] !== computed.mad[label]) {
+        throw new DeserializeError(`Mapper SAID at ${label} does not verify.`);
+      }
     }
   }
 

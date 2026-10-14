@@ -104,9 +104,11 @@ The [registry foundation](../../docs/plans/credentials/REGISTRY_PLAN.md) owns
 full v2 services and the recorded upstream intake gap. Preserve legacy VDR and #168 stores;
 storage readability, observer vetting and issuer processing are separate gates.
 
-Standalone Mapper currently accepts a tampered map with a stale claimed d despite
-saidive verify. The [focused repair](../../docs/plans/cesr/MAPPER_PLAN.md) must use
-independent positive/tampered formats and preserve Aggor disclosure semantics.
+Standalone saidive Mapper verifies top-level claims across all input formats.
+Compactor disclosure construction does not flat-rehash compact claims in expanded
+maps; Aggor independently verifies its visible map commitments. The
+[Mapper plan](../../docs/plans/cesr/MAPPER_PLAN.md) retains bundled schema-ID and
+resource-encoding qualification separately from these checks.
 [IPEX](../../docs/plans/exchange/IPEX_PLAN.md) retains presentation/qualification
 gates; do not relist already implemented CLI/verifier workflows as missing.
 Broader dissemination/revocation and DB-row parity claims require their actual
