@@ -6,7 +6,8 @@
  * setup lives under `tufa/src/host`, while endpoint-specific HTTP semantics
  * live under `tufa/src/http/protocol`.
  */
-import type { AgentRuntime, ProtocolHostPolicy } from "keri-ts/runtime";
+import { type AgentRuntime, defaultRuntimeServices, type ProtocolHostPolicy } from "keri-ts/runtime";
+import { ArtifactFiles } from "./protocol/artifact-files.ts";
 import { buildProtocolRequestContext } from "./protocol/context.ts";
 import { classifyDidResolutionRoute, handleDidResolutionRoute } from "./protocol/endpoints/did-resolution.ts";
 import { classifyDwsArtifactRoute, handleDwsArtifactRoute } from "./protocol/endpoints/dws-artifacts.ts";
@@ -43,11 +44,13 @@ export function createProtocolHandler(
   runtime?: AgentRuntime,
   policy: ProtocolHostPolicy = {},
 ): ProtocolHandler {
-  return async (req: Request): Promise<Response> => {
+  const files = new ArtifactFiles(runtime?.resources ?? defaultRuntimeServices.resources);
+  const handle = async (req: Request): Promise<Response> => {
     const context = buildProtocolRequestContext(req, runtime, policy);
     const route = classifyProtocolRoute(context);
-    return await dispatchProtocolRoute(context, route);
+    return await dispatchProtocolRoute(context, route, files);
   };
+  return Object.assign(handle, { close: () => files.close() });
 }
 
 /** Classify one request by explicit endpoint precedence. */
@@ -68,6 +71,7 @@ export function classifyProtocolRoute(
 async function dispatchProtocolRoute(
   context: ProtocolRequestContext,
   route: ProtocolRoute,
+  files: ArtifactFiles,
 ): Promise<Response> {
   switch (route.kind) {
     case "health":
@@ -75,7 +79,7 @@ async function dispatchProtocolRoute(
     case "didResolution":
       return await handleDidResolutionRoute(context, route.did);
     case "dwsArtifact":
-      return await handleDwsArtifactRoute(context, route);
+      return await handleDwsArtifactRoute(context, route, files);
     case "ambiguousHostedPath":
       return new Response(route.message, {
         status: 409,

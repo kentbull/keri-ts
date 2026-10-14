@@ -327,7 +327,11 @@ function openServerHost(
           await host.close();
         } finally {
           controller.abort();
-          await host.server.finished;
+          try {
+            await app.close();
+          } finally {
+            await host.server.finished;
+          }
         }
       } finally {
         removeSignals();

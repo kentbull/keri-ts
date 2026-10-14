@@ -1,9 +1,11 @@
 /** Static and dynamic `did:webs` artifact routes. */
+import { ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
 import {
   didWebsFromArtifactRequest,
   generateDidWebsArtifacts,
   ValidationError,
 } from "keri-ts/runtime";
+import type { ArtifactFiles } from "../artifact-files.ts";
 import type { ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
 /** Classify configured `did.json` and `keri.cesr` artifact routes. */
@@ -36,12 +38,13 @@ export function classifyDwsArtifactRoute(
 export async function handleDwsArtifactRoute(
   context: ProtocolRequestContext,
   route: Extract<ProtocolRoute, { kind: "dwsArtifact" }>,
+  files: ArtifactFiles,
 ): Promise<Response> {
   if (context.policy.dwsDynamic && context.runtime && dynamicAidAllowed(context, route.aid)) {
     return dynamicArtifactResponse(context, route);
   }
   if (context.policy.dwsStaticFilesDir) {
-    return await staticArtifactResponse(context, route);
+    return await staticArtifactResponse(context, route, files);
   }
   return new Response("Not Found", {
     status: 404,
@@ -78,16 +81,17 @@ function dynamicArtifactResponse(
 async function staticArtifactResponse(
   context: ProtocolRequestContext,
   route: Extract<ProtocolRoute, { kind: "dwsArtifact" }>,
+  files: ArtifactFiles,
 ): Promise<Response> {
   const root = context.policy.dwsStaticFilesDir!;
   try {
     const path = staticArtifactPath(root, context.policy.dwsDidPath, route.aid, route.artifact);
-    const bytes = await Deno.readFile(path);
-    return new Response(bodyBuffer(bytes), {
-      headers: {
-        "Content-Type": route.artifact === "did.json" ? "application/did+json" : "application/cesr",
-      },
-    });
+    return await files.response(
+      path,
+      route.artifact === "did.json" ? "application/did+json" : "application/cesr",
+      context.req.signal,
+      route.artifact === "did.json" ? 8 * 1024 ** 2 : undefined,
+    );
   } catch (error) {
     if (error instanceof ValidationError) {
       return new Response(error.message, {
@@ -95,10 +99,14 @@ async function staticArtifactResponse(
         headers: { "Content-Type": "text/plain" },
       });
     }
-    return new Response("Not Found", {
-      status: 404,
-      headers: { "Content-Type": "text/plain" },
-    });
+    if (error instanceof ResourceAdmissionError && error.reason === "busy") {
+      return new Response(error.message, { status: 503 });
+    }
+    if (error instanceof ResourceLimitError) return new Response(error.message, { status: 413 });
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } });
+    }
+    throw error;
   }
 }
 

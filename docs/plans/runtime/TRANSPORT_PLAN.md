@@ -61,7 +61,7 @@ source, response, admission and lifecycle facilities.
 | [Queries][queries]      | Lazy POST; GET collects      | S1–3: demand-driven GET replay    |
 | [Mailbox][mailbox-path] | Demand-driven SSE            | S1–3: cue/worker credit and stop  |
 | [OOBI][oobi-path]       | Incremental CESR intake      | S2: lazy replay serving           |
-| [DID Webs][did-path]    | Collected fetch/generation   | S2: streamed CESR artifacts       |
+| [DID Webs][did-path]    | Streamed intake/static files | S2: lazy generation/export        |
 | [Commands][commands]    | Mixed services/lifetimes     | S1–8: shared runtime wiring       |
 | [JSON edges][json-path] | Finite documents/status      | S2: bounded exception audit       |
 
