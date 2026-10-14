@@ -4,12 +4,12 @@
  * Resolution succeeds only when hosted `did.json` matches the DID document
  * regenerated from the fetched `keri.cesr` KERI/VDR stream.
  */
-import { action, call, type Operation } from "effection";
+import { ResourceAdmissionError } from "cesr-ts";
+import { call, type Operation, resource } from "effection";
 import { abortable } from "../../app/abortable.ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
-import { settleRuntimeIngress } from "../../app/agent-runtime.ts";
 import { collectBytes, streamBytes } from "../../app/byte-source.ts";
-import { fetchResponseHandle } from "../../app/httping.ts";
+import { defaultRuntimeHttpClient } from "../../app/runtime-services.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { pinDesignatedAliasesSchema } from "./designated-aliases.ts";
 import { didWebsArtifactUrls, normalizeHostedDidDocument, parseDidWebs } from "./dids.ts";
@@ -33,27 +33,42 @@ export interface ResolveDidWebsResult {
 }
 
 /** Resolve one `did:webs` by fetching and verifying hosted artifacts. */
-export function* resolveDidWebs(
+export function resolveDidWebs(
   runtime: AgentRuntime,
   options: ResolveDidWebsOptions,
 ): Operation<ResolveDidWebsResult> {
+  return call(() => resolveArtifacts(runtime, options));
+}
+
+/** Keep finite JSON ownership local even when a long-lived caller resolves multiple DIDs. */
+function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions): Operation<ResolveDidWebsResult> {
   const parsed = parseDidWebs(options.did);
   const urls = didWebsArtifactUrls(parsed, { scheme: "https" });
   const fallbackUrls = didWebsArtifactUrls(parsed, { scheme: "http" });
   pinDesignatedAliasesSchema(runtime);
-  const cesr = yield* fetchBytesWithFallback(
-    urls.keriCesr,
-    fallbackUrls.keriCesr,
-    options.insecureHttp ?? false,
-  );
-  yield* settleRuntimeIngress(runtime, [cesr], { local: false });
+  const preferHttp = options.insecureHttp ?? false;
+  yield* call(function*() {
+    yield* holdArtifactCredit(runtime, 1024 ** 2);
+    yield* runtime.reactor.process(
+      (signal) => artifactBytes(runtime, urls.keriCesr, fallbackUrls.keriCesr, preferHttp, signal),
+      { local: false },
+    );
+  });
+  // EOF and parser cleanup precede convergence and any claim of a complete DID.
   yield* runtime.reactor.processEscrowsOnce();
+  // Generated/hosted plaintext, collection and comparison copies stay owned through this scope.
+  yield* holdArtifactCredit(runtime, 8 * 8 * 1024 ** 2, 1);
   const expected = generateBareDidDocument(runtime, parsed.canonical);
-  const hosted = yield* fetchJsonWithFallback(
-    urls.didJson,
-    fallbackUrls.didJson,
-    options.insecureHttp ?? false,
+  const bytes = yield* abortable((signal) =>
+    collectBytes(artifactBytes(runtime, urls.didJson, fallbackUrls.didJson, preferHttp, signal), 8 * 1024 ** 2)
   );
+  let hosted: unknown;
+  try {
+    hosted = JSON.parse(new TextDecoder().decode(bytes));
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw new ValidationError(`Unable to parse DID JSON: ${error.message}`);
+  }
   const hostedDocument = hostedDidDocument(hosted);
   const normalized = normalizeHostedDidDocument(hostedDocument, parsed.canonical);
   assertSameDocument(expected, normalized);
@@ -65,63 +80,57 @@ export function* resolveDidWebs(
   };
 }
 
-function* fetchBytes(url: string): Operation<Uint8Array> {
-  const { response } = yield* fetchResponseHandle(url);
-  if (!response.ok) {
-    yield* closeBody(response);
-    throw new ValidationError(`Unable to fetch ${url}: HTTP ${response.status}.`);
-  }
-  return yield* readResponseBytes(response);
+/** Hold request/copy allowance before fetch; enclosing cleanup joins before returning credit. */
+function* holdArtifactCredit(runtime: AgentRuntime, bytes: number, streams = 0): Operation<void> {
+  yield* resource<void>(function*(provide) {
+    const admission = runtime.resources.reserve({ bytes, streams });
+    if (admission.kind === "refuse") {
+      throw new ResourceAdmissionError("DID artifact admission refused", admission.reason);
+    }
+    try {
+      yield* provide();
+    } finally {
+      admission.reservation.release();
+    }
+  });
 }
 
-function* fetchBytesWithFallback(
+/** Native header transport fallback only; a started body never retries another artifact URL. */
+async function* artifactBytes(
+  runtime: AgentRuntime,
   httpsUrl: string,
   httpUrl: string,
   preferHttp: boolean,
-): Operation<Uint8Array> {
+  signal: AbortSignal,
+): AsyncGenerator<Uint8Array> {
   const urls = preferHttp ? [httpUrl, httpsUrl] : [httpsUrl, httpUrl];
   let lastError: unknown;
-  for (const url of [...new Set(urls)]) {
+  for (const url of urls) {
+    signal.throwIfAborted();
+    let response: Response;
     try {
-      // Dispose the failed or consumed response before retrying another URL.
-      return yield* call(() => fetchBytes(url));
+      response = await runtime.services.http.fetch(url, { signal });
     } catch (error) {
+      signal.throwIfAborted();
+      // Injected clients can throw programmer/infrastructure TypeErrors; never recast those as transport.
+      if (runtime.services.http !== defaultRuntimeHttpClient || !(error instanceof TypeError)) throw error;
       lastError = error;
+      continue;
+    }
+    try {
+      signal.throwIfAborted();
+      if (!response.ok) {
+        lastError = new ValidationError(`Unable to fetch ${url}: HTTP ${response.status}.`);
+        continue;
+      }
+      yield* streamBytes(response.body, { signal });
+      return;
+    } finally {
+      // Late fetch completion and parser failure still dispose the response before credit/fallback.
+      if (response.body && !response.body.locked) await response.body.cancel();
     }
   }
-  throw lastError instanceof Error ? lastError : new ValidationError(String(lastError));
-}
-
-function* fetchJsonWithFallback(
-  httpsUrl: string,
-  httpUrl: string,
-  preferHttp: boolean,
-): Operation<unknown> {
-  const bytes = yield* fetchBytesWithFallback(httpsUrl, httpUrl, preferHttp);
-  try {
-    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-  } catch (error) {
-    throw new ValidationError(
-      `Unable to parse DID JSON from ${preferHttp ? httpUrl : httpsUrl}: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  }
-}
-
-/** Current DID verification collects a finite document/artifact with an explicit 8 MiB ceiling. */
-function* readResponseBytes(response: Response): Operation<Uint8Array> {
-  return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal }), 8 * 1024 * 1024));
-}
-
-function* closeBody(response: Response): Operation<void> {
-  if (!response.body) {
-    return;
-  }
-  yield* action<void>((resolve) => {
-    void response.body!.cancel().finally(() => resolve(undefined));
-    return () => {};
-  });
+  throw lastError;
 }
 
 function hostedDidDocument(value: unknown): DidDocument {

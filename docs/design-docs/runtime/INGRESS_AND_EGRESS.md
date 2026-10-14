@@ -318,9 +318,19 @@ collection ceiling and a conservative 64 MiB copy/decode allowance before reads.
 These logical charges require native/metadata qualification; they are not an RSS
 bound. OOBI replay serving still collects output and remains transport S2 work.
 
-DID verification still collects at most 8 MiB per artifact, including `keri.cesr`;
-transport S2 owns streamed CESR resolution and artifact serving before release.
-DID success still requires complete evidence and hosted-document comparison.
+DID `keri.cesr` resolution enters Reactor progressively using the exact runtime
+HTTP services/policy. A 1 MiB request allowance and parser source admission precede
+fetch; body/parser cleanup joins before returning credit. Independently accepted
+events remain on late failure/cancellation; no DID result or hosted JSON fetch
+precedes genuine CESR EOF and escrow processing. Complete generated-versus-hosted
+document comparison remains required. Hosted JSON retains an 8 MiB collection cap
+and one stream/64 MiB logical copy allowance through decoding, normalization and
+comparison. This is conservative admission, not a measured native/heap bound.
+Only default native fetch-header TypeError and non-ok HTTP responses may try the
+existing alternate URL; injected client TypeError, body/parser/storage/admission
+and cancellation failures propagate. Cleanup failure prevents fallback. Existing
+HTTP scheme fallback remains a compatibility policy, not strict TLS qualification.
+Artifact generation/serving still collects histories and remains transport S2 work.
 Finite JSON documents and receipt proofs retain whole-document semantics with
 bounded admission and joined cancellation. Mailbox admin response metadata admits
 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those finite
