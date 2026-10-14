@@ -85,7 +85,15 @@ need production measurement; they do not cover arbitrary injected HTTP clients o
 native fetch buffers. Caller-supplied frames must already satisfy parser admission.
 Standalone requests share the default services policy; separately resolved services
 need an explicitly shared policy to participate in the same deployment boundary.
-Source parsers in `postCesr` and query upload remain a separate integration gate.
+`postCesr` reserves its cursor/producer allowance and one outgoing stream before
+acquiring the source. Its parser uses the same policy for ordinary trees and ESSR
+stages. A frame request borrows that stream slot while separately charging output
+copies; direct frame requests acquire their own slot. The optional response
+consumer finishes inside the frame scope before advancing input. Query delivery
+uses this same owner, leaving the second default stream slot for response ingress.
+Configured parser and HTTP policies must agree. Source and payload cleanup join
+before their respective reservations return; callers must still wire the owning
+runtime services into every standalone exchange/witness sender.
 
 Additional hydrated representations, reader copies, storage and object/handle/work
 limits remain in the
