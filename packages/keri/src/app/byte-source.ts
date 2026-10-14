@@ -34,12 +34,14 @@ export async function* streamBytes(
   const reader = stream.getReader();
   let closing: Promise<void> | undefined;
   /** Share the original cancellation Promise so finally joins asynchronous transport cleanup. */
-  const close = () => closing ??= reader.cancel(signal?.reason).catch(() => {});
+  const close = () => closing ??= reader.cancel(signal?.reason);
   /** Cancellation interrupts the pending read; the generator finally joins the same cleanup. */
   const abort = () => {
-    void close();
+    // Observe the notification rejection here; finally joins the same Promise and propagates it.
+    void close().catch(() => {});
   };
   signal?.addEventListener("abort", abort, { once: true });
+  let failed = false, failure: unknown;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -51,10 +53,28 @@ export async function* streamBytes(
       }
       if (value.length > 0) yield value;
     }
+  } catch (error) {
+    failed = true;
+    failure = error;
+    throw error;
   } finally {
     signal?.removeEventListener("abort", abort);
-    await close();
-    reader.releaseLock();
+    // Always unlock, and retain distinct read/cancel/unlock failures rather than masking the first.
+    const errors: unknown[] = failed ? [failure] : [];
+    try {
+      await close();
+    } catch (error) {
+      if (!errors.includes(error)) errors.push(error);
+    }
+    try {
+      reader.releaseLock();
+    } catch (error) {
+      if (!errors.includes(error)) errors.push(error);
+    }
+    // deno-lint-ignore no-unsafe-finally -- Preserve all failures, including cleanup during iterator return.
+    if (errors.length > 1) throw new AggregateError(errors, "Transport read and cleanup failed");
+    // deno-lint-ignore no-unsafe-finally -- The single original failure retains its identity.
+    if (errors.length) throw errors[0];
   }
 }
 

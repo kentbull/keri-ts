@@ -21,7 +21,8 @@ TEL body/proof-row pre-read allocation remains separately open.
 Finite KEL replay preflights event bodies before owned copies; HTTP source credit
 must cover reconstruction before iterator acquisition, not only yielded bytes.
 Witness GET no-SN captures target-only FEL ranges; SN captures KEL/FEL horizons
-and resumes sequence/duplicate order without holding a cursor across hydration.
+and seeks physical duplicate proems without rescanning buckets or holding a
+cursor across hydration. Deleted earlier duplicates do not shift the checkpoint.
 New accepted duplicates beyond the FEL horizon are excluded; current index/proof
 metadata is not an immutable snapshot. Broad no-SN proof skip and native proof-copy
 qualification remain open; do not turn that path into a native-failure guarantee.

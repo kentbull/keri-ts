@@ -67,13 +67,13 @@ feed buffer or separate synchronous parser remains.
 
 The required transport path is a bounded abortable source, one progressive parser
 per connection/request, complete frames, guarded verification/storage, and owned
-delivery outside the guard. HTTP body intake already uses this parser path; TCP
-currently collects until connection completion. Existing cue consumers can still
+delivery outside the guard. HTTP body intake and Tufa TCP witness intake use the
+progressive parser. Existing cue consumers can still
 await network I/O under the guard. The [transport plan][transport-plan] owns closure;
-these requirements do not describe completed TCP support.
+duplex and composed backpressure remain unqualified.
 
-`socketBytes` is the shared KERI runtime TCP source prerequisite; listener/parser
-integration remains pending. It acquires exclusive binary readable-mode ownership
+`socketBytes` is the shared KERI runtime TCP source used by Tufa witness listeners.
+It acquires exclusive binary readable-mode ownership
 on first pull, returns independent backing allocations of at most 64 KiB by default,
 and permits one pending pull. Do not mix data/flow readers with it. Abort, failure
 and early return destroy and join socket close; genuine receive EOF releases only
@@ -85,6 +85,23 @@ view may pin pool/socket backing larger than a small configured chunk ceiling:
 twice that ceiling does not cover all native backing. The host must separately
 account for fixed pools, readable/native/kernel buffering and qualify its actual
 configuration; this adapter supplies no full native or RSS bound.
+
+Tufa admits paused TCP connections before creating work, with a default cap of
+two admitted/closing connections and a positive shared 2 MiB logical read/copy
+allowance per connection. This allowance is qualification policy, not a hard native
+buffer ceiling. Reactor reserves the sole receive stream/cursor owner before the
+first socket pull; two receives consume two stream permits. Native acceptance is
+capped at `maxConnections + 1`: one transient refusal handle allows reporting in
+Deno, whose native cap does not emit Node's `drop` event. That handle is tracked
+through close and joined on shutdown, with no task/read/queue before refusal;
+native/kernel pre-admission buffering remains separate from the shared ledger.
+Intrinsic wire failures, policy refusals and recognized peer failures close and
+report the connection; cancellation stays distinct. Source/storage/invariant and
+cleanup failures reach the host owner after joined cleanup. Parser-owned source
+return is not peer close. Stop acceptance, join parser/source/socket tasks, then
+join listener close before closing runtime stores. Earlier accepted frames remain
+durable after a later connection failure. Default mailbox/direct routing stays
+unchanged; same-socket reply conversations remain separate work.
 
 The guard protects protocol interpretation, signing, routing snapshots and local
 DB side effects. Network waits and capacity waits belong outside it. Transfer a
@@ -251,7 +268,8 @@ does not itself port OOBI producers or qualify their pre-yield allocations.
 Witness `GET /query?typ=kel` returns a lazy source through shared ReplyStreams.
 Without `sn`, capture contains only the target's FEL extent, never delegator logs.
 With `sn`, it retains KEL sequence/duplicate order and captures final KEL/FEL
-horizons. Later accepted duplicates at an old sequence are excluded by their
+horizons. Each duplicate is sought by its physical insertion proem, so deleted
+earlier rows do not shift the checkpoint and buckets are not rescanned. Later accepted duplicates at an old sequence are excluded by their
 new FEL ordinals; existing index/proof metadata is consumed at read time, not
 frozen as a proof snapshot. Each cursor closes before finite event hydration/yield.
 The source uses the response's configured message ceiling for native body preflight.
@@ -261,7 +279,8 @@ configured-limit refusal 413; later read failures error the response stream.
 Existing missing-selector/SN 400, unknown-target 200-empty and TEL 501 remain.
 SN reconstruction propagates failures; no-SN uses the existing corrupt-record skip
 path, whose broad proof-reconstruction catch still requires phase 5 qualification.
-Native proof-row/copy admission remains open. Frozen 714 QueryEnd collects bytes;
+Native selected KEL duplicate-row and proof-row/copy pre-allocation admission
+remain open. Frozen 714 QueryEnd collects bytes;
 this lazy path is a qualified TS integration. Its SN path always clones with `fn=0`;
 TS preserves its existing actual FEL ordinal, so SN replay is not claimed byte parity.
 
@@ -357,8 +376,10 @@ transfers to caller ownership; resolution credit ends after joined cleanup.
 Only default native fetch-header TypeError and non-ok HTTP responses may try the
 existing alternate URL; injected client TypeError, body/parser/storage/admission
 and cancellation failures propagate. HTTP-refusal cleanup failure prevents fallback.
-The shared `streamBytes` reader still suppresses cancel rejection; propagation is
-a separate shared cleanup follow-on, not a DID-specific reader. Existing
+The shared `streamBytes` reader joins one cancel Promise and always releases its
+lock. A single failure keeps its identity; distinct read/cancel/unlock failures
+propagate together as an AggregateError. Parent cancellation/error reporting
+remains part of composed owner qualification. Existing
 HTTP scheme fallback remains a compatibility policy, not strict TLS qualification.
 Artifact generation/serving still collects histories and remains transport S2 work.
 Finite JSON documents and receipt proofs retain whole-document semantics with
