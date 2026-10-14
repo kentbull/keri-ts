@@ -11,6 +11,7 @@ import {
   framePayload,
   Kinds,
   makeBlindState,
+  type MapperMap,
   MemoryPayloadSink,
   NumberPrimitive,
   parseBytes,
@@ -30,12 +31,14 @@ import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { type ExchangeDecision, Exchanger } from "../../../src/app/exchanging.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody, prepareIpexExn } from "../../../src/app/ipex-building.ts";
+import { verifyIpexRelations, walkIpexGraph } from "../../../src/app/ipex-graph.ts";
 import { IpexV2Handler } from "../../../src/app/ipex-v2.ts";
 import { type IpexRoute, loadIpexHandlers } from "../../../src/app/ipexing.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
+import { Schemer } from "../../../src/core/scheming.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
 
@@ -622,4 +625,136 @@ Deno.test("IPEX byte preparation cancels its read and joins payload-owner dispos
     await task.halt();
     MemoryPayloadSink.prototype.finish = original;
   }
+});
+
+Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every edge pin", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = hby.makeHab("issuer"), sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
+    const schema = new Schemer({
+      sed: {
+        $id: "",
+        version: "1.0.0",
+        type: "object",
+        properties: { a: { type: "object", required: ["name"], properties: { name: { type: "string" } } } },
+      },
+    });
+    const exchanger = new Exchanger(hby);
+    loadIpexHandlers(hby, exchanger);
+    const credential = (name: string | number, edge?: NonNullable<Parameters<typeof acdcmap>[1]>["edge"]) =>
+      acdcmap(issuer.pre, { schema: schema.said, attribute: { d: "", name }, ...(edge ? { edge } : {}) });
+    const node = (body: SerderACDC, signed = true): CesrFrame => ({
+      body,
+      attachments: signed
+        ? messageAttachmentGroups({
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: issuer.pre }),
+              issuer.kever!.sner,
+              new Diger({ qb64: issuer.kever!.said }),
+              issuer.sign(body.raw, true),
+            ),
+          ],
+        }, Vrsn_2_0)
+        : [],
+    });
+    const args = (verb: "/ipex/offer" | "/ipex/grant", bodies: SerderACDC[], signed = true) => {
+      const serder = ipexExnBody(sender.pre, verb, bodies, {
+        message: crypto.randomUUID(),
+        recipient: recipient.pre,
+        xid: schema.said,
+        plan: bodies.map((body, i) => [schema.said, i ? "/e/link/_/" : "/", []]),
+      });
+      return {
+        serder,
+        nests: bodies.map((body) => node(body, signed)),
+        tsgs: [
+          new TransIdxSigGroup(
+            new Prefixer({ qb64: sender.pre }),
+            sender.kever!.sner,
+            new Diger({ qb64: sender.kever!.said }),
+            sender.sign(serder.raw, true),
+          ),
+        ],
+      };
+    };
+    try {
+      const valid = credential("Ada"), invalid = credential(7);
+      // Metadata offers intentionally withhold issuer proof; the outer sender cannot waive schema validation.
+      const offer = args("/ipex/offer", [valid], false);
+      assertEquals((yield* exchanger.processEvent(offer)).kind, "escrow");
+      assertExists(hby.db.emse!.get([offer.serder.said!, schema.said]));
+      const unsigned = args("/ipex/grant", [valid], false);
+      assertEquals((yield* exchanger.processEvent(unsigned)).kind, "reject");
+      assertEquals(
+        hby.db.emse!.get([unsigned.serder.said!, schema.said]),
+        null,
+        "issuer proof precedes schema dependency",
+      );
+      const grant = args("/ipex/grant", [valid]);
+      assertEquals((yield* exchanger.processEvent(grant)).kind, "escrow");
+      assertExists(hby.db.emse!.get([grant.serder.said!, schema.said]));
+      hby.db.schema.pin(schema.said, schema);
+      yield* exchanger.processEscrows();
+      assertExists(hby.db.exns.get(offer.serder.said!));
+      assertExists(hby.db.exns.get(grant.serder.said!));
+      for (const verb of ["/ipex/offer", "/ipex/grant"] as const) {
+        const rejected = args(verb, [invalid], verb === "/ipex/grant");
+        assertEquals((yield* exchanger.processEvent(rejected)).kind, "reject");
+        assertEquals(hby.db.exns.get(rejected.serder.said!), null);
+      }
+      // Same-schema pins still evaluate the far credential; equality of IDs proves no payload constraint.
+      const near = (far: SerderACDC, pin: string | MapperMap) =>
+        credential("Near", { d: "", link: { n: far.said, s: pin } });
+      const graph = (far: SerderACDC, pin: string | MapperMap) => {
+        const root = near(far, pin);
+        return walkIpexGraph(root.said!, [node(root), node(far)], true)!;
+      };
+      assertEquals(verifyIpexRelations(graph(valid, schema.said), hby.db), true);
+      assertEquals(verifyIpexRelations(graph(invalid, schema.said), hby.db), false);
+      const alternative = credential("Near", {
+        d: "",
+        o: "OR",
+        bad: { n: valid.said, s: false },
+        good: { n: valid.said },
+      });
+      assertEquals(
+        verifyIpexRelations(walkIpexGraph(alternative.said!, [node(alternative), node(valid)], true)!, hby.db),
+        true,
+      );
+      const edgeSchema = new Schemer({
+        sed: {
+          $id: "",
+          version: "1.0.0",
+          type: "object",
+          properties: { a: { properties: { name: { const: "Ada" } } } },
+        },
+      });
+      const inherited = credential("Near", { d: "", group: { s: edgeSchema.said, link: { n: valid.said } } });
+      const inheritedGraph = walkIpexGraph(inherited.said!, [node(inherited), node(valid)], true)!;
+      assertEquals(verifyIpexRelations(inheritedGraph, hby.db), { kind: "missing", said: edgeSchema.said });
+      const edgeGrant = args("/ipex/grant", [near(valid, edgeSchema.said), valid]);
+      assertEquals((yield* exchanger.processEvent(edgeGrant)).kind, "escrow");
+      assertExists(hby.db.emse!.get([edgeGrant.serder.said!, edgeSchema.said]));
+      hby.db.schema.pin(edgeSchema.said, edgeSchema);
+      yield* exchanger.processEscrows();
+      assertExists(hby.db.exns.get(edgeGrant.serder.said!));
+      assertEquals(verifyIpexRelations(inheritedGraph, hby.db), true);
+      assertEquals(verifyIpexRelations(graph(valid, edgeSchema.sed as MapperMap), hby.db), true);
+      assertEquals(verifyIpexRelations(graph(credential("Other"), edgeSchema.said), hby.db), false);
+      // A real schema read failure propagates; it is never downgraded to missing-schema escrow.
+      const get = hby.db.schema.get.bind(hby.db.schema);
+      hby.db.schema.get = () => {
+        throw new Error("schema storage unavailable");
+      };
+      try {
+        assertThrows(() => verifyIpexRelations(graph(valid, edgeSchema.said), hby.db), Error, "storage unavailable");
+      } finally {
+        hby.db.schema.get = get;
+      }
+      assertEquals(hby.db.exns.get(valid.said!), null, "conversation acceptance does not accept a credential");
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });
