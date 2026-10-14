@@ -109,7 +109,9 @@ hosted extended jobs, whose existing 15-minute cap remains unchanged.
 The approved final task is publication of `cesr-ts`, `keri-ts` and `@keri-ts/tufa`
 for downstream diddaemon adoption. Complete the reference-backed transport S1–9
 caller scope, bounded in-flight work and existing storage/escrow recovery checks
-before merging #104 or publishing. Cache redesign, exhaustive CBOR accounting and
+before merging #104 or publishing. Default notification/mailbox store acquisition
+and joined shutdown clear temporary sidecars; borrowed stores remain caller-owned.
+Cache redesign, exhaustive CBOR accounting and
 additional stack-wide streaming are deferred, not release blockers. Prove real
 HTTP/TCP progress through verified acceptance before transfer completion; parser
 tests, finite TCP admission and local write completion cannot satisfy this gate.
