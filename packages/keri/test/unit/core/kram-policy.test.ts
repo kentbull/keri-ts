@@ -1,10 +1,18 @@
 /** Cache policy against real LMDB; frozen semantics from KERIpy 927c0cb8. */
-import { b, SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import { b, Dater, Diger, NumberPrimitive, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { KeriDispatchEnvelope } from "../../../src/core/dispatch.ts";
+import { KramHandoff } from "../../../src/core/kram-handoff.ts";
 import { type KramExemption, KramPolicy, type KramWindows } from "../../../src/core/kram-policy.ts";
+import { KramPruner } from "../../../src/core/kram-pruning.ts";
+import { evaluateKramTime, inspectKramReplay, type KramTimeAuthentication } from "../../../src/core/kram-time.ts";
 import { reply } from "../../../src/core/protocol-eventing.ts";
+import { MsgCacheRecord, TxnMsgCacheRecord } from "../../../src/core/records.ts";
 import { createBaser } from "../../../src/db/basing.ts";
+import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../../src/time/mod.ts";
+import sourceReference from "../../fixtures/kram-source-auth-927.json" with { type: "json" };
+import timeReference from "../../fixtures/kram-time-927.json" with { type: "json" };
 
 const initial: KramWindows = [1000, 5000, 60000, 300000, 5000, 60000, 300000];
 const expanded: KramWindows = [2000, 7000, 62000, 302000, 7000, 62000, 302000];
@@ -113,6 +121,301 @@ Deno.test("KRAM changes preserve active pruning, fixed drift and new coverage st
       db.hbys.pin("kram-policy", "invalid");
       assertThrows(() => policy.reconcile(), Error, "Corrupt KRAM policy metadata");
     } finally {
+      yield* db.close(true);
+    }
+  });
+});
+
+// Independent intake observations at 927c0cb8; shared body literals keep source/auth owners separate.
+Deno.test("KRAM replay and time plans match frozen receipts, openers and inclusive microsecond windows", async () => {
+  const bodies: Record<string, string> = { ...timeReference.bodies, "source.wrong": sourceReference.bodies.wrong };
+  const caches = timeReference.caches as Record<
+    string,
+    { body: string; windows: "long" | "short"; xdt?: string; rdt?: string }
+  >;
+  const makeRecord = (name: string) => {
+    const { body, windows, xdt, rdt } = caches[name], { d, xl, pxl } = timeReference.windows;
+    const ml = timeReference.windows[windows], values = { mdt: JSON.parse(bodies[body]).dt, d, ml, pml: ml, xl, pxl };
+    return xdt === undefined ? new MsgCacheRecord(values) : new TxnMsgCacheRecord({ ...values, xdt, rdt });
+  };
+  for (const row of timeReference.cases) {
+    await run(function*() {
+      const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
+      try {
+        const configured = row.configuration === "decreased"
+          ? timeReference.configurations.decreased as unknown as KramWindows
+          : initial;
+        const policy = new KramPolicy(db, { caches: { "~": configured } });
+        const body = new SerderKERI({ raw: b(bodies[row.body]) });
+        const seed = (name: string) => {
+          const owner = new SerderKERI({ raw: b(bodies[caches[name].body]) }), record = makeRecord(name);
+          if (record instanceof TxnMsgCacheRecord) {
+            db.tmsc.pin([owner.pre!, owner.ilk === "xip" ? owner.said! : String(owner.ked?.x), owner.said!], record);
+          } else db.msgc.pin([owner.pre!, owner.said!], record);
+        };
+        if (row.before) seed(row.before);
+        for (const sibling of row.siblings ?? []) seed(sibling);
+        if (row.partial) db.pmkm.pin([body.pre!, body.said!], body);
+        if (row.sharedOpener) {
+          db.xdt.pin(String(body.ked?.x), new Dater({ qb64: encodeDateTimeToDater(row.sharedOpener) }));
+        }
+        yield* db.close(false);
+        yield* db.reopen({ reuse: true });
+        const inspection = inspectKramReplay(db, body);
+        const decision = inspection.kind === "drop"
+          ? inspection
+          : evaluateKramTime(
+            db,
+            policy,
+            inspection,
+            timeReference
+              .authentications[
+                row.authentication as keyof typeof timeReference.authentications
+              ] as KramTimeAuthentication,
+            row.receiverTime,
+          );
+        if (row.refusal) {
+          assertEquals<string | false>(decision.kind === "drop" && decision.reason, row.refusal, row.name);
+        } else {
+          assertEquals(decision.kind, "proceed", row.name);
+          if (decision.kind === "proceed") {
+            assertEquals(decision.record.asDict(), makeRecord(row.cache!).asDict(), row.name);
+            assertEquals(decision.receiverTime, caches[row.cache!].rdt || row.receiverTime, row.name);
+          }
+        }
+        const cached = String(body.ked?.x ?? "") || body.ilk === "xip"
+          ? db.tmsc.get([body.pre!, body.ilk === "xip" ? body.said! : String(body.ked?.x), body.said!])
+          : db.msgc.get([body.pre!, body.said!]);
+        assertEquals(
+          cached?.asDict() ?? null,
+          row.before ? makeRecord(row.before).asDict() : null,
+          "planning cannot publish a competing receipt",
+        );
+        if (row.name === "transaction threshold freezes receiver time") {
+          const received = makeRecord("transaction-received") as TxnMsgCacheRecord;
+          db.tmsc.pin([body.pre!, String(body.ked?.x), body.said!], received);
+          const ready = inspectKramReplay(db, body, { resumingReady: true });
+          if (ready.kind === "drop") throw new Error("durable partial must remain resumable");
+          const retry = evaluateKramTime(db, policy, ready, { kind: "seal" }, "2026-10-13T12:20:02.000000+00:00");
+          assertEquals(
+            retry.kind === "proceed" && retry.receiverTime,
+            received.rdt,
+            "ready retry cannot refresh first receipt",
+          );
+          assertEquals(
+            evaluateKramTime(db, policy, { ...ready, resumingReady: false }, { kind: "single" }, row.receiverTime),
+            { kind: "drop", reason: "replay" },
+          );
+          assertThrows(() => evaluateKramTime(db, policy, ready, { kind: "single" }, "bad"), Error, "receiver clock");
+          db.pmkm.rem([body.pre!, body.said!]);
+          assertThrows(() => inspectKramReplay(db, body, { resumingReady: true }), Error, "partial state");
+          db.tmsc.pin(
+            [body.pre!, String(body.ked?.x), body.said!],
+            new TxnMsgCacheRecord({ ...received.asDict(), mdt: "bad" }),
+          );
+          assertThrows(() => inspectKramReplay(db, body), Error, "Corrupt");
+        }
+      } finally {
+        yield* db.close(true);
+      }
+    });
+  }
+});
+
+Deno.test("KRAM finite pruning matches frozen TTL cleanup and retains exact microseconds", async () => {
+  // Ten actual helper observations at clean 927c0cb8; all 64 imported module files byte-verified.
+  const observed: readonly (readonly ["message" | "transaction", number, boolean])[] = [
+    ["message", -1001000, false],
+    ["message", -1000000, true],
+    ["message", 61000000, true],
+    ["message", 61001000, false],
+    ["transaction", -1000, false],
+    ["transaction", 0, true],
+    ["transaction", 300000000, true],
+    ["transaction", 300001000, false],
+    // Precision strengthening of the reference's integer-ms truncation, matching K2/K7.
+    ["message", -1000001, false],
+    ["message", 61000001, false],
+    ["transaction", -1, false],
+    ["transaction", 300000001, false],
+  ];
+  await run(function*() {
+    const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
+    try {
+      const policy = new KramPolicy(db, { caches: { "~": initial } });
+      const body = new SerderKERI({ raw: b(timeReference.bodies.transaction) });
+      const key = [body.pre!, body.said!], xid = String(body.ked?.x), txkey = [key[0], xid, key[1]];
+      const values = { mdt: body.stamp!, d: 1000, ml: 60000, pml: 60000, xl: 300000, pxl: 300000 };
+      const clock = (offset: number) => {
+        const micros = timestampMicros(body.stamp)! + BigInt(offset);
+        return makeNowIso8601(new Date(Number(micros / 1000n))).replace(
+          /\.\d{6}/,
+          `.${(micros % 1000000n).toString().padStart(6, "0")}`,
+        );
+      };
+      const pass = (pruner: KramPruner, receipt: string) => {
+        let result;
+        for (let i = 0; i < 100; i++) {
+          result = pruner.prune(receipt, 1);
+          assertEquals(result.visited <= 1, true);
+          if (result.passComplete) return result;
+        }
+        throw new Error("finite prune pass did not complete");
+      };
+      for (const [family, offset, keep] of observed) {
+        const record = family === "message"
+          ? new MsgCacheRecord(values)
+          : new TxnMsgCacheRecord({ ...values, xdt: body.stamp!, rdt: body.stamp! });
+        if (family === "message") db.msgc.pin(key, record);
+        else db.tmsc.pin(txkey, record as TxnMsgCacheRecord);
+        db.xdt.pin(xid, new Dater({ qb64: encodeDateTimeToDater(body.stamp!) }));
+        db.pmkm.pin(key, body);
+        db.pmks.add(key, new Siger({ code: "A", raw: new Uint8Array(64), index: 0 }));
+        db.pmsk.pin(key, [NumberPrimitive.fromNum(0n), new Diger({ qb64: body.said! })]);
+        db.ptds.add(key, new Uint8Array([0xff, 0x00]));
+        db.kpnd.pin(key, b("private snapshot"));
+        db.kready.pin(key, body.stamp!);
+        pass(new KramPruner(db, policy), clock(offset));
+        assertEquals((family === "message" ? db.msgc.get(key) : db.tmsc.get(txkey)) !== null, keep);
+        assertEquals([
+          db.pmkm.get(key) !== null,
+          !!db.pmks.get(key).length,
+          db.pmsk.get(key) !== null,
+          !!db.ptds.get(key).length,
+          db.kpnd.get(key) !== null,
+          db.kready.get(key) !== null,
+        ], Array(6).fill(keep));
+        assertEquals(db.xdt.get(xid) !== null, family === "transaction" && keep);
+        db.msgc.rem(key);
+        db.tmsc.rem(txkey);
+      }
+      const first = new TxnMsgCacheRecord({ ...values, xdt: body.stamp!, rdt: "" });
+      db.tmsc.pin(txkey, first);
+      db.tmsc.pin(["other-sender", xid, "other-message"], new TxnMsgCacheRecord({ ...first.asDict(), pxl: 301000 }));
+      db.xdt.pin(xid, new Dater({ qb64: encodeDateTimeToDater(body.stamp!) }));
+      const pruner = new KramPruner(db, policy);
+      pass(pruner, clock(300001000));
+      assertEquals([db.tmsc.get(txkey), db.xdt.get(xid) !== null], [null, true]);
+      yield* db.close(false);
+      yield* db.reopen({ reuse: true });
+      pass(pruner, clock(301001000));
+      assertEquals([db.tmsc.get(["other-sender", xid, "other-message"]), db.xdt.get(xid)], [null, null]);
+      assertThrows(() => pruner.prune("bad"), Error, "receiver clock");
+      assertThrows(() => pruner.prune(clock(0), 0), RangeError);
+      db.msgc.pin(key, new MsgCacheRecord({ ...values, mdt: "bad" }));
+      assertThrows(() => pass(pruner, clock(0)), Error, "Corrupt");
+    } finally {
+      yield* db.close(true);
+    }
+  });
+});
+
+Deno.test("KRAM orphan scan restarts for insertion behind its checkpoint and excludes live handoff", async () => {
+  await run(function*() {
+    const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
+    try {
+      const policy = new KramPolicy(db, { enabled: false, caches: { "~": initial } });
+      const body = new SerderKERI({ raw: b(timeReference.bodies.transaction) }), xid = String(body.ked?.x);
+      const record = new TxnMsgCacheRecord({
+        mdt: body.stamp!,
+        xdt: body.stamp!,
+        rdt: "",
+        d: 1000,
+        ml: 60000,
+        pml: 60000,
+        xl: 300000,
+        pxl: 300000,
+      });
+      db.tmsc.pin(["mmm", "other-xid", "middle"], record);
+      db.tmsc.pin(["zzz", "other-xid", "last"], record);
+      db.xdt.pin(xid, new Dater({ qb64: encodeDateTimeToDater(body.stamp!) }));
+      const pruner = new KramPruner(db, policy), receipt = "2026-10-13T12:00:02.000000+00:00";
+      for (let i = 0; i < 4; i++) assertEquals(pruner.prune(receipt, 1).passComplete, false);
+      // Candidate existence scan passed mmm; newly published aaa lies behind that checkpoint.
+      db.tmsc.pin(["aaa", xid, "inserted"], record);
+      let completed = false;
+      for (let i = 0; i < 20 && !completed; i++) completed = pruner.prune(receipt, 1).passComplete;
+      assertEquals(completed, true);
+      assertEquals(db.xdt.get(xid) !== null, true, "intervening commit invalidates an orphan proof");
+      const handoff = new KramHandoff(db, policy);
+      yield* handoff.intake(
+        new KeriDispatchEnvelope({ serder: body, attachmentGroups: [], local: false }),
+        function*() {
+          assertEquals(pruner.prune("2026-10-13T12:20:00.000000+00:00", 1).kind, "busy");
+          assertEquals(db.tmsc.get(["aaa", xid, "inserted"]) !== null, true);
+        },
+      );
+      db.tmsc.rem(["aaa", xid, "inserted"]);
+      let complete = false;
+      for (let i = 0; i < 30 && !complete; i++) complete = pruner.prune(receipt, 1).passComplete;
+      assertEquals(complete, true);
+      assertEquals(db.xdt.get(xid), null, "last shared opener is actually removed");
+    } finally {
+      yield* db.close(true);
+    }
+  });
+});
+
+Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without skipping rows", async () => {
+  await run(function*() {
+    const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
+    const getKeys = db.msgc.sdb.getKeys, transaction = db.env!.transactionSync, remove = db.kready.rem;
+    let cursors = 0;
+    try {
+      const policy = new KramPolicy(db, { caches: { "~": initial } });
+      const body = new SerderKERI({ raw: b(timeReference.bodies.transaction) }), key = [body.pre!, body.said!];
+      db.msgc.pin(
+        key,
+        new MsgCacheRecord({ mdt: body.stamp!, d: 1000, ml: 60000, pml: 60000, xl: 300000, pxl: 300000 }),
+      );
+      db.pmkm.pin(key, body);
+      db.kready.pin(key, body.stamp!);
+      db.kpnd.pin(key, b("owned wire"));
+      db.msgc.sdb.getKeys = function(options) {
+        const iterable = getKeys.call(this, options);
+        return new Proxy(iterable, {
+          get(target, property, receiver) {
+            if (property !== Symbol.iterator) return Reflect.get(target, property, receiver);
+            return function*() {
+              cursors++;
+              try {
+                yield* target;
+              } finally {
+                cursors--;
+              }
+            };
+          },
+        });
+      };
+      db.env!.transactionSync = function<T>(action: () => T, flags?: Parameters<typeof transaction>[1]): T {
+        assertEquals(cursors, 0, "no suspended cursor may cross a write");
+        return transaction.call(this, action, flags) as T;
+      };
+      const failure = new Error("cleanup I/O failed");
+      db.kready.rem = () => {
+        throw failure;
+      };
+      const pruner = new KramPruner(db, policy), receipt = "2026-10-13T12:20:00.000000+00:00";
+      assertEquals(assertThrows(() => pruner.prune(receipt, 1)), failure);
+      assertEquals([
+        db.msgc.get(key) !== null,
+        db.pmkm.get(key) !== null,
+        db.kready.get(key) !== null,
+        db.kpnd.get(key) !== null,
+      ], [true, true, true, true]);
+      db.kready.rem = remove;
+      assertEquals(pruner.prune(receipt, 1).removed, 1, "failed cleanup cannot advance the checkpoint");
+      assertEquals([db.msgc.get(key), db.pmkm.get(key), db.kready.get(key), db.kpnd.get(key)], [
+        null,
+        null,
+        null,
+        null,
+      ]);
+      assertEquals(cursors, 0);
+    } finally {
+      db.msgc.sdb.getKeys = getKeys;
+      db.env!.transactionSync = transaction;
+      db.kready.rem = remove;
       yield* db.close(true);
     }
   });
