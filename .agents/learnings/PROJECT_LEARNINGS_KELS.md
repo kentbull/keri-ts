@@ -58,13 +58,21 @@ State-record construction proves no acceptance. Complete-message caps do not pro
 Revery BADA preserves microseconds. Its bounded proof plan discovers the complete
 query batch before reply/proof/escrow writes. Same-call groups see virtual staged
 pins in input order; externalEscrow leaves pending proofs with the semantic owner.
-Resource refusals propagate through RPE replay without deleting its durable row. TSN retry must use Broker's typed finite
+Resource refusals propagate through RPE replay without deleting its durable row.
+KSN publication holds caller-owned PreparedReply query credit while admitting the
+actual keyStateSaved child on Kevery's deck, including distinct local decks.
+Validate semantic correspondence before applying new proofs. Unverified replies
+still apply their existing escrow/query effects. Preparation is one-shot within
+one synchronous guarded turn; suspension permits stale BADA decisions. TSN retry must use Broker's typed finite
 family pass; its legacy exception adapter can conceal infrastructure errors.
 Persist the outer reply SAID for BADA, not the contained TEL digest: actual 714's
 registry handler confuses these domains and accepts older signed notices.
 Registry TSN trust uses accepted configuration and issuer witnesses, never claimed
 notice backers. The semantic receiver owns missing/partial proofs in Broker via
 explicit external Revery escrow; preserve prior BADA evidence until publication.
+Hold PreparedReply query ownership and the actual dependency/state child before
+proof/Broker effects. Test exact family membership without bulk copies and check
+the insertion invariant before publishing. Semantic rejected plans remain unapplied.
 TEL recovery must preserve credential `i` separately from the queried issuer.
 TSN cue-to-wire routes require the signing attester suffix; actual 714 emits bare
 routes. HTTP pair capture and success do not replace independent receiver proofs.

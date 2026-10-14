@@ -119,6 +119,14 @@ export class Broker {
     return this.saiderdb.get(keys);
   }
 
+  /** Test one exact family/prefix/attester bucket without materializing its members. */
+  hasStateNotice(typ: string, pre: string, aid: string, diger: Diger): boolean {
+    for (const member of this.escrowdb.getIter([typ, pre, aid])) {
+      if (member.qb64 === diger.qb64) return true;
+    }
+    return false;
+  }
+
   /** Retry a finite captured family horizon with typed outcomes and no exception adapter.
    * Release key cursors before hydration, callbacks or index writes. Failed callbacks
    * propagate and leave that row eligible for retry. Kept rows and insertions behind
