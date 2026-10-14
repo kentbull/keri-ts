@@ -1,12 +1,12 @@
 # Incremental KRAM intake plan
 
 Owner: roadmap **3f**, within [exchange admission](EXCHANGE_ADMISSION_PLAN.md).
-K1–K9 and optional runtime intake K10a are delivered through #204. They cover
+K1–K10 are implemented. They cover
 storage, microsecond time, policy, source/signature normalization, durable partial
 staging, ready handoff and finite pruning. The donor [#172][snapshot] remains
 recoverable evidence, not a merge target.
 
-## Current review boundaries
+## Implemented boundaries requiring composed qualification
 
 | Unit | Boundary                       | Remaining evidence                                |
 | ---- | ------------------------------ | ------------------------------------------------- |
@@ -17,8 +17,9 @@ recoverable evidence, not a merge target.
 K10b carries completed, nonexempt KRAM receipt authority to Exchanger without a
 sender-controlled timestamp override. Private exchange metadata preserves the
 first receipt through route escrow, retry, reopen and acceptance. K10c belongs to
-the [IPEX plan](IPEX_PLAN.md); presentation processing remains guarded until its
-actual child proof, registry and receiver-cutoff checks work together.
+the [IPEX plan](IPEX_PLAN.md); child proof, registry and receiver-cutoff checks
+are implemented. Their complete maintained workflow and resource qualification
+remain open; do not infer completion from isolated receipt/cutoff tests.
 
 Cancellation, I/O, corruption and programming failures propagate. Normal intake
 refusals remain typed. Each remaining unit follows the roadmap's 300–500-line or

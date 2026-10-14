@@ -15,7 +15,7 @@ import {
 } from "../primitives/codex.ts";
 import { Compactor } from "../primitives/compactor.ts";
 import { Diger } from "../primitives/diger.ts";
-import type { MapperMap } from "../primitives/mapper.ts";
+import { Mapper, type MapperMap } from "../primitives/mapper.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import { isMediarCode, Mediar } from "../primitives/mediar.ts";
 import { NumberPrimitive } from "../primitives/number.ts";
@@ -997,11 +997,30 @@ function computeAcdcFieldVariants(
   topLevelCompactable: boolean,
   compactify: boolean,
   partialSection: boolean,
+  verifySections: boolean,
 ): { display: unknown; compact: unknown } {
   const sectionConfig = acdcSectionConfig(label);
   if (
     sectionConfig && value && typeof value === "object" && !Array.isArray(value)
   ) {
+    if (label === "s" && typeof (value as SadMap).$id === "string") {
+      // A JSON resource binds its whole shallow map, including bundled URI IDs.
+      // Its encoding is independent of the credential body's serialization.
+      const resource = Mapper.fromSad(value as MapperMap, {
+        kind: Kinds.json,
+        strict: false,
+        saidive: true,
+        saids: { $id: DigDex.Blake3_256 },
+        makify: true,
+        verify: false,
+      });
+      if (resource.said === (value as SadMap).$id) {
+        return {
+          display: topLevelCompactable && compactify ? resource.said : resource.mad,
+          compact: topLevelCompactable ? resource.said : resource.mad,
+        };
+      }
+    }
     const expanded = new Compactor({
       mad: withAcdcSectionPlaceholder(label, value as SadMap) as MapperMap,
       kind,
@@ -1012,6 +1031,9 @@ function computeAcdcFieldVariants(
       makify: true,
     });
     expanded.trace(true);
+    if (label === "s" && verifySections && JSON.stringify(expanded.mad) !== JSON.stringify(value)) {
+      throw new DeserializeError("Invalid schema section commitment.");
+    }
 
     if (!topLevelCompactable) {
       return {
@@ -1065,11 +1087,13 @@ function computeAcdcSad(
     pvrsn,
     saids,
     compactify,
+    verifySections = false,
   }: {
     kind: Kind;
     pvrsn: Versionage;
     saids: SaidCodeMap;
     compactify: boolean;
+    verifySections?: boolean;
   },
 ): {
   sad: SadMap;
@@ -1097,6 +1121,7 @@ function computeAcdcSad(
         topLevelCompactable,
         compactify,
         partialSection,
+        verifySections,
       );
       displaySad[label] = variants.display;
       compactSad[label] = variants.compact;
@@ -1918,6 +1943,7 @@ export class SerderACDC extends Serder {
       pvrsn: this.pvrsn,
       saids,
       compactify: false,
+      verifySections: true,
     });
 
     if (typeof ked.d !== "string" || actual.sad.d !== ked.d) {

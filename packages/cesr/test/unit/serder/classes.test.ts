@@ -569,3 +569,21 @@ Deno.test("serder: ACDC issuee follows disclosed attributes or aggregate members
     assertEquals(credential.issueeb, row.issuee === null ? null : b(row.issuee), row.name);
   }
 });
+
+Deno.test("serder: stale explicit schema claims cannot enter verification fallback", () => {
+  for (const kind of ["JSON", "CBOR", "MGPK", "CESR"] as const) {
+    const options = { kind, pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0 };
+    const valid = new SerderACDC({
+      ...options,
+      sad: { t: "acm", u: "", i: KERIPY_STRUCTING_DATA_VECTORS.sealEvent.i, s: { $id: "", title: "schema" } },
+      makify: true,
+    });
+    const changed = structuredClone(valid.sad!);
+    (changed.s as Record<string, unknown>).$id = token("E");
+    assertThrows(() => new SerderACDC({ ...options, sad: changed }), DeserializeError, "schema section commitment");
+    const { raw } = sizeify(changed, kind);
+    assertThrows(() => new SerderACDC({ raw }), DeserializeError, "schema section commitment");
+    assertEquals(new SerderACDC({ ...options, sad: changed, verify: false }).verify(), false);
+    assertEquals(new SerderACDC({ ...options, sad: changed, makify: true }).schema, valid.schema);
+  }
+});

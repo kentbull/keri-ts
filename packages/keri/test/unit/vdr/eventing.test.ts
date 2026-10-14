@@ -1,10 +1,25 @@
-import { run } from "effection";
-import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { Diger, NumberPrimitive, NumDex, SerderACDC, TraitDex } from "../../../../cesr/mod.ts";
+import { call, run } from "effection";
+import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import {
+  Diger,
+  discardFrame,
+  NumberPrimitive,
+  NumDex,
+  parseBytes,
+  Prefixer,
+  SerderACDC,
+  TraitDex,
+  Vrsn_1_0,
+  Vrsn_2_0,
+} from "../../../../cesr/mod.ts";
+import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
+import { envelopeFromFrame } from "../../../src/app/parsering.ts";
+import { query } from "../../../src/core/protocol-eventing.ts";
+import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { incept as inceptRegistry, issue, revoke } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import { createReger } from "../../../src/db/reger.ts";
+import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 
 const SCHEMA_SAID = "Eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -229,4 +244,92 @@ Deno.test("protocol-vdr-eventing - NoBackers inception rejects configured backer
     Error,
     "NoBackers",
   );
+});
+
+Deno.test("tels queries reach the built-in owner and retain captured management/credential replay", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = hby.makeHab("issuer");
+    const runtime = yield* createAgentRuntime(hby);
+    const reger = runtime.vdr.reger! as Reger, tvy = runtime.vdr.tvy! as Tevery;
+    try {
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      const credential = makeCredential(issuer.pre);
+      const iss = issue(credential.said!, vcp.pre!);
+      const anchors = [anchorTel(issuer, vcp), anchorTel(issuer, iss)];
+      for (const [index, serder] of [vcp, iss].entries()) {
+        assertEquals(tvy.processEvent({ serder, ...anchors[index] }).kind, "accept");
+      }
+      // Frozen 927 processQuery emits management then credential, using default v2 proof counters.
+      const responses: Iterable<Uint8Array>[] = [];
+      for (const pvrsn of [Vrsn_1_0, Vrsn_2_0]) {
+        const request = query("tels", { ri: vcp.pre!, src: issuer.pre, i: iss.pre! }, { pre: issuer.pre, pvrsn });
+        const reply = runtime.reactor.replies.reserve(request.said!);
+        try {
+          const wire = messagize(request, {
+            sigers: issuer.sign(request.raw, true),
+            seal: { i: new Prefixer({ qb64: issuer.pre }) },
+            gvrsn: pvrsn,
+          });
+          yield* runtime.reactor.processBytes(wire);
+          runtime.reactor.replies.capture(runtime.cues);
+          const cue = reply.take();
+          assertExists(cue);
+          if (cue.kin !== "replay") throw new Error("Expected TEL replay");
+          assertEquals([cue.querySaid, cue.src, cue.dest], [request.said, issuer.pre, issuer.pre]);
+          responses.push(cue.messages);
+        } finally {
+          reply.close();
+        }
+      }
+      const rev = revoke(iss.pre!, vcp.pre!, iss.said!);
+      assertEquals(tvy.processEvent({ serder: rev, ...anchorTel(issuer, rev) }).kind, "accept");
+      for (const response of responses) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const messages = [...response];
+          assertEquals(messages.length, 2, "Later revocation remains outside both captured responses");
+          for (const [index, message] of messages.entries()) {
+            const [frame] = yield* call(() => parseBytes(message));
+            try {
+              const envelope = envelopeFromFrame(frame);
+              assertEquals(envelope.serder.raw, [vcp, iss][index].raw);
+              assertEquals(envelope.lastSsc?.s.num, anchors[index].seqner.num);
+              assertEquals(envelope.lastSsc?.d.qb64, anchors[index].saider.qb64);
+              assertEquals(frame.gvrsn?.major, 2);
+            } finally {
+              yield* call(() => discardFrame(frame));
+            }
+          }
+        }
+      }
+      assertEquals(runtime.cues.pull()?.kin, "revoked", "Accepted later revocation keeps its independent cue");
+      const request = (ri = vcp.pre!, i = "", route = "tels") =>
+        query(route, { ri, src: issuer.pre, i }, { pre: issuer.pre, pvrsn: Vrsn_2_0 });
+      const source = new Prefixer({ qb64: issuer.pre });
+      assertEquals(tvy.processQuery({ serder: request(), source }), undefined);
+      assertEquals(runtime.cues.pull()?.kin, "replay");
+      assertEquals(tvy.processQuery({ serder: request(issuer.pre), source }), undefined);
+      assertEquals(runtime.cues.length, 0, "Unknown TEL has no response or query escrow");
+      assertEquals(tvy.processQuery({ serder: request(), source: undefined }), {
+        kind: "drop",
+        reason: "missingAuthentication",
+      });
+      assertEquals(tvy.processQuery({ serder: request(""), source }), { kind: "drop", reason: "invalidQuery" });
+      assertEquals(tvy.processQuery({ serder: request(vcp.pre!, "", "tsn"), source }), {
+        kind: "drop",
+        reason: "unsupportedRoute",
+      });
+      const unsigned = hby.makeHab("nontransferable", undefined, { transferable: false });
+      const serder = request();
+      assertEquals(tvy.processQuery({ serder, cigars: unsigned.sign(serder.raw, false) }), undefined);
+      assertEquals(runtime.cues.pull()?.kin, "replay");
+      yield* reger.close();
+      assertThrows(() => [...responses[0]], Error, "not open");
+      yield* reger.reopen();
+      assertEquals([...responses[0]].length, 2, "Captured response reopens independently of query processing");
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
 });

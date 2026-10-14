@@ -86,6 +86,26 @@ Ownership in `keri-ts`:
 - `packages/cesr/src/primitives/mapper.ts`
 - `packages/cesr/src/primitives/compactor.ts`
 
+Standalone `Mapper({saidive:true, verify:true})` verifies each present configured
+top-level claim against the selected serialization format, regardless of input
+representation. `makify` replaces claims; `verify:false` skips verification.
+Compactor retains its existing wire round-trip and group validation through the
+same constructor path but overrides only standalone claim verification: expanded
+disclosure maps can carry commitments to their compact representation. This is
+an explicit TypeScript disclosure boundary, not issuer authentication. Serder
+verifies compact credential commitments, while Aggor independently verifies
+visible map claims and its list commitment.
+
+An embedded schema with a verified shallow JSON bare root `$id` is one content-bound
+resource, independent of the credential body format. ACDC construction retains
+its bundled URI IDs and references, and the compact schema section is that root
+ID. URI-wrapped root IDs are outside this recognition/profile boundary.
+Default/unbound schemas retain their frozen format-specific construction.
+Serder verification rejects stale explicit schema claims; it never repairs them
+by falling back to construction. Root commitment validity does not establish
+each bundle's content binding or schema-profile validity: v2 schema validation
+checks those separately, even when a tampered bundle has a newly committed root.
+
 ### 3. List/selective disclosure
 
 This is the `Aggor` path.

@@ -20,10 +20,21 @@ or erase existing escrows.
 Queries prefer the last transferable last-establishment group. V2 queries with
 raw indexed signatures fall back to the claimed sender. Missing requester
 material is refused. `logs/ksn/mbx` delegate to Kevery; `tels/tsn` require an
-explicit TEL query processor. The built-in Tevery lacks that processor, so these
-routes report `missingProcessor` unless a caller supplies one. Replies require
-cigars or transferable signature groups; exchanges also permit source couples
-or triples. Processors still verify signatures, dependencies and route semantics.
+explicit TEL query processor. Built-in legacy Tevery serves `tels`; `tsn` remains
+explicitly refused until its producer and receiving processors work. Replies
+require cigars or transferable signature groups; exchanges also permit source
+couples or triples. Reply/exchange processors verify their proofs and dependencies.
+
+TEL replay captures management then optional credential extents from accepted
+`Reger.tels.` without collecting body bytes, releasing each cursor before yielding.
+Every complete message has an 8 MiB default assembly cap including its selector.
+The frozen processor uses default v2 proof counters for both query body versions;
+TypeScript prefixes an explicit v2 genus selector so v1 TEL bodies remain parseable.
+Bodies, proof bytes and ordering are preserved. Missing TELs produce no response.
+Frozen query signature validation is TODO: requester material identifies a
+destination and does not itself authenticate the request. Sender policy and
+optional KRAM remain independent; this is not v2 `RegistryStore` query support.
+Whole-row reads still allocate before their size checks and retain phase 5 ownership.
 
 Admission refusals return `MessageDropDecision`. Frozen `xip/pro/bar` processors
 are stubs: they report `referenceStub`, never acceptance. Route-specific decisions
