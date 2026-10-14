@@ -110,8 +110,9 @@ scratch and mapped residency remain separate overhead, so this is no RSS bound.
 See the [payload contract](../../docs/design-docs/db/PAYLOAD_STORAGE.md).
 
 Stored reply body preflight, retained proof-row ceilings and final wire-size
-admission are separate from native proof-row decoding/copy admission. Current
-TS group/cigar reconstruction must not be labeled intentional 714 parity.
+admission are separate from native proof-row decoding/copy admission. Stored
+reply reconstruction uses 714 key-ordered groups and exactly one optional cigar;
+source construction does not authenticate those proofs for the receiver.
 
 [db]: ../../docs/design-docs/db/db-architecture.md
 

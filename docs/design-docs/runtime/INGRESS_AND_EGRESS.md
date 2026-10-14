@@ -440,12 +440,22 @@ Configured remote-worker counts and retained query cues still need their own
 handle/metadata boundary; these leases do not bound accepted configuration/state.
 
 Stored endpoint reply reconstruction uses configurable local defaults of 8 MiB
-per message and 4096 scanned proof rows. Native reply/establishment bodies are
-preflighted before copying; proof retention and exact counter-framed output size
-are checked before growth/final serialization. These limits are not protocol
-invalidity or a shared memory bound. Missing body returns empty; corruption and
-I/O failures propagate. Native proof-row decoding/copy pre-admission remains
-phase 5. The current TS newest-transferable-group/all-cigar/raw-body fallback
-remains an unresolved 714 output parity gap: actual `Hab.loadEndRole` and
-`loadLocScheme` pass all transferable groups and at most one cigar. Lazy OOBI
-selection and finite forwarding collection remain subsequent S2 units.
+per message and 4096 scanned proof rows. The native reply body is preflighted
+before copying; proof retention and exact counter-framed output size are checked
+before growth/final serialization. These limits are not protocol invalidity or a
+shared memory bound. Missing body returns empty; corruption and I/O failures
+propagate. Native proof-row decoding/copy pre-admission remains phase 5.
+
+Reconstruction follows actual 714 `Hab.loadEndRole`/`loadLocScheme` and `fetchTsgs`:
+all transferable groups retain canonical prefix/SN/digest order and stored seals,
+without reopening establishment bodies. Existing compact TS SN keys are padded
+only for ordering/reconstruction; stable raw-key ties retain each original group
+and accepted/escrow tables are not rewritten. Exactly one cigar may accompany them.
+Zero/multiple cigars contribute no couple. No remaining authenticator fails rather
+than emitting an unproved raw body. `messagize` accepts ordered groups under one
+aggregate counter, widening v1 ordinals and preserving v2 qualified ordinals.
+The caller's attachment genus floor remains explicit and the body may raise it.
+Independent actual-helper observations verified 64 imported 714 modules, group
+order `[0,1]`, v1 `-VBn-FAC` / v2 `-CBn-XBm` tails, one/two-cigar selection and
+missing-authenticator failure. Lazy OOBI selection and finite forwarding collection
+remain subsequent S2 units.
