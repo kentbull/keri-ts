@@ -18,12 +18,18 @@ The [runtime contract][runtime] distinguishes current behavior from the target.
 Reuse the active admission stack: HTTP frame/output work (#224–225), finite TCP
 ownership (#230), parser scheduling (#231), and mailbox stream admission.
 Those units are dependencies, not proof of end-to-end socket streamability.
+Generic witness sends and runtime delegation share services; finite TCP credit
+follows joined socket close. Streamed sending remains S7–8.
 HTTP already shares `requestFrame` (parsed frame) and `postCesr` (byte source);
 its successful-response consumer is optional, so ordinary sends do not prove
 verified protocol replies or durable remote acceptance.
 Lazy replies, query queues, HTTP frame preparation and outgoing source parsing
 share owner credit. Standalone sender wiring and native/storage copies still
 require qualification through real slow sinks.
+
+Raw Poster delivery exposes separate route snapshot, synchronous target
+preparation and prepared HTTP sending. Runtime cue callers still compose them
+under the guard; S1–3 must add admission, owned handoff and explicit outcomes.
 
 ## Messenger organization
 

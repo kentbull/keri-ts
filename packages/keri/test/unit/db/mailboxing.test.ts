@@ -1,10 +1,25 @@
+import { ResourceLimitError } from "cesr-ts";
 import { run } from "effection";
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { DatabaseNotOpenError } from "../../../src/core/errors.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";
 import { createMailboxer, Mailboxer } from "../../../src/db/mailboxing.ts";
+
+Deno.test("db/mailboxing - admitted stream reads reject an oversized native row before copying", async () => {
+  await run(function*() {
+    const mailboxer = yield* createMailboxer({ name: `bounded-mailbox-${crypto.randomUUID()}`, temp: true });
+    const bytes = new Uint8Array(4 * 1024 ** 2 + 1).fill(7);
+    mailboxer.storeMsg("aid/reply", bytes);
+    assertThrows(
+      () => Array.from(mailboxer.cloneTopicIter("aid/reply", 0, 4 * 1024 ** 2)),
+      ResourceLimitError,
+      "byte ceiling",
+    );
+    assertEquals(Array.from(mailboxer.cloneTopicIter("aid/reply"))[0][2], bytes);
+  });
+});
 
 async function pathExists(path: string): Promise<boolean> {
   try {

@@ -35,13 +35,15 @@ including aggregate 24 MiB credit during comparisons, publication and hydration.
 Exchanger nested admission/replay additionally holds a conservative shared copy
 allowance through joined cleanup; this covers its cooperating row/serialization
 and cursor phases, with parser frames charging ordinary/ESSR staging separately.
+Mailbox provider reads use native size preflight before copies, backed by shared
+message/chunk/metadata admission through joined close.
 KRAM snapshot/hash/serialization and reopened hydration now share runtime credit.
 Temporary rows/cursors release after parser join; real frame owners retain their
 ordinary/ESSR reservations through scoped consumer disposal. No file owner wrapper
 is introduced, and synchronous publication retains its collected wire credit.
-Broader KEL/reply replay (`clonePreIter`, `replyEndRole`), mailbox rows, parent
-factors and query preparation/retained introductions still require native-row and
-copy audits. Queue/stream credit alone does not prove their pre-read boundary.
+Broader KEL/reply replay (`clonePreIter`, `replyEndRole`), parent factors and query
+preparation/retained introductions still require native-row and copy audits.
+Queue/stream credit alone does not prove their pre-read boundary.
 Fixed native scratch (initially 16 MiB), growth through other read APIs and LMDB
 mapped residency remain separate overhead. Shared leases and measured native/string
 coexistence must cover these categories before a runtime-total/RSS claim.

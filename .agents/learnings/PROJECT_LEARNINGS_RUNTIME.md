@@ -68,6 +68,10 @@ frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
 HTTP success, verified replies and durable acceptance are different outcomes.
 
+Poster route snapshots and synchronous target preparation own habitat/DB work;
+prepared sending owns HTTP only. Keep borrowed wire alive through joined cleanup.
+The extraction alone does not move runtime callers outside their guard or admit copies.
+
 Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB
 preparation, then transfer admitted delivery ownership before network I/O. Never
@@ -93,6 +97,9 @@ before transport suspension. Query credits remain charged through failed deliver
 bounded passes drain only their initial work. Generic witness and signed-exchange
 HTTP share serializer output; authorization survives content-type retry. Receipt
 responses are intentionally finite proofs.
+Witness delegation passes the runtime's services into generic sends. TCP admission
+precedes socket creation, charges the retained backing as well as its transport
+copy, and settles only after close. Calling destroy is not joined cleanup.
 
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove
@@ -113,6 +120,9 @@ SSE consumes one complete event and awaits its consumer before another read.
 Provider output reads only with HTTP demand. Finite processOnce returns typed
 batches; long-lived pollDo is sink-based. Disconnect/timeout discards unfinished
 events so their cursors can retry. Durable inbox admission has separate dispositions.
+Provider query/nested streams share one runtime lease. Validate cursor metadata
+before copying and use bounded native row reads; join director close before stores.
+Attempt every owner's cleanup and propagate failures after releasing its credit.
 
 ## CLI and follow-ups
 
