@@ -67,6 +67,14 @@ decision-returning helpers such as:
 This keeps the KERIpy mental model while making the control surface explicit in
 TypeScript.
 
+When `processEvent` owns the native writer, one synchronous transaction covers
+decision, concrete cue admission, first-seen preparation and durable effects.
+Live accepted state and cues publish only after that commit succeeds; failed
+writes or commits release unpublished cue ownership. Explicit `decideEvent` /
+`applyDecision` callers and `processEvent` within an already active writer retain
+caller-owned commit/publication ordering. An in-process Reactor guard alone does
+not serialize another process writing the same LMDB environment.
+
 ## Historical inception replay
 
 For a known prefix, an `icp` or `dip` replay is compared with the accepted KEL

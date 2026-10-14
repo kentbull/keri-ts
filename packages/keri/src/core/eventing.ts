@@ -159,6 +159,13 @@ type ReceiptEventDecision =
     event: { pre: string; said: string; serder: SerderKERI; wits: string[] };
   };
 
+/** One invocation's admitted KEL effects, published after its owning native commit. */
+interface PreparedKeverDecision {
+  write(): void;
+  publish(): void;
+  release(): void;
+}
+
 /**
  * Minimal but real KEL event processor backed by live `Kever` instances.
  *
@@ -238,12 +245,32 @@ export class Kevery {
    * Process one normalized KEL event envelope.
    *
    * The returned decision is the normal typed outcome for remote processing.
+   * The owning native writer covers decision, admission and durable effects;
+   * accepted live state and cues publish only after that commit returns.
+   * An already active writer remains caller-owned, including its publication boundary.
    * Exceptions are reserved for invariant/corruption cases during application.
    */
   processEvent(envelope: KeverEventEnvelope): KeverDecision {
-    const decision = this.decideEvent(envelope);
-    this.applyDecision(decision);
-    return decision;
+    const env = this.db.env!;
+    // Nested callers retain their existing caller-owned commit/publication contract.
+    if ((env as unknown as { env: { writeTxn?: unknown } }).env.writeTxn) {
+      const decision = this.decideEvent(envelope);
+      this.applyDecision(decision);
+      return decision;
+    }
+    let prepared: PreparedKeverDecision | undefined;
+    try {
+      const decision = env.transactionSync(() => {
+        const decision = this.decideEvent(envelope);
+        prepared = this.prepareDecision(decision);
+        prepared?.write();
+        return decision;
+      });
+      prepared?.publish();
+      return decision;
+    } finally {
+      prepared?.release();
+    }
   }
 
   /**
@@ -878,8 +905,20 @@ export class Kevery {
    * - `Kever` decides acceptance/rejection criteria
    * - `Kevery` owns durable mutation, escrow routing, duplicate logging, and
    *   post-acceptance cue emission
+   * - explicit decide/apply callers own synchronous writer and commit/publication ordering
    */
   applyDecision(decision: KeverDecision): void {
+    const prepared = this.prepareDecision(decision);
+    try {
+      prepared?.write();
+      prepared?.publish();
+    } finally {
+      prepared?.release();
+    }
+  }
+
+  /** Admit concrete cues and fix FEL metadata under the caller's synchronous writer ownership. */
+  private prepareDecision(decision: KeverDecision): PreparedKeverDecision | undefined {
     // Ordinary Runtime decks retain their existing refusal/retry boundary until ownership is fully ported.
     if (!(this.cues instanceof CueDeck)) {
       this.cues.checkSpace(
@@ -900,23 +939,25 @@ export class Kevery {
       // Hold exact cue objects/backing and slots before accepted-event writes.
       this.cues.checkSpace(cues.length);
       const prepared = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
-      try {
-        target.logEvent(transition.log, logged);
-        target.applyTransition(transition);
-        this.db.pinState(transition.pre, transition.state);
-        this.kevers.set(transition.pre, target);
-        this.db.udes.rem(dgKey(transition.pre, transition.said));
-        if (group) {
-          this.db.prefixes.add(transition.pre);
-          this.db.groups.add(transition.pre);
-        }
-        if (prepared) prepared.publish();
-        else this.emitDecisionCues(cues);
-        this.repairAnchoredDelegationSourceSeals(transition.log.serder);
-      } finally {
-        prepared?.release();
-      }
-      return;
+      return {
+        write: () => {
+          target.logEvent(transition.log, logged);
+          this.db.pinState(transition.pre, transition.state);
+          this.db.udes.rem(dgKey(transition.pre, transition.said));
+          this.repairAnchoredDelegationSourceSeals(transition.log.serder);
+        },
+        publish: () => {
+          target.applyTransition(transition);
+          this.kevers.set(transition.pre, target);
+          if (group) {
+            this.db.prefixes.add(transition.pre);
+            this.db.groups.add(transition.pre);
+          }
+          if (prepared) prepared.publish();
+          else this.emitDecisionCues(cues);
+        },
+        release: () => prepared?.release(),
+      };
     }
 
     const kever = decision.kind === "duplicate" ? this.kevers.get(decision.log?.serder.pre ?? "") : undefined;
@@ -926,14 +967,17 @@ export class Kevery {
     const cues = [...(logged?.cues ?? []), ...(decision.cues ?? [])];
     this.cues.checkSpace(cues.length);
     const prepared = cues.length && this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
-    try {
-      if (decision.kind === "escrow") this.persistEscrowInstruction(decision.instruction);
-      else if (decision.log && kever && logged) kever.logEvent(decision.log, logged);
-      if (prepared) prepared.publish();
-      else this.emitDecisionCues(cues);
-    } finally {
-      prepared?.release();
-    }
+    return {
+      write: () => {
+        if (decision.kind === "escrow") this.persistEscrowInstruction(decision.instruction);
+        else if (decision.log && kever && logged) kever.logEvent(decision.log, logged);
+      },
+      publish: () => {
+        if (prepared) prepared.publish();
+        else this.emitDecisionCues(cues);
+      },
+      release: () => prepared?.release(),
+    };
   }
 
   /** Reprocess one pass of out-of-order escrowed events. */
