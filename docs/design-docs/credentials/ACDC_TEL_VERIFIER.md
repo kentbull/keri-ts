@@ -51,6 +51,11 @@ responsibilities into one vague "VC" layer.
 - Verifier webhooks are not notifier state. `Notifier` gives operator
   visibility; durable verifier work is driven from accepted grants, TEL state,
   saved credential indexes, and verifier cue sidecars.
+- VerifierAgent's guarded revoked-cue scan borrows the runtime deck. With CueDeck,
+  transfer existing owners, preserve unrelated order, release only after durable
+  verifier enqueue or duplicate detection, and requeue failed publication with
+  its original credit. The temporary scan is bounded by the initial deck count;
+  webhook waits remain outside the guard. Ordinary Deck handling is unchanged.
 
 ## V2 Registry Evidence
 

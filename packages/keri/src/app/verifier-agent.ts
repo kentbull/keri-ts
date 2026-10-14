@@ -12,7 +12,8 @@
  */
 import { Dater, Ilks, Prefixer, SerderACDC } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
-import type { AgentCue } from "../core/cues.ts";
+import { CueDeck, type OwnedCue } from "../core/cue-admission.ts";
+import type { AgentCue, CredentialRevokedCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { VcStateRecordShape } from "../core/records.ts";
@@ -150,30 +151,55 @@ export class VerifierAgent {
   }
 
   private processRevokedCues(): number {
+    if (this.cues instanceof CueDeck) return this.processOwnedRevokedCues(this.cues);
     const retained: AgentCue[] = [];
     let queued = 0;
     while (!this.cues.empty) {
       const cue = this.cues.pull();
-      if (!cue) {
-        continue;
-      }
-      if (cue.kin !== "revoked") {
-        retained.push(cue);
-        continue;
-      }
-      const said = cue.serder.pre;
-      if (!said || this.hasRevocationQueuedOrSent(said)) {
-        continue;
-      }
-      const creder = this.reger.creds.get([said]);
-      if (creder?.issuer) {
-        this.cdb.snd.pin([said], new Prefixer({ qb64: creder.issuer }));
-      }
-      this.cdb.rev.pin([said], nowDater());
-      queued += 1;
+      if (!cue) continue;
+      if (cue.kin !== "revoked") retained.push(cue);
+      else queued += this.queueRevocation(cue);
     }
     this.cues.extend(retained);
     return queued;
+  }
+
+  /** Guarded finite scan: preserve unrelated owners and failed publication without reacquiring credit. */
+  private processOwnedRevokedCues(cues: CueDeck): number {
+    const retained: OwnedCue[] = [];
+    const count = cues.length;
+    let queued = 0;
+    try {
+      for (let index = 0; index < count; index++) {
+        const owner = cues.takeOwned();
+        if (!owner) break;
+        const cue = owner.cue;
+        if (cue.kin !== "revoked") {
+          retained.push(owner);
+          continue;
+        }
+        try {
+          queued += this.queueRevocation(cue);
+        } catch (error) {
+          retained.push(owner);
+          throw error;
+        }
+        owner.release();
+      }
+    } finally {
+      for (const owner of retained.reverse()) cues.requeue(owner);
+    }
+    return queued;
+  }
+
+  /** Publish existing durable revocation work synchronously; caller retains source ownership through failure. */
+  private queueRevocation(cue: CredentialRevokedCue): number {
+    const said = cue.serder.pre;
+    if (!said || this.hasRevocationQueuedOrSent(said)) return 0;
+    const creder = this.reger.creds.get([said]);
+    if (creder?.issuer) this.cdb.snd.pin([said], new Prefixer({ qb64: creder.issuer }));
+    this.cdb.rev.pin([said], nowDater());
+    return 1;
   }
 
   private scanPersistedRevocations(): number {
