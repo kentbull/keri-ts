@@ -4,7 +4,8 @@ import { call, type Operation } from "npm:effection@^3.6.0";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { CesrHttpRefusal } from "./cesr-egress.ts";
 import type { PreparedCueEmission } from "./cue-preparation.ts";
-import { type PreparedCesrTarget, type RawCesrRoute, sendPreparedCesrTarget } from "./forwarding.ts";
+import type { PreparedCueRoute } from "./cue-route.ts";
+import { type PreparedCesrTarget, sendPreparedCesrTarget } from "./forwarding.ts";
 import type { Hab } from "./habbing.ts";
 
 const wireBytes = 8 * 1024 ** 2, preparationBytes = 3 * wireBytes;
@@ -29,9 +30,6 @@ function ownTarget(value: PreparedCesrTarget | undefined, credit: ResourceReserv
   };
 }
 
-/** Local owner progress only: pending work proves neither durable transfer nor protocol acceptance. */
-export type CueDeliveryStep = "done" | "more" | "pending";
-
 /** Keep one lazy extent/current message and one target; failed packets transfer into admitted queue slots. */
 export class CueDelivery {
   private iterator?: Iterator<Uint8Array>;
@@ -42,9 +40,11 @@ export class CueDelivery {
   constructor(
     private readonly owner: PreparedCueEmission,
     private readonly hab: Hab,
-    private readonly route: RawCesrRoute,
+    private readonly routing: PreparedCueRoute,
   ) {
-    if (route.sender !== hab.pre || !route.targets.length) throw new RangeError("Invalid cue delivery route");
+    if (routing.route.sender !== hab.pre || !routing.route.targets.length) {
+      throw new RangeError("Invalid cue delivery route");
+    }
   }
 
   /** One target per pass permits other admitted owners to progress; preparation alone runs under Reactor. */
@@ -52,7 +52,7 @@ export class CueDelivery {
     runtime: AgentRuntime,
     signal: AbortSignal,
     retainFailed: (target: OwnedCueTarget) => boolean,
-  ): Operation<CueDeliveryStep> {
+  ): Operation<"done" | "more" | "pending"> {
     signal.throwIfAborted();
     if (!this.prepared) {
       let done = false, busy = false;
@@ -84,7 +84,7 @@ export class CueDelivery {
           }
           const target = runtime.poster.prepareBytesTarget(
             self.hab,
-            self.route,
+            self.routing.route,
             self.targetIndex,
             self.message,
             wireBytes,
@@ -122,7 +122,7 @@ export class CueDelivery {
 
   /** Advance only joined transmission or successful independent live transfer; never claim remote acceptance. */
   private advance(): void {
-    if (++this.targetIndex === this.route.targets.length) {
+    if (++this.targetIndex === this.routing.route.targets.length) {
       this.targetIndex = 0;
       this.message = undefined;
     }
@@ -131,11 +131,25 @@ export class CueDelivery {
   /** Queue acknowledgement/shutdown releases retained evidence after the active transport has joined. */
   release(): void {
     if (this.released) return;
-    this.iterator?.return?.();
-    this.prepared?.release();
-    this.owner.release();
     this.released = true;
+    const errors: unknown[] = [];
+    for (
+      const cleanup of [
+        () => this.iterator?.return?.(),
+        () => this.prepared?.release(),
+        () => this.owner.release(),
+        () => this.routing.release(),
+      ]
+    ) {
+      try {
+        cleanup();
+      } catch (error) {
+        if (!errors.includes(error)) errors.push(error);
+      }
+    }
     this.iterator = this.message = undefined;
     this.prepared = undefined;
+    if (errors.length === 1) throw errors[0];
+    if (errors.length) throw new AggregateError(errors, "Cue delivery cleanup failed");
   }
 }

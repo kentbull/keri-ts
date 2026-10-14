@@ -19,6 +19,7 @@ import { postCesr } from "./cesr-egress.ts";
 import { CesrHttpRefusal } from "./cesr-egress.ts";
 import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
 import { prepareCueEmission } from "./cue-preparation.ts";
+import { prepareCueRoute } from "./cue-route.ts";
 import type { CueSink } from "./cue-runtime.ts";
 import { introduce, type RawCesrRoute, sendPreparedCesrTarget } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -77,19 +78,13 @@ interface QueryDelivery {
 
 const requestBytes = 8 * 1024 * 1024;
 // Query wire, retained introduction events and their joined introduction may coexist during preparation.
-const preparationBytes = 3 * requestBytes, routeBytes = 1024 ** 2;
+const preparationBytes = 3 * requestBytes;
 
 /** One shared item slot owns either query bytes, a lazy cue cursor or an exact failed packet. */
 type AdmittedDelivery =
   | { kind: "query"; delivery: QueryDelivery; release(): void }
   | { kind: "cue"; delivery: CueDelivery; release(): void }
   | { kind: "target"; delivery: OwnedCueTarget; release(): void };
-
-/** Local queue progress; pending/partial work proves neither remote acceptance nor durable retry. */
-export interface RuntimeDeliveryProgress {
-  retiredOwners: number;
-  pending: boolean;
-}
 
 /** Own query/cue delivery on one finite queue; network work executes outside guarded preparation. */
 export class RuntimeDeliveries {
@@ -142,31 +137,15 @@ export class RuntimeDeliveries {
     this.pending.checkSpace();
     return prepareCueEmission(hab, cues, this.resources, (owner) => {
       if (!owner.emission || owner.emission.kind !== "wire") throw new RangeError("Cue delivery requires wire");
-      if (owner.retainedBytes + preparationBytes + routeBytes > this.resources.limits.bytes) {
-        throw new ResourceAdmissionError("Cue route retention exceeds shared capacity", "limit");
-      }
-      const admitted = this.resources.reserve({ bytes: routeBytes });
-      if (admitted.kind === "refuse") throw new ResourceAdmissionError("Cue routes are busy", admitted.reason);
+      const captured = prepareCueRoute(this.resources, owner, () => route(owner.emission!));
       let queued = false;
       try {
-        const captured = route(owner.emission);
-        let size = 2 * (captured.sender.length + captured.recipient.length + captured.topic.length);
-        if (captured.targets.length > 4096) throw new ResourceLimitError("Cue target count exceeds limit");
-        for (const target of captured.targets) size += 128 + 2 * (target.eid.length + target.url.length);
-        if (size > routeBytes) throw new ResourceLimitError("Cue route metadata exceeds limit");
         const delivery = new CueDelivery(owner, hab, captured);
-        this.pending.push({
-          kind: "cue",
-          delivery,
-          release() {
-            delivery.release();
-            admitted.reservation.release();
-          },
-        });
+        this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
         queued = true;
         return undefined;
       } finally {
-        if (!queued) admitted.reservation.release();
+        if (!queued) captured.release();
       }
     });
   }
@@ -202,7 +181,6 @@ export class RuntimeDeliveries {
         entry.release();
       } catch (error) {
         errors.push(error);
-        this.pending.push(entry);
       }
     }
     if (errors.length === 1) throw errors[0];
@@ -210,7 +188,7 @@ export class RuntimeDeliveries {
   }
 
   /** A bounded pass advances each owner once; cue preparation is guarded, all HTTP waits are outside. */
-  process(runtime: AgentRuntime): Operation<RuntimeDeliveryProgress> {
+  process(runtime: AgentRuntime): Operation<{ retiredOwners: number; pending: boolean }> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     return call(function*() {
@@ -268,8 +246,11 @@ export class RuntimeDeliveries {
         // A cancelled/closed owner cannot acknowledge after successful HTTP cleanup.
         active.signal.throwIfAborted();
         if (done) {
-          entry.release();
-          self.pending.pull();
+          try {
+            entry.release();
+          } finally {
+            self.pending.pull();
+          }
           retiredOwners++;
         } else {
           self.pending.pull();

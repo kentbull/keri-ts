@@ -220,6 +220,8 @@ advances one target per cue. Only the observed exact HTTP refusal may transfer
 a failed packet into another admitted slot; otherwise its cursor stays put.
 Other targets then progress while the exact failed wire remains pending.
 Queue retirement reports local owner progress, not durable transfer/acceptance.
+Synchronous cursor-finalization failure propagates after every independent cleanup
+attempt and credit release; the retired owner never repeats transport/cleanup.
 Actual Respondant/HTTP/witness cue adoption remains the next S1–3 unit.
 
 Prepared cue route capture reserves 1 MiB and at most 4096 targets before

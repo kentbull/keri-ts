@@ -427,12 +427,6 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
     };
     try {
       runtime.cues.push(cue);
-      assertThrows(() =>
-        runtime.deliveries.enqueueCue(sender, runtime.cues, () => ({
-          ...route(),
-          targets: Array.from({ length: 4097 }, () => ({ eid: second.pre, url: "https://second.test/" })),
-        })), ResourceLimitError);
-      assertEquals([runtime.cues.length, runtime.resources.used.bytes], [1, 0]);
       assertEquals(runtime.deliveries.enqueueCue(sender, runtime.cues, route), true);
       const query = sender.query(sender.pre, sender.pre, {}, "logs");
       for (let index = 0; index < 7; index++) {
@@ -445,7 +439,7 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
       }
       runtime.cues.push(cue);
       assertThrows(() => runtime.deliveries.enqueueCue(sender, runtime.cues, route), Error, "Deck capacity");
-      assertEquals([runtime.cues.length, routes], [1, 2], "item refusal precedes interpretation/route acquisition");
+      assertEquals([runtime.cues.length, routes], [1, 1], "item refusal precedes interpretation/route acquisition");
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
         failed,
@@ -465,6 +459,41 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
       acceptFirst = true;
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });
       assertEquals(runtime.resources.used.bytes, 0);
+      assertStrictEquals(runtime.cues.pull(), cue, "the capacity-refused original cue is still present");
+      const cleanupFailure = new Error("iterator cleanup failed");
+      let returns = 0;
+      const messages = [query], iterator = messages[Symbol.iterator].bind(messages);
+      messages[Symbol.iterator] = () => {
+        const source = iterator();
+        return Object.assign(source, {
+          return() {
+            returns++;
+            throw cleanupFailure;
+          },
+        });
+      };
+      runtime.cues.push({ kin: "replay", messages, src: sender.pre, dest: second.pre });
+      runtime.deliveries.enqueueCue(sender, runtime.cues, () => ({ ...route(), targets: route().targets.slice(0, 1) }));
+      injected = true;
+      assertStrictEquals(
+        yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
+        failed,
+      );
+      runtime.deliveries.enqueue(() => ({
+        url: "https://query.test/",
+        body: query,
+        bodyMode: "header",
+        destination: sender.pre,
+      }));
+      const attempts = packets.first.length;
+      assertStrictEquals(yield* call(() => assertRejects(() => run(() => runtime.deliveries.close()))), cleanupFailure);
+      assertEquals([runtime.deliveries.hasPending, runtime.resources.used.bytes, returns], [false, 0, 1]);
+      yield* runtime.deliveries.close();
+      assertEquals(
+        [packets.first.length, returns],
+        [attempts, 1],
+        "failed finalization cannot repeat transport or return",
+      );
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
