@@ -32,6 +32,12 @@ those captured limits; sources must honor the producer backing contract while
 reading. Rejected admission never invokes the source factory and adds no waiter.
 A source that allocates outside this contract is outside the accounted envelope.
 
+Reactor also supplies this policy to tree admission. Each independent root owns
+one ordinary-wire allowance across all descendants. Both consumer disposal and
+resumption/closure of a generator suspended at delivery must finish before credit
+returns; parser termination alone never reclaims a delivered consumer owner.
+Reactor disposes every input root after dispatch and joined cleanup.
+
 Complete-record ingress reserves retained byte credit before copying. Its record
 owns the lease through queued and processing states, including cue-capacity retry
 and typed temporary parser-admission refusal. Oversize admission releases the record.
@@ -40,6 +46,7 @@ only queued records and invalidates late retries; processing retains credit unti
 joined cleanup. Runtime close and scope exit clear queued ownership. Parser backing
 credit is acquired separately, so both charges coexist during processing.
 
-Hydrated tree copies, storage and object/handle/work limits remain in the
+Additional hydrated representations, ESSR staging, storage and object/handle/work
+limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
 Counter totals alone are not an RSS or native/mapped-memory guarantee.
