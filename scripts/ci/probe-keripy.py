@@ -1,5 +1,7 @@
 """Verify the exact imported KERIpy runtime before interop creates any stores."""
 import argparse
+import hashlib
+import importlib
 import importlib.metadata as metadata
 import importlib.util
 import json
@@ -50,6 +52,7 @@ def main():
     )
     if cli_module is None:
         raise SystemExit("Verified KERIpy runtime has no KLI module")
+    importlib.import_module(cli_module)
     dependencies = {}
     for name in ("keri", "hio", "lmdb", "pysodium", "blake3"):
         try:
@@ -64,6 +67,8 @@ def main():
         "pythonVersion": sys.version,
         "cliModule": cli_module,
         "dependencies": dependencies,
+        "importVerification": "git-bytes" if root else "installed-record",
+        "loadedModules": loaded_modules(root, commit, expected_module.parent),
     }
     if args.resolver_root:
         import dws
@@ -88,6 +93,30 @@ def main():
             "root": str(resolver_root), "commit": resolver_commit, "module": str(resolver_module)
         }
     print(json.dumps(result, sort_keys=True))
+
+
+def loaded_modules(root, commit, package_root):
+    """Hash startup imports; editable source must match the pinned Git bytes.
+
+    Installed hashes record observed bytes, not independent Git equivalence.
+    Command-specific lazy imports still need qualification in the actual command.
+    """
+    modules = {}
+    for name, module in sorted(sys.modules.copy().items()):
+        if name != "keri" and not name.startswith("keri."):
+            continue
+        path = pathlib.Path(module.__file__).resolve()
+        content = path.read_bytes()
+        if not path.is_relative_to(package_root):
+            raise SystemExit(f"KERIpy import escaped selected package: {name} at {path}")
+        if root:
+            expected = subprocess.check_output(
+                ["git", "-C", str(root), "show", f"{commit}:{path.relative_to(root).as_posix()}"]
+            )
+            if content != expected:
+                raise SystemExit(f"KERIpy imported bytes differ from {commit}: {name} at {path}")
+        modules[name] = {"path": str(path), "sha256": hashlib.sha256(content).hexdigest()}
+    return modules
 
 
 def module_exists(name):
