@@ -67,7 +67,10 @@ interface PendingQuery extends QueryRequest {
   release(): void;
 }
 
-/** Existing pending deck owns admitted metadata until completion, clear or joined coordinator shutdown. */
+/**
+ * Own admitted metadata until completion/clear/joined shutdown. Top-level query and witness lists
+ * are copied; nested query values remain aliases and must stay immutable throughout queue/consumer lifetime.
+ */
 class PendingQueries extends Deck<PendingQuery> {
   private active?: PendingQuery;
   constructor(private readonly resources: ResourcePolicy, capacity: number) {
@@ -610,7 +613,10 @@ export class QueryCoordinator implements CueSink {
     return !this.pending.empty || this.continuations.length > 0;
   }
 
-  /** Queue one continuation-owned query for later resolution and delivery. */
+  /**
+   * Queue for later resolution/delivery: copy the top level/witness list only.
+   * Nested query values remain borrowed immutable data until consumption or clear/close retires the record.
+   */
   enqueue(request: QueryRequest): void {
     if (this.closed) throw new Error("Query coordinator is closed");
     const { pre, route, query, src, wits } = request;
