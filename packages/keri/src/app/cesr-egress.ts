@@ -44,6 +44,8 @@ export interface EgressOptions {
   maxErrorBytes?: number;
   /** Observe only this invocation's actual non-ok response; unexpected/cleanup failures still propagate. */
   onHttpRefusal?: (error: CesrHttpRefusal) => void;
+  /** Observe only actual source/tree/HTTP reservation refusals; injected failures stay distinct. */
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
   /** Upstream cancellation joins the same request lifetime as Effection cancellation. */
   signal?: AbortSignal;
   /** Injectable HTTP service for the owning runtime. */
@@ -183,10 +185,12 @@ function openFrameResponse(
     const bytes = 8 * cesrOutputMetadataBytes(frame) + 6 * headerLimit + 4 * errorLimit + 2 * 1024 ** 2;
     const credit = services.resources.reserve({ streams, bytes });
     if (credit.kind === "refuse") {
-      throw new ResourceAdmissionError(
+      const refusal = new ResourceAdmissionError(
         `HTTP output ${credit.resource} admission refused: ${credit.reason}`,
         credit.reason,
       );
+      options.onAdmissionRefusal?.(refusal);
+      throw refusal;
     }
     // Each Promise leaf remains tracked until cancellation has joined its cleanup.
     let preparing: Promise<Uint8Array> | undefined;
@@ -303,7 +307,9 @@ export function postCesr(
         bytes: limits.maxChunkBytes + limits.maxBufferedBytes,
       });
       if (credit.kind === "refuse") {
-        throw new ResourceAdmissionError(`Output source admission refused: ${credit.reason}`, credit.reason);
+        const refusal = new ResourceAdmissionError(`Output source admission refused: ${credit.reason}`, credit.reason);
+        options.onAdmissionRefusal?.(refusal);
+        throw refusal;
       }
       try {
         yield* provide();
@@ -321,6 +327,10 @@ export function postCesr(
       ...limits,
       resources: services.resources,
       signal,
+      onAdmissionRefusal(error) {
+        options.parse?.onAdmissionRefusal?.(error);
+        options.onAdmissionRefusal?.(error);
+      },
     });
     for (const frame of yield* each(channel.frames)) {
       try {

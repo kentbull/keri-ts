@@ -72,6 +72,8 @@ empty sources close before returning null and runtime close drops primed bytes.
 OOBI serving captures bounded endpoint/delegation descriptors only after admission,
 closes metadata cursors before hydration, and borrows Hab/store through cleanup.
 Fresh preparation caps are conservative; native metadata/proof allocation remains open.
+Finite forwarding introductions must cap before retaining messages, including
+ordinary wrapper defaults; a lazy source alone does not qualify bulk transport.
 RuntimeDeliveries owns the existing finite query queue; retained cue adoption
 uses this same owner rather than adding a parallel queue. Query producers run
 only after preparation/request admission. Queued requests retain
@@ -103,8 +105,10 @@ prepared sending owns HTTP only. Keep borrowed wire alive through joined cleanup
 An explicit target cap validates backing and bounds introduction plus forwarded wire
 before their final concatenation; direct wire becomes an independent copy. The
 caller must reserve preparation/copy credit first and retain it through joined send.
-Actual HTTP refusal observation is invocation-local; source/fetch/cleanup failures
-retain their original identity. These facilities do not yet move runtime callers
+Actual HTTP and source/tree/output admission refusal observation is invocation-local;
+source/fetch/sink/cleanup and external observer failures retain original identity.
+Prepared target attempts return local complete/refused/busy only after joined
+cleanup, matching observed engine-created errors rather than foreign classes. These facilities do not yet move runtime callers
 outside their guard or admit all decoded/native preparation copies.
 Admitted cue interpretation is synchronous: destination item admission precedes
 preparation, and atomic acceptance precedes ordinary source removal. Existing

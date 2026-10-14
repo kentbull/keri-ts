@@ -27,7 +27,7 @@ import {
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
-import type { Poster } from "../../../src/app/forwarding.ts";
+import { introduce, type Poster } from "../../../src/app/forwarding.ts";
 import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../src/app/habbing.ts";
 import type { QueryCoordinator } from "../../../src/app/querying.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
@@ -803,6 +803,12 @@ Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approve
         ...hby.db.clonePreIter(delegate.pre),
       );
       assertEquals([...approved], [...expected]);
+      const introduction = concatBytes(
+        ...hby.db.clonePreIter(delegate.pre),
+        ...hby.db.cloneDelegation(delegate.kever!),
+        delegate.replyEndRole(delegate.pre),
+      );
+      assertEquals(introduce(delegate, delegator.pre, introduction.length), introduction);
       const read = hby.db.getValBounded;
       const fault = new Error("event hydration must follow metadata admission");
       hby.db.getValBounded = () => {
