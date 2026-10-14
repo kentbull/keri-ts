@@ -1,4 +1,4 @@
-import { ResourceLimitError } from "../core/errors.ts";
+import { CborAdmissionError, ResourceLimitError } from "../core/errors.ts";
 import type { DecodedBodyBudget } from "./body-admission.ts";
 
 /**
@@ -57,6 +57,7 @@ export function admitCbor(raw: Uint8Array, budget: DecodedBodyBudget): boolean {
         payload = size;
         shortString = Math.max(shortString, Math.min(size, 64));
       } else if (major === 6) {
+        admitTag(size);
         tagged = true;
         // Unknown Tag has two fields; this also bounds the standard Date record.
         charge += 64 + 2 * 16;
@@ -85,4 +86,20 @@ export function admitCbor(raw: Uint8Array, budget: DecodedBodyBudget): boolean {
   budget.decodedBytes = remaining;
   // Builtin/custom tag callbacks have independent failure provenance and expansion owners.
   return !tagged && (boundaryFailure || (!indefinite && pending !== 0));
+}
+
+/**
+ * Refuse actual cbor-x-only expansion before codec entry, not unknown CBOR semantics.
+ * Definitions are blocked and the private codec configures no tables/getShared, so
+ * record IDs and 6/14/15 necessarily retain bounded Tag fallback on this path.
+ * All six packed prefix/suffix ranges and the table export are actual allocating handlers.
+ */
+function admitTag(tag: number): void {
+  if (
+    tag === 27 || tag === 51 || tag === 105 || tag === 259
+    || tag === 0xdff9 || tag === 0xdffe || tag === 0xdfff || tag === 0x53687264
+    || (tag >= 225 && tag <= 255) || (tag >= 28704 && tag <= 32767)
+    || (tag >= 1879052288 && tag <= 2147483647) || (tag >= 216 && tag <= 223)
+    || (tag >= 27647 && tag <= 28671) || (tag >= 1811940352 && tag <= 1879048191)
+  ) throw new CborAdmissionError(tag);
 }

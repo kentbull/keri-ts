@@ -4,6 +4,7 @@ import { toAsyncFrames } from "../../../src/adapters/async-iterable.ts";
 import { concatBytes, decodeB64, decoder, t } from "../../../src/core/bytes.ts";
 import { encodeKeriCbor } from "../../../src/core/cbor.ts";
 import {
+  CborAdmissionError,
   ColdStartError,
   DeserializeError,
   GroupSizeError,
@@ -658,6 +659,15 @@ Deno.test("JSON and CBOR descendants share decoded credit through refusal, suspe
   await discardFrame(frame);
   assertEquals(resources.used.bytes, held, "suspended parser owns both codecs' credit");
   await parser.return(undefined);
+  assertEquals(resources.used.bytes, 0);
+  assertEquals(resources.released, resources.reserved);
+  const refused = concatBytes(Uint8Array.of(0xd9, 1, 3), cborBody);
+  refused.set(encode("00001b"), 17);
+  const refusedChild = v.group("BodyWithAttachmentGroup", wrap(refused));
+  await assertRejects(
+    () => parseBytes(encode(v.group("BodyWithAttachmentGroup", wrap(encode(jsonBody)) + refusedChild)), options),
+    CborAdmissionError,
+  );
   assertEquals(resources.used.bytes, 0);
   assertEquals(resources.released, resources.reserved);
   const controller = new AbortController();
