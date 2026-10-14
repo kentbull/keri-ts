@@ -20,7 +20,7 @@ must precede route processing without replacing Exchanger proof policy.
 3f also owns built-in TEL query processing; the injected dispatch seam alone does
 not qualify `tels/tsn` behavior.
 Inspect `core/parsing.py`, `core/eventing.py` and `core/kraming.py` at
-`927c0cb8794d7c84fc17143c67df64aab9deda6c` before editing. Verify the imported
+`7143832813cac6a394ab1faf9be83bb3372be87c` before editing. Verify the imported
 modules in each evidence run. `processXip`, `processPro` and `processBar` are
 stubs there; do not invent processing to claim parity.
 

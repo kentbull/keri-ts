@@ -14,7 +14,7 @@ import { envelopeFromFrame } from "../src/app/parsering.ts";
 
 /** Require explicit executable selection independently of shell PATH. */
 const python = Deno.args[0];
-if (!python) throw new Error("Pass Python with PYTHONPATH selecting frozen upstream927 source");
+if (!python) throw new Error("Pass Python with PYTHONPATH selecting frozen upstream714 source");
 /** A finite test corpus; never used as a production collector. */
 const corpus: {
   local: string;
@@ -122,7 +122,7 @@ for (const row of returned) {
 }
 console.log(
   JSON.stringify({
-    reference: "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+    reference: "7143832813cac6a394ab1faf9be83bb3372be87c",
     acceptedWrappers: corpus.rows.length,
     replayedChildren: returned.length,
     unsupportedNativeDefaultBuilder: true,

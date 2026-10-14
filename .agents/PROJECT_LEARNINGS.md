@@ -2,8 +2,8 @@
 
 Routing and durable rules only. Current source, tests and normative contracts
 outrank these summaries. The [parity roadmap](../docs/plans/PARITY_ROADMAP.md)
-owns remaining work; do not duplicate its checklist here. Parser structure and
-nested consumers are implemented, while optional KRAM intake, shared budgets,
+owns remaining work; do not duplicate its checklist here. Parser structure,
+nested consumers and optional KRAM intake are implemented. Shared budgets,
 storage/transport reconciliation and final qualification remain incomplete.
 
 ## Read by subject
@@ -32,6 +32,9 @@ Accepted legacy bytes remain readable; new intake requires full witnessed tuples
 Raw evidence stays separate from opt-in strict seal projection.
 Native addon loading alone is not runtime compatibility; qualify large-row paths.
 Pinned nested-row preflight preserves active writers; shared copy admission remains separate.
+
+Active KERIpy parity targets `7143832813cac6a394ab1faf9be83bb3372be87c`.
+Keep historical 927 fixtures and fork/legacy compatibility results labeled by their actual sources.
 
 Normal remote outcomes use typed decisions. Exceptions retain invariant,
 infrastructure and caller-contract failures. Keep protocol compatibility and

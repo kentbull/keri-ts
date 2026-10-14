@@ -45,7 +45,7 @@
 
 ## Primitive and Serder rules
 
-- Generated codices from upstream `927c0cb8` own table meaning; helper sets derive
+- Generated codices from pinned upstream `71438328` own table meaning; helper sets derive
   from them. Table membership is not context admission. Historical v1 `-D/-J/-K`
   extensions are explicit; v2 nonce seals belong to structing, not every reader.
 - Decode bounded headers and only the declared token, never the remaining stream.

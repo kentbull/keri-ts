@@ -7,7 +7,7 @@ import { publishNests, stageNests } from "../src/db/exchange-nests.ts";
 
 /** Explicit executable keeps the frozen source environment independent of PATH. */
 const python = Deno.args[0];
-if (!python) throw new Error("Pass Python with PYTHONPATH selecting frozen 927c0cb8 source");
+if (!python) throw new Error("Pass Python with PYTHONPATH selecting frozen 71438328 source");
 /** Retain only this finite qualification corpus; production stores one bounded row per child. */
 const rows: { name: string; wire: string; tree: unknown }[] = [];
 await run(function*() {

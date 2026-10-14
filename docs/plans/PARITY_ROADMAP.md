@@ -1,7 +1,7 @@
 # KERIpy parity and bounded runtime roadmap
 
 Verified boundary: keri-ts `248b3ea7` after [#223][mapper-repair].
-Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+Frozen upstream: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
 completed PR evidence are summarized in the [delivery report][delivered].

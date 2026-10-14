@@ -22,7 +22,7 @@ import { exchange } from "../src/core/protocol-exchanging.ts";
 
 /** Require the explicit frozen interpreter/PYTHONPATH chosen by the qualification caller. */
 const python = Deno.args[0];
-if (!python) throw new Error("Pass the Python executable with PYTHONPATH selecting frozen upstream927");
+if (!python) throw new Error("Pass the Python executable with PYTHONPATH selecting frozen upstream714");
 /** Small bounded corpus only; production replay stays streamed. */
 const corpus: {
   bootstrap: number[][];
@@ -130,10 +130,10 @@ await run(function*() {
     }
     console.log(
       JSON.stringify({
-        reference: "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+        reference: "7143832813cac6a394ab1faf9be83bb3372be87c",
         accepted: corpus.rows.length,
         replayed: returned.length,
-        scope: "exchange proof factors only; nested IPEX remains guarded",
+        scope: "exchange proof factors only; nested IPEX not exercised",
       }),
     );
   } finally {

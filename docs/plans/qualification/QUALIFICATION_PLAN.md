@@ -92,5 +92,6 @@ affected checks after the final [Mapper repair](../cesr/MAPPER_PLAN.md).
 
 Reference gaps are classified using the [upstream registry review](../../reference/credentials/UPSTREAM_REGISTRY_GAPS.md).
 Qualify our implemented behavior without waiting for absent upstream processing.
-Current main `71438328` adds schema hardening (#1713); assess this delta separately
-from frozen `927c0cb8` evidence and record any unqualified newer behavior.
+The active baseline is `7143832813cac6a394ab1faf9be83bb3372be87c`, including
+schema hardening (#1713). Earlier `927c0cb8` results remain historical evidence;
+run final qualification against 714 and label retained fork/legacy targets separately.
