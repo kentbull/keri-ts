@@ -44,6 +44,7 @@ import type { Mailboxer } from "../db/mailboxing.ts";
 import type { OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
+import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { type CesrHttpRefusal, postCesr } from "./cesr-egress.ts";
 import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
@@ -64,6 +65,7 @@ import type { OobiReplyLimits } from "./oobi-replies.ts";
 import { Organizer } from "./organizing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+import { sendCesrTcp } from "./tcp-egress.ts";
 
 /** Delivery preference accepted by CLI and runtime exchange send helpers. */
 export type ExchangeDeliveryPreference = "auto" | "direct" | "indirect";
@@ -95,6 +97,12 @@ export interface RawCesrRoute {
 export type PreparedCesrTarget =
   | { readonly kind: "stored" }
   | {
+    readonly kind: "tcp";
+    readonly url: string;
+    readonly destination: string;
+    readonly message: Uint8Array;
+  }
+  | {
     readonly kind: "http";
     readonly url: string;
     readonly destination: string;
@@ -102,15 +110,25 @@ export type PreparedCesrTarget =
     readonly bodyMode: CesrBodyMode;
   };
 
-/** Deliver prepared HTTP wire without habitat access, signing or local storage work. */
+/** Deliver prepared wire; explicit runtime lends same-socket intake, otherwise TCP drains output only. */
 export function* sendPreparedCesrTarget(
   target: PreparedCesrTarget,
   services: RuntimeServices,
   signal?: AbortSignal,
   onHttpRefusal?: (error: CesrHttpRefusal) => void,
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+  runtime?: AgentRuntime,
 ): Operation<void> {
-  if (target.kind === "http") {
+  if (target.kind === "tcp") {
+    if (runtime) {
+      yield* sendCesrTcp(target.url, target.message, {
+        services,
+        signal,
+        onAdmissionRefusal,
+        replies: { runtime, local: true },
+      });
+    } else yield* sendCesrTcp(target.url, target.message, { services, signal, onAdmissionRefusal });
+  } else if (target.kind === "http") {
     yield* postCesrMessage(
       target.url,
       target.message,
@@ -124,16 +142,34 @@ export function* sendPreparedCesrTarget(
   }
 }
 
+/** Preserve selected endpoint and signed bytes; TCP has no HTTP body framing mode. */
+function remoteCesrTarget(
+  endpoint: { eid: string; url: string },
+  message: Uint8Array,
+  bodyMode: CesrBodyMode,
+): PreparedCesrTarget {
+  const base = { url: endpoint.url, destination: endpoint.eid, message };
+  return new URL(endpoint.url).protocol === "tcp:" ? { ...base, kind: "tcp" } : { ...base, kind: "http", bodyMode };
+}
+
 /** Join a prepared target attempt; local completion/refusal/busy never implies protocol acceptance. */
 export function* attemptPreparedCesrTarget(
   target: PreparedCesrTarget,
   services: RuntimeServices,
   signal?: AbortSignal,
+  runtime?: AgentRuntime,
 ): Operation<"complete" | "refused" | "busy"> {
   let observed: CesrHttpRefusal | ResourceAdmissionError | undefined;
   try {
     yield* call(() =>
-      sendPreparedCesrTarget(target, services, signal, (error) => observed = error, (error) => observed = error)
+      sendPreparedCesrTarget(
+        target,
+        services,
+        signal,
+        (error) => observed = error,
+        (error) => observed = error,
+        runtime,
+      )
     );
     signal?.throwIfAborted();
     return "complete";
@@ -225,6 +261,8 @@ export class Poster {
    * - KERIpy `Poster` is queue/doer based
    * - here the caller drives one explicit operation and gets a structured
    *   result back immediately
+   * - optional runtime lends same-socket TCP intake; standalone TCP is transmit-only
+   * - public callers own synchronous route/signing preparation and wire retention
    */
   *sendExchange(
     hab: Hab,
@@ -240,6 +278,7 @@ export class Poster {
       embeds?: Record<string, Uint8Array>;
       delivery?: ExchangeDeliveryPreference;
     },
+    runtime?: AgentRuntime,
   ): Operation<ExchangeSendResult> {
     const recipient = this.resolveRecipient(args.recipient);
     const topic = args.topic ?? defaultTopicForRoute(args.route);
@@ -278,6 +317,7 @@ export class Poster {
             topic,
             message,
             endpoint,
+            runtime,
           );
           deliveries.push(endpoint.url);
         } catch (error) {
@@ -323,12 +363,13 @@ export class Poster {
     const directEndpoints = directDeliveryEndpoints(hab, recipient);
     if (directEndpoints.length > 0) {
       for (const endpoint of directEndpoints) {
-        yield* postCesrMessage(
-          endpoint.url,
-          message,
-          this.hby.cesrBodyMode,
-          endpoint.eid,
+        yield* sendPreparedCesrTarget(
+          remoteCesrTarget(endpoint, message, this.hby.cesrBodyMode),
           this.services,
+          undefined,
+          undefined,
+          undefined,
+          runtime,
         );
         deliveries.push(endpoint.url);
       }
@@ -346,6 +387,7 @@ export class Poster {
           topic,
           message,
           witnessEndpoint,
+          runtime,
         );
         deliveries.push(witnessEndpoint.url);
         return { serder, deliveries, queued };
@@ -362,6 +404,7 @@ export class Poster {
    *
    * This is used by delegation workflows where correctness depends on the
    * actual KEL bytes reaching the delegator or delegate, not on an EXN wrapper.
+   * Optional runtime lends TCP intake; caller owns preparation/retention before transport.
    */
   *sendBytes(
     hab: Hab,
@@ -371,6 +414,7 @@ export class Poster {
       topic?: string;
       delivery?: ExchangeDeliveryPreference;
     },
+    runtime?: AgentRuntime,
   ): Operation<RawCesrSendResult> {
     const route = this.resolveBytesRoute(hab, args);
     const deliveries: string[] = [];
@@ -380,7 +424,7 @@ export class Poster {
       const endpoint = route.targets[index]!;
       try {
         const target = this.prepareBytesTarget(hab, route, index, args.message);
-        yield* sendPreparedCesrTarget(target, this.services);
+        yield* sendPreparedCesrTarget(target, this.services, undefined, undefined, undefined, runtime);
         deliveries.push(endpoint.url);
       } catch (error) {
         if (route.kind !== "mailbox") throw error;
@@ -478,15 +522,9 @@ export class Poster {
     if (!Number.isSafeInteger(index) || !endpoint) throw new RangeError("Invalid CESR delivery target");
     if (route.kind !== "direct") {
       const forwarded = this.prepareForwardedTarget(hab, route.recipient, route.topic, message, endpoint, maxBytes);
-      return forwarded.kind === "stored" ? forwarded : { ...forwarded, bodyMode: route.bodyMode };
+      return forwarded.kind === "http" ? { ...forwarded, bodyMode: route.bodyMode } : forwarded;
     }
-    return {
-      kind: "http",
-      url: endpoint.url,
-      destination: endpoint.eid,
-      message: maxBytes === undefined ? message : message.slice(),
-      bodyMode: route.bodyMode,
-    };
+    return remoteCesrTarget(endpoint, maxBytes === undefined ? message : message.slice(), route.bodyMode);
   }
 
   /**
@@ -495,7 +533,7 @@ export class Poster {
    * Retry behavior is per mailbox endpoint, not per logical message. A removed
    * mailbox cancels only that endpoint's target row.
    */
-  *processPending(): Operation<void> {
+  *processPending(runtime?: AgentRuntime): Operation<void> {
     for (const pending of this.outboxer.iterPending()) {
       const hab = this.hby.habs.get(pending.message.sender);
       if (!hab) {
@@ -527,6 +565,7 @@ export class Poster {
           pending.message.topic,
           pending.raw,
           endpoint,
+          runtime,
         );
         this.outboxer.markDelivered(
           pending.said,
@@ -568,6 +607,7 @@ export class Poster {
     topic: string,
     message: Uint8Array,
     endpoint: { eid: string; url: string },
+    runtime?: AgentRuntime,
   ): Operation<void> {
     yield* this.deliverForwardedTarget(
       hab,
@@ -575,6 +615,7 @@ export class Poster {
       topic,
       message,
       endpoint,
+      runtime,
     );
   }
 
@@ -588,6 +629,7 @@ export class Poster {
     topic: string,
     message: Uint8Array,
     endpoint: { eid: string; url: string },
+    runtime?: AgentRuntime,
   ): Operation<void> {
     yield* this.deliverForwardedTarget(
       hab,
@@ -595,6 +637,7 @@ export class Poster {
       topic,
       message,
       endpoint,
+      runtime,
     );
   }
 
@@ -610,9 +653,10 @@ export class Poster {
     topic: string,
     message: Uint8Array,
     endpoint: { eid: string; url: string },
+    runtime?: AgentRuntime,
   ): Operation<void> {
     const target = this.prepareForwardedTarget(hab, recipient, topic, message, endpoint);
-    yield* sendPreparedCesrTarget(target, this.services);
+    yield* sendPreparedCesrTarget(target, this.services, undefined, undefined, undefined, runtime);
   }
 
   /** Local mailbox writes and signed introductions finish before any network work starts. */
@@ -634,13 +678,7 @@ export class Poster {
     }
     const forwarded = buildForwardedDelivery(hab, { recipient, topic, message }, maxBytes);
     const intro = introduce(hab, endpoint.eid, maxBytes - forwarded.length);
-    return {
-      kind: "http",
-      url: endpoint.url,
-      destination: endpoint.eid,
-      message: concatBytes(intro, forwarded),
-      bodyMode: this.hby.cesrBodyMode,
-    };
+    return remoteCesrTarget(endpoint, concatBytes(intro, forwarded), this.hby.cesrBodyMode);
   }
 
   /** Require provider mailbox storage for local mailbox-target delivery. */

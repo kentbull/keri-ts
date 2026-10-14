@@ -558,7 +558,7 @@ export function* processRuntimeTurn(
   yield* runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
   yield* runtime.authenticator.processOnce();
-  yield* runtime.poster.processPending();
+  yield* runtime.poster.processPending(runtime);
   yield* runtime.delegating.processAllOnce();
   runtime.signaler?.processOnce();
   if (options.pollMailbox ?? true) {
@@ -761,7 +761,7 @@ export function* runAgentRuntime(
       : []),
     yield* spawn(function*() {
       while (true) {
-        yield* runtime.poster.processPending();
+        yield* runtime.poster.processPending(runtime);
         yield* runtimeTurn();
       }
     }),

@@ -8,12 +8,20 @@
  * - shared mailbox storage and remote cursor progression
  */
 import { call, run } from "effection";
-import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { concatBytes, parseBytes, ResourceLimitError, SerderKERI } from "../../../../cesr/mod.ts";
+import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { createServer } from "node:net";
+import {
+  concatBytes,
+  parseBytes,
+  ResourceAdmissionError,
+  ResourceLimitError,
+  SerderKERI,
+} from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import {
+  attemptPreparedCesrTarget,
   ForwardHandler,
   introduce,
   introductionMessages,
@@ -30,9 +38,11 @@ import {
   updateMailboxRemoteCursor,
 } from "../../../src/app/mailboxing.ts";
 import { persistResolvedContact } from "../../../src/app/organizing.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
 import type { Mailboxer } from "../../../src/db/mailboxing.ts";
 
 function makeExchangeSerder(
@@ -723,7 +733,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           const introduction = yield* call(() => parseBytes(expectedIntro));
           const frameCount = introduction.length;
 
-          const poster = new Poster(hby);
+          const poster = new Poster(hby, { services: runtime.services });
           const route = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
           const prepared = poster.prepareBytesTarget(sender, route, 0, message);
           assertEquals(prepared.kind, "http");
@@ -779,6 +789,100 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             >)["q"],
             { s: "0", i: recipient.pre, src: sender.pre },
           );
+          const receiptKey = dgKey(sender.pre, sender.kever!.said);
+          const receipt = remoteWitness.receipt(sender.kever!.serder);
+          let connections = 0;
+          const tcpBodies: Uint8Array[][] = [];
+          const tcp = createServer({ allowHalfOpen: true }, (socket) => {
+            connections++;
+            const chunks: Uint8Array[] = [];
+            tcpBodies.push(chunks);
+            socket.on("error", () => {});
+            socket.on("data", (chunk) => chunks.push(new Uint8Array(chunk)));
+            // A real signed receipt travels independently of the prepared upload's framing.
+            socket.write(receipt);
+            socket.once("end", () => socket.end());
+          });
+          yield* call(() => new Promise<void>((resolve) => tcp.listen(0, "127.0.0.1", resolve)));
+          try {
+            const addr = tcp.address();
+            if (!addr || typeof addr === "string") throw new Error("Expected TCP endpoint");
+            const url = `tcp://127.0.0.1:${addr.port}`;
+            hby.db.locs.pin([remoteWitness.pre, "tcp"], { url });
+            assertEquals(
+              poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" }).targets[0].url,
+              route.targets[0].url,
+            );
+            hby.db.locs.rem([remoteWitness.pre, "http"]);
+            const tcpRoute = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
+            const tcpTarget = poster.prepareBytesTarget(sender, tcpRoute, 0, message);
+            assertEquals(tcpTarget.kind, "tcp");
+            if (tcpTarget.kind !== "tcp") throw new Error("Expected TCP target");
+            assertEquals(
+              tcpTarget.message.subarray(0, expectedIntro.length),
+              expectedIntro,
+              "TCP preserves signed introduction",
+            );
+            assertEquals(poster.prepareBytesTarget(sender, { ...tcpRoute, kind: "direct" }, 0, message).kind, "tcp");
+            const busy = runtime.resources.reserve({ streams: runtime.resources.limits.streams - 1 });
+            if (busy.kind !== "reserve") throw new Error("Expected free stream credit");
+            try {
+              assertEquals(yield* attemptPreparedCesrTarget(tcpTarget, runtime.services, undefined, runtime), "busy");
+              assertEquals(connections, 0, "RX refusal must precede socket acquisition");
+            } finally {
+              busy.reservation.release();
+            }
+            assertEquals(runtime.resources.used.streams, 0);
+            const reserve = runtime.resources.reserve,
+              foreign = new ResourceAdmissionError("foreign owner failure", "busy");
+            runtime.resources.reserve = () => {
+              throw foreign;
+            };
+            try {
+              assertStrictEquals(
+                yield* call(() =>
+                  assertRejects(() =>
+                    run(() => attemptPreparedCesrTarget(tcpTarget, runtime.services, undefined, runtime))
+                  )
+                ),
+                foreign,
+              );
+            } finally {
+              runtime.resources.reserve = reserve;
+            }
+            const sent = yield* poster.sendBytes(sender, {
+              recipient: recipient.pre,
+              message,
+              topic: "/receipt",
+            }, runtime);
+            assertEquals(sent.deliveries, [url]);
+            assertEquals(hby.db.rcts.get(receiptKey).length, 1, "explicit receiver persists the same-socket receipt");
+            assertEquals(concatBytes(...tcpBodies[0]).subarray(0, expectedIntro.length), expectedIntro);
+            const uploaded = yield* call(() => parseBytes(concatBytes(...tcpBodies[0])));
+            const forwarded = uploaded.at(-1)!.body;
+            if (!(forwarded instanceof SerderKERI)) throw new Error("Expected signed forwarded EXN");
+            assertEquals(forwarded.route, "/fwd");
+            assertEquals(forwarded.ked?.q, delivered.ked?.q);
+            assertEquals(forwarded.ked?.e, delivered.ked?.e);
+            hby.db.rcts.rem(receiptKey);
+            yield* runtime.reactor.settle(undefined, {}, function*() {
+              runtime.deliveries.enqueueCue(sender, new Deck([{ kin: "replay", messages: [message] }]), () => tcpRoute);
+            });
+            yield* runtime.deliveries.process(runtime);
+            yield* runtime.deliveries.process(runtime);
+            assertEquals(runtime.deliveries.hasPending, false);
+            assertEquals(hby.db.rcts.get(receiptKey).length, 1, "actual queue caller lends its receiver");
+            assertEquals(concatBytes(...tcpBodies[1]).subarray(0, expectedIntro.length), expectedIntro);
+            assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+            hby.db.rcts.rem(receiptKey);
+            yield* sendPreparedCesrTarget(tcpTarget, runtime.services);
+            assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");
+            assertEquals(concatBytes(...tcpBodies[2]), tcpTarget.message);
+          } finally {
+            yield* call(() =>
+              new Promise<void>((resolve, reject) => tcp.close((error) => error ? reject(error) : resolve()))
+            );
+          }
         } finally {
           yield* runtime.close();
         }

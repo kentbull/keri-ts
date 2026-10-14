@@ -265,7 +265,7 @@ export class RuntimeDeliveries {
     if (errors.length) throw new AggregateError(errors, "Runtime delivery cleanup failed");
   }
 
-  /** A bounded pass advances each owner once; cue preparation is guarded, all HTTP waits are outside. */
+  /** A bounded pass advances each owner once; cue preparation is guarded, all transport waits are outside. */
   process(runtime: AgentRuntime): Operation<{ retiredOwners: number; pending: boolean }> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
@@ -304,7 +304,7 @@ export class RuntimeDeliveries {
             )) === "done";
           } else {
             done = (yield* call(() =>
-              attemptPreparedCesrTarget(entry.delivery.target, runtime.services, active.signal)
+              attemptPreparedCesrTarget(entry.delivery.target, runtime.services, active.signal, runtime)
             )) === "complete";
           }
         }
