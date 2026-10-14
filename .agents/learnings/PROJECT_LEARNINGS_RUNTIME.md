@@ -44,7 +44,11 @@ a runtime. Reactor reserves stream/cursor/producer credit before source acquisit
 and retains it through joined parser cleanup. AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
 Internal CueDeck preparation holds concrete metadata/backing and item credit;
-ownership transfers through fanout/requeue until final cleanup. Runtime activation
+ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
+clone/state and decision-carried duplicate/escrow cues now prepare before effects
+when CueDeck is explicitly injected. Revery's own missing-signer query batches
+also prepare before BADA/proof/escrow effects; semantic /ksn and registry state
+child cues and OOBI publication remain open. Runtime activation
 waits for every producer/consumer port; count checks alone cannot reserve byte credit.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
@@ -66,7 +70,12 @@ See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md
 
 ## Transport
 
-The target finite and streamed messenger entry points share two engines. Parsed
+Incremental CESR I/O is the stack-wide default, including discovery, artifacts
+and CLI callers. Adopt the shared engines/response owners rather than private
+collectors; pass the runtime's exact services/policy. Finite JSON/receipt semantics
+require enforced caps, cancellation and joined cleanup. OOBI/DID completion still
+requires full evidence; processing before EOF does not imply artifact success.
+The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
 HTTP success, verified replies and durable acceptance are different outcomes.
@@ -100,9 +109,10 @@ before transport suspension. Query credits remain charged through failed deliver
 bounded passes drain only their initial work. Generic witness and signed-exchange
 HTTP share serializer output; authorization survives content-type retry. Receipt
 responses are intentionally finite proofs.
-Witness delegation passes the runtime's services into generic sends. TCP admission
-precedes socket creation, charges the retained backing as well as its transport
-copy, and settles only after close. Calling destroy is not joined cleanup.
+Witness delegation passes the runtime's services into generic sends. TCP finite/source adapters share one writer: admission precedes socket/factory
+creation, backing limits precede writes, and write callbacks/drain precede another
+pull. Credit follows source return plus socket close; calling destroy is not joined
+cleanup. End/close deadlines start at source EOF, not the beginning of a large transfer.
 
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove

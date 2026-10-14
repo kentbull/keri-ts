@@ -1,8 +1,9 @@
-import { Cigar, Dater, Diger, Prefixer, SerderKERI, Siger } from "cesr-ts";
+import { Cigar, Dater, Diger, Prefixer, ResourceLimitError, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
+import { CueDeck } from "./cue-admission.ts";
 import type { AgentCue } from "./cues.ts";
-import { Deck, DeckFullError } from "./deck.ts";
+import { Deck } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import {
@@ -29,6 +30,14 @@ export interface ReplyUnverified {
 
 /** Typed live reply result used instead of exception-shaped control flow. */
 export type ReplyProcessDecision = ReplyAccept | ReplyUnverified;
+
+/** Finite proof writes and concrete query cues discovered without changing BADA or escrow state. */
+interface ReplyAcceptancePlan {
+  decision: ReplyProcessDecision;
+  accepted?: Parameters<Revery["updateReply"]>[0];
+  escrows: Array<Parameters<Revery["escrowReply"]>[0]>;
+  cues: AgentCue[];
+}
 
 /** Builder for one accepted live reply decision. */
 export function acceptReplyDecision(): ReplyAccept {
@@ -318,6 +327,7 @@ export class Revery {
   readonly cues: Deck<AgentCue>;
   readonly lax: boolean;
   readonly local: boolean;
+  readonly maxReplyGroups: number;
 
   /**
    * Create one reply verifier bound to one `Baser` and optional shared router.
@@ -333,11 +343,14 @@ export class Revery {
       cues,
       lax = true,
       local = false,
+      maxReplyGroups = 4096,
     }: {
       rtr?: Router;
       cues?: Deck<AgentCue>;
       lax?: boolean;
       local?: boolean;
+      /** Incoming proof-group limit; bounds staged entries and matches the parser group default. */
+      maxReplyGroups?: number;
     } = {},
   ) {
     this.db = db;
@@ -345,6 +358,8 @@ export class Revery {
     this.cues = cues ?? new Deck();
     this.lax = lax;
     this.local = local;
+    if (!Number.isSafeInteger(maxReplyGroups) || maxReplyGroups < 0) throw new RangeError("Invalid reply group limit");
+    this.maxReplyGroups = maxReplyGroups;
   }
 
   /** Local prefixes used for self-attachment policy decisions. */
@@ -366,7 +381,7 @@ export class Revery {
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
     // Missing signer groups can each request state; the accepted route may also emit one cue.
-    this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
+    if (!(this.cues instanceof CueDeck)) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
     if (!args.serder.verify()) {
       throw new ValidationError(
         `Invalid said for reply msg=${JSON.stringify(args.serder.ked)}.`,
@@ -410,7 +425,34 @@ export class Revery {
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
-    this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
+    if (!(this.cues instanceof CueDeck)) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
+    const plan = this.prepareReply(args);
+    this.cues.checkSpace(plan.cues.length);
+    const prepared = plan.cues.length && this.cues instanceof CueDeck ? this.cues.prepare(plan.cues) : undefined;
+    try {
+      for (const escrow of plan.escrows) this.escrowReply(escrow);
+      if (plan.accepted) {
+        this.updateReply(plan.accepted);
+        if (!args.retainPrevious) this.removeReply(args.osaider ?? null);
+      }
+      if (prepared) prepared.publish();
+      else this.cues.extend(plan.cues);
+      return plan.decision;
+    } finally {
+      prepared?.release();
+    }
+  }
+
+  /** Evaluate ordered proof groups with a virtual escrow view before any durable reply effects. */
+  private prepareReply(args: Parameters<Revery["acceptReply"]>[0]): ReplyAcceptancePlan {
+    if ((args.tsgs?.length ?? 0) > this.maxReplyGroups || (args.cigars?.length ?? 0) > this.maxReplyGroups) {
+      throw new ResourceLimitError("Reply proof groups exceed configured work limit");
+    }
+    const escrows: ReplyAcceptancePlan["escrows"] = [];
+    const cues: AgentCue[] = [];
+    // Same-call groups see the last staged pin exactly as they previously saw the durable write.
+    const staged = new Map<string, Parameters<Revery["escrowReply"]>[0]>();
+    const groupKey = (pre: string, snh: string, said: string) => `${pre}.${snh}.${said}`;
     const daterText = args.serder.ked?.dt;
     if (typeof daterText !== "string") {
       throw new ValidationError("Reply message is missing 'dt'.");
@@ -421,7 +463,10 @@ export class Revery {
     const escrow = (material: Parameters<Revery["escrowReply"]>[0]) => {
       if (!material.sigers.length) return;
       pending = true;
-      if (!args.externalEscrow) this.escrowReply(material);
+      if (!args.externalEscrow) {
+        escrows.push(material);
+        staged.set(groupKey(material.prefixer.qb64, encodeOrdinalHex(material.seqner), material.diger.qb64), material);
+      }
     };
 
     for (const cigar of args.cigars ?? []) {
@@ -436,14 +481,12 @@ export class Revery {
         continue;
       }
 
-      this.updateReply({
-        serder: args.serder,
-        saider: args.saider,
-        dater,
-        cigar,
-      });
-      if (!args.retainPrevious) this.removeReply(args.osaider ?? null);
-      return acceptReplyDecision();
+      return {
+        decision: acceptReplyDecision(),
+        escrows,
+        cues,
+        accepted: { serder: args.serder, saider: args.saider, dater, cigar },
+      };
     }
 
     const oldTsgs = args.osaider
@@ -474,7 +517,8 @@ export class Revery {
           diger: tsg.diger,
           sigers: [...tsg.sigers],
         });
-        this.cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
+        this.cues.checkSpace(cues.length + 1);
+        cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
         continue;
       }
 
@@ -493,7 +537,7 @@ export class Revery {
         continue;
       }
 
-      const escrowed = this.db.ssgs.get([
+      const escrowed = staged.get(groupKey(tsg.pre, tsg.snh, tsg.said))?.sigers ?? this.db.ssgs.get([
         args.saider.qb64,
         tsg.pre,
         tsg.snh,
@@ -535,17 +579,20 @@ export class Revery {
       }
 
       if (tholder.satisfy([...seen])) {
-        this.updateReply({
-          serder: args.serder,
-          saider: args.saider,
-          dater,
-          prefixer: tsg.prefixer,
-          seqner: tsg.seqner,
-          diger: tsg.diger,
-          sigers: verified,
-        });
-        if (!args.retainPrevious) this.removeReply(args.osaider ?? null);
-        return acceptReplyDecision();
+        return {
+          decision: acceptReplyDecision(),
+          escrows,
+          cues,
+          accepted: {
+            serder: args.serder,
+            saider: args.saider,
+            dater,
+            prefixer: tsg.prefixer,
+            seqner: tsg.seqner,
+            diger: tsg.diger,
+            sigers: verified,
+          },
+        };
       }
 
       escrow({
@@ -560,10 +607,14 @@ export class Revery {
       });
     }
 
-    return unverifiedReplyDecision(
-      `Reply ${args.saider.qb64} at route ${args.route} was not accepted.`,
-      { said: args.saider.qb64, route: args.route, aid: args.aid, ...(args.externalEscrow ? { pending } : {}) },
-    );
+    return {
+      escrows,
+      cues,
+      decision: unverifiedReplyDecision(
+        `Reply ${args.saider.qb64} at route ${args.route} was not accepted.`,
+        { said: args.saider.qb64, route: args.route, aid: args.aid, ...(args.externalEscrow ? { pending } : {}) },
+      ),
+    };
   }
 
   /**
@@ -758,7 +809,7 @@ export class Revery {
       }
       return acceptEscrow();
     } catch (error) {
-      if (error instanceof DeckFullError) throw error;
+      if (error instanceof ResourceLimitError) throw error;
       return dropEscrow("processingError", {
         message: error instanceof Error ? error.message : String(error),
         context: { said: diger.qb64, route: serder.route },

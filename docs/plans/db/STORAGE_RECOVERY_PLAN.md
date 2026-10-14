@@ -15,8 +15,8 @@ Apply the [roadmap review rules](../PARITY_ROADMAP.md), in dependency order:
 4. Crash recovery of proven task-owned stages and unreferenced files.
 5. Joined cleanup-error handling and durable reopen/retry reconciliation.
    Include [transport delivery obligations](../runtime/TRANSPORT_PLAN.md): the
-   current optional outbox is mailbox-only and publishes multiple rows without
-   one transaction. Qualify atomic publication, finite admission, partial-target
+   optional mailbox-only outbox publishes rows and terminal pruning in one
+   transaction. Qualify finite admission, partial-target
    status and reopen before claiming durable transfer. Direct/witness obligations
    require explicit destination semantics or proven regeneration. A journal added
    after KEL acceptance alone leaves the crash-before-cue-transfer gap. Resolve
