@@ -1,12 +1,14 @@
 import { type Operation, run } from "effection";
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { Diger, Prefixer, Seqner, SerderKERI } from "../../../../cesr/mod.ts";
+import { assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert";
+import { Diger, Prefixer, ResourceLimitError, Seqner, SerderKERI, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "../../../src/app/oobiery.ts";
+import { loadStoredReply } from "../../../src/app/stored-replies.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { reply } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { assertOperationThrows, testCLICommand } from "../../utils.ts";
@@ -147,10 +149,8 @@ Deno.test("OOBI local state - transferable controller OOBI reply seal attachment
 
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, pre, "http"));
-      ingestKeriBytes(
-        runtime,
-        hab.makeEndRole(pre, EndpointRoles.controller, true),
-      );
+      const endRole = hab.makeEndRole(pre, EndpointRoles.controller, true);
+      ingestKeriBytes(runtime, endRole);
       yield* processRuntimeTurn(runtime, { hab });
 
       const stream = textDecoder.decode(
@@ -160,6 +160,46 @@ Deno.test("OOBI local state - transferable controller OOBI reply seal attachment
       assertStringIncludes(
         stream,
         `-FAB${pre}${fixedSeqner}${pre}`,
+      );
+      const said = hby.db.eans.get([pre, EndpointRoles.controller, pre])!.qb64;
+      const expected = endRole;
+      assertEquals(hab.loadEndRole(pre, pre, EndpointRoles.controller), expected);
+      assertEquals(loadStoredReply(hby.db, said, { maxMessageBytes: expected.length }), expected);
+      assertThrows(() => loadStoredReply(hby.db, said, { maxMessageBytes: expected.length - 1 }), ResourceLimitError);
+      assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: 0 }), ResourceLimitError);
+      const native = hby.db.rpys.sdb as unknown as { getBinary(key: Uint8Array): Uint8Array | undefined };
+      const binary = native.getBinary;
+      native.getBinary = () => {
+        throw new Error("oversized stored reply was copied");
+      };
+      try {
+        assertThrows(() => loadStoredReply(hby.db, said, { maxMessageBytes: 1 }), ResourceLimitError);
+      } finally {
+        native.getBinary = binary;
+      }
+      const read = hby.db.getValBounded, fault = new Error("establishment storage failed");
+      hby.db.getValBounded = function(...args) {
+        if (args[0] === this.evts.sdb) throw fault;
+        return read.apply(this, args);
+      };
+      try {
+        assertEquals(assertThrows(() => loadStoredReply(hby.db, said)), fault);
+      } finally {
+        hby.db.getValBounded = read;
+      }
+      const bare = new SerderKERI({ raw: hab.makeLocScheme("http://127.0.0.1:1", pre, "http") });
+      hby.db.rpys.pin([bare.said!], bare);
+      assertEquals(loadStoredReply(hby.db, bare.said!), bare.raw);
+      assertEquals(loadStoredReply(hby.db, "missing").length, 0);
+      assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: -1 }), RangeError);
+      const newer = reply("/loc/scheme", { eid: pre, scheme: "http", url: hostUrl }, { pre, pvrsn: Vrsn_2_0 });
+      const v2Wire = hab.endorse(newer);
+      hby.db.rpys.pin([newer.said!], newer);
+      hby.db.ssgs.pin([newer.said!, pre, "0".repeat(32), pre], hab.sign(newer.raw, true));
+      assertEquals(loadStoredReply(hby.db, newer.said!, { maxMessageBytes: v2Wire.length }), v2Wire);
+      assertThrows(
+        () => loadStoredReply(hby.db, newer.said!, { maxMessageBytes: v2Wire.length - 1 }),
+        ResourceLimitError,
       );
     } finally {
       yield* hby.close();
@@ -190,10 +230,8 @@ Deno.test("OOBI local state - non-transferable mailbox OOBI replies use reply ci
 
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, pre, "http"));
-      ingestKeriBytes(
-        runtime,
-        hab.makeEndRole(pre, EndpointRoles.mailbox, true),
-      );
+      const endRole = hab.makeEndRole(pre, EndpointRoles.mailbox, true);
+      ingestKeriBytes(runtime, endRole);
       yield* processRuntimeTurn(runtime, { hab });
 
       const stream = textDecoder.decode(
@@ -202,6 +240,20 @@ Deno.test("OOBI local state - non-transferable mailbox OOBI replies use reply ci
 
       assertStringIncludes(stream, "\"r\":\"/loc/scheme\"");
       assertStringIncludes(stream, "-CAB");
+      const said = hby.db.eans.get([pre, EndpointRoles.mailbox, pre])!.qb64;
+      const expected = endRole;
+      assertEquals(hab.loadEndRole(pre, pre, EndpointRoles.mailbox), expected);
+      assertEquals(loadStoredReply(hby.db, said, { maxMessageBytes: expected.length, maxProofRows: 1 }), expected);
+      assertThrows(() => loadStoredReply(hby.db, said, { maxMessageBytes: expected.length - 1 }), ResourceLimitError);
+      assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: 0 }), ResourceLimitError);
+      // Additional stored couple exercises the preexisting all-cigar TS reconstruction.
+      const other = hby.makeHab("other", undefined, { transferable: false });
+      const serder = hby.db.rpys.get([said])!;
+      const cigar = other.sign(serder.raw, false)[0];
+      hby.db.scgs.add([said], [other.kever!.verfers[0], cigar]);
+      const both = loadStoredReply(hby.db, said, { maxProofRows: 2 });
+      assertEquals(both, hab.loadEndRole(pre, pre, EndpointRoles.mailbox));
+      assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: 1 }), ResourceLimitError);
     } finally {
       yield* hby.close();
     }

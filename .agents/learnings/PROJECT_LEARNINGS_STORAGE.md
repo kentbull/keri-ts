@@ -109,4 +109,8 @@ scratch and mapped residency remain separate overhead, so this is no RSS bound.
 [storage phase 5](../../docs/plans/db/STORAGE_RECOVERY_PLAN.md) jointly own closure.
 See the [payload contract](../../docs/design-docs/db/PAYLOAD_STORAGE.md).
 
+Stored reply body preflight, retained proof-row ceilings and final wire-size
+admission are separate from native proof-row decoding/copy admission. Current
+TS group/cigar reconstruction must not be labeled intentional 714 parity.
+
 [db]: ../../docs/design-docs/db/db-architecture.md

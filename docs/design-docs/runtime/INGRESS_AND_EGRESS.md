@@ -390,3 +390,14 @@ collectors use the same owned, cancellable byte reader.
 Provider connections and per-request topics now share finite runtime admission.
 Configured remote-worker counts and retained query cues still need their own
 handle/metadata boundary; these leases do not bound accepted configuration/state.
+
+Stored endpoint reply reconstruction uses configurable local defaults of 8 MiB
+per message and 4096 scanned proof rows. Native reply/establishment bodies are
+preflighted before copying; proof retention and exact counter-framed output size
+are checked before growth/final serialization. These limits are not protocol
+invalidity or a shared memory bound. Missing body returns empty; corruption and
+I/O failures propagate. Native proof-row decoding/copy pre-admission remains
+phase 5. The current TS newest-transferable-group/all-cigar/raw-body fallback
+remains an unresolved 714 output parity gap: actual `Hab.loadEndRole` and
+`loadLocScheme` pass all transferable groups and at most one cigar. Lazy OOBI
+selection and finite forwarding collection remain subsequent S2 units.

@@ -46,7 +46,7 @@ import {
   rotate as rotateEvent,
 } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
-import { HabitatRecord, type VerferCigarCouple } from "../core/records.ts";
+import { HabitatRecord } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
@@ -66,6 +66,7 @@ import {
   normalizeSaltQb64,
   saltySigner,
 } from "./keeping.ts";
+import { loadStoredReply } from "./stored-replies.ts";
 
 /** Reserved alias for the local signatory habitat record. */
 export const SIGNER = "__signatory__";
@@ -238,86 +239,6 @@ function emptyMessage(): Uint8Array {
 /** Concatenate a list of wire messages while preserving empty-list semantics. */
 function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
   return messages.length === 0 ? emptyMessage() : concatBytes(...messages);
-}
-
-/**
- * Rebuild stored transferable reply signature groups from `ssgs.`.
- *
- * This helper is used when accepted replies are reloaded for OOBI/resource
- * dissemination and the caller needs a full wire message again.
- */
-function fetchReplyTsgs(
-  db: Baser,
-  said: string,
-): TransIdxSigGroup[] {
-  const grouped = new Map<string, TransIdxSigGroup>();
-
-  for (
-    const [keys, siger] of db.ssgs.getTopItemIter([said], { topive: true })
-  ) {
-    const prefix = keys[1];
-    const dig = keys[3];
-    if (!prefix || !dig) {
-      continue;
-    }
-    const estEvent = db.getEvtSerder(prefix, dig);
-    const seqner = estEvent?.sner;
-    if (!seqner) {
-      continue;
-    }
-    const groupKey = `${prefix}.${seqner.qb64}.${dig}`;
-    let group = grouped.get(groupKey);
-    if (!group) {
-      group = new TransIdxSigGroup(
-        new Prefixer({ qb64: prefix }),
-        seqner,
-        new Diger({ qb64: dig }),
-        [],
-      );
-      grouped.set(groupKey, group);
-    }
-    group.sigers.push(siger);
-  }
-
-  return [...grouped.values()].sort((a, b) => Number(b.sn - a.sn));
-}
-
-/** Rehydrate one stored verfer+cigar tuple into the KERIpy runtime cigar shape. */
-function hydrateStoredCigar(tuple: VerferCigarCouple): Cigar {
-  return new Cigar(tuple[1], tuple[0]);
-}
-
-/**
- * Reload one persisted reply plus all of its stored attachments by SAID.
- *
- * Returns an empty message when the reply SAID is not present in reply-state
- * storage.
- */
-function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
-  const serder = db.rpys.get([said]);
-  if (!serder) {
-    return emptyMessage();
-  }
-
-  const tsgs = fetchReplyTsgs(db, said);
-  if (tsgs.length > 0) {
-    const lead = tsgs[0];
-    return messagize(serder, {
-      sigers: lead.sigers,
-      seal: { i: lead.prefixer, s: lead.seqner, d: lead.diger },
-      pipelined: true,
-    });
-  }
-
-  const cigars = db.scgs.get([said]);
-  if (cigars.length > 0) {
-    return messagize(serder, {
-      cigars: cigars.map((entry) => hydrateStoredCigar(entry)),
-      pipelined: true,
-    });
-  }
-
-  return serder.raw;
 }
 
 /**
@@ -1192,7 +1113,7 @@ export class Hab {
       return emptyMessage();
     }
     const said = this.db.eans.get([cid, role, eid]);
-    return said ? loadReplyMessageBySaid(this.db, said.qb64) : emptyMessage();
+    return said ? loadStoredReply(this.db, said.qb64) : emptyMessage();
   }
 
   /**
@@ -1207,7 +1128,7 @@ export class Hab {
     for (
       const [, said] of this.db.lans.getTopItemIter(keys, { topive: !scheme })
     ) {
-      messages.push(loadReplyMessageBySaid(this.db, said.qb64));
+      messages.push(loadStoredReply(this.db, said.qb64));
     }
     return concatMessages(messages.filter((msg) => msg.length > 0));
   }
