@@ -183,7 +183,15 @@ query or txnStateSaved child before proof/Broker effects. Exact family membershi
 prevents duplicate query credit; insertion must match the synchronous prediction
 before publication. Pending Broker proofs and prior accepted BADA evidence retain
 their existing owners, including credential registry/attester/TEL dependency migration.
-Semantic rejection never applies the new proof plan. OOBI publication remains open, followed by
-EXN/KRAM and legacy credential/TEL producers.
+Semantic rejection never applies the new proof plan.
+
+Oobiery.resolve admits its actual queued cue before the queue write. Multi-URL
+fanout validates and stages every child record, then admits the exact ordered cue
+batch before any child queue or parent moobi mutation. Parent completion admits
+its actual resolved/failed result before terminal/contact writes. Ordinary Deck
+keeps its existing count guards. Resource refusal cannot leave partial fanout or
+publish terminal/contact effects; unexpected write faults release unpublished
+credit without DB rollback. Response/schema/CESR and introduction publication
+remain open, followed by EXN/KRAM and legacy credential/TEL producers.
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.

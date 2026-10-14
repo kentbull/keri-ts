@@ -1,5 +1,6 @@
 import { type Cigar, Diger, Ilks, Prefixer, ResourceAdmissionError, SerderKERI } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
+import { CueDeck } from "../core/cue-admission.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
@@ -91,8 +92,16 @@ export class Oobiery {
   resolve(url: string, alias?: string): void {
     this.cues.checkSpace();
     const meta = parseOobiUrl(url, alias);
-    this.pinQueuedRecord(queueKindFor(url), url, meta);
-    this.cues.push({ kin: "oobiQueued", url, alias: meta.alias });
+    const kind = queueKindFor(url), record = this.queuedRecord(meta);
+    const cues: AgentCue[] = [{ kin: "oobiQueued", url, alias: meta.alias }];
+    const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    try {
+      this.pinQueueStore(kind, url, record);
+      if (batch) batch.publish();
+      else this.cues.extend(cues);
+    } finally {
+      batch?.release();
+    }
   }
 
   /**
@@ -444,18 +453,23 @@ export class Oobiery {
     }
 
     this.cues.checkSpace(urls.length);
-    for (const childUrl of urls) {
-      this.resolve(childUrl, record.oobialias ?? undefined);
-    }
-
-    this.hby.db.coobi.rem(url);
-    this.hby.db.moobi.pin(url, {
-      ...record,
-      cid,
-      date: new Date().toISOString(),
-      state: "pending-multi-oobi",
-      urls,
+    // Normalize every child before the first queue write; malformed later URLs cannot leave partial fanout.
+    const children = urls.map((childUrl) => {
+      const meta = parseOobiUrl(childUrl, record.oobialias ?? undefined);
+      return { url: childUrl, kind: queueKindFor(childUrl), meta, record: this.queuedRecord(meta) };
     });
+    const cues: AgentCue[] = children.map(({ url, meta }) => ({ kin: "oobiQueued", url, alias: meta.alias }));
+    const parent = { ...record, cid, date: new Date().toISOString(), state: "pending-multi-oobi", urls };
+    const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    try {
+      for (const child of children) this.pinQueueStore(child.kind, child.url, child.record);
+      this.hby.db.coobi.rem(url);
+      this.hby.db.moobi.pin(url, parent);
+      if (batch) batch.publish();
+      else this.cues.extend(cues);
+    } finally {
+      batch?.release();
+    }
   }
 
   /** Finalize one parent multi-OOBI after its child URLs all reach terminal state. */
@@ -466,37 +480,34 @@ export class Oobiery {
     const failed = urls.length === 0
       || urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
 
-    this.hby.db.moobi.rem(url);
-    if (failed) {
-      this.hby.db.eoobi.pin(url, {
-        ...record,
-        date,
-        state: urls.length === 0 ? "invalid-multi-oobi" : "child-failed",
-      });
-      this.cues.push({
+    const state = failed ? (urls.length === 0 ? "invalid-multi-oobi" : "child-failed") : "resolved";
+    const result = { ...record, date, state };
+    const cues: AgentCue[] = failed
+      ? [{
         kin: "oobiFailed",
         url,
         reason: urls.length === 0 ? "invalid multi-oobi" : "child failed",
-      });
-      return;
+      }]
+      : [{
+        kin: "oobiResolved",
+        url,
+        cid: record.cid ?? undefined,
+        role: record.role ?? undefined,
+        eid: record.eid ?? undefined,
+      }];
+    const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    try {
+      this.hby.db.moobi.rem(url);
+      if (failed) this.hby.db.eoobi.pin(url, result);
+      else {
+        this.hby.db.roobi.pin(url, result);
+        persistResolvedContact(this.hby, record.cid ?? null, { alias: record.oobialias, oobi: url });
+      }
+      if (batch) batch.publish();
+      else this.cues.extend(cues);
+    } finally {
+      batch?.release();
     }
-
-    this.hby.db.roobi.pin(url, {
-      ...record,
-      date,
-      state: "resolved",
-    });
-    persistResolvedContact(this.hby, record.cid ?? null, {
-      alias: record.oobialias,
-      oobi: url,
-    });
-    this.cues.push({
-      kin: "oobiResolved",
-      url,
-      cid: record.cid ?? undefined,
-      role: record.role ?? undefined,
-      eid: record.eid ?? undefined,
-    });
   }
 
   /** Mark one fetched OOBI as terminal failure and clear its in-flight state. */
@@ -535,13 +546,9 @@ export class Oobiery {
     store.rem(url);
   }
 
-  /** Normalize and persist one new queued OOBI record into the default queue. */
-  private pinQueuedRecord(
-    kind: OobiQueueKind,
-    url: string,
-    meta: OobiJob,
-  ): void {
-    this.pinQueueStore(kind, url, {
+  /** Stage one normalized queue record without durable effects. */
+  private queuedRecord(meta: OobiJob): OobiRecordShape {
+    return {
       date: new Date().toISOString(),
       state: "queued",
       cid: meta.cid ?? null,
@@ -549,7 +556,7 @@ export class Oobiery {
       role: meta.role ?? null,
       oobialias: meta.alias ?? null,
       said: meta.said ?? null,
-    });
+    };
   }
 
   /**
