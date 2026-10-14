@@ -1,11 +1,22 @@
 import { run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
-import { Dater, Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
+import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import {
+  Dater,
+  Diger,
+  NumberPrimitive,
+  Prefixer,
+  ResourceAdmissionError,
+  ResourceLimitError,
+  ResourcePolicy,
+  SerderKERI,
+} from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
+import { DeckFullError } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { Revery, unverifiedReplyDecision } from "../../../src/core/routing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
-import { expectKind, routingTestApi } from "../../private-access.ts";
+import { expectKind, routingTestApi, withPatchedMethod } from "../../private-access.ts";
 
 function createEscrowedReplyFixture(
   hby: {
@@ -134,6 +145,127 @@ Deno.test("Revery.acceptReply aggregates weighted reply signatures until the thr
           .length,
         2,
       );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Revery holds the exact query batch before ordered proof effects and preserves external ownership", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `revery-cue-admission-${crypto.randomUUID()}`, temp: true });
+    try {
+      const hab = hby.makeHab("weighted", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2", toad: 0 });
+      const kever = hab.kever!;
+      const resources = new ResourcePolicy();
+      const cues = new CueDeck(resources, 1);
+      const rvy = new Revery(hby.db, { cues });
+      const body = (dt: string) =>
+        new SerderKERI({ sad: { t: "rpy", dt, r: "/admission", a: { aid: hab.pre } }, makify: true });
+      const group = (serder: SerderKERI, indices: number[], sn = kever.sner) =>
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: hab.pre }),
+          sn,
+          new Diger({ qb64: kever.said }),
+          indices.map((i) => hab.sign(serder.raw, true)[i]),
+        );
+      const prior = body("2026-10-13T00:00:00.000001+00:00");
+      const priorSaid = new Diger({ qb64: prior.said! });
+      assertEquals(
+        rvy.acceptReply({
+          serder: prior,
+          saider: priorSaid,
+          route: "/admission",
+          aid: hab.pre,
+          tsgs: [group(prior, [0, 1])],
+        }).kind,
+        "accept",
+      );
+      const serder = body("2026-10-13T00:00:00.000002+00:00");
+      const saider = new Diger({ qb64: serder.said! });
+      const args = {
+        serder,
+        saider,
+        route: "/admission",
+        aid: hab.pre,
+        osaider: priorSaid,
+        tsgs: [group(serder, [0]), group(serder, [0], NumberPrimitive.fromNum(1n)), group(serder, [1])],
+      };
+      const unchanged = () => {
+        assertEquals(hby.db.rpys.get([saider.qb64]), null);
+        assertEquals(hby.db.sdts.get([saider.qb64]), null);
+        assertEquals([...hby.db.ssgs.getTopItemIter([saider.qb64], { topive: true })], []);
+        assertEquals(hby.db.rpes.get([args.route]), []);
+        assertExists(hby.db.rpys.get([priorSaid.qb64]));
+        assertEquals(cues.length, 0);
+      };
+      const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertEquals(assertThrows(() => rvy.acceptReply(args), ResourceAdmissionError).reason, "busy");
+      occupied.reservation.release();
+      unchanged();
+      assertEquals(
+        assertThrows(
+          () => new Revery(hby.db, { cues: new CueDeck(new ResourcePolicy({ bytes: 1 })) }).acceptReply(args),
+          ResourceAdmissionError,
+        ).reason,
+        "limit",
+      );
+      unchanged();
+      const slot = cues.prepare([{ kin: "proof", said: "active" }]);
+      assertThrows(() => rvy.acceptReply(args), DeckFullError);
+      slot.release();
+      unchanged();
+      assertThrows(
+        () => new Revery(hby.db, { cues, maxReplyGroups: 2 }).acceptReply(args),
+        ResourceLimitError,
+        "work limit",
+      );
+      unchanged();
+      // External escrow must not virtually aggregate proofs which its semantic owner has not published.
+      const pending = expectKind(rvy.acceptReply({ ...args, externalEscrow: true }), "unverified");
+      assertEquals(pending.context?.pending, true);
+      assertEquals(cues.toArray(), [{ kin: "query", pre: hab.pre, q: { pre: hab.pre } }]);
+      cues.clear();
+      unchanged();
+      withPatchedMethod(hby.db.sdts, "pin", () => {
+        throw new Error("proof publication failed");
+      }, () => {
+        assertThrows(() => rvy.acceptReply(args), Error, "proof publication failed");
+      });
+      assertEquals(resources.used.bytes, 0);
+      unchanged();
+      assertEquals(rvy.acceptReply({ ...args, retainPrevious: true }).kind, "accept");
+      assertExists(hby.db.rpys.get([priorSaid.qb64]));
+      assertEquals(hby.db.rpys.get([saider.qb64])?.said, serder.said);
+      assertEquals(
+        hby.db.ssgs.get([saider.qb64, hab.pre, kever.sner.numh, kever.said]).length,
+        2,
+        "staged signatures aggregate in input order",
+      );
+      assertEquals(cues.length, 1, "three proof groups need only one actual query slot");
+      const owner = cues.takeOwned()!;
+      const retained = resources.used.bytes;
+      cues.clear();
+      assertEquals(resources.used.bytes, retained);
+      owner.release();
+      assertEquals(resources.used.bytes, 0);
+      const latest = body("2026-10-13T00:00:00.000003+00:00");
+      cues.capacity = 0;
+      const allBytes = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertEquals(
+        rvy.acceptReply({
+          serder: latest,
+          saider: new Diger({ qb64: latest.said! }),
+          route: args.route,
+          aid: hab.pre,
+          osaider: saider,
+          tsgs: [group(latest, [0, 1])],
+        }).kind,
+        "accept",
+      );
+      allBytes.reservation.release();
+      assertEquals(hby.db.rpys.get([saider.qb64]), null, "default BADA supersession removes previous proof");
+      assertEquals([cues.length, resources.used.bytes], [0, 0], "cue-free acceptance needs no cue credit");
     } finally {
       yield* hby.close(true);
     }
@@ -346,9 +478,10 @@ Deno.test("Revery escrow replay preserves processing error detail on drop decisi
         "reply-detail",
         "/escrow/reply/detail",
       );
+      let fault: Error = new Error("boom");
       replyVerifier.rtr.addRoute("/escrow/reply/detail", {
         processReply() {
-          throw new Error("boom");
+          throw fault;
         },
       });
       const decision = routingTestApi(replyVerifier).reprocessEscrowedReply(
@@ -359,6 +492,10 @@ Deno.test("Revery escrow replay preserves processing error detail on drop decisi
       assertEquals(drop.reason, "processingError");
       assertEquals(drop.message, "boom");
       assertEquals(drop.context?.said, saider.qb64);
+      fault = new ResourceAdmissionError("query bytes occupied", "busy");
+      assertThrows(() => replyVerifier.processEscrowReply(), ResourceAdmissionError);
+      assertEquals(hby.db.rpes.get(["/escrow/reply/detail"]).length, 1);
+      assertExists(hby.db.rpys.get([saider.qb64]));
     } finally {
       yield* hby.close(true);
     }

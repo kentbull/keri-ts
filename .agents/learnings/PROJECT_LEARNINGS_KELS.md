@@ -54,7 +54,10 @@ validation is TODO. Internal TSN production calls actual `vcState(vci)`, correct
 714's broken query keyword. Missing credentials retain the registry reply; credential
 receiving and TSN queries remain guarded. Registry receiving verifies BADA/trust/TEL correspondence.
 State-record construction proves no acceptance. Complete-message caps do not prove native pre-read admission.
-Revery BADA preserves microseconds. TSN retry must use Broker's typed finite
+Revery BADA preserves microseconds. Its bounded proof plan discovers the complete
+query batch before reply/proof/escrow writes. Same-call groups see virtual staged
+pins in input order; externalEscrow leaves pending proofs with the semantic owner.
+Resource refusals propagate through RPE replay without deleting its durable row. TSN retry must use Broker's typed finite
 family pass; its legacy exception adapter can conceal infrastructure errors.
 Persist the outer reply SAID for BADA, not the contained TEL digest: actual 714's
 registry handler confuses these domains and accepts older signed notices.
