@@ -172,7 +172,7 @@ export function* createAgentRuntime(
   hby: Habery,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
-  const resources = options.resources ?? new ResourcePolicy();
+  const resources = options.resources ?? options.services?.resources ?? new ResourcePolicy();
   const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
     const streams = new ReplyStreams(options.replyLimits, resources);
     try {
@@ -190,7 +190,7 @@ export function* createAgentRuntime(
     }
   });
   const mode = options.mode ?? "local";
-  const services = resolveRuntimeServices(options.services);
+  const services = resolveRuntimeServices({ ...options.services, resources });
   const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
   const mailboxer = options.mailboxer
     ?? (enableMailboxStore ? (yield* openMailboxerForHabery(hby)) : null);

@@ -7,6 +7,8 @@ import {
   essrPayload,
   MemoryPayloadSink,
   parse,
+  ResourceAdmissionError,
+  ResourcePolicy,
   t,
   Texter,
 } from "cesr-ts";
@@ -170,10 +172,13 @@ for (const bodyMode of ["header", "body"] as const) {
     await frame.essr?.discard();
     let closed = false;
     let continued = false;
+    const resources = new ResourcePolicy({ streams: 1 });
+    let reads = 0, requests = 0;
     const wire: OwnedPayload = {
       size: 8,
       /** Suspend a cooperative payload reader until its transport scope aborts. */
       async *open(signal) {
+        reads++;
         try {
           yield b("4BAB");
           await new Promise<void>((_resolve, reject) => {
@@ -182,6 +187,7 @@ for (const bodyMode of ["header", "body"] as const) {
           });
           yield b("YWJj");
         } finally {
+          assertEquals(resources.used.streams, 1, "reader cleanup still holds HTTP credit");
           closed = true;
         }
       },
@@ -189,22 +195,56 @@ for (const bodyMode of ["header", "body"] as const) {
       discard: () => Promise.resolve(),
     };
     frame.essr = essrPayload(wire, 1, 3, { major: 2, minor: 0 });
+    const transport = {
+      ...services(async (_url, init) => {
+        requests++;
+        // The pending fetch joins its upload read when cancellation aborts the payload source.
+        await new Response(init!.body).arrayBuffer();
+        return new Response(null, { status: 204 });
+      }),
+      resources,
+    };
+    const tooSmall = { ...transport, resources: new ResourcePolicy({ bytes: 1 }) };
+    await assertRejects(
+      () => run(() => requestFrame("https://peer.test/", frame, { bodyMode, services: tooSmall })),
+      ResourceAdmissionError,
+      "limit",
+    );
+    assertEquals([reads, requests], [0, 0], "size refusal precedes payload reads and network acquisition");
     const task = run(function*() {
       yield* requestFrame("https://peer.test/", frame, {
         bodyMode,
-        services: services(async (_url, init) => {
-          // The pending fetch joins its upload read when cancellation aborts the payload source.
-          await new Response(init!.body).arrayBuffer();
-          return new Response(null, { status: 204 });
-        }),
+        services: transport,
       });
       continued = true;
     });
     await blocked.promise;
+    const before = [reads, requests];
+    await assertRejects(
+      () => run(() => requestFrame("https://peer.test/", frame, { bodyMode, services: transport })),
+      ResourceAdmissionError,
+      "busy",
+    );
+    assertEquals([reads, requests], before, "shared contention cannot open another payload or connection");
     await task.halt();
     assertEquals(closed, true);
     assertEquals(continued, false);
+    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     await frame.essr.discard();
+    frame.essr = undefined;
+    await run(() =>
+      requestFrame("https://peer.test/", frame, {
+        bodyMode,
+        services: {
+          ...services(() => {
+            assertEquals(resources.used.streams, 1, "capacity is reusable after joined cleanup");
+            return Promise.resolve(new Response(null, { status: 204 }));
+          }),
+          resources,
+        },
+      })
+    );
+    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   });
 }
 
@@ -238,6 +278,32 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
       assertEquals(cancelled, false);
     });
     assertEquals(cancelled, true);
+    const resources = new ResourcePolicy();
+    await assertRejects(
+      () =>
+        run(() =>
+          requestFrame("https://peer.test/", frame, {
+            services: {
+              ...services(() =>
+                Promise.resolve(
+                  new Response(
+                    new ReadableStream({
+                      /** Unexpected transport cleanup failure propagates after releasing shared ownership. */
+                      cancel() {
+                        throw new Error("response cleanup failed");
+                      },
+                    }),
+                  ),
+                )
+              ),
+              resources,
+            },
+          })
+        ),
+      Error,
+      "response cleanup failed",
+    );
+    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   } finally {
     await frame.essr?.discard();
   }
@@ -276,6 +342,53 @@ Deno.test("CESR failed-response diagnostics cancel a tail beyond the finite budg
       "HTTP 500: bad!",
     );
     assertEquals(cancelled, true);
+    const resources = new ResourcePolicy({ streams: 1 });
+    const reading = Promise.withResolvers<void>(), cancelling = Promise.withResolvers<void>();
+    const cleanup = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    let joined = false, calls = 0;
+    const sending = run(() =>
+      requestFrame("https://peer.test/", frame, {
+        signal: controller.signal,
+        services: {
+          ...services(() =>
+            Promise.resolve(
+              new Response(
+                new ReadableStream({
+                  /** Suspend diagnostics so abort, rather than reaching the prefix cap, starts cancellation. */
+                  pull() {
+                    reading.resolve();
+                  },
+                  /** Credit belongs to this first asynchronous cancellation until it finishes. */
+                  async cancel() {
+                    calls++;
+                    cancelling.resolve();
+                    await cleanup.promise;
+                    assertEquals(resources.used.streams, 1);
+                    joined = true;
+                  },
+                }, { highWaterMark: 0 }),
+                { status: 500 },
+              ),
+            )
+          ),
+          resources,
+        },
+      })
+    );
+    let settled = false;
+    const rejected = assertRejects(() => sending, Error).finally(() => settled = true);
+    try {
+      await reading.promise;
+      controller.abort();
+      await cancelling.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assertEquals([settled, joined, resources.used.streams], [false, false, 1]);
+    } finally {
+      cleanup.resolve();
+      await rejected;
+    }
+    assertEquals([calls, joined, resources.used.streams, resources.used.bytes], [1, true, 0, 0]);
   } finally {
     await frame.essr?.discard();
   }
