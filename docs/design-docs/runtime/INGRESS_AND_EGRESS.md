@@ -163,6 +163,19 @@ serialization/native endpoint-row copy qualification open. Request-local HTTP/
 witness response ownership, mailbox workers and the remaining stack inventory
 still require their caller ports.
 
+Pending queries retain canonical query/witness metadata on the Baser policy
+before normalized body/witness-list copies. Three conservative canonical estimates
+cover retention/copy coexistence; this is not a native heap/RSS measurement. Their existing default 1024 slots
+include the active head. Unresolved rotation keeps its lease; successful send or
+atomic transport transfer retires it. `pending.clear()` releases queued records,
+while an active head remains charged until processing joins. Runtime shutdown
+cancels and joins the coordinator before clearing it; a standalone coordinator
+caller owns its `close()` lifecycle. Hab references are borrowed accepted state,
+not recursively charged metadata. Nested metadata stays immutable until retirement.
+Pending pull/push bypasses are rejected; use
+coordinator enqueue and completion/rotation ownership. Wire preparation still
+needs the caller's existing admission/guard, separately from this metadata lease.
+
 ## Messenger responsibilities
 
 The release requires incremental source/sink I/O where KERIpy 714 supports it:

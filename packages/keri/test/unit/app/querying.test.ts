@@ -1,6 +1,12 @@
-import { call, run, spawn, suspend } from "effection";
-import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
-import { ResourceLimitError, SerderKERI, type Siger } from "../../../../cesr/mod.ts";
+import { call, resource, run, spawn, suspend } from "effection";
+import { assertEquals, assertExists, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import {
+  ResourceAdmissionError,
+  ResourceLimitError,
+  ResourcePolicy,
+  SerderKERI,
+  type Siger,
+} from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
   processRuntimeTurn,
@@ -11,6 +17,7 @@ import {
 import { type CueSink } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { QueryCoordinator } from "../../../src/app/querying.ts";
+import { reserveCueBytes } from "../../../src/core/cue-admission.ts";
 import { type KeverEventEnvelope } from "../../../src/core/eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 
@@ -600,13 +607,19 @@ Deno.test("query queues keep failed deliveries and defer newly appended work to 
       coordinator.enqueue(request);
       coordinator.enqueue(request);
       assertThrows(() => coordinator.enqueue(request), ResourceLimitError);
+      assertEquals(
+        coordinator.enqueueCue({ kin: "query" }),
+        false,
+        "Ineligible metadata never claims pending admission",
+      );
       coordinator.watchSeqNo(hab.pre, 100);
       assertThrows(() => coordinator.watchKeyState(hab.pre), ResourceLimitError);
+      const failure = new ResourceAdmissionError("foreign transport busy", "busy");
       coordinator.configure({
         hab,
         sink: {
           *send() {
-            throw new Error("Delivery failed");
+            throw failure;
           },
         },
       });
@@ -614,12 +627,15 @@ Deno.test("query queues keep failed deliveries and defer newly appended work to 
       let failed = false;
       try {
         yield* coordinator.processPending();
-      } catch {
+      } catch (error) {
         failed = true;
+        assertStrictEquals(error, failure);
       }
       assertEquals(failed, true);
       assertEquals(coordinator.pending.length, 3);
+      assertEquals(hby.db.resources.used.bytes > 0, true);
       coordinator.pending.clear();
+      assertEquals(hby.db.resources.used.bytes, 0);
       let sent = 0;
       coordinator.configure({
         hab,
@@ -683,4 +699,115 @@ Deno.test("query cancellation preserves its in-flight queue credit and permits t
       yield* hby.close(true);
     }
   });
+});
+
+Deno.test("pending query metadata refuses before copies and runtime close joins active consumption", async () => {
+  for (const fault of [undefined, new ResourceAdmissionError("foreign cleanup busy", "busy")]) {
+    let entered!: () => void, cleaning!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => entered = resolve),
+      cleanup = new Promise<void>((resolve) => cleaning = resolve),
+      gate = new Promise<void>((resolve) => release = resolve);
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const hab = hby.makeHab("alice");
+      seedControllerEndpoint(hby, hab.pre);
+      const runtime = yield* createAgentRuntime(hby), coordinator = runtime.querying;
+      const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, route: "logs", query: {} };
+      assertThrows(() => reserveCueBytes(hby.db.resources, [cue], 64, undefined, { copies: 0 }), RangeError);
+      const finite = new ResourcePolicy({ bytes: 25000 });
+      let floor: unknown;
+      const impossible = assertThrows(
+        () => reserveCueBytes(finite, [cue], 64, (error) => floor = error, { copies: 3 }),
+        ResourceAdmissionError,
+      );
+      assertStrictEquals(impossible, floor);
+      assertEquals([impossible.reason, finite.used.bytes], ["limit", 0]);
+      const occupied = hby.db.resources.reserve({ bytes: hby.db.resources.limits.bytes });
+      if (occupied.kind !== "reserve") throw new Error("Expected byte occupancy");
+      let copied = false, observed: unknown;
+      const guarded = {
+        ...cue,
+        query: {
+          get s() {
+            copied = true;
+            return "0";
+          },
+        },
+      };
+      const refusal = assertThrows(
+        () => coordinator.enqueueCue(guarded, (error) => observed = error),
+        ResourceAdmissionError,
+      );
+      assertStrictEquals(refusal, observed);
+      assertEquals([refusal.reason, copied, coordinator.pending.length], ["busy", false, 0]);
+      occupied.reservation.release();
+      coordinator.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", query: {}, hab });
+      coordinator.enqueueCue({ ...cue, pre: "unresolved", src: undefined });
+      const retained = hby.db.resources.used.bytes;
+      yield* coordinator.processPending(runtime); // The default sink retires resolved input; unresolved metadata rotates.
+      assertEquals(coordinator.pending.length, 1);
+      assertEquals(hby.db.resources.used.bytes > 0 && hby.db.resources.used.bytes < retained, true);
+      const deferred = coordinator.pending.peekHead(), deferredBytes = hby.db.resources.used.bytes;
+      yield* coordinator.processPending(runtime);
+      assertStrictEquals(coordinator.pending.peekHead(), deferred);
+      assertEquals(hby.db.resources.used.bytes, deferredBytes);
+      coordinator.pending.clear();
+      assertEquals(hby.db.resources.used.bytes, 0);
+      coordinator.configure({
+        hab,
+        sink: {
+          *send() {
+            yield* resource<void>(function*(provide) {
+              try {
+                yield* provide();
+              } finally {
+                cleaning();
+                yield* call(() => gate);
+                // deno-lint-ignore no-unsafe-finally -- Qualify propagation of an injected cleanup failure.
+                if (fault) throw fault;
+              }
+            });
+            entered();
+            yield* suspend();
+          },
+        },
+      });
+      coordinator.enqueueCue(cue);
+      let consumeError: unknown, closeError: unknown;
+      const sending = yield* spawn(function*() {
+        try {
+          yield* coordinator.processPending(runtime);
+        } catch (error) {
+          consumeError = error;
+        }
+      });
+      yield* call(() => ready);
+      // Clearing queued work never releases the currently borrowed source record.
+      coordinator.pending.clear();
+      assertEquals([coordinator.pending.length, hby.db.resources.used.bytes > 0], [1, true]);
+      let closed = false;
+      const closing = yield* spawn(function*() {
+        try {
+          yield* runtime.close();
+          closed = true;
+        } catch (error) {
+          closeError = error;
+        }
+      });
+      try {
+        yield* call(() => cleanup);
+        assertEquals([closed, coordinator.pending.length, hby.db.resources.used.bytes > 0], [false, 1, true]);
+      } finally {
+        release();
+      }
+      yield* closing;
+      yield* sending;
+      assertStrictEquals(consumeError, fault);
+      assertStrictEquals(closeError, fault);
+      assertEquals([closed, coordinator.pending.length, hby.db.resources.used.bytes], [!fault, 0, 0]);
+      assertThrows(() => coordinator.enqueueCue(cue), Error, "closed");
+      yield* runtime.close();
+      yield* hby.close(true);
+    });
+  }
 });

@@ -146,29 +146,36 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
   return bytes;
 }
 
-/** Reserve canonical input retention before copying or interpreting it; caller releases after joined consumption. */
+/**
+ * Reserve canonical retention before copying/interpreting; caller releases after joined consumption.
+ * Optional copies is conservative coexistence allowance, not a count of physical/native allocations.
+ */
 export function reserveCueBytes(
   resources: ResourcePolicy,
   cues: readonly AgentCue[],
   maxNodes = 65536,
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
-  limits: { additionalBytes?: number; maxBytes?: number } = {},
+  limits: { additionalBytes?: number; maxBytes?: number; copies?: number } = {},
 ): ResourceReservation & { readonly bytes: number } {
   if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) throw new RangeError("Invalid cue inspection limit");
-  const { additionalBytes = 0, maxBytes = Number.MAX_SAFE_INTEGER } = limits;
+  const { additionalBytes = 0, maxBytes = Number.MAX_SAFE_INTEGER, copies = 1 } = limits;
+  if (!Number.isSafeInteger(copies) || copies < 1) throw new RangeError("Invalid cue copy allowance");
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Invalid cue byte limit");
   if (!Number.isSafeInteger(additionalBytes) || additionalBytes < 0) throw new RangeError("Invalid cue byte floor");
   // Logical Set/descriptor/stack allowance precedes even the metadata walk.
-  const inspection = resources.reserve({ bytes: 128 * maxNodes + 16 * cues.length + 16384 });
+  const inspectionBytes = 128 * maxNodes + 16 * cues.length + 16384;
+  const inspection = resources.reserve({ bytes: inspectionBytes });
   if (inspection.kind === "refuse") {
     const refusal = new ResourceAdmissionError("Cue inspection admission refused", inspection.reason);
     onAdmissionRefusal?.(refusal);
     throw refusal;
   }
   try {
-    const bytes = retainedBytes(cues, maxNodes);
-    if (bytes > maxBytes) throw new ResourceLimitError("Cue retention exceeds finite byte limit");
-    if (bytes > resources.limits.bytes - additionalBytes) {
+    const measured = retainedBytes(cues, maxNodes);
+    const bytes = measured * copies;
+    if (!Number.isSafeInteger(bytes)) throw new RangeError("Unsafe cue copy allowance");
+    if (measured > maxBytes) throw new ResourceLimitError("Cue retention exceeds finite byte limit");
+    if (bytes > resources.limits.bytes - additionalBytes - (copies > 1 ? inspectionBytes : 0)) {
       const refusal = new ResourceAdmissionError("Cue retention exceeds combined byte capacity", "limit");
       onAdmissionRefusal?.(refusal);
       throw refusal;

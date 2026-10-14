@@ -1,6 +1,6 @@
-import { ResourceLimitError } from "cesr-ts";
-import { call, type Operation } from "npm:effection@^3.6.0";
-import { CueDeck } from "../core/cue-admission.ts";
+import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy } from "cesr-ts";
+import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
+import { CueDeck, reserveCueBytes } from "../core/cue-admission.ts";
 import type { AgentCue, CueEmission, QueryCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
@@ -60,6 +60,101 @@ interface QueryRequest {
   hab?: Hab;
   src?: string;
   wits?: string[];
+}
+
+/** One pending record retains canonical metadata; its Hab is an accepted-state borrow, outside the byte walk. */
+interface PendingQuery extends QueryRequest {
+  release(): void;
+}
+
+/** Existing pending deck owns admitted metadata until completion, clear or joined coordinator shutdown. */
+class PendingQueries extends Deck<PendingQuery> {
+  private active?: PendingQuery;
+  constructor(private readonly resources: ResourcePolicy, capacity: number) {
+    super(undefined, capacity);
+  }
+  override checkSpace(count = 1, onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void): void {
+    if (!Number.isSafeInteger(count) || count < 0) throw new RangeError("Invalid query admission count");
+    if (count > this.capacity) throw new ResourceLimitError("Query batch exceeds item capacity");
+    if (count > this.capacity - this.length) {
+      const refusal = new DeckFullError("Pending query slots are occupied");
+      onAdmissionRefusal?.(refusal);
+      throw refusal;
+    }
+  }
+  /** Admit before normalization/witness copies; undefined preparation is ineligible, not a queued acknowledgment. */
+  admit(
+    cue: QueryCue,
+    prepare: () => QueryRequest | undefined,
+    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
+  ): boolean {
+    this.checkSpace(1, onAdmissionRefusal);
+    const input = reserveCueBytes(this.resources, [cue], undefined, onAdmissionRefusal, {
+      copies: 3,
+    });
+    let published = false;
+    try {
+      const request = prepare();
+      if (!request) return false;
+      let live = true;
+      super.append({
+        ...request,
+        release() {
+          if (!live) return;
+          live = false;
+          input.release();
+        },
+      });
+      published = true;
+      return true;
+    } finally {
+      if (!published) {
+        input.release();
+      }
+    }
+  }
+  override append(_request: PendingQuery): number {
+    throw new Error("Use query coordinator admission");
+  }
+  override prepend(_request: PendingQuery): number {
+    throw new Error("Use query coordinator admission");
+  }
+  override extend(_requests: Iterable<PendingQuery>): number {
+    throw new Error("Use query coordinator admission");
+  }
+  override pull(): PendingQuery | undefined {
+    throw new Error("Pending query ownership requires completion or rotation");
+  }
+  override pop(): PendingQuery | undefined {
+    throw new Error("Pending query ownership requires completion or rotation");
+  }
+  /** Protect the selected head while preparation/consumption may suspend. */
+  holdHead(): void {
+    this.active = this.peekHead();
+  }
+  releaseHead(): void {
+    this.active = undefined;
+  }
+  complete(): void {
+    const request = super.pull();
+    this.active = undefined;
+    request?.release();
+  }
+  /** Unresolved work rotates without giving up or reacquiring its slot/metadata credit. */
+  rotate(): void {
+    const request = super.pull();
+    this.active = undefined;
+    if (request) super.append(request);
+  }
+  /** Preserve an active head until its consumer joins; clear only independently queued ownership. */
+  override clear(): void {
+    const count = this.length;
+    for (let index = 0; index < count; index++) {
+      const request = super.pull()!;
+      if (request === this.active) super.append(request);
+      else request.release();
+    }
+  }
 }
 
 /**
@@ -428,11 +523,16 @@ export class AnchorQuerier implements QueryContinuation {
 export class QueryCoordinator implements CueSink {
   readonly hby: Habery;
   /** Pending requests retain their queue credit until delivery completes. */
-  readonly pending: Deck<QueryRequest>;
+  readonly pending: PendingQueries;
   /** Maximum retained continuation records, independent of pending wire requests. */
   private readonly maxContinuations: number;
   /** Prevent a cue consumer and the background worker from sending the same head concurrently. */
   private processing = false;
+  private closed = false;
+  private active?: Task<void>;
+  private joined?: Promise<void>;
+  /** Retain the joined halt result across a cancelled close so the next owner still observes late failure. */
+  private stopping?: { task: Task<void>; cleanup: Promise<void> };
   private sink: CueSink;
   private hab: Hab | null;
   private continuations: QueryContinuation[] = [];
@@ -453,7 +553,7 @@ export class QueryCoordinator implements CueSink {
         throw new RangeError("Query limits must be positive safe integers");
       }
     }
-    this.pending = new Deck(undefined, maxPending);
+    this.pending = new PendingQueries(hby.db.resources, maxPending);
     this.maxContinuations = maxContinuations;
     this.hby = hby;
     this.sink = sink;
@@ -512,19 +612,32 @@ export class QueryCoordinator implements CueSink {
 
   /** Queue one continuation-owned query for later resolution and delivery. */
   enqueue(request: QueryRequest): void {
-    this.pending.push({
+    if (this.closed) throw new Error("Query coordinator is closed");
+    const { pre, route, query, src, wits } = request;
+    this.pending.admit({ kin: "query", pre, route, query, src, wits }, () => ({
       ...request,
-      query: cloneQueryBody(request.query),
-      wits: request.wits ? [...request.wits] : undefined,
-    });
+      query: cloneQueryBody(query),
+      wits: wits ? [...wits] : undefined,
+    }));
   }
 
   /** Retain a portable recovery cue using the normal field normalization and bounded pending queue. */
-  enqueueCue(cue: QueryCue): boolean {
+  enqueueCue(
+    cue: QueryCue,
+    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
+  ): boolean {
+    if (this.closed) throw new Error("Query coordinator is closed");
     const pre = extractQueriedPrefix(cue);
     if (!pre) return false;
-    this.enqueue({ pre, route: cue.route ?? "logs", query: normalizeOutboundQuery(cue), src: cue.src, wits: cue.wits });
-    return true;
+    return this.pending.admit(cue, () => {
+      return {
+        pre,
+        route: cue.route ?? "logs",
+        query: normalizeOutboundQuery(cue),
+        src: cue.src,
+        wits: cue.wits ? [...cue.wits] : undefined,
+      };
+    }, onAdmissionRefusal);
   }
 
   /** Observe a source cue only after the downstream owner has atomically retained eligible delivery. */
@@ -585,69 +698,120 @@ export class QueryCoordinator implements CueSink {
    * local state, emit any initial or follow-on queries that can honestly be
    * constructed, and retain unresolved work for later turns.
    * Runtime callers prepare signing in a short guarded turn. Admitted transport sinks also
-   * retain shared byte ownership; standalone/custom pending delivery retains caller-owned bounds.
+   * retain wire ownership; canonical pending metadata stays charged on the Baser policy.
+   * Standalone/custom wire preparation retains caller-owned bounds.
    */
   processPending(runtime?: AgentRuntime): Operation<void> {
     // deno-lint-ignore no-this-alias -- The isolated generator owns one complete drain pass.
     const self = this;
     return call(function*() {
-      if (self.processing) return;
+      if (self.processing || self.closed) return;
       if (self.sink.admitQuery && !runtime) throw new RangeError("Admitted queries require their owning runtime");
       if (runtime && runtime.querying !== self) throw new RangeError("Wrong query coordinator runtime");
       self.processing = true;
-      try {
-        self.tickContinuations();
-        const count = self.pending.length;
-        for (let index = 0; index < count; index++) {
-          const request = self.pending.peekHead();
-          if (!request) break;
-          if (self.sink.admitQuery) {
-            const cue: QueryCue = {
-              kin: "query",
-              pre: request.pre,
-              route: request.route,
-              query: request.query,
-              src: request.src,
-              wits: request.wits,
-            };
-            const admit = () => self.sink.admitQuery!(cue, () => self.wireEmissionForRequest(request));
-            const result: { admission: CueAdmission } = { admission: "ineligible" };
-            yield* runtime!.reactor.settle(undefined, {}, function*() {
-              result.admission = admit();
-            });
-            const admission = result.admission;
-            if (admission === "busy") break;
-            if (admission === "transferred") {
-              self.pending.pull();
+      let finish!: () => void;
+      self.joined = new Promise<void>((resolve) => finish = resolve);
+      yield* resource<void>(function*(provide) {
+        try {
+          yield* provide();
+        } finally {
+          self.pending.releaseHead();
+          self.active = undefined;
+          self.processing = false;
+          self.joined = undefined;
+          finish();
+        }
+      });
+      let failure: { error: unknown } | undefined;
+      const task = yield* spawn(function*() {
+        try {
+          self.tickContinuations();
+          const count = self.pending.length;
+          for (let index = 0; index < count; index++) {
+            const request = self.pending.peekHead();
+            if (!request) break;
+            self.pending.holdHead();
+            if (self.sink.admitQuery) {
+              const cue: QueryCue = {
+                kin: "query",
+                pre: request.pre,
+                route: request.route,
+                query: request.query,
+                src: request.src,
+                wits: request.wits,
+              };
+              const admit = () => self.sink.admitQuery!(cue, () => self.wireEmissionForRequest(request));
+              const result: { admission: CueAdmission } = { admission: "ineligible" };
+              yield* runtime!.reactor.settle(undefined, {}, function*() {
+                result.admission = admit();
+              });
+              const admission = result.admission;
+              if (admission === "busy") break;
+              if (admission === "transferred") {
+                self.pending.complete();
+                continue;
+              }
+              if (admission !== "ineligible") throw new TypeError("Invalid query admission");
+              self.pending.rotate();
               continue;
             }
-            if (admission !== "ineligible") throw new TypeError("Invalid query admission");
-            self.pending.pull();
-            self.pending.push(request);
-            continue;
+            const prepared: { emission?: CueEmission | null } = {};
+            if (runtime) {
+              yield* runtime.reactor.settle(undefined, {}, function*() {
+                prepared.emission = self.wireEmissionForRequest(request);
+              });
+            } else prepared.emission = self.wireEmissionForRequest(request);
+            const emission = prepared.emission;
+            if (emission) {
+              // Keep the head and its capacity reservation while the transport can suspend or fail.
+              yield* self.sink.send(emission);
+              self.pending.complete();
+            } else {
+              // Unresolved work rotates without releasing capacity across an asynchronous boundary.
+              self.pending.rotate();
+            }
           }
-          const prepared: { emission?: CueEmission | null } = {};
-          if (runtime) {
-            yield* runtime.reactor.settle(undefined, {}, function*() {
-              prepared.emission = self.wireEmissionForRequest(request);
-            });
-          } else prepared.emission = self.wireEmissionForRequest(request);
-          const emission = prepared.emission;
-          if (emission) {
-            // Keep the head and its capacity reservation while the transport can suspend or fail.
-            yield* self.sink.send(emission);
-            self.pending.pull();
-          } else {
-            // Unresolved work rotates without releasing capacity across an asynchronous boundary.
-            self.pending.pull();
-            self.pending.push(request);
-          }
+          self.tickContinuations();
+        } catch (error) {
+          failure = { error };
+          throw error;
         }
-        self.tickContinuations();
-      } finally {
-        self.processing = false;
+      });
+      self.active = task;
+      try {
+        yield* task;
+      } catch (error) {
+        const stopping = self.stopping;
+        if (!stopping || stopping.task !== task) throw error;
+        yield* call(() => stopping.cleanup);
+        if (failure) throw failure.error;
       }
     });
+  }
+
+  /** Stop active processing and join its children before releasing queued metadata. Do not reenter from its sink. */
+  *close(): Operation<void> {
+    this.closed = true;
+    const failures: unknown[] = [];
+    try {
+      if (this.active && !this.stopping) {
+        const task = this.active;
+        this.stopping = { task, cleanup: Promise.resolve().then(() => task.halt()) };
+      }
+      const stopping = this.stopping;
+      if (stopping) yield* call(() => stopping.cleanup);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      if (this.joined) yield* call(() => this.joined!);
+    } catch (error) {
+      if (!failures.includes(error)) failures.push(error);
+    }
+    this.pending.clear();
+    this.stopping = undefined;
+    if (failures.length === 1) throw failures[0];
+    if (failures.length) throw new AggregateError(failures, "Query coordinator cleanup failed");
   }
 
   /** Continuous background query worker for long-lived runtime hosts. */
