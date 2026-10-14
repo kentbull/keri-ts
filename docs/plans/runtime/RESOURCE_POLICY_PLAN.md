@@ -15,8 +15,10 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
 1. Shared reservation ledger with atomic refusal and idempotent release is implemented;
    owners still need to acquire/transfer/release its credit at their actual boundaries.
 2. Runtime streams reserve producer/cursor backing before source acquisition;
-   parser tree hydration and consumer ownership are the next integration boundary.
-3. Queues, completed trees and descendant ownership transfers.
+   ordinary tree allowances now transfer to consumer owners.
+3. Ordinary tree reservations follow completed roots and parent-owned descendants
+   through parser and consumer cleanup. Queue, ESSR staging and additional hydrated
+   copy accounting remain open.
 4. ESSR recipients borrow the exposed runtime policy; measured native-copy
    qualification remains open.
 5. Storage/hydration copy charges, coordinated with phase 5.

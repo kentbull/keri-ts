@@ -177,6 +177,7 @@ export class Reactor {
       });
       const channel = yield* toEffectionFrames(source, {
         ...limits,
+        resources: self.resources,
         // Acquire storage lazily: ordinary frames do not open the payload archive.
         payloadSink: options.payloadSink
           ?? (async (maxBytes, signal) => (await self.hby.db.openPayloads(signal)).files.stage(maxBytes, signal)),
@@ -215,7 +216,7 @@ export class Reactor {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     return call(function*() {
-      if (frame && (frame.essr || frame.nests?.length)) {
+      if (frame) {
         // Register ownership before dispatch: reverse resource teardown joins its work before deleting input.
         yield* resource<void>(function*(provide) {
           try {

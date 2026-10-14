@@ -12,9 +12,13 @@
   independent sibling cannot revoke earlier delivered owners.
 - A shared cursor bounds consumption and input backing. Tree credits cover
   ordinary bytes/leaves, decoded ESSR/items, nodes and depth. No full raw envelope
-  or per-Texter manifest is retained. These are not shared runtime reservations.
+  or per-Texter manifest is retained. Optional shared ordinary-wire reservations
+  belong to delivered roots, never independently to nested children. They do not
+  account for all hydrated copies or heap overhead.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each
-  owner once. Sink finish transfers ownership; abort cannot revoke that result.
+  owner once, including shared credit on ordinary frames. A suspended generator
+  also retains its output: credit returns after consumer disposal and generator
+  resumption/closure. Sink finish transfers ownership; abort cannot revoke it.
 - `Payload.open(signal)` must cooperate with cancellation. Generator return alone
   cannot interrupt blocked I/O. CESR root has no Effection import; its optional
   adapter owns one subscription, abort and joined cleanup.

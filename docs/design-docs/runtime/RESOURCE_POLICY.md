@@ -32,6 +32,13 @@ those captured limits; sources must honor the producer backing contract while
 reading. Rejected admission never invokes the source factory and adds no waiter.
 A source that allocates outside this contract is outside the accounted envelope.
 
-Hydrated tree copies, storage, queues and object/handle/work limits remain in the
+Reactor also supplies this policy to tree admission. Each independent root owns
+one ordinary-wire allowance across all descendants. Both consumer disposal and
+resumption/closure of a generator suspended at delivery must finish before credit
+returns; parser termination alone never reclaims a delivered consumer owner.
+Reactor disposes every input root after dispatch and joined cleanup.
+
+Additional hydrated representations, ESSR staging, storage, queues and
+object/handle/work limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
 Counter totals alone are not an RSS or native/mapped-memory guarantee.
