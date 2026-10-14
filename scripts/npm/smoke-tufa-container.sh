@@ -34,6 +34,13 @@ log_agent_process() {
 }
 
 npm install -g "$@" >/dev/null
+# Separate global tarballs make CESR a sibling of Tufa, outside Tufa's peer tree.
+# This fixture chooses CESR's Effection adapter, so supply its declared peer.
+GLOBAL_ROOT="$(npm root -g)"
+if [ -f "${GLOBAL_ROOT}/cesr-ts/package.json" ] && [ ! -f "${GLOBAL_ROOT}/effection/package.json" ]; then
+  EFFECTION_RANGE="$(node -e 'const p = require(process.argv[1]); const t = require(process.argv[2]); if (p.peerDependenciesMeta?.effection?.optional !== true || typeof p.peerDependencies?.effection !== "string" || p.peerDependencies.effection !== t.dependencies?.effection) throw new Error("Mismatched CESR optional peer and Tufa Effection dependency"); process.stdout.write(p.peerDependencies.effection);' "${GLOBAL_ROOT}/cesr-ts/package.json" "${GLOBAL_ROOT}/@keri-ts/tufa/package.json")"
+  npm install -g "effection@${EFFECTION_RANGE}" >/dev/null
+fi
 echo "Node runtime: $(node --version), npm: $(npm --version)" >&2
 node /smoke-scripts/smoke-tufa-runtime.mjs "$(npm root -g)/@keri-ts/tufa"
 V1="$(tufa version | tr -d "\r")"
