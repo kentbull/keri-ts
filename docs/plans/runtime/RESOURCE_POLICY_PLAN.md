@@ -34,9 +34,10 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    Runtime. Prospective KEL/clone/state and decision-carried duplicate/escrow
    producers now admit concrete batches before effects when explicitly injected.
    Revery's own query batches likewise precede BADA/proof/escrow writes, using
-   finite proof planning. Semantic /ksn and registry state child publication,
-   OOBI and other durable producers remain open, followed by query/mailbox/delivery
-   ownership transfers.
+   finite proof planning. Semantic /ksn admits its actual keyStateSaved child
+   before proof/state writes while retaining prepared reply/query ownership.
+   Registry/credential state children, OOBI and other durable producers remain
+   open, followed by query/mailbox/delivery ownership transfers.
 
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.
 Split further before publication if a complete boundary needs more. Qualification

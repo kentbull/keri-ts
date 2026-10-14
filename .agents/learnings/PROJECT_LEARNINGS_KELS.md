@@ -57,7 +57,12 @@ State-record construction proves no acceptance. Complete-message caps do not pro
 Revery BADA preserves microseconds. Its bounded proof plan discovers the complete
 query batch before reply/proof/escrow writes. Same-call groups see virtual staged
 pins in input order; externalEscrow leaves pending proofs with the semantic owner.
-Resource refusals propagate through RPE replay without deleting its durable row. TSN retry must use Broker's typed finite
+Resource refusals propagate through RPE replay without deleting its durable row.
+KSN publication holds caller-owned PreparedReply query credit while admitting the
+actual keyStateSaved child on Kevery's deck, including distinct local decks.
+Validate semantic correspondence before applying new proofs. Unverified replies
+still apply their existing escrow/query effects. Preparation is one-shot within
+one synchronous guarded turn; suspension permits stale BADA decisions. TSN retry must use Broker's typed finite
 family pass; its legacy exception adapter can conceal infrastructure errors.
 Persist the outer reply SAID for BADA, not the contained TEL digest: actual 714's
 registry handler confuses these domains and accepts older signed notices.

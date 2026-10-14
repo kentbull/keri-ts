@@ -1211,7 +1211,7 @@ export class Kevery {
     if (osaider?.qb64 === args.diger.qb64) {
       osaider = null;
     }
-    const decision = this.rvy.acceptReply({
+    const reply = this.rvy.prepareReply({
       serder: args.serder,
       saider: args.diger,
       route: args.route,
@@ -1220,25 +1220,39 @@ export class Kevery {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
-    if (decision.kind === "unverified") {
-      return unverifiedReplyDecision(
-        `Unverified key state notice reply ${args.serder.said ?? "<unknown>"}.`,
-      );
-    }
+    try {
+      if (reply.decision.kind === "unverified") {
+        reply.applyProofs();
+        reply.publishQueries();
+        return unverifiedReplyDecision(
+          `Unverified key state notice reply ${args.serder.said ?? "<unknown>"}.`,
+        );
+      }
 
-    const ldig = this.db.kels.getLast(pre, sn);
-    if (ldig && ldig !== said) {
-      throw new ValidationError(
-        `Mismatch key state at sn=${sn} with accepted event log for ${pre}.`,
-      );
+      const ldig = this.db.kels.getLast(pre, sn);
+      if (ldig && ldig !== said) {
+        throw new ValidationError(
+          `Mismatch key state at sn=${sn} with accepted event log for ${pre}.`,
+        );
+      }
+      const saider = new Diger({ qb64: said });
+      const dater = new Dater({ qb64: encodeDateTimeToDater(dt) });
+      const cues: AgentCue[] = [{ kin: "keyStateSaved", ksn }];
+      this.cues.checkSpace();
+      const child = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+      try {
+        reply.applyProofs();
+        this.updateKeyState(args.aid, ksn, saider, dater);
+        reply.publishQueries();
+        if (child) child.publish();
+        else this.cues.extend(cues);
+        return acceptReplyDecision();
+      } finally {
+        child?.release();
+      }
+    } finally {
+      reply.release();
     }
-
-    const saider = new Diger({ qb64: said });
-    const dater = new Dater({ qb64: encodeDateTimeToDater(dt) });
-    this.cues.checkSpace();
-    this.updateKeyState(args.aid, ksn, saider, dater);
-    this.cues.push({ kin: "keyStateSaved", ksn });
-    return acceptReplyDecision();
   }
 
   /**
