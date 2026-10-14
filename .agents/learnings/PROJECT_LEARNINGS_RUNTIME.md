@@ -38,6 +38,8 @@ can hide disposal errors after delivery. Fail cleanup before returning to its ca
 KRAM handoff retains its local busy guard until that disposal and checked durable
 acknowledgement finish. Failed callbacks, disposal or ack preserve ready retries;
 callback side effects/owner adoption are at least once, without rollback.
+Kramer/handoff borrow Baser's exact policy; acknowledgement snapshots reserve before
+copying and retain credit through staged consumption, joined disposal and acknowledgement.
 Per-Baser active scope counts exclude synchronous cache maintenance, while
 admission remains guarded per instance; neither supplies a shared memory budget.
 

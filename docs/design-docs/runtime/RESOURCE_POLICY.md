@@ -301,6 +301,13 @@ credit. Ordinary Deck retains its original per-item push path. Earlier resolutio
 verification coordinate arrays, native proof reads, KRAM/IPEX notification ports,
 private ESSR verification snapshots and native/copy admission remain open.
 
+Kramer and KramHandoff borrow Baser's exact shared policy, rejecting mismatches
+before acquisition. A non-exempt handoff reserves its acknowledgement body-copy
+bytes before slicing input and holds credit through staging, consumption, joined
+hydration disposal and checked acknowledgement. Missing-state cues use the existing
+Deck append seam, which performs admission when a CueDeck is injected. The local
+handoff guard remains separate from deployment capacity and adds no queue or retry.
+
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not promise durable cue recovery.
 
