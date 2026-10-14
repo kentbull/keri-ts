@@ -70,6 +70,9 @@ registry handler confuses these domains and accepts older signed notices.
 Registry TSN trust uses accepted configuration and issuer witnesses, never claimed
 notice backers. The semantic receiver owns missing/partial proofs in Broker via
 explicit external Revery escrow; preserve prior BADA evidence until publication.
+Hold PreparedReply query ownership and the actual dependency/state child before
+proof/Broker effects. Test exact family membership without bulk copies and check
+the insertion invariant before publishing. Semantic rejected plans remain unapplied.
 TEL recovery must preserve credential `i` separately from the queried issuer.
 Credential TSN admission matches its own current TEL/registry/anchor record; accepted
 revocation cannot be overwritten by a newly signed old issuance notice. Actual 714
