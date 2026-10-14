@@ -1,5 +1,6 @@
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { createServer, type Socket } from "node:net";
 import { attachmentPayload, collectPayload, concatBytes, parse, ResourceAdmissionError } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -7,6 +8,7 @@ import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { introduce } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage } from "../../../src/app/habbing.ts";
 import { queryTransportSink } from "../../../src/app/runtime-deliveries.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
@@ -252,6 +254,19 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
 
 Deno.test("query transport resolves explicit witness-targeted queries from witness locs", async () => {
   const bodies: Uint8Array[] = [];
+  let reply: Uint8Array = new Uint8Array();
+  const sockets = new Set<Socket>();
+  let tcpConnections = 0;
+  const tcpServer = createServer({ allowHalfOpen: true }, (socket) => {
+    tcpConnections++;
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+    socket.on("error", () => {});
+    socket.resume();
+    socket.once("end", () => socket.end(reply));
+  });
+  await new Promise<void>((resolve) => tcpServer.listen(0, "127.0.0.1", resolve));
+  const tcpUrl = `tcp://127.0.0.1:${(tcpServer.address() as { port: number }).port}`;
   const controller = new AbortController();
   const port = 9238;
   const server = Deno.serve({
@@ -305,6 +320,10 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           },
         );
 
+        remoteHby.db.wigs.put(
+          [remoteController.pre, remoteController.kever!.said],
+          remoteWitness.sign(remoteController.kever!.serder.raw, true),
+        );
         const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
@@ -321,6 +340,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
               "http",
             ),
           );
+          ingestKeriBytes(runtime, remoteWitness.makeLocScheme(tcpUrl, remoteWitness.pre, "tcp"));
           yield* processRuntimeTurn(runtime, { pollMailbox: false });
 
           const query = sender.query(
@@ -359,6 +379,46 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             bodies,
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteWitness.pre), query))),
           );
+          assertEquals(tcpConnections, 0, "HTTP remains preferred when both schemes are advertised");
+          hby.db.locs.rem([remoteWitness.pre, "http"]);
+          remoteController.interact();
+          assertEquals(hby.db.getKever(remoteController.pre)?.sn, 0);
+          runtime.querying.configure({ hab: sender, sink });
+          const enqueue = () =>
+            runtime.querying.enqueue({
+              pre: remoteController.pre,
+              route: "logs",
+              query: { s: "1", fn: "0" },
+              hab: sender,
+              wits: [remoteWitness.pre],
+            });
+          const waiting = runtime.querying.watchSeqNo(remoteController.pre, 1, {
+            hab: sender,
+            wits: [remoteWitness.pre],
+          });
+          yield* runtime.querying.processPending(runtime);
+          assertEquals(tcpConnections, 0, "guarded query preparation performs no network I/O");
+          assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });
+          assertEquals(hby.db.getKever(remoteController.pre)?.sn, 0, "TCP drain does not satisfy the query");
+          assertEquals(waiting.done, false);
+          remoteHby.db.wigs.put(
+            [remoteController.pre, remoteController.kever!.said],
+            remoteWitness.sign(remoteController.kever!.serder.raw, true),
+          );
+          reply = acceptedEventReplayMessage(remoteHby, remoteController.pre, 1).message;
+          enqueue();
+          yield* runtime.querying.processPending(runtime);
+          yield* runtime.deliveries.process(runtime);
+          assertEquals(tcpConnections, 2);
+          assertEquals(
+            hby.db.getKever(remoteController.pre)?.sn,
+            1,
+            "signed TCP replay passes Kevery before state advances",
+          );
+          yield* runtime.querying.processPending(runtime);
+          assertEquals(waiting.done, true, "the sequence continuation observes verified accepted state");
+          assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+          yield* runtime.reactor.processEscrowsOnce();
         } finally {
           yield* runtime.close();
         }
@@ -368,6 +428,8 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
       }
     });
   } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => tcpServer.close((error) => error ? reject(error) : resolve()));
     controller.abort();
     try {
       await server.finished;
