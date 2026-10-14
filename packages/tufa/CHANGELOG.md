@@ -1,5 +1,80 @@
 # @keri-ts/tufa
 
+## 0.11.0
+
+### Minor Changes
+
+- 2f238e9: Replace collected KEL replay cues with reopenable message sources and stream
+  HTTP replies with bounded runtime-owned readers. Bound query requests and
+  continuations, retaining failed deliveries for retry.
+- aef51c0: Require Node 20.3 or later for generated npm packages. Node 18 is no longer supported; transport cancellation uses native AbortSignal.any.
+- 96b197e: Initialize pinned sodium npm bindings with Node 18's native secure randomness when the global is absent.
+  Declare Node 18.17 as the KERI/Tufa minimum required by their abort-signal composition.
+- f515cf8: Use progressive parsing for asynchronous annotation, streaming CLI validation,
+  and replay benchmarks. Bound finite annotation and benchmark input explicitly,
+  preserve nested CESR/ESSR wire in annotation round trips, and own Tufa input and
+  output through Effection scopes. Remove unused annotation hints and speculative
+  parser-mode/partial-error benchmark flags.
+- 4740ffe: Parse HTTP and file sources progressively within Effection scopes, serialize dispatch and cue consumption with bounded admission, and reserve direct query replies by query SAID. Cancel and join request readers and release staged frame payloads when their owning scope ends.
+- c0e9445: Remove the synchronous CESR stream engine, feed/flush/reset API, parser event
+  wrappers, unused KERI CESR re-export stubs, and atomic ESSR conversion adapter. Expose async finite parseBytes
+  alongside progressive parse; use the same engine for complete KERI records and
+  streamed grant-file inspection. Shorten benchmark API names to benchmarkParser,
+  BenchmarkOptions, and BenchmarkResult; countFrames returns the single-run count
+  directly. Preserve KERI/CESR/ACDC protocol versions.
+- 17bff5b: Reject malformed attachment wrapper tails consistently. Replace the dispatch entrypoints with parseAttachmentGroup, remove parser recovery options and parser-related --compat flags, and migrate runtime callers. Opaque wire families and KERIpy filesystem compatibility remain supported.
+- 8abb84a: Run dispatch and mailbox settlement as Effection operations before advancing ingress, pass the receiving mailbox identity explicitly, and cancel and join owned webhook I/O when its operation stops.
+
+### Patch Changes
+
+- d85fa42: Retain canonical Compactor descendants through compaction and expansion, and support path-directed disclosure closures. Add bounded Pather resolution for the IPEX disclosure prerequisite while keeping wire path construction independent of the traversal limit.
+- 1692418: Resume bounded command-local mailbox polling across endpoints and habitats so an empty earlier long poll cannot starve queued proxy replay. Keep one absolute turn budget, sequential transport, durable cursor acceptance and joined cleanup.
+- e97df52: Expose hosted DID JSON artifact construction independently and avoid generating discarded CESR replay for dynamic did.json requests.
+- a1930f7: Atomically retain direct query replies through HTTP and queued target cleanup.
+- 60fbf59: Separate ESSR admission refusal from verification rejection with typed recipient outcomes and explicit plaintext ownership transfer. Propagate unexpected I/O and key-store failures, classify raw sealed-box authentication narrowly, and dispose finished plaintext when handoff cleanup fails.
+- 6019f5a: Preserve and independently verify exchange source seals and route-selected supplemental proofs through escrow, durable storage, and replay. Keep legacy v1 signature intake and nested IPEX guards while exposing typed route dependency escrow.
+- 192ecff: Match frozen exchange proof admission and retry policy: require explicit evidence delivery, restrict new missing-state escrows, deduplicate queries, and preserve previously accepted authentication on incomplete redelivery. Clarify valid-factor results and selected supplemental ownership.
+- c85823b: Preserve unexpected fetch/cleanup failures and close published replies on late request cancellation.
+- e67d273: Transfer generic HTTP cues to the existing bounded delivery, mailbox correlation and pending-query owners before removing the source. Run network delivery outside Reactor and preserve each earlier query's exact authorization and request-local admission failure provenance.
+- ab1821e: Serve OOBI replies through admitted lazy Hab message sources with bounded metadata and per-message preparation.
+- e4e8b35: Raise the finite shared default stream ceiling to eight so KLI mailbox and witness long polls leave room for ingress and delivery. The 256 MiB byte ceiling, one decryption ceiling, configured-policy refusal and joined cleanup remain unchanged.
+- a190518: Separate synchronous nested multisig body construction from byte parsing and wire preparation. Reuse parsed child frames without payload reads; retain bounded cancellable preparation and existing v1/v2 wire behavior.
+- 9b1972f: Verify nested v2 IPEX disclosures and independent issuer evidence before durable exchange acceptance. Preserve dependency escrow and replay, add a verified observer registry store, and separate pure body construction from cancellable byte preparation. Presentation registries remain guarded pending receiver-owned KRAM intake.
+- ef4491d: Support nested v2 multisig event and reply proposals with independent child commitments, durable local approval replay, and cursor-safe exchange escrow retry.
+- 9a4c726: Use Node 18-compatible promises for transport drain and joined shutdown.
+- 33b1921: Enable explicit optional KRAM runtime intake with scoped ready consumption, finite pruning and exact HTTP refusal handling.
+- c8332a2: Parse enclosed nested messages as bounded parent-owned trees, preserving each child's body, signatures, genus, and payload resources. Dispose complete trees at ownership boundaries and reject nested runtime processing, serialization, and annotation explicitly until those consumers support their evidence.
+- 2da7cc5: Defer query response parsing until guarded cue handling completes, stream mailbox SSE with owned readers and consumer backpressure, and bound finite document and admin response collection.
+- d485e44: Make CESR frame completion independent of network chunk boundaries. Open
+  attachment sets now wait for a following body, a complete enclosure, or explicit
+  flush. Terminal partial attachments report shortage without emitting an
+  incomplete frame; flush drains all complete frames in either emission mode.
+
+  Remove the frameBoundaryPolicy option, policy exports, and deferred-frame
+  wrapper. Update complete-record runtime consumers to finish parsing explicitly
+  and keep multisig attachment sets open while appending peer signatures.
+
+- 5ed6b87: Emit stored transferable receipts as indexed signature groups during KEL replay so current KERIpy can consume complete OOBI responses. Validate and escrow grouped replay receipts without imposing a controller signing threshold or losing following endpoint replies.
+- 5e18dfa: Reserve shared runtime credit before HTTP frame preparation and retain it through joined transport cleanup, including the first asynchronous diagnostic cancellation.
+- 1a3d433: Admit outgoing source parsers and query uploads through the runtime policy, retaining source and frame ownership through response consumption and joined cleanup.
+- 894529a: Admit query wire preparation and queued request ownership through the shared runtime policy before acquiring lazy message sources.
+- 4ed2f6a: Reserve shared runtime credit for lazy HTTP replay and distinguish temporary capacity refusal from configured size limits.
+- 935952f: Retain shared ordinary-tree admission credit across parser delivery, nested ownership, consumer disposal and joined cleanup.
+- a393238: Share runtime admission with witness delivery and join TCP socket cleanup before releasing its stream and byte credit.
+- c3ff9d3: Serve static DID artifacts under shared admission with demand-driven file reads and joined response cleanup.
+  Terminate and report streamed HTTP body failures after headers have been sent.
+- 9d33d98: Process witness TCP input progressively under bounded connection admission, preserving refusal provenance and joined shutdown ownership.
+- d8f19fc: Keep one deferred TCP query reply on its accepted connection through joined output or deadline.
+- f171389: Return correlated immediate receipts and query replies on accepted TCP connections.
+- 1d238bd: Serve ordered legacy TSN replies through their independently authenticated receiver routes and retain bounded HTTP response-pair ownership through source cleanup.
+- 29f8143: Resolve advertised host kernel and protocol handler exports from actual generated npm output.
+- 53b75a3: Apply sender allow/deny policy and proof prerequisites before v2 non-event dispatch. Preserve query requester identity and prevent refused requests from opening HTTP mailbox responses.
+- 547c566: Verify supplied ACDC v2 registry chains, issuer anchors, and blinded state bindings
+  with typed missing/reject outcomes and microsecond historical cutoff selection.
+  Nested IPEX workflow integration remains guarded.
+- 8108a95: Transfer witness cues to the existing delivery batch and consume borrowed emissions outside Reactor through joined cleanup. Finite wrappers return caller-owned wire snapshots capped at a local 8 MiB aggregate and captured cue-count limit; drains require the runtime source deck.
+- 2a23a53: Return witness KEL query results as captured lazy messages and serve them with shared response admission, preserving selector order and per-event native preflight.
+
 ## 0.10.6
 
 ### Patch Changes
