@@ -283,15 +283,32 @@ chunk and bounded topic-metadata credit before acquisition, with one stream slot
 across query correlation and nested output. Native row preflight checks the 4 MiB
 ceiling before copying. Director/runtime close joins cancellation before stores.
 
-Finite OOBI and DID verification currently admit at most 8 MiB per fetched
-artifact, including their CESR replay document. Moving those complete verification
-flows to streamed CESR artifacts is required by transport S2 before release.
-DID resolution remains complete-evidence verification, even when intake streams.
-OOBI/DID replay serving and witness GET query output still collect histories;
-these are open adoption gaps. Finite JSON documents and receipt proofs retain
-whole-document semantics with bounded admission and joined cancellation.
-Mailbox admin response metadata admits 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those
-finite collectors use the same owned, cancellable byte reader.
+OOBI CESR responses enter the progressive Reactor directly, including canonical
+`application/cesr`, legacy `application/json+cesr` and `application/cesr+json`.
+Independent counted events may become accepted before response EOF. One scoped
+job retains the queued row through complete intake and joined cancellation;
+partial failure clears its in-flight marker while retaining retry ownership and
+already accepted events. Transient admission/cue saturation leaves that row for
+the existing worker; size, I/O and unexpected failures propagate. No extra queue
+or retry scheduler is introduced. `oobiResolved` retains retrieval-completion
+semantics; it is not proof that every incoming event was independently accepted.
+
+Oobiery borrows the Reactor's exact policy. A 1 MiB minimum byte lease precedes
+fetch and bounds cooperating pending GET handles; Reactor separately reserves
+its one active parser stream before body-reader acquisition. This avoids charging
+the same receive lifetime twice. The job owner clears only after body/parser/fetch
+cleanup joins, preventing concurrent retries. JSON/schema OOBIs keep an 8 MiB
+collection ceiling and a conservative 64 MiB copy/decode allowance before reads.
+These logical charges require native/metadata qualification; they are not an RSS
+bound. OOBI replay serving still collects output and remains transport S2 work.
+
+DID verification still collects at most 8 MiB per artifact, including `keri.cesr`;
+transport S2 owns streamed CESR resolution and artifact serving before release.
+DID success still requires complete evidence and hosted-document comparison.
+Finite JSON documents and receipt proofs retain whole-document semantics with
+bounded admission and joined cancellation. Mailbox admin response metadata admits
+1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those finite
+collectors use the same owned, cancellable byte reader.
 
 Provider connections and per-request topics now share finite runtime admission.
 Configured remote-worker counts and retained query cues still need their own

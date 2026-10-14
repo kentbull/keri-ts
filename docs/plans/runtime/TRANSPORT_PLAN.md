@@ -59,7 +59,7 @@ source, response, admission and lifecycle facilities.
 | [Delivery][delivery]    | Shared sends; guarded drains | S1–3, S7–8: owned workers/replies |
 | [Queries][queries]      | Lazy POST; GET collects      | S1–3: demand-driven GET replay    |
 | [Mailbox][mailbox-path] | Demand-driven SSE            | S1–3: cue/worker credit and stop  |
-| [OOBI][oobi-path]       | 8 MiB fetch; bundle reply    | S2: incremental CESR fetch/serve  |
+| [OOBI][oobi-path]       | Incremental CESR intake      | S2: lazy replay serving           |
 | [DID Webs][did-path]    | Collected fetch/generation   | S2: streamed CESR artifacts       |
 | [Commands][commands]    | Mixed services/lifetimes     | S1–8: shared runtime wiring       |
 | [JSON edges][json-path] | Finite documents/status      | S2: bounded exception audit       |
