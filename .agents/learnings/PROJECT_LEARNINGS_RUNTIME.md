@@ -179,7 +179,9 @@ or treat high-water buffering as a hard shared-memory ceiling.
 Tufa TCP immediate event proofs and query replies own bounded correlated slots;
 Kevery accept/duplicate decisions gate event output. Signing stays guarded, socket
 writes borrow the connection stream slot outside the guard. Unrelated cues retain
-Respondant routing; deferred query escrow output is still a connection-ownership gap.
+Respondant routing. One missing-state logs/ksn query may stay in its existing bounded
+slot; readiness wakes socket output while one joined parser pull stays live. The host
+runtime driver owns escrow retries; a standalone listener borrower must supply it.
 Tufa TCP bounds admitted/closing tasks before source acquisition; Reactor alone
 charges the receive stream. Earlier connection credit outlives joined parser/socket
 cleanup. Intrinsic wire refusal must preserve source/storage provenance, and a

@@ -254,9 +254,10 @@ export class Kevery {
    * - `ksn`
    * - `mbx`
    */
-  processQuery(envelope: QueryEnvelope): void {
+  processQuery(envelope: QueryEnvelope): QueryProcessDecision {
     const decision = this.decideQuery(envelope);
     this.applyLiveQueryDecision(envelope, decision);
+    return decision;
   }
 
   /** Recheck one exact mailbox request independently of any previously queued stream cue. */
