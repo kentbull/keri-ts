@@ -211,6 +211,12 @@ input/credit; successful transfer frees the ordinary Deck slot and retains credi
 until destination consumption and joined cleanup finish. Actual retained-delivery
 adoption and guard-free network waits remain S1–3; this facility adds neither.
 
+Prepared cue route capture reserves 1 MiB and at most 4096 targets before
+endpoint resolution; its owner clears captured metadata on release. The combined
+configured floor includes live cue/output and temporary interpretation credit.
+Resolution failures release unpublished route credit. This is logical metadata
+admission; native/decoded endpoint rows still require separate qualification.
+
 Completion records must distinguish local transmission drain, HTTP success,
 verified protocol replies and durable application acceptance. An HTTP status or
 socket drain proves only its own boundary. Consumers report protocol decisions;
