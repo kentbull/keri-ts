@@ -102,6 +102,7 @@ import {
   SerderSuber,
   Suber,
 } from "./subing.ts";
+import { CapturedWitnessReplay } from "./witness-replay.ts";
 
 function isMissingReloadEventError(error: unknown): boolean {
   return error instanceof Error
@@ -1778,6 +1779,33 @@ export class Baser {
     }
     if (ranges.length === 0) return null;
     return new CapturedKelReplay(this, ranges, maxMessageBytes);
+  }
+
+  /** Capture target-only witness GET replay; explicit sequence queries retain KEL duplicate ordering. */
+  witnessReplay(
+    pre: string,
+    sn: number | null,
+    maxMessageBytes: number,
+  ): CapturedKelReplay | CapturedWitnessReplay | null {
+    if (typeof pre !== "string" || !pre || !Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
+      throw new RangeError("Invalid witness replay prefix or ceiling");
+    }
+    if (sn !== null && (!Number.isSafeInteger(sn) || sn < 0)) throw new RangeError("Invalid witness replay sequence");
+    const felEnd = this.replayEnd(pre);
+    if (felEnd === null) return null;
+    if (!Number.isFinite(felEnd) || felEnd < 0) throw new DatabaseOperationError("Corrupt witness FEL horizon");
+    if (!Number.isSafeInteger(felEnd)) throw new ResourceLimitError("Unsupported witness replay horizon");
+    if (sn === null) return new CapturedKelReplay(this, [[pre, 0, felEnd]], maxMessageBytes);
+    const start = b(`${pre}.${"f".repeat(32)}`);
+    for (const entry of this.kels.sdb.getRange({ start, reverse: true, limit: 1 })) {
+      const [prefix, end] = splitOnKey(entry.key);
+      if (t(prefix) !== pre) return null;
+      if (!Number.isFinite(end) || end < 0) throw new DatabaseOperationError("Corrupt witness KEL horizon");
+      if (!Number.isSafeInteger(end)) throw new ResourceLimitError("Unsupported witness KEL horizon");
+      if (end < sn) return null;
+      return new CapturedWitnessReplay(this, pre, sn, end, felEnd, maxMessageBytes);
+    }
+    return null;
   }
 
   /** Read one captured range, retaining only a current event and releasing its cursor before each yield. */

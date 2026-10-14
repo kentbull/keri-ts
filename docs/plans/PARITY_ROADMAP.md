@@ -51,6 +51,8 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
    witness GET replay, DID CESR artifact output, mailbox, CLI service wiring and bounded
    JSON exceptions; adoption throughout the stack is part of the same release gate.
    It is required in the next release, not deferred post-release qualification.
+   Witness GET KEL replay now uses bounded lazy responses; proof/native-copy and
+   full transport qualification remain open. OOBI/DID output stays in S2.
    DID resolution intake streams through Reactor and compares full documents
    after EOF; native/heap and full workflow qualification remain open.
 4. Qualify delivered Mapper claims (#223) and bundled schema IDs (#226) in the

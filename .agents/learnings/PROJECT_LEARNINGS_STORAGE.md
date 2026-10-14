@@ -20,6 +20,12 @@ consumer readers close each cursor before clone/yield, including reopened stores
 TEL body/proof-row pre-read allocation remains separately open.
 Finite KEL replay preflights event bodies before owned copies; HTTP source credit
 must cover reconstruction before iterator acquisition, not only yielded bytes.
+Witness GET no-SN captures target-only FEL ranges; SN captures KEL/FEL horizons
+and seeks physical duplicate proems without rescanning buckets or holding a
+cursor across hydration. Deleted earlier duplicates do not shift the checkpoint.
+New accepted duplicates beyond the FEL horizon are excluded; current index/proof
+metadata is not an immutable snapshot. Broad no-SN proof skip and native proof-copy
+qualification remain open; do not turn that path into a native-failure guarantee.
 Native CI caches include NAPI and rebuild-script identity; every cache hit must
 pass both native metadata and emitted V1-format probes before reuse. A lockfile
 can retain older packages; inspect the imported addon. Map sizing respects explicit

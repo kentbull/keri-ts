@@ -157,7 +157,10 @@ credit precedes body reads. Transient saturation uses the existing queued worker
 OOBI queueing and multi-URL fanout stage all child records and admit exact ordered
 cue batches before queue/moobi writes; validate every URL before mutation. Admit
 parent resolved/failed cues before terminal/contact effects. Preserve ordinary
-Deck guards. Response and introduction publication remain separate open ports.
+Deck guards. Introductions hold PreparedReply and admit actual queued children
+before BADA/proof/queue effects; unverified replies retain existing escrow/query
+publication without a child. Keep the one-shot plan in a single synchronous turn.
+Response publication remains open.
 
 ## Mailbox
 

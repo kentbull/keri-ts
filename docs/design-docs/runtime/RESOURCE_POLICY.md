@@ -204,7 +204,11 @@ batch before any child queue or parent moobi mutation. Parent completion admits
 its actual resolved/failed result before terminal/contact writes. Ordinary Deck
 keeps its existing count guards. Resource refusal cannot leave partial fanout or
 publish terminal/contact effects; unexpected write faults release unpublished
-credit without DB rollback. Response/schema/CESR and introduction publication
-remain open, followed by EXN/KRAM and legacy credential/TEL producers.
+credit without DB rollback. Introductions hold PreparedReply query ownership and
+admit the actual oobiQueued child before BADA/proof/queue effects on shared or
+distinct decks. Unverified introductions still apply existing escrow/query effects
+without a queued child. Keep the entire preparation in one synchronous guarded
+turn and preserve the ordinary group-plus-one count guard. Response/schema/CESR
+publication remains open, followed by EXN/KRAM and legacy credential/TEL producers.
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.
