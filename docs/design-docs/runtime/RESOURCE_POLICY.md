@@ -20,7 +20,18 @@ are immutable snapshots, not writable controls.
 This ledger is an admission primitive, not an allocation interceptor. Callers
 must charge copies, backing buffers and retained metadata before acquiring them.
 ESSR recipients require an explicit shared policy and retain their crypto credit
-through joined cleanup. Parser trees, storage, queues and runtime hosts remain
-to be connected. Their integration and object/handle/work limits
-remain in the [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
+through joined cleanup. `AgentRuntime.resources` is shared with its Reactor and
+must be passed to hosted ESSR recipients. Inject the same policy into multiple
+runtimes when they share one deployment boundary; independent defaults do not
+establish a process-wide budget.
+
+Before opening a source, Reactor reserves one stream and the configured cursor
+backing allowance plus one producer allocation (8 MiB + 1 MiB by default).
+It holds the reservation until parser and source cleanup join. The parser enforces
+those captured limits; sources must honor the producer backing contract while
+reading. Rejected admission never invokes the source factory and adds no waiter.
+A source that allocates outside this contract is outside the accounted envelope.
+
+Hydrated tree copies, storage, queues and object/handle/work limits remain in the
+[resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
 Counter totals alone are not an RSS or native/mapped-memory guarantee.
