@@ -1,5 +1,5 @@
 /** Optional receiver-owned KRAM intake composed from qualified policy, handoff and pruning. */
-import { ResourcePolicy } from "cesr-ts";
+import type { ResourcePolicy } from "cesr-ts";
 import type { Operation } from "effection";
 import type { Baser } from "../db/basing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
@@ -47,13 +47,14 @@ export class Kramer {
 
   constructor(
     private readonly db: Baser,
-    { config = {}, cues, now = Date.now, resources = new ResourcePolicy() }: {
+    { config = {}, cues, now = Date.now, resources = db.resources }: {
       config?: KramConfig;
       cues?: Deck<AgentCue>;
       now?: () => number;
       resources?: ResourcePolicy;
     } = {},
   ) {
+    if (resources !== db.resources) throw new RangeError("Kramer must borrow its backing store's resource policy");
     this.now = now;
     this.policy = new KramPolicy(db, config, now);
     this.handoff = new KramHandoff(db, this.policy, { cues, now, resources });

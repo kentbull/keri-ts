@@ -44,6 +44,8 @@ can hide disposal errors after delivery. Fail cleanup before returning to its ca
 KRAM handoff retains its local busy guard until that disposal and checked durable
 acknowledgement finish. Failed callbacks, disposal or ack preserve ready retries;
 callback side effects/owner adoption are at least once, without rollback.
+Kramer/handoff borrow Baser's exact policy; acknowledgement snapshots reserve before
+copying and retain credit through staged consumption, joined disposal and acknowledgement.
 Per-Baser active scope counts exclude synchronous cache maintenance, while
 admission remains guarded per instance; neither supplies a shared memory budget.
 
@@ -182,7 +184,9 @@ or treat high-water buffering as a hard shared-memory ceiling.
 Tufa TCP immediate event proofs and query replies own bounded correlated slots;
 Kevery accept/duplicate decisions gate event output. Signing stays guarded, socket
 writes borrow the connection stream slot outside the guard. Unrelated cues retain
-Respondant routing; deferred query escrow output is still a connection-ownership gap.
+Respondant routing. One missing-state logs/ksn query may stay in its existing bounded
+slot; readiness wakes socket output while one joined parser pull stays live. The host
+runtime driver owns escrow retries; a standalone listener borrower must supply it.
 Tufa TCP bounds admitted/closing tasks before source acquisition; Reactor alone
 charges the receive stream. Earlier connection credit outlives joined parser/socket
 cleanup. Intrinsic wire refusal must preserve source/storage provenance, and a
@@ -226,6 +230,12 @@ runtime/owners through joined directional cleanup. RX EOF cannot end TX; TX EOF
 starts the absolute drain deadline. Concurrent children belong to the abortable
 I/O scope so cancellation reaches both before either cleanup waits. A drained
 connection/dispatch count proves neither verified replies nor remote acceptance.
+WitnessReceiptor preserves HTTP-first selection and uses local same-socket intake
+for TCP-only witnesses; explicit Receiptor endpoint calls remain HTTP-only. Success requires persisted wigs at the requested witness
+index before complementary fanout. Receiptor/catchup borrow an explicitly supplied
+runtime or own one scoped receiver; borrowed cleanup leaves its stores open.
+Generic sendWitnessMessage remains transmit-only without receiver context. Never
+open a second runtime merely to receive replies over an existing runtime's Habery.
 
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove

@@ -39,7 +39,7 @@ import {
   TransReceiptQuadruple,
 } from "../core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
-import type { KeverDecision } from "../core/kever-decisions.ts";
+import type { KeverDecision, QueryProcessDecision } from "../core/kever-decisions.ts";
 import { type KramReceipt, kramReceipt, type KramRefusal } from "../core/kraming.ts";
 import { nestedIpexRoute, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
@@ -136,6 +136,7 @@ export interface MessageDropDecision {
 /** Route-specific results remain distinct from pre-dispatch refusal and unreported outcomes. */
 export type DispatchDecision =
   | KeverDecision
+  | QueryProcessDecision
   | ReplyProcessDecision
   | ExchangeDecision
   | MessageDropDecision
@@ -199,8 +200,7 @@ export function* dispatchEnvelope(
       if (["tels", "tsn"].includes(serder.route ?? "")) {
         return dispatchTelQuery(queryEnvelopeFromDispatch(envelope), vdr);
       }
-      kevery.processQuery(queryEnvelopeFromDispatch(envelope));
-      break;
+      return kevery.processQuery(queryEnvelopeFromDispatch(envelope));
     case Ilks.rct:
       kevery.processReceipt(envelope);
       break;

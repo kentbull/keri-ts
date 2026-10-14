@@ -1,5 +1,5 @@
 /** Internal retryable KRAM handoff; borrowed shared credit covers scoped snapshot copies. */
-import { bytesEqual, ResourcePolicy } from "cesr-ts";
+import { bytesEqual, ResourceAdmissionError, type ResourcePolicy } from "cesr-ts";
 import { call, type Operation, type Provide, resource } from "effection";
 import type { Baser } from "../db/basing.ts";
 import { removeKramFactors } from "../db/kram-factors.ts";
@@ -41,13 +41,16 @@ export class KramHandoff {
   constructor(
     readonly db: Baser,
     readonly policy: KramPolicy,
-    { cues = new Deck<AgentCue>(), now = Date.now, resources = new ResourcePolicy() }: {
+    { cues = new Deck<AgentCue>(), now = Date.now, resources = db.resources }: {
       cues?: Deck<AgentCue>;
       now?: () => number;
       resources?: ResourcePolicy;
     } = {},
   ) {
     if (policy.db !== db) throw new Error("KRAM handoff policy must use its backing store");
+    if (resources !== db.resources) {
+      throw new RangeError("KRAM handoff must borrow its backing store's resource policy");
+    }
     this.cues = cues;
     this.now = now;
     this.resources = resources;
@@ -86,6 +89,18 @@ export class KramHandoff {
         if (timestampMicros(receipt) === null) throw new Error("Invalid KRAM receiver clock");
         if (this.policy.exempts(incoming.serder)) return yield* consume(incoming, receipt);
         const key = [incoming.serder.pre!, incoming.serder.said!];
+        // This acknowledgement snapshot coexists with staged/hydrated evidence until cleanup and commit join.
+        yield* resource<void>(function*(this: KramHandoff, provide: Provide<void>) {
+          const credit = this.resources.reserve({ bytes: incoming.serder.raw.byteLength });
+          if (credit.kind === "refuse") {
+            throw new ResourceAdmissionError("KRAM acknowledgement copy admission refused", credit.reason);
+          }
+          try {
+            yield* provide(undefined);
+          } finally {
+            credit.reservation.release();
+          }
+        }.bind(this));
         const body = incoming.serder.raw.slice();
         const result = yield* stageKram(
           this.db,
