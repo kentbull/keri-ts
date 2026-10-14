@@ -41,8 +41,10 @@ Use dprint and deterministic version generation in checks; opt into build metada
 only for artifacts. Build helpers are real source files, not multiline JS/TS in
 shell/workflow strings. Keep inline-code:check and export docstring checks honest.
 
-The package graph is tufa → keri-ts → cesr-ts. Derive manifest exports/bin from DNT
-output and assert packed targets. Install all three local tarballs once per runtime
+The package graph is tufa → keri-ts → cesr-ts. Derive every manifest export/bin
+from DNT output, including host/kernel and protocol-handler imports/declarations;
+fixed layout guesses can break advertised subpaths while the CLI still works.
+Assert packed targets. Install all three local tarballs once per runtime
 image (including macOS); run the installed Tufa bin without npx fallback. Source
 tests do not qualify package resolution or Node hosting. Require Node >=20.3 in
 all generated manifests; qualify the declared floor and current runtime without

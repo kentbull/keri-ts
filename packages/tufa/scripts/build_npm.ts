@@ -49,6 +49,8 @@ interface TufaNpmTargets {
     import: string;
     types: string;
   };
+  hostKernel: { import: string; types: string };
+  protocolHandler: { import: string; types: string };
   bin: string;
 }
 
@@ -58,6 +60,8 @@ interface TufaNpmTargets {
 const ROOT_ENTRYPOINT_MARKER = "Minimal npm module surface for the `tufa` application package.";
 const RUNTIME_ENTRYPOINT_MARKER = "npm subpath entrypoint for `@keri-ts/tufa/runtime`.";
 const BIN_ENTRYPOINT_MARKER = "run(() => tufa(argv.slice(2)))";
+const HOST_KERNEL_MARKER = "Run one shared host kernel over the common runtime lifecycle.";
+const PROTOCOL_HANDLER_MARKER = "Build the shared protocol handler used by the Deno and Node HTTP hosts.";
 const BUNDLED_WORKSPACE_SOURCE_PATTERNS = ["/keri/src/", "/cesr/src/"];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [
   "libsodium-wrappers",
@@ -115,6 +119,27 @@ function resolveGeneratedTargets(): TufaNpmTargets {
         { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "runtime.d.ts", marker: RUNTIME_ENTRYPOINT_MARKER },
       ),
     },
+    hostKernel: {
+      import: findGeneratedEntrypoint(
+        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "kernel.js", marker: HOST_KERNEL_MARKER },
+      ),
+      types: findGeneratedEntrypoint(
+        { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "kernel.d.ts", marker: HOST_KERNEL_MARKER },
+      ),
+    },
+    protocolHandler: {
+      import: findGeneratedEntrypoint(
+        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "protocol-handler.js", marker: PROTOCOL_HANDLER_MARKER },
+      ),
+      types: findGeneratedEntrypoint(
+        {
+          root: `${OUT_DIR}/types`,
+          outDir: OUT_DIR,
+          fileName: "protocol-handler.d.ts",
+          marker: PROTOCOL_HANDLER_MARKER,
+        },
+      ),
+    },
     bin: findGeneratedEntrypoint(
       { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "cli-node.js", marker: BIN_ENTRYPOINT_MARKER },
     ),
@@ -124,6 +149,10 @@ function resolveGeneratedTargets(): TufaNpmTargets {
   assertPackagePathExists(OUT_DIR, targets.root.types);
   assertPackagePathExists(OUT_DIR, targets.runtime.import);
   assertPackagePathExists(OUT_DIR, targets.runtime.types);
+  assertPackagePathExists(OUT_DIR, targets.hostKernel.import);
+  assertPackagePathExists(OUT_DIR, targets.hostKernel.types);
+  assertPackagePathExists(OUT_DIR, targets.protocolHandler.import);
+  assertPackagePathExists(OUT_DIR, targets.protocolHandler.types);
   assertPackagePathExists(OUT_DIR, targets.bin);
 
   return targets;
@@ -166,12 +195,12 @@ function normalizeBuiltManifest(): TufaNpmTargets {
       types: targets.runtime.types,
     },
     "./host/kernel": {
-      import: "./esm/tufa/npm/src/src/host/kernel.js",
-      types: "./types/src/host/kernel.d.ts",
+      import: targets.hostKernel.import,
+      types: targets.hostKernel.types,
     },
     "./http/protocol-handler": {
-      import: "./esm/tufa/npm/src/src/http/protocol-handler.js",
-      types: "./types/src/http/protocol-handler.d.ts",
+      import: targets.protocolHandler.import,
+      types: targets.protocolHandler.types,
     },
   };
   manifest.bin = {
@@ -260,14 +289,6 @@ await build({
       "./runtime": {
         import: NPM_RUNTIME_PATH,
         types: NPM_RUNTIME_TYPES_PATH,
-      },
-      "./host/kernel": {
-        import: "./esm/tufa/npm/src/src/host/kernel.js",
-        types: "./types/src/host/kernel.d.ts",
-      },
-      "./http/protocol-handler": {
-        import: "./esm/tufa/npm/src/src/http/protocol-handler.js",
-        types: "./types/src/http/protocol-handler.d.ts",
       },
     },
     bin: {
