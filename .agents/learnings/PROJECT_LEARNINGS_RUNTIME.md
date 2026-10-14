@@ -117,7 +117,11 @@ has its own pre-admitted finite credit. Retired owners are local progress, not
 protocol success or durable retry. Respondant source heads now transfer immediately
 under the guard; their queued network work drains outside it. Unsupported/custom
 cues retain existing sink handling; occupied capacity never destructively falls back.
-Source queries and request-local HTTP/witness owners still require adoption.
+Source query/continuation callbacks now run only after bounded input, item, wire,
+route and preparation admission; captured signature/routing survive later changes.
+Busy preserves the raw or continuation head, and unresolved/custom sinks keep
+notify semantics. Actual continuation drains receive their owning runtime for
+a short guarded preparation turn. Request-local HTTP/witness owners still need adoption.
 Actual HTTP and source/tree/output admission refusal observation is invocation-local;
 source/fetch/sink/cleanup and external observer failures retain original identity.
 Prepared target attempts return local complete/refused/busy only after joined

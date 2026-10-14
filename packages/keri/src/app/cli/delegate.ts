@@ -214,6 +214,7 @@ function delegateConfirmSink(
 ): CueSink {
   const querySink = queryTransportSink(runtime, hby, hab);
   return {
+    admitQuery: querySink.admitQuery,
     admitCue: (current, interpreter) => runtime.respondant.admitCue(current, interpreter, hab),
     *send(emission: CueEmission): Operation<void> {
       if (emission.kind === "wire" && emission.cue.kin === "query") {
