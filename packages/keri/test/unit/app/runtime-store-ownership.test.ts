@@ -1,10 +1,10 @@
 import { ResourcePolicy } from "cesr-ts";
 import { action, call, run } from "effection";
-import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { RegBaser } from "../../../src/acdc/regbasing.ts";
 import { openRegistry } from "../../../src/acdc/registering.ts";
 import { createRegery as createAcdcRegery, Regery as AcdcRegery } from "../../../src/acdc/registraring.ts";
-import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { MailboxAdmissionError } from "../../../src/db/mailbox-inbox.ts";
 import { createReger, Reger } from "../../../src/db/reger.ts";
@@ -122,37 +122,42 @@ Deno.test("runtime stores - policy is fixed before opening and survives borrowed
 });
 
 Deno.test("runtime stores - failed reply cleanup still joins owned database close", async () => {
-  await run(function*() {
-    const hby = yield* createHabery(habitatOptions);
-    try {
-      const runtime = yield* createAgentRuntime(hby);
-      const reader = runtime.replyStreams.open({
-        *[Symbol.iterator]() {
-          try {
-            yield Uint8Array.of(1);
-          } finally {
-            // deno-lint-ignore no-unsafe-finally -- database owners must close even when replay cleanup fails.
-            throw new Error("reply storage close failed");
-          }
-        },
-      }).getReader();
-      yield* call(() => reader.read());
+  for (const failure of [undefined, new Error("reply storage close failed")]) {
+    await run(function*() {
+      const hby = yield* createHabery(habitatOptions);
       try {
+        const runtime = yield* createAgentRuntime(hby);
+        const reader = runtime.replyStreams.open({
+          *[Symbol.iterator]() {
+            try {
+              yield Uint8Array.of(1);
+            } finally {
+              assertEquals(runtime.acdc.rgy!.baser.opened, true);
+              assertEquals((runtime.vdr.reger as Reger).opened, true);
+              // deno-lint-ignore no-unsafe-finally -- database owners close even when replay cleanup fails.
+              throw failure;
+            }
+          },
+        }).getReader();
+        yield* call(() => reader.read());
+        try {
+          yield* runtime.close();
+          throw new Error("Expected reply shutdown failure");
+        } catch (error) {
+          assertEquals(error instanceof AggregateError, true);
+          assertStrictEquals((error as AggregateError).errors[0].errors[1], failure);
+        }
+        assertReleased(runtime.acdc.rgy!.baser);
+        assertReleased(runtime.vdr.reger as Reger);
+        assertEquals(runtime.resources.used.bytes, 0);
+        yield* call(() => assertRejects(() => reader.read(), AggregateError));
+        reader.releaseLock();
         yield* runtime.close();
-        throw new Error("Expected reply shutdown failure");
-      } catch (error) {
-        assertEquals(error instanceof AggregateError, true);
+      } finally {
+        yield* hby.close(true);
       }
-      assertReleased(runtime.acdc.rgy!.baser);
-      assertReleased(runtime.vdr.reger as Reger);
-      assertEquals(runtime.resources.used.bytes, 0);
-      yield* call(() => assertRejects(() => reader.read(), AggregateError));
-      reader.releaseLock();
-      yield* runtime.close();
-    } finally {
-      yield* hby.close(true);
-    }
-  });
+    });
+  }
 });
 
 Deno.test("runtime stores - readonly Habery acquires no default store", async () => {
@@ -259,27 +264,89 @@ Deno.test("runtime stores - cancellation during acquisition joins unreturned sto
   }
 });
 
-Deno.test("runtime stores - cancelling a live runtime closes scope-owned stores", async () => {
-  const hby = await run(() => createHabery(habitatOptions));
-  let registry!: RegBaser;
-  let reger!: Reger;
-  let entered!: () => void;
-  const ready = new Promise<void>((resolve) => entered = resolve);
+Deno.test("runtime stores - cancelling a live runtime joins output before scope-owned stores", async () => {
+  const hby = await run(() =>
+    createHabery({
+      ...habitatOptions,
+      name: crypto.randomUUID(),
+      skipSignator: false,
+      resources: new ResourcePolicy({ streams: 3 }),
+    })
+  );
+  const ready = Promise.withResolvers<void>(), reading = Promise.withResolvers<void>();
+  const cleanup = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  let runtime!: AgentRuntime;
+  let replyClosed = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull() {
+      reading.resolve();
+    },
+    async cancel() {
+      cleanup.resolve();
+      await release.promise;
+    },
+  }, { highWaterMark: 0 });
   const task = run(function*() {
-    const runtime = yield* createAgentRuntime(hby);
-    registry = runtime.acdc.rgy!.baser;
-    reger = runtime.vdr.reger as Reger;
-    entered();
+    runtime = yield* createAgentRuntime(hby, {
+      services: { http: { fetch: () => Promise.resolve(new Response(body)) } },
+    });
+    const reader = runtime.replyStreams.open({
+      *[Symbol.iterator]() {
+        try {
+          yield Uint8Array.of(1);
+        } finally {
+          assertEquals(runtime.acdc.rgy!.baser.opened, true);
+          assertEquals((runtime.vdr.reger as Reger).opened, true);
+          replyClosed = true;
+        }
+      },
+    }).getReader();
+    yield* call(() => reader.read());
+    reader.releaseLock();
+    const hab = hby.makeHab("sender");
+    runtime.deliveries.enqueue(() => ({
+      url: "https://query.test/",
+      body: hab.query(hab.pre, hab.pre, {}, "logs"),
+      bodyMode: "header",
+      destination: hab.pre,
+    }));
+    ready.resolve();
     yield* action<void>(() => () => {});
   });
+  await Promise.race([
+    ready.promise,
+    task.then(() => {
+      throw new Error("Owner ended before output setup");
+    }),
+  ]);
+  // An independently running borrower makes the queue's own abort/join seam observable on scope exit.
+  const delivery = run(() => runtime.deliveries.process(runtime));
+  const result = delivery.catch((error) => error);
   try {
-    await ready;
-    await task.halt();
-    assertReleased(registry);
-    assertReleased(reger);
+    await Promise.race([
+      reading.promise,
+      result.then((error) => {
+        throw error;
+      }),
+    ]);
+    const closing = Promise.resolve(task.halt());
+    await cleanup.promise;
+    assertEquals(runtime.acdc.rgy!.baser.opened, true);
+    assertEquals((runtime.vdr.reger as Reger).opened, true);
+    assertEquals(runtime.resources.used.bytes > 0, true);
+    assertEquals(replyClosed, false);
+    release.resolve();
+    await closing;
+    assertEquals((await result) instanceof DOMException, true);
+    assertEquals(replyClosed, true);
+    assertReleased(runtime.acdc.rgy!.baser);
+    assertReleased(runtime.vdr.reger as Reger);
+    assertEquals(runtime.resources.used.bytes, 0);
     assertEquals(hby.db.opened, true);
   } finally {
+    release.resolve();
     await task.halt();
+    await result;
     await run(() => hby.close(true));
   }
 });

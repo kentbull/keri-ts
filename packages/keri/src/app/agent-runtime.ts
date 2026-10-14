@@ -190,22 +190,6 @@ export function* createAgentRuntime(
   ) {
     throw new RangeError("AgentRuntime notification services require its exact Habery and resource policy");
   }
-  const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
-    const streams = new ReplyStreams(options.replyLimits, resources);
-    try {
-      yield* provide(streams);
-    } finally {
-      streams.close();
-    }
-  });
-  const deliveries = yield* resource<RuntimeDeliveries>(function*(provide) {
-    const deliveries = new RuntimeDeliveries(resources);
-    try {
-      yield* provide(deliveries);
-    } finally {
-      yield* deliveries.close();
-    }
-  });
   const mode = options.mode ?? "local";
   const services = resolveRuntimeServices({ ...options.services, resources });
   const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
@@ -260,6 +244,23 @@ export function* createAgentRuntime(
     ownsAcdcRegery = true;
   }
   const acdcRegery = acdc.rgy;
+  // Reverse scope teardown joins borrowed output evidence before its backing stores close.
+  const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
+    const streams = new ReplyStreams(options.replyLimits, resources);
+    try {
+      yield* provide(streams);
+    } finally {
+      streams.close();
+    }
+  });
+  const deliveries = yield* resource<RuntimeDeliveries>(function*(provide) {
+    const deliveries = new RuntimeDeliveries(resources);
+    try {
+      yield* provide(deliveries);
+    } finally {
+      yield* deliveries.close();
+    }
+  });
   const reactor = new Reactor(hby, {
     cues,
     vdr,

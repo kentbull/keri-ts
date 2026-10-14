@@ -605,3 +605,8 @@ without rolling back partial durable writes. Collapse, expiry and owned shutdown
 return credit. The queue view is borrowed readonly; managed pings are immutable.
 Durable notices, native row hydration, caller-retained views/copies and arbitrary
 external mutation remain outside this transient owner contract.
+
+Runtime output resources are acquired after their backing registry stores so
+reverse scope teardown joins delivery cancellation and closes lazy replies before
+store cleanup. Explicit close keeps the same ordering and failure aggregation;
+injected stores remain borrowed. Default CueDeck activation is still deferred.
