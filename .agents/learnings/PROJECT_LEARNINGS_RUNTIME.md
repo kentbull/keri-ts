@@ -61,6 +61,15 @@ See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md
 
 ## Transport
 
+Socket streamability requires a connection-owned parser, bounded handoff and
+joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB
+preparation, then transfer admitted delivery ownership before network I/O. Never
+wait for queue space under the guard or remove a cue before successful transfer.
+Genuine receive EOF, transmit failure and remote acceptance are separate facts.
+Explicit duplex preserves default routing; half-close drain deadlines cannot be
+extended by activity. The [transport plan](../../docs/plans/runtime/TRANSPORT_PLAN.md)
+owns the remaining implementation and release gate.
+
 Direct replies reserve query SAIDs before dispatch; only the final query owns the
 HTTP response. Earlier responses transfer to ordinary delivery. A response scope
 outlives fetch headers and must not inherit a request signal that aborts when the
