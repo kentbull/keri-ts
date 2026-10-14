@@ -32,8 +32,9 @@ Per-Baser active scope counts exclude synchronous cache maintenance, while
 admission remains guarded per instance; neither supplies a shared memory budget.
 
 Runtime store acquisition and ownership must be visible in composition-root
-control flow. Default registry-evidence and TEL stores are scope-owned; readonly
-Haberies get neither, and injected stores remain caller-owned. Factories retain
+control flow. Default `acdc.rgy` and legacy TEL stores are scope-owned; readonly
+Haberies get neither, and injected services remain caller-owned. The v2 manager
+shares its one store with IPEX and Reactor; keep it separate from `vdr.rgy`. Factories retain
 cleanup responsibility until returning their opened store. Explicit runtime close
 and scope exit both join cleanup; scope exit after explicit close is harmless.
 

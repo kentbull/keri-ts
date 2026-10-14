@@ -27,6 +27,7 @@ import {
 } from "../../../src/acdc/regeventing.ts";
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
 import { createRegery } from "../../../src/acdc/registraring.ts";
+import { FailedSchemaValidationError, MissingSchemaError } from "../../../src/acdc/scheming.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { receipt } from "../../../src/core/protocol-eventing.ts";
@@ -646,6 +647,17 @@ Deno.test("registry blind updates extend one staged frontier across reopen and r
         Error,
         "blinder overrides",
       );
+      // This additional 71438328 gate preserves all frozen927 proof/frontier assertions below.
+      const invalid = acdcmap(issuer.pre, {
+        regid,
+        schema: { $id: "", version: "1.0.0", type: "object", properties: { a: { type: "string" } } },
+        attribute: { d: "" },
+      });
+      assertThrows(() => registry.blind(invalid, "issued", options), FailedSchemaValidationError);
+      const missing = acdcmap(issuer.pre, { regid, schema: issuer.pre, attribute: { d: "" } });
+      assertThrows(() => registry.blind(missing, "issued", options), MissingSchemaError);
+      assertEquals(baser.maes!.get(regid, 1), [], "schema refusal precedes disclosure/event publication");
+      assertEquals([...baser.evts.getTopItemIter()].length, 1, "refused credentials publish no event bodies");
       const [issued, first] = registry.blind(acdc, "issued", options);
       assertEquals([issued.td.nonce, issued.ts.text, first.sad!.n, first.sad!.p, first.sad!.b], [
         acdc.said,

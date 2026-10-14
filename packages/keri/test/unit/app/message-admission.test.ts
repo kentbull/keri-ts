@@ -1,17 +1,19 @@
 /** Non-event policy gates precede real route acceptance and retain borrowed ownership. */
-import { b, Diger, discardFrame, essrPayload, parseBytes, Prefixer, SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import { b, Diger, discardFrame, essrPayload, parseBytes, Prefixer, SerderKERI, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { call, run, spawn } from "effection";
-import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
+import { type KramConfig, type KramReceipt, kramReceipt, kramReceiptTime } from "../../../src/core/kraming.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
 import { Revery } from "../../../src/core/routing.ts";
+import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-admission-vectors.json" with { type: "json" };
 import ipex from "../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
 
@@ -255,6 +257,181 @@ Deno.test("optional KRAM uses the receiver clock and scopes consumers through re
       assertEquals(hby.db.msgc.get(key), null, "ordinary escrow scheduling advances finite pruning");
     } finally {
       yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("KRAM exchange receipt survives dependency escrow and cannot be forged or refreshed", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender");
+    let now = Date.now(), dependency = false;
+    const runtime = yield* createAgentRuntime(hby, {
+      kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+      services: { clock: { now: () => now, setTimeout, clearTimeout: (timer) => clearTimeout(timer as number) } },
+    });
+    const seen: (string | undefined)[] = [], handled: (string | undefined)[] = [];
+    runtime.reactor.exchanger.addHandler({
+      resource: "/receipt",
+      verify: ({ receiverTime }) => {
+        seen.push(receiverTime);
+        return dependency ? true : { kind: "escrow", reason: "Missing route dependency" };
+      },
+      handle: ({ receiverTime }) => {
+        handled.push(receiverTime);
+      },
+    });
+    const body = (label: string) =>
+      exchange("/receipt", { label }, {
+        sender: sender.pre,
+        recipient: sender.pre,
+        pvrsn: Vrsn_2_0,
+        stamp: makeNowIso8601(new Date(now - 1000)),
+      })[0];
+    const group = (serder: SerderKERI) =>
+      new TransIdxSigGroup(
+        new Prefixer({ qb64: sender.pre }),
+        sender.kever!.sner,
+        new Diger({ qb64: sender.kever!.said }),
+        sender.sign(serder.raw, true),
+      );
+    const pending = body("pending"), receipt = makeNowIso8601(new Date(now));
+    let escaped: KramReceipt | undefined, borrowed: SerderKERI | undefined;
+    try {
+      const [frame] = yield* call(() =>
+        parseBytes(serializeMessage(pending, { tsgs: [group(pending)], gvrsn: Vrsn_2_0 }))
+      );
+      yield* runtime.reactor.settle(frame, {}, function*(ready, decision) {
+        assertEquals(decision?.kind, "escrow");
+        escaped = kramReceipt(ready!);
+        borrowed = ready!.serder;
+        assertExists(escaped);
+        assertEquals(kramReceiptTime(escaped, borrowed), receipt);
+        assertThrows(() => kramReceiptTime(escaped!, pending), Error, "Invalid scoped KRAM receipt");
+      });
+      assertThrows(() => kramReceiptTime(escaped!, borrowed!), Error, "Invalid scoped KRAM receipt");
+      assertEquals(seen, [receipt]);
+      assertEquals(handled, []);
+      assertEquals(hby.db.exchangeMeta.get([pending.said!])?.receiverTime, receipt);
+      assertEquals(hby.db.kready.get([sender.pre, pending.said!]), null);
+      now += 120000;
+      yield* hby.db.reopen();
+      dependency = true;
+      yield* runtime.reactor.exchanger.processEscrows();
+      assertEquals(seen, [receipt, receipt]);
+      assertEquals(handled, [receipt]);
+      assertExists(hby.db.exns.get([pending.said!]));
+      assertEquals(hby.db.exchangeMeta.get([pending.said!])?.receiverTime, receipt);
+      // A new direct attempt cannot replace first qualified provenance with sender dt.
+      yield* runtime.reactor.exchanger.processEvent({ serder: pending, tsgs: [group(pending)] });
+      assertEquals(handled, [receipt, receipt]);
+      const fresh = body("forged");
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              runtime.reactor.exchanger.processEvent({
+                serder: fresh,
+                tsgs: [group(fresh)],
+                receipt: {} as KramReceipt,
+              })
+            ),
+          Error,
+          "Invalid scoped KRAM receipt",
+        )
+      );
+      assertEquals(hby.db.exchangeMeta.get([fresh.said!]), null);
+      const competing = body("competing"), winning = makeNowIso8601(new Date(now));
+      runtime.reactor.exchanger.routes.set("/receipt", {
+        resource: "/receipt",
+        verify: () => {
+          hby.db.exchangeMeta.pin([competing.said!], { mailboxAid: null, receiverTime: winning });
+          return true;
+        },
+        handle: () => {
+          throw new Error("must not consume stale admission");
+        },
+      });
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              runtime.reactor.exchanger.processEvent({
+                serder: competing,
+                tsgs: [group(competing)],
+              })
+            ),
+          Error,
+          "Exchange receiver receipt changed during admission",
+        )
+      );
+      assertEquals(hby.db.exchangeMeta.get([competing.said!])?.receiverTime, winning);
+      assertEquals(hby.db.exns.get([competing.said!]), null);
+      hby.db.exchangeMeta.pin([pending.said!], { mailboxAid: null, receiverTime: "corrupt" });
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              runtime.reactor.exchanger.processEvent({
+                serder: pending,
+                tsgs: [group(pending)],
+              })
+            ),
+          Error,
+          "Corrupt exchange receiver receipt",
+        )
+      );
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("disabled, exempt, default and v1 exchange intake cannot confer KRAM receipt authority", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender");
+    try {
+      const cases: { kram?: KramConfig; pvrsn: typeof Vrsn_2_0 }[] = [
+        { pvrsn: Vrsn_2_0 },
+        { kram: { enabled: false }, pvrsn: Vrsn_2_0 },
+        { kram: { enabled: true, denials: [[[2, 0], "exn", ""]] }, pvrsn: Vrsn_2_0 },
+        { kram: { enabled: true }, pvrsn: Vrsn_1_0 },
+      ];
+      for (const { kram, pvrsn } of cases) {
+        const runtime = yield* createAgentRuntime(hby, { kram });
+        runtime.reactor.exchanger.addHandler({
+          resource: "/unqualified",
+          verify: ({ receiverTime }) => {
+            assertEquals(receiverTime, undefined);
+            return true;
+          },
+          handle: ({ receiverTime }) => {
+            assertEquals(receiverTime, undefined);
+          },
+        });
+        const message = exchange("/unqualified", { n: crypto.randomUUID() }, {
+          sender: sender.pre,
+          recipient: sender.pre,
+          pvrsn,
+        })[0];
+        const tsg = new TransIdxSigGroup(
+          new Prefixer({ qb64: sender.pre }),
+          sender.kever!.sner,
+          new Diger({ qb64: sender.kever!.said }),
+          sender.sign(message.raw, true),
+        );
+        try {
+          yield* runtime.reactor.processBytes(serializeMessage(message, { tsgs: [tsg], gvrsn: pvrsn }));
+          assertExists(hby.db.exns.get([message.said!]));
+          assertEquals(hby.db.exchangeMeta.get([message.said!])?.receiverTime, undefined);
+        } finally {
+          yield* runtime.close();
+        }
+      }
+    } finally {
       yield* hby.close(true);
     }
   });

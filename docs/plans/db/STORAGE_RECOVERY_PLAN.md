@@ -22,10 +22,12 @@ an explicit limitation rather than becoming an after-allocation size assertion.
 
 ## Allocation boundary
 
-LMDB currently returns an entire row before its size check. Nested wire's 24 MiB
-aggregate ceiling, mailbox's 4 MiB row check and replay's finite event limits
-therefore do not prove admission before native allocation. Close that boundary
-and account for all runtime-wide copies before claiming bounded memory.
+Nested wire now uses the pinned NAPI size preflight before owned row copies,
+including aggregate 24 MiB credit during comparisons, publication and hydration.
+Other LMDB reads still return whole rows before size checks; mailbox's 4 MiB row
+check and replay's finite event limits do not prove admission before allocation.
+Shared leases must also account for pre-existing scratch and every admitted copy
+before claiming bounded runtime memory.
 
 LMDB V1 inspection must use the existing owner or a separate process. The #164
 test repair moved the live CLI host and inspector into separate processes without

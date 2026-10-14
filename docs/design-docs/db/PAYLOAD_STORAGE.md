@@ -121,15 +121,24 @@ only that admission's candidate bucket. Exclusive archive startup clears abandon
 private stages and public rows without accepted/escrow ownership; Python-origin
 owned rows require no private metadata.
 
-Each row is one finite LMDB wire allocation. Aggregate nested wire is capped at
-24 MiB; ordinary metadata, ESSR decoded bytes/items, nodes, and depth retain the
-existing parent-tree budgets (8 MiB, 8 MiB/16,384, 256, 64). Reopening subtracts
-parent credit and diminishes it across rows; non-native body hydration is charged
-conservatively for its Texter encoding. The LMDB API returns a complete row before
-its size can be checked. This finite row copy and the mailbox's finite child-row
-copy are explicit storage costs; they do not establish shared runtime memory
-admission. Reads release key cursors before suspension and stage ESSR in files,
-without retaining a second array of complete ciphertext fragments.
+Nested staging comparisons, publication and hydration admit each stored row
+against diminishing 24 MiB aggregate wire credit before its owned backing copies.
+The pinned lmdb-js 3.5.3 NAPI hook reads size without growing an insufficient
+native target; supported binary, uncompressed, unversioned rows then copy under
+that same transaction. Active writers are borrowed, while ordinary reads hold
+an explicit snapshot. Unsupported bindings/modes fail closed. Publication still
+belongs to the caller's transaction, so an over-limit suffix preserves earlier
+public evidence on rollback; loading disposes previously hydrated descendants.
+
+Native pre-existing scratch (initially 16 MiB), LMDB mapped residency and the
+admitted native/public copies are distinct costs. Other read paths can grow
+scratch or allocate whole rows. This ceiling acquires no shared resource lease
+and does not bound the runtime's aggregate copies, file readers or metadata.
+Remaining parent-tree credit still accounts for Texter-expanded ordinary bodies,
+attachment groups, descendant nodes and ESSR bytes/items before acceptance:
+8 MiB ordinary metadata, 8 MiB/16,384 ESSR bytes/items, 256 nodes and depth 64.
+Reads release key cursors before suspension and stage ESSR in files, without
+retaining a second array of complete ciphertext fragments.
 
 Fresh parsed children remain hydrated through verification and handler execution.
 Escrow retry and replay reopen stored child frames; their temporary ESSR stages

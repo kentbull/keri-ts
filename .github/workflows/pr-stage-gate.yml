@@ -132,8 +132,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: rebuild LMDB-js for KERI compatibility
-        if: steps.setup.outputs.cache-hit != 'true'
-        run: deno task setup:compat-lmdb
+        run: |
+          if [[ "${{ steps.setup.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
+            deno task setup:compat-lmdb
+            deno run -A scripts/ci/report-lmdb-runtime.ts
+          fi
 
       - name: run the maintained package and runtime suites once
         shell: bash
@@ -169,8 +172,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: rebuild LMDB-js for KERI compatibility
-        if: steps.setup.outputs.cache-hit != 'true'
-        run: deno task setup:compat-lmdb
+        run: |
+          if [[ "${{ steps.setup.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
+            deno task setup:compat-lmdb
+            deno run -A scripts/ci/report-lmdb-runtime.ts
+          fi
 
       - name: check out pinned KERIpy table source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
