@@ -182,6 +182,7 @@ function cueSourcePrefix(
 }
 
 function soleHab(hby: Habery): Hab | null {
-  const habitats = [...hby.habs.values()];
-  return habitats.length === 1 ? habitats[0] ?? null : null;
+  const habitats = hby.habs.values();
+  const first = habitats.next();
+  return first.done || !habitats.next().done ? null : first.value;
 }
