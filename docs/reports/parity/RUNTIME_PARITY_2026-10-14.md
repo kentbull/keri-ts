@@ -74,9 +74,10 @@ rows and retain scoped copy leases. [TEL #331][tel] closes the actual native bod
 incrementally capped; canonical anchor tuples and native duplicate records are
 finite. [Storage owner][storage] preserves existing publication/rollback/reopen
 and task-owned recovery, without a general delivery journal. [#339][first-seen]
-commits owning KEL/FEL/prepared writes before live state and cue publication; direct
-decide/apply or already-active writer callers retain their external commit/publication
-contract. This is not general cross-process cache coherence. Outbox stays optional.
+commits incoming KEL/FEL/prepared writes before live state and cue publication.
+Private escrow replay still needs the same writer follow-up. Explicit decide/apply
+or active-writer callers own commit/publication; this is not cache coherence.
+Outbox stays optional.
 
 V2 processMsg preserves sender policy→optional KRAM→authentication prerequisites
 and route dispatch. Signature presence is not threshold proof; downstream processors
@@ -193,8 +194,8 @@ store cross-opening claim is made for ordinary official npm addons.
 
 1. Retain exact imported/native provenance and final source/package deltas. The
    completed inventory remains labeled 576/1aa, with its failures intact.
-2. Finish docs/static closure; retain exact source-qualified repair evidence
-   without successful-path repeats.
+2. Close the private escrow writer follow-up and docs/static checks; retain exact
+   source-qualified evidence without successful-path repeats.
    Preserve protocol/topology and accessor/Mapper/schema limits.
 3. Source Deno/packed Node actual caller/framing/early-usable/pressure/cleanup evidence,
    exact installed tarballs at advertised Node 20.3.0 and current runtime, with peer
