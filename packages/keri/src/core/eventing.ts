@@ -51,6 +51,7 @@ import {
   type ReceiptProcessDecision,
 } from "./kever-decisions.ts";
 import { Kever, type KeverEventInit } from "./kever.ts";
+import type { Kramer } from "./kraming.ts";
 import { normalizeMbxTopicCursor } from "./mailbox-topics.ts";
 import { reply as replyEvent } from "./protocol-eventing.ts";
 import { KeyStateRecord, ObservedRecord } from "./records.ts";
@@ -175,6 +176,8 @@ export class Kevery {
   readonly lax: boolean;
   readonly local: boolean;
   readonly rvy?: Revery;
+  /** Optional receiver-owned v2 non-event intake; ordinary route owners still verify. */
+  readonly kramer?: Kramer;
   /** Policy applies to claimed v2 non-event senders before route processing. */
   readonly allowList: Set<string>;
   readonly denyList: Set<string>;
@@ -187,12 +190,14 @@ export class Kevery {
       local = false,
       rvy,
       messagePolicy = {},
+      kramer,
     }: {
       cues?: Deck<AgentCue>;
       lax?: boolean;
       local?: boolean;
       rvy?: Revery;
       messagePolicy?: MessagePolicy;
+      kramer?: Kramer;
     } = {},
   ) {
     this.db = db;
@@ -200,6 +205,7 @@ export class Kevery {
     this.lax = lax;
     this.local = local;
     this.rvy = rvy;
+    this.kramer = kramer;
     this.allowList = new Set(messagePolicy.allowList);
     this.denyList = new Set(messagePolicy.denyList);
   }

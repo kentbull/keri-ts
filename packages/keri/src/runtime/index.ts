@@ -92,3 +92,5 @@ export { abortable } from "../app/abortable.ts";
 
 export * from "../acdc/observing.ts";
 export * from "../acdc/regeventing.ts";
+
+export { type KramConfig, Kramer, type KramRefusal } from "../core/kraming.ts";

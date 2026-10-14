@@ -8,8 +8,9 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.
 import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
+import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
-import { serializeMessage } from "../../../src/core/protocol-serialization.ts";
+import { messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import fixture from "../../fixtures/keripy-admission-vectors.json" with { type: "json" };
 import ipex from "../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
@@ -201,6 +202,106 @@ Deno.test("refused nested evidence is disposed with joined cleanup and infrastru
       }
     } finally {
       release();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("optional KRAM uses the receiver clock and scopes consumers through ready acknowledgement", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender", undefined, { icount: 3, isith: "2", ncount: 3, nsith: "2" });
+    let now = Date.now();
+    const runtime = yield* createAgentRuntime(hby, {
+      kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+      services: { clock: { now: () => now, setTimeout, clearTimeout: (timer) => clearTimeout(timer as number) } },
+    });
+    const body = query("ksn", { i: sender.pre, src: sender.pre }, { pre: sender.pre, pvrsn: Vrsn_2_0 });
+    const sigers = sender.sign(body.raw, true), key = [sender.pre, body.said!];
+    const frame = (index: number) => parseBytes(messagize(body, { sigers: [sigers[index]], gvrsn: Vrsn_2_0 }));
+    try {
+      const [partial] = yield* call(() => frame(0));
+      yield* runtime.reactor.settle(partial, {}, function*(_envelope, decision) {
+        assertEquals(decision?.kind, "pending");
+      });
+      assertEquals(hby.db.kready.get(key), null);
+      now += 1000;
+      const [complete] = yield* call(() => frame(1));
+      const failure = new Error("transport consumer failed");
+      const fail = function*(ready?: import("../../../src/core/dispatch.ts").KeriDispatchEnvelope) {
+        assertEquals(ready!.sigers.map((sig) => sig.index), [0, 1]);
+        assertExists(hby.db.pmkm.get(key), "consumer runs before acknowledgement");
+        assertEquals(runtime.reactor.kevery.kramer!.prune().kind, "busy");
+        throw failure;
+      };
+      yield* call(() =>
+        assertRejects(() => run(() => runtime.reactor.settle(complete, {}, fail)), Error, failure.message)
+      );
+      const receipt = hby.db.kready.get(key)!;
+      assertEquals(Date.parse(receipt), now, "services.clock owns first completion time");
+      now += 1000;
+      const [retry] = yield* call(() => frame(1));
+      const returned = yield* runtime.reactor.settle(retry, {}, function*(ready) {
+        assertEquals(hby.db.kready.get(key), receipt);
+        assertEquals(ready!.sigers.map((sig) => sig.index), [0, 1]);
+      });
+      assertEquals(returned!.sigers.map((sig) => sig.index), [1], "returned input cannot expose hydrated pool/owners");
+      assertEquals([hby.db.pmkm.get(key), hby.db.kready.get(key)], [null, null]);
+      yield* runtime.reactor.settle((yield* call(() => frame(1)))[0], {}, function*(_ready, decision) {
+        assertEquals(decision, { kind: "drop", reason: "replay" });
+      });
+      now += 120000;
+      yield* runtime.reactor.processEscrowsOnce();
+      assertEquals(hby.db.msgc.get(key), null, "ordinary escrow scheduling advances finite pruning");
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("optional KRAM preserves actual OOBI verification and frozen processor stubs", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), wrong = hby.makeHab("wrong");
+    const runtime = yield* createAgentRuntime(hby, { kram: { enabled: true } });
+    try {
+      const endpoint = reply("/end/role/add", { cid: sender.pre, role: "controller", eid: sender.pre }, {
+        pre: sender.pre,
+        pvrsn: Vrsn_2_0,
+      });
+      const location = reply("/loc/scheme", { eid: sender.pre, scheme: "http", url: "http://example.test/" }, {
+        pre: sender.pre,
+        pvrsn: Vrsn_2_0,
+      });
+      const group = (body: SerderKERI, signer = sender) =>
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: sender.pre }),
+          sender.kever!.sner,
+          new Diger({ qb64: sender.kever!.said }),
+          signer.sign(body.raw, true),
+        );
+      yield* runtime.reactor.processBytes(
+        serializeMessage(location, { tsgs: [group(location, wrong)], gvrsn: Vrsn_2_0 }),
+      );
+      assertEquals(hby.db.locs.get([sender.pre, "http"]), null, "exemption cannot authenticate signatures");
+      for (const body of [endpoint, location]) {
+        yield* runtime.reactor.processBytes(serializeMessage(body, { tsgs: [group(body)], gvrsn: Vrsn_2_0 }));
+        assertEquals(hby.db.msgc.get([sender.pre, body.said!]), null);
+      }
+      assertEquals(hby.db.ends.get([sender.pre, "controller", sender.pre])?.allowed, true);
+      assertEquals(hby.db.locs.get([sender.pre, "http"])?.url, "http://example.test/");
+      const stubs = fixture.cases.filter((row) => row.name.endsWith("reference stub"));
+      assertEquals(stubs.length, 3);
+      for (const row of stubs) {
+        const [frame] = yield* call(() => parseBytes(b(row.wire)));
+        const disabled = new Reactor(hby, { kram: { enabled: false } });
+        yield* disabled.settle(frame, {}, function*(_ready, decision) {
+          assertEquals(decision, { kind: "drop", reason: "referenceStub" });
+        });
+      }
+    } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });
