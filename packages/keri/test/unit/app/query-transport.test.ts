@@ -1,9 +1,10 @@
 import { call, run } from "effection";
-import { assertEquals } from "jsr:@std/assert";
-import { attachmentPayload, collectPayload, concatBytes, parse } from "../../../../cesr/mod.ts";
+import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { attachmentPayload, collectPayload, concatBytes, parse, ResourceAdmissionError } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
+import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { introduce } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { queryTransportSink } from "../../../src/app/runtime-deliveries.ts";
@@ -121,6 +122,116 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             bodies,
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteController.pre), query))),
           );
+          const cue = {
+            kin: "query" as const,
+            pre: remoteController.pre,
+            src: remoteController.pre,
+            route: "logs",
+            query: { s: "0", fn: "0" },
+          };
+          assertThrows(() => sink.admitQuery!(cue, () => Promise.resolve(null) as never), TypeError);
+          assertEquals(runtime.resources.used.bytes, 0, "async preparation cannot escape admitted scope");
+          assertEquals(sink.admitQuery!(cue, () => null), "ineligible");
+          assertEquals(runtime.resources.used.bytes, 0, "unresolved preparation cannot publish an owner");
+          const readFailure = new Error("query iterator read failed");
+          const cleanupFailure = new ResourceAdmissionError("foreign query cleanup busy", "busy");
+          const cleanup = assertThrows(() =>
+            sink.admitQuery!(cue, () => ({
+              kind: "wire",
+              cue,
+              messages: {
+                [Symbol.iterator]() {
+                  return {
+                    next() {
+                      throw readFailure;
+                    },
+                    return() {
+                      throw cleanupFailure;
+                    },
+                  };
+                },
+              },
+            })), AggregateError);
+          assertEquals(cleanup.errors, [readFailure, cleanupFailure]);
+          assertEquals(runtime.resources.used.bytes, 0, "both query failure paths release unpublished credit");
+          runtime.cues.push(cue);
+          runtime.querying.configure({ hab: sender, sink });
+          const sign = sender.query, resolve = sender.endsFor;
+          const signed: Uint8Array[] = [];
+          let resolved = 0;
+          sender.query = function(...args) {
+            const wire = sign.apply(this, args);
+            signed.push(wire);
+            return wire;
+          };
+          sender.endsFor = function(...args) {
+            resolved++;
+            return resolve.apply(this, args);
+          };
+          try {
+            for (let index = 0; index < 8; index++) {
+              runtime.deliveries.enqueue(() => ({
+                url: `http://127.0.0.1:${port}`,
+                body: query,
+                bodyMode: "header",
+                destination: remoteController.pre,
+              }));
+            }
+            runtime.querying.enqueue({
+              pre: remoteController.pre,
+              src: remoteController.pre,
+              route: "logs",
+              query: {},
+            });
+            const pending = runtime.querying.pending.peekHead();
+            yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
+            yield* runtime.querying.processPending(runtime);
+            assertStrictEquals(runtime.cues.peekHead(), cue);
+            assertStrictEquals(runtime.querying.pending.peekHead(), pending);
+            assertEquals([signed.length, resolved], [0, 0], "item refusal precedes signing and route lookup");
+            yield* runtime.deliveries.process(runtime);
+            const foreign = new ResourceAdmissionError("foreign signing busy", "busy");
+            sender.query = () => {
+              throw foreign;
+            };
+            assertStrictEquals(
+              yield* call(() =>
+                assertRejects(() => run(() => processCuesOnce(runtime, { hab: sender, sink: runtime.querying })))
+              ),
+              foreign,
+            );
+            assertStrictEquals(runtime.cues.peekHead(), cue);
+            assertEquals(runtime.resources.used.bytes, 0);
+            sender.query = function(...args) {
+              const wire = sign.apply(this, args);
+              signed.push(wire);
+              return wire;
+            };
+            yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
+            yield* runtime.querying.processPending(runtime);
+            assertEquals([runtime.cues.empty, runtime.querying.pending.empty, signed.length], [true, true, 2]);
+            assertEquals(runtime.resources.used.bytes, 18 * 1024 ** 2, "two independent wire and route owners remain");
+            const captured = concatBytes(introduce(sender, remoteController.pre), signed[0]);
+            sender.rotate();
+            yield* runtime.reactor.process((signal) =>
+              chunkBytes(
+                remoteController.makeLocScheme("http://unreachable.test/", remoteController.pre, "http"),
+                { signal },
+              )
+            );
+            const before = bodies.length;
+            yield* runtime.deliveries.process(runtime);
+            assertEquals(
+              bodies.slice(before, before + (yield* call(() => expectedMessages(captured))).length),
+              yield* call(() => expectedMessages(captured)),
+              "captured endpoint and original signature survive later state changes",
+            );
+            assertEquals(signed.length, 2, "delivery never re-signs the admitted query");
+            assertEquals(runtime.resources.used.bytes, 0);
+          } finally {
+            sender.query = sign;
+            sender.endsFor = resolve;
+          }
         } finally {
           yield* runtime.close();
         }
