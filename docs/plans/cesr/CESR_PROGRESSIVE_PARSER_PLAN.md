@@ -7,14 +7,14 @@ parent-owned trees, serialization and annotation are delivered. The
 
 ## Remaining parser-specific work
 
-- Complete the current-reference Serder accessor audit (`uuid`, sender/recipient,
-  registry fields and other semantic projections); record implemented, absent,
-  or intentionally narrower behavior against frozen upstream.
+- The current-reference accessor audit and #330/#332 UUID/sequence corrections
+  record supported, absent and narrower projections. Retain its typed/mutability/
+  number-width limits; final execution does not establish full Python object-API parity.
 - Keep structural guards on child kinds, ilks and contexts without completed
   consumers. Table membership alone never enables a runtime route.
-- Integrate parser reservations/work checkpoints through the existing
-  [resource-policy phase](../runtime/RESOURCE_POLICY_PLAN.md). Do not create a
-  second engine, strategy framework or cross-major retry path.
+- Parser reservations and deterministic work checkpoints are integrated with
+  [shared policy](../runtime/RESOURCE_POLICY_PLAN.md). Final maintained execution
+  must confirm their lifecycle; no second engine or cross-major retry path is needed.
 
 ## Regression floor
 

@@ -2,45 +2,34 @@
 
 Owner: roadmap **6**, required for the next npm release and the existing goal.
 Progressive parsing, HTTP/file intake, serialization, lazy replay and mailbox SSE
-and bounded witness TCP intake exist. Composed backpressure and duplex remain open.
+and explicit TCP conversations exist. Final composed/packed qualification remains open.
 The [runtime contract][runtime] distinguishes current behavior from the target.
 
 ## Current boundary
 
-- `witness-tcp.ts` supervises admitted paused sources, distinguishes EOF from
-  peer failure, and joins parser/socket tasks before listener shutdown completes.
-- `processWitnessIngressSource` settles frames progressively; its finite wrapper
-  still returns a bounded aggregate of emissions.
-- Final direct HTTP query replies atomically share one interpreted batch between
-  ReplyStreams and queued targets; no network runs during that preparation.
-  Earlier queries now use queue-only owned delivery after their own authorization.
-- Generic HTTP cue preparation transfers to RuntimeDeliveries, owned mailbox
-  correlation or pending queries before removal; network waits and scoped fallback
-  cleanup run outside Reactor. Witness drains share admitted wire with queued
-  delivery and consume callbacks outside the guard; source intake collects no
-  aggregate, while finite results are capped caller-owned snapshots.
-- The TCP sender shares a finite/source/frame writer and explicit same-socket
-  reply processing (#271). Actual conversation callers remain S8; mailbox/direct
-  routing remains the default. The Tufa accepted listener now returns correlated
-  immediate proofs and one bounded deferred logs/ksn reply on that connection,
-  driven by the existing host escrow loop. Outbound caller adoption remains S8.
+- Accepted TCP sockets have one admitted parser and shared borrowed writer;
+  receipt/replay is correlated to the current dispatch. One bounded pending query
+  wakes via the owning runtime escrow driver. RX/TX are independent, drain deadlines
+  are absolute and shutdown joins sources, parser, output and socket cleanup.
+- WitnessReceiptor requires verified persisted receipts; runtime witness/query/
+  Anchorer/Poster callers borrow existing services and use HTTP-first/TCP fallback.
+  Standalone transmit-only operations retain their explicit completion contract.
+- HTTP direct/queued fanout, generic request drains and witness source callbacks
+  transfer owners under short guarded preparation and await transport outside it.
+  Source witness intake collects no aggregate; finite wrappers return capped,
+  independent caller-owned snapshots. Current sender refusal gates every response.
+- Mailbox SSE is incremental, demand-driven and HTTP(S)-only. Delivery still permits
+  TCP. Default mailbox/direct role precedence, signed introductions and host
+  ownership remain intact; queued output is not a durable-delivery journal.
 
-Reuse the active admission stack: HTTP frame/output work (#224–225), finite TCP
-ownership (#230), parser scheduling (#231), and mailbox stream admission.
-Those units are dependencies, not proof of end-to-end socket streamability.
-Generic witness sends and runtime delegation share services; finite TCP credit
-follows joined socket close. Writer foundation is delivered; frame/caller
-integration and replies remain S7–8.
-HTTP already shares `requestFrame` (parsed frame) and `postCesr` (byte source);
-its successful-response consumer is optional, so ordinary sends do not prove
-verified protocol replies or durable remote acceptance.
-Lazy replies, query queues, HTTP frame preparation and outgoing source parsing
-share owner credit. Standalone sender wiring and native/storage copies still
-require qualification through real slow sinks.
-
-Raw Poster delivery exposes separate route snapshot, synchronous target
-preparation and prepared HTTP sending. Runtime cue callers still compose them
-under the guard; S1–3 must add admission, owned handoff and explicit outcomes.
+These are implemented caller boundaries, not proof of final release qualification.
+[Exact PRs and source evidence](../../reports/parity/RUNTIME_PARITY_2026-10-14.md)
+separate local drain, verified acceptance, caller-owned finite behavior and recovery.
+Same-socket output works with two RX slots occupied. The default eight-stream
+policy reserves headroom for ordinary polls and independent work; fairness and
+final caller cleanup remain separately qualified boundaries. Busy must
+preserve bounded work or close/refuse explicitly, never hide another waiting queue.
+Native/kernel/fetch buffering and other storage reads retain their own limits.
 
 ## Messenger organization
 
@@ -211,7 +200,7 @@ S9 extends existing transport/runtime tests for decisive regressions:
 - Exercise cancellation, disconnect, malformed late children, EOF, processing
   failure and shutdown. Keep already delivered independent children; dispose all
   unclaimed owners and join I/O before releasing runtime/store resources.
-- With the real default two live receive sources (including two TCP receives),
+- With two real live receive sources (including two TCP receives),
   queued and directed output must progress or produce explicit bounded admission,
   refusal or closure. Never wait while holding every permit needed by the reply.
   Qualify the combined configured pipeline floor separately from temporary busy;
