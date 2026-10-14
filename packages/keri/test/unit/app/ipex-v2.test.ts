@@ -53,13 +53,16 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
     const notifier = new Notifier(hby, { noter });
     const exchanger = new Exchanger(hby);
     loadIpexHandlers(hby, exchanger, { notifier });
+    // The default ledger must also fit one ingress backing and the existing 64 MiB crypto allowance.
+    const coexist = exchanger.resources.reserve({ bytes: 73 * 1024 ** 2, streams: 1, decryptions: 1 });
+    if (coexist.kind !== "reserve") throw new Error("Default coexistence credit unavailable");
     try {
       assertEquals(fixture.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
       let through = 0;
       let notifications = 0;
       for (const row of fixture.cases) {
         while (through < row.through) yield* call(() => learn(hby, fixture.wires[through++]));
-        const frames = yield* call(() => parseBytes(b(row.wire)));
+        const frames = yield* call(() => parseBytes(b(row.wire), { resources: exchanger.resources }));
         try {
           assertEquals(frames.length, 1, row.name);
           let decision: ExchangeDecision | undefined;
@@ -86,7 +89,9 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
             yield* call(async () => {
               for await (const chunk of exchanger.replay(row.said)) replayed.push(chunk);
             });
-            const restored = yield* call(() => parseBytes(concatBytes(...replayed)));
+            const restored = yield* call(() =>
+              parseBytes(concatBytes(...replayed), { resources: exchanger.resources })
+            );
             try {
               assertEquals(restored.length, 1);
               assertEquals(restored[0].body.raw, frames[0].body.raw, row.name);
@@ -114,6 +119,8 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
         }
       }
     } finally {
+      coexist.reservation.release();
+      assertEquals(exchanger.resources.used.bytes, 0);
       yield* noter.close(true);
       yield* hby.close(true);
     }
