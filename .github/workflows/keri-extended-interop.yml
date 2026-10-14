@@ -84,9 +84,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
-          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
+          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-${{ hashFiles('packages/keri/scripts/setup_lmdb_v1.sh', 'deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-
 
       - name: install deterministic workspace dependencies
         if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
@@ -99,11 +99,12 @@ jobs:
             3.13
             ${{ env.PYTHON_VERSION }}
 
-      - name: rebuild LMDB-js with data v1 compatibility
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
+      - name: verify or rebuild LMDB-js data v1 and NAPI compatibility
         run: |
-          cd packages/keri
-          deno task setup:compat-lmdb
+          if [[ "${{ steps.interop-node-modules-cache.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
+            deno task setup:compat-lmdb
+            deno run -A scripts/ci/report-lmdb-runtime.ts
+          fi
 
       - name: check out exact mailbox fork qualification peer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

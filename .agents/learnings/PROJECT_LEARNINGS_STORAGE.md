@@ -14,14 +14,16 @@ Use the repository-pinned LMDB release (runtime source currently 3.5.3), V1 data
 format for KERIpy interop, and the actual native rebuild/preflight path.
 Rebuild with official `ENABLE_V8_FUNCTIONS=false`: Node-header V8 imports can
 terminate Deno when a large row first reaches the mapped-buffer path.
-Qualify the actual addon under both runtimes, including rows above 16 MiB. A lockfile
+Qualify the actual addon under both runtimes, including rows above 16 MiB.
+Native CI caches include NAPI and rebuild-script identity; every cache hit must
+pass both native metadata and emitted V1-format probes before reuse. A lockfile
 can retain older packages; inspect the imported addon. Map sizing respects explicit
 options, KERI_LMDB_MAP_SIZE/KERI_BASER_MAP_SIZE and stored metadata.
 
 LMDB V1 live inspection needs the existing owner or separate processes. Opening
 the same environment twice in one process can break reader slots, even readonly.
 RegBaser owns the existing public registry evts/tels/heads layout; observer
-chain reads/imports extend that same environment. Readonly old-store opening
+accepted-chain reads and public engine intake share that same environment. Readonly old-store opening
 binds existing tables without migration. RegBaser's absent anchor/escrow adapters
 and RegistryStore's alias mapper are null on old layouts until explicit storage
 writes initialize them; reads cannot migrate a store. Anchor tuples retain bigint
@@ -76,8 +78,11 @@ storage does not accept either message or publish ordinary exchange wire.
 
 ## Open boundary
 
-Whole LMDB rows are allocated before current size checks. Finite row ceilings and
-per-tree budgets do not prove admission before allocation or a runtime-wide bound.
+Nested wire reads use the pinned NAPI size preflight before owned row copies;
+active writers stay borrowed and ordinary reads share one explicit snapshot.
+Other LMDB APIs still allocate whole rows before size checks. Pre-existing native
+scratch and admitted copies still need shared leases; local ceilings do not prove
+a runtime-wide bound.
 [Resource phase 4](../../docs/plans/runtime/RESOURCE_POLICY_PLAN.md) and
 [storage phase 5](../../docs/plans/db/STORAGE_RECOVERY_PLAN.md) jointly own closure.
 See the [payload contract](../../docs/design-docs/db/PAYLOAD_STORAGE.md).

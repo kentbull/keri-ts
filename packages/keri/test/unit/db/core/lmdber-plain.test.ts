@@ -1,7 +1,7 @@
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { b, bytesEqual, t } from "../../../../../cesr/mod.ts";
-import { DatabaseNotOpenError } from "../../../../src/core/errors.ts";
+import { b, bytesEqual, ResourceLimitError, t } from "../../../../../cesr/mod.ts";
+import { DatabaseNotOpenError, DatabaseOperationError } from "../../../../src/core/errors.ts";
 import { openLMDB } from "../../../../src/db/core/lmdber.ts";
 import { pairsAsText, withTempLMDBer } from "./lmdber-test-utils.ts";
 
@@ -49,6 +49,99 @@ Deno.test("db/core lmdber plain - rows above the native shared-buffer threshold 
     } finally {
       yield* lmdber.close(true);
     }
+  });
+});
+
+Deno.test("db/core lmdber bounded rows admit before copy and retain read or writer transaction ownership", async () => {
+  await withTempLMDBer("plain-bounded", (lmdber) => {
+    const plain = lmdber.openDB("plain.");
+    const native = plain as unknown as {
+      getBinary(key: Uint8Array, options?: object): Uint8Array | undefined;
+      getBinaryFast(key: Uint8Array, options?: object): Uint8Array | undefined;
+      _returnLargeBuffer(): Uint8Array;
+      useReadTransaction(): { address: number; done(): void };
+      compression: unknown;
+    };
+    const large = new Uint8Array(16 * 1024 ** 2 + 1).fill(0xff);
+    lmdber.setVal(plain, b("large"), large);
+    const getBinary = native.getBinary, growth = native._returnLargeBuffer, useRead = native.useReadTransaction;
+    let copies = 0, finished = 0;
+    native.getBinary = function(key, options) {
+      copies++;
+      return getBinary.call(this, key, options);
+    };
+    native._returnLargeBuffer = () => {
+      throw new Error("preflight must not grow the native target");
+    };
+    native.useReadTransaction = function() {
+      const transaction = useRead.call(this);
+      return {
+        address: transaction.address,
+        done: () => {
+          finished++;
+          transaction.done();
+        },
+      };
+    };
+    try {
+      assertThrows(() => lmdber.getValBounded(plain, b("large"), 1024), ResourceLimitError);
+      assertEquals([copies, finished], [0, 1], "oversize releases the snapshot without a fallback copy");
+      lmdber.setVal(plain, b("small"), b("tiny"));
+      const owned = lmdber.getValBounded(plain, b("small"), 4)!;
+      assertEquals(t(owned), "tiny");
+      assertEquals(lmdber.getValBounded(plain, b("absent"), 0), null);
+      lmdber.setVal(plain, b("empty"), new Uint8Array());
+      assertEquals(lmdber.getValBounded(plain, b("empty"), 0), new Uint8Array());
+      for (const limit of [-1, NaN, Infinity, 1.5]) {
+        assertThrows(() => lmdber.getValBounded(plain, b("small"), limit), RangeError);
+      }
+      const compression = native.compression;
+      native.compression = true;
+      assertThrows(() => lmdber.getValBounded(plain, b("small"), 4), DatabaseOperationError, "binding");
+      native.compression = compression;
+      const fast = native.getBinaryFast;
+      native.getBinaryFast = function(key, options) {
+        const result = fast.call(this, key, options);
+        lmdber.setVal(plain, key, b("later"));
+        return result;
+      };
+      try {
+        assertEquals(t(lmdber.getValBounded(plain, b("small"), 4)!), "tiny", "both reads hold the old snapshot");
+      } finally {
+        native.getBinaryFast = fast;
+      }
+      assertEquals(t(lmdber.getVal(plain, b("small"))!), "later");
+      assertEquals(t(owned), "tiny", "owned rows survive later native reads");
+      const before = finished, copying = native.getBinary;
+      native.getBinary = () => {
+        throw new Error("bounded copy infrastructure fault");
+      };
+      assertThrows(() => lmdber.getValBounded(plain, b("small"), 5), Error, "infrastructure fault");
+      assertEquals(finished, before + 1, "copy failure releases the read snapshot");
+      native.getBinary = copying;
+      native.useReadTransaction = () => {
+        throw new Error("an active writer must not open a readonly transaction");
+      };
+      lmdber.env!.transactionSync(() => {
+        lmdber.setVal(plain, b("inside"), b("writer"));
+        assertEquals(t(lmdber.getValBounded(plain, b("inside"), 6)!), "writer");
+        lmdber.setVal(plain, b("inside"), b("changed"));
+        assertEquals(t(lmdber.getValBounded(plain, b("inside"), 7)!), "changed");
+      });
+    } finally {
+      native.getBinary = getBinary;
+      native._returnLargeBuffer = growth;
+      native.useReadTransaction = useRead;
+    }
+    assertEquals(bytesEqual(lmdber.getValBounded(plain, b("large"), large.length)!, large), true);
+    const dups = lmdber.openDB("dups.", true);
+    lmdber.putVals(dups, b("same"), [b("z"), b("a")]);
+    assertEquals(t(lmdber.getValBounded(dups, b("same"), 1)!), "a");
+    lmdber.env!.transactionSync(() => {
+      lmdber.addVal(dups, b("same"), b("0"));
+      assertEquals(t(lmdber.getValBounded(dups, b("same"), 1)!), "0");
+    });
+    assertEquals(t(lmdber.getVal(plain, b("inside"))!), "changed");
   });
 });
 
