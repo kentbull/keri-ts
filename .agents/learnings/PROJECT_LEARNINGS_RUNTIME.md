@@ -80,18 +80,20 @@ cleanup complete. One shared instance is required; separate ledgers do not bound
 a runtime. Reactor reserves stream/cursor/producer credit before source acquisition
 and retains it through joined parser cleanup. AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
-Internal CueDeck preparation holds concrete metadata/backing and item credit;
+Default AgentRuntime CueDeck preparation holds concrete metadata/backing and item credit;
 ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
 clone/state and decision-carried duplicate/escrow cues now prepare before effects
-when CueDeck is explicitly injected. Revery's own missing-signer query batches
+in the default runtime or an explicitly supplied CueDeck. Revery's own missing-signer query batches
 also prepare before BADA/proof/escrow effects. /ksn holds PreparedReply ownership
 and admits its concrete keyStateSaved child before proof/state writes on shared
 or distinct decks. Registry and credential TSN hold the same preparation while admitting its
 actual new dependency query or txnStateSaved child before proof/Broker effects.
 Exact family membership prevents duplicate query credit while Broker retains
 registry/attester/TEL dependency migration. OOBI typed cue producers also admit
-actual batches before effects. Runtime activation
-waits for every producer/consumer port; count checks alone cannot reserve byte credit.
+actual batches before effects. Runtime scopes the deck after backing stores and before
+consumers; shutdown joins outputs, clears queued owners, then closes owned stores.
+Explicit-close callers first join their request/runtime tasks; transferred owners
+retain credit through their own joined cleanup. Count checks remain finite item policy.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
 Complete-record ingress charges shared bytes before copying; queued and processing

@@ -989,6 +989,21 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
                 yield* background.halt();
                 assertEquals(hby.obx.pendingCount(), 1, "cancellation keeps the durable target pending");
                 assertEquals(retiredScans, scans, "cancellation joins the live iterator");
+                assertEquals(
+                  runtime.cues.toArray().map((cue) =>
+                    cue.kin === "receipt"
+                      ? [cue.kin, cue.serder.pre, cue.serder.said]
+                      : cue.kin === "keyStateSaved"
+                      ? [cue.kin, cue.ksn.i, cue.ksn.d]
+                      : [cue.kin]
+                  ),
+                  [["receipt", progress.pre, progress.kever!.said], [
+                    "keyStateSaved",
+                    progress.pre,
+                    progress.kever!.said,
+                  ]],
+                );
+                runtime.cues.clear(); // Discard only verified queued test output; leaked transport credit would remain.
                 assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
                 holdClose.release.resolve();
                 holdClose = { started: Promise.withResolvers<void>(), release: Promise.withResolvers<void>() };

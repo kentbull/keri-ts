@@ -420,6 +420,18 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           );
           yield* runtime.querying.processPending(runtime);
           assertEquals(waiting.done, true, "the sequence continuation observes verified accepted state");
+          assertEquals(
+            runtime.cues.toArray().map((cue) =>
+              cue.kin === "receipt"
+                ? [cue.kin, cue.serder.pre, cue.serder.said]
+                : cue.kin === "keyStateSaved"
+                ? [cue.kin, cue.ksn.i, cue.ksn.d]
+                : [cue.kin]
+            ),
+            ["receipt", "keyStateSaved"].map((kin) => [kin, remoteController.pre, remoteController.kever!.said]),
+          );
+          assertEquals(runtime.resources.used, { bytes: 3785, streams: 0, decryptions: 0 });
+          runtime.cues.clear(); // Only queued accepted output is released; leaked transport credit would remain.
           assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
           yield* runtime.reactor.processEscrowsOnce();
         } finally {
