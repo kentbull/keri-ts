@@ -37,7 +37,9 @@ import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type Kind, Kinds, Protocols, Vrsn_1_0, Vrsn_2_0 } from "../tables/versions.ts";
 import type { Protocol } from "../tables/versions.ts";
+import type { BodyDecodeContext } from "./body-admission.ts";
 import { decodeJson } from "./json-admission.ts";
+import { decodeAdmittedMsgpack } from "./msgpack-admission.ts";
 import { dumpCesrNativeSad, parseCesrNativeKed, reapCesrNativeBody } from "./native.ts";
 import { smell, versify } from "./smell.ts";
 
@@ -868,7 +870,7 @@ function getFieldDom(
 }
 
 /** Decode raw serialized bytes into a protocol SAD plus projected ilk/said fields. */
-function parseRawToKed(raw: Uint8Array, smellage: Smellage, onJsonFailure?: (error: unknown) => void): {
+function parseRawToKed(raw: Uint8Array, smellage: Smellage, context?: BodyDecodeContext): {
   ked: SadMap | null;
   ilk: string | null;
   said: string | null;
@@ -880,9 +882,11 @@ function parseRawToKed(raw: Uint8Array, smellage: Smellage, onJsonFailure?: (err
 
   try {
     if (kind === "JSON") {
-      ked = decodeJson(raw, onJsonFailure) as SadMap;
+      ked = decodeJson(raw, context?.onDecodeFailure) as SadMap;
     } else if (kind === "MGPK") {
-      ked = normalizeDecodedMap(decodeMsgpack(raw), kind);
+      ked = context?.msgpackBoundaryFailure !== undefined
+        ? decodeAdmittedMsgpack(raw, context.msgpackBoundaryFailure, context.onDecodeFailure)
+        : normalizeDecodedMap(decodeMsgpack(raw), kind);
     } else if (kind === "CBOR") {
       ked = normalizeDecodedMap(decodeKeriCbor(raw), kind);
     } else if (kind === "CESR") {
@@ -895,7 +899,7 @@ function parseRawToKed(raw: Uint8Array, smellage: Smellage, onJsonFailure?: (err
       said = native.said;
     }
   } catch (error) {
-    if (kind === "JSON") throw error;
+    if (kind === "JSON" || (kind === "MGPK" && context?.msgpackBoundaryFailure !== undefined)) throw error;
     if (error instanceof DeserializeError) {
       throw new DeserializeError(
         `Failed to decode ${kind} Serder: ${String(error.message)}`,
@@ -2034,13 +2038,14 @@ export class SerderACDC extends Serder {
 
 /**
  * Parse one raw Serder body and hydrate protocol-specific Serder subclasses.
+ * Context records decoder provenance only; Serdery admits progressive bodies before this seam.
  */
 export function parseSerder(
   raw: Uint8Array,
   smellage: Smellage,
-  onJsonFailure?: (error: unknown) => void,
+  context?: BodyDecodeContext,
 ): Serder {
-  const { ked, ilk, said } = parseRawToKed(raw, smellage, onJsonFailure);
+  const { ked, ilk, said } = parseRawToKed(raw, smellage, context);
   const init: SerderHydratedInit = {
     raw,
     smellage,
