@@ -16,7 +16,6 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { isWellKnownOobiUrl, Oobiery, parseOobiUrl } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
-import { DeckFullError } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -441,13 +440,7 @@ Deno.test("OOBI queue and multi-parent publication admit complete cue ownership 
       }
       const pending = hby.db.moobi.get(parent)!;
       const terminalBusy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      let failure: unknown;
-      try {
-        yield* oobi.processOnce();
-      } catch (error) {
-        failure = error;
-      }
-      assertEquals(failure instanceof ResourceAdmissionError, true);
+      yield* oobi.processOnce();
       terminalBusy.reservation.release();
       assertEquals(hby.db.moobi.get(parent), pending);
       assertEquals(hby.db.roobi.get(parent), null);
@@ -464,14 +457,7 @@ Deno.test("OOBI queue and multi-parent publication admit complete cue ownership 
       hby.db.moobi.pin(failedParent, pending);
       hby.db.eoobi.pin(children[0], { state: "http-404" });
       const occupied = cues.prepare([{ kin: "proof", said: "held" }, { kin: "proof", said: "held2" }]);
-      let capacity: unknown;
-      try {
-        yield* oobi.processOnce();
-      } catch (error) {
-        capacity = error;
-      }
-      // processOnce pauses an exactly full published deck, but held preparation still refuses before writes.
-      assertEquals(capacity instanceof DeckFullError, true);
+      yield* oobi.processOnce();
       assertExists(hby.db.moobi.get(failedParent));
       assertEquals(hby.db.eoobi.get(failedParent), null);
       occupied.release();

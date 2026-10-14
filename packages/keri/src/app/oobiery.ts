@@ -125,7 +125,14 @@ export class Oobiery {
     const multi = this.nextReadyMoobi();
     if (multi) {
       const [url, record] = multi;
-      this.completeMultiOobi(url, record);
+      try {
+        this.completeMultiOobi(url, record);
+      } catch (error) {
+        if (!(error instanceof DeckFullError || (error instanceof ResourceAdmissionError && error.reason === "busy"))) {
+          throw error;
+        }
+        // The parent keeps its durable moobi owner until a later turn can admit its result.
+      }
     }
   }
 
