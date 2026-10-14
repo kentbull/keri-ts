@@ -17,29 +17,27 @@ Apply the [roadmap review rules](../PARITY_ROADMAP.md), in dependency order:
    Include [transport delivery obligations](../runtime/TRANSPORT_PLAN.md): the
    optional mailbox-only outbox publishes rows and terminal pruning in one
    transaction. Qualify finite admission, partial-target
-   status and reopen before claiming durable transfer. Direct/witness obligations
-   require explicit destination semantics or proven regeneration. A journal added
-   after KEL acceptance alone leaves the crash-before-cue-transfer gap. Resolve
-   that gap by linked durable state or bounded recovery; do not silently enable
-   the optional outbox or claim an in-memory delivery queue survives restart.
+   status and reopen before claiming durable transfer. KERIpy's ordinary outbound
+   queues are volatile; preserve and disclose that boundary. New general delivery
+   journals or regeneration are deferred. Do not silently enable the optional
+   outbox or claim an in-memory delivery queue survives restart.
 
 Keep each PR within the size target, including regressions. Reuse existing storage
 tests; exercise failure/crash designs with uncommitted probes unless a maintained
 regression has clear value. An unavailable native pre-allocation seam must remain
 an explicit limitation rather than becoming an after-allocation size assertion.
 
-## Accepted-state owner adoption
+## Accepted-state residency boundary
 
 The shared policy is installed on Baser before reopen and inherited by Habery's
 runtime; borrowed runtime shutdown does not own that policy's store lifetimes.
-Accepted cache charges remain unimplemented. Follow the
-[phase 4 ownership sequence](../runtime/RESOURCE_POLICY_PLAN.md#accepted-state-ownership-closure)
-for prospective accepted generations, native state/event preflight, local pins,
-durable membership and explicit borrower adoption before bounded eviction.
-Cold `states.` decoding and accepted `evts.` hydration both need pre-copy admission.
-A current event's independent owner must not retain its parent input proof tree.
-Raw externally retained references require the explicit borrowing compatibility
-boundary in that plan; Map deletion alone never proves allocation reclamation.
+Accepted cache residency and public borrowing/eviction redesign are
+[deferred](../runtime/RESOURCE_POLICY_PLAN.md#deferred-accepted-state-residency).
+Preserve existing accepted-state APIs and report their growth separately. Transient
+row hydration/replay copies still need admission in the adopted streaming paths;
+do not retain a parent proof tree merely to keep an accepted event alive. Existing
+store reopen, escrow retry and task-owned staging recovery qualification remain;
+they do not establish a new general durable-delivery guarantee.
 
 ## Allocation boundary
 

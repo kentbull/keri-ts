@@ -158,9 +158,10 @@ still require their caller ports.
 
 ## Messenger responsibilities
 
-Incremental source/sink I/O is the default for CESR network traffic across KERI
-and Tufa. Callers share the runtime's exact services/resource policy, preserve
-borrowed owners and propagate cancellation through joined cleanup. GET retrieval,
+The release requires incremental source/sink I/O where KERIpy 714 supports it:
+TCP parser/reply lifetimes, HTTP messenger ownership and mailbox SSE. Callers share
+the runtime's exact services/resource policy, preserve borrowed owners and
+propagate cancellation through joined cleanup. Further stack-wide adoption is deferred. GET retrieval,
 SSE and non-CESR documents preserve their framing; they reuse ownership facilities
 rather than being wrapped in a CESR POST. A finite collector needs a semantic
 reason and enforced admission/cap, not merely a legacy byte-input API.
@@ -173,17 +174,23 @@ untouched. The response and pending cleanup join before credit returns; cleanup
 failure cannot publish success. Native headers/buffering and durable pending-row
 allocation are separate qualification boundaries.
 
-Default library, host and command composition follows these same ownership
-boundaries. A convenience wrapper must not silently select a private collector,
-separate policy or detached transport task. Finite document/proof exceptions
+Required reference-backed library, host and command paths follow these ownership
+boundaries. Upstream finite collection remains permitted. A convenience wrapper
+must preserve its declared policy and joined lifetime. Finite document/proof exceptions
 retain their framing but expose an enforced ceiling, admission owner and
 cancellable joined response lifetime. Document the reason at the owning API;
 byte-input convenience alone does not justify buffering an entire history.
+Required streaming paths account their preparation and retained results; releasing
+a response reader does not release retained in-flight state. Finite introductions,
+credential exports and JSON may preserve reference behavior. Their conversion to
+new lazy producers or caches is deferred. Required callers preserve failure,
+disconnect and shutdown ownership. Size policy, local capacity refusal, transport
+failure and verified application acceptance remain distinct outcomes.
 
 Two engines own transport work: CESR HTTP request/response scopes and an owned
 TCP connection with directional I/O. Small Effection operations/resources expose
 finite-message and source inputs. TCP adapters share one writer with optional owned
-reply parsing; stack-wide caller adoption remains S1–9.
+reply parsing; reference-backed caller qualification remains S1–9.
 
 | KERIpy responsibility | TypeScript entry / shared engine                        |
 | --------------------- | ------------------------------------------------------- |
@@ -497,10 +504,10 @@ join pending filesystem work and descriptor close before returning credit.
 The protocol handler and Hono app expose close; default handlers are owned while
 injected handlers remain caller-owned. OS reads are joined, not forcibly interrupted;
 native/filesystem residency still requires qualification. Dynamic generation/export
-still collects histories and remains transport S2 work.
+collects histories; its further streaming conversion is deferred.
 Dynamic `did.json` uses JSON-only artifact construction with the same local-AID
 validation, schema pinning and document bytes. It never opens CESR replay;
-finite JSON preparation admission and streamed CESR generation/export remain open.
+further JSON preparation and streamed CESR generation/export changes are deferred.
 The Node host terminates a failing post-header body and reports its original error;
 it cannot replace already transmitted 200 headers with a new status.
 Finite JSON documents and receipt proofs retain whole-document semantics with

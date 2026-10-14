@@ -39,9 +39,14 @@ Keep historical 927 fixtures and fork/legacy compatibility results labeled by th
 Normal remote outcomes use typed decisions. Exceptions retain invariant,
 infrastructure and caller-contract failures. Keep protocol compatibility and
 frozen-reference evidence explicit; no old TypeScript API shims are required.
-Finite local limits do not establish a shared runtime memory bound.
-Baser fixes the deployment policy before reopen; runtime inherits it, while accepted
-cache accounting and explicit borrower adoption remain phase 4/5 work.
+Finite local limits do not establish a shared in-flight memory bound.
+Baser fixes the deployment policy before reopen; runtime inherits it. This release
+bounds in-flight work and reports accepted-state growth separately. Streaming is
+required where KERIpy 714 supports it. New caches, accepted-state API redesign,
+further stack-wide streaming and exhaustive CBOR extension accounting are deferred.
+KERIpy parity comes first; optional additions are proposals, not implementation gates.
+Selective inter-component streaming may reuse existing engines for a concrete
+benefit after parity priorities; it does not restore a stack-wide mandate.
 PRs target 300–500 added or removed lines or fewer, including verification.
 Reuse tests; new maintained integration/end-to-end coverage needs strong
 justification. Exploratory probes may remain uncommitted. Choose narrow unit
