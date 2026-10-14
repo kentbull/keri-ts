@@ -41,6 +41,7 @@ export * from "../app/querying.ts";
 export * from "../app/reactor.ts";
 export * from "../app/reply-streams.ts";
 export * from "../app/respondant.ts";
+export { queryTransportSink } from "../app/runtime-deliveries.ts";
 export * from "../app/runtime-services.ts";
 export * from "../app/runtime-turn.ts";
 export * from "../app/schema-resolving.ts";

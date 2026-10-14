@@ -1,30 +1,68 @@
+import { ResourceAdmissionError } from "cesr-ts";
 import { type Operation } from "effection";
-import { type AgentCue, type AgentRuntime, type CueEmission, type Hab } from "keri-ts/runtime";
+import {
+  type AgentCue,
+  type AgentRuntime,
+  type CueSink,
+  type Deck,
+  DeckFullError,
+  type Hab,
+  processCuesOnce,
+  queryTransportSink,
+} from "keri-ts/runtime";
 
 /**
- * Consume explicit cues under Reactor.settle through one service habitat and mailbox side effects.
- *
- * `Hab.processCuesIter(...)` remains the cue-to-wire interpreter; the request
- * layer owns mailbox publication side effects needed before HTTP responses are
- * finalized.
+ * Drain one finite HTTP cue pass: immediate guarded transfers retain deliveries,
+ * mailbox correlations and pending queries; borrowed fallback emissions stay owned
+ * through joined sink cleanup outside Reactor. Busy preserves the source head.
  */
 export function* drainRuntimeCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
-  cues: Iterable<AgentCue>,
-): Operation<CueEmission[]> {
-  const habitats = [...runtime.hby.habs.values()];
-  const hab = serviceHab
-    ?? (habitats.length === 1 ? habitats[0] ?? null : null);
-  if (!hab) {
-    return [];
+  cues: Deck<AgentCue>,
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+): Operation<void> {
+  if (cues !== runtime.cues) throw new RangeError("HTTP cue drain requires the runtime source deck");
+  const habitats = runtime.hby.habs.values();
+  const first = habitats.next();
+  const hab = serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
+  if (!hab) return;
+  const transport = queryTransportSink(runtime, runtime.hby, hab);
+  const destination: CueSink = {
+    admitQuery: transport.admitQuery,
+    admitCue: (current, interpreter) => runtime.respondant.admitCue(current, interpreter, hab),
+    send: (emission) => runtime.respondant.sendWithHab(emission, hab),
+  };
+  let refusal: ResourceAdmissionError | DeckFullError | undefined;
+  const note = (error: ResourceAdmissionError | DeckFullError) => {
+    refusal = error;
+    if (error instanceof ResourceAdmissionError) onAdmissionRefusal?.(error);
+  };
+  const sink: CueSink = {
+    admitCue: (current, interpreter) => runtime.querying.admitCue(current, interpreter, destination),
+    prepareEmission(emission) {
+      if (emission.kind === "transport" && emission.cue.kin === "stream") {
+        runtime.mailboxDirector.retainQueryCue(emission.cue, note);
+      } else if (emission.cue.kin === "query" && emission.kind !== "wire") {
+        runtime.querying.enqueueCue(emission.cue, note);
+      }
+      return emission;
+    },
+    *sendPrepared(emission) {
+      yield* runtime.reactor.settle(undefined, {}, function*() {
+        runtime.querying.observeCue(emission.cue);
+      });
+      if (emission.cue.kin !== "stream" && emission.cue.kin !== "query") {
+        yield* destination.send(emission);
+      }
+    },
+    send: destination.send,
+  };
+  try {
+    yield* processCuesOnce(runtime, { hab, sink, onAdmissionRefusal });
+  } catch (error) {
+    if (!refusal || error !== refusal || !(refusal instanceof DeckFullError || refusal.reason === "busy")) throw error;
   }
-
-  const emissions: CueEmission[] = [];
-  for (const emission of hab.processCuesIter(cues)) {
-    if (emission.cue.kin === "query" && emission.kind !== "wire") runtime.querying.enqueueCue(emission.cue);
-    else yield* runtime.respondant.sendWithHab(emission, hab);
-    emissions.push(emission);
-  }
-  return emissions;
+  // Network/capacity checks run after the synchronous guarded transfers.
+  yield* runtime.deliveries.process(runtime);
 }

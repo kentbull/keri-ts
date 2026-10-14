@@ -69,8 +69,15 @@ The existing delivery owner can prepare an earlier query batch without an HTTP
 response consumer. This atomic queue-only transfer preserves the original slot
 on capacity or preparation refusal and reserves no response stream permit. It
 retains the once-interpreted wire through joined target cleanup; no-target cleanup
-waits until all preparation and source ownership have transferred. The generic
-HTTP caller port remains separate from this facility.
+waits until all preparation and source ownership have transferred. Generic HTTP
+uses this queued-only transfer for each earlier query authorized by its own exact
+frame/dispatch; a later unrelated frame neither authorizes nor revokes that batch.
+Ordinary HTTP cues use `processCuesOnce` with a per-request service habitat/sink:
+query/wire, mailbox correlation and unresolved pending ownership transfer before
+source removal. Network delivery and borrowed fallback consumption/cleanup run
+outside Reactor. Only observed engine-created admission refusals become HTTP
+capacity responses; foreign same-class source/preparation failures propagate.
+Witness cue consumption and default CueDeck activation remain separate ports.
 
 The generic HTTP route consumes its request body progressively and appends a
 separately bounded CESR attachment header. Administrative requests still collect

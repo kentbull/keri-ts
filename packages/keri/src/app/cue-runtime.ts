@@ -64,9 +64,11 @@ export function processCuesOnce(
   {
     hab,
     sink = ignoreCueSink,
+    onAdmissionRefusal,
   }: {
     hab?: Hab;
     sink?: CueSink;
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
   } = {},
 ): Operation<void> {
   return call(function*() {
@@ -101,7 +103,10 @@ export function processCuesOnce(
                 owner = prepared;
                 return undefined;
               },
-              (error) => refused = { error },
+              (error) => {
+                refused = { error };
+                onAdmissionRefusal?.(error);
+              },
               (emission) => sink.prepareEmission?.(emission) ?? emission,
             );
           });

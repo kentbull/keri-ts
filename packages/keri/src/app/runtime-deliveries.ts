@@ -198,11 +198,18 @@ export class RuntimeDeliveries {
   }
 
   /** Atomically publish one bounded direct-reply batch and its HTTP stream; no network runs here. */
-  openReply(runtime: AgentRuntime, hab: Hab, reply: QueryReply): ReadableStream<Uint8Array> | null {
+  openReply(
+    runtime: AgentRuntime,
+    hab: Hab,
+    reply: QueryReply,
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+  ): ReadableStream<Uint8Array> | null {
     if (runtime.resources !== this.resources) throw new RangeError("Wrong reply resource policy");
     if (this.closed) throw new Error("Runtime deliveries are closed");
     if (this.pending.length === this.pending.capacity) {
-      throw new ResourceAdmissionError("Direct reply delivery slots are busy", "busy");
+      const refusal = new ResourceAdmissionError("Direct reply delivery slots are busy", "busy");
+      onAdmissionRefusal?.(refusal);
+      throw refusal;
     }
     this.pending.checkSpace();
     return DirectReplyDelivery.prepare(runtime, hab, reply, (delivery, open) => {
@@ -211,22 +218,29 @@ export class RuntimeDeliveries {
       if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
       else delivery.release();
       return stream;
-    });
+    }, onAdmissionRefusal);
   }
 
   /** Atomically retain an earlier query reply without opening a request-local response stream. */
-  enqueueReply(runtime: AgentRuntime, hab: Hab, reply: QueryReply): boolean {
+  enqueueReply(
+    runtime: AgentRuntime,
+    hab: Hab,
+    reply: QueryReply,
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+  ): boolean {
     if (runtime.resources !== this.resources) throw new RangeError("Wrong reply resource policy");
     if (this.closed) throw new Error("Runtime deliveries are closed");
     if (this.pending.length === this.pending.capacity) {
-      throw new ResourceAdmissionError("Queued reply delivery slots are busy", "busy");
+      const refusal = new ResourceAdmissionError("Queued reply delivery slots are busy", "busy");
+      onAdmissionRefusal?.(refusal);
+      throw refusal;
     }
     this.pending.checkSpace();
     return DirectReplyDelivery.prepareQueued(runtime, hab, reply, (delivery) => {
       this.pending.checkSpace();
       if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
       else delivery.release();
-    });
+    }, onAdmissionRefusal);
   }
 
   /** A failed independent packet retains the same lease; no target advances if the queue cannot accept it. */

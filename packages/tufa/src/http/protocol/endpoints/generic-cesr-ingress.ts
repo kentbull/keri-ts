@@ -122,6 +122,7 @@ function* deferredDirectQueryResponse(
   serder: SerderKERI,
   reply: QueryReply,
   publish: (response: Response) => void,
+  onAdmissionRefusal: (error: ResourceAdmissionError) => void,
 ): Operation<Response | null> {
   const runtime = context.runtime!;
   const expires = Date.now() + DIRECT_QUERY_RESPONSE_WAIT_MS;
@@ -132,7 +133,7 @@ function* deferredDirectQueryResponse(
       const first = habitats.next();
       const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
       if (hab) {
-        const stream = runtime.deliveries.openReply(runtime, hab, reply);
+        const stream = runtime.deliveries.openReply(runtime, hab, reply, onAdmissionRefusal);
         if (stream) {
           response = new Response(stream, {
             status: 200,
@@ -159,9 +160,12 @@ export async function handleGenericCesrIngress(
     return textResponse("Unacceptable content type.", 406);
   }
   let response: Response | undefined, operationFailure: { error: unknown } | undefined;
+  const admissionRefusals = new Set<unknown>();
   const task = run(function*() {
     try {
-      response = yield* call(() => ingest(context, hosted, (value) => response = value));
+      response = yield* call(() =>
+        ingest(context, hosted, (value) => response = value, (error) => admissionRefusals.add(error))
+      );
       return response;
     } catch (error) {
       operationFailure = { error };
@@ -208,8 +212,12 @@ export async function handleGenericCesrIngress(
   if (primary && !ownCancellation) {
     const error = primary.error;
     if (!context.req.signal.aborted && !cleanup.length) {
-      if (error instanceof ResourceAdmissionError && error.reason === "busy") return textResponse(error.message, 503);
-      if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
+      if (error instanceof ResourceAdmissionError && admissionRefusals.has(error)) {
+        return textResponse(error.message, error.reason === "busy" ? 503 : 413);
+      }
+      if (error instanceof ResourceLimitError && !(error instanceof ResourceAdmissionError)) {
+        return textResponse(error.message, 413);
+      }
       if (error instanceof ParserError || error instanceof ValidationError) return textResponse(error.message, 400);
     }
     if (!cleanup.includes(error)) cleanup.unshift(error);
@@ -232,6 +240,7 @@ function* ingest(
   context: ProtocolRequestContext,
   hosted: HostedRouteResolution,
   publish: (response: Response) => void,
+  onAdmissionRefusal: (error: ResourceAdmissionError) => void,
 ): Operation<Response> {
   const runtime = context.runtime!;
   let seen = false;
@@ -241,7 +250,7 @@ function* ingest(
     yield* call(function*() {
       const channel = yield* runtime.reactor.frames(
         (signal) => requestBytes(context.req, { signal }),
-        { signal: context.req.signal },
+        { signal: context.req.signal, onAdmissionRefusal },
       );
       for (const frame of yield* each(channel.frames)) {
         yield* call(function*() {
@@ -258,18 +267,17 @@ function* ingest(
             // A later frame makes this an ordinary query; transfer its reply before releasing its reservation.
             yield* runtime.reactor.settle(undefined, {}, function*() {
               try {
-                const batch = previous.takeAll();
-                if (batch) {
-                  try {
-                    yield* drainRuntimeCues(runtime, context.policy.serviceHab, batch.cues);
-                  } finally {
-                    batch.release();
-                  }
+                const habitats = runtime.hby.habs.values();
+                const first = habitats.next();
+                const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
+                if (hab && query!.authorized) {
+                  runtime.deliveries.enqueueReply(runtime, hab, previous, onAdmissionRefusal);
                 }
               } finally {
                 previous.close();
               }
             });
+            yield* runtime.deliveries.process(runtime);
           }
           query = undefined;
           seen = true;
@@ -300,10 +308,11 @@ function* ingest(
             }
             if (route.kind === "witnessLocalIngress") {
               yield* drainWitnessCues(runtime, route.witnessHab, runtime.cues);
-            } else {
-              yield* drainRuntimeCues(runtime, context.policy.serviceHab, runtime.cues);
             }
           });
+          if (route.kind !== "witnessLocalIngress") {
+            yield* drainRuntimeCues(runtime, context.policy.serviceHab, runtime.cues, onAdmissionRefusal);
+          }
         });
         yield* each.next();
       }
@@ -317,7 +326,8 @@ function* ingest(
       return response;
     }
     return query.reply
-      ? (yield* deferredDirectQueryResponse(context, query.serder, query.reply, publish)) ?? jsonNoContentResponse()
+      ? (yield* deferredDirectQueryResponse(context, query.serder, query.reply, publish, onAdmissionRefusal))
+        ?? jsonNoContentResponse()
       : jsonNoContentResponse();
   } finally {
     query?.reply?.close();
