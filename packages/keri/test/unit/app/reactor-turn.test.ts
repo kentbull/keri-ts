@@ -1,6 +1,6 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { ResourceLimitError, ResourcePolicy } from "../../../../cesr/mod.ts";
+import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "../../../../cesr/mod.ts";
 import { abortable } from "../../../src/app/abortable.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -274,6 +274,13 @@ Deno.test("queued retry retains its byte lease until a real cue-capacity retry c
       const resources = new ResourcePolicy();
       const reactor = new Reactor(target, { resources, maxSources: 1, maxPendingCues: 4 });
       reactor.ingest(wire);
+      const occupied = resources.reserve({ streams: 2 });
+      assertEquals(occupied.kind, "reserve");
+      if (occupied.kind !== "reserve") throw new Error("stream reservation failed");
+      yield* reactor.processOnce();
+      assertEquals(reactor.hasIngress, true, "temporary parser admission retains queued work");
+      assertEquals(resources.used.bytes, wire.length);
+      occupied.reservation.release();
       reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
       yield* reactor.processOnce();
       assertEquals(reactor.hasIngress, true);
@@ -285,6 +292,11 @@ Deno.test("queued retry retains its byte lease until a real cue-capacity retry c
       assertEquals(target.db.getKever(sender.pre)!.sn, 0);
       assertEquals(reactor.hasIngress, false);
       assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+      const limited = new Reactor(target, { resources: new ResourcePolicy({ bytes: wire.length }) });
+      limited.ingest(wire);
+      yield* call(() => assertRejects(() => run(() => limited.processOnce()), ResourceAdmissionError, "limit"));
+      assertEquals(limited.hasIngress, false, "a configuration refusal is terminal for this record");
+      assertEquals(limited.resources.used.bytes, 0);
     } finally {
       yield* target.close(true);
       yield* source.close(true);

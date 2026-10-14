@@ -246,7 +246,8 @@ function* ingest(context: ProtocolRequestContext, hosted: HostedRouteResolution)
           }, function*(envelope, decision) {
             if (query) {
               // SAIDs exclude attachments: authorize this exact envelope, not an older query cue.
-              query.authorized = decision?.kind !== "drop"
+              query.authorized = decision?.kind !== "drop" && decision?.kind !== "pending"
+                && decision?.kind !== "missing"
                 && (!query.mailbox || runtime.reactor.kevery.isMailboxQueryAuthorized(
                   queryEnvelopeFromDispatch(envelope!),
                 ));

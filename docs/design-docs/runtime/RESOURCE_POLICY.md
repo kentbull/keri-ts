@@ -33,7 +33,8 @@ reading. Rejected admission never invokes the source factory and adds no waiter.
 A source that allocates outside this contract is outside the accounted envelope.
 
 Complete-record ingress reserves retained byte credit before copying. Its record
-owns the lease through queued and processing states, including cue-capacity retry.
+owns the lease through queued and processing states, including cue-capacity retry
+and typed temporary parser-admission refusal. Oversize admission releases the record.
 Local record/byte limits also include active processing. Clearing ingress releases
 only queued records and invalidates late retries; processing retains credit until
 joined cleanup. Runtime close and scope exit clear queued ownership. Parser backing

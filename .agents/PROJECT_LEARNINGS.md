@@ -27,6 +27,7 @@ Consume-scoped hydration joins disposal and propagates cleanup failures before r
 Retryable handoff acknowledges after disposal; callback effects remain at least once.
 Parsed evidence, wrapper construction, verified acceptance and durable publication
 are separate boundaries. Parent signatures never authenticate nested children.
+Public registry intake borrows issuer KEL state independently of local Hab aliases.
 Raw evidence stays separate from opt-in strict seal projection.
 
 Normal remote outcomes use typed decisions. Exceptions retain invariant,
