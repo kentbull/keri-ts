@@ -481,3 +481,21 @@ Deno.test("db/basing - full event seal search skips accepted opaque and digest-o
     }
   });
 });
+
+Deno.test("readonly legacy Baser opening leaves absent schema escrow tables absent", async () => {
+  await run(function*() {
+    const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
+    try {
+      db.emse!.sdb.dropSync();
+      db.emsd!.sdb.dropSync();
+      yield* db.close();
+      yield* db.reopen({ reuse: true, readonly: true });
+      assertEquals(db.emse, null);
+      assertEquals(db.emsd, null);
+      assertEquals(db.env!.getBinary(b("emse.")), undefined);
+      assertEquals(db.env!.getBinary(b("emsd.")), undefined);
+    } finally {
+      yield* db.close(true);
+    }
+  });
+});
