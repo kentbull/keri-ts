@@ -5,7 +5,11 @@
 The maintained inventory in scripts/ci/keri-test-suites.ts owns files; the runner
 enforces missing/duplicate/unowned coverage. Audit is not execution. Parallelize
 only truly isolated files; runtime/server/stateful/interop lanes stay serial until
-their assumptions change. Preserve participant topology and semantic assertions.
+their assumptions change. Preserve participant topology and distinct semantic
+assertions. Delete redundant permutations; byte-at-a-time parsing already visits
+each token boundary, so do not reverify signed trees at every two-chunk split.
+Large-input regressions need to exceed the faulty threshold, not repeat
+increasingly large allocations.
 
 Witness harnesses use temporary copied configs and bind-checked randomized ports.
 Track children before readiness waits and report their output on startup failure.
@@ -47,7 +51,9 @@ blocker as current publication status; verify live state before release claims.
 ## Remaining qualification
 
 The [qualification plan](../../docs/plans/qualification/QUALIFICATION_PLAN.md) owns
-the full inventory and repeated fresh-process runtime matrix. Long hosted jobs
+the full inventory and two fresh-process 16/256 MiB production observations.
+Gigabyte/repeated matrices and historical reruns are deferred; enlarge only to
+resolve an anomaly and do not claim statistical or unmeasured scale evidence. Long hosted jobs
 remain maintainer-dispatched with the existing 15-minute cap, outside required
 merge CI. Record failures/skips and variance; parser-only timing does not prove
 production memory bounds. [Runtime learnings](PROJECT_LEARNINGS_RUNTIME.md) own

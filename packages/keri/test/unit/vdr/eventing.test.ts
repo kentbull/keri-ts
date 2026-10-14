@@ -39,6 +39,7 @@ import { CredentialStateReceiver } from "../../../src/vdr/credential-tsn.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 import { RegistryStateReceiver } from "../../../src/vdr/registry-tsn.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
+import { expectKind } from "../../private-access.ts";
 
 /** Assert borrowed data while its actual default-runtime owner is live, then return its credit. */
 function assertRuntimeCue(runtime: AgentRuntime, expected: AgentCue | AgentCue["kin"], message?: string): void {
@@ -50,8 +51,6 @@ function assertRuntimeCue(runtime: AgentRuntime, expected: AgentCue | AgentCue["
     owner?.release();
   }
 }
-
-import { expectKind } from "../../private-access.ts";
 
 const SCHEMA_SAID = "Eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 

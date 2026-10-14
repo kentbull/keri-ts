@@ -716,8 +716,6 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
 
         const runtime = yield* createAgentRuntime(hby, {
           mode: "local",
-          // This scenario drives Poster TCP; mailbox polling has its own HTTP/SSE contract.
-          mailboxPollTransport: { *poll() {} },
         });
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
@@ -903,6 +901,22 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
               topic: "/receipt",
               createdAt: stamp,
             }, [remoteWitness.pre]);
+            const bounded = hby.obx.iterPendingBounded!, ordinary = hby.obx.iterPending;
+            hby.obx.iterPending = () => {
+              throw new Error("Runtime retry cannot use the unbounded iterator");
+            };
+            let scans = 0, retiredScans = 0;
+            hby.obx.iterPendingBounded = function*(limits) {
+              assertEquals(guarded, true, "bounded row pulls own a short Reactor turn");
+              assertEquals(runtime.resources.used.bytes > 0, true, "admission precedes iterator acquisition");
+              scans++;
+              try {
+                yield* bounded.call(this, limits);
+              } finally {
+                assertEquals(runtime.resources.used.bytes > 0, true, "cursor joins before credit returns");
+                retiredScans++;
+              }
+            };
             let guarded = false, failPreparation = true;
             const settle = runtime.reactor.settle.bind(runtime.reactor), endorse = sender.endorse;
             const failed = hby.obx.markFailed.bind(hby.obx), markDelivered = hby.obx.markDelivered.bind(hby.obx);
@@ -931,6 +945,25 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
               acknowledged.resolve();
             };
             try {
+              const occupied = runtime.resources.reserve({ bytes: runtime.resources.limits.bytes });
+              if (occupied.kind !== "reserve") throw new Error("Expected free byte policy");
+              try {
+                yield* poster.processPending(runtime);
+                assertEquals(scans, 0, "busy cannot acquire a native iterator");
+                assertEquals(hby.obx.pendingCount(), 1);
+              } finally {
+                occupied.reservation.release();
+              }
+              const admitted = hby.obx.iterPendingBounded;
+              hby.obx.iterPendingBounded = undefined;
+              try {
+                yield* call(() =>
+                  assertRejects(() => run(() => poster.processPending(runtime)), RangeError, "bounded reads")
+                );
+                assertEquals(scans, 0, "unsupported runtime store cannot start a scan");
+              } finally {
+                hby.obx.iterPendingBounded = admitted;
+              }
               yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
               assertEquals(hby.obx.pendingCount(), 1, "preparation failure preserves retry state");
               assertEquals(connections, 3);
@@ -942,12 +975,25 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
                   resources: runtime.resources,
                 })
               );
-              const background = yield* spawn(() => runAgentRuntime(runtime, { hab: sender }));
+              let background = yield* spawn(() => runAgentRuntime(runtime, { hab: sender }));
               try {
                 yield* call(() => holdClose!.started.promise);
                 assertEquals(hby.obx.pendingCount(), 1, "TCP wait cannot acknowledge the outbox early");
                 yield* runtime.reactor.settle(frame);
                 assertEquals(hby.db.getKever(progress.pre)?.sn, 0, "signed protocol work progresses during TCP wait");
+                assertEquals(
+                  runtime.resources.used.bytes >= 32 * 1024 ** 2,
+                  true,
+                  "outbox wire stays credited during TCP wait",
+                );
+                yield* background.halt();
+                assertEquals(hby.obx.pendingCount(), 1, "cancellation keeps the durable target pending");
+                assertEquals(retiredScans, scans, "cancellation joins the live iterator");
+                assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+                holdClose.release.resolve();
+                holdClose = { started: Promise.withResolvers<void>(), release: Promise.withResolvers<void>() };
+                background = yield* spawn(() => runAgentRuntime(runtime, { hab: sender }));
+                yield* call(() => holdClose!.started.promise);
                 holdClose.release.resolve();
                 yield* call(() => acknowledged.promise);
                 assertEquals(hby.obx.pendingCount(), 0);
@@ -961,6 +1007,8 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
               sender.endorse = endorse;
               hby.obx.markFailed = failed;
               hby.obx.markDelivered = markDelivered;
+              hby.obx.iterPendingBounded = bounded;
+              hby.obx.iterPending = ordinary;
             }
           } finally {
             yield* call(() =>

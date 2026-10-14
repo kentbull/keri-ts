@@ -305,8 +305,16 @@ Poster operations retain caller-owned synchronous preparation/retention bounds;
 admitted CueDelivery still prepares under a short turn and sends outside it.
 Runtime outbox retries also guard route/signing/target preparation and
 cancel/failure/delivered writes. Transport cleanup joins outside those turns.
-The optional durable outbox retains its existing live iterator across attempts;
-its row materialization and preparation-copy bounds remain separately unqualified.
+The optional durable outbox keeps its live retry scan, using keys-only native iteration
+and bounded reads before copying target/metadata rows (64 KiB each) or payloads
+(8 MiB). Runtime reserves 64 MiB for payload pull overlap, copies, retained output
+and preparation, plus 640 KiB for metadata/key work, before iterator acquisition.
+Credit lasts through joined transport, outcome publication and iterator return;
+busy leaves durable targets unchanged for the next existing turn. Runtime custom
+stores require the explicit bounded-read capability; standalone Poster remains
+caller-owned. Disabled outbox defaults remain unchanged. Pending counts,
+outcome/pruning scans, endpoint/introduction companion rows, general record heap
+hydration and native scratch/mapped residency remain separately unqualified.
 Invocation-local observers report actual TCP/RX capacity refusals so busy retains
 existing work before socket acquisition. Foreign failures and raw peer errors
 propagate with original identity; this adds no transport retry taxonomy.

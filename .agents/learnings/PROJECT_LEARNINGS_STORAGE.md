@@ -45,7 +45,10 @@ mutations against a store still hosted by a stale runtime. Prefer narrow tufa db
 dump selectors. Reacquire named handles after close/reopen.
 
 Optional mailbox outbox publication and terminal pruning commit complete rows
-together. That transaction does not bridge accepted KEL state to initial cue transfer.
+together. Runtime retries use keys-only live scans and bounded native metadata/payload
+reads before copies; caller credit lasts through transport and cursor cleanup.
+Ordinary scans, pending counts and outcome/pruning reads remain outside that claim.
+That transaction does not bridge accepted KEL state to initial cue transfer.
 
 ## Payload ownership
 

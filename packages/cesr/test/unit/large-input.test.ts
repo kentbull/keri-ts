@@ -12,7 +12,7 @@ import { KERIPY_INDEXER_VECTORS, KERIPY_MATTER_VECTORS } from "../fixtures/kerip
 const V2 = { major: 2, minor: 0 } as const;
 
 Deno.test("large input: base64 encoding matches an independent encoder across chunk boundaries", () => {
-  const data = Uint8Array.from({ length: 1024 * 1024 + 2 }, (_, i) => i % 256);
+  const data = Uint8Array.from({ length: 3 * 24576 + 2 }, (_, i) => i % 256);
   // Exercise both base64 remainder classes and either side of the 24 KiB encoder slab.
   for (const length of [0, 1, 2, 3, 24575, 24576, 24577, data.length - 2, data.length - 1, data.length]) {
     const raw = data.subarray(0, length);
@@ -30,15 +30,14 @@ Deno.test("large input: byte conversion preserves every byte without Unicode sub
   assertEquals(Uint8Array.from(text, (char) => char.charCodeAt(0)), raw);
 });
 
-Deno.test("large input: 1 MiB and 4 MiB Texters roundtrip in both CESR domains", () => {
-  // Cover zero-byte and one-byte alignment padding without a long-running benchmark.
-  for (const size of [1024 * 1024, 4 * 1024 * 1024 + 2]) {
-    const raw = Uint8Array.from({ length: size }, (_, i) => i % 256);
-    const texter = new Texter({ raw, code: MtrDex.Bytes_L0 });
-    for (const parsed of [new Texter({ qb64b: texter.qb64b }), new Texter({ qb2: texter.qb2 })]) {
-      assertEquals(parsed.raw, raw);
-      assertEquals(parsed.qb64, texter.qb64);
-    }
+Deno.test("large input: Texter roundtrips beyond argument limits in both CESR domains", () => {
+  // 256 KiB exceeds the old spread limit and promotes the large variable code;
+  // the remainder also exercises alignment padding. Aggregate scale is manual.
+  const raw = Uint8Array.from({ length: 256 * 1024 + 1 }, (_, i) => i % 256);
+  const texter = new Texter({ raw, code: MtrDex.Bytes_L0 });
+  for (const parsed of [new Texter({ qb64b: texter.qb64b }), new Texter({ qb2: texter.qb2 })]) {
+    assertEquals(parsed.raw, raw);
+    assertEquals(parsed.qb64, texter.qb64);
   }
 });
 
