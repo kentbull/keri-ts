@@ -4,7 +4,7 @@
 before delegating to the existing processors. This corresponds to
 `Kevery.processMsg` with KRAM disabled in unmodified KERIpy
 `927c0cb8794d7c84fc17143c67df64aab9deda6c` (`core/parsing.py` and
-`core/eventing.py`). KRAM intake remains unimplemented.
+`core/eventing.py`). KRAM is disabled by default and explicitly configurable at runtime.
 
 ## Policy and responsibility
 
@@ -38,8 +38,8 @@ expansions wait for receiver-clocked delays; pure decreases apply immediately.
 Active acceptance and pruning remain ordered, and existing drift stays fixed.
 Atomic `ctyp.`/private `hbys.` transition metadata survives reopen and refreshes
 stale owners. These restart and active-window guarantees strengthen the frozen
-reference, which stores pending transitions only in memory. No Kramer intake or
-runtime enablement is exported; cache windows are not a shared runtime budget.
+reference, which stores pending transitions only in memory. Cache policy remains
+internal; cache windows are not a shared runtime budget.
 
 Internal `authenticateKramSource` returns valid, known-invalid, or missing-state
 source decisions. It checks the last source couple or sender-matching triple
@@ -47,7 +47,7 @@ against the accepted sender KEL digest and an event seal containing the message
 SAID. Foreign triples and child proofs remain independent. Known-invalid source
 results remain eligible for later signature fallback; missing state blocks it.
 Missing coordinates retain `bigint` precision, including beyond the database's
-safe-number range; the eventual intake owner emits exact hexadecimal queries.
+safe-number range; intake emits exact hexadecimal missing-state queries.
 This read-only helper emits no cues and enables no public Kramer/runtime intake.
 
 Internal KRAM time plans preserve inclusive microsecond admission/lifetime windows,
@@ -103,6 +103,16 @@ after a bounded global TMSC scan proves no participant remains. Committed writes
 restart that proof and reopen resets checkpoints; unrelated writes can postpone
 orphan cleanup, favoring safety over progress. Rows inserted behind cache cursors
 are visited next pass. This is maintenance exclusion, not a shared runtime budget.
+
+Optional `createAgentRuntime({ kram })` composes the qualified policy, handoff and
+finite pruner using the trusted services clock. Configuration must cover admitted
+message types. V2 sender policy precedes all intake effects; v1 paths stay separate.
+The ready transport consumer runs inside handoff before joined disposal and ack.
+Callback results are void; Reactor returns only its original borrowed input. HTTP
+refuses current pending, missing, busy and replay outcomes despite older cues.
+HTTP recovery queries enter the bounded coordinator and drain on ordinary host turns.
+No automatic ESSR decryption or child dispatch is enabled; presentation-registry
+cutoffs remain guarded pending durable trusted receipt propagation.
 
 ## Ownership and HTTP
 
