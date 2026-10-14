@@ -228,8 +228,10 @@ limit; the durable inbox retains its independent capacity and explicit dispositi
 Provider SSE performs no mailbox reads without HTTP demand, releases each LMDB
 iterator before suspension, and copies at most 64 KiB per transport pull from one
 admitted 4 MiB stored message. A blocked consumer cannot accumulate a mailbox
-replay in the platform stream queue. Stored values are still read whole before
-their individual size check.
+replay in the platform stream queue. Provider responses reserve shared message,
+chunk and bounded topic-metadata credit before acquisition, with one stream slot
+across query correlation and nested output. Native row preflight checks the 4 MiB
+ceiling before copying. Director/runtime close joins cancellation before stores.
 
 Finite OOBI and DID verification currently admit at most 8 MiB per fetched
 artifact, including their CESR replay document. Moving those complete verification
@@ -237,7 +239,6 @@ flows to streamed artifacts remains separate work. Mailbox admin response metada
 admits 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those
 finite collectors use the same owned, cancellable byte reader.
 
-Mailbox-provider connection count and configured endpoint/topic counts do not yet
-share an aggregate runtime reservation. Their cross-source concurrency budget
-belongs to the planned shared resource-policy follow-up, not these per-reader
-and per-event bounds.
+Provider connections and per-request topics now share finite runtime admission.
+Configured remote-worker counts and retained query cues still need their own
+handle/metadata boundary; these leases do not bound accepted configuration/state.

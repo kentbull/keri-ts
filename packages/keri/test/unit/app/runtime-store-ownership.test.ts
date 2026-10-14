@@ -246,6 +246,43 @@ Deno.test("runtime stores - cancelling a live runtime closes scope-owned stores"
   }
 });
 
+Deno.test("runtime stores - mailbox cleanup joins before stores and failure still closes every owner", async () => {
+  const hby = await run(() => createHabery(habitatOptions));
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const failure = new Error("mailbox cleanup failed");
+  try {
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      const original = runtime.mailboxDirector.close.bind(runtime.mailboxDirector);
+      runtime.mailboxDirector.close = async () => {
+        await original();
+        entered.resolve();
+        await release.promise;
+        throw failure;
+      };
+      try {
+        yield* call(async () => {
+          const closing = run(() => runtime.close());
+          await entered.promise;
+          assertEquals(runtime.mailboxer!.opened, true);
+          assertEquals(runtime.acdc.rgy!.baser.opened, true);
+          release.resolve();
+          assertEquals(await assertRejects(() => closing), failure);
+        });
+        assertEquals(runtime.mailboxer!.opened, false);
+        assertReleased(runtime.acdc.rgy!.baser);
+        assertReleased(runtime.vdr.reger as Reger);
+        assertEquals(hby.db.opened, true);
+      } finally {
+        release.resolve();
+        runtime.mailboxDirector.close = original;
+      }
+    });
+  } finally {
+    await run(() => hby.close(true));
+  }
+});
+
 Deno.test("registry opener - failed and cancelled acquisition joins backing-store cleanup", async () => {
   const original = RegBaser.prototype.reopen;
   const failure = new Error("registry open failed after acquisition");

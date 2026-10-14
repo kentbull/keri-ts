@@ -110,6 +110,9 @@ SSE consumes one complete event and awaits its consumer before another read.
 Provider output reads only with HTTP demand. Finite processOnce returns typed
 batches; long-lived pollDo is sink-based. Disconnect/timeout discards unfinished
 events so their cursors can retry. Durable inbox admission has separate dispositions.
+Provider query/nested streams share one runtime lease. Validate cursor metadata
+before copying and use bounded native row reads; join director close before stores.
+Attempt every owner's cleanup and propagate failures after releasing its credit.
 
 ## CLI and follow-ups
 
