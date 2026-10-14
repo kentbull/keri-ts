@@ -559,3 +559,11 @@ The host kernel supplies runAgentRuntime's escrow driver; standalone listener
 borrowers must provide that driver for idle-RX query retries. Genuine receive EOF
 keeps TX available for the pending reply under the same absolute deadline.
 Cancellation joins the pull and output before releasing reply or connection credit.
+
+Signaler bounds its existing UI wakeup queue: 1024 queued entries and one prepared
+replacement, a 64 KiB conservative JSON ceiling, and shared inspection/copy credit.
+Notifier prepares before Noter writes; false/throw releases unpublished credit,
+without rolling back partial durable writes. Collapse, expiry and owned shutdown
+return credit. The queue view is borrowed readonly; managed pings are immutable.
+Durable notices, native row hydration, caller-retained views/copies and arbitrary
+external mutation remain outside this transient owner contract.
