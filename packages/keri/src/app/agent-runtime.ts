@@ -87,7 +87,10 @@ export interface AgentRuntime {
   noter: Noter | null;
   notifier: Notifier | null;
   signaler: Signaler | null;
-  /** Default runtime cues retain shared byte/item credit until transferred owners finish cleanup. */
+  /**
+   * Default cues retain shared byte/item credit through joined consumer cleanup.
+   * Consume with processCuesOnce or an owned transfer; naked pull cannot discard that credit.
+   */
   cues: Deck<AgentCue>;
   reactor: Reactor;
   oobiery: Oobiery;
