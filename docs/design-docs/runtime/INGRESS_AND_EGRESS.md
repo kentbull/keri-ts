@@ -254,7 +254,9 @@ mode turns the whole source into one request. Preserve the resolved URL/path,
 714's HTTPStreamMessenger instead sends one bulk PUT to `/`; this is a documented
 wire/API difference, not a reason to change the established POST contract.
 
-The HTTP engine owns upload, fetch and response cleanup; its scoped consumer
+The HTTP engine owns upload, fetch and response cleanup. Normal scope exit may
+abort an unread successful response; cancellation suppresses only that controller's
+exact reason, preserving foreign AbortErrors and cleanup failures. Its scoped consumer
 uses one progressive parser for each applicable CESR response body. Receipt/SSE
 readers retain their distinct framing contracts. TCP owns one progressive parser
 per receive lifetime, optional concurrent reply consumption and directional
