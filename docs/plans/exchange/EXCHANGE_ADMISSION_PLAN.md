@@ -11,8 +11,11 @@ The [admission contract](../../design-docs/exchange/MESSAGE_ADMISSION.md) owns
 sender policy, proof prerequisites, query source/processor routing and explicit
 reference-stub refusals. Evidence: signed frozen-reference delegation fixtures,
 real runtime acceptance/invalid-signature tests, joined owner disposal and HTTP
-refusal/readmission. Built-in legacy `tels` replay is implemented; `tsn` response
-and authenticated receiving/escrow processing remain unavailable.
+refusal/readmission. Built-in legacy `tels` replay and internal TSN production
+are implemented; TSN runtime dispatch and authenticated receiving/escrow processing
+remain unavailable. Production corrects 714's `vcState(vcpre=...)` keyword bug
+using independently observed `vcState(vci)` records, without claiming receiving
+workflow qualification.
 
 ## Remaining processing boundary
 
