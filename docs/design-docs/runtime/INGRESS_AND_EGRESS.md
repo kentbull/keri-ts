@@ -403,6 +403,8 @@ The protocol handler and Hono app expose close; default handlers are owned while
 injected handlers remain caller-owned. OS reads are joined, not forcibly interrupted;
 native/filesystem residency still requires qualification. Dynamic generation/export
 still collects histories and remains transport S2 work.
+The Node host terminates a failing post-header body and reports its original error;
+it cannot replace already transmitted 200 headers with a new status.
 Finite JSON documents and receipt proofs retain whole-document semantics with
 bounded admission and joined cancellation. Mailbox admin response metadata admits
 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those finite

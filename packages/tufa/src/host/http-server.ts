@@ -195,13 +195,17 @@ async function handleNodeRequest(
   const abort = () => disconnected.abort(new DOMException("Client disconnected", "AbortError"));
   req.once("aborted", abort);
   res.once("close", abort);
+  const signal = AbortSignal.any([options.signal, disconnected.signal]);
   try {
-    const signal = AbortSignal.any([options.signal, disconnected.signal]);
     const response = await handler(toNodeRequest(req, options, signal));
     if (!res.destroyed) await writeNodeResponse(res, response);
     else await response.body?.cancel();
   } catch (error) {
-    if (!res.destroyed) {
+    if (res.headersSent) {
+      // A streamed body can fail after 200 headers; terminate that transfer instead of rewriting its status.
+      res.destroy();
+      if (!(error instanceof DOMException && error.name === "AbortError" && signal.aborted)) options.onError(error);
+    } else if (!res.destroyed) {
       const fallback = options.onError(error);
       await writeNodeResponse(res, fallback);
     }

@@ -146,6 +146,8 @@ connection/dispatch count proves neither verified replies nor remote acceptance.
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove
 the signal path. Otherwise active responses can force SIGKILL.
+After headers are sent, a body failure must terminate the HTTP transfer and report
+the original error; attempting a replacement status can leave the peer waiting.
 
 OOBI CESR intake streams through Reactor; JSON/schema collection remains finite.
 Keep the queued row through full intake, clear in-flight markers on failure, and
