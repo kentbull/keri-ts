@@ -16,6 +16,13 @@ export class ParserError extends Error {
   }
 }
 
+/** Opt-in progressive decoding refusal, excluding caller I/O, policy and cleanup failures. */
+export class WireParseError extends ParserError {
+  constructor(public override readonly cause: ParserError) {
+    super(cause.message, cause.offset, cause.context);
+  }
+}
+
 /** Input ended before the parser had enough bytes to complete the current unit. */
 export class ShortageError extends ParserError {
   constructor(

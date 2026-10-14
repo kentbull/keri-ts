@@ -172,6 +172,14 @@ accepted content only after required verification.
 
 ## Cancellation and resource policy
 
+Hosts may opt into `classifyWireErrors` to receive `WireParseError` for intrinsic
+progressive wire decoding failures, with the original parser failure as its cause.
+Default error classes stay unchanged. Invocation-local provenance preserves errors
+thrown by supplied sources, sink factories/writes and shared admission. Payload
+finish/metadata, cancellation, source/sink/owner cleanup and consumer work remain
+outside this classification. Cleanup failure still propagates its aggregate;
+hosts must not classify an arbitrary `ParserError` as peer misconduct.
+
 Generator `.return()` alone cannot interrupt an in-flight awaited source
 `.next()`. Owned HTTP/file adapters, cursor reads, and sinks must honor a shared
 abort signal. Cancellation interrupts pending I/O, then `finally` closes the
