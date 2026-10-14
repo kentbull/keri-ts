@@ -191,7 +191,10 @@ then has independent backing; its caller must reserve copy/preparation credit
 first and retain it through joined cleanup. Decoding, signing and native replay
 allocations remain separate qualification boundaries. An invocation-local HTTP
 refusal observer identifies only the actual non-ok response, after bounded
-diagnostic cleanup; injected source/fetch/cleanup errors and aborts propagate.
+diagnostic cleanup; injected source/fetch/cleanup errors and aborts propagate. Admission observations
+likewise identify only engine-created source/tree/output refusals. Prepared target
+attempts join cleanup before returning local complete/refused/busy; foreign
+same-class errors and external observer failures propagate unchanged.
 The preparation facility adds no queue, automatic retry or runtime handoff.
 Local stored delivery requires completed body/topic publication in one mailbox
 transaction. Repeated body appearances preserve topic order and raw deduplication;

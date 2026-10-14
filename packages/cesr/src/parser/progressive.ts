@@ -26,6 +26,8 @@ import { type EssrBudget, essrFactory, type EssrOptions, type EssrWriter } from 
 export interface ParseOptions extends CursorOptions, EssrOptions {
   /** Wrap intrinsic wire decoding failures only; source, sink, policy and cleanup errors retain identity. */
   classifyWireErrors?: boolean;
+  /** Observe only this invocation's own tree admission refusal; external failures retain their identity. */
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
   /** Shared ordinary-tree and ESSR-stage allowances, retained until root disposal. */
   resources?: ResourcePolicy;
   /** Resident body and ordinary attachment byte limit per owned tree; streamed ESSR is budgeted separately. */
@@ -413,10 +415,19 @@ export async function* parse(
     newTree: () => {
       const reservations: ResourceReservation[] = [];
       let reservedBytes = 0;
+      const refuse: (error: ResourceAdmissionError) => never = (error) => {
+        try {
+          options.onAdmissionRefusal?.(error);
+        } catch (failure) {
+          external.add(failure);
+          throw failure;
+        }
+        throw error;
+      };
       const reserve = (bytes: number) => {
         if (!resources || bytes === 0) return;
         if (bytes > resources.limits.bytes - reservedBytes) {
-          throw new ResourceAdmissionError("Tree admission refused: limit", "limit");
+          refuse(new ResourceAdmissionError("Tree admission refused: limit", "limit"));
         }
         let decision;
         try {
@@ -426,7 +437,7 @@ export async function* parse(
           throw error;
         }
         if (decision.kind === "refuse") {
-          throw new ResourceAdmissionError(`Tree admission refused: ${decision.reason}`, decision.reason);
+          refuse(new ResourceAdmissionError(`Tree admission refused: ${decision.reason}`, decision.reason));
         }
         reservations.push(decision.reservation);
         reservedBytes += bytes;

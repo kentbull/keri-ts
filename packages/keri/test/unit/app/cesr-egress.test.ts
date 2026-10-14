@@ -22,6 +22,7 @@ import vectors from "../../../../cesr/test/fixtures/nested-vectors.json" with { 
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { CesrHttpRefusal, postCesr, requestFrame } from "../../../src/app/cesr-egress.ts";
 import { CESR_ATTACHMENT_HEADER } from "../../../src/app/cesr-http.ts";
+import { attemptPreparedCesrTarget } from "../../../src/app/forwarding.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
 import { sendCesrTcpFrame } from "../../../src/app/tcp-egress.ts";
 
@@ -686,47 +687,91 @@ Deno.test("TCP frame output admits before serialization and borrows nested owner
   assertEquals(discards, 1, "only the caller disposes its actual child owner");
 });
 
-Deno.test("HTTP refusal observation excludes identical errors from source, fetch and cleanup", async () => {
-  const failure = new CesrHttpRefusal("external failure", 503);
-  for (const origin of ["source", "fetch", "cleanup", "peer"] as const) {
-    let observed: CesrHttpRefusal | undefined;
-    const transport = services(async (_url, init) => {
-      await new Response(init!.body).arrayBuffer();
-      if (origin === "fetch") throw failure;
-      if (origin === "cleanup") {
-        return new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(new Uint8Array(16 * 1024));
-            },
-            cancel() {
-              throw failure;
-            },
-          }),
-          { status: 503 },
-        );
+Deno.test("transport refusal observation excludes identical typed errors from source, fetch and cleanup", async () => {
+  for (
+    const failure of [new CesrHttpRefusal("external failure", 503), new ResourceAdmissionError("foreign busy", "busy")]
+  ) {
+    for (const origin of ["source", "fetch", "cleanup", "peer"] as const) {
+      let observed: CesrHttpRefusal | ResourceAdmissionError | undefined;
+      const transport = services(async (_url, init) => {
+        await new Response(init!.body).arrayBuffer();
+        if (origin === "fetch") throw failure;
+        if (origin === "cleanup") {
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new Uint8Array(16 * 1024));
+              },
+              cancel() {
+                throw failure;
+              },
+            }),
+            { status: 503 },
+          );
+        }
+        return new Response("peer refusal", { status: 503 });
+      });
+      const error = await assertRejects(() =>
+        run(function*() {
+          yield* postCesr("https://peer.test/", async function*() {
+            if (origin === "source") throw failure;
+            yield fixture();
+          }, {
+            bodyMode: "body",
+            services: transport,
+            onHttpRefusal: (refusal) => observed = refusal,
+            onAdmissionRefusal: (refusal) => observed = refusal,
+          });
+        })
+      );
+      if (origin === "peer") {
+        assertStrictEquals(error, observed);
+        if (!(observed instanceof CesrHttpRefusal)) throw new Error("Expected observed peer refusal");
+        assertEquals(observed.status, 503);
+      } else {
+        assertStrictEquals(error, failure);
+        assertEquals(observed, undefined);
       }
-      return new Response("peer refusal", { status: 503 });
-    });
-    const error = await assertRejects(() =>
-      run(function*() {
-        yield* postCesr("https://peer.test/", async function*() {
-          if (origin === "source") throw failure;
-          yield fixture();
-        }, {
-          bodyMode: "body",
-          services: transport,
-          onHttpRefusal: (refusal) => observed = refusal,
-        });
-      })
-    );
-    if (origin === "peer") {
-      assertStrictEquals(error, observed);
-      assertEquals(observed?.status, 503);
-    } else {
-      assertStrictEquals(error, failure);
-      assertEquals(observed, undefined);
+      assertEquals([transport.resources.used.bytes, transport.resources.used.streams], [0, 0]);
     }
-    assertEquals([transport.resources.used.bytes, transport.resources.used.streams], [0, 0]);
   }
+});
+
+Deno.test("prepared attempt reports only its own joined admission refusal", async () => {
+  const resources = new ResourcePolicy();
+  let requests = 0;
+  const transport = {
+    ...services(async (_url, init) => {
+      requests++;
+      await new Response(init!.body).arrayBuffer();
+      return new Response(null, { status: 204 });
+    }),
+    resources,
+  };
+  const target = {
+    kind: "http" as const,
+    url: "https://peer.test/",
+    destination: "aid",
+    message: fixture(),
+    bodyMode: "body" as const,
+  };
+  const held = resources.reserve({ streams: resources.limits.streams });
+  if (held.kind !== "reserve") throw new Error("Expected free stream capacity");
+  assertEquals(await run(() => attemptPreparedCesrTarget(target, transport)), "busy");
+  assertEquals(requests, 0);
+  held.reservation.release();
+  assertEquals(await run(() => attemptPreparedCesrTarget(target, transport)), "complete");
+  const failure = new ResourceAdmissionError("foreign transport busy", "busy");
+  const controller = new AbortController();
+  transport.http = {
+    fetch() {
+      controller.abort();
+      return Promise.reject(failure);
+    },
+  };
+  assertStrictEquals(
+    await assertRejects(() => run(() => attemptPreparedCesrTarget(target, transport, controller.signal))),
+    failure,
+  );
+  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
 });
