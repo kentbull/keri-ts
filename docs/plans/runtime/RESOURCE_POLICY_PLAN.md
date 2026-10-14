@@ -40,7 +40,10 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    KEL query source-seal repair follows concrete output admission on live/retry paths.
    Registry and credential TSN admit exact new dependency queries or txnStateSaved
    children before proof/Broker writes, preserving external escrow and prior proof
-   ownership. Capture-time allocations remain open. OOBI queueing, staged
+   ownership. Legacy credential Verifier admits actual dependency/saved cues before
+   body/proof/date/index writes, retaining current families on replay resource refusal.
+   Registry/schema membership and every-attempt chain cue distinctions remain exact.
+   Constructors/native copies and crash recovery remain open. Capture-time allocations remain open. OOBI queueing, staged
    multi-URL fanout and multi-parent completion admit exact batches before
    queue/terminal/contact effects; response and introduction publication remain
    open, alongside other durable producers, followed by
