@@ -182,9 +182,12 @@ retains its queue credit until delivery succeeds; failure leaves it available
 for retry. Concurrent drains cannot send the same head, and newly appended work
 waits for the next bounded pass.
 
-Replay byte admission runs in `cloneEvtMsg` while evidence is read from storage,
-before retaining each attachment and allocating the final event buffer. The raw
-stored body must still be read as one value before its length can be checked.
+Finite `cloneEvtMsg` body reads use native row-size preflight before owned
+materialization. Evidence fragments are admitted before retaining each attachment
+and allocating the final event buffer. HTTP replay reserves eight event-size
+allowances plus one output chunk before iterator acquisition, covering cooperating
+native/body/decoded/proof/reconstruction copies through source cleanup. This is
+conservative policy requiring final memory qualification, not an exact RSS ceiling.
 Aggregate replay length is not collected or capped; ordinary single-event bytes
 and concurrent HTTP replies remain independently bounded. Other finite callers
 of `cloneEvtMsg` without a limit retain their existing allocation behavior.

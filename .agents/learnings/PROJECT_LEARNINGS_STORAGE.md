@@ -15,6 +15,8 @@ format for KERIpy interop, and the actual native rebuild/preflight path.
 Rebuild with official `ENABLE_V8_FUNCTIONS=false`: Node-header V8 imports can
 terminate Deno when a large row first reaches the mapped-buffer path.
 Qualify the actual addon under both runtimes, including rows above 16 MiB.
+Finite KEL replay preflights event bodies before owned copies; HTTP source credit
+must cover reconstruction before iterator acquisition, not only yielded bytes.
 Native CI caches include NAPI and rebuild-script identity; every cache hit must
 pass both native metadata and emitted V1-format probes before reuse. A lockfile
 can retain older packages; inspect the imported addon. Map sizing respects explicit

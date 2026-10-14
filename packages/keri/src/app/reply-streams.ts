@@ -23,7 +23,7 @@ export class ReplyStreams {
   /** Independent byte credit supplied by each HTTP pull. */
   private readonly maxChunkBytes: number;
 
-  /** Conservative credit for one retained event and one outgoing owned chunk. */
+  /** Conservative credit for native/body/decoded/proof/reconstruction copies and one outgoing chunk. */
   private readonly reservationBytes: number;
 
   /** Validate all limits before any response can acquire a storage reader. */
@@ -39,7 +39,8 @@ export class ReplyStreams {
     this.maxStreams = maxStreams;
     this.maxMessageBytes = maxMessageBytes;
     this.maxChunkBytes = maxChunkBytes;
-    this.reservationBytes = maxMessageBytes + maxChunkBytes;
+    // Reserve before iterator acquisition: next() may reconstruct an event before yielding its final bytes.
+    this.reservationBytes = 8 * maxMessageBytes + maxChunkBytes;
     if (!Number.isSafeInteger(this.reservationBytes)) throw new RangeError("Reply reservation exceeds safe range");
   }
 
