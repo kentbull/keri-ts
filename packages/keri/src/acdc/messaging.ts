@@ -163,6 +163,10 @@ function schemaSaidAndSad(
   if (typeof schema === "string") {
     return [schema, schema as unknown as MapperMap] as const;
   }
+  // Supplied content-bound JSON resources keep their identity across body kinds.
+  // Default/unbound schema construction retains its frozen format-specific IDs.
+  const resource = defaultSchema(cloneMapperValue(schema), Kinds.json);
+  if (schema.$id === resource[0]) return resource;
   return defaultSchema(cloneMapperValue(schema), kind);
 }
 
