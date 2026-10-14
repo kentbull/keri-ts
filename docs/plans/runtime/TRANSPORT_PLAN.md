@@ -2,14 +2,15 @@
 
 Owner: roadmap **6**, required for the next npm release and the existing goal.
 Progressive parsing, HTTP/file intake, serialization, lazy replay and mailbox SSE
-exist. TCP socket-to-application streaming and composed backpressure remain open.
+and bounded witness TCP intake exist. Composed backpressure and duplex remain open.
 The [runtime contract][runtime] distinguishes current behavior from the target.
 
 ## Current boundary
 
-- `witness-tcp.ts` collects the entire connection before parsing, treats `close`
-  as successful EOF, and detaches connection tasks from listener shutdown.
-- `processWitnessIngress` accepts finite bytes and retains all emissions.
+- `witness-tcp.ts` supervises admitted paused sources, distinguishes EOF from
+  peer failure, and joins parser/socket tasks before listener shutdown completes.
+- `processWitnessIngressSource` settles frames progressively; its finite wrapper
+  still returns a bounded aggregate of emissions.
 - Generic HTTP ingress already parses progressively, but HTTP/witness/runtime
   cue drains can await `Respondant` network delivery under the Reactor guard.
 - The TCP sender shares a finite/source writer (#243), but has no
@@ -55,7 +56,7 @@ source, response, admission and lifecycle facilities.
 
 | Path                    | Current boundary             | Owner / remaining adoption        |
 | ----------------------- | ---------------------------- | --------------------------------- |
-| [Hosts][hosts]          | HTTP streams; TCP collects   | S4–6: supervised socket ingress   |
+| [Hosts][hosts]          | HTTP/TCP streams             | S8: explicit TCP conversations    |
 | [Delivery][delivery]    | Shared sends; guarded drains | S1–3, S7–8: owned workers/replies |
 | [Queries][queries]      | Lazy POST; GET collects      | S1–3: demand-driven GET replay    |
 | [Mailbox][mailbox-path] | Demand-driven SSE            | S1–3: cue/worker credit and stop  |
@@ -180,11 +181,16 @@ collectors must declare and enforce their caps.
 | Requirement      | Current evidence           | Owner   | Unresolved gate                |
 | ---------------- | -------------------------- | ------- | ------------------------------ |
 | HTTP progress    | Progressive body intake    | S1–3    | Guard-free network waits       |
-| TCP progress     | Source/writer foundations  | S4–8    | Acceptance before EOF          |
+| TCP progress     | Witness accepts before EOF | S4–8    | Guard-free delivery/duplex     |
 | Streamed output  | Shared HTTP/TCP writers    | S1–8    | Caller adoption and duplex     |
 | Ownership        | Finite guards/active stack | S1–8    | Shared bounds and joined stop  |
 | Recovery         | Optional mailbox outbox    | Phase 5 | Atomic/recoverable obligations |
 | Production proof | Parser/focused cases       | S9      | All applicable stack paths     |
+
+The npm manifest advertises Node >=18. Existing query delivery, TCP writer and
+HTTP host use `Promise.withResolvers`, unavailable at that floor; repair those
+paths and run actual packed floor smoke before release. Node 25 qualification
+does not establish Node 18 support. New listener admission uses ordinary Promises.
 
 S9 extends existing transport/runtime tests for decisive regressions:
 

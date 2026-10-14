@@ -67,13 +67,13 @@ feed buffer or separate synchronous parser remains.
 
 The required transport path is a bounded abortable source, one progressive parser
 per connection/request, complete frames, guarded verification/storage, and owned
-delivery outside the guard. HTTP body intake already uses this parser path; TCP
-currently collects until connection completion. Existing cue consumers can still
+delivery outside the guard. HTTP body intake and Tufa TCP witness intake use the
+progressive parser. Existing cue consumers can still
 await network I/O under the guard. The [transport plan][transport-plan] owns closure;
-these requirements do not describe completed TCP support.
+duplex and composed backpressure remain unqualified.
 
-`socketBytes` is the shared KERI runtime TCP source prerequisite; listener/parser
-integration remains pending. It acquires exclusive binary readable-mode ownership
+`socketBytes` is the shared KERI runtime TCP source used by Tufa witness listeners.
+It acquires exclusive binary readable-mode ownership
 on first pull, returns independent backing allocations of at most 64 KiB by default,
 and permits one pending pull. Do not mix data/flow readers with it. Abort, failure
 and early return destroy and join socket close; genuine receive EOF releases only
@@ -85,6 +85,23 @@ view may pin pool/socket backing larger than a small configured chunk ceiling:
 twice that ceiling does not cover all native backing. The host must separately
 account for fixed pools, readable/native/kernel buffering and qualify its actual
 configuration; this adapter supplies no full native or RSS bound.
+
+Tufa admits paused TCP connections before creating work, with a default cap of
+two admitted/closing connections and a positive shared 2 MiB logical read/copy
+allowance per connection. This allowance is qualification policy, not a hard native
+buffer ceiling. Reactor reserves the sole receive stream/cursor owner before the
+first socket pull; two receives consume two stream permits. Native acceptance is
+capped at `maxConnections + 1`: one transient refusal handle allows reporting in
+Deno, whose native cap does not emit Node's `drop` event. That handle is tracked
+through close and joined on shutdown, with no task/read/queue before refusal;
+native/kernel pre-admission buffering remains separate from the shared ledger.
+Intrinsic wire failures, policy refusals and recognized peer failures close and
+report the connection; cancellation stays distinct. Source/storage/invariant and
+cleanup failures reach the host owner after joined cleanup. Parser-owned source
+return is not peer close. Stop acceptance, join parser/source/socket tasks, then
+join listener close before closing runtime stores. Earlier accepted frames remain
+durable after a later connection failure. Default mailbox/direct routing stays
+unchanged; same-socket reply conversations remain separate work.
 
 The guard protects protocol interpretation, signing, routing snapshots and local
 DB side effects. Network waits and capacity waits belong outside it. Transfer a

@@ -272,10 +272,11 @@ function openServerHost(
 ): OwnedServerHost {
   const controller = new AbortController();
   const { signal } = controller;
-  const shutdownRequested = Promise.withResolvers<void>();
+  let requestShutdown!: () => void;
+  const shutdownRequested = new Promise<void>((resolve) => requestShutdown = resolve);
   const shutdown = () => {
     logger.info("Shutting down server...");
-    shutdownRequested.resolve();
+    requestShutdown();
   };
   const serverOptions = buildServerOptions(
     port,
@@ -318,7 +319,7 @@ function openServerHost(
 
   return {
     server: host.server,
-    shutdownRequested: shutdownRequested.promise,
+    shutdownRequested,
     async close() {
       // Keep repeated signals graceful until the adapter has actually drained.
       try {
