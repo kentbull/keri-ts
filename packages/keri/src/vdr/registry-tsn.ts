@@ -8,7 +8,7 @@ import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
 import type { Tevery } from "./eventing.ts";
 
 /** Require the entire qualified prefix, not a valid prefix followed by untrusted suffix bytes. */
-function qualifiedPrefix(value: unknown): boolean {
+export function qualifiedPrefix(value: unknown): boolean {
   try {
     return typeof value === "string" && new Prefixer({ qb64: value }).qb64 === value;
   } catch {
@@ -17,7 +17,7 @@ function qualifiedPrefix(value: unknown): boolean {
 }
 
 /** Validate remote fields only; no storage/infrastructure failure is caught here. */
-function registryRecord(data: unknown): RegStateRecord | null {
+export function registryRecord(data: unknown): RegStateRecord | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   const row = data as Record<string, unknown>;
   if (
