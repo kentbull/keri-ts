@@ -71,6 +71,7 @@ export {
 } from "../app/witnessing.ts";
 export * from "../core/attachment-countering.ts";
 export * from "../core/cues.ts";
+export { DeckFullError } from "../core/deck.ts";
 export * from "../core/errors.ts";
 export * from "../core/eventing.ts";
 export * from "../core/kever.ts";

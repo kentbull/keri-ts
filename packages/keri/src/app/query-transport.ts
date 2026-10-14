@@ -149,8 +149,8 @@ export class QueryDeliveries {
       if (self.draining || self.closed) return;
       self.draining = true;
       const active = self.active = new AbortController();
-      const done = Promise.withResolvers<void>();
-      self.joined = done.promise;
+      let complete!: () => void;
+      self.joined = new Promise<void>((resolve) => complete = resolve);
       // Register completion before response resources so close() joins their teardown as well.
       yield* resource<void>(function*(provide) {
         try {
@@ -161,7 +161,7 @@ export class QueryDeliveries {
           self.draining = false;
           self.active = undefined;
           self.joined = undefined;
-          done.resolve();
+          complete();
         }
       });
       const count = self.pending.length;

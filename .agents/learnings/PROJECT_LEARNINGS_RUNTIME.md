@@ -21,6 +21,9 @@ owners. Promise adaptation belongs at real edges. Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state.
+Shared transport readers cancel once, join that Promise and always unlock;
+single errors retain identity and distinct read/cleanup failures aggregate.
+Parent cancellation diagnostics still need composed owner qualification.
 
 Owned hydration uses an isolated consume callback with direct joined finalization.
 A bare yielding finalizer can resume cancelled parent work; resource-only teardown
@@ -106,6 +109,12 @@ socket errors outside the readable lifetime. Abort/return joins close; genuine E
 leaves the writable half for explicit connection drain. Never mix flow readers,
 or treat high-water buffering as a hard shared-memory ceiling.
 
+Tufa TCP bounds admitted/closing tasks before source acquisition; Reactor alone
+charges the receive stream. Earlier connection credit outlives joined parser/socket
+cleanup. Intrinsic wire refusal must preserve source/storage provenance, and a
+parser-owned return must not be mistaken for peer failure. Native rejection handles
+and pool/kernel buffering remain explicit finite/qualification boundaries.
+
 Direct replies reserve query SAIDs before dispatch; only the final query owns the
 HTTP response. Earlier responses transfer to ordinary delivery. A response scope
 outlives fetch headers and must not inherit a request signal that aborts when the
@@ -166,6 +175,9 @@ library/runtime/DB. Choose withExistingHabery, withAgentRuntime or
 withHabAndAgentRuntime for existing-store commands; ensureHby is create-if-missing
 startup. Bootstrap tests use explicit config paths. Source runs do not qualify
 the packed Node CLI.
+Respect the advertised Node floor in runtime code: transport drain, query completion
+and host shutdown use ordinary Promise construction. A newer-runtime smoke cannot
+qualify older supported Node versions.
 
 [Runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md),
 [cue design](../../docs/design-docs/runtime/CUES.md),

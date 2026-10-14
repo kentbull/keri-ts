@@ -1508,6 +1508,38 @@ Deno.test("Kevery logs replay for delegated identifiers includes the delegator c
       const delegateKever = delegate.kever;
       assertExists(delegateKever);
 
+      // An accepted sealing event exists, but a reopened receiver may have lost its source hint.
+      delegator.interact({ data: [eventSeal(delegateKever.serder)] });
+      const sourceKey = dgKey(delegate.pre, delegateKever.said);
+      hby.db.aess.rem(sourceKey);
+      const resources = new ResourcePolicy();
+      const owned = new CueDeck(resources, 1);
+      const admitted = new Kevery(hby.db, { cues: owned });
+      const query = makeQuerySerder("logs", { i: delegate.pre, src: delegate.pre });
+      const envelope = signedQueryEnvelope(delegate, query);
+      const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertEquals(assertThrows(() => admitted.processQuery(envelope), ResourceAdmissionError).reason, "busy");
+      assertEquals(hby.db.aess.get(sourceKey), null);
+      assertEquals(owned.length, 0);
+      occupied.reservation.release();
+      const slot = owned.prepare([{ kin: "proof", said: "occupied" }]);
+      assertThrows(() => admitted.processQuery(envelope), DeckFullError);
+      assertEquals(hby.db.aess.get(sourceKey), null);
+      slot.release();
+      const limited = new CueDeck(new ResourcePolicy({ bytes: 1 }));
+      assertEquals(
+        assertThrows(() => new Kevery(hby.db, { cues: limited }).processQuery(envelope), ResourceAdmissionError).reason,
+        "limit",
+      );
+      assertEquals(hby.db.aess.get(sourceKey), null);
+      admitted.processQuery(envelope);
+      assertExists(hby.db.aess.get(sourceKey));
+      const output = owned.takeOwned();
+      assertExists(output);
+      assertEquals(output.cue.kin, "replay");
+      output.release();
+      assertEquals(resources.used.bytes, 0);
+
       const kvy = new Kevery(hby.db);
       const serder = makeQuerySerder("logs", {
         i: delegate.pre,
