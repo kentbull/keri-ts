@@ -31,6 +31,21 @@ export interface ReplyUnverified {
 /** Typed live reply result used instead of exception-shaped control flow. */
 export type ReplyProcessDecision = ReplyAccept | ReplyUnverified;
 
+/**
+ * Caller-owned reply preparation for one synchronous guarded turn. Do not suspend
+ * between preparation and application: the evaluated BADA state must stay current.
+ * Borrowed proof material remains immutable until application or release.
+ */
+export interface PreparedReply {
+  readonly decision: Readonly<ReplyProcessDecision>;
+  /** Apply accepted/escrow proof effects once, after all semantic cue admission succeeds. */
+  applyProofs(): void;
+  /** Publish admitted queries after proof and semantic publication. */
+  publishQueries(): void;
+  /** Release unpublished query credit and borrowed proof references; idempotent after publication. */
+  release(): void;
+}
+
 /** Finite proof writes and concrete query cues discovered without changing BADA or escrow state. */
 interface ReplyAcceptancePlan {
   decision: ReplyProcessDecision;
@@ -425,26 +440,65 @@ export class Revery {
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
-    if (!(this.cues instanceof CueDeck)) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
-    const plan = this.prepareReply(args);
-    this.cues.checkSpace(plan.cues.length);
-    const prepared = plan.cues.length && this.cues instanceof CueDeck ? this.cues.prepare(plan.cues) : undefined;
+    const prepared = this.prepareReply(args);
     try {
-      for (const escrow of plan.escrows) this.escrowReply(escrow);
-      if (plan.accepted) {
-        this.updateReply(plan.accepted);
-        if (!args.retainPrevious) this.removeReply(args.osaider ?? null);
-      }
-      if (prepared) prepared.publish();
-      else this.cues.extend(plan.cues);
-      return plan.decision;
+      prepared.applyProofs();
+      prepared.publishQueries();
+      return prepared.decision;
     } finally {
-      prepared?.release();
+      prepared.release();
     }
   }
 
+  /** Hold prospective query ownership while the semantic caller admits its own publication. */
+  prepareReply(args: Parameters<Revery["acceptReply"]>[0]): PreparedReply {
+    if (!(this.cues instanceof CueDeck)) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
+    let plan: ReplyAcceptancePlan | undefined = this.evaluateReply(args);
+    let previous = args.retainPrevious ? null : args.osaider ?? null;
+    let queries = plan.cues;
+    const decision = plan.decision;
+    if (decision.kind === "unverified" && decision.context) Object.freeze(decision.context);
+    Object.freeze(decision);
+    this.cues.checkSpace(queries.length);
+    const batch = queries.length && this.cues instanceof CueDeck ? this.cues.prepare(queries) : undefined;
+    let phase: "prepared" | "applying" | "applied" | "published" | "released" = "prepared";
+    return Object.freeze({
+      decision,
+      applyProofs: () => {
+        const proofs = plan;
+        if (phase !== "prepared" || !proofs) throw new Error("Reply preparation is no longer applicable");
+        phase = "applying";
+        try {
+          for (const escrow of proofs.escrows) this.escrowReply(escrow);
+          if (proofs.accepted) {
+            this.updateReply(proofs.accepted);
+            this.removeReply(previous);
+          }
+          phase = "applied";
+        } finally {
+          plan = undefined;
+          previous = null;
+        }
+      },
+      publishQueries: () => {
+        if (phase !== "applied") throw new Error("Reply queries require successful proof application");
+        if (batch) batch.publish();
+        else this.cues.extend(queries);
+        phase = "published";
+        queries = [];
+      },
+      release: () => {
+        batch?.release();
+        plan = undefined;
+        previous = null;
+        queries = [];
+        phase = "released";
+      },
+    });
+  }
+
   /** Evaluate ordered proof groups with a virtual escrow view before any durable reply effects. */
-  private prepareReply(args: Parameters<Revery["acceptReply"]>[0]): ReplyAcceptancePlan {
+  private evaluateReply(args: Parameters<Revery["acceptReply"]>[0]): ReplyAcceptancePlan {
     if ((args.tsgs?.length ?? 0) > this.maxReplyGroups || (args.cigars?.length ?? 0) > this.maxReplyGroups) {
       throw new ResourceLimitError("Reply proof groups exceed configured work limit");
     }
