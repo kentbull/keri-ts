@@ -1331,8 +1331,9 @@ export class Baser {
     }
 
     for (const serder of this.getEvtPreIter(pre, sn)) {
-      for (const current of serder.eventSeals) {
-        if (eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
+      for (const raw of serder.seals) {
+        const current = normalizeEventSeal(raw);
+        if (current && eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
           return serder;
         }
       }
@@ -1366,8 +1367,9 @@ export class Baser {
       if (!serder) {
         continue;
       }
-      for (const current of serder.eventSeals) {
-        if (eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
+      for (const raw of serder.seals) {
+        const current = normalizeEventSeal(raw);
+        if (current && eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
           return serder;
         }
       }

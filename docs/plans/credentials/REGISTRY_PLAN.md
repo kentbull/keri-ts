@@ -31,13 +31,15 @@ them. Runtime acquisition retains explicit scopes and joined failure cleanup.
 | Complete-chain assembly      | IPEX through RegistryStore                         |
 | Runtime acquisition          | Explicit `acdc.rgy` ownership                      |
 
-R1–R5 are merged through #185: storage, validation and inception are available.
-Pure verifier names match `vet`/`vetBinds`; the internal engine accepts anchored
+Pure verifier names match `vet`/`vetBinds`; the local engine accepts anchored
 inceptions/updates with protected slots and heads, deterministic sibling retry,
-queued progression and earliest-anchor resealing. Named local services support
-creation and reopen; blind/presentation operations and runtime integration remain
-unfinished. Ordinals above the safe-integer storage range are
-explicitly unsupported pending the storage phase.
+queued progression and earliest-anchor resealing. Named v2 Regery/Registry services
+support creation and reopen; a borrowed Registrar stages credential, presentation
+and vacuous updates from one unambiguous staged frontier. Presentation validates
+target digest syntax only; IPEX still owns grant authentication. Trailing vacuous
+updates require their disclosures when resolving the effective binding.
+Runtime integration remains unfinished. Ordinals above the safe-integer storage
+range are explicitly unsupported pending the storage phase.
 The [import preservation record][import-record] retains the exact original code.
 
 Use `evts/ancs/tels/heads/maes/ooes`; accepted heads use physical `heds.` and
@@ -67,7 +69,8 @@ meaningful verification and relevant contract update.
 | R9a  | Staged frontier, blind updates and pipelined commitments           |
 | R9b  | Registrar present/vacate operations and facade                     |
 | R10  | Actual public evidence intake and custom import disposition        |
-| R11  | IPEX accepted-chain assembly and dependency retry/replay           |
+| R11a | IPEX-owned bounded accepted-chain assembly through RegistryStore   |
+| R11b | Receiver cutoff and presentation dependency retry/replay           |
 | R12  | Runtime acdc/vdr grouping and scoped service ownership             |
 
 Stack dependency-coupled units on their predecessors; merge in dependency order.

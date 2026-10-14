@@ -5,7 +5,13 @@ import type { Hab, Habery } from "../app/habbing.ts";
 import { DatabaseNotOpenError, ValidationError } from "../core/errors.ts";
 import { regcept, type RegceptOptions } from "./messaging.ts";
 import type { RegBaser } from "./regbasing.ts";
-import { type RegistryEventDecision, RegistryEventer } from "./regengine.ts";
+import {
+  type RegistryBlindOptions,
+  type RegistryBlindResult,
+  type RegistryEventDecision,
+  RegistryEventer,
+  type RegistryPresentationTarget,
+} from "./regengine.ts";
 import { validateRip } from "./regeventing.ts";
 import { openRegistry, type OpenRegistryOptions, RegistryStore } from "./registering.ts";
 
@@ -148,6 +154,10 @@ export class Registry {
     if (result.kind === "reject") throw new ValidationError(`Registry inception rejected: ${result.reason}`);
     return rip;
   }
+  /** Derive a disclosure and stage its commitment after checking credential membership. */
+  blind(acdc: SerderACDC, state: string, options: RegistryBlindOptions = {}): RegistryBlindResult {
+    return this.eventer.blind(acdc, state, options);
+  }
   /** Process parsed TEL evidence through the shared typed engine. */
   processEvent(serder: SerderACDC): RegistryEventDecision {
     return this.eventer.processEvent(serder);
@@ -156,8 +166,59 @@ export class Registry {
   anchorMsg(said: string, number?: NumberPrimitive, diger?: Diger): RegistryEventDecision {
     return this.eventer.anchorMsg(said, number, diger);
   }
+  /** Stage a grant commitment in this registry; grant authentication remains with IPEX. */
+  present(
+    grant: RegistryPresentationTarget,
+    state = "presented",
+    options: RegistryBlindOptions = {},
+  ): RegistryBlindResult {
+    return this.eventer.present(grant, state, options);
+  }
+  /** Stage a vacuous disclosure that leaves the prior effective binding in force. */
+  vacate(options: RegistryBlindOptions = {}): RegistryBlindResult {
+    return this.eventer.vacate(options);
+  }
   /** Retry both missing-anchor and ordering prerequisites. */
   processEscrows(): void {
     this.eventer.processEscrows();
+  }
+}
+
+/** Caller-facing v2 operations over a borrowed Regery; this facade acquires no keys, stores or runtime service. */
+export class Registrar {
+  constructor(readonly rgy: Regery) {}
+
+  /** Accept instances directly; registry keys take precedence over local aliases, as in frozen KERIpy. */
+  private registry(reference: Registry | string): Registry {
+    if (reference instanceof Registry) return reference;
+    const registry = this.rgy.regs.get(reference) ?? this.rgy.registryByName(reference);
+    if (!registry) throw new ValidationError(`Unknown registry: ${reference}`);
+    return registry;
+  }
+  /** Create one named registry through the manager's existing atomic inception/alias workflow. */
+  makeRegistry(name: string, prefix: string, options: RegceptOptions = {}): Registry {
+    return this.rgy.makeRegistry(name, prefix, options);
+  }
+  /** Stage a credential binding, requiring its issuer and registry to match the resolved Registry. */
+  issue(
+    reference: Registry | string,
+    acdc: SerderACDC,
+    state = "issued",
+    options: RegistryBlindOptions = {},
+  ): RegistryBlindResult {
+    return this.registry(reference).blind(acdc, state, options);
+  }
+  /** Bind a grant SAID through a registry instance, key or alias. */
+  present(
+    reference: Registry | string,
+    grant: RegistryPresentationTarget,
+    state = "presented",
+    options: RegistryBlindOptions = {},
+  ): RegistryBlindResult {
+    return this.registry(reference).present(grant, state, options);
+  }
+  /** Append a vacuous state disclosure through the resolved registry. */
+  vacate(reference: Registry | string, options: RegistryBlindOptions = {}): RegistryBlindResult {
+    return this.registry(reference).vacate(options);
   }
 }

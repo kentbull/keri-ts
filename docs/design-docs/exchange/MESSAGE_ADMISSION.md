@@ -95,6 +95,15 @@ does not roll back prior effects. Local busy guards supply no shared runtime bud
 An active-scope count shared by Baser excludes synchronous pruning through final
 cleanup. Pruning must check before its read/mutation batch and must not yield.
 
+Internal `KramPruner` advances finite MSGC/TMSC/opener passes with no read cursor
+held across writes. Stored pruning windows retain inclusive microsecond cutoffs;
+expired idle rows atomically release factors, private snapshot and ready receipt.
+Live handoff scopes sharing a Baser defer pruning. Shared XDT disappears only
+after a bounded global TMSC scan proves no participant remains. Committed writes
+restart that proof and reopen resets checkpoints; unrelated writes can postpone
+orphan cleanup, favoring safety over progress. Rows inserted behind cache cursors
+are visited next pass. This is maintenance exclusion, not a shared runtime budget.
+
 ## Ownership and HTTP
 
 Dispatch borrows the envelope, including separate parent and child proof owners.

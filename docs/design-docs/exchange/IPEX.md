@@ -28,10 +28,14 @@ acceptances. Schema resolution uses already cached schemas, without fetching.
 `RegistryEvidenceStore.importEvidence` verifies the merged observer chain before
 an atomic write to frozen RegBaser-compatible `evts.`, `tels.`, and `heds.` tables.
 Importing an older prefix cannot downgrade the head. Missing or invalid evidence
-makes no partial write. Reads require a complete accepted chain; corrupt rows and
+makes no partial write. IPEX borrows `RegistryStore`, not an issuer's Hab or alias
+manager, and assembles its own complete accepted chain through `seqEvent` and
+`headEvent`. Its `maxRegistryEvents` limit (default 16,384 including inception)
+is checked before collecting updates. A missing head is a retryable dependency;
+a declared accepted head with missing rows or inconsistent markers is corruption.
 I/O failures propagate. AgentRuntime owns its default store and joins close;
 injected stores remain caller-owned. There is no automatic `rip/bup` parser intake
-or issuer registry engine. The 16,384-event ceiling bounds one read/import, not
+route; local registry services are separate. The event ceiling bounds one read/import, not
 runtime memory; native whole-row allocation and shared admission remain phases 4–5.
 
 Presentation-registry grants remain guarded until consolidated v2 intake supplies

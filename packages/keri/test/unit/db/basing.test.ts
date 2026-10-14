@@ -459,3 +459,25 @@ Deno.test("db/basing - partial factor limits bound the union and transaction ref
     }
   });
 });
+
+Deno.test("db/basing - full event seal search skips accepted opaque and digest-only KEL data", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const issuer = hby.makeHab("issuer"), seal = { i: issuer.pre, s: "0", d: issuer.pre };
+      issuer.interact({ data: [issuer.pre, { d: issuer.pre }, { application: "payload" }] });
+      const opaque = issuer.kever!.serder;
+      assertEquals(opaque.verify(), true);
+      assertThrows(() => opaque.eventSeals, Error, "expected plain object");
+      assertEquals(hby.db.fetchLastSealingEventByEventSeal(issuer.pre, seal), null);
+      assertEquals(hby.db.fetchAllSealingEventByEventSeal(issuer.pre, seal), null);
+      issuer.interact({ data: [seal] });
+      assertEquals(hby.db.fetchLastSealingEventByEventSeal(issuer.pre, seal)!.said, issuer.kever!.said);
+      assertEquals(hby.db.fetchAllSealingEventByEventSeal(issuer.pre, seal)!.said, issuer.kever!.said);
+      assertEquals(hby.db.fetchLastSealingEventByEventSeal(issuer.pre, { ...seal, s: "1" }), null);
+      assertEquals(hby.db.fetchLastSealingEventByEventSeal(issuer.pre, seal, issuer.kever!.sn + 1), null);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});

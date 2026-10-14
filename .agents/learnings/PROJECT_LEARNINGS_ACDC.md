@@ -38,6 +38,8 @@ store and workflow. Supplied anchored prefixes cannot hide an unanchored suffix.
 Disclosed issuer/target/rd, blinded/bound state and historical cutoff are separate
 checks. Shared time/mod.ts parsing retains exact microseconds and requires an explicit
 RFC3339 zone; cutoff selection includes events exactly at the supplied timestamp.
+IPEX borrows RegistryStore and checks its finite chain ceiling before collecting
+accepted updates; an existing head with missing accepted rows is corruption.
 Supplied chain authentication does not prove global freshness. IPEX
 presentation cutoffs require receiver-observed KRAM time, still pending.
 Share parsed rip/bup field validation across observer and local processing, but
@@ -54,6 +56,12 @@ Explicit anchoring validates event membership/prior before storing the couple.
 Queued progression commits one event at a time; later failures do not undo prior acceptance.
 Reopen named v2 registries from the stored rip issuer, not the first available
 Hab. Duplicate aliases share one instance; injected RegBaser ownership stays with its caller.
+Registrar acquires no owners: resolve direct instances, then registry keys, then
+aliases. Presentation checks target SAID syntax only; grant authentication stays
+with IPEX. Empty-target/state vacuous steps need their own disclosures when
+verifying the preceding effective binding. Blinded updates reuse the staged frontier.
+Local blinded updates follow a unique staged frontier across both escrows after an
+accepted head. De-duplicate sightings, reject forks, and never equate staging with acceptance.
 
 IPEX conversations, issuer proofs and wallet acceptance remain separate. Follow
 [exchange learnings](PROJECT_LEARNINGS_EXCHANGE.md) for v2 nested routes and
