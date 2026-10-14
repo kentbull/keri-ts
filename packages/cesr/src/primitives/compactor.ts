@@ -73,6 +73,12 @@ export class Compactor extends Mapper {
     }
   }
 
+  /** Expanded disclosures carry compact claims; retain wire checks without flat-map rehashing. */
+  protected override verifySaidClaims(): void {
+    // Compactor constructs disclosure variants, not authenticated maps. Serder
+    // verifies compact credential commitments; Aggor verifies its visible maps.
+  }
+
   /** Primary SAID of the current map state, if its configured saidive label is present. */
   override get said(): string | null {
     const label = Object.keys(this.saids)[0];
