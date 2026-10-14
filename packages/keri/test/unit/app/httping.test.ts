@@ -151,8 +151,35 @@ Deno.test("HTTP response cancellation joins body cleanup and propagates its orig
 });
 
 Deno.test("late HTTP response cleanup failure is not hidden during fetch cancellation", async () => {
+  for (const fault of [new Error("late response cleanup failed"), new DOMException("foreign abort", "AbortError")]) {
+    const started = Promise.withResolvers<void>();
+    const task = run(function*() {
+      yield* fetchResponseHandle("https://peer.test/", {}, {
+        services: services((_url, init) =>
+          new Promise<Response>((resolve) => {
+            init!.signal!.addEventListener("abort", () =>
+              resolve(
+                new Response(
+                  new ReadableStream<Uint8Array>({
+                    cancel() {
+                      throw fault;
+                    },
+                  }),
+                ),
+              ), { once: true });
+            started.resolve();
+          })
+        ),
+      });
+    });
+    await started.promise;
+    assertStrictEquals(await assertRejects(() => task.halt()), fault);
+  }
+});
+
+Deno.test("HTTP response teardown recognizes only its controller's exact abort reason", async () => {
   const started = Promise.withResolvers<void>();
-  const fault = new Error("late response cleanup failed");
+  let continued = false;
   const task = run(function*() {
     yield* fetchResponseHandle("https://peer.test/", {}, {
       services: services((_url, init) =>
@@ -161,8 +188,8 @@ Deno.test("late HTTP response cleanup failure is not hidden during fetch cancell
             resolve(
               new Response(
                 new ReadableStream<Uint8Array>({
-                  cancel() {
-                    throw fault;
+                  start(controller) {
+                    controller.error(init!.signal!.reason);
                   },
                 }),
               ),
@@ -171,7 +198,9 @@ Deno.test("late HTTP response cleanup failure is not hidden during fetch cancell
         })
       ),
     });
+    continued = true;
   });
   await started.promise;
-  assertStrictEquals(await assertRejects(() => task.halt()), fault);
+  await task.halt();
+  assertEquals(continued, false);
 });

@@ -135,7 +135,15 @@ function* fetchResponseHandleInternal(
         yield* call(async () => {
           // A fetch completing during cancellation still transfers its response to this owner.
           const response = await pending!.catch(() => undefined);
-          if (response?.body && !response.body.locked) await response.body.cancel();
+          if (response?.body && !response.body.locked) {
+            try {
+              await response.body.cancel();
+            } catch (error) {
+              // Fetch may already have errored the body with this controller's exact abort reason.
+              // Foreign AbortErrors and cleanup failures still propagate, even during cancellation.
+              if (error !== controller.signal.reason) throw error;
+            }
+          }
         });
       }
     }

@@ -51,6 +51,9 @@ the cancellation Promise; joined late failures remain visible even during scope
 cancellation. Finite request intake preserves distinct read/header and outer-body
 cleanup failures. Unacquired response cleanup also propagates failure; it cannot
 silently turn failed cleanup into success.
+An already errored Fetch body may reject cancellation with its controller's exact
+abort reason; that remains cancellation. Other cleanup errors, including foreign
+AbortErrors during shutdown, propagate. Mailbox idle timeout keeps its ordinary outcome.
 
 HTTP query replies carry the requesting query SAID. A bounded request reservation
 captures matching replies before background consumption. Duplicate requests
