@@ -199,7 +199,11 @@ finite messages. `Baser.replay` captures prefix/first-seen ranges, including at
 most 32 delegators by default, and releases each LMDB cursor before yielding an
 event. Its default 8 MiB event limit is admission policy, not a KERI wire limit.
 Later accepted events do not extend a captured replay; stored proofs are read
-when that replay is consumed.
+when that replay is consumed. Its frozen `CapturedKelReplay` exposes only captured
+ranges and the message ceiling for cue admission; the Baser stays borrowed and
+must remain open. Taking/fanning out the cue retains its metadata credit until
+final consumption and joined cleanup. Inspection never opens the event iterator.
+Other replay sources and capture-time allocations remain separate admission work.
 
 `ReplyStreams` owns up to eight live HTTP replies by default. Each pull copies at
 most 64 KiB from one event; transport cancellation or runtime closure releases
@@ -221,6 +225,18 @@ conservative policy requiring final memory qualification, not an exact RSS ceili
 Aggregate replay length is not collected or capped; ordinary single-event bytes
 and concurrent HTTP replies remain independently bounded. Other finite callers
 of `cloneEvtMsg` without a limit retain their existing allocation behavior.
+
+## Witness source intake
+
+`processWitnessIngressSource` owns one Reactor parser and settles each frame,
+consuming witness emissions individually without an aggregate result. Its callback
+borrows each emission under the current guarded frame lifetime; retained work needs
+independent admitted ownership transfer, and lazy input owners cannot escape.
+The finite `processWitnessIngress` wrapper keeps its collected result and chunk cap;
+`/receipts` retains `local: true, deliver: false`. Source cancellation joins parser
+and producer cleanup. Default responder delivery still runs under the guard until
+bounded handoff adoption. Tufa TCP listener supervision and socket-to-application
+wiring remain S6 work; this source API alone does not enable that route.
 
 ## Witness and exchange output
 

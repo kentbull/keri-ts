@@ -200,3 +200,25 @@ Deno.test("cue refusal and failed publication release preparation without queue 
   );
   assertEquals([opened, normal.used.bytes], [false, 0]);
 });
+
+Deno.test("finite replay arrays share retained backing without opening opaque sources", () => {
+  const resources = new ResourcePolicy();
+  const deck = new CueDeck(resources);
+  const backing = new Uint8Array(8192);
+  const cue: AgentCue = { kin: "replay", messages: [backing.subarray(0, 1), backing.subarray(1, 2)] };
+  const prepared = deck.prepare([cue]);
+  const charge = resources.used.bytes;
+  assertEquals(charge >= backing.byteLength && charge < 2 * backing.byteLength, true);
+  prepared.release();
+  assertEquals(resources.used.bytes, 0);
+  let opened = 0;
+  const fake = Object.create(null);
+  Object.defineProperty(fake, Symbol.iterator, {
+    get() {
+      opened++;
+      throw new Error("iterator accessed");
+    },
+  });
+  assertThrows(() => deck.prepare([{ kin: "replay", messages: fake }]), RangeError, "Opaque");
+  assertEquals([opened, resources.used.bytes], [0, 0]);
+});

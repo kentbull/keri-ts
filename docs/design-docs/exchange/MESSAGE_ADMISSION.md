@@ -81,7 +81,8 @@ pointer is the outer reply SAID, and `txnStateSaved` reaches the host as a notif
 emission. Recovery uses existing bounded query coordination, retaining exact TEL
 `ri/i/src` fields. Storage/invariant failures propagate. Credential TSN receiving
 also uses this proof ownership and accepted-trust boundary.
-TSN query dispatch remains guarded; this is not v2 `RegistryStore` receiving.
+TSN queries publish an ordered registry/credential pair; this is not v2
+`RegistryStore` receiving.
 
 Credential `/tsn/credential/{aid}` independently verifies registry availability,
 attester proof and the credential's current accepted TEL record. Its registry,
@@ -93,6 +94,16 @@ Missing registry, issuer/proof and credential TEL use finite `credential-mre/mae
 Broker families and existing query delivery. Reopen/retry rechecks accepted state;
 no parent proof confers credential acceptance. Existing `vcState` row hydration
 costs remain inherited, not a shared-memory qualification.
+
+The TSN cue serializer appends the signing habitat's attester prefix to each base
+route. Actual 714 emits bare TSN wire routes although its receivers require that
+suffix; this repair complements the recorded `vcState(vci)` query correction.
+Missing credentials return only the registry notice; no response or HTTP success
+proves acceptance. Direct HTTP capture retains at most the complementary pair.
+Admitted cue fanout retains owner credit through response EOF/cancel/failure and
+source cleanup, even without an initial pull. Ordinary single-replay capture stays
+unchanged; separate receiver checks decide both notices. Query requester material selects
+the destination; actual 714 still leaves query signature validation TODO.
 
 Legacy TEL/TSN ordinals above `Number.MAX_SAFE_INTEGER` are explicitly refused;
 protocol `NumberPrimitive` supports wider values, so this is not all-number parity.

@@ -8,7 +8,7 @@ export type TsnQueryResult =
   | { kind: "unavailable"; registry: string }
   | { kind: "drop"; reason: "unsupportedRoute" | "missingAuthentication" | "invalidQuery" };
 
-/** Prepare at most two legacy TSN replies without publishing cues or enabling intake.
+/** Prepare at most two legacy TSN replies without publishing cues.
  * Requester material selects the destination, as in 714; it does not verify the query.
  * Receiving these records still requires independent BADA, trust and accepted TEL checks.
  * Storage/invariant failures propagate. State helpers retain their existing read limits.

@@ -88,6 +88,9 @@ Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB
 preparation, then transfer admitted delivery ownership before network I/O. Never
 wait for queue space under the guard or remove a cue before successful transfer.
+Witness source intake shares the Reactor parser with its finite wrapper; consume
+emissions individually under the guarded frame lifetime, with independently admitted
+ownership for retained work. Finite receipt delivery suppression stays explicit.
 Genuine receive EOF, transmit failure and remote acceptance are separate facts.
 Explicit duplex preserves default routing; half-close drain deadlines cannot be
 extended by activity. The [transport plan](../../docs/plans/runtime/TRANSPORT_PLAN.md)
@@ -104,6 +107,9 @@ HTTP response. Earlier responses transfer to ordinary delivery. A response scope
 outlives fetch headers and must not inherit a request signal that aborts when the
 handler returns. requestFrame/postCesr retain frame owners until consumption ends.
 
+KEL replay exposes frozen prefix/from/end metadata; cue admission inspects it
+without opening a body/iterator or walking the borrowed Baser. Retained/fanout
+owners keep that credit; capture-time and opaque TEL/composed sources stay separate.
 Replay captures first-seen ranges, hydrates one finite event and releases cursors
 before transport suspension. Query credits remain charged through failed delivery;
 bounded passes drain only their initial work. Generic witness and signed-exchange

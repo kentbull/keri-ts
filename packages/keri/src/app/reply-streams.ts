@@ -44,8 +44,29 @@ export class ReplyStreams {
     if (!Number.isSafeInteger(this.reservationBytes)) throw new RangeError("Reply reservation exceeds safe range");
   }
 
-  /** Borrow a reopenable message source without consuming its first event until HTTP requests bytes. */
-  open(messages: Iterable<Uint8Array>): ReadableStream<Uint8Array> {
+  /** Borrow a reopenable source without advancing until HTTP requests bytes.
+   * Transfer the optional disposer through source closure, including admission/acquisition refusal.
+   */
+  open(messages: Iterable<Uint8Array>, dispose?: () => void): ReadableStream<Uint8Array> {
+    const release = () => {
+      const owned = dispose;
+      dispose = undefined;
+      owned?.();
+    };
+    try {
+      return this.openOwned(messages, release);
+    } catch (error) {
+      try {
+        release();
+      } catch (cleanup) {
+        throw new AggregateError([error, cleanup], "Reply acquisition cleanup failed");
+      }
+      throw error;
+    }
+  }
+
+  /** Keep transferred cue credit through iterator cleanup, including cancellation before the first pull. */
+  private openOwned(messages: Iterable<Uint8Array>, release: () => void): ReadableStream<Uint8Array> {
     if (this.closed) throw new Error("Reply streams are closed");
     if (this.readers.size >= this.maxStreams) throw new ResourceAdmissionError("Too many active HTTP replies", "busy");
     const credit = this.resources.reserve({ streams: 1, bytes: this.reservationBytes });
@@ -72,14 +93,24 @@ export class ReplyStreams {
       iterator = undefined;
       current = undefined;
       this.readers.delete(close);
+      const failures: unknown[] = [];
       try {
         owned.return?.();
       } catch (error) {
-        const failure = reason === undefined ? error : new AggregateError([reason, error], "Reply cleanup failed");
-        stream.error(failure);
-        throw failure;
-      } finally {
-        credit.reservation.release();
+        failures.push(error);
+      }
+      try {
+        release();
+      } catch (error) {
+        failures.push(error);
+      }
+      credit.reservation.release();
+      if (failures.length) {
+        const error = failures.length === 1 && reason === undefined
+          ? failures[0]
+          : new AggregateError(reason === undefined ? failures : [reason, ...failures], "Reply cleanup failed");
+        stream.error(error);
+        throw error;
       }
       if (reason !== undefined) stream.error(reason);
     };
