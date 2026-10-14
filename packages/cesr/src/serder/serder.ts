@@ -1921,13 +1921,14 @@ export class SerderKERI extends Serder {
   }
 
   get uuid(): string | null {
-    return this.ked && typeof this.ked.u === "string" ? this.ked.u : null;
+    const uuid = this.ked && typeof this.ked.u === "string" ? this.ked.u : null;
+    if (uuid === null && this.pvrsn.major < 2 && this.pvrsn.minor < 1 && this.ilk === Ilks.vcp) {
+      return this.ked && typeof this.ked.n === "string" ? this.ked.n : null;
+    }
+    return uuid;
   }
 
   get nonce(): string | null {
-    if (this.pvrsn.major < 2 && this.pvrsn.minor < 1 && this.ilk === Ilks.vcp) {
-      return this.ked && typeof this.ked.n === "string" ? this.ked.n : null;
-    }
     return this.uuid;
   }
 }
