@@ -337,7 +337,7 @@ Deno.test("runtime stores - failed pre-native and cancelled unreturned sidecar a
   const failure = new Error("notification path acquired before native open");
   PathManager.prototype.reopen = function*(options) {
     const opened = yield* pathReopen.call(this, options);
-    if (this.path?.includes("/keri_not_")) {
+    if (noter && this.path === noter.path) {
       assertEquals(noter.env, null);
       throw failure;
     }
