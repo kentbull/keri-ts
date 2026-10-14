@@ -540,7 +540,31 @@ Deno.test("Kevery admits prospective clone/state cues before accepted writes and
         assertThrows(() => kever.logEvent(decision.transition.log, log), Error, "changed before logging");
       });
       unchanged();
-      kvy.applyDecision(decision);
+      const native = (hby.db.env! as unknown as {
+        env: { writeTxn?: object; commitTxn(): void; abortTxn(): void };
+      }).env;
+      const commit = native.commitTxn.bind(native);
+      const nextOrdinal = hby.db.nextFelOrdinal.bind(hby.db);
+      const failure = new Error("native KEL commit refused");
+      let writer: object | undefined;
+      withPatchedMethod(hby.db, "nextFelOrdinal", (pre) => {
+        assert(native.writeTxn, "FEL preparation holds the native writer");
+        writer ??= native.writeTxn;
+        assertEquals(native.writeTxn === writer, true);
+        return nextOrdinal(pre);
+      }, () =>
+        withPatchedMethod(native, "commitTxn", () => {
+          if (native.writeTxn !== writer) return commit(); // Existing nested writes commit their child transactions.
+          assertEquals(kever.state(), priorState, "live state waits for the owning commit");
+          assertEquals(hby.db.kevers.get(hab.pre), kever);
+          assertEquals(cues.length, 0, "admitted cues are unpublished before commit");
+          assert(resources.used.bytes > 0, "cue ownership survives until the owning commit");
+          native.abortTxn();
+          throw failure;
+        }, () => assertEquals(assertThrows(() => kvy.processEvent(envelope)), failure)));
+      unchanged();
+      assertEquals(resources.used.bytes, 0, "failed commit releases unpublished cue ownership");
+      expectKind(kvy.processEvent(envelope), "accept");
       const batch = cues.toArray();
       assertEquals(batch.map((cue) => cue.kin), ["noticeBadCloneFN", "witness", "keyStateSaved"]);
       const clone = batch[0];
