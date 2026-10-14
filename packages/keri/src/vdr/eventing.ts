@@ -20,10 +20,12 @@ import {
   Siger,
   TraitDex,
   Verfer,
+  Vrsn_2_0,
 } from "cesr-ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
+import type { QueryEnvelope } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
 import { state as registryState, vcstate as credentialState } from "../core/protocol-vdr-eventing.ts";
 import { RegStateRecord, VcStateRecord } from "../core/records.ts";
@@ -75,6 +77,12 @@ export type TelProcessDecision =
     ilk?: string | null;
     reason: string;
   };
+
+/** TEL query refusals are normal remote outcomes; absence of a response does not imply acceptance. */
+export type TelQueryDecision = void | {
+  kind: "drop";
+  reason: "unsupportedRoute" | "missingAuthentication" | "invalidQuery";
+};
 
 export interface TelProcessEventArgs {
   serder: SerderKERI;
@@ -965,6 +973,37 @@ export class Tevery {
       if (error instanceof DeckFullError) throw error;
       return reject(error instanceof Error ? error.message : String(error), args.serder);
     }
+  }
+
+  /** Serve legacy TEL replay in management/credential order; TSN processing remains explicitly unsupported.
+   * Frozen 927 leaves query signature validation TODO. Requester material identifies the destination;
+   * optional KRAM and sender policy remain separate. Replay output uses the reference's default v2 genus.
+   */
+  processQuery({ serder, source, cigars }: QueryEnvelope): TelQueryDecision {
+    if (serder.route !== "tels") return { kind: "drop", reason: "unsupportedRoute" };
+    const dest = source?.qb64 ?? cigars?.[0]?.verfer?.qb64;
+    if (!dest) return { kind: "drop", reason: "missingAuthentication" };
+    const query = serder.ked?.q as Record<string, unknown> | undefined;
+    if (
+      !query || typeof query.ri !== "string" || !query.ri || typeof query.src !== "string" || !query.src
+      || typeof query.i !== "string"
+    ) return { kind: "drop", reason: "invalidQuery" };
+    const management = this.reger.replay(query.ri, { gvrsn: Vrsn_2_0, genusify: true });
+    const credential = query.i ? this.reger.replay(query.i, { gvrsn: Vrsn_2_0, genusify: true }) : null;
+    if (!management && !credential) return;
+    this.cues.push({
+      kin: "replay",
+      querySaid: serder.said ?? undefined,
+      src: query.src,
+      dest,
+      messages: {
+        /** Each consumer reopens the captured extents without collecting the aggregate. */
+        *[Symbol.iterator]() {
+          if (management) yield* management;
+          if (credential) yield* credential;
+        },
+      },
+    });
   }
 
   processEscrows(): void {

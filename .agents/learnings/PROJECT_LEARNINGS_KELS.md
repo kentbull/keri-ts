@@ -38,6 +38,11 @@ attachment genus from body protocol/genus. It is **not fixed to v1**. Every inne
 and outer counter follows that genus; v1 widens ordinals to Seqner while v2 retains
 Number. TEL/credential export retains the same distinction through escrow/storage.
 Frozen upstream accepts v1 TEL/ACDC bodies under v2 attachments but rejects v2 vcp.
+Legacy TEL query replay captures management then credential extents, closes cursors
+before yielding, and preserves frozen v2 proof counters with an explicit genus
+selector. Requester material identifies the destination; upstream query signature
+validation is TODO. TSN receiving remains guarded; do not infer it from replay or
+state-record construction. Complete-message caps do not prove native pre-read admission.
 
 Canonical transferable receipt output groups proofs by the complete receiptor
 establishment seal (`-F` in v1). Durable vrcs quadruples and legacy decoding remain.

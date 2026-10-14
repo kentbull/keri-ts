@@ -10,13 +10,16 @@
  *   verifier policy live in later VDR runtime modules
  */
 import {
+  b,
   Cigar,
   concatBytes,
+  Counter,
   Dater,
   Diger,
   NumberPrimitive,
   NumDex,
   Prefixer,
+  ResourceLimitError,
   Saider,
   Seqner,
   SerderACDC,
@@ -35,7 +38,7 @@ import {
 } from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { RegistryRecord, RegStateRecord, type VerferCigarCouple } from "../core/records.ts";
-import { dgKey } from "./core/keys.ts";
+import { dgKey, splitOnKey } from "./core/keys.ts";
 import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
 import { Broker } from "./escrowing.ts";
 import { Komer } from "./koming.ts";
@@ -305,6 +308,53 @@ export class Reger extends LMDBer {
     }
   }
 
+  /** Capture one TEL extent without body reads; each reader releases its cursor before yielding. */
+  replay(
+    pre: string,
+    { gvrsn = Vrsn_1_0, genusify = false, maxMessageBytes = 8 * 1024 * 1024 }: {
+      gvrsn?: Versionage;
+      genusify?: boolean;
+      maxMessageBytes?: number;
+    } = {},
+  ): Iterable<Uint8Array> | null {
+    if (!Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
+      throw new RangeError("TEL replay message limit must be a positive safe integer");
+    }
+    let end: number | null = null;
+    for (const entry of this.tels.sdb.getRange({ start: b(`${pre}.${"f".repeat(32)}`), reverse: true, limit: 1 })) {
+      const [prefix, ordinal] = splitOnKey(entry.key);
+      if (t(prefix) === pre) end = ordinal;
+    }
+    if (end === null) return null;
+    if (!Number.isSafeInteger(end) || end < 0) throw new DatabaseOperationError("Corrupt TEL replay ordinal");
+    const genus = { major: gvrsn.major, minor: gvrsn.minor };
+    const last = end;
+    // deno-lint-ignore no-this-alias -- Each reader borrows this store without retaining its read cursor.
+    const reger = this;
+    return {
+      /** Later accepted ordinals are outside this response; interruption retains no cursor or body queue. */
+      *[Symbol.iterator]() {
+        let next = 0;
+        while (next <= last) {
+          const rows = reger.tels.getAllItemIter(pre, next);
+          let row: [string[], number, Diger] | undefined;
+          try {
+            row = rows.next().value;
+          } finally {
+            rows.return(undefined);
+          }
+          if (!row || row[1] > last) break;
+          const [, ordinal, diger] = row;
+          if (!Number.isSafeInteger(ordinal) || ordinal < next) {
+            throw new DatabaseOperationError("Corrupt TEL replay sequence");
+          }
+          next = ordinal + 1;
+          yield reger.cloneTvt(pre, diger, genus, maxMessageBytes, genusify);
+        }
+      },
+    };
+  }
+
   /** Clone one TEL event at sequence `sn`, preserving its body and honoring the genus floor. */
   cloneTvtAt(
     pre: KeyPart,
@@ -325,7 +375,12 @@ export class Reger extends LMDBer {
     pre: KeyPart,
     dig: string | Uint8Array | Diger | Saider,
     gvrsn: Versionage = Vrsn_1_0,
+    maxMessageBytes = 8 * 1024 * 1024,
+    genusify = false,
   ): Uint8Array {
+    if (!Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
+      throw new RangeError("TEL replay message limit must be a positive safe integer");
+    }
     const preText = keyText(pre);
     const digText = digestText(dig);
     const dgkey = dgKey(preText, digText);
@@ -334,11 +389,19 @@ export class Reger extends LMDBer {
       throw new ValidationError(`Missing event for dig=${digText}.`);
     }
 
+    if (raw.length > maxMessageBytes) throw new ResourceLimitError("TEL body exceeds replay message limit");
     const tibs = this.tibs.get([preText, digText]);
     const couple = this.ancs.get(dgkey);
-    if (tibs.length === 0 && couple === null) return raw;
+    if (tibs.length === 0 && couple === null && !genusify) return raw;
     // A requested genus is a floor; retain the body bytes and honor its declared minimum.
     gvrsn = resolveAttachmentGvrsn(new SerderKERI({ raw }), gvrsn);
+    const selector = genusify ? Counter.makeGVC(gvrsn) : new Uint8Array();
+    if (tibs.length === 0 && couple === null) {
+      if (raw.length + selector.length > maxMessageBytes) {
+        throw new ResourceLimitError("TEL selector exceeds message limit");
+      }
+      return concatBytes(selector, raw);
+    }
     const attachments: Uint8Array[] = [];
     if (tibs.length > 0) {
       const tibPayload = tibs.map((tib) => tib.qb64b);
@@ -370,6 +433,11 @@ export class Reger extends LMDBer {
       );
     }
 
+    const attachmentBytes = attachments.reduce((total, item) => total + item.length, 0);
+    const counter = attachmentCounterQb64b("AttachmentGroup", attachmentBytes / 4, gvrsn);
+    if (selector.length + raw.length + counter.length + attachmentBytes > maxMessageBytes) {
+      throw new ResourceLimitError("TEL proofs exceed replay message limit");
+    }
     const atc = attachments.length === 0 ? new Uint8Array() : concatBytes(...attachments);
     if (atc.length % 4 !== 0) {
       throw new ValidationError(
@@ -377,8 +445,9 @@ export class Reger extends LMDBer {
       );
     }
     return concatBytes(
+      selector,
       raw,
-      attachmentCounterQb64b("AttachmentGroup", atc.length / 4, gvrsn),
+      counter,
       atc,
     );
   }
