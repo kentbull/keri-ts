@@ -125,6 +125,8 @@ separate from propagated storage/invariant/resource failures. Static Draft 2020-
 resources require content-bound IDs and plain semantic versions. Bare/sad/DID/OOBI
 references resolve only from the local cache, including fragments and verified
 bundles; dynamic/recursive keywords are prohibited. Legacy Schemer is unchanged.
+TS refuses ambiguous duplicate anchors as invalid; pinned 714 selects its first
+anchor. This stricter local policy prevents validator-specific ambiguous resolution.
 JSON schema resources are supported; validation consumes decoded ACDC data.
 Local limits are 8 MiB each for credential/schema closure bytes, 128 resources, 4096
 schema values/references and depth 64 before private clone/compile. These are
