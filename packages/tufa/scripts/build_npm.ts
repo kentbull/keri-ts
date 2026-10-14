@@ -285,7 +285,7 @@ await build({
       "@types/node": "^20.9.0",
     },
     engines: {
-      node: ">=18",
+      node: ">=18.17",
     },
     scripts: {
       prepublishOnly: "npm run test",
