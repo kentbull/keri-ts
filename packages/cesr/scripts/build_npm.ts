@@ -190,7 +190,7 @@ await build({
       "libsodium-wrappers-sumo": "0.8.4",
     },
     engines: {
-      node: ">=18",
+      node: ">=20.3",
     },
     scripts: {
       prepublishOnly: "npm run test",

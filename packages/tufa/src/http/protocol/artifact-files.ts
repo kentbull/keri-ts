@@ -93,7 +93,7 @@ export class ArtifactFiles {
               return;
             }
             const chunk = new Uint8Array(Math.min(CHUNK, remaining));
-            // Node 18's positional overload requires an explicit extent for this typed buffer.
+            // The positional overload requires an explicit extent for this typed buffer.
             reading = file!.read(chunk, 0, chunk.byteLength, null);
             const { bytesRead } = await reading;
             reading = undefined;

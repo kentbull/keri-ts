@@ -1,4 +1,4 @@
-/** Supply Node 18's native secure randomness before evaluating the pinned sodium wrapper. */
+/** Supply native secure randomness before evaluating the pinned sodium wrapper. */
 if (globalThis.crypto === undefined && globalThis.process?.versions?.node) {
   const { webcrypto } = await import("node:crypto");
   Object.defineProperty(globalThis, "crypto", { value: webcrypto, writable: true, configurable: true });

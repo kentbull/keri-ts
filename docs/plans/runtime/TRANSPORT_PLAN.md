@@ -187,11 +187,11 @@ collectors must declare and enforce their caps.
 | Recovery         | Optional mailbox outbox    | Phase 5 | Atomic/recoverable obligations |
 | Production proof | Parser/focused cases       | S9      | All applicable stack paths     |
 
-KERI/Tufa npm manifests advertise Node >=18.17. Query delivery, TCP output and
-HTTP shutdown use ordinary Promises; packed secure randomness is initialized
-before sodium (#270). Installed Node 18.17 probes cover these paths and static
-file response shutdown. S9 still requires the composed package/runtime matrix;
-neither newer-runtime checks nor a focused floor probe qualifies the whole stack.
+CESR/KERI/Tufa npm manifests require Node >=20.3. Final packed qualification uses
+that minimum and the current CI runtime, including transport and joined cleanup.
+Historical Node 18 probes remain evidence of their measured revision; Node 18 is
+no longer a supported release target. A focused floor probe does not qualify the
+whole stack.
 
 S9 extends existing transport/runtime tests for decisive regressions:
 
