@@ -27,14 +27,19 @@ export function prepareCueRoute(
   resources: ResourcePolicy,
   owner: PreparedCueEmission,
   resolve: () => RawCesrRoute,
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): PreparedCueRoute {
+  const refuse: (error: ResourceAdmissionError) => never = (error) => {
+    onAdmissionRefusal?.(error);
+    throw error;
+  };
   void owner.emission;
   if (owner.resourcePolicy !== resources) throw new RangeError("Cue route requires the owner's exact policy");
   if (owner.retainedBytes + interpretationBytes + routeBytes > resources.limits.bytes) {
-    throw new ResourceAdmissionError("Cue route retention exceeds shared capacity", "limit");
+    refuse(new ResourceAdmissionError("Cue route retention exceeds shared capacity", "limit"));
   }
   const admitted = resources.reserve({ bytes: routeBytes });
-  if (admitted.kind === "refuse") throw new ResourceAdmissionError("Cue routes are busy", admitted.reason);
+  if (admitted.kind === "refuse") refuse(new ResourceAdmissionError("Cue routes are busy", admitted.reason));
   try {
     const route = resolve();
     let size = 2 * (route.sender.length + route.recipient.length + route.topic.length);

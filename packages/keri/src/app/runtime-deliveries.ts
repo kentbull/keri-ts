@@ -131,22 +131,33 @@ export class RuntimeDeliveries {
   }
 
   /** Guarded item preflight precedes interpretation; route resolution borrows admitted output synchronously. */
-  enqueueCue(hab: Hab, cues: Deck<AgentCue>, route: (emission: CueEmission) => RawCesrRoute): boolean {
+  enqueueCue(
+    hab: Hab,
+    cues: Deck<AgentCue>,
+    route: (emission: CueEmission) => RawCesrRoute,
+    sender = hab,
+    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
+  ): boolean {
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    this.pending.checkSpace();
+    try {
+      this.pending.checkSpace();
+    } catch (error) {
+      if (error instanceof DeckFullError) onAdmissionRefusal?.(error);
+      throw error;
+    }
     return prepareCueEmission(hab, cues, this.resources, (owner) => {
       if (!owner.emission || owner.emission.kind !== "wire") throw new RangeError("Cue delivery requires wire");
-      const captured = prepareCueRoute(this.resources, owner, () => route(owner.emission!));
+      const captured = prepareCueRoute(this.resources, owner, () => route(owner.emission!), onAdmissionRefusal);
       let queued = false;
       try {
-        const delivery = new CueDelivery(owner, hab, captured);
+        const delivery = new CueDelivery(owner, sender, captured);
         this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
         queued = true;
         return undefined;
       } finally {
         if (!queued) captured.release();
       }
-    });
+    }, onAdmissionRefusal);
   }
 
   /** A failed independent packet retains the same lease; no target advances if the queue cannot accept it. */

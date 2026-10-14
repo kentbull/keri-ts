@@ -1,11 +1,16 @@
-import { call, type Operation, run } from "effection";
-import { assertEquals } from "jsr:@std/assert";
+import { ResourceAdmissionError } from "cesr-ts";
+import { call, type Operation, run, spawn } from "effection";
+import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { chunkBytes } from "../../../src/app/byte-source.ts";
+import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
+import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Respondant } from "../../../src/app/respondant.ts";
 import { processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
+import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
 Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forward through poster instead of mailbox storage", async () => {
@@ -366,4 +371,161 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
       yield* source.close(true);
     }
   });
+});
+
+Deno.test("runtime Respondant admission keeps saturated cues and progresses signed ingress during paused HTTP delivery", async () => {
+  let arrived!: () => void, release!: () => void;
+  const receiving = new Promise<void>((resolve) => arrived = resolve);
+  const gate = new Promise<void>((resolve) => release = resolve);
+  const abort = new AbortController();
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", port: 0, signal: abort.signal, onListen() {} },
+    async (request) => {
+      await readCesrRequestBytes(request);
+      arrived();
+      await gate;
+      return new Response(null, { status: 204 });
+    },
+  );
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const sender = hby.makeHab("sender"),
+        recipient = hby.makeHab("recipient"),
+        controller = remote.makeHab("controller");
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      try {
+        ingestKeriBytes(
+          runtime,
+          recipient.makeLocScheme(`http://127.0.0.1:${server.addr.port}`, recipient.pre, "http"),
+        );
+        ingestKeriBytes(runtime, recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true));
+        ingestKeriBytes(runtime, acceptedEventReplayMessage(remote, controller.pre, 0).message);
+        yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+        const cue = {
+          kin: "reply" as const,
+          src: sender.pre,
+          dest: recipient.pre,
+          route: "/loc/scheme",
+          data: { eid: sender.pre, scheme: "http", url: "http://sender.test/" },
+        };
+        runtime.cues.push(cue);
+        const interpretation = sender.interpretCue;
+        let interpreted = 0;
+        sender.interpretCue = (input) => {
+          interpreted++;
+          return interpretation.call(sender, input);
+        };
+        const queued = {
+          url: "https://query.test/",
+          body: new Uint8Array(),
+          bodyMode: "header" as const,
+          destination: sender.pre,
+        };
+        for (let index = 0; index < 8; index++) runtime.deliveries.enqueue(() => queued);
+        runtime.querying.configure({ hab: sender, sink: runtime.respondant.forHab(sender) });
+        yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
+        assertStrictEquals(runtime.cues.peekHead(), cue);
+        assertEquals([interpreted, runtime.deliveries.hasPending], [0, true]);
+        // Dispose only this saturated fixture's query owners, then use a fresh owned runtime for actual delivery.
+        yield* runtime.close();
+        const active = yield* createAgentRuntime(hby, { mode: "local" });
+        active.cues.push(cue);
+        const sink = active.respondant.forHab(sender);
+        const occupied = active.resources.reserve({ bytes: active.resources.limits.bytes });
+        if (occupied.kind !== "reserve") throw new Error("Expected free byte capacity");
+        yield* processCuesOnce(active, { hab: sender, sink });
+        assertStrictEquals(active.cues.peekHead(), cue, "own byte refusal cannot destructively fall back");
+        const observerFailure = new Error("cue refusal observer failed");
+        assertStrictEquals(
+          assertThrows(() =>
+            active.deliveries.enqueueCue(
+              sender,
+              active.cues,
+              () => {
+                throw new Error("Unadmitted route resolution");
+              },
+              sender,
+              () => {
+                throw observerFailure;
+              },
+            )
+          ),
+          observerFailure,
+        );
+        assertStrictEquals(active.cues.peekHead(), cue);
+        occupied.reservation.release();
+        const foreign = new ResourceAdmissionError("foreign cue preparation busy", "busy");
+        const resolve = active.poster.resolveBytesRoute;
+        for (const phase of ["interpret", "route"]) {
+          if (phase === "interpret") {
+            sender.interpretCue = () => {
+              throw foreign;
+            };
+          } else {active.poster.resolveBytesRoute = () => {
+              throw foreign;
+            };}
+          try {
+            assertStrictEquals(
+              yield* call(() => assertRejects(() => run(() => processCuesOnce(active, { hab: sender, sink })))),
+              foreign,
+            );
+            assertStrictEquals(active.cues.peekHead(), cue);
+            assertEquals(active.resources.used.bytes, 0, "foreign failure releases unpublished preparation");
+          } finally {
+            sender.interpretCue = interpretation;
+            active.poster.resolveBytesRoute = resolve;
+          }
+        }
+        let returned = false;
+        const sending = yield* spawn(function*() {
+          yield* processRuntimeTurn(active, {
+            hab: sender,
+            sink: active.respondant.forHab(sender),
+            pollMailbox: false,
+          });
+          returned = true;
+        });
+        let progress!: () => void;
+        const progressed = new Promise<void>((resolve) => progress = resolve);
+        let fail!: (error: Error) => void;
+        const expired = new Promise<never>((_, reject) => fail = reject);
+        const deadline = setTimeout(() => fail(new Error("Guarded ingress waited for paused delivery")), 2000);
+        try {
+          yield* call(() => Promise.race([receiving, expired]));
+          assertEquals(active.cues.empty, true, "source removal follows admitted transfer");
+          const later = controller.interact();
+          const accepting = yield* spawn(function*() {
+            yield* active.reactor.process((signal) => chunkBytes(later, { signal }), { local: true });
+            progress();
+          });
+          yield* call(() => Promise.race([progressed, expired]));
+          assertEquals(returned, false, "the real HTTP delivery is still paused");
+          assertEquals(hby.db.getKever(controller.pre)?.sn, 1, "verified input progresses before delivery returns");
+          assertEquals(active.deliveries.hasPending, true);
+          release();
+          yield* accepting;
+          yield* sending;
+          yield* active.deliveries.process(active);
+          assertEquals(active.resources.used.bytes, 0);
+        } finally {
+          clearTimeout(deadline);
+          release();
+          yield* sending.halt();
+          yield* active.close();
+        }
+        sender.interpretCue = interpretation;
+      } finally {
+        release();
+        yield* runtime.close();
+        yield* remote.close(true);
+        yield* hby.close(true);
+      }
+    });
+  } finally {
+    release();
+    abort.abort();
+    await server.finished;
+  }
 });
