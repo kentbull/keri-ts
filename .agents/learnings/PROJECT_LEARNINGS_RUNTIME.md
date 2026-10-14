@@ -68,6 +68,10 @@ frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
 HTTP success, verified replies and durable acceptance are different outcomes.
 
+Poster route snapshots and synchronous target preparation own habitat/DB work;
+prepared sending owns HTTP only. Keep borrowed wire alive through joined cleanup.
+The extraction alone does not move runtime callers outside their guard or admit copies.
+
 Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB
 preparation, then transfer admitted delivery ownership before network I/O. Never

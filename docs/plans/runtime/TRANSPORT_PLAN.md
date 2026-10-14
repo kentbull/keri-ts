@@ -25,6 +25,10 @@ Lazy replies, query queues, HTTP frame preparation and outgoing source parsing
 share owner credit. Standalone sender wiring and native/storage copies still
 require qualification through real slow sinks.
 
+Raw Poster delivery exposes separate route snapshot, synchronous target
+preparation and prepared HTTP sending. Runtime cue callers still compose them
+under the guard; S1–3 must add admission, owned handoff and explicit outcomes.
+
 ## Messenger organization
 
 Use two shared transport engines, with small finite-message and source entry
