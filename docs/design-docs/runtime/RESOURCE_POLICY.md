@@ -99,3 +99,26 @@ Additional hydrated representations, reader copies, storage and object/handle/wo
 limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
 Counter totals alone are not an RSS or native/mapped-memory guarantee.
+
+The internal `CueDeck` is an uninstalled producer/consumer foundation. Ordinary
+Deck and Runtime wiring remain unchanged. `prepare(cues)` holds byte/item credit
+before durable effects; publish transfers it to queued owners, while unused or
+failed preparation rolls back. Held items include prepared, queued, active and
+fanout references, so pulling cannot create another free slot. Transfer/requeue
+never releases credit; clearing releases queued owners only. Consumers release
+after consumption and joined cleanup. A failed callback keeps its owner for retry.
+
+The logical charge counts complete ArrayBuffer backing once per batch, including
+views, and walks canonical enumerable Serder/record/primitive metadata without
+encoding it or calling accessors. Strings charge two bytes per code unit, scalar
+values eight bytes, objects 64 bytes, fields 16 bytes plus labels, and references
+128 bytes. Inspection is finite (65,536 values and depth 64 by default). It does
+not measure native heap overhead; prepared data must remain immutable through
+final release. One shared batch lease lasts until its last owner; fanout adds
+reference credit, not another payload charge. Opaque replay closures are refused
+until captured-range metadata is explicit; they are never opened for inspection.
+
+Next integrate prospective KEL acceptance/clone/state cues before logging, then
+Revery/OOBI, EXN/KRAM and legacy credential/TEL producers. QueryReplies fanout,
+mailbox correlation, query continuations and delivery consumers must transfer
+owners before Runtime enables this deck. This does not close durable cue recovery.

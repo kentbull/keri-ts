@@ -28,6 +28,9 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
 6. Parser input checkpoints yield after 64 KiB or 4,096 pull/consume operations,
    including empty producers, with one cancellation-owned timer. Pending
    metadata/handles and bounded escrow scan work remain separately owned.
+   Internal held cue batches/owned references are available but not wired into
+   Runtime. Port prospective KEL/clone/state producers first, remaining durable
+   producers next, then explicit query/mailbox/delivery ownership transfers.
 
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.
 Split further before publication if a complete boundary needs more. Qualification
