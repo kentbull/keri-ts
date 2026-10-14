@@ -17,7 +17,7 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
   };
   for (let index = 0; index < 8; index++) queue.enqueue(() => request);
   assertThrows(() => queue.enqueue(() => request), Error, "Deck capacity");
-  assertEquals(resources.used.bytes, 64 * 1024 * 1024);
+  assertEquals(resources.used.bytes, 72 * 1024 * 1024);
   assertEquals(queue.hasPending, true);
   await run(() => queue.close());
   assertEquals(queue.hasPending, false);
@@ -29,11 +29,14 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
   // Parser rejection retains the exact queued request for explicit retry or shutdown disposal.
   await assertRejects(() => run(() => failed.process({} as AgentRuntime)));
   assertEquals(failed.hasPending, true);
-  assertEquals(resources.used.bytes, 8 * 1024 * 1024, "failed delivery retains retry ownership");
+  assertEquals(resources.used.bytes, 9 * 1024 * 1024, "failed delivery retains retry ownership");
   await run(() => failed.close());
   assertEquals(resources.used.bytes, 0);
+  const invalidRoute = new RuntimeDeliveries(resources);
+  assertThrows(() => invalidRoute.enqueue(() => ({ ...request, url: "x".repeat(512 * 1024) })), ResourceLimitError);
+  assertEquals(resources.used.bytes, 0, "metadata overflow releases both preparation and retained route credit");
 
-  const shared = new ResourcePolicy({ bytes: 32 * 1024 * 1024 });
+  const shared = new ResourcePolicy({ bytes: 33 * 1024 * 1024 });
   const first = new RuntimeDeliveries(shared), second = new RuntimeDeliveries(shared);
   first.enqueue(() => request);
   let prepared = false;
@@ -43,10 +46,27 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
   };
   assertEquals(assertThrows(() => second.enqueue(prepare), ResourceAdmissionError).reason, "busy");
   assertEquals(prepared, false, "shared refusal precedes source acquisition or concatenation");
-  assertEquals(shared.used.bytes, 8 * 1024 * 1024);
+  assertEquals(shared.used.bytes, 9 * 1024 * 1024);
   const tooSmall = new RuntimeDeliveries(new ResourcePolicy({ bytes: shared.limits.bytes - 1 }));
   assertEquals(assertThrows(() => tooSmall.enqueue(prepare), ResourceAdmissionError).reason, "limit");
   assertEquals(prepared, false);
+  const cue = { kin: "query" as const, pre: "aid", src: "aid", query: {} };
+  const emptyFloor = new RuntimeDeliveries(new ResourcePolicy({ bytes: 33 * 1024 ** 2 }));
+  assertEquals(assertThrows(() => emptyFloor.enqueue(prepare, undefined, cue), ResourceAdmissionError).reason, "limit");
+  assertEquals(prepared, false, "combined source retention floor refuses before signing");
+  assertEquals(
+    assertThrows(() =>
+      new RuntimeDeliveries(new ResourcePolicy({ bytes: 40 * 1024 ** 2 }))
+        .enqueue(prepare, undefined, cue, 8 * 1024 ** 2), ResourceAdmissionError).reason,
+    "limit",
+  );
+  assertEquals(prepared, false, "existing owned source credit cannot become irreducible busy");
+  assertThrows(() =>
+    new RuntimeDeliveries(resources).enqueue(prepare, undefined, {
+      ...cue,
+      query: { q: "x".repeat(4 * 1024 ** 2 + 1) },
+    }), ResourceLimitError);
+  assertEquals(prepared, false, "finite input ceiling refuses before query serialization");
   await run(() => first.close());
   assertThrows(
     () =>
@@ -105,7 +125,7 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
       });
       yield* call(() => cleanup.promise);
       assertEquals(closed, false); // Runtime shutdown must join the transport's asynchronous cancel.
-      assertEquals(runtime.resources.used.bytes >= 8 * 1024 * 1024, true, "active request retains credit until joined");
+      assertEquals(runtime.resources.used.bytes >= 9 * 1024 * 1024, true, "active request retains credit until joined");
       release.resolve();
       yield* closing;
       yield* delivery;
@@ -183,4 +203,4 @@ Deno.test("query shutdown after successful response consumption cannot send the 
     }
   });
 });
-import { ResourceAdmissionError, ResourcePolicy } from "cesr-ts";
+import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";

@@ -1,5 +1,6 @@
 import { ResourceLimitError } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
+import { CueDeck } from "../core/cue-admission.ts";
 import type { AgentCue, CueEmission, QueryCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
@@ -90,8 +91,9 @@ function cloneQueryBody(
  * - more than one habitat means runtime must not guess
  */
 function soleHab(hby: Habery): Hab | null {
-  const habitats = [...hby.habs.values()];
-  return habitats.length === 1 ? habitats[0] ?? null : null;
+  const habitats = hby.habs.values();
+  const first = habitats.next();
+  return first.done || !habitats.next().done ? null : first.value;
 }
 
 /** Extract the raw portable query body from either `query` or legacy `q`. */
@@ -528,7 +530,27 @@ export class QueryCoordinator implements CueSink {
   /** Observe a source cue only after the downstream owner has atomically retained eligible delivery. */
   admitCue(runtime: AgentRuntime, interpreter: Hab | null): CueAdmission {
     const cue = runtime.cues.peekHead();
-    const admission = this.sink.admitCue?.(runtime, interpreter) ?? "ineligible";
+    let admission: CueAdmission;
+    if (cue?.kin === "query" && this.sink.admitQuery) {
+      admission = this.sink.admitQuery(cue, () => {
+        const emission = interpreter?.interpretCue(cue);
+        return emission?.kind === "wire" ? emission : this.transientQueryEmission(cue);
+      });
+      if (admission === "transferred") {
+        if (runtime.cues.peekHead() !== cue) throw new Error("Query source changed during admission");
+        const original = runtime.cues instanceof CueDeck ? runtime.cues.takeOwned()! : undefined;
+        if (!original) runtime.cues.pull();
+        try {
+          this.observeContinuations(cue);
+        } finally {
+          original?.release();
+        }
+        return "transferred";
+      }
+    } else admission = this.sink.admitCue?.(runtime, interpreter) ?? "ineligible";
+    if (admission !== "transferred" && admission !== "busy" && admission !== "ineligible") {
+      throw new TypeError("Invalid query source admission");
+    }
     if (cue && admission === "transferred") this.observeContinuations(cue);
     return admission;
   }
@@ -551,7 +573,7 @@ export class QueryCoordinator implements CueSink {
       yield* this.sink.send(emission);
     }
 
-    yield* this.processPending();
+    if (!this.sink.admitQuery) yield* this.processPending();
   }
 
   /**
@@ -560,12 +582,15 @@ export class QueryCoordinator implements CueSink {
    * This is the Effection analogue of the KERIpy query/noticer doers: inspect
    * local state, emit any initial or follow-on queries that can honestly be
    * constructed, and retain unresolved work for later turns.
+   * Admitted transport sinks require their owning runtime for a short guarded preparation turn.
    */
-  processPending(): Operation<void> {
+  processPending(runtime?: AgentRuntime): Operation<void> {
     // deno-lint-ignore no-this-alias -- The isolated generator owns one complete drain pass.
     const self = this;
     return call(function*() {
       if (self.processing) return;
+      if (self.sink.admitQuery && !runtime) throw new RangeError("Admitted queries require their owning runtime");
+      if (runtime && runtime.querying !== self) throw new RangeError("Wrong query coordinator runtime");
       self.processing = true;
       try {
         self.tickContinuations();
@@ -573,6 +598,31 @@ export class QueryCoordinator implements CueSink {
         for (let index = 0; index < count; index++) {
           const request = self.pending.peekHead();
           if (!request) break;
+          if (self.sink.admitQuery) {
+            const cue: QueryCue = {
+              kin: "query",
+              pre: request.pre,
+              route: request.route,
+              query: request.query,
+              src: request.src,
+              wits: request.wits,
+            };
+            const admit = () => self.sink.admitQuery!(cue, () => self.wireEmissionForRequest(request));
+            const result: { admission: CueAdmission } = { admission: "ineligible" };
+            yield* runtime!.reactor.settle(undefined, {}, function*() {
+              result.admission = admit();
+            });
+            const admission = result.admission;
+            if (admission === "busy") break;
+            if (admission === "transferred") {
+              self.pending.pull();
+              continue;
+            }
+            if (admission !== "ineligible") throw new TypeError("Invalid query admission");
+            self.pending.pull();
+            self.pending.push(request);
+            continue;
+          }
           const emission = self.wireEmissionForRequest(request);
           if (emission) {
             // Keep the head and its capacity reservation while the transport can suspend or fail.
@@ -592,9 +642,9 @@ export class QueryCoordinator implements CueSink {
   }
 
   /** Continuous background query worker for long-lived runtime hosts. */
-  *queryDo(): Operation<never> {
+  *queryDo(runtime?: AgentRuntime): Operation<never> {
     while (true) {
-      yield* this.processPending();
+      yield* this.processPending(runtime);
       yield* runtimeTurn();
     }
   }

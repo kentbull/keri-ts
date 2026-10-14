@@ -46,6 +46,11 @@ shares its one store with IPEX and Reactor; keep it separate from `vdr.rgy`. Fac
 cleanup responsibility until returning their opened store. Explicit runtime close
 and scope exit both join cleanup; scope exit after explicit close is harmless.
 
+Baser fixes its ResourcePolicy before reopen and local Habery/signator construction.
+CLI opening forwards it; AgentRuntime inherits it and rejects policy mismatches.
+Borrowed runtime shutdown leaves Baser ownership intact. Accepted cache/native
+admission and public borrowing adoption remain open in resource phase 4/storage phase 5.
+
 Shared ResourcePolicy credit belongs to an owner until consumption and joined
 cleanup complete. One shared instance is required; separate ledgers do not bound
 a runtime. Reactor reserves stream/cursor/producer credit before source acquisition
@@ -117,7 +122,11 @@ has its own pre-admitted finite credit. Retired owners are local progress, not
 protocol success or durable retry. Respondant source heads now transfer immediately
 under the guard; their queued network work drains outside it. Unsupported/custom
 cues retain existing sink handling; occupied capacity never destructively falls back.
-Source queries and request-local HTTP/witness owners still require adoption.
+Source query/continuation callbacks now run only after bounded input, item, wire,
+route and preparation admission; captured signature/routing survive later changes.
+Busy preserves the raw or continuation head, and unresolved/custom sinks keep
+notify semantics. Actual continuation drains receive their owning runtime for
+a short guarded preparation turn. Request-local HTTP/witness owners still need adoption.
 Actual HTTP and source/tree/output admission refusal observation is invocation-local;
 source/fetch/sink/cleanup and external observer failures retain original identity.
 Prepared target attempts return local complete/refused/busy only after joined

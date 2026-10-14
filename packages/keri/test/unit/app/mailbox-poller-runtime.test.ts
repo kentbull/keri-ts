@@ -98,7 +98,7 @@ function makePollerFixture(
     new MailboxDirector(hby),
     {
       timeouts,
-      services: fakeRuntimeServices({ clock }),
+      services: fakeRuntimeServices({ clock, resources: hby.db.resources }),
       pollTransport: transport,
     },
   );
@@ -231,7 +231,7 @@ Deno.test("processMailboxTurn settles complete body-only mailbox records", async
         ],
       });
       const runtime = yield* createAgentRuntime(hby, {
-        services: fakeRuntimeServices({ clock }),
+        services: fakeRuntimeServices({ clock, resources: hby.db.resources }),
         mailboxPollTransport: transport,
       });
       try {

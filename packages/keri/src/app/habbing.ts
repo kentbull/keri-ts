@@ -19,6 +19,7 @@ import {
   Ilks,
   NumberPrimitive,
   Prefixer,
+  type ResourcePolicy,
   type SealEvent,
   SealLast,
   SerderKERI,
@@ -74,6 +75,8 @@ export const SIGNER = "__signatory__";
 
 /** Arguments for constructing and reopening a `Habery`. */
 export interface HaberyArgs {
+  /** Install the deployment policy before Baser reopen and local construction. */
+  resources?: ResourcePolicy;
   name: string;
   base?: string;
   temp?: boolean;
@@ -2158,6 +2161,7 @@ export function branToSeedAeid(bran: string): { seed: string; aeid: string } {
 export function* createHabery(args: HaberyArgs): Operation<Habery> {
   const {
     name,
+    resources,
     base = "",
     temp = false,
     headDirPath,
@@ -2183,6 +2187,7 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
   try {
     db = yield* createBaser({
       name,
+      resources,
       base,
       temp,
       headDirPath,

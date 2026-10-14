@@ -16,6 +16,7 @@ import {
   type Payload,
   Prefixer,
   ResourceLimitError,
+  ResourcePolicy,
   Saider,
   SealEvent,
   Seqner,
@@ -169,6 +170,8 @@ function seqnerFromNumber(number: NumberPrimitive): Seqner {
 
 /** Options for opening a `Baser` LMDB environment and its named subdb surface. */
 export interface BaserOptions extends LMDBerOptions {
+  /** Shared deployment policy, fixed before storage or accepted state opens. */
+  resources?: ResourcePolicy;
   compat?: boolean;
 }
 
@@ -194,6 +197,8 @@ export interface BaserOptions extends LMDBerOptions {
  *   subset is actively driven by `Habery`/CLI in this arc
  */
 export class Baser {
+  /** Survives runtime shutdown because runtimes borrow this database. */
+  readonly resources: ResourcePolicy;
   private lmdber: LMDBer;
   private readonly logger: Logger;
   private evtsRaw!: Database<BinVal, BinKey>;
@@ -523,6 +528,7 @@ export class Baser {
   static readonly MaxNamedDBs = 128;
 
   constructor(options: BaserOptions = {}) {
+    this.resources = options.resources ?? new ResourcePolicy();
     this.logger = options.logger ?? consoleLogger;
     const compat = options.compat ?? false;
     this.lmdber = new LMDBer(options, {
@@ -587,6 +593,9 @@ export class Baser {
    * than hand-rolled raw LMDB handles.
    */
   *reopen(options: Partial<BaserOptions> = {}): Operation<boolean> {
+    if (options.resources && options.resources !== this.resources) {
+      throw new RangeError("Baser reopen requires its original resource policy");
+    }
     if (this.archive) {
       yield* call(async () => {
         await (await this.archive!.catch(() => null))?.close();

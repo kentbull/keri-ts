@@ -6,7 +6,8 @@ import {
   type ResourceReservation,
 } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import type { CueEmission } from "../core/cues.ts";
+import { CueDeck, reserveCueBytes } from "../core/cue-admission.ts";
+import type { CueEmission, QueryCue } from "../core/cues.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { DeckFullError } from "../core/deck.ts";
@@ -19,7 +20,7 @@ import { postCesr } from "./cesr-egress.ts";
 import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
 import { prepareCueEmission } from "./cue-preparation.ts";
 import { prepareCueRoute } from "./cue-route.ts";
-import type { CueSink } from "./cue-runtime.ts";
+import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import { attemptPreparedCesrTarget, introduce, type RawCesrRoute } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
@@ -75,7 +76,7 @@ interface QueryDelivery {
   destination: string;
 }
 
-const requestBytes = 8 * 1024 * 1024;
+const requestBytes = 8 * 1024 * 1024, routeBytes = 1024 ** 2;
 // Query wire, retained introduction events and their joined introduction may coexist during preparation.
 const preparationBytes = 3 * requestBytes;
 
@@ -102,31 +103,64 @@ export class RuntimeDeliveries {
   constructor(private readonly resources = new ResourcePolicy()) {}
 
   /** Admit before synchronous wire preparation; undefined means no request was produced. */
-  enqueue(prepare: () => QueryDelivery | undefined): void {
-    if (this.closed) throw new Error("Query deliveries are closed");
-    this.pending.checkSpace();
-    if (requestBytes + preparationBytes > this.resources.limits.bytes) {
-      throw new ResourceAdmissionError("Query preparation exceeds shared byte capacity", "limit");
+  enqueue(
+    prepare: () => QueryDelivery | undefined,
+    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
+    cue?: QueryCue,
+    sourceRetainedBytes = 0,
+  ): boolean {
+    const refuse: (error: ResourceAdmissionError) => never = (error) => {
+      onAdmissionRefusal?.(error);
+      throw error;
+    };
+    if (this.closed) throw new Error("Runtime deliveries are closed");
+    try {
+      this.pending.checkSpace();
+    } catch (error) {
+      if (error instanceof DeckFullError) onAdmissionRefusal?.(error);
+      throw error;
     }
-    const retained = this.resources.reserve({ bytes: requestBytes });
-    if (retained.kind === "refuse") throw new ResourceAdmissionError("Query bytes are busy", retained.reason);
-    let preparation: ResourceReservation | undefined;
+    if (!Number.isSafeInteger(sourceRetainedBytes) || sourceRetainedBytes < 0) {
+      throw new RangeError("Invalid query source retention");
+    }
+    const floor = requestBytes + routeBytes + preparationBytes + sourceRetainedBytes;
+    if (floor > this.resources.limits.bytes) {
+      refuse(new ResourceAdmissionError("Query preparation exceeds shared byte capacity", "limit"));
+    }
+    const input = cue
+      ? reserveCueBytes(this.resources, [cue], undefined, onAdmissionRefusal, {
+        additionalBytes: floor,
+        maxBytes: requestBytes,
+      })
+      : undefined;
+    let retained: ResourceReservation | undefined, preparation: ResourceReservation | undefined;
     let queued = false;
     try {
-      const credit = this.resources.reserve({ bytes: preparationBytes });
-      if (credit.kind === "refuse") throw new ResourceAdmissionError("Query preparation is busy", credit.reason);
-      preparation = credit.reservation;
+      const credit = this.resources.reserve({ bytes: requestBytes + routeBytes });
+      if (credit.kind === "refuse") refuse(new ResourceAdmissionError("Query bytes are busy", credit.reason));
+      retained = credit.reservation;
+      const temporary = this.resources.reserve({ bytes: preparationBytes });
+      if (temporary.kind === "refuse") {
+        refuse(new ResourceAdmissionError("Query preparation is busy", temporary.reason));
+      }
+      preparation = temporary.reservation;
       const delivery = prepare();
-      if (!delivery) return;
-      if (this.closed) throw new Error("Query deliveries are closed");
+      if (!delivery) return false;
+      if (this.closed) throw new Error("Runtime deliveries are closed");
       if (delivery.body.buffer.byteLength > requestBytes) {
         throw new ResourceLimitError("Query request exceeds byte limit");
       }
-      this.pending.push({ kind: "query", delivery, release: () => retained.reservation.release() });
+      if (128 + 2 * (delivery.url.length + delivery.destination.length) > routeBytes) {
+        throw new ResourceLimitError("Query route metadata exceeds byte limit");
+      }
+      const owner = retained;
+      this.pending.push({ kind: "query", delivery, release: () => owner.release() });
       queued = true;
+      return true;
     } finally {
+      input?.release();
       preparation?.release();
-      if (!queued) retained.reservation.release();
+      if (!queued) retained?.release();
     }
   }
 
@@ -303,40 +337,83 @@ export function queryTransportSink(
   hby: Habery,
   hab: Hab,
 ): CueSink {
-  return {
+  if (runtime.hby !== hby) throw new RangeError("Query transport requires its owning Habery");
+  const prepareDelivery = (emission: CueEmission | null): QueryDelivery | undefined => {
+    if (emission === null) return;
+    if (!emission || emission.kind !== "wire" && emission.kind !== "notify" && emission.kind !== "transport") {
+      throw new TypeError("Query preparation must return a synchronous emission or null");
+    }
+    if (emission.kind !== "wire" || emission.cue.kin !== "query") return;
+    const destination = emission.cue.src, queriedPre = emission.cue.pre;
+    if (!destination || !queriedPre) return;
+    const url = resolveQueryDestinationUrl(hab, queriedPre, destination, {
+      explicitWitness: emission.cue.wits?.includes(destination) ?? false,
+    });
+    if (!url) throw new ValidationError(`No endpoint URL found for query destination ${destination}.`);
+    if (128 + 2 * (url.length + destination.length) > routeBytes) {
+      throw new ResourceLimitError("Query route metadata exceeds byte limit");
+    }
+    const messages = emission.messages[Symbol.iterator]();
+    let message: Uint8Array | undefined, failed = false, failure: unknown;
+    try {
+      message = messages.next().value;
+    } catch (error) {
+      failed = true;
+      failure = error;
+    }
+    try {
+      messages.return?.();
+    } catch (error) {
+      if (failed && error !== failure) throw new AggregateError([failure, error], "Query source cleanup failed");
+      throw error;
+    }
+    if (failed) throw failure;
+    if (!message) return;
+    if (message.buffer.byteLength > requestBytes) throw new ResourceLimitError("Query request exceeds byte limit");
+    const intro = introduce(hab, destination, requestBytes - message.length);
+    if (intro.length + message.length > requestBytes) throw new ResourceLimitError("Query request exceeds byte limit");
+    return { url, body: concatBytes(intro, message), bodyMode: hby.cesrBodyMode, destination };
+  };
+  const sink: CueSink = {
+    admitCue(current, interpreter) {
+      if (current !== runtime) throw new RangeError("Query sink requires its owning runtime");
+      const cue = current.cues.peekHead();
+      if (cue?.kin !== "query" || !interpreter) return "ineligible";
+      const admission = sink.admitQuery!(cue, () => {
+        const emission = interpreter.interpretCue(cue);
+        return emission?.kind === "wire" ? emission : null;
+      });
+      if (admission === "transferred") {
+        if (current.cues.peekHead() !== cue) throw new Error("Query source changed during admission");
+        if (current.cues instanceof CueDeck) current.cues.takeOwned()!.release();
+        else current.cues.pull();
+      }
+      return admission;
+    },
+    admitQuery(cue, prepare): CueAdmission {
+      const source = runtime.cues instanceof CueDeck && runtime.cues.peekHead() === cue ? runtime.cues : undefined;
+      if (source && source.resourcePolicy !== runtime.resources) throw new RangeError("Wrong query source policy");
+      let refusal: ResourceAdmissionError | DeckFullError | undefined;
+      try {
+        return runtime.deliveries.enqueue(
+            () => prepareDelivery(prepare()),
+            (error) => refusal = error,
+            cue,
+            source?.headRetentionBytes(),
+          )
+          ? "transferred"
+          : "ineligible";
+      } catch (error) {
+        if (refusal && error === refusal && (refusal instanceof DeckFullError || refusal.reason === "busy")) {
+          return "busy";
+        }
+        throw error;
+      }
+    },
     *send(emission: CueEmission): Operation<void> {
-      if (emission.kind !== "wire" || emission.cue.kin !== "query") {
-        return;
-      }
-      const destination = emission.cue.src;
-      const queriedPre = emission.cue.pre;
-      if (!destination || !queriedPre) return;
-
-      const url = resolveQueryDestinationUrl(hab, queriedPre, destination, {
-        explicitWitness: emission.cue.wits?.includes(destination) ?? false,
-      });
-      if (!url) {
-        throw new ValidationError(
-          `No endpoint URL found for query destination ${destination}.`,
-        );
-      }
-      runtime.deliveries.enqueue(() => {
-        const messages = emission.messages[Symbol.iterator]();
-        let message: Uint8Array | undefined;
-        try {
-          message = messages.next().value;
-        } finally {
-          // A query consumes one message; release its source before transport suspension.
-          messages.return?.();
-        }
-        if (!message) return;
-        if (message.buffer.byteLength > requestBytes) throw new ResourceLimitError("Query request exceeds byte limit");
-        const intro = introduce(hab, destination, requestBytes - message.length);
-        if (intro.length + message.length > requestBytes) {
-          throw new ResourceLimitError("Query request exceeds byte limit");
-        }
-        return { url, body: concatBytes(intro, message), bodyMode: hby.cesrBodyMode, destination };
-      });
+      if (emission.kind !== "wire" || emission.cue.kin !== "query") return;
+      runtime.deliveries.enqueue(() => prepareDelivery(emission));
     },
   };
+  return sink;
 }

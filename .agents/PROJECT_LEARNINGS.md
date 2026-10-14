@@ -40,6 +40,8 @@ Normal remote outcomes use typed decisions. Exceptions retain invariant,
 infrastructure and caller-contract failures. Keep protocol compatibility and
 frozen-reference evidence explicit; no old TypeScript API shims are required.
 Finite local limits do not establish a shared runtime memory bound.
+Baser fixes the deployment policy before reopen; runtime inherits it, while accepted
+cache accounting and explicit borrower adoption remain phase 4/5 work.
 PRs target 300–500 added or removed lines or fewer, including verification.
 Reuse tests; new maintained integration/end-to-end coverage needs strong
 justification. Exploratory probes may remain uncommitted. Choose narrow unit
