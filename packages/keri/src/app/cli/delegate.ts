@@ -29,7 +29,7 @@ import {
 } from "../endpoint-roleing.ts";
 import { MULTISIG_IXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
-import { queryTransportSink } from "../query-transport.ts";
+import { queryTransportSink } from "../runtime-deliveries.ts";
 import { WitnessReceiptor } from "../witnessing.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
 import { resolveWitnessAuths } from "./common/witness-auth.ts";

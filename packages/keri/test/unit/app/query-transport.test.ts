@@ -6,7 +6,7 @@ import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { introduce } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { queryTransportSink } from "../../../src/app/query-transport.ts";
+import { queryTransportSink } from "../../../src/app/runtime-deliveries.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
 /** Collect the finite signed fixture through the same progressive frame boundary used by HTTP output. */
@@ -116,7 +116,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
 
           // The guarded cue sink queues delivery; this separate turn owns the response.
           assertEquals(bodies.length, 0);
-          yield* runtime.queryDeliveries.process(runtime);
+          yield* runtime.deliveries.process(runtime);
           assertEquals(
             bodies,
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteController.pre), query))),
@@ -243,7 +243,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
 
           // The guarded cue sink queues delivery; this separate turn owns the response.
           assertEquals(bodies.length, 0);
-          yield* runtime.queryDeliveries.process(runtime);
+          yield* runtime.deliveries.process(runtime);
           assertEquals(
             bodies,
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteWitness.pre), query))),
@@ -435,10 +435,10 @@ Deno.test("query delivery settles a streamed reply after releasing the guarded c
       // The real guard owns cue handling. Reply parsing here would recursively wait for this same guard.
       yield* runtime.reactor.settle(undefined, {}, () => sink.send(emission));
       assertEquals(requests, 0);
-      assertEquals(runtime.queryDeliveries.hasPending, true);
-      yield* runtime.queryDeliveries.process(runtime);
+      assertEquals(runtime.deliveries.hasPending, true);
+      yield* runtime.deliveries.process(runtime);
       assertEquals(hby.db.getKever(peer.pre)?.said, peer.kever!.said);
-      assertEquals(runtime.queryDeliveries.hasPending, false);
+      assertEquals(runtime.deliveries.hasPending, false);
     } finally {
       yield* runtime.close();
       yield* remote.close(true);

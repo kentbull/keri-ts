@@ -5,7 +5,7 @@ import type { AgentCue, CueEmission } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import type { Hab } from "./habbing.ts";
 
-// Local finite policy matches QueryDeliveries' 8 MiB retained wire plus 24 MiB preparation allowance.
+// Local finite policy matches RuntimeDeliveries' 8 MiB retained wire plus 24 MiB preparation allowance.
 const wireBytes = 8 * 1024 ** 2, preparationBytes = 3 * wireBytes;
 
 /** Borrow emission/evidence until the accepting delivery owner finishes consumption and joined cleanup. */
