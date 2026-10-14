@@ -36,6 +36,9 @@ halt, preserving late failures and releasing the lock even when cleanup fails.
 Response cancellation uses an earlier scope resource: a bare yielding finally
 can join its Promise while losing a late failure during cancellation. Unacquired
 HTTP response/request bodies propagate cleanup failure instead of discarding it.
+CESR request teardown may error an unread successful native response body.
+Suppress only the intentional controller's exact abort reason from body cancellation;
+foreign AbortErrors and cleanup failures still propagate after shared credit releases.
 Fetch teardown joins pending rejection as well as late response cleanup. Timeout
 null recognizes only its controller's exact reason; foreign same-class AbortErrors
 and I/O failures propagate without repeating an already-reported object.

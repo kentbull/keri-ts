@@ -318,31 +318,64 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
     });
     assertEquals(cancelled, true);
     const resources = new ResourcePolicy();
-    await assertRejects(
-      () =>
-        run(() =>
-          requestFrame("https://peer.test/", frame, {
-            services: {
-              ...services(() =>
-                Promise.resolve(
-                  new Response(
-                    new ReadableStream({
-                      /** Unexpected transport cleanup failure propagates after releasing shared ownership. */
-                      cancel() {
-                        throw new Error("response cleanup failed");
-                      },
-                    }),
-                  ),
-                )
-              ),
-              resources,
-            },
-          })
-        ),
-      Error,
-      "response cleanup failed",
-    );
-    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+    for (const failure of [new Error("response cleanup failed"), new DOMException("foreign cleanup", "AbortError")]) {
+      const observed = await assertRejects(
+        () =>
+          run(() =>
+            requestFrame("https://peer.test/", frame, {
+              services: {
+                ...services(() =>
+                  Promise.resolve(
+                    new Response(
+                      new ReadableStream({
+                        /** Foreign same-class abort and ordinary I/O cleanup failures retain identity. */
+                        cancel() {
+                          throw failure;
+                        },
+                      }),
+                    ),
+                  )
+                ),
+                resources,
+              },
+            })
+          ),
+      );
+      assertStrictEquals(observed, failure);
+      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+    }
+    let ownSignal: AbortSignal | undefined;
+    const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
+      await request.arrayBuffer();
+      return new Response(
+        new ReadableStream({
+          /** Keep a real successful response body unread when the request scope returns. */
+          start(controller) {
+            controller.enqueue(Uint8Array.of(7));
+          },
+        }),
+        { status: 202 },
+      );
+    });
+    try {
+      await run(function*() {
+        const response = yield* requestFrame(`http://127.0.0.1:${server.addr.port}/`, frame, {
+          services: {
+            ...services((url, init) => {
+              ownSignal = init!.signal!;
+              return fetch(url, init);
+            }),
+            resources,
+          },
+        });
+        assertEquals(response.status, 202);
+        assertEquals(ownSignal!.aborted, false, "successful headers keep the response live");
+      });
+      assertEquals(ownSignal!.aborted, true, "normal scope cleanup intentionally aborts its fetch");
+      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+    } finally {
+      await server.shutdown();
+    }
   } finally {
     await frame.essr?.discard();
   }

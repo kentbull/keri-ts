@@ -263,7 +263,14 @@ function openFrameResponse(
             yield* call(async () => {
               // A late successful response still has an owned body that must be closed.
               const completed = await fetching!.catch(() => undefined);
-              if (completed?.body && !completed.body.locked) await completed.body.cancel();
+              if (completed?.body && !completed.body.locked) {
+                try {
+                  await completed.body.cancel();
+                } catch (error) {
+                  // Native fetch may error an unread body with this exact intentional teardown reason.
+                  if (error !== controller.signal.reason) throw error;
+                }
+              }
             });
           }
         } finally {
