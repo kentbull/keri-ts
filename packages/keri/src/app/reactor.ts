@@ -16,6 +16,7 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
 import { Kevery, type MessagePolicy } from "../core/eventing.ts";
+import { type KramConfig, Kramer } from "../core/kraming.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
@@ -94,6 +95,8 @@ export class Reactor {
       maxPendingCues = 1024,
       messagePolicy,
       resources = new ResourcePolicy(),
+      kram,
+      now,
     }: {
       cues?: Deck<AgentCue>;
       local?: boolean;
@@ -108,6 +111,9 @@ export class Reactor {
       messagePolicy?: MessagePolicy;
       /** Borrow the host policy so other streams and recipients compete for the same credit. */
       resources?: ResourcePolicy;
+      /** Omitted preserves disabled intake; the receiver clock is runtime-owned. */
+      kram?: KramConfig;
+      now?: () => number;
     } = {},
   ) {
     for (const limit of [maxSources, maxQueuedBytes, maxPendingCues]) {
@@ -127,7 +133,8 @@ export class Reactor {
     this.revery = new Revery(hby.db, { rtr: this.router, cues: this.cues });
     this.replyRoutes = new BasicReplyRouteHandler(hby.db, this.revery);
     this.replyRoutes.registerReplyRoutes(this.router);
-    this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery, messagePolicy });
+    const kramer = kram ? new Kramer(hby.db, { config: kram, cues: this.cues, now }) : undefined;
+    this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery, messagePolicy, kramer });
     this.kevery.registerReplyRoutes(this.router);
     this.exchanger = new Exchanger(hby, { cues: this.cues });
     this.local = local;
@@ -228,14 +235,30 @@ export class Reactor {
       return yield* self.turn(function*() {
         let envelope: KeriDispatchEnvelope | undefined;
         let decision: DispatchDecision = undefined;
+        const finish = function*(ready: KeriDispatchEnvelope | undefined, current: DispatchDecision) {
+          if (escrows) yield* self.advanceEscrows();
+          self.replies.capture(self.cues);
+          if (consume) yield* consume(ready, current);
+        };
+        let consumed = false;
         if (frame) self.cues.checkSpace();
         if (frame) {
           envelope = envelopeFromFrame(frame, local);
-          decision = yield* dispatchEnvelope(envelope, self.revery, self.kevery, self.exchanger, self.vdr, mailboxAid);
+          decision = yield* dispatchEnvelope(
+            envelope,
+            self.revery,
+            self.kevery,
+            self.exchanger,
+            self.vdr,
+            mailboxAid,
+            function*(ready, current) {
+              consumed = true;
+              yield* finish(ready, current);
+            },
+          );
         }
-        if (escrows) yield* self.advanceEscrows();
-        self.replies.capture(self.cues);
-        if (consume) yield* consume(envelope, decision);
+        if (!consumed) yield* finish(envelope, decision);
+        // Only the original borrowed input escapes; hydrated ready owners stay inside finish().
         return envelope;
       });
     });
@@ -342,6 +365,7 @@ export class Reactor {
   /** Advance component escrows while the caller already owns the runtime turn. */
   private *advanceEscrows(): Operation<void> {
     try {
+      this.kevery.kramer?.prune();
       this.kevery.processEscrows();
       this.revery.processEscrowReply();
       this.vdr.tvy?.processEscrows?.();

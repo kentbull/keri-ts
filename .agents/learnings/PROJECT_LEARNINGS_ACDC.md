@@ -48,6 +48,10 @@ tuple plus witness-receipt requirement. Field validity is not TEL acceptance.
 Local TEL publication must atomically commit body, anchor, accepted ordinal/head
 and escrow cleanup; bind instance state only after the transaction succeeds.
 Stored body presence alone never counts as acceptance or an accepted predecessor.
+Explicit parsed RegistryObserver borrows public KEL/store without local Hab aliases.
+Before inception, updates stay in durable anchor escrow; retry reconstructs issuer
+from stored inception. Full tuple/witness intake is stronger than digest-only vet
+and extends upstream integration, without establishing global registry freshness.
 Duplicate replay is read-only and cannot move the head backward. Missing anchors
 precede ordering escrow; unsafe numeric storage ordinals require explicit refusal.
 Retry arbitrates anchored siblings as a set, using earliest anchor then digest
