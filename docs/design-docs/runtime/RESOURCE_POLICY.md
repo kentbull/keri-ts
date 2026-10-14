@@ -150,9 +150,14 @@ readers. Admission charges only that metadata/reference; each consumer closes it
 TEL cursor before cloning/yielding. Prototype spoofs and subclasses remain refused.
 Finite message arrays charge their complete backing normally. Other opaque replay
 closures remain refused; arbitrary work is never opened for measurement. Capture-time temporary
-allocations and query source-seal repair still need producer admission; this retained
+allocations still need producer admission; this retained
 owner seam does not activate Runtime or close the full query/delivery boundary.
 TEL body/proof-row pre-read allocation admission remains a phase 5 obligation.
+
+Live and retried KEL queries admit their actual output batch before repairing
+delegation source-seal hints. Busy, configured-limit and item refusal leave `aess`
+unchanged; admitted replay readers see the repair at consumption. Unexpected
+repair failures release unpublished credit without implying database rollback.
 
 Kevery now prepares the concrete acceptance/clone/state batch before logging,
 with prospective first-seen ordinal/date and group/witness policy. Logging checks

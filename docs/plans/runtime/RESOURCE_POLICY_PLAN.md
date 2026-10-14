@@ -37,9 +37,10 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    finite proof planning. Semantic /ksn admits its actual keyStateSaved child
    before proof/state writes while retaining prepared reply/query ownership.
    Frozen KEL and fixed single/pair TEL ranges are inspectable without opening event readers.
+   KEL query source-seal repair follows concrete output admission on live/retry paths.
    Registry and credential TSN admit exact new dependency queries or txnStateSaved
    children before proof/Broker writes, preserving external escrow and prior proof
-   ownership. Capture-time/query effects remain open. OOBI queueing, staged
+   ownership. Capture-time allocations remain open. OOBI queueing, staged
    multi-URL fanout and multi-parent completion admit exact batches before
    queue/terminal/contact effects; introductions hold prepared reply/query
    ownership while admitting queued children before proof/queue writes. Response

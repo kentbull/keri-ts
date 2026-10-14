@@ -335,11 +335,6 @@ export class Kevery {
           return escrowQuery("notFullyWitnessed");
         }
 
-        // Reopened validators may have accepted a delegated event before its
-        // `.aess` source-seal hint was learned. Repair that hint before replay
-        // so downstream receivers get the same delegation attachment KERIpy
-        // would clone from persisted delegating-event state.
-        this.repairReplaySourceSeal(kever);
         const messages = this.db.replay(pre, fn);
         if (!messages) {
           // KERIpy treats an empty replay slice as a successful no-op rather
@@ -418,7 +413,7 @@ export class Kevery {
   ): void {
     switch (decision.kind) {
       case "accept":
-        this.emitDecisionCues(decision.cues);
+        this.publishQueryCues(envelope.serder, decision.cues);
         return;
       case "escrow":
         this.escrowQueryNotFoundEvent(envelope);
@@ -1362,6 +1357,23 @@ export class Kevery {
     this.cues.extend(cues ?? []);
   }
 
+  /** Admit concrete query output before repairing replay source seals or publishing its cues. */
+  private publishQueryCues(serder: SerderKERI, cues: readonly AgentCue[] = []): void {
+    this.cues.checkSpace(cues.length);
+    const batch = cues.length && this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    try {
+      if (serder.route === "logs") {
+        const query = serder.ked?.q as Record<string, unknown> | undefined;
+        const kever = typeof query?.i === "string" ? this.db.getKever(query.i) : undefined;
+        if (kever) this.repairReplaySourceSeal(kever);
+      }
+      if (batch) batch.publish();
+      else this.emitDecisionCues(cues);
+    } finally {
+      batch?.release();
+    }
+  }
+
   /**
    * Persist one missing-state query so later runtime turns can retry it.
    *
@@ -1516,7 +1528,7 @@ export class Kevery {
     });
     switch (decision.kind) {
       case "accept":
-        this.emitDecisionCues(decision.cues);
+        this.publishQueryCues(serder, decision.cues);
         return acceptEscrow();
       case "escrow":
         return keepEscrow("queryNotFound", {
