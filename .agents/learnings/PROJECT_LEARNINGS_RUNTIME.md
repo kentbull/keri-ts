@@ -23,6 +23,8 @@ Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state.
 Shared transport readers cancel once, join that Promise and always unlock;
 single errors retain identity and distinct read/cleanup failures aggregate.
+SSE's earlier reader owner re-observes its pending read/cancel Promises after
+halt, preserving late failures and releasing the lock even when cleanup fails.
 Response cancellation uses an earlier scope resource: a bare yielding finally
 can join its Promise while losing a late failure during cancellation. Unacquired
 HTTP response/request bodies propagate cleanup failure instead of discarding it.
@@ -200,6 +202,8 @@ Witness delegation passes the runtime's services into generic sends. TCP finite/
 creation, backing limits precede writes, and write callbacks/drain precede another
 pull. Credit follows source return plus socket close; calling destroy is not joined
 cleanup. End/close deadlines start at source EOF, not the beginning of a large transfer.
+Accepted-socket output borrows the connection stream slot, reserves separate output backing,
+and shares the outgoing callback/drain loop without ending the socket.
 Already admitted TCP frames use the serializer directly; shared HTTP/TCP metadata
 admission precedes qualification, and actual nested payload owners stay borrowed.
 

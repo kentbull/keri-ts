@@ -7,7 +7,7 @@ import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { socketBytes } from "../../../src/app/socket-source.ts";
-import { sendCesrTcp, streamCesrTcp } from "../../../src/app/tcp-egress.ts";
+import { sendCesrTcp, streamCesrTcp, writeCesrTcpSocket } from "../../../src/app/tcp-egress.ts";
 import { Receiptor, sendWitnessMessage, WitnessReceiptor } from "../../../src/app/witnessing.ts";
 
 /** Seed accepted local identifiers and the remote HTTP location used by witness transport. */
@@ -849,6 +849,30 @@ Deno.test("TCP output rejects oversized backing, freezes drain deadline and perm
       { kind: "transmitted", bytes: 6 },
     );
     assertEquals(received, 10);
+    const borrowed = createConnection({ host: "127.0.0.1", port: (server.address() as { port: number }).port });
+    const stream = services.resources.reserve({ streams: 1 });
+    assertEquals(stream.kind, "reserve");
+    if (stream.kind !== "reserve") throw new Error("Expected connection stream credit");
+    try {
+      await new Promise<void>((resolve) => borrowed.once("connect", resolve));
+      for (let index = 0; index < 2; index++) {
+        assertEquals(
+          await run(() =>
+            writeCesrTcpSocket(borrowed, async function*() {
+              yield Uint8Array.of(7, 8);
+            }, { services, maxChunkBytes: 2 })
+          ),
+          { kind: "transmitted", bytes: 2 },
+        );
+        assertEquals(borrowed.writableEnded, false, "a reply cannot end the next frame's output direction");
+        assertEquals(services.resources.used, { streams: 1, bytes: 0, decryptions: 0 });
+      }
+    } finally {
+      borrowed.destroy();
+      await new Promise<void>((resolve) => borrowed.closed ? resolve() : borrowed.once("close", resolve));
+      stream.reservation.release();
+    }
+
     assertEquals(services.resources.used, { streams: 0, bytes: 0, decryptions: 0 });
   } finally {
     for (const socket of sockets) socket.destroy();

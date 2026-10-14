@@ -160,6 +160,130 @@ async function interrupted<T>(pending: Promise<T>, signal: AbortSignal): Promise
   }
 }
 
+/** Output on a caller-owned connection, borrowing its existing stream/cursor slot. */
+export interface TcpSocketWriteOptions {
+  services: RuntimeServices;
+  maxChunkBytes?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Write a bounded source without ending the accepted socket or acquiring another parser/stream.
+ * The caller owns connection/stream admission and source evidence through joined completion.
+ * Separate output backing credit precedes source acquisition; cancellation destroys the socket
+ * to wake pending callbacks, joins source return/write completion, then returns byte credit.
+ */
+export function writeCesrTcpSocket(
+  socket: Socket,
+  factory: TcpSourceFactory,
+  { services, maxChunkBytes = 65536, signal }: TcpSocketWriteOptions,
+): Operation<TcpTransmission> {
+  return call(function*() {
+    const cap = positive(maxChunkBytes, "maxChunkBytes");
+    yield* resource<void>(function*(provide) {
+      const credit = services.resources.reserve({ bytes: 2 * cap });
+      if (credit.kind === "refuse") {
+        throw new ResourceAdmissionError("TCP socket output admission refused", credit.reason);
+      }
+      try {
+        yield* provide();
+      } finally {
+        credit.reservation.release();
+      }
+    });
+    return yield* abortable(async (signal) => {
+      const destroy = () => socket.destroy();
+      signal.addEventListener("abort", destroy, { once: true });
+      try {
+        return {
+          kind: "transmitted",
+          bytes: await writeBorrowedSource(socket, factory, signal, services, cap, { fail: destroy }),
+        };
+      } finally {
+        signal.removeEventListener("abort", destroy);
+      }
+    }, signal);
+  });
+}
+
+/** Shared source/read/callback/drain loop; connection owners handle abort and socket close. */
+async function writeBorrowedSource(
+  socket: Socket,
+  factory: TcpSourceFactory,
+  signal: AbortSignal,
+  services: RuntimeServices,
+  cap: number,
+  hooks: { eof?: () => void; fail?: (error: unknown) => void; failedCleanup?: () => void } = {},
+): Promise<number> {
+  let iterator: AsyncIterator<Uint8Array> | undefined;
+  let pendingRead: Promise<IteratorResult<Uint8Array>> | undefined;
+  let pendingWrite: Promise<void> | undefined;
+  let timer: RuntimeTimer | undefined;
+  let failure: unknown, bytes = 0, work = 0;
+  try {
+    const source = await factory(signal);
+    iterator = source[Symbol.asyncIterator]();
+    signal.throwIfAborted();
+    while (true) {
+      // Empty/immediately resolved producers must not starve socket events or scope cancellation.
+      if (++work === 4096) {
+        work = 0;
+        await interrupted(
+          new Promise<void>((resolve) => {
+            timer = services.clock.setTimeout(resolve, 0);
+          }),
+          signal,
+        );
+        services.clock.clearTimeout(timer);
+        timer = undefined;
+      }
+      pendingRead = Promise.resolve(iterator.next());
+      const part = await interrupted(pendingRead, signal);
+      pendingRead = undefined;
+      if (part.done) {
+        hooks.eof?.();
+        break;
+      }
+      if (!(part.value instanceof Uint8Array)) throw new TypeError("TCP source must yield binary chunks");
+      if (part.value.buffer.byteLength > cap) {
+        throw new ResourceLimitError(`TCP chunk backing exceeds ${cap} bytes`);
+      }
+      if (!part.value.length) continue;
+      let drain!: () => void;
+      const drained = new Promise<void>((resolve) => drain = resolve);
+      socket.once("drain", drain);
+      try {
+        let writable = false;
+        pendingWrite = new Promise<void>((resolve, reject) => {
+          writable = socket.write(part.value, (error) => error ? reject(error) : resolve());
+        });
+        await interrupted(pendingWrite, signal);
+        pendingWrite = undefined;
+        if (!writable) await interrupted(drained, signal);
+      } finally {
+        socket.removeListener("drain", drain);
+      }
+      bytes += part.value.length;
+    }
+  } catch (error) {
+    failure = error;
+    hooks.fail?.(error);
+  } finally {
+    if (failure !== undefined || signal.aborted) hooks.failedCleanup?.();
+    try {
+      await pendingRead?.catch(() => undefined);
+      await iterator?.return?.();
+    } catch (error) {
+      failure = failure === undefined ? error : new AggregateError([failure, error], "TCP source cleanup failed");
+    } finally {
+      await pendingWrite?.catch(() => undefined);
+      if (timer !== undefined) services.clock.clearTimeout(timer);
+    }
+  }
+  if (failure !== undefined) throw failure;
+  return bytes;
+}
+
 /** Shared connection/source/write owner; no direction, queue or parser is duplicated by adapters. */
 function writeTcp(
   url: string,
@@ -220,11 +344,16 @@ function writeTcp(
       socket.once("close", () => {
         if (!socket.writableFinished) fail(new Error("TCP closed before output completed"));
       });
-      let iterator: AsyncIterator<Uint8Array> | undefined;
-      let pendingRead: Promise<IteratorResult<Uint8Array>> | undefined;
       let pendingWrite: Promise<void> | undefined;
       let receiveTask: Task<void> | undefined, receiveEOF = false, processedFrames = 0;
-      let failure: unknown, bytes = 0, work = 0, finished = false;
+      let closingReceive: Promise<void> | undefined, receiveCleanupFailure: unknown;
+      const stopReceive = () => {
+        receiver.abort(signal.reason);
+        closingReceive ??= receiveTask?.halt().then(() => {}, (error) => {
+          receiveCleanupFailure = error;
+        });
+      };
+      let failure: unknown, bytes = 0, finished = false;
       try {
         timer = services.clock.setTimeout(() => fail(new Error("TCP connect deadline exceeded")), connectTimeout);
         timerActive = true;
@@ -256,50 +385,14 @@ function writeTcp(
             }
           });
         }
-        const source = await factory(signal);
-        iterator = source[Symbol.asyncIterator]();
-        signal.throwIfAborted();
-        while (true) {
-          // Empty/immediately resolved producers must not starve socket events or scope cancellation.
-          if (++work === 4096) {
-            work = 0;
-            await interrupted(
-              new Promise<void>((resolve) => {
-                timer = services.clock.setTimeout(resolve, 0);
-                timerActive = true;
-              }),
-              signal,
-            );
-            services.clock.clearTimeout(timer);
-            timerActive = false;
-          }
-          pendingRead = Promise.resolve(iterator.next());
-          const part = await interrupted(pendingRead, signal);
-          pendingRead = undefined;
-          if (part.done) break;
-          if (!(part.value instanceof Uint8Array)) throw new TypeError("TCP source must yield binary chunks");
-          if (part.value.buffer.byteLength > cap) {
-            throw new ResourceLimitError(`TCP chunk backing exceeds ${cap} bytes`);
-          }
-          if (!part.value.length) continue;
-          let drain!: () => void;
-          const drained = new Promise<void>((resolve) => drain = resolve);
-          socket.once("drain", drain);
-          try {
-            let writable = false;
-            pendingWrite = new Promise<void>((resolve, reject) => {
-              writable = socket.write(part.value, (error) => error ? reject(error) : resolve());
-            });
-            await interrupted(pendingWrite, signal);
-            pendingWrite = undefined;
-            if (!writable) await interrupted(drained, signal);
-          } finally {
-            socket.removeListener("drain", drain);
-          }
-          bytes += part.value.length;
-        }
-        timer = services.clock.setTimeout(() => fail(new Error("TCP drain deadline exceeded")), drainTimeout);
-        timerActive = true;
+        bytes = await writeBorrowedSource(socket, factory, signal, services, cap, {
+          fail,
+          failedCleanup: stopReceive,
+          eof() {
+            timer = services.clock.setTimeout(() => fail(new Error("TCP drain deadline exceeded")), drainTimeout);
+            timerActive = true;
+          },
+        });
         pendingWrite = new Promise<void>((resolve, reject) =>
           socket.end((error?: Error) => error ? reject(error) : resolve())
         );
@@ -316,22 +409,18 @@ function writeTcp(
         receiver.abort(signal.reason);
         socket.destroy();
         // Start both directional cleanups before awaiting either one; slow source return cannot delay RX abort.
-        const closingReceive = receiveTask?.halt().then(() => {}, (error) => {
-          failure = failure === undefined ? error : new AggregateError([failure, error], "TCP reply cleanup failed");
-        });
-        try {
-          await pendingRead?.catch(() => undefined);
-          await iterator?.return?.();
-        } catch (error) {
-          failure = failure === undefined ? error : new AggregateError([failure, error], "TCP source cleanup failed");
-        } finally {
-          await closingReceive;
-          await pendingWrite?.catch(() => undefined);
-          await closed;
-          signal.removeEventListener("abort", abort);
-          socket.removeListener("error", fail);
-          if (timerActive) services.clock.clearTimeout(timer);
+        stopReceive();
+        await closingReceive;
+        if (receiveCleanupFailure !== undefined) {
+          failure = failure === undefined
+            ? receiveCleanupFailure
+            : new AggregateError([failure, receiveCleanupFailure], "TCP reply cleanup failed");
         }
+        await pendingWrite?.catch(() => undefined);
+        await closed;
+        signal.removeEventListener("abort", abort);
+        socket.removeListener("error", fail);
+        if (timerActive) services.clock.clearTimeout(timer);
       }
       if (failure !== undefined) throw failure;
       if (!finished) throw new Error("TCP closed before output completed");

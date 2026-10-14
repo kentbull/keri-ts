@@ -1,5 +1,5 @@
 import { call, run, suspend } from "effection";
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { consumeMailboxSse, type MailboxSseMessage, readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 
 /** Encode wire fixtures with the same UTF-8 boundary as HTTP. */
@@ -66,25 +66,58 @@ Deno.test("mailbox SSE waits for a slow fragmented first event and discards a tr
 });
 
 Deno.test("mailbox SSE timeout cancels and joins its sole pending read", async () => {
-  let pulls = 0;
-  let cancelled = 0;
-  const body = new ReadableStream<Uint8Array>({
-    pull() {
-      pulls++;
-    },
-    cancel() {
-      cancelled++;
-    },
-  }, { highWaterMark: 0 });
-  await run(function*() {
-    yield* consumeMailboxSse(new Response(body), new AbortController(), function*() {}, {
-      idleTimeoutMs: 2,
-      maxDurationMs: 25,
+  for (const nativeAbort of [false, true]) {
+    const controller = new AbortController();
+    let pulls = 0;
+    let cancelled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      start(bodyController) {
+        if (nativeAbort) {
+          controller.signal.addEventListener("abort", () => bodyController.error(controller.signal.reason));
+        }
+      },
+      pull() {
+        pulls++;
+      },
+      cancel() {
+        cancelled++;
+      },
+    }, { highWaterMark: 0 });
+    await run(function*() {
+      yield* consumeMailboxSse(new Response(body), controller, function*() {}, {
+        idleTimeoutMs: 2,
+        maxDurationMs: 25,
+      });
     });
-  });
-  assertEquals(pulls, 1); // Timeout cannot abandon one read and begin another.
-  assertEquals(cancelled, 1);
-  assertEquals(body.locked, false);
+    assertEquals(pulls, 1); // Timeout cannot abandon one read and begin another.
+    assertEquals(cancelled, nativeAbort ? 0 : 1);
+    assertEquals(body.locked, false);
+  }
+});
+
+Deno.test("mailbox SSE propagates cleanup failure and unlocks after a consumer stops", async () => {
+  for (const primary of [undefined, new Error("SSE consumer failed")]) {
+    const fault = new Error("SSE cancellation failed");
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("id: 0\nevent: /reply\ndata: hello\n\n"));
+      },
+      cancel() {
+        throw fault;
+      },
+    });
+    const failure = await assertRejects(() =>
+      run(() =>
+        consumeMailboxSse(new Response(body), new AbortController(), function*() {
+          if (primary) throw primary;
+          return false;
+        })
+      )
+    );
+    if (primary) assertEquals((failure as AggregateError).errors, [primary, fault]);
+    else assertStrictEquals(failure, fault);
+    assertEquals(body.locked, false);
+  }
 });
 
 Deno.test("mailbox SSE scope cancellation stops a blocked consumer and releases its reader", async () => {
@@ -163,6 +196,39 @@ Deno.test("mailbox SSE halt joins asynchronous cancellation of its pending read"
   release.resolve();
   await halting;
   assertEquals([continued, halted, body.locked], [false, true, false]);
+});
+
+Deno.test("mailbox SSE halt joins a late cleanup failure before unlocking", async () => {
+  const reading = Promise.withResolvers<void>(), closing = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const fault = new DOMException("Foreign cancellation failure", "AbortError");
+  let continued = false, cancelled = 0, halted = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull() {
+      reading.resolve();
+    },
+    async cancel() {
+      cancelled++;
+      closing.resolve();
+      await release.promise;
+      throw fault;
+    },
+  }, { highWaterMark: 0 });
+  const task = run(function*() {
+    yield* consumeMailboxSse(new Response(body), new AbortController(), function*() {});
+    continued = true;
+  });
+  await reading.promise;
+  const halting = task.halt();
+  const failure = assertRejects(() => halting).then((error) => {
+    halted = true;
+    return error;
+  });
+  await closing.promise;
+  assertEquals([halted, body.locked], [false, true]);
+  release.resolve();
+  assertStrictEquals(await failure, fault);
+  assertEquals([continued, cancelled, body.locked], [false, 1, false]);
 });
 
 Deno.test("finite mailbox SSE reports wait through retry headers for the first complete message", async () => {
