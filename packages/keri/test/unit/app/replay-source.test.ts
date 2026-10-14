@@ -126,6 +126,32 @@ Deno.test("replay sources reopen their captured extent without including later f
         assertThrows(() => (replay!.ranges[0] as unknown as number[])[1] = 1, TypeError);
         assertThrows(() => (replay!.ranges as unknown as string[]).push("late"), TypeError);
         assertEquals(CapturedKelReplay.is(Object.create(CapturedKelReplay.prototype)), false);
+        // Copying primitive tuples prevents an Array subclass from hiding an uncharged retained owner.
+        class RetainedRanges extends Array<readonly [string, number, number]> {
+          #body = new Uint8Array(1024 * 1024);
+          /** Demonstrate actual additional caller retention, excluded from the canonical source. */
+          bytes(): number {
+            return this.#body.byteLength;
+          }
+        }
+        const input = new RetainedRanges();
+        input.push([hab.pre, 0, 0]);
+        const normalized = new CapturedKelReplay(hby.db, input, replay.maxMessageBytes);
+        assertEquals(input.bytes(), 1024 * 1024);
+        assertEquals([normalized.ranges === input, normalized.ranges[0] === input[0]], [false, false]);
+        assertEquals([Object.getPrototypeOf(normalized.ranges), Object.getPrototypeOf(normalized.ranges[0])], [
+          Array.prototype,
+          Array.prototype,
+        ]);
+        const captureCharge = (source: CapturedKelReplay): number => {
+          const batch = cues.prepare([{ kin: "replay", messages: source }]);
+          const bytes = resources.used.bytes;
+          batch.release();
+          return bytes;
+        };
+        assertEquals(captureCharge(normalized), captureCharge(replay));
+        assertThrows(() => new CapturedKelReplay(hby.db, [[hab.pre, 1, 0]], replay!.maxMessageBytes), RangeError);
+        assertThrows(() => new CapturedKelReplay(hby.db, [[hab.pre, 0, 0]], 0), RangeError);
         // Even a borrowed store with opaque additional state is never walked by the cue inspector.
         Object.defineProperty(hby.db, "retainedProbe", {
           get() {

@@ -15,6 +15,9 @@ format for KERIpy interop, and the actual native rebuild/preflight path.
 Rebuild with official `ENABLE_V8_FUNCTIONS=false`: Node-header V8 imports can
 terminate Deno when a large row first reaches the mapped-buffer path.
 Qualify the actual addon under both runtimes, including rows above 16 MiB.
+TEL capture metadata and fixed pair composition own no event bodies or cursors;
+consumer readers close each cursor before clone/yield, including reopened stores.
+TEL body/proof-row pre-read allocation remains separately open.
 Finite KEL replay preflights event bodies before owned copies; HTTP source credit
 must cover reconstruction before iterator acquisition, not only yielded bytes.
 Witness GET no-SN captures target-only FEL ranges; SN captures KEL/FEL horizons

@@ -10,11 +10,25 @@ export class CapturedKelReplay implements Iterable<Uint8Array> {
   readonly maxMessageBytes: number;
   #db: Baser;
 
-  /** Transfer and freeze the capture array; callers retain the borrowed store through consumption. */
-  constructor(db: Baser, ranges: KelReplayRange[], maxMessageBytes: number) {
+  /** Copy primitive ranges into plain frozen containers; caller keeps the borrowed store alive. */
+  constructor(db: Baser, ranges: readonly KelReplayRange[], maxMessageBytes: number) {
+    const count = ranges.length;
+    if (!Number.isSafeInteger(count) || count < 0 || !Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
+      throw new RangeError("Invalid KEL replay range count or message limit");
+    }
     this.#db = db;
-    for (const range of ranges) Object.freeze(range);
-    this.ranges = Object.freeze(ranges);
+    const owned: KelReplayRange[] = [];
+    for (let i = 0; i < count; i++) {
+      const [pre, from, end] = ranges[i];
+      if (
+        typeof pre !== "string" || !pre || !Number.isSafeInteger(from) || from < 0
+        || !Number.isSafeInteger(end) || end < from
+      ) {
+        throw new RangeError("Invalid captured KEL range");
+      }
+      owned.push(Object.freeze([pre, from, end] as const));
+    }
+    this.ranges = Object.freeze(owned);
     this.maxMessageBytes = maxMessageBytes;
     Object.freeze(this);
   }
