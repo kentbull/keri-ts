@@ -12,14 +12,15 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
-import { query } from "../../../src/core/protocol-eventing.ts";
+import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { incept as inceptRegistry, issue, revoke } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
+import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
 
@@ -433,6 +434,230 @@ Deno.test("TSN producer prepares ordered independent state replies without enabl
       assertThrows(() => prepareTsnQuery({ serder: request(), source }, tvy.tevers), Error, "Missing TEL anchor");
     } finally {
       yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("registry TSN runtime verifies independent proof, accepted trust and microsecond BADA", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = hby.makeHab("issuer"), outsider = hby.makeHab("outsider", undefined, { transferable: false });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    const tvy = new Tevery({ db: hby.db, reger });
+    const runtime = yield* createAgentRuntime(hby, { vdr: { reger, tvy } });
+    try {
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const state = tvy.tevers.get(vcp.pre!)!.state().asDict();
+      const oldStamp = makeNowIso8601().replace(/0\+00:00$/, "1+00:00");
+      const newStamp = oldStamp.replace(/1\+00:00$/, "2+00:00");
+      const notice = (data = state, stamp = newStamp, author = issuer) =>
+        reply(`/tsn/registry/${author.pre}`, data, { pre: author.pre, stamp });
+      const valid = notice();
+      yield* runtime.reactor.processBytes(issuer.endorse(valid));
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, valid.said, "Pointer is outer reply SAID");
+      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      assertEquals(tvy.cues.length, 0, "Borrowed Tevery does not capture reply-owned notifications");
+      yield* runtime.reactor.processBytes(issuer.endorse(notice(state, oldStamp)));
+      assertEquals(
+        reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64,
+        valid.said,
+        "Older microsecond cannot replace it",
+      );
+      yield* runtime.reactor.processBytes(outsider.endorse(notice()));
+      assertEquals(runtime.cues.length, 0, "A foreign endorsement does not authenticate the claimed attester");
+      // Actual714 accepts this signed self-listing in strict mode; accepted configuration must supply trust.
+      const fabricated = notice({ ...state, c: [], b: [outsider.pre] }, newStamp, outsider);
+      yield* runtime.reactor.processBytes(outsider.endorse(fabricated));
+      assertEquals(reger.txnsb.current([vcp.pre!, outsider.pre]), null);
+      assertEquals(runtime.cues.length, 0);
+      for (
+        const malformed of [
+          notice({ ...state, i: `${vcp.pre}suffix` }),
+          notice({ ...state, s: "20000000000001" }),
+          reply(`/tsn/registry/${issuer.pre}suffix`, state, { pre: issuer.pre }),
+        ]
+      ) yield* runtime.reactor.processBytes(issuer.endorse(malformed));
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0, "Malformed qualified coordinates never reach storage");
+      assertEquals(runtime.cues.length, 0);
+      const habRecord = hby.db.getHab(issuer.pre)!;
+      habRecord.watchers = [outsider.pre];
+      hby.db.habs.pin(issuer.pre, habRecord);
+      const watcher = notice(state, newStamp, outsider);
+      yield* runtime.reactor.processBytes(outsider.endorse(watcher));
+      assertEquals(reger.txnsb.current([vcp.pre!, outsider.pre])?.qb64, watcher.said);
+      assertEquals([...issuer.processCuesIter(runtime.cues)].map((emission) => [emission.kind, emission.cue.kin]), [
+        ["notify", "txnStateSaved"],
+      ]);
+      habRecord.watchers = [];
+      hby.db.habs.pin(issuer.pre, habRecord);
+      const backed = inceptRegistry(issuer.pre, { baks: [outsider.pre], toad: 1 });
+      assertEquals(
+        tvy.processEvent({ serder: backed, ...anchorTel(issuer, backed), wigers: outsider.sign(backed.raw, true) })
+          .kind,
+        "accept",
+      );
+      const backerNotice = reply(`/tsn/registry/${outsider.pre}`, tvy.tevers.get(backed.pre!)!.state().asDict(), {
+        pre: outsider.pre,
+      });
+      yield* runtime.reactor.processBytes(outsider.endorse(backerNotice));
+      assertEquals(
+        reger.txnsb.current([backed.pre!, outsider.pre])?.qb64,
+        backerNotice.said,
+        "Accepted registry backers supply trust independently of watcher configuration",
+      );
+      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      const wrong = notice(
+        {
+          ...state,
+          d: new Diger({ code: "E", raw: Diger.digest(new TextEncoder().encode("wrong digest"), "E") }).qb64,
+        },
+        newStamp.replace(/2\+00:00$/, "3+00:00"),
+      );
+      for (const rejected of [wrong, notice({ ...state, c: [] }, newStamp.replace(/2\+00:00$/, "4+00:00"))]) {
+        yield* runtime.reactor.processBytes(issuer.endorse(rejected));
+        assertEquals(hby.db.rpys.get([rejected.said!]), null, "Unaccepted authenticated body has no orphan owner");
+        assertEquals(hby.db.sdts.get([rejected.said!]), null);
+        assertEquals([...hby.db.ssgs.getTopItemIter([rejected.said!], { topive: true })].length, 0);
+      }
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, valid.said);
+      assertExists(hby.db.sdts.get([valid.said!]), "Pending/rejected semantic state retains previous BADA metadata");
+      assertEquals(runtime.cues.length, 0);
+      assertEquals(tvy.processQuery({ serder: query("tsn", { ri: vcp.pre, i: "" }), source: issuer.kever!.prefixer }), {
+        kind: "drop",
+        reason: "unsupportedRoute",
+      });
+      yield* reger.close();
+      let failure: unknown;
+      try {
+        yield* runtime.reactor.processBytes(issuer.endorse(valid));
+      } catch (error) {
+        failure = error;
+      }
+      assertEquals(
+        failure instanceof Error && failure.message.includes("not open"),
+        true,
+        "Storage failure propagates through runtime reply intake",
+      );
+      yield* reger.reopen();
+    } finally {
+      yield* runtime.close();
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("registry TSN missing issuer and TEL retry through the normal runtime turn", async () => {
+  await run(function*() {
+    const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = sender.makeHab("issuer");
+    const source = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const local = hby.makeHab("receiver");
+    const runtime = yield* createAgentRuntime(hby);
+    const reger = runtime.vdr.reger! as Reger;
+    try {
+      const tvy = new Tevery({ db: sender.db, reger: source });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const state = tvy.tevers.get(vcp.pre!)!.state().asDict();
+      const serder = reply(`/tsn/registry/${issuer.pre}`, state, { pre: issuer.pre });
+      yield* runtime.reactor.processBytes(issuer.endorse(serder));
+      assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 1);
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre]), null);
+      const queries: Record<string, unknown>[] = [];
+      const turn = () =>
+        processRuntimeTurn(runtime, {
+          hab: local,
+          pollMailbox: false,
+          sink: {
+            *send(emission) {
+              if (emission.cue.kin === "query" && emission.kind === "wire") {
+                for (const message of emission.messages) {
+                  const [frame] = yield* call(() => parseBytes(message));
+                  try {
+                    queries.push(envelopeFromFrame(frame).serder.ked!.q as Record<string, unknown>);
+                  } finally {
+                    yield* call(() => discardFrame(frame));
+                  }
+                }
+              }
+            },
+          },
+        });
+      yield* turn();
+      assertEquals(queries[0].i, issuer.pre);
+      for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
+      yield* turn();
+      assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 0);
+      assertEquals(reger.txnsb.escrowdb.get(["registry-ooo", vcp.pre!, issuer.pre]).length, 1);
+      assertExists(reger.txnsb.serderdb.get([serder.said!]), "Broker retains the pending authenticated body");
+      assertEquals(hby.db.rpys.get([serder.said!]), null, "Pending proof has one external owner");
+      assertEquals(queries.at(-1), { ri: vcp.pre, i: "", src: issuer.pre }, "Recovery preserves TEL coordinates");
+      yield* runtime.reactor.processBytes(source.cloneTvt(vcp.pre!, vcp.said!));
+      yield* turn();
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, serder.said);
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0);
+      issuer.rotate({ ncount: 1, nsith: "1", toad: 0 });
+      const fresh = reply(`/tsn/registry/${issuer.pre}`, state, { pre: issuer.pre });
+      yield* runtime.reactor.processBytes(issuer.endorse(fresh));
+      assertEquals(
+        reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length,
+        1,
+        "Known issuer with missing future establishment remains owned by Broker",
+      );
+      assertEquals(hby.db.rpes.cnt(), 0, "External proof ownership does not double-index legacy RPE");
+      for (const wire of sender.db.clonePreIter(issuer.pre, 2)) yield* runtime.reactor.processBytes(wire);
+      yield* turn();
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, fresh.said);
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0);
+      yield* reger.close();
+      yield* reger.reopen();
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, fresh.said, "Accepted notice survives reopen");
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+      yield* source.close(true);
+      yield* sender.close(true);
+    }
+  });
+});
+
+Deno.test("registry TSN partial proof ownership stays in finite Broker retry", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = hby.makeHab("issuer", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
+    const runtime = yield* createAgentRuntime(hby);
+    const reger = runtime.vdr.reger! as Reger, tvy = runtime.vdr.tvy! as Tevery;
+    try {
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const serder = reply(`/tsn/registry/${issuer.pre}`, tvy.tevers.get(vcp.pre!)!.state().asDict(), {
+        pre: issuer.pre,
+      });
+      const est = hby.db.getEvtSerder(issuer.pre, hby.db.kels.getLast(issuer.pre, 0)!)!;
+      const signatures = issuer.sign(serder.raw, true);
+      const wire = (index: number) =>
+        messagize(serder, {
+          sigers: [signatures[index]],
+          seal: { i: issuer.kever!.prefixer, s: est.sner!, d: new Diger({ qb64: est.said! }) },
+        });
+      yield* runtime.reactor.processBytes(wire(0));
+      yield* runtime.reactor.processEscrowsOnce();
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre]), null);
+      assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 1);
+      assertEquals(hby.db.rpes.cnt(), 0);
+      assertEquals(hby.db.ssgs.cnt(), 0, "Unaccepted signature pool stays with its explicit Broker owner");
+      yield* runtime.reactor.processBytes(wire(1));
+      yield* runtime.reactor.processEscrowsOnce();
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, serder.said);
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0);
+      assertEquals(hby.db.rpes.cnt(), 0);
+      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+    } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });

@@ -51,13 +51,17 @@ Legacy TEL query replay captures management then credential extents, closes curs
 before yielding, and preserves frozen v2 proof counters with an explicit genus
 selector. Requester material identifies the destination; upstream query signature
 validation is TODO. Internal TSN production calls actual `vcState(vci)`, correcting
-714's broken query keyword. Missing credentials retain the registry reply; TSN
-receiving remains guarded and needs independent BADA/trust/TEL correspondence.
+714's broken query keyword. Missing credentials retain the registry reply; credential
+receiving and TSN queries remain guarded. Registry receiving verifies BADA/trust/TEL correspondence.
 State-record construction proves no acceptance. Complete-message caps do not prove native pre-read admission.
 Revery BADA preserves microseconds. TSN retry must use Broker's typed finite
 family pass; its legacy exception adapter can conceal infrastructure errors.
 Persist the outer reply SAID for BADA, not the contained TEL digest: actual 714's
 registry handler confuses these domains and accepts older signed notices.
+Registry TSN trust uses accepted configuration and issuer witnesses, never claimed
+notice backers. The semantic receiver owns missing/partial proofs in Broker via
+explicit external Revery escrow; preserve prior BADA evidence until publication.
+TEL recovery must preserve credential `i` separately from the queried issuer.
 
 Canonical transferable receipt output groups proofs by the complete receiptor
 establishment seal (`-F` in v1). Durable vrcs quadruples and legacy decoding remain.
