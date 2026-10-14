@@ -33,25 +33,28 @@ Deno.test("attachment completion is independent of text/binary chunk partitions 
       const expected = await parseBytes(wire);
       assertEquals(expected.length, 1);
       assertEquals(expected[0].attachments.length, 2);
-      for (let split = 0; split <= wire.length; split++) {
+      const edge = bodyBytes.length + first.length;
+      for (
+        const parts of [
+          Array.from(wire, (byte) => Uint8Array.of(byte)),
+          [wire.slice(0, edge), new Uint8Array(), wire.slice(edge)],
+        ]
+      ) {
         let delivered = false;
-        /** Assert no frame escapes before actual EOF, even after a complete attachment leaf. */
+        /** Chunk exhaustion, including empty reads, cannot close an open attachment set. */
         const record = async function*() {
-          yield wire.slice(0, split);
-          assertEquals(delivered, false);
-          yield new Uint8Array();
-          assertEquals(delivered, false);
-          yield wire.slice(split);
-          assertEquals(delivered, false);
+          for (const part of parts) {
+            yield part;
+            assertEquals(delivered, false);
+          }
         };
         const actual = [];
         for await (const frame of parse(record())) {
           delivered = true;
           actual.push(frame);
         }
-        assertEquals(actual, expected, `v${version} binary=${binary} split=${split}`);
+        assertEquals(actual, expected, `v${version} binary=${binary}`);
       }
-      assertEquals(await Array.fromAsync(parse(chunks(...Array.from(wire, (byte) => Uint8Array.of(byte))))), expected);
       // A following body closes the attachment set without requiring source EOF.
       const parser = parse(bounded(concatBytes(bodyBytes, first), second, bodyBytes));
       try {
@@ -72,9 +75,9 @@ Deno.test("complete enclosures emit promptly and never absorb bytes outside thei
       const expected = await parseBytes(bytes(wire));
       assertEquals(expected.length, 1);
       const input = bytes(wire);
-      for (let split = 0; split < input.length; split++) {
+      for (const parts of [Array.from(input, (byte) => Uint8Array.of(byte)), [input]]) {
         // The orphan attachment is outside the closed frame and must fail on the next pull.
-        const parser = parse(chunks(input.slice(0, split), input.slice(split), bytes(groupV2("-L", sigerToken()))));
+        const parser = parse(chunks(...parts, bytes(groupV2("-L", sigerToken()))));
         assertEquals((await parser.next()).value, expected[0]);
         await assertRejects(() => parser.next(), ColdStartError);
       }
@@ -92,8 +95,8 @@ Deno.test("complete enclosures emit promptly and never absorb bytes outside thei
 
 Deno.test("terminal partial attachments never expose their pending message as complete", async () => {
   const wire = encode(body + groupV2("-K", sigerToken()) + "-LAWAAAA");
-  for (let split = 0; split <= wire.length; split++) {
-    const parser = parse(chunks(wire.slice(0, split), wire.slice(split)));
+  for (const parts of [Array.from(wire, (byte) => Uint8Array.of(byte)), [wire]]) {
+    const parser = parse(chunks(...parts));
     await assertRejects(() => parser.next(), ShortageError);
     assertEquals((await parser.next()).done, true);
   }

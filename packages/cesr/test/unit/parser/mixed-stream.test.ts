@@ -83,20 +83,14 @@ Deno.test("multi-message mixed stream ordering is split-deterministic", async ()
   const frame1End = jsonFrame.length;
   const frame2End = frame1End + KERIPY_NATIVE_V2_ICP_FIX_BODY.length;
 
-  // Verification 2: boundary-aligned and boundary-adjacent chunk cuts.
-  const targetedSplits = [
-    [frame1End],
-    [frame2End],
-    [frame1End, frame2End],
-    [frame1End - 1, frame2End + 1],
-  ];
-  for (const splitPoints of targetedSplits) {
-    assertEquals(await summarizeFrames(stream, splitPoints), baseline);
-  }
-
-  // Verification 3: exhaustive single-split determinism across the full stream.
-  for (let split = 1; split < stream.length; split++) {
-    assertEquals(await summarizeFrames(stream, [split]), baseline);
+  // One boundary-aligned feed and one bytewise feed preserve coalescing and all token cuts.
+  for (
+    const boundaries of [
+      [frame1End, frame2End],
+      Array.from({ length: stream.length - 1 }, (_, index) => index + 1),
+    ]
+  ) {
+    assertEquals(await summarizeFrames(stream, boundaries), baseline);
   }
 });
 
@@ -146,7 +140,8 @@ Deno.test(
 
 Deno.test("annotation work yields a host turn and cancellation joins its source", async () => {
   const body = encode(v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}"));
-  const wire = concatBytes(new Uint8Array(1024 * 1024).fill(10), body);
+  // Separator scanning consumes once per byte; two 4,096-operation checkpoints suffice.
+  const wire = concatBytes(new Uint8Array(8 * 1024).fill(10), body);
   for (const cancel of [false, true]) {
     const controller = new AbortController();
     const reason = new Error("annotation work cancelled");

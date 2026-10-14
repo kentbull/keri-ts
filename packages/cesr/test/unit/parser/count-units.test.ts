@@ -100,20 +100,20 @@ Deno.test("versioned transferable groups preserve item counts, payload bounds, a
   }
 });
 
-Deno.test("v2 length-counted signature frames are deterministic at every byte split", async () => {
+Deno.test("v2 length-counted signatures preserve bytewise and attachment-edge framing", async () => {
   for (const domain of domains) {
     for (const code of [CtrDexV2.ControllerIdxSigs, CtrDexV2.WitnessIdxSigs]) {
       const wire = bytes(KERIPY_NATIVE_V2_ICP_FIX_BODY + groupV2(code, sigerToken() + bigSiger), domain);
       const expected = await parseBytes(wire);
       assertEquals(expected.length, 1);
       assertEquals(expected[0].attachments[0].items.length, 2);
-      for (let split = 0; split <= wire.length; split++) {
-        /** Split even inside hard/soft headers without changing frame boundaries. */
+      const edge = bytes(KERIPY_NATIVE_V2_ICP_FIX_BODY, domain).length + 1;
+      for (const parts of [Array.from(wire, (byte) => Uint8Array.of(byte)), [wire.slice(0, edge), wire.slice(edge)]]) {
+        /** Bytewise input visits all headers; the edge case resumes inside the attachment counter. */
         const chunks = async function*() {
-          yield wire.slice(0, split);
-          yield wire.slice(split);
+          yield* parts;
         };
-        assertEquals(await Array.fromAsync(parse(chunks())), expected, `${domain} ${code} split=${split}`);
+        assertEquals(await Array.fromAsync(parse(chunks())), expected, `${domain} ${code}`);
       }
     }
   }

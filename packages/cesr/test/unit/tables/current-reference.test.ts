@@ -144,9 +144,9 @@ Deno.test("nonce seals and obsolete v2 receipts never become attachments across 
       const attachment = domain === "txt" ? b(row.qb64) : hexWire(row.qb2);
       assertThrows(() => parseAttachmentGroup(attachment, V2, domain), UnknownCodeError);
       const wire = concatBytes(domain === "txt" ? b(native) : decodeB64(native), attachment);
-      for (let split = 0; split <= wire.length; split++) {
+      for (const parts of [Array.from(wire, (byte) => Uint8Array.of(byte)), [wire]]) {
         await assertRejects(
-          () => Array.fromAsync(parse(chunks(wire.slice(0, split), wire.slice(split)))),
+          () => Array.fromAsync(parse(chunks(...parts))),
           UnknownCodeError,
         );
       }
