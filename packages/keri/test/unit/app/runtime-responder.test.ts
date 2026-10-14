@@ -364,8 +364,15 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
         cleanup.resolve();
         yield* call(() => halt);
         assertEquals(continued, false);
-        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         assertEquals(provider.db.getKever(controller.pre)?.sn, 0, "cancelled input cannot deliver its later event");
+        assertEquals(
+          runtime.cues.toArray().map((cue) =>
+            cue.kin === "keyStateSaved" ? [cue.kin, cue.ksn.i, cue.ksn.d] : [cue.kin]
+          ),
+          [["keyStateSaved", controller.pre, provider.db.getKever(controller.pre)!.said]],
+        );
+        runtime.cues.clear(); // Cancellation preserves the unconsumed state cue's owner until test cleanup.
+        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         const finite = yield* processWitnessIngress(runtime, witness, later, { local: true, deliver: false });
         assertEquals(finite.filter((emission) => emission.cue.kin === "witness").length, 1);
         assertEquals(provider.db.getKever(controller.pre)?.sn, 1);
