@@ -1,5 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import type { CueEmission } from "../core/cues.ts";
+import type { CueEmission, QueryCue } from "../core/cues.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import type { Hab } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -11,6 +11,8 @@ export type CueAdmission = "transferred" | "busy" | "ineligible";
 export interface CueSink {
   /** Synchronous guarded admission only: no waiting, reentry or destructive fallback on capacity refusal. */
   admitCue?(runtime: AgentRuntime, interpreter: Hab | null): CueAdmission;
+  /** Admit source retention and one finite query before invoking its synchronous signing/route preparation. */
+  admitQuery?(cue: QueryCue, prepare: () => CueEmission | null): CueAdmission;
   send(emission: CueEmission): Operation<void>;
 }
 

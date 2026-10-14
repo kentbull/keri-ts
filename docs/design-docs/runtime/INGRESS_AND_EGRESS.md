@@ -135,8 +135,18 @@ custom cues keep their existing sink. QueryCoordinator observes transferred cues
 only after acceptance. Packet delivery then runs outside Reactor, while failed
 wire/progress remains owned. Exact preparation refusal notification separates
 engine busy outcomes from foreign same-class interpretation/routing failures.
-Source-query admission, request-local HTTP/witness response ownership, mailbox
-workers and the remaining stack inventory still require their caller ports.
+Source queries and continuation requests use synchronous `admitQuery` preparation
+after item preflight, bounded raw input, 8 MiB retained wire, 1 MiB route metadata
+and 24 MiB temporary preparation admission. This local input/wire policy refuses
+before signing when capacity is occupied; configured input/floor limits remain
+distinct. Ineligible preparation publishes nothing and preserves unresolved/custom
+notify behavior. Continuation drains receive their owning runtime for guarded
+preparation; no signing, route lookup, capacity or network wait occurs before that
+admission. Source removal/observation follows transfer, and joined network work
+retains the original endpoint/signature. These logical allowances leave decoded
+serialization/native endpoint-row copy qualification open. Request-local HTTP/
+witness response ownership, mailbox workers and the remaining stack inventory
+still require their caller ports.
 
 ## Messenger responsibilities
 
