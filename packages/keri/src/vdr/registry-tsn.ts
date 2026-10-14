@@ -7,22 +7,31 @@ import type { BrokerProcessReplyArgs } from "../db/escrowing.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
 import type { Tevery } from "./eventing.ts";
 
+/** Require the entire qualified prefix, not a valid prefix followed by untrusted suffix bytes. */
+function qualifiedPrefix(value: unknown): boolean {
+  try {
+    return typeof value === "string" && new Prefixer({ qb64: value }).qb64 === value;
+  } catch {
+    return false;
+  }
+}
+
 /** Validate remote fields only; no storage/infrastructure failure is caught here. */
 function registryRecord(data: unknown): RegStateRecord | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   const row = data as Record<string, unknown>;
   if (
     Object.keys(row).some((key) => !["vn", "i", "s", "d", "ii", "dt", "et", "bt", "b", "c"].includes(key))
-    || typeof row.s !== "string" || !/^[0-9a-f]+$/i.test(row.s)
+    || typeof row.s !== "string" || !/^[0-9a-f]{1,14}$/i.test(row.s)
     || BigInt(`0x${row.s}`) > BigInt(Number.MAX_SAFE_INTEGER)
-    || typeof row.bt !== "string" || !/^[0-9a-f]+$/i.test(row.bt) || !["vcp", "vrt"].includes(String(row.et))
+    || typeof row.bt !== "string" || !/^[0-9a-f]{1,14}$/i.test(row.bt) || !["vcp", "vrt"].includes(String(row.et))
     || timestampMicros(row.dt) === null || !Array.isArray(row.vn) || row.vn.length !== 2
     || row.vn.some((part) => !Number.isSafeInteger(part) || part < 0)
     || !Array.isArray(row.b) || !Array.isArray(row.c) || row.c.some((item) => typeof item !== "string")
   ) return null;
   try {
-    for (const value of [row.i, row.ii, ...row.b]) new Prefixer({ qb64: value as string });
-    new Diger({ qb64: row.d as string });
+    if (![row.i, row.ii, ...row.b].every(qualifiedPrefix)) return null;
+    if (new Diger({ qb64: row.d as string }).qb64 !== row.d) return null;
     return RegStateRecord.fromDict(row);
   } catch {
     return null;
@@ -42,7 +51,7 @@ export class RegistryStateReceiver {
     const refuse = (reason: string, escrow?: string) => unverifiedReplyDecision(reason, { escrow });
     const record = registryRecord(serder.ked?.a);
     if (
-      !record || timestampMicros(serder.ked?.dt) === null || route !== `/tsn/registry/${aid}`
+      !record || !qualifiedPrefix(aid) || timestampMicros(serder.ked?.dt) === null || route !== `/tsn/registry/${aid}`
       || serder.said !== diger.qb64 || !serder.verify()
     ) {
       return refuse("Invalid registry transaction-state notice.");
@@ -54,7 +63,7 @@ export class RegistryStateReceiver {
       return refuse("Mismatched issuer or stale registry state.");
     }
     const kever = this.tvy.db.getKever(issuer, { refresh: true });
-    this.tvy.cues.checkSpace();
+    this.rvy.cues.checkSpace();
     const escrow = (typ: string, query: boolean) => {
       if (
         this.tvy.reger.txnsb.escrowStateNotice({
@@ -68,7 +77,7 @@ export class RegistryStateReceiver {
           tsgs,
         }) && query
       ) {
-        this.tvy.cues.push({
+        this.rvy.cues.push({
           kin: "query",
           pre: issuer,
           src: aid,
@@ -123,7 +132,7 @@ export class RegistryStateReceiver {
     const dater = new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) });
     this.tvy.reger.txnsb.updateReply(aid, serder, diger, dater);
     if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
-    this.tvy.cues.push({ kin: "txnStateSaved", record });
+    this.rvy.cues.push({ kin: "txnStateSaved", record });
     return acceptReplyDecision();
   }
 

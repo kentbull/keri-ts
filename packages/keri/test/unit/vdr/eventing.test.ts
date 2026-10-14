@@ -443,8 +443,9 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer"), outsider = hby.makeHab("outsider", undefined, { transferable: false });
-    const runtime = yield* createAgentRuntime(hby);
-    const reger = runtime.vdr.reger! as Reger, tvy = runtime.vdr.tvy! as Tevery;
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    const tvy = new Tevery({ db: hby.db, reger });
+    const runtime = yield* createAgentRuntime(hby, { vdr: { reger, tvy } });
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
       assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
@@ -457,6 +458,7 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
       yield* runtime.reactor.processBytes(issuer.endorse(valid));
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, valid.said, "Pointer is outer reply SAID");
       assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      assertEquals(tvy.cues.length, 0, "Borrowed Tevery does not capture reply-owned notifications");
       yield* runtime.reactor.processBytes(issuer.endorse(notice(state, oldStamp)));
       assertEquals(
         reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64,
@@ -469,6 +471,14 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
       const fabricated = notice({ ...state, c: [], b: [outsider.pre] }, newStamp, outsider);
       yield* runtime.reactor.processBytes(outsider.endorse(fabricated));
       assertEquals(reger.txnsb.current([vcp.pre!, outsider.pre]), null);
+      assertEquals(runtime.cues.length, 0);
+      for (
+        const malformed of [
+          notice({ ...state, i: `${vcp.pre}suffix` }),
+          reply(`/tsn/registry/${issuer.pre}suffix`, state, { pre: issuer.pre }),
+        ]
+      ) yield* runtime.reactor.processBytes(issuer.endorse(malformed));
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0, "Malformed qualified coordinates never reach storage");
       assertEquals(runtime.cues.length, 0);
       const habRecord = hby.db.getHab(issuer.pre)!;
       habRecord.watchers = [outsider.pre];
@@ -527,6 +537,7 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
       yield* reger.reopen();
     } finally {
       yield* runtime.close();
+      yield* reger.close(true);
       yield* hby.close(true);
     }
   });
