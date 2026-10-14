@@ -20,7 +20,10 @@ work children so cancellation aborts and joins I/O before releasing permits or
 owners. Promise adaptation belongs at real edges. Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 Receiving mailbox identity is an explicit per-message argument, never ambient
-mutable request state.
+mutable request state. Mailbox query correlation uses its own exact-policy
+CueDeck (64 held slots by default); selected cues retain byte/item credit through
+joined nested-reader cleanup. Admit the destination before removing a source cue;
+shutdown clears unmatched owners only after active reads close.
 Shared transport readers cancel once, join that Promise and always unlock;
 single errors retain identity and distinct read/cleanup failures aggregate.
 SSE's earlier reader owner re-observes its pending read/cancel Promises after

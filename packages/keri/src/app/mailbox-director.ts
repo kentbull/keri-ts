@@ -16,8 +16,8 @@
  *   discovering mailbox storage through `Habery`
  */
 import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy, type ResourceReservation } from "cesr-ts";
+import { CueDeck, type OwnedCue } from "../core/cue-admission.ts";
 import type { StreamCue } from "./../core/cues.ts";
-import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { MbxTopicCursor } from "../core/mailbox-topics.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
@@ -63,11 +63,13 @@ interface MailboxStreamOptions {
 export class MailboxDirector {
   readonly hby: Habery;
   readonly mailboxer: Mailboxer | null;
-  readonly queryCues: Deck<StreamCue>;
+  /** Exclusive correlation ownership; external producers append but do not take/release query owners. */
+  readonly queryCues: CueDeck;
   readonly topics: Set<string>;
   private readonly streamCleanups = new Set<() => Promise<void>>();
   private readonly resources: ResourcePolicy;
   private readonly limits: Required<MailboxStreamLimits>;
+  private correlationsClosed = false;
 
   constructor(
     hby: Habery,
@@ -77,17 +79,23 @@ export class MailboxDirector {
       topics = [],
       resources = new ResourcePolicy(),
       streamLimits = {},
+      maxQueryCues = 64,
     }: {
       mailboxer?: Mailboxer;
-      queryCues?: Deck<StreamCue>;
+      queryCues?: CueDeck;
       topics?: readonly string[];
       resources?: ResourcePolicy;
       streamLimits?: MailboxStreamLimits;
+      /** Local retained correlation slots, including active readers; not a protocol maximum. */
+      maxQueryCues?: number;
     } = {},
   ) {
     this.hby = hby;
     this.mailboxer = mailboxer ?? null;
-    this.queryCues = queryCues ?? new Deck();
+    if (!Number.isSafeInteger(maxQueryCues) || maxQueryCues < 0) throw new RangeError("Invalid mailbox query capacity");
+    if (queryCues && queryCues.resourcePolicy !== resources) throw new RangeError("Mailbox query policy mismatch");
+    this.queryCues = queryCues ?? new CueDeck(resources, maxQueryCues);
+    this.queryCues.capacity = Math.min(this.queryCues.capacity, maxQueryCues);
     this.topics = new Set(topics);
     this.resources = resources;
     this.limits = {
@@ -121,10 +129,16 @@ export class MailboxDirector {
 
   /** Stop every request-owned mailbox stream before its backing store closes. */
   async close(): Promise<void> {
+    this.correlationsClosed = true;
     const outcomes = await Promise.allSettled(
       [...this.streamCleanups].map((cleanup) => Promise.resolve().then(cleanup)),
     );
     const failures = outcomes.flatMap((result) => result.status === "rejected" ? [result.reason] : []);
+    try {
+      this.queryCues.clear();
+    } catch (error) {
+      if (!failures.includes(error)) failures.push(error);
+    }
     if (failures.length === 1) throw failures[0];
     if (failures.length) throw new AggregateError(failures, "Mailbox stream cleanup failed");
   }
@@ -164,9 +178,10 @@ export class MailboxDirector {
     return { ...topics };
   }
 
-  /** Retain one mailbox-query `stream` cue for later HTTP/SSE correlation. */
+  /** Admit one immutable query cue before the caller removes its source owner; busy leaves that source intact. */
   retainQueryCue(cue: StreamCue): void {
-    this.queryCues.push(cue);
+    if (this.correlationsClosed) throw new Error("Mailbox query correlation is closed");
+    this.queryCues.append(cue);
   }
 
   /**
@@ -387,6 +402,7 @@ export class MailboxDirector {
     said: string,
     options: Pick<MailboxStreamOptions, "retryMs" | "pollIntervalMs"> = {},
   ): ReadableStream<Uint8Array> {
+    if (this.correlationsClosed) throw new Error("Mailbox query correlation is closed");
     const credit = this.admit();
     try {
       if (typeof said !== "string" || 4 * said.length > this.limits.maxMetadataBytes) {
@@ -419,6 +435,7 @@ export class MailboxDirector {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let wake: (() => void) | undefined;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let selected: OwnedCue | undefined;
     let pending: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
     let closing: Promise<void> | undefined;
     let stream: ReadableStreamDefaultController<Uint8Array>;
@@ -445,6 +462,12 @@ export class MailboxDirector {
         } catch (error) {
           failures.push(error);
         }
+        try {
+          selected?.release();
+        } catch (error) {
+          if (!failures.includes(error)) failures.push(error);
+        }
+        selected = undefined;
         this.streamCleanups.delete(close);
         release();
         if (failures.length === 1) throw failures[0];
@@ -471,8 +494,10 @@ export class MailboxDirector {
             return;
           }
           while (!reader && !closed) {
-            const cue = this.takeQueryCue(said);
-            if (cue) {
+            selected = this.takeQueryCue(said) ?? undefined;
+            if (selected) {
+              const cue = selected.cue;
+              if (cue.kin !== "stream") throw new Error("Mailbox query owner is not a stream cue");
               reader = this.mailboxStream(
                 cue.pre,
                 this.cursor(cue.pre, cue.topics),
@@ -551,39 +576,26 @@ export class MailboxDirector {
    * host work still needs.
    */
   hasQueryCue(said: string): boolean {
-    let found = false;
-    const kept: StreamCue[] = [];
-    while (!this.queryCues.empty) {
-      const cue = this.queryCues.pull();
-      if (!cue) {
-        continue;
-      }
-      if (cue.serder.said === said) {
-        found = true;
-      }
-      kept.push(cue);
+    for (const cue of this.queryCues) {
+      if (cue.kin === "stream" && cue.serder.said === said) return true;
     }
-    this.queryCues.extend(kept);
-    return found;
+    return false;
   }
 
-  /** Remove and return the next queued `stream` cue for one query SAID. */
-  private takeQueryCue(said: string): StreamCue | null {
-    let match: StreamCue | null = null;
-    const kept: StreamCue[] = [];
-    while (!this.queryCues.empty) {
-      const cue = this.queryCues.pull();
-      if (!cue) {
-        continue;
+  /** Select the first matching owner without re-admission or changing preceding cue order. */
+  private takeQueryCue(said: string): OwnedCue | null {
+    let preceding = 0;
+    for (const cue of this.queryCues) {
+      if (cue.kin === "stream" && cue.serder.said === said) {
+        const kept: OwnedCue[] = [];
+        for (let i = 0; i < preceding; i++) kept.push(this.queryCues.takeOwned()!);
+        const selected = this.queryCues.takeOwned()!;
+        for (let i = kept.length - 1; i >= 0; i--) this.queryCues.requeue(kept[i]);
+        return selected;
       }
-      if (!match && cue.serder.said === said) {
-        match = cue;
-        continue;
-      }
-      kept.push(cue);
+      preceding++;
     }
-    this.queryCues.extend(kept);
-    return match;
+    return null;
   }
 
   /** Require provider mailbox storage for publication or mailbox serving. */
