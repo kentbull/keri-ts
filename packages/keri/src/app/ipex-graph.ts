@@ -1,6 +1,6 @@
 /** Borrowed ACDC disclosure DAGs: structure, negotiated paths and edge semantics. */
 import { type CesrFrame, Compactor, makePather, type MapperMap, Saider, SerderACDC } from "cesr-ts";
-import { Schemer } from "../core/scheming.ts";
+import { type SchemaValidation, validateSchema } from "../acdc/scheming.ts";
 import type { Baser } from "../db/basing.ts";
 
 /** One node selection: schema SAID, graph path and relative disclosure paths. */
@@ -10,6 +10,8 @@ export interface IpexGraph {
   nodes: ReadonlyMap<string, CesrFrame & { body: SerderACDC }>;
   order: readonly string[];
 }
+type MissingSchema = Extract<SchemaValidation, { kind: "missing" }>;
+type Relation = boolean | null | MissingSchema;
 const sectionLabels = new Set(["d", "u", "o", "w"]);
 const groupLabels = new Set([...sectionLabels, "s"]);
 const nodeLabels = new Set(["d", "u", "n", "s", "o", "w"]);
@@ -193,14 +195,14 @@ export function verifyIpexDisclosure(plan: DisclosurePlan, origin: string, graph
   return equal(selected, graph.order);
 }
 
-/** Check one declared edge relation against its authenticated-later far node. */
+/** Check one declared edge relation and its schema pin after the graph's issuer proofs pass. */
 function leafRelation(
   group: Record<string, unknown>,
   near: SerderACDC,
   graph: IpexGraph,
   inheritedSchema: unknown,
   db: Baser,
-): boolean | null {
+): Relation {
   if (Object.keys(group).some((key) => !nodeLabels.has(key)) || typeof group.n !== "string") return null;
   const far = graph.nodes.get(group.n)?.body;
   if (!far) return null;
@@ -219,30 +221,9 @@ function leafRelation(
   if (operators.includes("I2I") && (!far.issuee || near.issuer !== far.issuee)) return false;
   const schema = Object.hasOwn(group, "s") ? group.s : inheritedSchema;
   if (schema == null) return true;
-  let schemer: Schemer | null = null;
-  let schemaId: unknown;
-  if (typeof schema === "string") schemaId = schema;
-  else if (record(schema) && typeof schema.$id === "string") {
-    try {
-      schemer = new Schemer({ sed: structuredClone(schema) });
-    } catch {
-      return null;
-    }
-    if (schemer.said !== schema.$id) return null;
-    schemaId = schemer.said;
-  } else return null;
-  const farSchema = far.schema;
-  const farSchemaId = record(farSchema) ? farSchema.$id : farSchema;
-  if (typeof farSchemaId !== "string") return null;
-  if (schemaId === farSchemaId) return true;
-  // Database failures remain infrastructure failures, outside schema validation.
-  schemer ??= db.schema.get(schemaId as string);
-  if (!schemer) return null;
-  try {
-    return schemer.verify(far.raw);
-  } catch {
-    return false;
-  }
+  if (typeof schema !== "string" && !record(schema)) return false;
+  const result = validateSchema(far, db, schema);
+  return result.kind === "missing" ? result : result.kind === "valid";
 }
 
 /** Evaluate AND/OR edge groups; malformed members cannot be hidden by a passing sibling. */
@@ -253,7 +234,7 @@ function groupRelation(
   inheritedSchema: unknown,
   nested: boolean,
   db: Baser,
-): boolean | null {
+): Relation {
   const op = group.o ?? "AND";
   if (op !== "AND" && op !== "OR") return null;
   const labels = nested ? groupLabels : sectionLabels;
@@ -266,13 +247,14 @@ function groupRelation(
       ? leafRelation(node, near, graph, schema, db)
       : groupRelation(node, near, graph, schema, true, db);
     if (result === null) return null;
+    if (typeof result === "object") return result;
     results.push(result);
   }
   return !results.length ? null : op === "OR" ? results.some(Boolean) : results.every(Boolean);
 }
 
-/** Validate each disclosed edge block; issuer proofs are a separate later obligation. */
-export function verifyIpexRelations(graph: IpexGraph, db: Baser): boolean {
+/** Validate edge blocks against authenticated nodes; unavailable schemas remain typed dependencies. */
+export function verifyIpexRelations(graph: IpexGraph, db: Baser): boolean | MissingSchema {
   for (const said of graph.order) {
     const near = graph.nodes.get(said)!.body;
     const edges = blocks(near.sad!.e);
@@ -281,6 +263,7 @@ export function verifyIpexRelations(graph: IpexGraph, db: Baser): boolean {
       const matched = Object.hasOwn(edge, "n")
         ? leafRelation(edge, near, graph, null, db)
         : groupRelation(edge, near, graph, null, false, db);
+      if (matched !== null && typeof matched === "object") return matched;
       if (matched !== true) return false;
     }
   }
