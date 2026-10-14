@@ -57,14 +57,26 @@ paths to the frozen target, or document why historical compatibility is retained
 Local continuation checks on 2026-10-13 used the existing provenance probe and
 uncommitted actual-command probes. No hosted workflow was dispatched.
 
-| Actual environment                          | Startup imports | Actual command discovery         | Evidence boundary                                                                                           |
-| ------------------------------------------- | --------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| macOS / upstream 927 / Python 3.14.2        | 98              | 193 (`kli --help`)               | Every loaded KERI module matched 927 Git bytes                                                              |
-| macOS / fork b08 / Python 3.14.2            | 99              | 195 (`kli mailbox start --help`) | Temporary clean checkout, existing interpreter dependencies; every loaded KERI module matched b08 Git bytes |
-| Linux / upstream 927 / Python 3.14.6        | 98              | 193 (`kli --help`)               | Explicit 927 source with fork venv dependencies; every loaded KERI module matched 927 Git bytes             |
-| Linux / fork b08 / Python 3.14.6            | 99              | 195 (`kli mailbox start --help`) | Clean checkout and its venv; every loaded KERI module matched b08 Git bytes                                 |
-| macOS / cached Sally 98 / Python 3.14.2     | 99              | 195 (`kli mailbox start --help`) | Installed direct-url commit 98; independent command probe matched all loaded KERI modules to 98 Git bytes   |
-| macOS / embedded resolver 839 / Python 3.13 | 37              | Not run                          | Actual resolver checkout, site-packages KERIpy 1.2.14 and HIO 0.6.14; no KERI Git provenance                |
+| Env                | Start | CLI | Evidence                  |
+| ------------------ | ----: | --: | ------------------------- |
+| macOS 927          |    98 | 193 | Git bytes                 |
+| macOS b08          |    99 | 195 | Git bytes; temp source    |
+| Linux 927          |    98 | 193 | Git bytes; fork deps      |
+| Linux b08          |    99 | 195 | Git bytes; own venv       |
+| macOS Sally 98     |    99 | 195 | Installed pin + Git bytes |
+| macOS resolver 839 |    37 |   — | Installed hashes only     |
+
+Start/CLI count loaded KERI modules at startup and actual command discovery.
+927 used `kli --help`; b08 and Sally 98 used `kli mailbox start --help`.
+Every source/command comparison matched the selected pin's Git bytes. macOS
+used Python 3.14.2; Linux used 3.14.6. macOS b08 used a temporary clean checkout
+with existing interpreter dependencies; Linux 927 used explicit source with
+fork venv dependencies. Linux b08 used its clean checkout and own venv.
+
+Sally 98 startup recorded its installed direct-url commit; the independent
+command probe additionally verified all imported KERI bytes against Git. Resolver
+839 used Python 3.13 and its actual checkout with site-packages KERIpy 1.2.14 and
+HIO 0.6.14, without KERI Git provenance; resolver command discovery was not run.
 
 `scripts/ci/probe-keripy.py` imports KLI startup before recording module paths
 and SHA-256 hashes. With `--root`, every loaded KERI file must stay inside the
