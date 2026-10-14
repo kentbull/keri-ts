@@ -164,6 +164,9 @@ library/runtime/DB. Choose withExistingHabery, withAgentRuntime or
 withHabAndAgentRuntime for existing-store commands; ensureHby is create-if-missing
 startup. Bootstrap tests use explicit config paths. Source runs do not qualify
 the packed Node CLI.
+Respect the advertised Node floor in runtime code: transport drain, query completion
+and host shutdown use ordinary Promise construction. A newer-runtime smoke cannot
+qualify older supported Node versions.
 
 [Runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md),
 [cue design](../../docs/design-docs/runtime/CUES.md),
