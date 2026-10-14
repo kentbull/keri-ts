@@ -13,11 +13,12 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
     let start!: () => void, finish!: () => void;
     let started = new Promise<void>((resolve) => start = resolve);
     let gate = new Promise<void>((resolve) => finish = resolve);
-    let failure: unknown, posted: Uint8Array | undefined;
+    let failure: unknown, posted: Uint8Array | undefined, sends = 0;
     const runtime = yield* createAgentRuntime(hby, {
       services: {
         http: {
           async fetch(_url, init) {
+            sends++;
             posted = await readCesrRequestBytes(new Request(_url, init));
             start();
             await gate;
@@ -71,6 +72,24 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       assertEquals(runtime.deliveries.hasPending, true, "cancelled transport retains independent delivery");
       for (let pass = 0; pass < 4 && runtime.deliveries.hasPending; pass++) yield* runtime.deliveries.process(runtime);
       assertEquals(runtime.resources.used.bytes, 0);
+
+      hby.db.ends.rem([recipient.pre, Roles.controller, recipient.pre]);
+      const beforeSends = sends, interpret = sender.interpretCue.bind(sender);
+      let interpretations = 0;
+      sender.interpretCue = (...args) => {
+        interpretations++;
+        return interpret(...args);
+      };
+      runtime.cues.push(cue);
+      yield* drainRuntimeCues(runtime, sender, runtime.cues);
+      assertEquals([interpretations, sends, runtime.cues.length, runtime.deliveries.hasPending], [
+        1,
+        beforeSends,
+        0,
+        false,
+      ], "absent endpoint remains a once-interpreted local no-op");
+      assertEquals(runtime.resources.used.bytes, 0);
+      sender.interpretCue = interpret;
 
       const event = hby.db.getEvtSerder(sender.pre, sender.kever!.serder.said!)!;
       const stream = { kin: "stream" as const, serder: event, pre: sender.pre, src: sender.pre, topics: { logs: 0 } };

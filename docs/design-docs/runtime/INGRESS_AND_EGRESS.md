@@ -77,6 +77,8 @@ query/wire, mailbox correlation and unresolved pending ownership transfer before
 source removal. Network delivery and borrowed fallback consumption/cleanup run
 outside Reactor. Only observed engine-created admission refusals become HTTP
 capacity responses; foreign same-class source/preparation failures propagate.
+Explicit endpoint absence keeps the responder’s existing best-effort no-delivery
+outcome; no-target cleanup follows source transfer without a second interpretation.
 Witness cue consumption and default CueDeck activation remain separate ports.
 
 The generic HTTP route consumes its request body progressively and appends a

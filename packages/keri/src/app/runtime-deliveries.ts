@@ -18,7 +18,7 @@ import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
 import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
-import { prepareCueEmission } from "./cue-preparation.ts";
+import { prepareCueEmission, type PreparedCueEmission } from "./cue-preparation.ts";
 import { prepareCueRoute } from "./cue-route.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import { DirectReplyDelivery } from "./direct-reply-delivery.ts";
@@ -182,9 +182,16 @@ export class RuntimeDeliveries {
       if (error instanceof DeckFullError) onAdmissionRefusal?.(error);
       throw error;
     }
-    return prepareCueEmission(hab, cues, this.resources, (owner) => {
+    let unrouted: PreparedCueEmission | undefined;
+    const transferred = prepareCueEmission(hab, cues, this.resources, (owner) => {
       if (!owner.emission || owner.emission.kind !== "wire") throw new RangeError("Cue delivery requires wire");
       const captured = prepareCueRoute(this.resources, owner, () => route(owner.emission!), onAdmissionRefusal);
+      if (!captured.route.targets.length) {
+        // Responder routing is best-effort when no endpoint exists; retire only after source publication.
+        unrouted = owner;
+        captured.release();
+        return undefined;
+      }
       let queued = false;
       try {
         const delivery = new CueDelivery(owner, sender, captured);
@@ -195,6 +202,8 @@ export class RuntimeDeliveries {
         if (!queued) captured.release();
       }
     }, onAdmissionRefusal);
+    unrouted?.release();
+    return transferred;
   }
 
   /** Atomically publish one bounded direct-reply batch and its HTTP stream; no network runs here. */
