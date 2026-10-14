@@ -1,6 +1,6 @@
 import { Cigar, Dater, Diger, Prefixer, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
-import { encodeDateTimeToDater } from "../time/mod.ts";
+import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck, DeckFullError } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
@@ -79,8 +79,9 @@ function sameOrNewerReply(
   if (!oldDater) {
     return true;
   }
-  return new Date(nextDater.dts).getTime()
-    > new Date(oldDater.dts).getTime();
+  const next = timestampMicros(nextDater.dts), previous = timestampMicros(oldDater.dts);
+  if (next === null || previous === null) throw new ValidationError("Invalid BADA reply timestamp.");
+  return next > previous;
 }
 
 /**
