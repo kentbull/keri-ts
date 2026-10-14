@@ -114,13 +114,15 @@ Configured parser and HTTP policies must agree. Source and payload cleanup join
 before their respective reservations return; callers must still wire the owning
 runtime services into every standalone exchange/witness sender.
 
-Progressive JSON adds measured logical decoded charges to this same tree owner
-before raw copying/text decoding/JSON.parse; descendants share its cumulative cap
+Progressive JSON/MGPK add measured logical decoded charges to this same tree owner
+before raw copying and their codec allocation; descendants share its cumulative cap
 (the policy byte capacity). The CESR contract defines its 64/16/8/2 vocabulary and
-conservative working retention. Wire allowances alone do not bound decoded JSON.
+conservative working retention. Wire allowances alone do not bound decoded bodies.
 Tree admission checks its aggregate own reservations against capacity before each
 shared request: an impossible tree is `limit`; competing owners cause `busy`.
-This does not admit wrapped Matter preparation, binary/native hydration, standalone
+MGPK declared container capacity and pinned decoder work use the same root owner;
+shared key caching/global custom extensions are excluded from admitted MGPK.
+This does not admit wrapped Matter preparation, CBOR/native hydration, standalone
 verification, storage/cache copies or every JavaScript/native allocation.
 
 Additional hydrated representations, reader copies, storage and object/handle/work

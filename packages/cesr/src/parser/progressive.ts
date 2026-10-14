@@ -12,7 +12,7 @@ import { retainFrameCredit } from "../core/frame-credit.ts";
 import { ResourcePolicy, type ResourceReservation } from "../core/resource-policy.ts";
 import type { CesrFrame, EssrPayload } from "../core/types.ts";
 import { decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
-import type { JsonBudget } from "../serder/json-admission.ts";
+import type { DecodedBodyBudget } from "../serder/body-admission.ts";
 import { smell } from "../serder/smell.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { parseAttachmentGroup, startsFrame } from "./attachments.ts";
@@ -94,7 +94,7 @@ interface PendingFrame {
 }
 
 /** Remaining admission credit shared only by one pending message and its descendants. */
-interface TreeBudget extends EssrBudget, JsonBudget {
+interface TreeBudget extends EssrBudget, DecodedBodyBudget {
   /** One root owns the admission allowance for all parent-owned descendants. */
   credit?: ResourceReservation;
   /** Ordinary body and attachment wire bytes retained so far. */
@@ -389,7 +389,7 @@ export async function* parse(
     }
     : options;
   const resources = options.resources;
-  const jsonLimit = resources?.limits.bytes ?? new ResourcePolicy().limits.bytes;
+  const decodedLimit = resources?.limits.bytes ?? new ResourcePolicy().limits.bytes;
   const limit = options.maxFrameBytes ?? 8 * 1024 ** 2;
   if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Frame limit must be a positive safe integer");
   // Empty attachment groups require an object-count cap in addition to the byte cap.
@@ -448,8 +448,8 @@ export async function* parse(
       if (credit) context.credits.add(credit);
       return {
         credit,
-        jsonBytes: jsonLimit,
-        onJsonFailure: (error) => external.add(error),
+        decodedBytes: decodedLimit,
+        onDecodeFailure: (error) => external.add(error),
         resident: 0,
         groups: 0,
         nodes: 0,

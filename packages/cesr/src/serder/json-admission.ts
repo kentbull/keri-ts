@@ -1,12 +1,7 @@
 import { t } from "../core/bytes.ts";
 import { DeserializeError, ResourceLimitError } from "../core/errors.ts";
 
-/** JSON logical credit shared by a root and descendants; supplied bytes remain immutable through decode. */
-export interface JsonBudget {
-  jsonBytes: number;
-  onJsonFailure?: (error: unknown) => void;
-  admitStage?: (bytes: number) => void;
-}
+import type { DecodedBodyBudget } from "./body-admission.ts";
 
 const syntaxFailures = new WeakSet<DeserializeError>();
 
@@ -44,8 +39,8 @@ export function isJsonSyntaxFailure(error: unknown): boolean {
  * source bytes 2 (an upper bound on decoded UTF-16, including escapes/duplicate keys).
  * Fixed scalar workspace and decode text stay conservatively charged through root cleanup.
  */
-export function admitJson(raw: Uint8Array, budget: JsonBudget): void {
-  if (!Number.isSafeInteger(budget.jsonBytes) || budget.jsonBytes < 0) {
+export function admitJson(raw: Uint8Array, budget: DecodedBodyBudget): void {
+  if (!Number.isSafeInteger(budget.decodedBytes) || budget.decodedBytes < 0) {
     throw new RangeError("JSON credit must be a non-negative safe integer");
   }
   const working = 64 + 2 * raw.length;
@@ -79,8 +74,8 @@ export function admitJson(raw: Uint8Array, budget: JsonBudget): void {
       scalar = true;
       charge += 8 + 16;
     }
-    if (charge > budget.jsonBytes) throw new ResourceLimitError("JSON exceeds decoded tree credit");
+    if (charge > budget.decodedBytes) throw new ResourceLimitError("JSON exceeds decoded tree credit");
   }
   budget.admitStage?.(charge);
-  budget.jsonBytes -= charge;
+  budget.decodedBytes -= charge;
 }

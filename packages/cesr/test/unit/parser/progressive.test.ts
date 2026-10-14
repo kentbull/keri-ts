@@ -1,3 +1,4 @@
+import { encode as encodeMsgpack } from "@msgpack/msgpack";
 import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import { toAsyncFrames } from "../../../src/adapters/async-iterable.ts";
 import { concatBytes, decodeB64, decoder, t } from "../../../src/core/bytes.ts";
@@ -547,4 +548,57 @@ Deno.test("wrapped JSON retains intrinsic opaque fallback and propagates resourc
   assertEquals(accepted.body.raw, encode(json));
   assertEquals(accepted.body.ked, original(json));
   assertEquals(accepted.body.said, original(json).d);
+});
+
+Deno.test("JSON and MGPK descendants share decoded credit through refusal, suspension and cancellation", async () => {
+  const jsonBody = tinyJson(0);
+  const msgpackBody = encodeMsgpack({ v: "KERI10MGPK000018_", a: [] });
+  const v = vector(1);
+  const wrap = (raw: Uint8Array) => v.group("NonNativeBodyGroup", new Texter({ raw, code: "4B" }).qb64);
+  const child = v.group("BodyWithAttachmentGroup", wrap(msgpackBody));
+  const wire = v.group("BodyWithAttachmentGroup", wrap(encode(jsonBody)) + child);
+  // JSON charge406; pinned MGPK scanner64 +working1394 +declared decoded342.
+  const held = 512 + 406 + 64 + 1394 + 342;
+  const resources = new ResourcePolicy({ bytes: held });
+  const options = { resources, maxFrameBytes: 512, classifyWireErrors: true };
+  const occupied = resources.reserve({ bytes: 1 });
+  assert(occupied.kind === "reserve");
+  const busy = await assertRejects(() => parseBytes(encode(wire), options), ResourceAdmissionError);
+  assertEquals(busy.reason, "busy");
+  assertEquals(resources.used.bytes, 1);
+  occupied.reservation.release();
+  const configured = new ResourcePolicy({ bytes: held - 1 });
+  const limit = await assertRejects(() =>
+    parseBytes(encode(wire), {
+      ...options,
+      resources: configured,
+    }), ResourceAdmissionError);
+  assertEquals(limit.reason, "limit");
+  assertEquals(configured.used.bytes, 0);
+  const parser = parse(chunks(encode(wire)), options);
+  const frame = (await parser.next()).value!;
+  assertEquals(frame.nests?.length, 1);
+  assertEquals(frame.nests![0].body.raw, msgpackBody);
+  assertEquals(frame.body.ked?.a, []);
+  assertEquals(frame.nests![0].body.ked?.a, []);
+  assertEquals(resources.used.bytes, held);
+  await discardFrame(frame.nests![0]);
+  await discardFrame(frame);
+  await discardFrame(frame);
+  assertEquals(resources.used.bytes, held, "suspended parser owns both codecs' credit");
+  await parser.return(undefined);
+  assertEquals(resources.used.bytes, 0);
+  const controller = new AbortController();
+  const cancellation = new Error("cancel after admitted binary child");
+  // Child body is complete; its declared attachment tail is deliberately withheld.
+  const waitingChild = v.group("BodyWithAttachmentGroup", wrap(msgpackBody) + v.sig);
+  const pending = v.group("BodyWithAttachmentGroup", wrap(encode(jsonBody)) + waitingChild);
+  const source = async function*() {
+    yield encode(pending.slice(0, -v.sig.length));
+    controller.abort(cancellation);
+  };
+  assert(
+    await assertRejects(() => collect(parse(source(), { ...options, signal: controller.signal }))) === cancellation,
+  );
+  assertEquals(resources.used.bytes, 0);
 });
