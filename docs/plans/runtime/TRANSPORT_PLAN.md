@@ -112,6 +112,28 @@ SSE callers still need the exact runtime services/policy. Local schema and crede
 file inputs need finite preflight bounds before whole-file reads. Keep these in the
 existing Commands/JSON edges S2 audit.
 
+**Caller audit boundaries.** Review the complete producer-to-consumer chain,
+including preparation before the shared engine and retained results after it:
+
+- Delivery: `runtime-bridge`/host kernel, Respondant and QueryCoordinator;
+  request-local replies must transfer their own lifetime on handler return.
+- Receipt/catchup: `Receiptor.receipt/get/catchup`, delegation sends and receipt
+  fanout; pass the existing runtime services rather than creating an unrelated
+  transport owner, and close replay cursors before a network wait.
+- Mailbox: provider/director endpoint workers, `mailbox.ts` administration and
+  operator debug; admit local submission/report copies as well as HTTP/SSE reads.
+- Artifacts/commands: dynamic DID handlers, generation/export, VC file/stdin,
+  IPEX grant support and credential presentations; a streamed upload cannot
+  compensate for collecting all KEL/TEL/dependency bytes beforehand.
+- JSON/status: Authenticator, verifier webhook and sample hook; bound body
+  preparation, ready-row/presentation retention and response cleanup. Schema,
+  command/config and diagnostic file collectors need finite preflight bounds.
+
+These are caller slices of the owners below, not new implementation projects.
+Include library defaults, command wrappers and failure paths, not just injected
+test services. Input size caps do not bound decoded state, retained reports or
+accepted caches; phases 4–5 own those charges and borrowing contracts.
+
 Publish each adoption slice within the existing S owners, separating OOBI receive,
 OOBI/GET output, DID receive, DID artifact generation/serving and JSON lifecycle
 fixes as needed to meet the review-size target. Preserve finite API convenience
@@ -166,6 +188,12 @@ ceiling and refusal-before-read/allocation evidence. Audit all socket/fetch/body
 readers again on the release head, including service injection and host error
 paths; absence from this table does not exempt a caller. An engine test without
 caller adoption leaves the row open. Preserve small PRs and existing test topology.
+Reject hidden prefetch, detached cleanup and whole-history preparation even when
+the final write uses a shared messenger. A bounded complete event, receipt or JSON
+document may stay finite when its consumer requires that semantic unit; a finite
+adapter still uses admitted, cancellable transport. Record whether credit transfers
+with a returned value or the caller admits its retained copy. Do not label a row
+closed when only the body reader's temporary credit has been released.
 
 ## Review units
 
