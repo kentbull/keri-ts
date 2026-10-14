@@ -76,8 +76,11 @@ storage does not accept either message or publish ordinary exchange wire.
 
 ## Open boundary
 
-Whole LMDB rows are allocated before current size checks. Finite row ceilings and
-per-tree budgets do not prove admission before allocation or a runtime-wide bound.
+Nested wire reads use the pinned NAPI size preflight before owned row copies;
+active writers stay borrowed and ordinary reads share one explicit snapshot.
+Other LMDB APIs still allocate whole rows before size checks. Pre-existing native
+scratch and admitted copies still need shared leases; local ceilings do not prove
+a runtime-wide bound.
 [Resource phase 4](../../docs/plans/runtime/RESOURCE_POLICY_PLAN.md) and
 [storage phase 5](../../docs/plans/db/STORAGE_RECOVERY_PLAN.md) jointly own closure.
 See the [payload contract](../../docs/design-docs/db/PAYLOAD_STORAGE.md).
