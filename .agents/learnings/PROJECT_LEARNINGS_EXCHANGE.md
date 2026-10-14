@@ -20,6 +20,11 @@ Keep ests/eidx and cigar verifier context; recheck proof factors on replay.
 Retry captures an initial horizon, reads one key and closes the LMDB cursor before
 awaiting/removing rows. Mutating a suspended range can skip the next escrow.
 Group leadership intentionally uses group signatures, excluding foreign endorsements.
+Missing-schema EXNs retain the same evidence ownership through emse/emsd and
+archive recovery. One absolute deadline spans sequential schema dependencies;
+TMSC opener plus lifetime differs from the receiver receipt. Equality is eligible.
+Remote dependency outcomes are typed; storage/corruption failures propagate.
+Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 
 ## Route ownership
 
@@ -33,9 +38,16 @@ frames; remote-first approval reopens evidence. CLI proposal/join remains v1.
 Preserve first-notice behavior or retries can republish approval unnecessarily.
 
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
-proof; conversation acceptance is not wallet acceptance. Observer registry import
+proof; metadata offers withhold issuer proofs but still validate carried schemas.
+Grant order is issuer authentication, own schemas, edge pins, then presentation.
+Same-schema identity never bypasses payload constraints; missing schema is a
+typed dependency, while infrastructure/resource failures propagate.
+Conversation acceptance is not wallet acceptance. Observer registry import
 is separate from issuer registry processing. Presentation registries still require
-receiver-owned KRAM time; deeper nests and unfinished routes remain guarded.
+receiver-owned KRAM time, node-local BLIDs and explicit fully witnessed Issuee
+source triples. Bind the exact grant target at the inclusive receipt cutoff;
+later accepted TEL updates cannot refresh it. Preserve missing proof escrow and
+independent issuer verification; deeper/hidden paths and unfinished routes remain guarded.
 
 Pure multisig/IPEX body builders take parsed Serders synchronously. Byte convenience
 operations own cancellable parseBytes, finite nested-wire collection and finally
@@ -89,7 +101,8 @@ Private envelope-bound receipt authority expires with the consumer and requires
 completed nonexempt intake. Freeze first exchange receiverTime through route proof
 escrow, retry and reopen; recheck publication against competing receipt writes.
 Signed dt, disabled/exempt/v1 intake and forged capabilities never confer cutoffs.
-Presentation registry processing remains independently guarded.
+Disclosed presentation registry processing consumes retained receipt provenance;
+hidden declarations and unfinished graphs remain guarded.
 
 [Proofs](../../docs/design-docs/exchange/EXCHANGE_PROOFS.md),
 [multisig](../../docs/design-docs/exchange/MULTISIG.md),
