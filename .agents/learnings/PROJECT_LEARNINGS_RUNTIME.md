@@ -104,6 +104,9 @@ HTTP response. Earlier responses transfer to ordinary delivery. A response scope
 outlives fetch headers and must not inherit a request signal that aborts when the
 handler returns. requestFrame/postCesr retain frame owners until consumption ends.
 
+KEL replay exposes frozen prefix/from/end metadata; cue admission inspects it
+without opening a body/iterator or walking the borrowed Baser. Retained/fanout
+owners keep that credit; capture-time and opaque TEL/composed sources stay separate.
 Replay captures first-seen ranges, hydrates one finite event and releases cursors
 before transport suspension. Query credits remain charged through failed delivery;
 bounded passes drain only their initial work. Generic witness and signed-exchange
