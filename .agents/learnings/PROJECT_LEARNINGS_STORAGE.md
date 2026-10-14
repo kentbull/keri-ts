@@ -21,7 +21,7 @@ options, KERI_LMDB_MAP_SIZE/KERI_BASER_MAP_SIZE and stored metadata.
 LMDB V1 live inspection needs the existing owner or separate processes. Opening
 the same environment twice in one process can break reader slots, even readonly.
 RegBaser owns the existing public registry evts/tels/heads layout; observer
-chain reads/imports extend that same environment. Readonly old-store opening
+accepted-chain reads and public engine intake share that same environment. Readonly old-store opening
 binds existing tables without migration. RegBaser's absent anchor/escrow adapters
 and RegistryStore's alias mapper are null on old layouts until explicit storage
 writes initialize them; reads cannot migrate a store. Anchor tuples retain bigint
