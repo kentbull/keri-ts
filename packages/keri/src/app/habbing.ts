@@ -46,7 +46,7 @@ import {
   rotate as rotateEvent,
 } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
-import { HabitatRecord, type VerferCigarCouple } from "../core/records.ts";
+import { HabitatRecord } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
@@ -66,6 +66,7 @@ import {
   normalizeSaltQb64,
   saltySigner,
 } from "./keeping.ts";
+import { loadStoredReply } from "./stored-replies.ts";
 
 /** Reserved alias for the local signatory habitat record. */
 export const SIGNER = "__signatory__";
@@ -238,86 +239,6 @@ function emptyMessage(): Uint8Array {
 /** Concatenate a list of wire messages while preserving empty-list semantics. */
 function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
   return messages.length === 0 ? emptyMessage() : concatBytes(...messages);
-}
-
-/**
- * Rebuild stored transferable reply signature groups from `ssgs.`.
- *
- * This helper is used when accepted replies are reloaded for OOBI/resource
- * dissemination and the caller needs a full wire message again.
- */
-function fetchReplyTsgs(
-  db: Baser,
-  said: string,
-): TransIdxSigGroup[] {
-  const grouped = new Map<string, TransIdxSigGroup>();
-
-  for (
-    const [keys, siger] of db.ssgs.getTopItemIter([said], { topive: true })
-  ) {
-    const prefix = keys[1];
-    const dig = keys[3];
-    if (!prefix || !dig) {
-      continue;
-    }
-    const estEvent = db.getEvtSerder(prefix, dig);
-    const seqner = estEvent?.sner;
-    if (!seqner) {
-      continue;
-    }
-    const groupKey = `${prefix}.${seqner.qb64}.${dig}`;
-    let group = grouped.get(groupKey);
-    if (!group) {
-      group = new TransIdxSigGroup(
-        new Prefixer({ qb64: prefix }),
-        seqner,
-        new Diger({ qb64: dig }),
-        [],
-      );
-      grouped.set(groupKey, group);
-    }
-    group.sigers.push(siger);
-  }
-
-  return [...grouped.values()].sort((a, b) => Number(b.sn - a.sn));
-}
-
-/** Rehydrate one stored verfer+cigar tuple into the KERIpy runtime cigar shape. */
-function hydrateStoredCigar(tuple: VerferCigarCouple): Cigar {
-  return new Cigar(tuple[1], tuple[0]);
-}
-
-/**
- * Reload one persisted reply plus all of its stored attachments by SAID.
- *
- * Returns an empty message when the reply SAID is not present in reply-state
- * storage.
- */
-function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
-  const serder = db.rpys.get([said]);
-  if (!serder) {
-    return emptyMessage();
-  }
-
-  const tsgs = fetchReplyTsgs(db, said);
-  if (tsgs.length > 0) {
-    const lead = tsgs[0];
-    return messagize(serder, {
-      sigers: lead.sigers,
-      seal: { i: lead.prefixer, s: lead.seqner, d: lead.diger },
-      pipelined: true,
-    });
-  }
-
-  const cigars = db.scgs.get([said]);
-  if (cigars.length > 0) {
-    return messagize(serder, {
-      cigars: cigars.map((entry) => hydrateStoredCigar(entry)),
-      pipelined: true,
-    });
-  }
-
-  return serder.raw;
 }
 
 /**
@@ -1192,7 +1113,7 @@ export class Hab {
       return emptyMessage();
     }
     const said = this.db.eans.get([cid, role, eid]);
-    return said ? loadReplyMessageBySaid(this.db, said.qb64) : emptyMessage();
+    return said ? loadStoredReply(this.db, said.qb64) : emptyMessage();
   }
 
   /**
@@ -1207,7 +1128,7 @@ export class Hab {
     for (
       const [, said] of this.db.lans.getTopItemIter(keys, { topive: !scheme })
     ) {
-      messages.push(loadReplyMessageBySaid(this.db, said.qb64));
+      messages.push(loadStoredReply(this.db, said.qb64));
     }
     return concatMessages(messages.filter((msg) => msg.length > 0));
   }
@@ -1392,59 +1313,56 @@ export class Hab {
       if (!cue) {
         continue;
       }
-      switch (cue.kin) {
-        case "receipt":
-          yield { cue, messages: [this.receipt(cue.serder)], kind: "wire" };
-          break;
-        case "witness":
-          yield { cue, messages: [this.witness(cue.serder)], kind: "wire" };
-          break;
-        case "replay":
-          yield { cue, messages: cue.messages, kind: "wire" };
-          break;
-        case "reply":
-          yield {
+      const emission = this.interpretCue(cue);
+      if (emission) yield emission;
+    }
+  }
+
+  /** Interpret one borrowed cue synchronously; callers own queue removal and retained output. */
+  interpretCue(cue: AgentCue): CueEmission | undefined {
+    switch (cue.kin) {
+      case "receipt":
+        return { cue, messages: [this.receipt(cue.serder)], kind: "wire" };
+      case "witness":
+        return { cue, messages: [this.witness(cue.serder)], kind: "wire" };
+      case "replay":
+        return { cue, messages: cue.messages, kind: "wire" };
+      case "reply":
+        return {
+          cue,
+          messages: [
+            cue.serder ? this.endorse(cue.serder) : this.reply(
+              ["/tsn/registry", "/tsn/credential"].includes(cue.route) ? `${cue.route}/${this.pre}` : cue.route,
+              cue.data ?? {},
+            ),
+          ],
+          kind: "wire",
+        };
+      case "query": {
+        const query = cue.query ?? cue.q ?? {};
+        if (cue.pre && cue.src) {
+          return {
             cue,
-            messages: [
-              cue.serder ? this.endorse(cue.serder) : this.reply(
-                ["/tsn/registry", "/tsn/credential"].includes(cue.route) ? `${cue.route}/${this.pre}` : cue.route,
-                cue.data ?? {},
-              ),
-            ],
+            messages: [this.query(cue.pre, cue.src, query, cue.route ?? "")],
             kind: "wire",
           };
-          break;
-        case "query": {
-          const query = cue.query ?? cue.q ?? {};
-          if (cue.pre && cue.src) {
-            yield {
-              cue,
-              messages: [this.query(cue.pre, cue.src, query, cue.route ?? "")],
-              kind: "wire",
-            };
-            break;
-          }
-          yield { cue, messages: [], kind: "notify" };
-          break;
         }
-        case "stream":
-          yield { cue, messages: [], kind: "transport" };
-          break;
-        case "notice":
-        case "noticeBadCloneFN":
-        case "keyStateSaved":
-        case "txnStateSaved":
-        case "invalid":
-        case "psUnescrow":
-        case "remoteMemberedSig":
-        case "oobiQueued":
-        case "oobiResolved":
-        case "oobiFailed":
-          yield { cue, messages: [], kind: "notify" };
-          break;
-        default:
-          break;
+        return { cue, messages: [], kind: "notify" };
       }
+      case "stream":
+        return { cue, messages: [], kind: "transport" };
+      case "notice":
+      case "noticeBadCloneFN":
+      case "keyStateSaved":
+      case "txnStateSaved":
+      case "invalid":
+      case "psUnescrow":
+      case "remoteMemberedSig":
+      case "oobiQueued":
+      case "oobiResolved":
+      case "oobiFailed":
+        return { cue, messages: [], kind: "notify" };
+      default:
     }
   }
 }

@@ -191,7 +191,7 @@ Semantic invalidity cannot publish a new unaccepted proof. Unverified replies
 still apply their existing escrow/query effects without a state child. Exceptions
 after writes release unpublished query/child credit and do not imply DB rollback.
 
-Registry and credential TSN hold PreparedReply query ownership and admits its exact new dependency
+Registry and credential TSN hold PreparedReply query ownership and admit exact new dependency
 query or txnStateSaved child before proof/Broker effects. Exact family membership
 prevents duplicate query credit; insertion must match the synchronous prediction
 before publication. Pending Broker proofs and prior accepted BADA evidence retain
@@ -217,7 +217,19 @@ credit without DB rollback. Introductions hold PreparedReply query ownership and
 admit the actual oobiQueued child before BADA/proof/queue effects on shared or
 distinct decks. Unverified introductions still apply existing escrow/query effects
 without a queued child. Keep the entire preparation in one synchronous guarded
-turn and preserve the ordinary group-plus-one count guard. Response/schema/CESR
-publication remains open, followed by EXN/KRAM and legacy TEL producers.
+turn and preserve the ordinary group-plus-one count guard.
+Attempt queue metadata stays staged until result admission; finite responses keep
+the original queue row until terminal publication. Attempt dates are descriptive:
+current selection/retry uses row presence, without an attempt-date TTL filter.
+CESR responses hold their actual prospective resolved cue as an earlier scope
+resource before queue metadata, the streaming marker and Reactor body reads. Credit survives
+joined parser/body cleanup; cancellation or failure releases unpublished credit
+while preserving queued work and earlier accepted events. Full retrieval applies terminal/contact effects under admitted result ownership,
+then publishes the result; it does not prove universal acceptance.
+HTTP, schema and invalid JSON results prepare actual batches before schema or
+terminal writes. Busy refusal uses the existing queued worker; configured limits
+and infrastructure failures propagate. The ordinary post-intake guard remains.
+Constructor allocation and native copy admission remain broader phase 4/5
+qualification. EXN/KRAM and legacy TEL producers remain open.
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.

@@ -2,6 +2,96 @@ import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { ReplyStreams } from "../../../src/app/reply-streams.ts";
 
+Deno.test("nonempty reply admission owns a primed event through cancellation or runtime close", async () => {
+  const resources = new ResourcePolicy({ bytes: 26, streams: 1 });
+  const replies = new ReplyStreams({ maxMessageBytes: 3, maxChunkBytes: 2 }, resources);
+  let events = 0, closed = 0, disposed = 0;
+  const messages = {
+    *[Symbol.iterator]() {
+      try {
+        yield new Uint8Array();
+        events++;
+        yield Uint8Array.of(1, 2, 3);
+        events++;
+        yield Uint8Array.of(4);
+      } finally {
+        assertEquals(resources.used.bytes, 26, "Primed owner credit lasts through source cleanup");
+        closed++;
+      }
+    },
+  };
+  assertEquals(replies.openNonEmpty([], () => disposed++), null);
+  assertEquals([disposed, resources.used.bytes], [1, 0]);
+  const first = replies.openNonEmpty(messages, () => disposed++)!;
+  assertEquals([events, resources.used.bytes], [1, 26]);
+  let acquired = false;
+  assertThrows(() =>
+    replies.openNonEmpty({
+      [Symbol.iterator]() {
+        acquired = true;
+        return [][Symbol.iterator]();
+      },
+    }), ResourceAdmissionError);
+  assertEquals(acquired, false, "Admission precedes priming/acquisition");
+  const reader = first.getReader();
+  assertEquals((await reader.read()).value, Uint8Array.of(1, 2));
+  assertEquals((await reader.read()).value, Uint8Array.of(3));
+  assertEquals(events, 1, "Primed bytes are neither duplicated nor advanced past event one");
+  await reader.cancel();
+  reader.releaseLock();
+  assertEquals([closed, disposed, resources.used.bytes], [1, 2, 0]);
+  const pending = replies.openNonEmpty(messages)!;
+  replies.close();
+  const waiting = pending.getReader();
+  await assertRejects(() => waiting.read(), DOMException, "Runtime closed");
+  waiting.releaseLock();
+  assertEquals([events, closed, resources.used.bytes], [2, 2, 0]);
+  const next = new ReplyStreams({ maxMessageBytes: 3, maxChunkBytes: 2 }, resources);
+  const fault = new Error("prime failed"), cleanup = new Error("prime disposal failed");
+  const failure = assertThrows(() =>
+    next.openNonEmpty({
+      *[Symbol.iterator]() {
+        throw fault;
+      },
+    }, () => {
+      throw cleanup;
+    }), AggregateError);
+  assertEquals(failure.errors, [fault, cleanup]);
+  assertEquals(resources.used.bytes, 0);
+  assertEquals(
+    assertThrows(() =>
+      next.openNonEmpty({
+        [Symbol.iterator]() {
+          return {
+            next: () => ({ done: true, value: undefined }),
+            return() {
+              throw cleanup;
+            },
+          };
+        },
+      })
+    ),
+    cleanup,
+    "Empty-response cleanup failure must not become a successful null result",
+  );
+  assertEquals(resources.used.bytes, 0);
+  assertThrows(() => next.openNonEmpty([new Uint8Array(4)]), ResourceLimitError);
+  assertEquals(resources.used.bytes, 0);
+  const Stream = globalThis.ReadableStream;
+  globalThis.ReadableStream = class {
+    constructor() {
+      throw fault;
+    }
+  } as unknown as typeof ReadableStream;
+  try {
+    assertEquals(assertThrows(() => next.openNonEmpty(messages)), fault);
+  } finally {
+    globalThis.ReadableStream = Stream;
+  }
+  assertEquals([closed, resources.used.bytes], [3, 0], "Failed stream publication disposes the primed owner");
+  next.close();
+});
+
 Deno.test("HTTP replay pulls one bounded chunk and closes its iterator on cancellation", async () => {
   const resources = new ResourcePolicy({ bytes: 26, streams: 2 });
   const replies = new ReplyStreams({ maxStreams: 1, maxMessageBytes: 3, maxChunkBytes: 2 }, resources);

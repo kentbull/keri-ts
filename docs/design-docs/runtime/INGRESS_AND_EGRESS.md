@@ -187,6 +187,19 @@ caller-owned through joined cleanup. Existing `sendBytes` composes these steps;
 S1–3 still owns admitted handoff, guard-free runtime callers and delivery outcomes.
 The extraction itself adds no queue or shared allocation guarantee.
 
+`Hab.interpretCue` synchronously borrows one cue without dequeuing. Internal
+`prepareCueEmission` pre-admits input retention and 8 MiB finite output plus
+24 MiB interpretation allowance before calling it. These local policy ceilings
+match QueryDeliveries; output is checked afterward, not a decoded/capture/native
+allocation bound. Lazy replay metadata/store ownership stays borrowed and unopened.
+The queued source-owned floor includes its irreducible shared-batch credit;
+inspect that stored amount without walking stores or opening replay.
+Accept must immediately/atomically retain the owner or throw without publication;
+it cannot be async, mutate the source deck or release early. Refusal preserves
+input/credit; successful transfer frees the ordinary Deck slot and retains credit
+until destination consumption and joined cleanup finish. Actual retained-delivery
+adoption and guard-free network waits remain S1–3; this facility adds neither.
+
 Completion records must distinguish local transmission drain, HTTP success,
 verified protocol replies and durable application acceptance. An HTTP status or
 socket drain proves only its own boundary. Consumers report protocol decisions;
@@ -256,6 +269,14 @@ bounded handoff adoption. Tufa TCP listeners compose this source with paused,
 bounded connection admission and joined parser/socket shutdown.
 
 ## Witness and exchange output
+
+`ReplyStreams.openNonEmpty` reserves the ordinary response owner before priming
+one bounded nonempty event. It returns null only after empty-source cleanup;
+cleanup/acquisition failures propagate. Primed bytes remain inside that same
+owner through transport consumption, cancellation or runtime close, including
+failed stream publication. No external peek wrapper or second stream slot is
+required. Ordinary `open` retains its first-pull behavior. This prerequisite
+does not itself port OOBI producers or qualify their pre-yield allocations.
 
 Witness `GET /query?typ=kel` returns a lazy source through shared ReplyStreams.
 Without `sn`, capture contains only the target's FEL extent, never delegator logs.
@@ -401,3 +422,14 @@ collectors use the same owned, cancellable byte reader.
 Provider connections and per-request topics now share finite runtime admission.
 Configured remote-worker counts and retained query cues still need their own
 handle/metadata boundary; these leases do not bound accepted configuration/state.
+
+Stored endpoint reply reconstruction uses configurable local defaults of 8 MiB
+per message and 4096 scanned proof rows. Native reply/establishment bodies are
+preflighted before copying; proof retention and exact counter-framed output size
+are checked before growth/final serialization. These limits are not protocol
+invalidity or a shared memory bound. Missing body returns empty; corruption and
+I/O failures propagate. Native proof-row decoding/copy pre-admission remains
+phase 5. The current TS newest-transferable-group/all-cigar/raw-body fallback
+remains an unresolved 714 output parity gap: actual `Hab.loadEndRole` and
+`loadLocScheme` pass all transferable groups and at most one cigar. Lazy OOBI
+selection and finite forwarding collection remain subsequent S2 units.

@@ -23,6 +23,7 @@ export class OwnedCue {
     private value: AgentCue | undefined,
     private dispose: (() => void) | undefined,
     private duplicate: (() => OwnedCue) | undefined,
+    readonly retainedBytes: number,
   ) {}
   get cue(): AgentCue {
     if (!this.live) throw new Error("Cue owner is released or transferred");
@@ -31,7 +32,7 @@ export class OwnedCue {
   /** Move ownership after optional synchronous atomic target admission, without returning credit. */
   transfer(accept?: (next: OwnedCue) => void): OwnedCue {
     const cue = this.cue;
-    const next = new OwnedCue(cue, this.dispose, this.duplicate);
+    const next = new OwnedCue(cue, this.dispose, this.duplicate, this.retainedBytes);
     ownerDecks.set(next, ownerDecks.get(this)!);
     try {
       accept?.(next);
@@ -145,6 +146,28 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
   return bytes;
 }
 
+/** Reserve canonical input retention before copying or interpreting it; caller releases after joined consumption. */
+export function reserveCueBytes(
+  resources: ResourcePolicy,
+  cues: readonly AgentCue[],
+  maxNodes = 65536,
+): ResourceReservation & { readonly bytes: number } {
+  if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) throw new RangeError("Invalid cue inspection limit");
+  // Logical Set/descriptor/stack allowance precedes even the metadata walk.
+  const inspection = resources.reserve({ bytes: 128 * maxNodes + 16 * cues.length + 16384 });
+  if (inspection.kind === "refuse") {
+    throw new ResourceAdmissionError("Cue inspection admission refused", inspection.reason);
+  }
+  try {
+    const bytes = retainedBytes(cues, maxNodes);
+    const retained = resources.reserve({ bytes });
+    if (retained.kind === "refuse") throw new ResourceAdmissionError("Cue byte admission refused", retained.reason);
+    return { bytes, release: () => retained.reservation.release() };
+  } finally {
+    inspection.reservation.release();
+  }
+}
+
 /**
  * AgentCue-only admission on the existing Deck. Held items include preparation,
  * queued cues and transferred/fanout handles. Pulling never returns their credit.
@@ -165,6 +188,15 @@ export class CueDeck extends Deck<AgentCue> {
       throw new RangeError("Invalid cue admission limits");
     }
   }
+  /** Retention and interpretation must share this exact ledger. */
+  get resourcePolicy(): ResourcePolicy {
+    return this.resources;
+  }
+  /** Batch credit cannot return while this queued head has a live owner; inspect without opening its evidence. */
+  headRetentionBytes(): number {
+    const cue = this.peekHead();
+    return cue ? this.owners.get(cue)![0].retainedBytes : 0;
+  }
   override get capacity(): number {
     return super.capacity;
   }
@@ -182,23 +214,13 @@ export class CueDeck extends Deck<AgentCue> {
   prepare(cues: readonly AgentCue[]): PreparedCueBatch {
     this.checkSpace(cues.length);
     if (!cues.length) throw new RangeError("Empty cue preparation");
-    // Logical Set/descriptor/stack/copy allowance precedes even the metadata walk.
-    const inspection = this.resources.reserve({ bytes: 128 * this.maxNodes + 16 * cues.length + 16384 });
-    if (inspection.kind === "refuse") {
-      throw new ResourceAdmissionError("Cue inspection admission refused", inspection.reason);
-    }
-    let credit: ResourceReservation | undefined;
+    const credit = reserveCueBytes(this.resources, cues, this.maxNodes);
     let values: AgentCue[];
     try {
-      const retained = this.resources.reserve({ bytes: retainedBytes(cues, this.maxNodes) });
-      if (retained.kind === "refuse") throw new ResourceAdmissionError("Cue byte admission refused", retained.reason);
-      credit = retained.reservation;
       values = [...cues];
     } catch (error) {
-      credit?.release();
+      credit.release();
       throw error;
-    } finally {
-      inspection.reservation.release();
     }
     const count = values.length;
     this.held += count;
@@ -224,7 +246,7 @@ export class CueDeck extends Deck<AgentCue> {
           duplicate.reservation.release();
           throw error;
         }
-      });
+      }, credit.bytes + (extra ? 128 : 0));
       ownerDecks.set(owner, this);
       return owner;
     };
