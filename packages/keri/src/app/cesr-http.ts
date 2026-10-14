@@ -203,10 +203,24 @@ export function requestBytes(
 
 /** Collect a bounded administrative/receipt request; generic ingress uses requestBytes directly. */
 export async function readCesrRequestBytes(req: Request, limit = 8 * 1024 * 1024): Promise<Uint8Array> {
+  let failed = false, failure: unknown;
   try {
     return await collectBytes(requestBytes(req), limit);
+  } catch (error) {
+    failed = true;
+    failure = error;
+    throw error;
   } finally {
-    if (req.body && !req.body.locked) await req.body.cancel().catch(() => {});
+    if (req.body && !req.body.locked) {
+      try {
+        await req.body.cancel();
+      } catch (error) {
+        // deno-lint-ignore no-unsafe-finally -- Retain distinct intake/cleanup failures and original identity.
+        throw failed && error !== failure
+          ? new AggregateError([failure, error], "CESR request intake and cleanup failed")
+          : error;
+      }
+    }
   }
 }
 
