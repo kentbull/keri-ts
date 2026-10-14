@@ -74,6 +74,9 @@ writes or commits release unpublished cue ownership. Explicit `decideEvent` /
 `applyDecision` callers and `processEvent` within an already active writer retain
 caller-owned commit/publication ordering. An in-process Reactor guard alone does
 not serialize another process writing the same LMDB environment.
+Event escrow replay uses this same owning writer: promotion or bucket movement
+and original-row removal commit before publication. A retry remaining in its
+current bucket leaves the existing row untouched and emits no additional cues.
 
 ## Historical inception replay
 
