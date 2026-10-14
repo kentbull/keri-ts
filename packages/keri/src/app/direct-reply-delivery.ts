@@ -1,4 +1,4 @@
-/** One interpreted reply batch borrowed by HTTP and the existing delivery queue until both close. */
+/** One interpreted reply batch owned by delivery and, when requested, borrowed by HTTP until both close. */
 import { ResourceAdmissionError } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import { reserveCueBytes } from "../core/cue-admission.ts";
@@ -11,7 +11,7 @@ import { prepareCueRoute, type PreparedCueRoute } from "./cue-route.ts";
 import type { Hab } from "./habbing.ts";
 import type { QueryReply } from "./query-replies.ts";
 
-/** Domain-specific two-consumer lifetime; neither consumer may retain bytes after its cleanup. */
+/** Queue-only or two-consumer reply lifetime; consumers cannot retain bytes after cleanup. */
 export class DirectReplyDelivery {
   private index = 0;
   private responseDone = false;
@@ -29,14 +29,42 @@ export class DirectReplyDelivery {
     reply: QueryReply,
     publish: (delivery: DirectReplyDelivery, open: () => ReadableStream<Uint8Array>) => ReadableStream<Uint8Array>,
   ): ReadableStream<Uint8Array> | null {
+    return this.prepareBatch(runtime, hab, reply, publish);
+  }
+
+  /** Transfer an earlier query batch to delivery only, without reserving an HTTP response permit. */
+  static prepareQueued(
+    runtime: AgentRuntime,
+    hab: Hab,
+    reply: QueryReply,
+    accept: (delivery: DirectReplyDelivery) => void,
+  ): boolean {
+    let transferred = false;
+    this.prepareBatch(runtime, hab, reply, undefined, (delivery) => {
+      accept(delivery);
+      transferred = true;
+    });
+    return transferred;
+  }
+
+  /** One atomic wire preparation serves either queue-only delivery or the existing two consumers. */
+  private static prepareBatch(
+    runtime: AgentRuntime,
+    hab: Hab,
+    reply: QueryReply,
+    publish?: (delivery: DirectReplyDelivery, open: () => ReadableStream<Uint8Array>) => ReadableStream<Uint8Array>,
+    enqueue?: (delivery: DirectReplyDelivery) => void,
+  ): ReadableStream<Uint8Array> | null {
     const batch = new DirectReplyDelivery();
+    batch.responseDone = !publish;
+    const responseBytes = publish ? runtime.replyStreams.preparationByteFloor : 0;
     let stream: ReadableStream<Uint8Array> | null = null;
     try {
       reply.admit((cues, release) => {
         batch.releaseInput = release;
         const before = runtime.resources.used.bytes;
         const input = reserveCueBytes(runtime.resources, cues, undefined, undefined, {
-          additionalBytes: reply.retainedBytes + runtime.replyStreams.preparationByteFloor
+          additionalBytes: reply.retainedBytes + responseBytes
             + cues.length * 33 * 1024 ** 2,
           maxBytes: 8 * 1024 ** 2,
         });
@@ -44,23 +72,25 @@ export class DirectReplyDelivery {
         try {
           // One synchronous combined preflight guarantees all internal acquisitions before signing.
           const combined = runtime.resources.reserve({
-            streams: 1,
-            bytes: runtime.replyStreams.preparationByteFloor + cues.length * 33 * 1024 ** 2
+            streams: publish ? 1 : 0,
+            bytes: responseBytes + cues.length * 33 * 1024 ** 2
               + 2 * (runtime.resources.used.bytes - before),
           });
           if (combined.kind === "refuse") {
             throw new ResourceAdmissionError("Direct reply preparation refused", combined.reason);
           }
           combined.reservation.release();
-          response = runtime.replyStreams.prepare();
+          if (publish) response = runtime.replyStreams.prepare();
           const prepare = (index: number): void => {
             if (index === cues.length) {
-              stream = publish(batch, () =>
-                response!.open({
-                  *[Symbol.iterator]() {
-                    for (const owner of batch.owners) yield* owner.emission!.messages;
-                  },
-                }, () => batch.closeResponse()));
+              if (publish) {
+                stream = publish(batch, () =>
+                  response!.open({
+                    *[Symbol.iterator]() {
+                      for (const owner of batch.owners) yield* owner.emission!.messages;
+                    },
+                  }, () => batch.closeResponse()));
+              } else enqueue!(batch);
               batch.published = true;
               return;
             }
@@ -115,6 +145,8 @@ export class DirectReplyDelivery {
         }
         return undefined;
       });
+      // Queue-only no-target cleanup must wait until every nested preparation and the reply slot transfer finish.
+      batch.finish([]);
       return stream;
     } finally {
       if (!batch.published) for (const route of batch.routes) route.release();
@@ -154,7 +186,7 @@ export class DirectReplyDelivery {
     if (this.published) this.finish([]);
   }
   private finish(cleanups: (() => void)[]): void {
-    if (this.responseDone && this.deliveryDone) {
+    if (this.published && this.responseDone && this.deliveryDone) {
       const releaseInput = this.releaseInput;
       cleanups.push(
         ...this.routes.map((route) => () => route.release()),

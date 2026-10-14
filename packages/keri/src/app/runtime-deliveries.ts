@@ -213,6 +213,21 @@ export class RuntimeDeliveries {
     });
   }
 
+  /** Atomically retain an earlier query reply without opening a request-local response stream. */
+  enqueueReply(runtime: AgentRuntime, hab: Hab, reply: QueryReply): boolean {
+    if (runtime.resources !== this.resources) throw new RangeError("Wrong reply resource policy");
+    if (this.closed) throw new Error("Runtime deliveries are closed");
+    if (this.pending.length === this.pending.capacity) {
+      throw new ResourceAdmissionError("Queued reply delivery slots are busy", "busy");
+    }
+    this.pending.checkSpace();
+    return DirectReplyDelivery.prepareQueued(runtime, hab, reply, (delivery) => {
+      this.pending.checkSpace();
+      if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
+      else delivery.release();
+    });
+  }
+
   /** A failed independent packet retains the same lease; no target advances if the queue cannot accept it. */
   private retainFailed(target: OwnedCueTarget): boolean {
     if (this.closed) return false;
