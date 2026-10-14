@@ -24,7 +24,11 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    before acquisition; extra hydrated and reader copies remain open.
 4. ESSR recipients borrow the exposed runtime policy; measured native-copy
    qualification remains open.
-5. Storage/hydration copy charges, coordinated with phase 5. Mailbox providers
+5. Progressive JSON decoded-body admission now precedes text/JSON decoding and
+   avoidable raw copying, sharing cumulative logical credit with the root and its
+   descendants through parser/consumer cleanup. Binary/native bodies, wrapped
+   Matter preparation, standalone verification/projections and store/cache hydration
+   remain successor gates. Storage/hydration copy charges coordinate with phase 5. Mailbox providers
    reserve one shared stream/copy lease through joined close and preflight native
    rows; retained query cues and remote-worker handles remain open.
 6. Parser input checkpoints yield after 64 KiB or 4,096 pull/consume operations,

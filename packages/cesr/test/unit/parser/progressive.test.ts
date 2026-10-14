@@ -1,14 +1,18 @@
 import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import { toAsyncFrames } from "../../../src/adapters/async-iterable.ts";
-import { concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
+import { concatBytes, decodeB64, decoder, t } from "../../../src/core/bytes.ts";
 import {
   ColdStartError,
+  DeserializeError,
   GroupSizeError,
   ParserError,
+  ResourceAdmissionError,
   ResourceLimitError,
   ShortageError,
   WireParseError,
 } from "../../../src/core/errors.ts";
+import { discardFrame } from "../../../src/core/frame.ts";
+import { ResourcePolicy } from "../../../src/core/resource-policy.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { parse } from "../../../src/parser/progressive.ts";
@@ -22,6 +26,7 @@ import {
   KERIPY_V1_JSON_ICP_BODY as json,
 } from "../../fixtures/external-vectors.ts";
 import { encode } from "../../fixtures/stream-byte-fixtures.ts";
+import { v1ify } from "../../fixtures/versioned-body-fixtures.ts";
 
 /** Build a real wrapped message with version-specific attachment count semantics. */
 function vector(major: 1 | 2) {
@@ -356,4 +361,190 @@ Deno.test("materialized frame admission includes all attachment groups before yi
     () => collect(parse(chunks(encode(body)), { maxFrameBytes: body.length - 1 })),
     ResourceLimitError,
   );
+});
+
+/** JSON values whose short wire requires much more decoded logical credit. */
+function tinyJson(count: number): string {
+  return v1ify("{\"v\":\"KERI10JSON000000_\",\"a\":[" + Array(count).fill("0").join(",") + "]}");
+}
+
+Deno.test("JSON tiny values admit or refuse before text/JSON decoding and preserve policy provenance", async () => {
+  const body = tinyJson(100);
+  const decoded = 278 + 24 * 100; // Object, two fields/labels, version string, array and scalar references.
+  const held = 512 + 64 + 2 * body.length + decoded;
+  const policy = new ResourcePolicy({ bytes: held });
+  const originalParse = JSON.parse;
+  const originalDecode = decoder.decode;
+  let parses = 0;
+  let texts = 0;
+  JSON.parse = (...args) => {
+    parses++;
+    return originalParse(...args);
+  };
+  decoder.decode = (...args) => {
+    texts++;
+    return originalDecode.apply(decoder, args);
+  };
+  try {
+    const blocker = policy.reserve({ bytes: 1 });
+    assert(blocker.kind === "reserve");
+    await assertRejects(
+      () => parseBytes(encode(body), { resources: policy, maxFrameBytes: 512, classifyWireErrors: true }),
+      ResourceAdmissionError,
+      "busy",
+    );
+    assertEquals([parses, texts, policy.used.bytes], [0, 0, 1]);
+    blocker.reservation.release();
+    const configured = new ResourcePolicy({ bytes: decoded - 1 });
+    await assertRejects(
+      () => parseBytes(encode(body), { resources: configured, maxFrameBytes: 512, classifyWireErrors: true }),
+      ResourceLimitError,
+      "decoded tree credit",
+    );
+    assertEquals([parses, texts, configured.used.bytes], [0, 0, 0]);
+    const [frame] = await parseBytes(encode(body), { resources: policy, maxFrameBytes: 512 });
+    assertEquals([parses, texts, policy.used.bytes], [1, 1, held]);
+    assertEquals(frame.body.raw, encode(body));
+    assertEquals(frame.body.ked?.a, Array(100).fill(0));
+    await discardFrame(frame);
+    assertEquals(policy.used.bytes, 0);
+  } finally {
+    JSON.parse = originalParse;
+    decoder.decode = originalDecode;
+  }
+});
+
+Deno.test("JSON parent and descendants share credit through suspension, disposal, failure and cancellation", async () => {
+  const body = tinyJson(0);
+  const wrap = (value: string) =>
+    vector(1).group("NonNativeBodyGroup", new Texter({ raw: encode(value), code: "4B" }).qb64);
+  const parent = wrap(body);
+  const child = vector(1).group("BodyWithAttachmentGroup", parent);
+  const wire = vector(1).group("BodyWithAttachmentGroup", parent + child);
+  const charge = 64 + 2 * body.length + 278;
+  const held = 512 + 2 * charge;
+  class TrackingPolicy extends ResourcePolicy {
+    reserved = 0;
+    released = 0;
+    override reserve(request: Parameters<ResourcePolicy["reserve"]>[0]) {
+      const decision = super.reserve(request);
+      if (decision.kind === "refuse") return decision;
+      this.reserved++;
+      return {
+        kind: "reserve" as const,
+        reservation: {
+          release: () => {
+            this.released++;
+            decision.reservation.release();
+          },
+        },
+      };
+    }
+  }
+  const policy = new TrackingPolicy({ bytes: held });
+  const options = { resources: policy, maxFrameBytes: 512 };
+  const parser = parse(chunks(encode(wire)), options);
+  const frame = (await parser.next()).value!;
+  assertEquals(frame.nests?.length, 1);
+  assertEquals([frame.body.ked, frame.nests![0].body.ked], [{ v: "KERI10JSON000020_", a: [] }, {
+    v: "KERI10JSON000020_",
+    a: [],
+  }]);
+  assertEquals(policy.used.bytes, held);
+  await discardFrame(frame.nests![0]);
+  await discardFrame(frame);
+  await discardFrame(frame);
+  assertEquals(policy.used.bytes, held, "the suspended parser keeps parent and child credit");
+  await parser.return(undefined);
+  assertEquals(policy.used.bytes, 0);
+  const insufficient = new ResourcePolicy({ bytes: held - 1 });
+  const configuredFloor = await assertRejects(
+    () => parseBytes(encode(wire), { ...options, resources: insufficient }),
+    ResourceAdmissionError,
+  );
+  assertEquals(configuredFloor.reason, "limit", "the tree cannot fit even without competing owners");
+  assertEquals(insufficient.used.bytes, 0, "failed descendant releases parent credit");
+  await assertRejects(() => parseBytes(encode(wire.slice(0, -4)), options), ShortageError);
+  assertEquals(policy.used.bytes, 0);
+  const controller = new AbortController();
+  const cancellation = new Error("cancel after admitted JSON parent");
+  const source = async function*() {
+    yield encode(wire.slice(0, -4));
+    controller.abort(cancellation);
+  };
+  assert(
+    await assertRejects(() => collect(parse(source(), { ...options, signal: controller.signal }))) === cancellation,
+  );
+  assertEquals(policy.used.bytes, 0);
+  assertEquals(policy.released, policy.reserved, "each admitted parent/child reservation releases exactly once");
+
+  const staged = new TrackingPolicy({ bytes: held + 16 });
+  const essr = counterV1(CtrDexV1.ESSRPayloadGroup, 1) + "4BABYWJj";
+  const payloadWire = vector(1).group(
+    "BodyWithAttachmentGroup",
+    parent
+      + vector(1).group("BodyWithAttachmentGroup", parent + essr),
+  );
+  const [owned] = await parseBytes(encode(payloadWire), {
+    ...options,
+    resources: staged,
+    maxEssrBytes: 3,
+    maxEssrItems: 1,
+  });
+  const gate = Promise.withResolvers<void>();
+  const failure = new Error("child disposal failed");
+  const discard = owned.nests![0].essr!.discard;
+  owned.nests![0].essr!.discard = async () => {
+    await gate.promise;
+    await discard();
+    throw failure;
+  };
+  const disposal = discardFrame(owned);
+  assertEquals(staged.used.bytes, held + 16, "JSON and stage credit survive awaited descendant disposal");
+  gate.resolve();
+  const cleanup = await assertRejects(() => disposal, AggregateError);
+  assertEquals(cleanup.errors, [failure]);
+  await discardFrame(owned);
+  assertEquals(staged.used.bytes, 0);
+  assertEquals(staged.released, staged.reserved);
+});
+
+Deno.test("wrapped JSON retains intrinsic opaque fallback and propagates resource/decoder failures unchanged", async () => {
+  const wrap = (body: string) =>
+    vector(1).group("NonNativeBodyGroup", new Texter({ raw: encode(body), code: "4B" }).qb64);
+  const wire = wrap(json);
+  const infrastructure = new DeserializeError("decoder infrastructure failed");
+  const original = JSON.parse;
+  JSON.parse = () => {
+    throw infrastructure;
+  };
+  try {
+    assert(await assertRejects(() => parseBytes(encode(wire), { classifyWireErrors: true })) === infrastructure);
+  } finally {
+    JSON.parse = original;
+  }
+  const policyFailure = new ResourceAdmissionError("injected resource failure", "busy");
+  class FailingPolicy extends ResourcePolicy {
+    override reserve(request: Parameters<ResourcePolicy["reserve"]>[0]) {
+      if (request.bytes !== 1024) throw policyFailure;
+      return super.reserve(request);
+    }
+  }
+  const resources = new FailingPolicy();
+  assert(
+    await assertRejects(() =>
+      parseBytes(encode(wire), {
+        resources,
+        maxFrameBytes: 1024,
+        classifyWireErrors: true,
+      })
+    ) === policyFailure,
+  );
+  assertEquals(resources.used.bytes, 0);
+  const [opaque] = await parseBytes(encode(wrap(v1ify("{\"v\":\"KERI10JSON000000_\",\"a\":]"))));
+  assertEquals(opaque.body.ked, null);
+  const [accepted] = await parseBytes(encode(wire));
+  assertEquals(accepted.body.raw, encode(json));
+  assertEquals(accepted.body.ked, original(json));
+  assertEquals(accepted.body.said, original(json).d);
 });

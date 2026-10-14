@@ -202,13 +202,16 @@ Deno.test("ESSR streams mixed Texter lengths in both genera/domains and reopens 
 Deno.test("shared ESSR stages refuse before sink acquisition and retain credit with the root", async () => {
   const v = vector(2);
   const wire = b(v.selector + v.group("BodyWithAttachmentGroup", v.body + v.essr("4BABYWJj", 1)));
-  const resources = new ResourcePolicy({ bytes: 2 * 1024 + 16 });
+  // The unchanged 299-byte JSON vector holds its 1488-byte logical tree plus workspace/text.
+  const jsonCredit = 64 + 2 * KERIPY_V1_JSON_ICP_BODY.length + 1488;
+  const retained = 1024 + jsonCredit + 16;
+  const resources = new ResourcePolicy({ bytes: 2 * (1024 + jsonCredit) + 16 });
   const observed = tracking();
   const options = { resources, maxFrameBytes: 1024, maxEssrBytes: 3, maxEssrItems: 1, payloadSink: observed.factory };
   const parser = parse(chunks(wire), options);
   const frame = (await parser.next()).value!;
   await parser.return(undefined);
-  assertEquals(resources.used.bytes, 1024 + 16);
+  assertEquals(resources.used.bytes, retained);
   let payloadReads = 0;
   let sinks = 0;
   const second = parse(
@@ -227,11 +230,11 @@ Deno.test("shared ESSR stages refuse before sink acquisition and retain credit w
   );
   await assertRejects(() => second.next(), ResourceAdmissionError, "busy");
   assertEquals([sinks, payloadReads], [0, 0]);
-  assertEquals(resources.used.bytes, 1024 + 16);
+  assertEquals(resources.used.bytes, retained);
   await discardFrame(frame);
   assertEquals(resources.used.bytes, 0);
 
-  const tooLarge = parse(chunks(wire), { ...options, maxEssrBytes: 2048 });
+  const tooLarge = parse(chunks(wire), { ...options, maxEssrBytes: resources.limits.bytes });
   await assertRejects(() => tooLarge.next(), ResourceAdmissionError, "limit");
   assertEquals(resources.used.bytes, 0);
   await assertRejects(
@@ -250,7 +253,7 @@ Deno.test("shared ESSR stages refuse before sink acquisition and retain credit w
   const accepted = (await retry.next()).value!;
   assertEquals(await collectPayload(accepted.essr!.raw, 3), b("abc"));
   await discardFrame(accepted);
-  assertEquals(resources.used.bytes, 1024 + 16, "suspended parser retains the complete tree allowance");
+  assertEquals(resources.used.bytes, retained, "suspended parser retains the complete tree allowance");
   await retry.return(undefined);
   assertEquals(resources.used.bytes, 0);
 });

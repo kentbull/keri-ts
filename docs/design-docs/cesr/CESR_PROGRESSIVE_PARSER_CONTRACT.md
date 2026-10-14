@@ -21,6 +21,21 @@ leaf groups at 4,096 per tree, including empty groups. Structural attachment
 wrappers flatten to ordered semantic leaves; nested messages retain their own evidence; their raw payloads are not retained. Cursor budgets separately bound
 producer backing buffers, queued input, and nesting.
 
+Progressive JSON bodies admit logical decoded allocation before UTF-8/JSON decoding
+and the avoidable Serder raw copy. One O(1) byte lexical scan counts containers
+(64), value references and property fields (16 each), scalar tokens (8), and string
+source bytes (2 each, a UTF-16 upper bound). Escapes and duplicate keys deliberately
+overcharge; native JSON syntax/semantics remain authoritative. A root and descendants
+share decoded credit equal to the supplied ResourcePolicy byte capacity, or its
+existing 256 MiB default when unshared. Shared admission also charges 64 bytes of
+fixed scanner workspace and twice the body extent for decode text before scanning;
+these working allowances conservatively survive through root cleanup. Exact stable
+independent backing may be reused only by this admitted JSON path. Standalone
+Serder ownership, bounded version probes, wrapped Matter preparation, binary/native
+hydration, verification/projection copies and stored/cache bodies remain separate
+phase 4/5 boundaries. Resource and unexpected decoder failures retain provenance;
+only intrinsic JSON syntax failure permits wrapped opaque fallback.
+
 ESSR Texters stream into an awaited sink, with separate `maxEssrBytes` (8 MiB
 concatenated decoded bytes) and `maxEssrItems` (16,384) defaults per owned tree. `maxTreeNodes` defaults to 256 including the root;
 the shared cursor retains its `maxDepth` default of 64. Both

@@ -37,6 +37,7 @@ import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type Kind, Kinds, Protocols, Vrsn_1_0, Vrsn_2_0 } from "../tables/versions.ts";
 import type { Protocol } from "../tables/versions.ts";
+import { decodeJson } from "./json-admission.ts";
 import { dumpCesrNativeSad, parseCesrNativeKed, reapCesrNativeBody } from "./native.ts";
 import { smell, versify } from "./smell.ts";
 
@@ -867,7 +868,7 @@ function getFieldDom(
 }
 
 /** Decode raw serialized bytes into a protocol SAD plus projected ilk/said fields. */
-function parseRawToKed(raw: Uint8Array, smellage: Smellage): {
+function parseRawToKed(raw: Uint8Array, smellage: Smellage, onJsonFailure?: (error: unknown) => void): {
   ked: SadMap | null;
   ilk: string | null;
   said: string | null;
@@ -879,7 +880,7 @@ function parseRawToKed(raw: Uint8Array, smellage: Smellage): {
 
   try {
     if (kind === "JSON") {
-      ked = JSON.parse(t(raw)) as SadMap;
+      ked = decodeJson(raw, onJsonFailure) as SadMap;
     } else if (kind === "MGPK") {
       ked = normalizeDecodedMap(decodeMsgpack(raw), kind);
     } else if (kind === "CBOR") {
@@ -894,14 +895,10 @@ function parseRawToKed(raw: Uint8Array, smellage: Smellage): {
       said = native.said;
     }
   } catch (error) {
+    if (kind === "JSON") throw error;
     if (error instanceof DeserializeError) {
       throw new DeserializeError(
         `Failed to decode ${kind} Serder: ${String(error.message)}`,
-      );
-    }
-    if (kind === "JSON" && error instanceof SyntaxError) {
-      throw new DeserializeError(
-        `Failed to decode JSON Serder: ${String(error)}`,
       );
     }
     throw new DeserializeError(
@@ -2041,8 +2038,9 @@ export class SerderACDC extends Serder {
 export function parseSerder(
   raw: Uint8Array,
   smellage: Smellage,
+  onJsonFailure?: (error: unknown) => void,
 ): Serder {
-  const { ked, ilk, said } = parseRawToKed(raw, smellage);
+  const { ked, ilk, said } = parseRawToKed(raw, smellage, onJsonFailure);
   const init: SerderHydratedInit = {
     raw,
     smellage,
