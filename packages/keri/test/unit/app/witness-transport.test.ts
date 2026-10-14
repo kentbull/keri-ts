@@ -787,6 +787,12 @@ Deno.test("TCP output rejects oversized backing, freezes drain deadline and perm
         assertEquals(borrowed.writableEnded, false, "a reply cannot end the next frame's output direction");
         assertEquals(services.resources.used, { streams: 1, bytes: 0, decryptions: 0 });
       }
+      let succeeded = false;
+      await run(() => writeCesrTcpSocket(borrowed, () => Promise.reject(undefined), { services })).then(
+        () => succeeded = true,
+        (error) => assertEquals(error, undefined),
+      );
+      assertEquals(succeeded, false, "undefined source rejection cannot become transmitted success");
     } finally {
       borrowed.destroy();
       await new Promise<void>((resolve) => borrowed.closed ? resolve() : borrowed.once("close", resolve));

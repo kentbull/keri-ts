@@ -18,7 +18,9 @@ The [runtime contract][runtime] distinguishes current behavior from the target.
   cue drains can await `Respondant` network delivery under the Reactor guard.
 - The TCP sender shares a finite/source/frame writer and explicit same-socket
   reply processing (#271). Actual conversation callers remain S8; mailbox/direct
-  routing remains the default.
+  routing remains the default. The Tufa accepted listener now returns correlated
+  immediate proofs and one bounded deferred logs/ksn reply on that connection,
+  driven by the existing host escrow loop. Outbound caller adoption remains S8.
 
 Reuse the active admission stack: HTTP frame/output work (#224–225), finite TCP
 ownership (#230), parser scheduling (#231), and mailbox stream admission.
