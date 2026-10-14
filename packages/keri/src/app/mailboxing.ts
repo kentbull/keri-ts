@@ -122,6 +122,7 @@ export function updateMailboxRemoteCursor(
  * KERIpy parity rule:
  * - mailbox role endpoints take precedence when authorized
  * - otherwise poll one witness mailbox endpoint
+ * - SSE uses HTTP(S) only; a TCP-only mailbox keeps role precedence while awaiting HTTP
  *
  * The result is intentionally already flattened to one preferred URL per
  * endpoint identifier so runtime pollers can stay focused on mailbox protocol
@@ -132,19 +133,20 @@ export function mailboxPollEndpoints(
   hab: Hab,
 ): Array<{ key: string; eid: string; url: string }> {
   const ends = hab.endsFor(hab.pre);
+  const isHttp = (endpoint: { url: string }) => ["https:", "http:"].includes(new URL(endpoint.url).protocol);
   const mailbox = flattenRoleUrls(ends[Roles.mailbox])
-    .filter((endpoint) => !hby.db.prefixes.has(endpoint.eid))
-    .map((endpoint) => ({
+    .filter((endpoint) => !hby.db.prefixes.has(endpoint.eid));
+  // Keep mailbox precedence before filtering transport; TCP delivery is a different caller policy.
+  if (mailbox.length > 0) {
+    return mailbox.filter(isHttp).map((endpoint) => ({
       key: `${Roles.mailbox}:${endpoint.eid}:${endpoint.url}`,
       eid: endpoint.eid,
       url: endpoint.url,
     }));
-  if (mailbox.length > 0) {
-    return mailbox;
   }
 
   const witness = firstSortedEndpoint(ends[Roles.witness]);
-  if (!witness || hby.db.prefixes.has(witness.eid)) {
+  if (!witness || hby.db.prefixes.has(witness.eid) || !isHttp(witness)) {
     return [];
   }
   return [{
