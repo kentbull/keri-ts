@@ -1392,59 +1392,56 @@ export class Hab {
       if (!cue) {
         continue;
       }
-      switch (cue.kin) {
-        case "receipt":
-          yield { cue, messages: [this.receipt(cue.serder)], kind: "wire" };
-          break;
-        case "witness":
-          yield { cue, messages: [this.witness(cue.serder)], kind: "wire" };
-          break;
-        case "replay":
-          yield { cue, messages: cue.messages, kind: "wire" };
-          break;
-        case "reply":
-          yield {
+      const emission = this.interpretCue(cue);
+      if (emission) yield emission;
+    }
+  }
+
+  /** Interpret one borrowed cue synchronously; callers own queue removal and retained output. */
+  interpretCue(cue: AgentCue): CueEmission | undefined {
+    switch (cue.kin) {
+      case "receipt":
+        return { cue, messages: [this.receipt(cue.serder)], kind: "wire" };
+      case "witness":
+        return { cue, messages: [this.witness(cue.serder)], kind: "wire" };
+      case "replay":
+        return { cue, messages: cue.messages, kind: "wire" };
+      case "reply":
+        return {
+          cue,
+          messages: [
+            cue.serder ? this.endorse(cue.serder) : this.reply(
+              ["/tsn/registry", "/tsn/credential"].includes(cue.route) ? `${cue.route}/${this.pre}` : cue.route,
+              cue.data ?? {},
+            ),
+          ],
+          kind: "wire",
+        };
+      case "query": {
+        const query = cue.query ?? cue.q ?? {};
+        if (cue.pre && cue.src) {
+          return {
             cue,
-            messages: [
-              cue.serder ? this.endorse(cue.serder) : this.reply(
-                ["/tsn/registry", "/tsn/credential"].includes(cue.route) ? `${cue.route}/${this.pre}` : cue.route,
-                cue.data ?? {},
-              ),
-            ],
+            messages: [this.query(cue.pre, cue.src, query, cue.route ?? "")],
             kind: "wire",
           };
-          break;
-        case "query": {
-          const query = cue.query ?? cue.q ?? {};
-          if (cue.pre && cue.src) {
-            yield {
-              cue,
-              messages: [this.query(cue.pre, cue.src, query, cue.route ?? "")],
-              kind: "wire",
-            };
-            break;
-          }
-          yield { cue, messages: [], kind: "notify" };
-          break;
         }
-        case "stream":
-          yield { cue, messages: [], kind: "transport" };
-          break;
-        case "notice":
-        case "noticeBadCloneFN":
-        case "keyStateSaved":
-        case "txnStateSaved":
-        case "invalid":
-        case "psUnescrow":
-        case "remoteMemberedSig":
-        case "oobiQueued":
-        case "oobiResolved":
-        case "oobiFailed":
-          yield { cue, messages: [], kind: "notify" };
-          break;
-        default:
-          break;
+        return { cue, messages: [], kind: "notify" };
       }
+      case "stream":
+        return { cue, messages: [], kind: "transport" };
+      case "notice":
+      case "noticeBadCloneFN":
+      case "keyStateSaved":
+      case "txnStateSaved":
+      case "invalid":
+      case "psUnescrow":
+      case "remoteMemberedSig":
+      case "oobiQueued":
+      case "oobiResolved":
+      case "oobiFailed":
+        return { cue, messages: [], kind: "notify" };
+      default:
     }
   }
 }

@@ -145,6 +145,27 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
   return bytes;
 }
 
+/** Reserve canonical input retention before copying or interpreting it; caller releases after joined consumption. */
+export function reserveCueBytes(
+  resources: ResourcePolicy,
+  cues: readonly AgentCue[],
+  maxNodes = 65536,
+): ResourceReservation {
+  if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) throw new RangeError("Invalid cue inspection limit");
+  // Logical Set/descriptor/stack allowance precedes even the metadata walk.
+  const inspection = resources.reserve({ bytes: 128 * maxNodes + 16 * cues.length + 16384 });
+  if (inspection.kind === "refuse") {
+    throw new ResourceAdmissionError("Cue inspection admission refused", inspection.reason);
+  }
+  try {
+    const retained = resources.reserve({ bytes: retainedBytes(cues, maxNodes) });
+    if (retained.kind === "refuse") throw new ResourceAdmissionError("Cue byte admission refused", retained.reason);
+    return retained.reservation;
+  } finally {
+    inspection.reservation.release();
+  }
+}
+
 /**
  * AgentCue-only admission on the existing Deck. Held items include preparation,
  * queued cues and transferred/fanout handles. Pulling never returns their credit.
@@ -165,6 +186,10 @@ export class CueDeck extends Deck<AgentCue> {
       throw new RangeError("Invalid cue admission limits");
     }
   }
+  /** Retention and interpretation must share this exact ledger. */
+  get resourcePolicy(): ResourcePolicy {
+    return this.resources;
+  }
   override get capacity(): number {
     return super.capacity;
   }
@@ -182,23 +207,13 @@ export class CueDeck extends Deck<AgentCue> {
   prepare(cues: readonly AgentCue[]): PreparedCueBatch {
     this.checkSpace(cues.length);
     if (!cues.length) throw new RangeError("Empty cue preparation");
-    // Logical Set/descriptor/stack/copy allowance precedes even the metadata walk.
-    const inspection = this.resources.reserve({ bytes: 128 * this.maxNodes + 16 * cues.length + 16384 });
-    if (inspection.kind === "refuse") {
-      throw new ResourceAdmissionError("Cue inspection admission refused", inspection.reason);
-    }
-    let credit: ResourceReservation | undefined;
+    const credit = reserveCueBytes(this.resources, cues, this.maxNodes);
     let values: AgentCue[];
     try {
-      const retained = this.resources.reserve({ bytes: retainedBytes(cues, this.maxNodes) });
-      if (retained.kind === "refuse") throw new ResourceAdmissionError("Cue byte admission refused", retained.reason);
-      credit = retained.reservation;
       values = [...cues];
     } catch (error) {
-      credit?.release();
+      credit.release();
       throw error;
-    } finally {
-      inspection.reservation.release();
     }
     const count = values.length;
     this.held += count;

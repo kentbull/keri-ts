@@ -187,6 +187,17 @@ caller-owned through joined cleanup. Existing `sendBytes` composes these steps;
 S1–3 still owns admitted handoff, guard-free runtime callers and delivery outcomes.
 The extraction itself adds no queue or shared allocation guarantee.
 
+`Hab.interpretCue` synchronously borrows one cue without dequeuing. Internal
+`prepareCueEmission` pre-admits input retention and 8 MiB finite output plus
+24 MiB interpretation allowance before calling it. These local policy ceilings
+match QueryDeliveries; output is checked afterward, not a decoded/capture/native
+allocation bound. Lazy replay metadata/store ownership stays borrowed and unopened.
+Accept must immediately/atomically retain the owner or throw without publication;
+it cannot be async, mutate the source deck or release early. Refusal preserves
+input/credit; successful transfer frees the ordinary Deck slot and retains credit
+until destination consumption and joined cleanup finish. Actual retained-delivery
+adoption and guard-free network waits remain S1–3; this facility adds neither.
+
 Completion records must distinguish local transmission drain, HTTP success,
 verified protocol replies and durable application acceptance. An HTTP status or
 socket drain proves only its own boundary. Consumers report protocol decisions;

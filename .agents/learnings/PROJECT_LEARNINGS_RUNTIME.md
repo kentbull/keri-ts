@@ -90,6 +90,11 @@ HTTP success, verified replies and durable acceptance are different outcomes.
 Poster route snapshots and synchronous target preparation own habitat/DB work;
 prepared sending owns HTTP only. Keep borrowed wire alive through joined cleanup.
 The extraction alone does not move runtime callers outside their guard or admit copies.
+Admitted cue interpretation is synchronous: destination item admission precedes
+preparation, and atomic acceptance precedes ordinary source removal. Existing
+CueDeck credit transfers/requeues; lazy replay stays unopened. The accepting
+owner releases after joined consumption. This facility alone is not reliable
+handoff or guard-free delivery; port actual owners/callers before activation.
 
 Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB

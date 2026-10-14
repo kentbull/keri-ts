@@ -1,8 +1,13 @@
-import { run } from "effection";
-import { assertEquals } from "jsr:@std/assert";
+import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
+import { call, resource, run, suspend } from "effection";
+import { assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { prepareCueEmission, type PreparedCueEmission } from "../../../src/app/cue-preparation.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 
 Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and transport cues", async () => {
   const name = `cue-runtime-${crypto.randomUUID()}`;
@@ -143,4 +148,160 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
     { kind: "transport", kin: "stream" },
     { kind: "notify", kin: "oobiFailed" },
   ]);
+});
+
+Deno.test("cue interpretation admits before transfer and retains evidence through joined cleanup", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `cue-preparation-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      const hab = hby.makeHab("interpreter");
+      const cue: AgentCue = {
+        kin: "reply",
+        route: "/loc/scheme",
+        data: { eid: hab.pre, scheme: "http", url: "http://localhost" },
+      };
+      const resources = new ResourcePolicy();
+      const ordinary = new Deck([cue], 1);
+      const expected = hab.interpretCue(cue)!;
+      const fault = new Error("destination admission failed");
+      assertStrictEquals(
+        assertThrows(() =>
+          prepareCueEmission(hab, ordinary, resources, () => {
+            throw fault;
+          })
+        ),
+        fault,
+      );
+      assertStrictEquals(ordinary.peekHead(), cue);
+      assertEquals(resources.used.bytes, 0);
+      const occupied = resources.reserve({ bytes: resources.limits.bytes });
+      if (occupied.kind !== "reserve") throw new Error("Expected free credit");
+      const interpret = hab.interpretCue;
+      let calls = 0;
+      hab.interpretCue = (input) => {
+        calls++;
+        return interpret.call(hab, input);
+      };
+      try {
+        const busy = assertThrows(
+          () => prepareCueEmission(hab, ordinary, resources, () => undefined),
+          ResourceAdmissionError,
+        );
+        assertEquals(busy.reason, "busy");
+        const limit = assertThrows(
+          () => prepareCueEmission(hab, ordinary, new ResourcePolicy({ bytes: 1 }), () => undefined),
+          ResourceAdmissionError,
+        );
+        assertEquals(limit.reason, "limit");
+        const combined = assertThrows(
+          () => prepareCueEmission(hab, ordinary, new ResourcePolicy({ bytes: 32 * 1024 ** 2 }), () => undefined),
+          ResourceAdmissionError,
+        );
+        assertEquals(combined.reason, "limit");
+        assertEquals(calls, 0);
+        assertStrictEquals(ordinary.peekHead(), cue);
+      } finally {
+        occupied.reservation.release();
+      }
+      for (const deck of [ordinary, new CueDeck(resources, 1)]) {
+        if (deck instanceof CueDeck) {
+          deck.push(cue);
+          assertThrows(
+            () => prepareCueEmission(hab, deck, new ResourcePolicy(), () => undefined),
+            RangeError,
+            "exact policy",
+          );
+        }
+        const retained = resources.used.bytes;
+        const currentInterpretation = hab.interpretCue;
+        hab.interpretCue = () => {
+          throw fault;
+        };
+        assertStrictEquals(assertThrows(() => prepareCueEmission(hab, deck, resources, () => undefined)), fault);
+        hab.interpretCue = currentInterpretation;
+        assertStrictEquals(deck.peekHead(), cue);
+        assertEquals(resources.used.bytes, retained);
+        assertStrictEquals(
+          assertThrows(() =>
+            prepareCueEmission(hab, deck, resources, () => {
+              throw fault;
+            })
+          ),
+          fault,
+        );
+        assertStrictEquals(deck.peekHead(), cue);
+        assertEquals(resources.used.bytes, retained, "failed transfer preserves source credit");
+        let owner!: PreparedCueEmission;
+        prepareCueEmission(hab, deck, resources, (prepared) => {
+          owner = prepared;
+          return undefined;
+        });
+        assertEquals(deck.length, 0);
+        assertEquals(owner.emission?.kind, expected.kind);
+        assertEquals(resources.used.bytes >= 8 * 1024 ** 2, true);
+        if (!(deck instanceof CueDeck)) {
+          deck.push(cue);
+          deck.pull();
+        }
+        const ready = Promise.withResolvers<void>(),
+          returning = Promise.withResolvers<void>(),
+          release = Promise.withResolvers<void>();
+        const consuming = run(function*() {
+          yield* resource<void>(function*(provide) {
+            try {
+              yield* provide();
+            } finally {
+              owner.release();
+            }
+          });
+          yield* resource<void>(function*(provide) {
+            try {
+              yield* provide();
+            } finally {
+              returning.resolve();
+              yield* call(() => release.promise);
+            }
+          });
+          ready.resolve();
+          yield* suspend();
+        });
+        yield* call(() => ready.promise);
+        let joined = false;
+        const halted = consuming.halt().then(() => joined = true);
+        yield* call(() => returning.promise);
+        assertEquals(joined, false);
+        assertEquals(resources.used.bytes >= 8 * 1024 ** 2, true);
+        release.resolve();
+        yield* call(() => halted);
+        assertEquals(resources.used.bytes, 0);
+        owner.release();
+        assertThrows(() => owner.emission, Error, "released");
+      }
+      const replay = new Deck<AgentCue>([{ kin: "replay", messages: [Uint8Array.of(1)] }]);
+      const messages = replay.peekHead()!.kin === "replay"
+        ? (replay.peekHead() as Extract<AgentCue, { kin: "replay" }>).messages
+        : [];
+      const iterator = messages[Symbol.iterator];
+      messages[Symbol.iterator] = () => {
+        throw new Error("replay opened during admission");
+      };
+      try {
+        prepareCueEmission(hab, replay, resources, (owner) => {
+          assertStrictEquals(owner.emission!.messages, messages);
+          queueMicrotask(() => owner.release());
+          return undefined;
+        });
+        yield* call(() => Promise.resolve());
+      } finally {
+        messages[Symbol.iterator] = iterator;
+      }
+      assertEquals(resources.used.bytes, 0);
+      const oversized = new Deck<AgentCue>([{ kin: "replay", messages: [new Uint8Array(8 * 1024 ** 2 + 1)] }]);
+      assertThrows(() => prepareCueEmission(hab, oversized, resources, () => undefined), ResourceLimitError);
+      assertEquals(oversized.length, 1);
+      assertEquals(resources.used.bytes, 0);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });
