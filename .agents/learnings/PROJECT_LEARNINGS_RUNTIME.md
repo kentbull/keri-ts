@@ -56,10 +56,17 @@ Query producers run only after preparation/request admission. Queued requests re
 credit through failure/retry; shutdown releases an active head after transport cleanup joins.
 Runtime HTTP services must carry the runtime's exact policy. Frame requests acquire
 stream/copy credit before serialization or fetch and release it after joined cleanup;
-admitting output does not admit a source parser or establish a native fetch bound.
+source-driven output holds one stream/cursor owner across parsing and HTTP, with
+separate tree/stage/output byte credit. Query responses use the remaining ingress
+slot. This does not establish a native fetch bound.
 See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md).
 
 ## Transport
+
+The target finite and streamed messenger entry points share two engines. Parsed
+frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
+`postCesr` means successive POSTs, even when each frame body streams. Local drain,
+HTTP success, verified replies and durable acceptance are different outcomes.
 
 Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB

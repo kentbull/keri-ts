@@ -9,6 +9,7 @@ import {
   NumberPrimitive,
   parseBytes,
   Prefixer,
+  ResourcePolicy,
   SerderKERI,
   Siger,
   Vrsn_2_0,
@@ -212,6 +213,7 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const receipt = "2026-10-13T12:00:02.000000+00:00", later = "2026-10-13T12:00:03.000000+00:00";
+    const resources = new ResourcePolicy();
     const policy = new KramPolicy(hby.db, {
       enabled: true,
       caches: { "~": [1000, 3000, 10000, 60000, 3000, 10000, 60000] },
@@ -249,11 +251,17 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
         sigers: [new Siger({ qb64: proofs.prior0 })],
       });
       const priorKey = [prior.serder.pre!, prior.serder.said!];
-      assertEquals(yield* stageKram(hby.db, policy, prior, receipt, unexpected), { kind: "pending", key: priorKey });
+      assertEquals(yield* stageKram(hby.db, policy, resources, prior, receipt, unexpected), {
+        kind: "pending",
+        key: priorKey,
+      });
       for (const wire of [...fixture.kel.slice(1), ...signatureFixture.kel.filter((_, i) => i !== 1)]) {
         yield* acceptKel(wire);
       }
-      assertEquals(yield* stageKram(hby.db, policy, prior, later, unexpected), { kind: "drop", reason: "replay" });
+      assertEquals(yield* stageKram(hby.db, policy, resources, prior, later, unexpected), {
+        kind: "drop",
+        reason: "replay",
+      });
       assertExists(hby.db.msgc.get(priorKey));
       assertEquals([
         hby.db.pmkm.get(priorKey),
@@ -269,12 +277,15 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
         nests: [child],
         ssgs: [last],
       });
-      assertEquals(yield* stageKram(hby.db, policy, first, receipt, unexpected), { kind: "pending", key });
+      assertEquals(yield* stageKram(hby.db, policy, resources, first, receipt, unexpected), { kind: "pending", key });
       assertEquals(hby.db.pmks.get(key).map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only]);
       assertEquals(hby.db.kready.get(key), null, "same-index variants do not satisfy threshold");
       assertEquals(hby.db.ulgs.get(key).map((prefix) => prefix.qb64), [foreign]);
       yield* acceptKel(signatureFixture.kel[1]);
-      assertEquals(yield* stageKram(hby.db, policy, input(["sender0"]), later, unexpected), { kind: "pending", key });
+      assertEquals(yield* stageKram(hby.db, policy, resources, input(["sender0"]), later, unexpected), {
+        kind: "pending",
+        key,
+      });
       assertEquals(
         hby.db.ulgs.get(key).map((prefix) => prefix.qb64),
         [foreign],
@@ -288,25 +299,36 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
         ssts: [{ i: new Prefixer({ qb64: foreign }), s: NumberPrimitive.fromNum(0n), d: new Diger({ qb64: foreign }) }],
         ssgs: [last],
       });
-      assertEquals(yield* stageKram(hby.db, policy, repeat, later, unexpected), { kind: "pending", key });
+      assertEquals(yield* stageKram(hby.db, policy, resources, repeat, later, unexpected), { kind: "pending", key });
       assertEquals(hby.db.ssts.get(key).map(([prefix]) => prefix.qb64), [foreign]);
       assertEquals(hby.db.ulgs.get(key), [], "fresh known-last receipt clears the earlier marker");
       assertEquals(hby.db.kpnd.get(key), snapshot, "retry preserves independent saved child");
-      const ready = yield* stageKram(hby.db, policy, input(["sender1"]), later, function*(envelope, stagedKey, clock) {
-        assertEquals(stagedKey, key);
-        assertEquals(clock, later);
-        assertEquals(envelope.sigers.map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only, proofs.sender1]);
-        assertEquals(envelope.nests[0].body.raw, child.body.raw);
-        assertEquals(envelope.ssts.map((triple) => triple.i.qb64), [foreign]);
-        assertEquals(envelope.unresolvedLast, []);
-        assertEquals(envelope.tsgs.filter((group) => group.pre === foreign).map((group) => [group.sn, group.said]), [[
-          0n,
-          foreign,
-        ]]);
-        assertEquals(hby.db.msgc.get([child.body.pre!, child.body.said!]), null, "parent admission never admits child");
-        assertEquals(hby.db.kready.get(key), later, "publication precedes scoped consumption");
-        return "consumed";
-      });
+      const ready = yield* stageKram(
+        hby.db,
+        policy,
+        resources,
+        input(["sender1"]),
+        later,
+        function*(envelope, stagedKey, clock) {
+          assertEquals(stagedKey, key);
+          assertEquals(clock, later);
+          assertEquals(envelope.sigers.map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only, proofs.sender1]);
+          assertEquals(envelope.nests[0].body.raw, child.body.raw);
+          assertEquals(envelope.ssts.map((triple) => triple.i.qb64), [foreign]);
+          assertEquals(envelope.unresolvedLast, []);
+          assertEquals(envelope.tsgs.filter((group) => group.pre === foreign).map((group) => [group.sn, group.said]), [[
+            0n,
+            foreign,
+          ]]);
+          assertEquals(
+            hby.db.msgc.get([child.body.pre!, child.body.said!]),
+            null,
+            "parent admission never admits child",
+          );
+          assertEquals(hby.db.kready.get(key), later, "publication precedes scoped consumption");
+          return "consumed";
+        },
+      );
       assertEquals(ready, { kind: "ready", key, receiverTime: later, value: "consumed" });
       const sink = new MemoryPayloadSink(8);
       yield* call(() => sink.write(b("4BABYWJj")));
@@ -328,16 +350,23 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
       });
       yield* call(() =>
         assertRejects(
-          () => run(() => stageKram(hby.db, policy, changedReceipt, later, unexpected)),
+          () => run(() => stageKram(hby.db, policy, resources, changedReceipt, later, unexpected)),
           Error,
           "ready receipt changed",
         )
       );
       hby.db.kready.pin(key, later);
       yield* call(() => hby.db.reopen());
-      const retry = yield* stageKram(hby.db, policy, input(["sender1"]), receipt, function*(_envelope, _key, clock) {
-        return clock;
-      });
+      const retry = yield* stageKram(
+        hby.db,
+        policy,
+        resources,
+        input(["sender1"]),
+        receipt,
+        function*(_envelope, _key, clock) {
+          return clock;
+        },
+      );
       assertEquals(
         retry,
         { kind: "ready", key, receiverTime: later, value: later },
@@ -348,7 +377,7 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
       };
       yield* call(() =>
         assertRejects(
-          () => run(() => stageKram(hby.db, policy, input(["sender1"]), receipt, failConsumer)),
+          () => run(() => stageKram(hby.db, policy, resources, input(["sender1"]), receipt, failConsumer)),
           Error,
           "handoff failed",
         )
@@ -359,7 +388,10 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
         hby.db.kpnd.rem(key);
         hby.db.kready.rem(key);
       });
-      assertEquals(yield* stageKram(hby.db, policy, first, later, unexpected), { kind: "drop", reason: "replay" });
+      assertEquals(yield* stageKram(hby.db, policy, resources, first, later, unexpected), {
+        kind: "drop",
+        reason: "replay",
+      });
       // Re-admit only after removing the replay row, then fail the last publication write.
       hby.db.msgc.rem(key);
       const pin = hby.db.kready.pin.bind(hby.db.kready);
@@ -375,7 +407,7 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
         });
         yield* call(() =>
           assertRejects(
-            () => run(() => stageKram(hby.db, policy, complete, receipt, unexpected)),
+            () => run(() => stageKram(hby.db, policy, resources, complete, receipt, unexpected)),
             Error,
             "ready write failed",
           )
@@ -408,7 +440,7 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
         },
       });
       try {
-        assertEquals(yield* stageKram(hby.db, policy, changed, later, unexpected), {
+        assertEquals(yield* stageKram(hby.db, policy, resources, changed, later, unexpected), {
           kind: "drop",
           reason: "timeliness",
         });

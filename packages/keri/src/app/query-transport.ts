@@ -1,13 +1,11 @@
 import {
   concatBytes,
-  discardFrame,
   ResourceAdmissionError,
   ResourceLimitError,
   ResourcePolicy,
   type ResourceReservation,
 } from "cesr-ts";
-import { toEffectionFrames } from "cesr-ts/effection";
-import { call, each, type Operation, resource } from "npm:effection@^3.6.0";
+import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -15,7 +13,7 @@ import { Roles } from "../core/roles.ts";
 import { Schemes } from "../core/schemes.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
-import { requestFrame } from "./cesr-egress.ts";
+import { postCesr } from "./cesr-egress.ts";
 import type { CueSink } from "./cue-runtime.ts";
 import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -189,27 +187,16 @@ function* postQueryMessage(
   delivery: QueryDelivery,
   controller: AbortController,
 ): Operation<void> {
-  const channel = yield* toEffectionFrames((signal) => chunkBytes(delivery.body, { signal }), {
-    signal: controller.signal,
-  });
-  for (const frame of yield* each(channel.frames)) {
-    yield* call(function*() {
-      yield* resource<void>(function*(provide) {
-        try {
-          yield* provide();
-        } finally {
-          yield* call(() => discardFrame(frame));
-        }
-      });
-      const response = yield* requestFrame(delivery.url, frame, {
-        bodyMode: delivery.bodyMode,
-        destination: delivery.destination,
-        services: runtime.services,
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new ValidationError(`Query delivery to ${delivery.url} failed with HTTP ${response.status}.`);
-      }
+  yield* postCesr(
+    delivery.url,
+    (signal) => chunkBytes(delivery.body, { signal }),
+    {
+      bodyMode: delivery.bodyMode,
+      destination: delivery.destination,
+      services: runtime.services,
+      signal: controller.signal,
+    },
+    function*(response) {
       if (response.headers.get("Content-Type")?.toLowerCase().startsWith("text/event-stream")) {
         yield* consumeMailboxSse(response, new AbortController(), function*(message) {
           yield* runtime.reactor.process((signal) => chunkBytes(message.msg, { signal }), {
@@ -221,9 +208,8 @@ function* postQueryMessage(
           signal: controller.signal,
         });
       }
-    });
-    yield* each.next();
-  }
+    },
+  );
 }
 
 /**

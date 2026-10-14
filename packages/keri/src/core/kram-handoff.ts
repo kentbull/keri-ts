@@ -1,5 +1,5 @@
-/** Internal retryable KRAM handoff; runtime installation and shared budgets remain separate. */
-import { bytesEqual } from "cesr-ts";
+/** Internal retryable KRAM handoff; borrowed shared credit covers scoped snapshot copies. */
+import { bytesEqual, ResourcePolicy } from "cesr-ts";
 import { call, type Operation, type Provide, resource } from "effection";
 import type { Baser } from "../db/basing.ts";
 import { removeKramFactors } from "../db/kram-factors.ts";
@@ -36,15 +36,21 @@ export class KramHandoff {
   private active = false;
   readonly cues: Deck<AgentCue>;
   private readonly now: () => number;
+  readonly resources: ResourcePolicy;
 
   constructor(
     readonly db: Baser,
     readonly policy: KramPolicy,
-    { cues = new Deck<AgentCue>(), now = Date.now }: { cues?: Deck<AgentCue>; now?: () => number } = {},
+    { cues = new Deck<AgentCue>(), now = Date.now, resources = new ResourcePolicy() }: {
+      cues?: Deck<AgentCue>;
+      now?: () => number;
+      resources?: ResourcePolicy;
+    } = {},
   ) {
     if (policy.db !== db) throw new Error("KRAM handoff policy must use its backing store");
     this.cues = cues;
     this.now = now;
+    this.resources = resources;
   }
 
   /** Local maintenance can defer while joined handoff work still owns evidence. */
@@ -84,6 +90,7 @@ export class KramHandoff {
         const result = yield* stageKram(
           this.db,
           this.policy,
+          this.resources,
           incoming,
           receipt,
           (ready, _key, frozenReceipt) => consume(ready, frozenReceipt),

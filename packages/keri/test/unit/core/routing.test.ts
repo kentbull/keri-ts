@@ -364,3 +364,35 @@ Deno.test("Revery escrow replay preserves processing error detail on drop decisi
     }
   });
 });
+
+Deno.test("Revery BADA retains microsecond ordering for signed replies", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true });
+    try {
+      const hab = hby.makeHab("nontrans", undefined, { transferable: false });
+      const verifier = new Revery(hby.db);
+      let prior: Diger | undefined;
+      const attempt = (dt: string) => {
+        const serder = new SerderKERI({ sad: { t: "rpy", dt, r: "/microseconds", a: { aid: hab.pre } }, makify: true });
+        const saider = new Diger({ qb64: serder.said! });
+        const result = verifier.acceptReply({
+          serder,
+          saider,
+          route: "/microseconds",
+          aid: hab.pre,
+          osaider: prior,
+          cigars: hab.sign(serder.raw, false),
+        });
+        if (result.kind === "accept") prior = saider;
+        return result.kind;
+      };
+      assertEquals(attempt("2026-10-13T00:00:00.000001+00:00"), "accept");
+      assertEquals(attempt("2026-10-13T00:00:00.000002+00:00"), "accept");
+      assertEquals(attempt("2026-10-13T00:00:00.000001+00:00"), "unverified");
+      assertEquals(attempt("2026-10-13T00:00:00.000002+00:00"), "unverified");
+      assertEquals(attempt("2026-10-13T01:00:00.000003+01:00"), "accept");
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});

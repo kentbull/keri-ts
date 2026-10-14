@@ -7,7 +7,7 @@ from keri import kering
 from keri.core import coring, mapping
 
 # Behavioral fixture pin, independent of the runtime interop harness.
-REFERENCE = "927c0cb8794d7c84fc17143c67df64aab9deda6c"
+REFERENCE = "7143832813cac6a394ab1faf9be83bb3372be87c"
 
 
 def generate():

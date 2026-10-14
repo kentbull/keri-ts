@@ -3,7 +3,7 @@
 `dispatchEnvelope` consolidates protocol-v2 `qry/rpy/exn/xip/pro/bar` intake
 before delegating to the existing processors. This corresponds to
 `Kevery.processMsg` with KRAM disabled in unmodified KERIpy
-`927c0cb8794d7c84fc17143c67df64aab9deda6c` (`core/parsing.py` and
+`7143832813cac6a394ab1faf9be83bb3372be87c` (`core/parsing.py` and
 `core/eventing.py`). KRAM is disabled by default and explicitly configurable at runtime.
 
 ## Policy and responsibility
@@ -47,6 +47,19 @@ anchor. State production does not authenticate a query, reply, or nested child;
 TSN receiving still requires BADA, attester trust and accepted TEL correspondence.
 Storage corruption and infrastructure errors propagate. Existing state helpers'
 read costs remain separate from the two-reply output ceiling.
+
+Reply BADA compares exact microseconds, as 714's datetime ordering does.
+`Broker.retryStateNotices` captures a finite family horizon and processes 64 rows
+per call by default (maximum 1024), releasing cursors before hydration or writes.
+Typed keep/accept/drop outcomes update only the current index; artifacts remain
+available to other dependency families. Failed callbacks and corrupt artifacts
+propagate, preserving retry ownership. Insertions behind a checkpoint return next
+pass; insertions beyond the horizon cannot extend that pass. TTL is inclusive.
+The legacy exception adapter remains separate and must not drive TSN runtime retry.
+Actual 714 registry replies store a TEL digest as Broker's current pointer, while
+Revery indexes proof/timestamp metadata by the outer reply SAID: a direct parsed
+probe accepted an older signed reply. Receiving must instead retain the outer
+reply SAID for BADA; state production and TSN dispatch guards remain unchanged.
 
 Admission refusals return `MessageDropDecision`. Frozen `xip/pro/bar` processors
 are stubs: they report `referenceStub`, never acceptance. Route-specific decisions
