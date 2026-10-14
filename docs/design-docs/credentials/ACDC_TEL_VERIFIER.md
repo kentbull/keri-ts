@@ -28,8 +28,8 @@ responsibilities into one vague "VC" layer.
   optional existing `ancs.`/`maes.`/`ooes.` adapters.
 - `acdc/registering.ts` supplies storage-only RegistryStore access, aliases,
   accepted-body cloning, earliest-anchor retention and insertion-ordered escrows.
-- `db/registry-evidence.ts` extends that same RegBaser owner for accepted v2
-  observer chains, separately from Reger.
+- `acdc/observing.ts` supplies explicit public parsed registry intake through
+  the engine; IPEX reads accepted ordinals through RegistryStore.
 - `app/ipex-credentialing.ts` owns KERIpy-shaped grant/admit credential
   artifacts.
 - `app/verifier-agent.ts` owns Sally-like webhook sending and durable ack/retry
@@ -190,8 +190,12 @@ The facade rejects negative/unsafe numeric ordinals before any storage mutation;
 engines retain incoming ordinals as bigint until checked conversion. `cloneTel`
 eagerly collects accepted bodies and provides no shared-budget guarantee; IPEX
 must reserve credit before collecting. The web backend remains unsupported.
-Verified observer import retains its complete-
-chain check and atomic publication. The full registry service remains unfinished.
+The custom whole-chain import API is removed. RegistryObserver validates and
+commits each event through the normal engine; missing anchors/order remain in
+escrow for explicit retry. Previously accepted #168 digest-only evidence remains
+readable without migration, but readability does not authorize fresh intake.
+The historical [import design](../../reference/credentials/VERIFIED_IMPORT_SNAPSHOT.md)
+remains deferred. Automatic parser intake and global freshness are separate work.
 
 ## IPEX
 
