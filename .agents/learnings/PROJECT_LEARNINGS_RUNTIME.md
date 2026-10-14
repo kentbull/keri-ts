@@ -69,7 +69,9 @@ iterator and returns it only after source cleanup. Busy HTTP admission returns 5
 configured size refusal remains 413. Neither creates retry scheduling.
 Nonempty response detection primes one bounded event under that same owner;
 empty sources close before returning null and runtime close drops primed bytes.
-Query producers run only after preparation/request admission. Queued requests retain
+RuntimeDeliveries owns the existing finite query queue; retained cue adoption
+uses this same owner rather than adding a parallel queue. Query producers run
+only after preparation/request admission. Queued requests retain
 credit through failure/retry; shutdown releases an active head after transport cleanup joins.
 Runtime HTTP services must carry the runtime's exact policy. Frame requests acquire
 stream/copy credit before serialization or fetch and release it after joined cleanup;

@@ -81,7 +81,7 @@ interface AdmittedQuery {
 }
 
 /** Own finite query requests; network responses are consumed only outside a guarded cue turn. */
-export class QueryDeliveries {
+export class RuntimeDeliveries {
   /** At most eight 8 MiB requests, including the active head. */
   private readonly pending = new Deck<AdmittedQuery>(undefined, 8);
   /** Shutdown must not release an active request until its transport resources have joined. */
@@ -242,7 +242,7 @@ export function queryTransportSink(
           `No endpoint URL found for query destination ${destination}.`,
         );
       }
-      runtime.queryDeliveries.enqueue(() => {
+      runtime.deliveries.enqueue(() => {
         const messages = emission.messages[Symbol.iterator]();
         let message: Uint8Array | undefined;
         try {

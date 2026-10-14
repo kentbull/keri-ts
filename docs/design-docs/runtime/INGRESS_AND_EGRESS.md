@@ -201,7 +201,7 @@ atomicity while retaining its layout, and adds no shared-copy/native admission.
 `Hab.interpretCue` synchronously borrows one cue without dequeuing. Internal
 `prepareCueEmission` pre-admits input retention and 8 MiB finite output plus
 24 MiB interpretation allowance before calling it. These local policy ceilings
-match QueryDeliveries; output is checked afterward, not a decoded/capture/native
+match RuntimeDeliveries; output is checked afterward, not a decoded/capture/native
 allocation bound. Lazy replay metadata/store ownership stays borrowed and unopened.
 The queued source-owned floor includes its irreducible shared-batch credit;
 inspect that stored amount without walking stores or opening replay.

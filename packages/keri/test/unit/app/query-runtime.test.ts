@@ -13,7 +13,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { fetchResponseHandle } from "../../../src/app/httping.ts";
 import { readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 
-import { queryTransportSink } from "../../../src/app/query-transport.ts";
+import { queryTransportSink } from "../../../src/app/runtime-deliveries.ts";
 import { witnessReceiptPost } from "../../../src/app/witnessing.ts";
 
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -407,7 +407,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       });
 
       // Network response processing begins only after the cue consumer's guarded turn has ended.
-      yield* proxyRuntime.queryDeliveries.process(proxyRuntime);
+      yield* proxyRuntime.deliveries.process(proxyRuntime);
       assertExists(witnessRuntime.hby.db.getKever(proxy.pre));
       assertExists(
         witnessRuntime.hby.db.ends.get([

@@ -34,7 +34,7 @@ import {
 } from "keri-ts/runtime";
 import { abortable } from "../../keri/src/app/abortable.ts";
 import { acceptedEventReplayMessage } from "../../keri/src/app/habbing.ts";
-import { queryTransportSink } from "../../keri/src/app/query-transport.ts";
+import { queryTransportSink } from "../../keri/src/app/runtime-deliveries.ts";
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
 import { messagize, serializeMessage } from "../../keri/src/core/protocol-serialization.ts";
 import { incept as inceptRegistry, issue } from "../../keri/src/core/protocol-vdr-eventing.ts";

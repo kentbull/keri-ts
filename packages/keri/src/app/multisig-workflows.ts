@@ -46,7 +46,7 @@ import {
   multisigPathedAttachment,
 } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import { queryTransportSink } from "./query-transport.ts";
+import { queryTransportSink } from "./runtime-deliveries.ts";
 import { Verifier } from "./verifying.ts";
 
 const MULTISIG_TOPIC = "multisig";
