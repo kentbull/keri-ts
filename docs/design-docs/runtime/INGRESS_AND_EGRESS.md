@@ -65,6 +65,13 @@ authorization uses the final query frame's exact signatures and dispatch decisio
 A current sender refusal prevents opening a response even when an earlier matching
 query cue exists. See [v2 message admission](../exchange/MESSAGE_ADMISSION.md).
 
+The existing delivery owner can prepare an earlier query batch without an HTTP
+response consumer. This atomic queue-only transfer preserves the original slot
+on capacity or preparation refusal and reserves no response stream permit. It
+retains the once-interpreted wire through joined target cleanup; no-target cleanup
+waits until all preparation and source ownership have transferred. The generic
+HTTP caller port remains separate from this facility.
+
 The generic HTTP route consumes its request body progressively and appends a
 separately bounded CESR attachment header. Administrative requests still collect
 an explicitly bounded 8 MiB value. `Reactor.processBytes` supplies a finite value to the same progressive source

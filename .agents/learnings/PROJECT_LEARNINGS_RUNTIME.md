@@ -195,6 +195,10 @@ HTTP response. Final direct replies prepare the bounded TSN pair atomically befo
 slot removal; one interpreted proof is borrowed by response and queued targets
 until both cleanups finish. Missing target routes allow response-only ownership;
 source/signer/storage failures propagate. Earlier responses still use ordinary delivery.
+Queue-only reply preparation shares that atomic wire owner and reserves no HTTP
+response permit. Busy retains the original slot, and no-target retirement waits
+until nested preparation and source transfer finish. Actual earlier-query caller
+adoption remains separate.
 A response scope
 outlives fetch headers and must not inherit a request signal that aborts when the
 handler returns. requestFrame/postCesr retain frame owners until consumption ends.
