@@ -98,6 +98,54 @@ a separately proven durable obligation or reconstruction path, not just a queue.
 
 [transport-plan]: ../../plans/runtime/TRANSPORT_PLAN.md
 
+## Messenger responsibilities
+
+Two engines own transport work: CESR HTTP request/response scopes and an owned
+TCP connection with directional I/O. Small Effection operations/resources expose
+finite-message and source inputs. This mapping defines responsibilities; the TCP
+entries and complete caller integration remain planned in S1–9.
+
+| KERIpy responsibility | TypeScript entry / shared engine                          |
+| --------------------- | --------------------------------------------------------- |
+| HTTPMessenger         | `requestFrame`; finite bytes via `postCesr`               |
+| HTTPStreamMessenger   | `postCesr` source and scoped response consumer            |
+| TCPMessenger          | Finite bytes/frame adapter to owned TCP engine (planned)  |
+| TCPStreamMessenger    | Abortable source/payload on the same TCP engine (planned) |
+
+Do not add aliases or inheritance merely to mirror names. Reuse existing byte
+sources, serializers and response readers. A parsed frame bypasses byte parsing;
+its caller retains every borrowed frame/payload owner until transport consumption
+and joined cleanup finish. Byte inputs enter the same machinery through a finite
+source adapter. Stream inputs use an abortable source factory or an appropriately
+owned Payload, pulled only under available credit without hidden prefetch or
+transfer-sized collection. Shared admission precedes source acquisition and
+avoidable allocation; cancellation joins reads, writes, parsing and disposal
+before releasing reservations.
+
+HTTP `postCesr` produces successive framed **POST** requests, finishing each
+response scope before advancing. Header mode sends the body with bounded
+`CESR-ATTACHMENT`; body mode streams one qualified frame in that request. Neither
+mode turns the whole source into one request. Preserve the resolved URL/path,
+`CESR-DESTINATION`, authorization and existing media-type negotiation. KERIpy
+714's HTTPStreamMessenger instead sends one bulk PUT to `/`; this is a documented
+wire/API difference, not a reason to change the established POST contract.
+
+The HTTP engine owns upload, fetch and response cleanup; its scoped consumer
+uses one progressive parser for each applicable CESR response body. Receipt/SSE
+readers retain their distinct framing contracts. TCP owns one progressive parser
+per receive lifetime, optional concurrent reply consumption and directional
+shutdown. Only explicit conversation policy enables same-socket duplex. Socket
+fragments and temporary byte exhaustion never establish message boundaries.
+Poster/Respondant choose destination and delivery policy; Reactor verifies and
+mutates accepted state. Signing, routing snapshots and local DB preparation stay
+in short guarded turns; independently owned network work and capacity waits do not.
+
+Completion records must distinguish local transmission drain, HTTP success,
+verified protocol replies and durable application acceptance. An HTTP status or
+socket drain proves only its own boundary. Consumers report protocol decisions;
+transport must not infer them, swallow infrastructure/invariant failures or turn
+cancellation into ordinary success. No extra queues or scheduling are implied.
+
 ## Runtime store ownership
 
 AgentRuntime borrows its Habery, injected `acdc.rgy` manager and injected VDR services.

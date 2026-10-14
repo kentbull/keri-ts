@@ -45,6 +45,8 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
    The socket-to-application streamability work is phase 6's S1–9 sequence:
    bounded cue handoff, network waits outside the guard, progressive TCP intake,
    supervised connections, streamed output, explicit duplex and composed proof.
+   Finite/source messenger entries share two engines within those units; HTTP
+   preserves its framed POST contract.
    It is required in the next release, not deferred post-release qualification.
 4. Complete bundled schema-ID repair M2 after delivered Mapper claim repair M1.
 5. Run the maintained full inventory and repeated end-to-end qualification (7)
