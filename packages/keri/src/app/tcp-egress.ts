@@ -282,8 +282,8 @@ function writeTcp(
             throw new ResourceLimitError(`TCP chunk backing exceeds ${cap} bytes`);
           }
           if (!part.value.length) continue;
-          const drained = Promise.withResolvers<void>();
-          const drain = () => drained.resolve();
+          let drain!: () => void;
+          const drained = new Promise<void>((resolve) => drain = resolve);
           socket.once("drain", drain);
           try {
             let writable = false;
@@ -292,7 +292,7 @@ function writeTcp(
             });
             await interrupted(pendingWrite, signal);
             pendingWrite = undefined;
-            if (!writable) await interrupted(drained.promise, signal);
+            if (!writable) await interrupted(drained, signal);
           } finally {
             socket.removeListener("drain", drain);
           }

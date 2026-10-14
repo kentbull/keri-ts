@@ -54,6 +54,7 @@ import {
   OnIoDupSuber,
   SerderSuber,
 } from "./subing.ts";
+import { CapturedTelReplay, type TelReplayRange, type TelReplaySettings } from "./tel-replay.ts";
 
 type KeyPart = string | Uint8Array;
 type TelAnchorTuple = [NumberPrimitive, Diger];
@@ -316,7 +317,7 @@ export class Reger extends LMDBer {
       genusify?: boolean;
       maxMessageBytes?: number;
     } = {},
-  ): Iterable<Uint8Array> | null {
+  ): CapturedTelReplay | null {
     if (!Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
       throw new RangeError("TEL replay message limit must be a positive safe integer");
     }
@@ -328,32 +329,36 @@ export class Reger extends LMDBer {
     if (end === null) return null;
     if (!Number.isFinite(end) || end < 0) throw new DatabaseOperationError("Corrupt TEL replay ordinal");
     if (!Number.isSafeInteger(end)) throw new ResourceLimitError("TEL replay ordinal exceeds supported range");
-    const genus = { major: gvrsn.major, minor: gvrsn.minor };
-    const last = end;
-    // deno-lint-ignore no-this-alias -- Each reader borrows this store without retaining its read cursor.
-    const reger = this;
-    return {
-      /** Later accepted ordinals are outside this response; interruption retains no cursor or body queue. */
-      *[Symbol.iterator]() {
-        let next = 0;
-        while (next <= last) {
-          const rows = reger.tels.getAllItemIter(pre, next);
-          let row: [string[], number, Diger] | undefined;
-          try {
-            row = rows.next().value;
-          } finally {
-            rows.return(undefined);
-          }
-          if (!row || row[1] > last) break;
-          const [, ordinal, diger] = row;
-          if (!Number.isSafeInteger(ordinal) || ordinal < next) {
-            throw new DatabaseOperationError("Corrupt TEL replay sequence");
-          }
-          next = ordinal + 1;
-          yield reger.cloneTvt(pre, diger, genus, maxMessageBytes, genusify);
-        }
-      },
-    };
+    return new CapturedTelReplay(this, [[pre, end]], { gvrsn, genusify, maxMessageBytes });
+  }
+
+  /** Consume one captured horizon without retaining a cursor or event queue across a yield. */
+  *replayRange(
+    [pre, last]: TelReplayRange,
+    { gvrsn, genusify, maxMessageBytes }: TelReplaySettings,
+  ): Generator<Uint8Array> {
+    if (
+      !pre || !Number.isSafeInteger(last) || last < 0 || !Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1
+    ) {
+      throw new RangeError("Invalid captured TEL range or message limit");
+    }
+    let next = 0;
+    while (next <= last) {
+      const rows = this.tels.getAllItemIter(pre, next);
+      let row: [string[], number, Diger] | undefined;
+      try {
+        row = rows.next().value;
+      } finally {
+        rows.return(undefined);
+      }
+      if (!row || row[1] > last) break;
+      const [, ordinal, diger] = row;
+      if (!Number.isSafeInteger(ordinal) || ordinal < next) {
+        throw new DatabaseOperationError("Corrupt TEL replay sequence");
+      }
+      next = ordinal + 1;
+      yield this.cloneTvt(pre, diger, gvrsn, maxMessageBytes, genusify);
+    }
   }
 
   /** Clone one TEL event at sequence `sn`, preserving its body and honoring the genus floor. */
