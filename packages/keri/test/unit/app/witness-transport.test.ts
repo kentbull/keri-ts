@@ -93,7 +93,7 @@ Deno.test("TCP witness admission owns its socket through cancellation and permit
       received.resolve();
     });
     socket.once("end", () => {
-      if (finish) socket.end();
+      if (finish) socket.end(Uint8Array.of(11, 12));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -695,7 +695,7 @@ Deno.test("TCP output rejects oversized backing, freezes drain deadline and perm
     socket.once("close", () => sockets.delete(socket));
     socket.on("data", (bytes) => received += bytes.length);
     socket.once("end", () => {
-      if (finish) socket.end();
+      if (finish) socket.end(Uint8Array.of(11, 12));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -867,6 +867,12 @@ Deno.test("TCP output rejects oversized backing, freezes drain deadline and perm
         assertEquals(borrowed.writableEnded, false, "a reply cannot end the next frame's output direction");
         assertEquals(services.resources.used, { streams: 1, bytes: 0, decryptions: 0 });
       }
+      let succeeded = false;
+      await run(() => writeCesrTcpSocket(borrowed, () => Promise.reject(undefined), { services })).then(
+        () => succeeded = true,
+        (error) => assertEquals(error, undefined),
+      );
+      assertEquals(succeeded, false, "undefined source rejection cannot become transmitted success");
     } finally {
       borrowed.destroy();
       await new Promise<void>((resolve) => borrowed.closed ? resolve() : borrowed.once("close", resolve));

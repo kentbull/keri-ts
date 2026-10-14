@@ -28,8 +28,11 @@ halt, preserving late failures and releasing the lock even when cleanup fails.
 Response cancellation uses an earlier scope resource: a bare yielding finally
 can join its Promise while losing a late failure during cancellation. Unacquired
 HTTP response/request bodies propagate cleanup failure instead of discarding it.
-Fetch's exact controller abort reason remains cancellation; foreign same-class
-AbortErrors still propagate. Preserve the mailbox's ordinary idle-timeout outcome.
+Fetch teardown joins pending rejection as well as late response cleanup. Timeout
+null recognizes only its controller's exact reason; foreign same-class AbortErrors
+and I/O failures propagate without repeating an already-reported object.
+HTTP ingress joins its own halt and closes published reply output on late abort
+outside status mapping. Preserve the mailbox's ordinary idle-timeout outcome.
 Parent cancellation diagnostics still need composed owner qualification.
 
 Owned hydration uses an isolated consume callback with direct joined finalization.
@@ -38,6 +41,8 @@ can hide disposal errors after delivery. Fail cleanup before returning to its ca
 KRAM handoff retains its local busy guard until that disposal and checked durable
 acknowledgement finish. Failed callbacks, disposal or ack preserve ready retries;
 callback side effects/owner adoption are at least once, without rollback.
+Kramer/handoff borrow Baser's exact policy; acknowledgement snapshots reserve before
+copying and retain credit through staged consumption, joined disposal and acknowledgement.
 Per-Baser active scope counts exclude synchronous cache maintenance, while
 admission remains guarded per instance; neither supplies a shared memory budget.
 
@@ -173,6 +178,12 @@ socket errors outside the readable lifetime. Abort/return joins close; genuine E
 leaves the writable half for explicit connection drain. Never mix flow readers,
 or treat high-water buffering as a hard shared-memory ceiling.
 
+Tufa TCP immediate event proofs and query replies own bounded correlated slots;
+Kevery accept/duplicate decisions gate event output. Signing stays guarded, socket
+writes borrow the connection stream slot outside the guard. Unrelated cues retain
+Respondant routing. One missing-state logs/ksn query may stay in its existing bounded
+slot; readiness wakes socket output while one joined parser pull stays live. The host
+runtime driver owns escrow retries; a standalone listener borrower must supply it.
 Tufa TCP bounds admitted/closing tasks before source acquisition; Reactor alone
 charges the receive stream. Earlier connection credit outlives joined parser/socket
 cleanup. Intrinsic wire refusal must preserve source/storage provenance, and a

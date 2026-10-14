@@ -37,7 +37,10 @@ Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prereq
           const kevery = new Kevery(hby.db, {
             messagePolicy: { allowList: new Set(row.allow), denyList: new Set(row.deny) },
           });
-          kevery.processQuery = (query) => record("kel-query", query);
+          kevery.processQuery = (query) => {
+            record("kel-query", query);
+            return { kind: "accept" };
+          };
           const revery = new Revery(hby.db);
           revery.processReply = () => {
             record("reply");
@@ -491,6 +494,7 @@ Deno.test("optional KRAM preserves actual OOBI verification and frozen processor
       for (const row of stubs) {
         const [frame] = yield* call(() => parseBytes(b(row.wire)));
         const disabled = new Reactor(hby, { kram: { enabled: false } });
+        assertEquals(disabled.resources === hby.db.resources, true, "standalone KRAM uses its backing policy");
         yield* disabled.settle(frame, {}, function*(_ready, decision) {
           assertEquals(decision, { kind: "drop", reason: "referenceStub" });
         });

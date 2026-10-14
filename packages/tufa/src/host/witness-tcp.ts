@@ -1,12 +1,34 @@
-import { ResourceLimitError, type ResourceReservation, WireParseError } from "cesr-ts";
+import {
+  type CesrFrame,
+  discardFrame,
+  Ilks,
+  ResourceAdmissionError,
+  ResourceLimitError,
+  type ResourceReservation,
+  WireParseError,
+} from "cesr-ts";
 import { action, call, createScope, type Operation, race, resource, useScope } from "effection";
-import { type AgentRuntime, DeckFullError, type Hab, processWitnessIngressSource, socketBytes } from "keri-ts/runtime";
+import {
+  type AgentRuntime,
+  chunkBytes,
+  Deck,
+  DeckFullError,
+  type Hab,
+  prepareCueEmission,
+  type PreparedCueEmission,
+  processCuesOnce,
+  type QueryReply,
+  socketBytes,
+  writeCesrTcpSocket,
+} from "keri-ts/runtime";
 import { createServer, type Socket } from "node:net";
 
 /** Finite host supervision; the runtime owns the sole parser stream reservation. */
 export interface WitnessTcpOptions {
   /** Maximum admitted/closing connections on this listener; default two. */
   maxConnections?: number;
+  /** Absolute deadline after genuine receive EOF, never refreshed by output activity; default 30 seconds. */
+  drainTimeoutMs?: number;
   /** Observe expected connection refusal without suppressing storage/invariant failures. */
   onRefusal?: (reason: "busy" | "limit" | "wire" | "peer") => void;
 }
@@ -28,6 +50,7 @@ function* processWitnessSocket(
   closed: Promise<void>,
   release: () => void,
   onRefusal: NonNullable<WitnessTcpOptions["onRefusal"]>,
+  drainTimeoutMs: number,
 ): Operation<void> {
   // Earlier resource outlives every parser/watcher child, including joined cancellation.
   yield* resource<void>(function*(provideLease) {
@@ -51,44 +74,255 @@ function* processWitnessSocket(
   let receiveSignal: AbortSignal | undefined;
   let returning = false;
   const error = (error: Error) => {
-    if (receiveSignal?.aborted || returning) return;
+    if ((receiveSignal?.aborted && !socket.readableEnded) || returning) return;
     if (isPeerError(error)) peers.add(error);
     rejectFailure(error);
   };
   const close = () => {
-    if (socket.readableEnded || receiveSignal?.aborted || returning) return;
-    const error = new Error("TCP peer closed before receive EOF");
+    if (
+      (socket.readableEnded && socket.writableFinished) || (receiveSignal?.aborted && !socket.readableEnded)
+      || returning
+    ) return;
+    const error = new Error("TCP peer closed before directional drain completed");
     peers.add(error);
     rejectFailure(error);
+  };
+  let deadline: ReturnType<AgentRuntime["services"]["clock"]["setTimeout"]> | undefined;
+  const eof = () => {
+    deadline = runtime.services.clock.setTimeout(() => {
+      const error = new Error("TCP reply drain deadline exceeded");
+      peers.add(error);
+      rejectFailure(error);
+    }, drainTimeoutMs);
   };
   yield* resource<void>(function*(provideWatcher) {
     socket.on("error", error);
     socket.on("close", close);
+    socket.once("end", eof);
     try {
       yield* provideWatcher();
     } finally {
       socket.off("error", error);
       socket.off("close", close);
+      socket.off("end", eof);
+      if (deadline !== undefined) runtime.services.clock.clearTimeout(deadline);
     }
   });
   try {
     yield* race([
-      processWitnessIngressSource(runtime, serviceHab, (signal) => {
-        receiveSignal = signal;
-        const input = socketBytes(socket, { signal });
-        const source: AsyncIterableIterator<Uint8Array> = {
-          [Symbol.asyncIterator]() {
-            return this;
-          },
-          next: () => input.next(),
-          return() {
-            // Parser-owned return can destroy the socket before its adapter aborts the signal.
-            returning = true;
-            return input.return!();
-          },
-        };
-        return source;
-      }, { local: true, classifyWireErrors: true }),
+      call(function*() {
+        const channel = yield* runtime.reactor.frames((signal) => {
+          receiveSignal = signal;
+          const input = socketBytes(socket, { signal });
+          const source: AsyncIterableIterator<Uint8Array> = {
+            [Symbol.asyncIterator]() {
+              return this;
+            },
+            next: () => input.next(),
+            return() {
+              returning = !socket.readableEnded;
+              return input.return!();
+            },
+          };
+          return source;
+        }, { classifyWireErrors: true });
+        let pending: QueryReply | undefined;
+        let next: IteratorResult<CesrFrame, void> | undefined,
+          readFailure: { error: unknown; reported?: boolean } | undefined;
+        let pulling = false, rxEOF = false, wake: (() => void) | undefined;
+        const frames = yield* channel.frames;
+        const [reads, haltReads] = createScope(yield* useScope());
+        /** Join the one pull, dispose its unclaimed frame, and release the slot even after cleanup failure. */
+        function* closeReadOwner(): Operation<void> {
+          const errors: unknown[] = [];
+          try {
+            yield* haltReads();
+          } catch (error) {
+            errors.push(error);
+          }
+          try {
+            const unclaimed = next;
+            if (unclaimed && !unclaimed.done) yield* call(() => discardFrame(unclaimed.value));
+          } catch (error) {
+            errors.push(error);
+          }
+          if (readFailure && !readFailure.reported && !errors.includes(readFailure.error)) {
+            errors.push(readFailure.error);
+          }
+          try {
+            pending?.close();
+          } catch (error) {
+            errors.push(error);
+          }
+          if (errors.length === 1) throw errors[0];
+          if (errors.length) throw new AggregateError(errors, "TCP read/reply cleanup failed");
+        }
+        yield* resource<void>(function*(provide) {
+          try {
+            yield* provide();
+          } finally {
+            yield* closeReadOwner();
+          }
+        });
+        type Batch = NonNullable<ReturnType<QueryReply["takeAll"]>>;
+        /** Borrow one captured batch until every admitted output and source cleanup joins. */
+        function* sendBatch(batch: Batch): Operation<void> {
+          yield* resource<void>(function*(provide) {
+            try {
+              yield* provide();
+            } finally {
+              batch.release();
+            }
+          });
+          for (const cue of batch.cues) {
+            yield* call(function*() {
+              let output: PreparedCueEmission | undefined;
+              yield* resource<void>(function*(provide) {
+                const hydration = runtime.resources.reserve({ bytes: runtime.replyStreams.preparationByteFloor });
+                if (hydration.kind === "refuse") {
+                  throw new ResourceAdmissionError("TCP reply preparation refused", hydration.reason);
+                }
+                try {
+                  yield* provide();
+                } finally {
+                  output?.release();
+                  hydration.reservation.release();
+                }
+              });
+              yield* runtime.reactor.settle(undefined, {}, function*() {
+                prepareCueEmission(serviceHab, new Deck([cue]), runtime.resources, (owner) => {
+                  output = owner;
+                  return undefined;
+                });
+              });
+              yield* writeCesrTcpSocket(socket, async function*(signal) {
+                for (const message of output!.emission!.messages) {
+                  yield* chunkBytes(message, { signal, maxChunkBytes: 65536 });
+                }
+              }, { services: runtime.services });
+            });
+          }
+        }
+        /** Settle current input and retain at most one authorized missing-state query on this connection. */
+        function* processFrame(frame: CesrFrame): Operation<void> {
+          yield* resource<void>(function*(provide) {
+            try {
+              yield* provide();
+            } finally {
+              yield* call(() => discardFrame(frame));
+            }
+          });
+          const body = frame.body;
+          if (body.ilk === Ilks.qry && pending) throw new DeckFullError("TCP pending query slot is occupied");
+          const pre = typeof body.ked?.i === "string" ? body.ked.i : undefined;
+          let slot = body.ilk === Ilks.qry && body.said
+            ? runtime.reactor.replies.reserve(body.said)
+            : ([Ilks.icp, Ilks.dip, Ilks.rot, Ilks.drt, Ilks.ixn] as readonly string[]).includes(body.ilk!) && pre
+                && body.said
+            ? runtime.reactor.replies.reserveEvent(pre, body.said)
+            : undefined;
+          let batch: ReturnType<NonNullable<typeof slot>["takeAll"]>;
+          yield* resource<void>(function*(provide) {
+            try {
+              yield* provide();
+            } finally {
+              batch?.release();
+              slot?.close();
+            }
+          });
+          yield* runtime.reactor.settle(frame, { local: true, escrows: true }, function*(_envelope, decision) {
+            // SAIDs do not include signatures: this exact dispatch must authorize its output.
+            if (
+              body.ilk === Ilks.qry
+                ? decision?.kind !== "drop" && decision?.kind !== "pending" && decision?.kind !== "missing"
+                : decision?.kind === "accept" || decision?.kind === "duplicate"
+            ) {
+              if (
+                body.ilk === Ilks.qry && decision?.kind === "escrow"
+                && ["logs", "ksn"].includes(String(body.ked?.r))
+              ) {
+                pending = slot;
+                slot = undefined;
+              } else batch = slot?.takeAll();
+            }
+          });
+          yield* processCuesOnce(runtime, { hab: serviceHab, sink: runtime.respondant.forHab(serviceHab) });
+          if (batch) yield* sendBatch(batch);
+        }
+        while (!rxEOF || pending) {
+          if (pending?.ready) {
+            yield* call(function*() {
+              let batch: Batch | undefined;
+              yield* resource<void>(function*(provide) {
+                try {
+                  yield* provide();
+                } finally {
+                  batch?.release();
+                }
+              });
+              yield* runtime.reactor.settle(undefined, {}, function*() {
+                batch = pending!.takeAll();
+              });
+              if (batch) yield* sendBatch(batch);
+            });
+            pending.close();
+            pending = undefined;
+            continue;
+          }
+          if (readFailure) {
+            readFailure.reported = true;
+            throw readFailure.error;
+          }
+          if (next) {
+            const result = next;
+            if (result.done) {
+              next = undefined;
+              rxEOF = true;
+            } else {
+              // Register ownership before the pending pull transfers its one complete frame.
+              yield* call(function*() {
+                yield* resource<void>(function*(provide) {
+                  try {
+                    yield* provide();
+                  } finally {
+                    yield* call(() => discardFrame(result.value));
+                  }
+                });
+                next = undefined;
+                yield* processFrame(result.value);
+              });
+            }
+            pulling = false;
+            continue;
+          }
+          if (!rxEOF && !pulling) {
+            pulling = true;
+            reads.run(function*() {
+              try {
+                next = yield* frames.next();
+              } catch (error) {
+                readFailure = { error };
+              }
+              wake?.();
+            });
+          }
+          // One cancellable observer and one joined parser pull; no result queue or Promise waiter growth.
+          yield* action<void>((resolve) => {
+            wake = resolve;
+            const unobserve = pending?.observeReady(resolve);
+            if (next || readFailure) resolve();
+            return () => {
+              wake = undefined;
+              unobserve?.();
+            };
+          });
+        }
+        // Genuine RX EOF leaves TX available until every scoped reply has drained.
+        yield* call(() =>
+          new Promise<void>((resolve, reject) => socket.end((error?: Error) => error ? reject(error) : resolve()))
+        );
+        yield* call(() => closed);
+      }),
       action<void>((_resolve, reject) => {
         failure.catch(reject);
         return () => {};
@@ -110,11 +344,17 @@ function* witnessTcpListener(
   hostname: string,
   runtime: AgentRuntime,
   serviceHab: Hab,
-  { maxConnections = 2, onRefusal = (reason) => console.warn(`Witness TCP connection refused: ${reason}`) }:
-    WitnessTcpOptions = {},
+  {
+    maxConnections = 2,
+    drainTimeoutMs = 30000,
+    onRefusal = (reason) => console.warn(`Witness TCP connection refused: ${reason}`),
+  }: WitnessTcpOptions = {},
 ): Operation<void> {
   if (!Number.isSafeInteger(maxConnections + 1) || maxConnections < 1) {
     throw new RangeError("TCP maxConnections and its rejection allowance must be positive safe integers");
+  }
+  if (!Number.isSafeInteger(drainTimeoutMs) || drainTimeoutMs < 1) {
+    throw new RangeError("TCP drainTimeoutMs must be positive");
   }
   // Created before the listener resource: its finalizer stops acceptance before joining these children.
   const [connections, haltConnections] = createScope(yield* useScope());
@@ -129,7 +369,7 @@ function* witnessTcpListener(
       rejectCompletion = reject;
     });
     let stopping = false;
-    const server = createServer({ pauseOnConnect: true }, (socket) => {
+    const server = createServer({ pauseOnConnect: true, allowHalfOpen: true }, (socket) => {
       let unowned: ResourceReservation | undefined;
       handles.add(socket);
       socket.once("close", () => handles.delete(socket));
@@ -158,10 +398,18 @@ function* witnessTcpListener(
           try {
             yield* call(function*() {
               unowned = undefined;
-              yield* processWitnessSocket(socket, runtime, serviceHab, closed, () => {
-                sockets.delete(socket);
-                decision.reservation.release();
-              }, onRefusal);
+              yield* processWitnessSocket(
+                socket,
+                runtime,
+                serviceHab,
+                closed,
+                () => {
+                  sockets.delete(socket);
+                  decision.reservation.release();
+                },
+                onRefusal,
+                drainTimeoutMs,
+              );
             });
           } catch (error) {
             rejectCompletion(error);
@@ -213,7 +461,7 @@ function* witnessTcpListener(
 /**
  * Own paused sockets, one progressive parser per receive lifetime, and joined listener shutdown.
  * Admission precedes task/source acquisition; the Reactor alone charges the receive stream slot.
- * Default receipt/mailbox/direct delivery stays unchanged, with no same-socket duplex policy.
+ * Exact event proofs and query replies use this connection; unrelated mailbox/direct cues retain ordinary routing.
  */
 export function startWitnessTcpServer(
   port: number,

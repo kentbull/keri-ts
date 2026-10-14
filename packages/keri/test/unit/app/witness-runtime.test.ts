@@ -1,14 +1,21 @@
-import { action, call, type Operation, race, run, spawn } from "effection";
+import { action, call, type Operation, race, run, spawn, type Task } from "effection";
 import { assert, assertEquals, assertExists, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import { once } from "node:events";
 import { createConnection, type Socket } from "node:net";
 import { b, parseBytes, ParserError, ResourceLimitError, WireParseError } from "../../../../cesr/mod.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+  runAgentRuntime,
+} from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest } from "../../../src/app/cesr-http.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+import { socketBytes } from "../../../src/app/socket-source.ts";
 import { Receiptor } from "../../../src/app/witnessing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { Schemes } from "../../../src/core/schemes.ts";
@@ -522,11 +529,24 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         isith: "1",
         ncount: 1,
         nsith: "1",
-        toad: 0,
+        toad: 1,
+        wits: [witness.pre],
       });
       yield* seedRemoteWitnessLocation(sourceHby, witness, tcpUrl, Schemes.tcp);
 
-      const runtime = yield* createAgentRuntime(providerHby, { mode: "local" });
+      const drains: number[] = [];
+      const runtime = yield* createAgentRuntime(providerHby, {
+        mode: "local",
+        services: {
+          clock: {
+            ...defaultRuntimeServices.clock,
+            setTimeout(callback, ms) {
+              if (ms === 200) drains.push(ms);
+              return setTimeout(callback, ms);
+            },
+          },
+        },
+      });
       const refusals: string[] = [];
       const sockets: Socket[] = [];
       const failed = Promise.withResolvers<unknown>();
@@ -537,13 +557,17 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
             "127.0.0.1",
             runtime,
             witness,
-            { onRefusal: (reason) => refusals.push(reason) },
+            { drainTimeoutMs: 200, onRefusal: (reason) => refusals.push(reason) },
           );
         } catch (error) {
           failed.resolve(error);
         }
       };
       let tcpTask = yield* spawn(serve);
+      const receiver = yield* createAgentRuntime(sourceHby, { mode: "indirect" });
+      let replayed = 0, foreignReplay = false;
+      let driver: Task<never> | undefined;
+      let stoppingReceiver = false, receiveTask: Task<void> | undefined;
 
       try {
         yield* sleepOp(50);
@@ -624,13 +648,55 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         const active = createConnection({ port: tcpPort, host: "127.0.0.1" });
         sockets.push(active);
         active.on("error", () => {});
-        active.resume();
+        receiveTask = yield* spawn(function*() {
+          try {
+            yield* receiver.reactor.process(
+              (signal) => socketBytes(active, { signal }),
+              { local: true },
+              function*(envelope) {
+                if (envelope?.serder.ilk !== "rct") {
+                  if (envelope?.serder.pre === controller.pre) replayed++;
+                  else foreignReplay = true;
+                }
+              },
+            );
+          } catch (error) {
+            if (!stoppingReceiver) throw error;
+          }
+        });
         yield* call(() => once(active, "connect"));
+        const latest = controller.kever!.serder;
+        runtime.cues.push({ kin: "receipt", serder: latest });
+        active.write(witness.endorse(latest)); // Correct body/SAID, but no controller authorization.
+        for (let attempt = 0; attempt < 200 && runtime.cues.length; attempt++) yield* sleepOp(10);
+        assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
+        assertEquals(
+          sourceHby.db.wigs.get(dgKey(controller.pre, latest.said!)).length,
+          0,
+          "a stale matching receipt cannot override the current escrow/reject decision",
+        );
+        runtime.cues.push({
+          kin: "replay",
+          querySaid: "another-query",
+          messages: [acceptedEventReplayMessage(providerHby, witness.pre, 0).message],
+        });
         active.write(message);
         for (let attempt = 0; attempt < 200 && providerHby.db.getKever(controller.pre)?.sn !== 1; attempt++) {
           yield* sleepOp(10);
         }
         assertEquals(providerHby.db.getKever(controller.pre)?.sn, 1);
+        for (
+          let attempt = 0;
+          attempt < 200 && !sourceHby.db.wigs.get(dgKey(controller.pre, latest.said!)).length;
+          attempt++
+        ) {
+          yield* sleepOp(10);
+        }
+        assertEquals(
+          sourceHby.db.wigs.get(dgKey(controller.pre, latest.said!)).length,
+          1,
+          "same-socket receipt is verified and persisted before client EOF",
+        );
         assertEquals(active.writableEnded, false);
         assertEquals(runtime.resources.used.streams, 1);
         const idle = createConnection({ port: tcpPort, host: "127.0.0.1" });
@@ -640,6 +706,24 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         yield* call(() => once(idle, "connect"));
         for (let attempt = 0; attempt < 200 && runtime.resources.used.streams !== 2; attempt++) yield* sleepOp(10);
         assertEquals(runtime.resources.used.streams, 2, "two receives consume exactly two parser permits");
+        controller.interact();
+        const next = controller.kever!.serder;
+        active.write(acceptedEventReplayMessage(sourceHby, controller.pre, 2).message);
+        for (
+          let attempt = 0;
+          attempt < 200 && !sourceHby.db.wigs.get(dgKey(controller.pre, next.said!)).length;
+          attempt++
+        ) yield* sleepOp(10);
+        assertEquals(
+          sourceHby.db.wigs.get(dgKey(controller.pre, next.said!)).length,
+          1,
+          "TX borrows its connection permit while both RX slots are occupied",
+        );
+        active.write(controller.query(controller.pre, witness.pre, { sn: "0" }, "logs"));
+        for (let attempt = 0; attempt < 200 && replayed !== 3; attempt++) yield* sleepOp(10);
+        assertEquals(replayed, 3, "correlated query replay drains on its existing socket before EOF");
+        assertEquals(foreignReplay, false, "shared cues from another request cannot leak to this socket");
+        assertEquals(runtime.resources.used.streams, 2);
         const excess = createConnection({ port: tcpPort, host: "127.0.0.1" });
         sockets.push(excess);
         excess.on("error", () => {});
@@ -653,10 +737,90 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         ]);
         assertEquals(runtime.resources.used.streams, 2);
         assertEquals(refusals, ["busy", "wire", "peer", "busy"]);
+        const priorDrains = drains.length;
+        driver = yield* spawn(() =>
+          runAgentRuntime(runtime, { hab: witness, sink: runtime.respondant.forHab(witness) })
+        );
+        active.write(controller.query(controller.pre, witness.pre, { s: "3" }, "logs"));
+        for (let attempt = 0; attempt < 200 && providerHby.db.qnfs.cnt() !== 1; attempt++) yield* sleepOp(10);
+        assertEquals(providerHby.db.qnfs.cnt(), 1, "missing sequence is the actual KERIpy query-not-found escrow");
+        controller.interact();
+        idle.write(acceptedEventReplayMessage(sourceHby, controller.pre, 3).message);
+        for (let attempt = 0; attempt < 200 && replayed !== 7; attempt++) yield* sleepOp(10);
+        assertEquals(
+          replayed,
+          7,
+          "the default runtime escrow driver wakes deferred replay while this socket RX is idle",
+        );
+        assertEquals(providerHby.db.qnfs.cnt(), 0);
+        assertEquals(drains.length, priorDrains, "activity cannot start or refresh the receive-EOF deadline");
+        yield* driver.halt();
+        driver = undefined;
+        active.end();
+        yield* receiveTask;
+
+        for (let attempt = 0; attempt < 200 && runtime.resources.used.streams !== 1; attempt++) yield* sleepOp(10);
+        assertEquals(runtime.resources.used.streams, 1, "genuine EOF ends replies before returning connection credit");
+        assertEquals(drains.length, priorDrains + 1, "one absolute deadline starts at genuine receive EOF");
+        // A missing query keeps TX available after RX EOF; a native reset stays connection-local.
+        const reset = createConnection({ port: tcpPort, host: "127.0.0.1" });
+        sockets.push(reset);
+        reset.on("error", () => {});
+        reset.resume();
+        yield* call(() => once(reset, "connect"));
+        reset.end(controller.query(controller.pre, witness.pre, { s: "99" }, "logs"));
+        for (let attempt = 0; attempt < 200 && drains.length !== priorDrains + 2; attempt++) yield* sleepOp(10);
+        assertEquals(drains.length, priorDrains + 2, "the pending reply outlives real receive EOF");
+        reset.resetAndDestroy();
+        for (let attempt = 0; attempt < 200 && refusals.length !== 5; attempt++) yield* sleepOp(10);
+        assertEquals(refusals.at(-1), "peer", "native reset after RX EOF cannot fail the listener");
+        const expires = createConnection({ port: tcpPort, host: "127.0.0.1" });
+        sockets.push(expires);
+        expires.on("error", () => {});
+        expires.resume();
+        yield* call(() => once(expires, "connect"));
+        const expired = new Promise<void>((resolve) => expires.once("close", resolve));
+        expires.end(controller.query(controller.pre, witness.pre, { s: "100" }, "logs"));
+        yield* race([
+          call(() => expired),
+          (function*() {
+            yield* sleepOp(2000);
+            throw new Error("Pending query drain deadline stalled");
+          })(),
+        ]);
+        assertEquals(refusals.at(-1), "peer");
+        assertEquals(drains.length, priorDrains + 3, "the deadline is not refreshed while a query stays unresolved");
+        const busy = createConnection({ port: tcpPort, host: "127.0.0.1" });
+        sockets.push(busy);
+        busy.on("error", () => {});
+        busy.resume();
+        yield* call(() => once(busy, "connect"));
+        const busyClosed = new Promise<void>((resolve) => busy.once("close", resolve));
+        busy.write(controller.query(controller.pre, witness.pre, { s: "101" }, "logs"));
+        busy.write(controller.query(controller.pre, witness.pre, { s: "102" }, "logs"));
+        yield* race([
+          call(() => busyClosed),
+          (function*() {
+            yield* sleepOp(2000);
+            throw new Error("Pending query saturation stalled");
+          })(),
+        ]);
+        assertEquals(
+          refusals.at(-1),
+          "busy",
+          "one pending query per connection refuses further work without another queue",
+        );
+        stoppingReceiver = true;
         yield* waitForTaskHalt(tcpTask);
+        if (receiveTask) yield* receiveTask.halt();
+        yield* receiver.close();
         assert(sockets.every((socket) => socket.destroyed));
         assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-        assertEquals(refusals, ["busy", "wire", "peer", "busy"], "cancellation is distinct from peer refusal");
+        assertEquals(
+          refusals,
+          ["busy", "wire", "peer", "busy", "peer", "peer", "busy"],
+          "cancellation is distinct from peer refusal",
+        );
         tcpTask = yield* spawn(serve);
         yield* sleepOp(50);
         const damaged = createConnection({ port: tcpPort, host: "127.0.0.1" });
@@ -670,7 +834,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         providerHby.db.pinState(controller.pre, { ...state, k: ["!"] });
         providerHby.db.kevers.delete(controller.pre);
         controller.interact();
-        damaged.write(acceptedEventReplayMessage(sourceHby, controller.pre, 2).message);
+        damaged.write(acceptedEventReplayMessage(sourceHby, controller.pre, 4).message);
         const failure = yield* race([
           call(() => failed.promise),
           (function*() {
@@ -680,9 +844,13 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         ]);
         assert(failure instanceof ParserError);
         assert(!(failure instanceof WireParseError));
-        assertEquals(refusals, ["busy", "wire", "peer", "busy"]);
+        assertEquals(refusals, ["busy", "wire", "peer", "busy", "peer", "peer", "busy"]);
       } finally {
+        if (driver) yield* driver.halt();
+        stoppingReceiver = true;
         yield* waitForTaskHalt(tcpTask);
+        if (receiveTask) yield* receiveTask.halt();
+        yield* receiver.close();
         assert(sockets.every((socket) => socket.destroyed), "host shutdown must close its active peers");
         assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         yield* runtime.close();

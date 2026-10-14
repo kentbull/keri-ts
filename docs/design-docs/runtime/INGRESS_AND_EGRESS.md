@@ -319,8 +319,10 @@ Other replay sources and capture-time allocations remain separate admission work
 `ReplyStreams` owns up to eight live HTTP replies by default. Each pull copies at
 most 64 KiB from one event; transport cancellation or runtime closure releases
 the iterator and event. The response lifetime is independent of ingress: Deno's
-legacy request signal aborts when its handler returns. No background task or
-whole-replay array is needed for these synchronous database readers.
+legacy request signal aborts when its handler returns. If request cancellation wins
+before response transfer, ingress joins its task then cancels the published body
+outside status mapping; foreign source/fetch/cleanup failures remain failures.
+No background task or whole-replay array is needed for these synchronous database readers.
 
 `QueryCoordinator` caps pending requests and continuations separately. A request
 retains its queue credit until delivery succeeds; failure leaves it available
@@ -563,3 +565,16 @@ query owner retains its wire, abort signal and admission through same-socket loc
 reply parsing and joined cleanup. Guarded query preparation opens no socket.
 Retiring that owner records transport completion only; query continuations complete
 from Kevery-verified accepted state, never from drain or received frame counts.
+
+Accepted Tufa TCP sockets use one receive parser and bounded event-prefix/SAID or
+query-SAID response slots. Only accepted/duplicate event decisions authorize
+receipt output. Preparation owns proof and replay hydration credit under the
+Reactor guard; the shared socket writer drains outside it, borrowing that
+connection's stream slot. Receive EOF starts one absolute reply-drain deadline.
+One unresolved logs/ksn query stays in its existing bounded response slot; another
+query on that connection receives a busy refusal. Its one readiness observer can
+wake output while one joined parser pull remains live, with no result queue.
+The host kernel supplies runAgentRuntime's escrow driver; standalone listener
+borrowers must provide that driver for idle-RX query retries. Genuine receive EOF
+keeps TX available for the pending reply under the same absolute deadline.
+Cancellation joins the pull and output before releasing reply or connection credit.

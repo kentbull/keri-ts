@@ -219,7 +219,8 @@ async function writeBorrowedSource(
   let pendingRead: Promise<IteratorResult<Uint8Array>> | undefined;
   let pendingWrite: Promise<void> | undefined;
   let timer: RuntimeTimer | undefined;
-  let failure: unknown, bytes = 0, work = 0;
+  let failure: { error: unknown } | undefined;
+  let bytes = 0, work = 0;
   try {
     const source = await factory(signal);
     iterator = source[Symbol.asyncIterator]();
@@ -266,7 +267,7 @@ async function writeBorrowedSource(
       bytes += part.value.length;
     }
   } catch (error) {
-    failure = error;
+    failure = { error };
     hooks.fail?.(error);
   } finally {
     if (failure !== undefined || signal.aborted) hooks.failedCleanup?.();
@@ -274,13 +275,13 @@ async function writeBorrowedSource(
       await pendingRead?.catch(() => undefined);
       await iterator?.return?.();
     } catch (error) {
-      failure = failure === undefined ? error : new AggregateError([failure, error], "TCP source cleanup failed");
+      failure = { error: failure ? new AggregateError([failure.error, error], "TCP source cleanup failed") : error };
     } finally {
       await pendingWrite?.catch(() => undefined);
       if (timer !== undefined) services.clock.clearTimeout(timer);
     }
   }
-  if (failure !== undefined) throw failure;
+  if (failure) throw failure.error;
   return bytes;
 }
 
@@ -334,6 +335,8 @@ function writeTcp(
       const controller = new AbortController(), signal = AbortSignal.any([upstream, controller.signal]);
       const socket = createConnection({ host: parsed.hostname, port, allowHalfOpen: !!replies });
       if (replies) socket.pause();
+      // Transmit-only completion still drains ignored peer bytes so genuine EOF/close can arrive.
+      else socket.resume();
       connectedSocket = socket;
       const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
       const fail = (error: unknown) => controller.abort(error);
