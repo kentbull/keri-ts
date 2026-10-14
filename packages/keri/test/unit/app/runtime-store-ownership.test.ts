@@ -1,5 +1,5 @@
 import { ResourcePolicy } from "cesr-ts";
-import { action, run } from "effection";
+import { action, call, run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { RegBaser } from "../../../src/acdc/regbasing.ts";
 import { openRegistry } from "../../../src/acdc/registering.ts";
@@ -77,6 +77,40 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
       yield* hby.close(true);
     });
   }
+});
+
+Deno.test("runtime stores - failed reply cleanup still joins owned database close", async () => {
+  await run(function*() {
+    const hby = yield* createHabery(habitatOptions);
+    try {
+      const runtime = yield* createAgentRuntime(hby);
+      const reader = runtime.replyStreams.open({
+        *[Symbol.iterator]() {
+          try {
+            yield Uint8Array.of(1);
+          } finally {
+            // deno-lint-ignore no-unsafe-finally -- database owners must close even when replay cleanup fails.
+            throw new Error("reply storage close failed");
+          }
+        },
+      }).getReader();
+      yield* call(() => reader.read());
+      try {
+        yield* runtime.close();
+        throw new Error("Expected reply shutdown failure");
+      } catch (error) {
+        assertEquals(error instanceof AggregateError, true);
+      }
+      assertReleased(runtime.acdc.rgy!.baser);
+      assertReleased(runtime.vdr.reger as Reger);
+      assertEquals(runtime.resources.used.bytes, 0);
+      yield* call(() => assertRejects(() => reader.read(), AggregateError));
+      reader.releaseLock();
+      yield* runtime.close();
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });
 
 Deno.test("runtime stores - readonly Habery acquires no default store", async () => {
