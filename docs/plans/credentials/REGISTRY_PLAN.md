@@ -70,6 +70,22 @@ meaningful verification and relevant contract update.
 | R11  | IPEX accepted-chain assembly and dependency retry/replay           |
 | R12  | Runtime acdc/vdr grouping and scoped service ownership             |
 
+The inspected current-main schema delta is pinned separately to
+`7143832813cac6a394ab1faf9be83bb3372be87c` (#1713); it does not replace the
+`927c0cb8` commitment/wire oracle. Keep these finite units distinct:
+
+| Unit | Current-main schema responsibility                                                 |
+| ---- | ---------------------------------------------------------------------------------- |
+| S1   | Bounded v2 local schema validation before blind derivation/staging                 |
+| S2   | Durable missing-schema EXN escrow, shared deadline and scoped replay               |
+| S3   | Offer/grant node and edge schemas, issuer-first grant order and dependency routing |
+
+S1 uses local verified resources and decoded credential data; legacy Schemer is
+unchanged. S2/S3 remain pending. Qualify the 714 helper separately, retaining all
+927 vectors/labels. Embedded bundled-resource construction also requires the
+[existing Mapper correction](../cesr/MAPPER_PLAN.md); working override/cache
+validation does not qualify that builder path.
+
 Stack dependency-coupled units on their predecessors; merge in dependency order.
 Independent reference/compatibility analysis can proceed in parallel. Keep existing
 consumers operational until their replacements work; obsolete TypeScript-only

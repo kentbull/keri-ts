@@ -54,6 +54,13 @@ Explicit anchoring validates event membership/prior before storing the couple.
 Queued progression commits one event at a time; later failures do not undo prior acceptance.
 Reopen named v2 registries from the stored rip issuer, not the first available
 Hab. Duplicate aliases share one instance; injected RegBaser ownership stays with its caller.
+V2 local blind validates its schema before deriving any commitment. Keep missing
+resource, invalid content, resource limits and infrastructure failures distinct.
+The static 71438328 schema profile is separately qualified; preserve frozen927
+commitments and legacy Schemer behavior. Validation consumes borrowed originals,
+compiles private copies and never fetches references. Embedded bundled-ID builder
+parity remains an existing Mapper correction, independent of override/cache checks.
+
 Local blinded updates follow a unique staged frontier across both escrows after an
 accepted head. De-duplicate sightings, reject forks, and never equate staging with acceptance.
 

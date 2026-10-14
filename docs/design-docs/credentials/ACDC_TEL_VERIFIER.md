@@ -118,6 +118,19 @@ share a transaction, and in-memory maps change only after it commits.
 `createRegery` owns a default backend until transfer, joining cleanup if loading
 fails; injected backends stay caller-owned, including after `close`. Owned close
 is joined and repeat-safe. Opening neither migrates nor rewrites old layouts.
+Local `blind` also applies the separately inspected 71438328 v2 schema profile
+before derivation/staging. Internal `acdc/scheming.validateSchema` returns valid,
+missing SAID, or invalid content; caller-facing missing/failed errors remain
+separate from propagated storage/invariant/resource failures. Static Draft 2020-12
+resources require content-bound IDs and plain semantic versions. Bare/sad/DID/OOBI
+references resolve only from the local cache, including fragments and verified
+bundles; dynamic/recursive keywords are prohibited. Legacy Schemer is unchanged.
+JSON schema resources are supported; validation consumes decoded ACDC data.
+Local limits are 8 MiB each for credential/schema closure bytes, 128 resources, 4096
+schema values/references and depth 64 before private clone/compile. These are
+operational policy, not a shared runtime CPU/memory or native-row guarantee.
+Override/cache validation does not qualify the [embedded bundle builder](../../plans/cesr/MAPPER_PLAN.md).
+
 Local `blind` checks the parsed credential's SAID, registry and issuer, then derives
 its disclosure and bup together. Its next ordinal follows the accepted head plus
 one unambiguous staged successor per slot across both escrows, including after
