@@ -20,7 +20,7 @@ import { call, run } from "npm:effection@^3.6.0";
 import { KERIPY_V1_JSON_ICP_BODY as json } from "../../../../cesr/test/fixtures/external-vectors.ts";
 import vectors from "../../../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
 import { chunkBytes } from "../../../src/app/byte-source.ts";
-import { postCesr, requestFrame } from "../../../src/app/cesr-egress.ts";
+import { CesrHttpRefusal, postCesr, requestFrame } from "../../../src/app/cesr-egress.ts";
 import { CESR_ATTACHMENT_HEADER } from "../../../src/app/cesr-http.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
 import { sendCesrTcpFrame } from "../../../src/app/tcp-egress.ts";
@@ -684,4 +684,49 @@ Deno.test("TCP frame output admits before serialization and borrows nested owner
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
   assertEquals(discards, 1, "only the caller disposes its actual child owner");
+});
+
+Deno.test("HTTP refusal observation excludes identical errors from source, fetch and cleanup", async () => {
+  const failure = new CesrHttpRefusal("external failure", 503);
+  for (const origin of ["source", "fetch", "cleanup", "peer"] as const) {
+    let observed: CesrHttpRefusal | undefined;
+    const transport = services(async (_url, init) => {
+      await new Response(init!.body).arrayBuffer();
+      if (origin === "fetch") throw failure;
+      if (origin === "cleanup") {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array(16 * 1024));
+            },
+            cancel() {
+              throw failure;
+            },
+          }),
+          { status: 503 },
+        );
+      }
+      return new Response("peer refusal", { status: 503 });
+    });
+    const error = await assertRejects(() =>
+      run(function*() {
+        yield* postCesr("https://peer.test/", async function*() {
+          if (origin === "source") throw failure;
+          yield fixture();
+        }, {
+          bodyMode: "body",
+          services: transport,
+          onHttpRefusal: (refusal) => observed = refusal,
+        });
+      })
+    );
+    if (origin === "peer") {
+      assertStrictEquals(error, observed);
+      assertEquals(observed?.status, 503);
+    } else {
+      assertStrictEquals(error, failure);
+      assertEquals(observed, undefined);
+    }
+    assertEquals([transport.resources.used.bytes, transport.resources.used.streams], [0, 0]);
+  }
 });

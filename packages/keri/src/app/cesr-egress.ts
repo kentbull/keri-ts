@@ -23,6 +23,13 @@ import {
 import { cesrOutputMetadataBytes } from "./cesr-output.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 
+/** Positive remote HTTP refusal, distinct from source, transport, storage and cleanup failure. */
+export class CesrHttpRefusal extends ValidationError {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 /** Transport choices and finite HTTP metadata limits for an admitted CESR frame. */
 export interface EgressOptions {
   /** Header mode matches KERIpy; body mode streams the complete qualified frame. */
@@ -35,6 +42,8 @@ export interface EgressOptions {
   maxHeaderBytes?: number;
   /** Failed responses retain at most this many diagnostic bytes; default 16 KiB. */
   maxErrorBytes?: number;
+  /** Observe only this invocation's actual non-ok response; unexpected/cleanup failures still propagate. */
+  onHttpRefusal?: (error: CesrHttpRefusal) => void;
   /** Upstream cancellation joins the same request lifetime as Effection cancellation. */
   signal?: AbortSignal;
   /** Injectable HTTP service for the owning runtime. */
@@ -234,7 +243,12 @@ function openFrameResponse(
           mode === "header" && response.status === 406 && contentType === CESR_CONTENT_TYPE
           && detail.toLowerCase().includes("content type")
         ) continue;
-        throw new ValidationError(`CESR delivery to ${url} failed with HTTP ${response.status}: ${detail}`);
+        const refusal = new CesrHttpRefusal(
+          `CESR delivery to ${url} failed with HTTP ${response.status}: ${detail}`,
+          response.status,
+        );
+        options.onHttpRefusal?.(refusal);
+        throw refusal;
       }
     } finally {
       try {
