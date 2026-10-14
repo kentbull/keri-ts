@@ -44,8 +44,9 @@ a runtime. Reactor reserves stream/cursor/producer credit before source acquisit
 and retains it through joined parser cleanup. AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
 Internal CueDeck preparation holds concrete metadata/backing and item credit;
-ownership transfers through fanout/requeue until final cleanup. KEL acceptance, clone/state and decision-carried duplicate/escrow cues now prepare
-before effects when CueDeck is explicitly injected. Runtime activation
+ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
+clone/state and decision-carried duplicate/escrow cues now prepare before effects
+when CueDeck is explicitly injected. Runtime activation
 waits for every producer/consumer port; count checks alone cannot reserve byte credit.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
@@ -84,6 +85,12 @@ Genuine receive EOF, transmit failure and remote acceptance are separate facts.
 Explicit duplex preserves default routing; half-close drain deadlines cannot be
 extended by activity. The [transport plan](../../docs/plans/runtime/TRANSPORT_PLAN.md)
 owns the remaining implementation and release gate.
+
+TCP socketBytes uses one exclusive binary readable-mode owner and one pending pull.
+Its caller admits both read/copy backing allowances before acquisition and owns
+socket errors outside the readable lifetime. Abort/return joins close; genuine EOF
+leaves the writable half for explicit connection drain. Never mix flow readers,
+or treat high-water buffering as a hard shared-memory ceiling.
 
 Direct replies reserve query SAIDs before dispatch; only the final query owns the
 HTTP response. Earlier responses transfer to ordinary delivery. A response scope

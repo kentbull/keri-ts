@@ -57,12 +57,16 @@ joined cleanup. Runtime close and scope exit clear queued ownership. Parser back
 credit is acquired separately, so both charges coexist during processing.
 
 Lazy HTTP replies borrow the runtime policy and reserve one stream plus their
-maximum retained event and outgoing chunk before acquiring a replay iterator.
+`8 * maxMessageBytes + maxChunkBytes` before acquiring a replay iterator.
 Credit lasts through source cleanup on EOF, cancellation, failure and runtime
 shutdown. Iterator contract failures release admission; cleanup failures propagate
 after every live reader and the runtime-owned stores have been closed.
-Local reply limits still apply. This accounts for retained replay/output
-buffers; the storage source must separately admit its native and hydration copies.
+Local reply limits still apply. The allowance covers cooperating native/body,
+decoded representations, proofs and final event reconstruction as well as retained
+output; it requires production measurement. Finite KEL event-body reads use native
+row preflight, and body read failures propagate before corrupt-record skipping.
+Companion proof rows, other storage sources, fixed native scratch and mapped
+residency remain separately audited boundaries.
 Temporary shared admission refusal maps to HTTP 503; configured size refusal
 remains 413. Neither response creates a retry queue.
 
@@ -144,6 +148,6 @@ pre-effect admission. Empty duplicate batches acquire no credit. Busy/limit refu
 leaves the decision unapplied; unexpected post-write faults release unpublished
 preparation but do not roll back durable effects. Ordinary Deck remains supported.
 
-Next integrate Revery/OOBI, EXN/KRAM and legacy credential/TEL producers. QueryReplies fanout,
-mailbox correlation, query continuations and delivery consumers must transfer
+Next integrate Revery/OOBI, EXN/KRAM and legacy credential/TEL producers.
+QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.

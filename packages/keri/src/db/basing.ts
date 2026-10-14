@@ -1570,8 +1570,9 @@ export class Baser {
    * event body comes from `evts.`, while the attached foot is reconstructed
    * from the companion stores that hold controller signatures, witness
    * signatures, source seals, receipts, and first-seen replay metadata. An optional
-   * byte budget admits each stored evidence item before retaining the full message;
-   * the existing single body value is read before its size can be checked.
+   * byte budget preflights the body row before owned materialization and admits
+   * each evidence item before retaining the full message. Unlimited legacy calls
+   * keep their ordinary read path; fixed native scratch is separate overhead.
    */
   cloneEvtMsg(
     pre: string,
@@ -1583,9 +1584,17 @@ export class Baser {
       throw new RangeError("Replay byte limit must be a positive safe integer");
     }
     const dgkey = dgKey(pre, said);
-    // Storage supplies one existing body value; reject it before hydrating or copying it.
-    const stored = this.getEvt(dgkey);
+    // A finite replay ceiling applies at the native row boundary, before owned copies or hydration.
+    const stored = maxBytes === Infinity
+      ? this.getEvt(dgkey)
+      : this.getValBounded(this.evtsRaw, dgkey, maxBytes);
     if (stored === null) throw new DatabaseOperationError(`Missing event body for ${pre}:${said}`);
+    return this.cloneStoredEvtMsg(pre, fn, said, stored, maxBytes);
+  }
+
+  /** Reconstruct admitted body bytes without reopening their native row. */
+  private cloneStoredEvtMsg(pre: string, fn: number, said: string, stored: Uint8Array, maxBytes: number): Uint8Array {
+    const dgkey = dgKey(pre, said);
     if (stored.length > maxBytes) throw new ResourceLimitError("Replay message exceeds byte limit");
     // Preserve SerderSuber's validation so corrupt records retain clonePreIter's skip behavior.
     // SerderKERI recognizes both native CESR and version-string bodies.
@@ -1786,9 +1795,12 @@ export class Baser {
             if (!row || row[1] > end) break;
             const [, ordinal, said] = row;
             next = ordinal + 1;
+            // Native admission/I/O failures are outside the corrupt-record reconstruction skip boundary.
+            const stored = db.getValBounded(db.evtsRaw, dgKey(current, said), maxMessageBytes);
+            if (!stored) continue;
             let message: Uint8Array;
             try {
-              message = db.cloneEvtMsg(current, ordinal, said, maxMessageBytes);
+              message = db.cloneStoredEvtMsg(current, ordinal, said, stored, maxMessageBytes);
             } catch (error) {
               // Resource policy is terminal; only corrupt/incomplete replay records are skipped.
               if (error instanceof ResourceLimitError) throw error;
