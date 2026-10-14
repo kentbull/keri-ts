@@ -433,7 +433,10 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
         const active = yield* createAgentRuntime(hby, { mode: "local" });
         active.cues.push(cue);
         const sink = active.respondant.forHab(sender);
-        const occupied = active.resources.reserve({ bytes: active.resources.limits.bytes });
+        assertEquals(active.resources.used.bytes > 0, true, "queued source owns shared credit");
+        const occupied = active.resources.reserve({
+          bytes: active.resources.limits.bytes - active.resources.used.bytes,
+        });
         if (occupied.kind !== "reserve") throw new Error("Expected free byte capacity");
         yield* processCuesOnce(active, { hab: sender, sink });
         assertStrictEquals(active.cues.peekHead(), cue, "own byte refusal cannot destructively fall back");
