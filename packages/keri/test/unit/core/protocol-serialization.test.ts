@@ -132,6 +132,30 @@ Deno.test("protocol v2 signature serialization parses flat, sealed, and nested e
   }
 });
 
+Deno.test("messagize aggregates ordered stored reply groups with actual 714 counters", async () => {
+  const { serder, sigers } = signerMessage();
+  const groups = ["0AAAAAAAAAAAAAAAAAAAAAAA", "0AAAAAAAAAAAAAAAAAAAAAAB"].map((qb64) =>
+    new TransIdxSigGroup(
+      new Prefixer({ qb64: SENDER }),
+      new Seqner({ qb64 }),
+      new Diger({ qb64: serder.said! }),
+      sigers,
+    )
+  );
+  for (const gvrsn of [Vrsn_1_0, Vrsn_2_0]) {
+    const wire = messagize(serder, { tsgs: groups, pipelined: true, gvrsn });
+    // Independent 714 Hab.loadEndRole/fetchTsgs/messagize observation, two one-signature groups.
+    assertEquals(
+      new TextDecoder().decode(wire.slice(serder.raw.length, serder.raw.length + 8)),
+      gvrsn.major === 1 ? "-VBn-FAC" : "-CBn-XBm",
+    );
+    const [frame] = await parseBytes(concatBytes(Counter.makeGVC(gvrsn), wire));
+    const seals = frame.attachments[0].items as readonly (readonly { qb64: string }[])[];
+    assertEquals(seals.map((seal) => seal[1].qb64), ["0AAAAAAAAAAAAAAAAAAAAAAA", "0AAAAAAAAAAAAAAAAAAAAAAB"]);
+  }
+  assertThrows(() => messagize(serder, { tsgs: [] }), ValidationError, "Missing attached signatures");
+});
+
 Deno.test("exchange signature groups preserve supplied v2 ordinals and widen only v1 Numbers", async () => {
   const { serder, sigers } = signerMessage();
   // Frozen Python 927c0cb8 Number(num=1) and Seqner(sn=1) produce these distinct qualified bytes.
@@ -153,6 +177,8 @@ Deno.test("exchange signature groups preserve supplied v2 ordinals and widen onl
       const [frame] = await parseBytes(serializeMessage(serder, { tsgs: [tsg], gvrsn, genusify: true }));
       assertEquals((frame.attachments[0].items[0] as readonly { qb64: string }[])[1].qb64, expected);
       if (gvrsn.major === 2) assertEquals((groups[0].items[0] as readonly unknown[])[1], ordinal);
+      const [live] = await parseBytes(messagize(serder, { tsgs: [tsg], gvrsn, pipelined: true, genusify: true }));
+      assertEquals((live.attachments[0].items[0] as readonly { qb64: string }[])[1].qb64, expected);
     }
   }
 });

@@ -1,20 +1,22 @@
 /** Finite stored endpoint-reply reconstruction; current proof rows are borrowed only during this synchronous call. */
-import { b, Cigar, Diger, Prefixer, ResourceLimitError, SerderKERI } from "cesr-ts";
+import { b, Cigar, Diger, Prefixer, ResourceLimitError, Seqner, SerderKERI, type Versionage } from "cesr-ts";
 import { attachmentCounterQb64b, resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
 import type { AttachmentCounterName } from "../core/attachment-countering.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
+import { DatabaseOperationError } from "../core/errors.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import type { Baser } from "../db/basing.ts";
-import { dgKey } from "../db/core/keys.ts";
 
 /** Configurable local ceilings, independent of protocol validity or a shared runtime budget. */
 export interface StoredReplyLimits {
   maxMessageBytes?: number;
   maxProofRows?: number;
+  /** Attachment genus floor; the body can raise it, matching live serialization. */
+  gvrsn?: Versionage;
 }
 
 /**
- * Rebuild one persisted reply with the existing TS newest-group/cigar/raw fallback.
+ * Rebuild one persisted reply with all stored groups and exactly one optional cigar.
  *
  * Missing bodies return empty bytes. Limit refusals precede retention growth or final
  * serialization; native proof decoding/copy admission remains a separate boundary.
@@ -38,12 +40,16 @@ export function loadStoredReply(db: Baser, said: string, limits: StoredReplyLimi
   const groups = new Map<string, TransIdxSigGroup>();
   for (const [keys, siger] of db.ssgs.getTopItemIter([said], { topive: true })) {
     admit(siger.qb64.length);
-    const prefix = keys[1], digest = keys[3];
-    if (!prefix || !digest) continue;
-    const event = db.getValBounded(db.evts.sdb, dgKey(prefix, digest), maxBytes);
-    const ordinal = event ? new SerderKERI({ raw: event }).sner : null;
-    if (!ordinal) continue;
-    const key = `${prefix}.${ordinal.qb64}.${digest}`;
+    const prefix = keys[1], snh = keys[2], digest = keys[3];
+    if (keys.length !== 4 || !prefix || !digest || !/^[0-9a-f]{1,32}$/.test(snh ?? "")) {
+      throw new DatabaseOperationError("Corrupt stored reply group key");
+    }
+    // Actual 714 fetchTsgs reconstructs stored seals in key order, without reopening establishment bodies.
+    const ordinal = new Seqner({
+      code: "0A",
+      raw: Uint8Array.from(snh.padStart(32, "0").match(/../g)!, (pair) => Number.parseInt(pair, 16)),
+    });
+    const key = `${prefix}.${snh}.${digest}`;
     let group = groups.get(key);
     if (!group) {
       group = new TransIdxSigGroup(new Prefixer({ qb64: prefix }), ordinal, new Diger({ qb64: digest }), []);
@@ -51,11 +57,13 @@ export function loadStoredReply(db: Baser, said: string, limits: StoredReplyLimi
     }
     group.sigers.push(siger);
   }
-  let lead: TransIdxSigGroup | undefined;
-  for (const group of groups.values()) {
-    if (!lead || group.sn > lead.sn) lead = group;
-  }
-  const gvrsn = resolveAttachmentGvrsn(serder);
+  // Existing TS rows use compact hex. Canonical ordering matches 714 fixed-width keys without rewriting storage.
+  const orderKey = (group: TransIdxSigGroup) => `${group.pre}.${group.snh.padStart(32, "0")}.${group.said}`;
+  const ordered = [...groups.values()].sort((left, right) => {
+    const a = orderKey(left), b = orderKey(right);
+    return a < b ? -1 : a > b ? 1 : 0; // Stable raw-key ties preserve distinct original groups.
+  });
+  const gvrsn = resolveAttachmentGvrsn(serder, limits.gvrsn);
   // Use the same counter codex/count rules as messagize, without constructing its proof payload.
   const counterSize = (name: AttachmentCounterName, count: number, bytes: number): number =>
     attachmentCounterQb64b(name, gvrsn.major >= 2 ? bytes / 4 : count, gvrsn).length;
@@ -64,18 +72,13 @@ export function loadStoredReply(db: Baser, said: string, limits: StoredReplyLimi
       + attachmentCounterQb64b("AttachmentGroup", footerBytes / 4, gvrsn).length;
     if (framedBytes > maxBytes) throw new ResourceLimitError("Stored reply exceeds message byte limit");
   };
-  if (lead) {
-    const sigBytes = lead.sigers.reduce((size, siger) => size + siger.qb64.length, 0);
-    // Live seal encoding is the existing fixed-width Seqner, also when the event uses NumberPrimitive.
-    const groupBytes = lead.prefixer.qb64.length + 24 + lead.diger.qb64.length + sigBytes
-      + counterSize("ControllerIdxSigs", lead.sigers.length, sigBytes);
-    requireWire(groupBytes + counterSize("TransIdxSigGroups", 1, groupBytes));
-    return messagize(serder, {
-      sigers: lead.sigers,
-      seal: { i: lead.prefixer, s: lead.seqner, d: lead.diger },
-      pipelined: true,
-    });
+  let groupBytes = 0;
+  for (const group of groups.values()) {
+    const sigBytes = group.sigers.reduce((size, siger) => size + siger.qb64.length, 0);
+    groupBytes += group.prefixer.qb64.length + group.seqner.qb64.length + group.diger.qb64.length + sigBytes
+      + counterSize("ControllerIdxSigs", group.sigers.length, sigBytes);
   }
+  const transferBytes = groups.size ? groupBytes + counterSize("TransIdxSigGroups", groups.size, groupBytes) : 0;
   const cigars: Cigar[] = [];
   let cigarBytes = 0;
   for (const tuple of db.scgs.getIter([said])) {
@@ -84,9 +87,8 @@ export function loadStoredReply(db: Baser, said: string, limits: StoredReplyLimi
     cigarBytes += bytes;
     cigars.push(new Cigar(tuple[1], tuple[0]));
   }
-  if (cigars.length) {
-    requireWire(cigarBytes + counterSize("NonTransReceiptCouples", cigars.length, cigarBytes));
-    return messagize(serder, { cigars, pipelined: true });
-  }
-  return serder.raw;
+  const selectedCigars = cigars.length === 1 ? cigars : [];
+  const cigarFooter = selectedCigars.length ? cigarBytes + counterSize("NonTransReceiptCouples", 1, cigarBytes) : 0;
+  if (groups.size || selectedCigars.length) requireWire(transferBytes + cigarFooter);
+  return messagize(serder, { tsgs: ordered, cigars: selectedCigars, pipelined: true, gvrsn });
 }

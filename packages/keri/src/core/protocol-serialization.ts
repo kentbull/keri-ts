@@ -137,6 +137,7 @@ export function messagize(
   serder: SerderKERI,
   args?: {
     sigers?: readonly Siger[];
+    tsgs?: readonly TransIdxSigGroup[];
     seal?: SealEventLike | SealLastLike;
     wigers?: readonly Siger[];
     cigars?: readonly Cigar[];
@@ -156,6 +157,7 @@ export function messagize(
   argsOrProof:
     | {
       sigers?: readonly Siger[];
+      tsgs?: readonly TransIdxSigGroup[];
       seal?: SealEventLike | SealLastLike;
       wigers?: readonly Siger[];
       cigars?: readonly Cigar[];
@@ -190,6 +192,7 @@ export function messagize(
 
   const {
     sigers = [],
+    tsgs = [],
     seal,
     wigers = [],
     cigars = [],
@@ -199,7 +202,7 @@ export function messagize(
     genusify = false,
   } = argsOrProof;
   const gvrsn = resolveAttachmentGvrsn(serderOrCreder, requestedGvrsn, nested);
-  if (sigers.length === 0 && wigers.length === 0 && cigars.length === 0) {
+  if (sigers.length === 0 && tsgs.length === 0 && wigers.length === 0 && cigars.length === 0) {
     throw new ValidationError(
       `Missing attached signatures on message = ${JSON.stringify(serderOrCreder.ked)}.`,
     );
@@ -250,6 +253,22 @@ export function messagize(
     } else {
       attachments.push(...sigerGroup);
     }
+  }
+
+  if (tsgs.length > 0) {
+    // Frozen 714 emits one aggregate group in supplied order; v2 preserves qualified ordinals.
+    const payload = tsgs.flatMap((group) => {
+      const signatures = group.sigers.map((siger) => siger.qb64b);
+      const ordinal = gvrsn.major >= 2 ? group.seqner.qb64b : encodeSealSeqnerQb64b(group.seqner);
+      return [
+        group.prefixer.qb64b,
+        ordinal,
+        group.diger.qb64b,
+        attachmentCounterPayloadQb64b("ControllerIdxSigs", group.sigers.length, signatures, gvrsn),
+        ...signatures,
+      ];
+    });
+    attachments.push(attachmentCounterPayloadQb64b("TransIdxSigGroups", tsgs.length, payload, gvrsn), ...payload);
   }
 
   if (wigers.length > 0) {
