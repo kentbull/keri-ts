@@ -58,6 +58,9 @@ and allocation measurements remain open. Broader KEL/reply replay (`clonePreIter
 `replyEndRole`), parent factors and query preparation/retained introductions still
 require native-row and copy audits. Queue/stream credit alone does not prove their
 pre-read boundary.
+Optional outbox runtime retry reads now preflight target/metadata/payload rows
+under shared copy credit retained through joined transport and iterator return.
+Other outbox scans and general record hydration remain outside that finite claim.
 Fixed native scratch (initially 16 MiB), growth through other read APIs and LMDB
 mapped residency remain separate overhead. Shared leases and measured native/string
 coexistence must cover these categories before a runtime-total/RSS claim.
