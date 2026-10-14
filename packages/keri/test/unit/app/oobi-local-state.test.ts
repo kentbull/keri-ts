@@ -16,6 +16,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { isWellKnownOobiUrl, Oobiery, parseOobiUrl } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
+import { DeckFullError } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -319,6 +320,79 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
         makify: true,
       });
 
+      for (const shared of [true, false]) {
+        const resources = new ResourcePolicy(), proofCues = new CueDeck(resources, 1);
+        const cues = shared ? proofCues : new CueDeck(resources, 1);
+        const reactor = new Reactor(hby, { resources, cues: proofCues });
+        const owner = new Oobiery(hby, reactor, { cues });
+        const url = `${introducedUrl}?deck=${shared}`;
+        const notice = new SerderKERI({
+          sad: { t: "rpy", dt: makeNowIso8601(), r: "/introduce", a: { cid: hab.pre, oobi: url } },
+          makify: true,
+        });
+        const args = {
+          serder: notice,
+          diger: new Diger({ qb64: notice.said! }),
+          route: "/introduce",
+          tsgs: [replySigGroupFor({ pre: hab.pre, kever: hab.kever!, sign: (ser) => hab.sign(ser, true) }, notice)],
+        };
+        const unchanged = () => {
+          assertEquals(hby.db.oobis.get(url), null);
+          assertEquals(hby.db.rpys.get([notice.said!]), null);
+          assertEquals(hby.db.sdts.get([notice.said!]), null);
+          assertEquals([...hby.db.ssgs.getTopItemIter([notice.said!], { topive: true })], []);
+          assertEquals(hby.db.rpes.cnt(), 0);
+          assertEquals(cues.length, 0);
+          assertEquals(proofCues.length, 0);
+        };
+        const busy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+        assertEquals(assertThrows(() => owner.processReply(args), ResourceAdmissionError).reason, "busy");
+        busy.reservation.release();
+        unchanged();
+        const tiny = new ResourcePolicy({ bytes: 1 }), tinyCues = new CueDeck(tiny, 1);
+        const limited = new Oobiery(hby, new Reactor(hby, { resources: tiny, cues: tinyCues }), { cues: tinyCues });
+        assertEquals(assertThrows(() => limited.processReply(args), ResourceAdmissionError).reason, "limit");
+        unchanged();
+        const slot = cues.prepare([{ kin: "proof", said: "occupied" }]);
+        const held = resources.used.bytes;
+        assertThrows(() => owner.processReply(args), DeckFullError);
+        assertEquals(resources.used.bytes, held);
+        slot.release();
+        unchanged();
+        assertEquals(owner.processReply(args).kind, "accept");
+        assertEquals(hby.db.oobis.get(url)?.cid, hab.pre);
+        assertExists(hby.db.rpys.get([notice.said!]));
+        const queued = cues.takeOwned()!;
+        assertEquals(queued.cue, { kin: "oobiQueued", url });
+        cues.clear();
+        assertEquals(resources.used.bytes > 0, true);
+        queued.release();
+        assertEquals(resources.used.bytes, 0);
+        assertEquals(proofCues.length, 0);
+      }
+      const cold = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      try {
+        const resources = new ResourcePolicy(), queries = new CueDeck(resources, 1), queues = new CueDeck(resources, 0);
+        const reactor = new Reactor(cold, { resources, cues: queries }),
+          owner = new Oobiery(cold, reactor, { cues: queues });
+        const args = {
+          serder,
+          diger: new Diger({ qb64: serder.said! }),
+          route: "/introduce",
+          tsgs: [replySigGroupFor({ pre: hab.pre, kever: hab.kever!, sign: (ser) => hab.sign(ser, true) }, serder)],
+        };
+        assertEquals(owner.processReply(args).kind, "unverified");
+        assertEquals(cold.db.oobis.get(introducedUrl), null);
+        assertEquals(cold.db.rpes.cnt(), 1, "Unverified introduction retains existing reply escrow ownership");
+        assertExists(cold.db.rpys.get([serder.said!]));
+        const query = queries.takeOwned()!;
+        assertEquals(query.cue.kin, "query");
+        assertEquals(queues.length, 0);
+        query.release();
+        assertEquals(resources.used.bytes, 0);
+      } finally {
+        yield* cold.close(true);
+      }
       runtime.reactor.revery.processReply({
         serder,
         tsgs: [replySigGroupFor({

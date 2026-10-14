@@ -42,8 +42,9 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    children before proof/Broker writes, preserving external escrow and prior proof
    ownership. Capture-time allocations remain open. OOBI queueing, staged
    multi-URL fanout and multi-parent completion admit exact batches before
-   queue/terminal/contact effects; response and introduction publication remain
-   open, alongside other durable producers, followed by
+   queue/terminal/contact effects; introductions hold prepared reply/query
+   ownership while admitting queued children before proof/queue writes. Response
+   publication and other durable producers remain open, followed by
    query/mailbox/delivery ownership transfers. Complete these ports before Runtime
    activation.
 

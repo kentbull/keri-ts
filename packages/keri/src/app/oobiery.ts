@@ -598,8 +598,8 @@ export class Oobiery {
       );
     }
 
-    this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
-    const decision = this.reactor.revery.acceptReply({
+    if (!(this.cues instanceof CueDeck)) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
+    const proof = this.reactor.revery.prepareReply({
       serder: args.serder,
       saider: args.diger,
       route: args.route,
@@ -608,24 +608,38 @@ export class Oobiery {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
-    if (decision.kind === "unverified") {
-      return unverifiedReplyDecision(
-        `Unverified introduction reply ${args.serder.said ?? "<unknown>"}.`,
-      );
+    try {
+      if (proof.decision.kind === "unverified") {
+        proof.applyProofs();
+        proof.publishQueries();
+        return unverifiedReplyDecision(`Unverified introduction reply ${args.serder.said ?? "<unknown>"}.`);
+      }
+      const meta = parseOobiUrl(oobi), kind = queueKindFor(oobi);
+      const record = {
+        date: dt,
+        state: "queued",
+        cid: cid ?? meta.cid ?? null,
+        eid: meta.eid ?? null,
+        role: meta.role ?? null,
+        oobialias: meta.alias ?? null,
+        said: meta.said ?? null,
+      };
+      const cues: AgentCue[] = [{ kin: "oobiQueued", url: oobi }];
+      this.cues.checkSpace(cues.length);
+      const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+      try {
+        proof.applyProofs();
+        this.pinQueueStore(kind, oobi, record);
+        proof.publishQueries();
+        if (batch) batch.publish();
+        else this.cues.extend(cues);
+        return acceptReplyDecision();
+      } finally {
+        batch?.release();
+      }
+    } finally {
+      proof.release();
     }
-
-    const meta = parseOobiUrl(oobi);
-    this.pinQueueStore(queueKindFor(oobi), oobi, {
-      date: dt,
-      state: "queued",
-      cid: cid ?? meta.cid ?? null,
-      eid: meta.eid ?? null,
-      role: meta.role ?? null,
-      oobialias: meta.alias ?? null,
-      said: meta.said ?? null,
-    });
-    this.cues.push({ kin: "oobiQueued", url: oobi });
-    return acceptReplyDecision();
   }
 }
 
