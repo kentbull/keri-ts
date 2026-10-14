@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
 import { toEffectionFrames } from "../../../effection.ts";
 import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
@@ -214,6 +214,7 @@ Deno.test("shared ESSR stages refuse before sink acquisition and retain credit w
   assertEquals(resources.used.bytes, retained);
   let payloadReads = 0;
   let sinks = 0;
+  let refusal: ResourceAdmissionError | undefined;
   const second = parse(
     (async function*() {
       yield wire.slice(0, -8);
@@ -222,20 +223,26 @@ Deno.test("shared ESSR stages refuse before sink acquisition and retain credit w
     })(),
     {
       ...options,
+      onAdmissionRefusal: (error) => refusal = error,
       payloadSink(limit, signal) {
         sinks++;
         return observed.factory(limit, signal);
       },
     },
   );
-  await assertRejects(() => second.next(), ResourceAdmissionError, "busy");
+  assertStrictEquals(await assertRejects(() => second.next(), ResourceAdmissionError, "busy"), refusal);
   assertEquals([sinks, payloadReads], [0, 0]);
   assertEquals(resources.used.bytes, retained);
   await discardFrame(frame);
   assertEquals(resources.used.bytes, 0);
 
-  const tooLarge = parse(chunks(wire), { ...options, maxEssrBytes: resources.limits.bytes });
-  await assertRejects(() => tooLarge.next(), ResourceAdmissionError, "limit");
+  refusal = undefined;
+  const tooLarge = parse(chunks(wire), {
+    ...options,
+    maxEssrBytes: resources.limits.bytes,
+    onAdmissionRefusal: (error) => refusal = error,
+  });
+  assertStrictEquals(await assertRejects(() => tooLarge.next(), ResourceAdmissionError, "limit"), refusal);
   assertEquals(resources.used.bytes, 0);
   await assertRejects(
     () =>
@@ -247,6 +254,37 @@ Deno.test("shared ESSR stages refuse before sink acquisition and retain credit w
       }).next(),
     Error,
     "stage unavailable",
+  );
+  assertEquals(resources.used.bytes, 0);
+  refusal = undefined;
+  const foreign = new ResourceAdmissionError("foreign sink busy", "busy");
+  assertStrictEquals(
+    await assertRejects(() =>
+      parse(chunks(wire), {
+        ...options,
+        classifyWireErrors: true,
+        onAdmissionRefusal: (error) => refusal = error,
+        payloadSink() {
+          throw foreign;
+        },
+      }).next()
+    ),
+    foreign,
+  );
+  assertEquals(refusal, undefined);
+  const observerFailure = new ParserError("observer failed");
+  assertStrictEquals(
+    await assertRejects(() =>
+      parse(chunks(wire), {
+        ...options,
+        maxEssrBytes: resources.limits.bytes,
+        classifyWireErrors: true,
+        onAdmissionRefusal() {
+          throw observerFailure;
+        },
+      }).next()
+    ),
+    observerFailure,
   );
   assertEquals(resources.used.bytes, 0);
   const retry = parse(chunks(wire), options);

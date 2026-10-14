@@ -36,6 +36,10 @@
   chunks count. Abort clears the single checkpoint timer and retains source-error
   identity. This is local scheduling policy, not a wire limit or RSS guarantee.
 
+Tree admission observers report only errors created by that parse invocation.
+Reserve, source, sink and observer exceptions retain identity; preserve their
+external provenance when intrinsic wire classification is enabled.
+
 ## Wire and version rules
 
 - `gvrsn` is attachment genus; `pvrsn` is body protocol. Explicit selection and
