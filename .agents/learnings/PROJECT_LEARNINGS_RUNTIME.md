@@ -55,7 +55,8 @@ and admits its concrete keyStateSaved child before proof/state writes on shared
 or distinct decks. Registry and credential TSN hold the same preparation while admitting its
 actual new dependency query or txnStateSaved child before proof/Broker effects.
 Exact family membership prevents duplicate query credit while Broker retains
-registry/attester/TEL dependency migration. OOBI remains open. Runtime activation
+registry/attester/TEL dependency migration. OOBI typed cue producers also admit
+actual batches before effects. Runtime activation
 waits for every producer/consumer port; count checks alone cannot reserve byte credit.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
@@ -162,7 +163,14 @@ parent resolved/failed cues before terminal/contact effects. Preserve ordinary
 Deck guards. Introductions hold PreparedReply and admit actual queued children
 before BADA/proof/queue effects; unverified replies retain existing escrow/query
 publication without a child. Keep the one-shot plan in a single synchronous turn.
-Response publication remains open.
+Attempt queue metadata stays staged until result admission; current queue retry
+uses row presence, not attempt-date TTL. Finite results preserve the original row
+until terminal publication. CESR result credit is an earlier scope resource held
+before queue and streaming metadata
+and Reactor body reads through joined cleanup. Failure/cancellation releases only
+unpublished result credit; full retrieval retains the published owner and is not
+universal protocol acceptance. HTTP/schema/JSON results admit before terminal
+or schema writes, with the existing queued worker retrying transient refusal.
 
 ## Mailbox
 
