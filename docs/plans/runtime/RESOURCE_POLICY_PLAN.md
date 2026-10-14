@@ -64,6 +64,12 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    query/mailbox/delivery ownership transfers. Complete these ports before Runtime
    activation.
 
+S2 OOBI HTTP now consumes lazy Hab messages with shared admission before metadata
+capture and finite per-message preparation. Forwarding still needs its finite
+caller port; native metadata/proof allocation and complete-stack qualification
+remain open. Active 714 Hab helpers collect output; TS streaming preserves its
+existing role/source topology and body-driven genus selection.
+
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.
 Split further before publication if a complete boundary needs more. Qualification
 uses existing scenarios and uncommitted pressure probes rather than a new suite

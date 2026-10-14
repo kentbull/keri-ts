@@ -69,6 +69,9 @@ iterator and returns it only after source cleanup. Busy HTTP admission returns 5
 configured size refusal remains 413. Neither creates retry scheduling.
 Nonempty response detection primes one bounded event under that same owner;
 empty sources close before returning null and runtime close drops primed bytes.
+OOBI serving captures bounded endpoint/delegation descriptors only after admission,
+closes metadata cursors before hydration, and borrows Hab/store through cleanup.
+Fresh preparation caps are conservative; native metadata/proof allocation remains open.
 RuntimeDeliveries owns the existing finite query queue; retained cue adoption
 uses this same owner rather than adding a parallel queue. Query producers run
 only after preparation/request admission. Queued requests retain

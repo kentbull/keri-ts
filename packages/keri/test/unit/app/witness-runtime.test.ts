@@ -1,8 +1,8 @@
 import { action, call, type Operation, race, run, spawn } from "effection";
-import { assert, assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import { once } from "node:events";
 import { createConnection, type Socket } from "node:net";
-import { b, parseBytes, ParserError, WireParseError } from "../../../../cesr/mod.ts";
+import { b, parseBytes, ParserError, ResourceLimitError, WireParseError } from "../../../../cesr/mod.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
@@ -166,6 +166,27 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
           providerHby.db.wigs.get(dgKey(controller.pre, event.said)).length,
           1,
         );
+
+        const makeLoc = witness.makeLocScheme;
+        let freshCalls = 0;
+        witness.makeLocScheme = function(...args) {
+          freshCalls++;
+          return makeLoc.apply(this, args);
+        };
+        try {
+          assertThrows(
+            () => [...witness.replyToOobiMessages(controller.pre, EndpointRoles.witness, [], {
+              maxMessageBytes: 1400,
+            })],
+            ResourceLimitError,
+            "preparation allowance",
+          );
+          assertEquals(freshCalls, 0);
+          assertEquals([...witness.replyToOobiMessages(controller.pre, EndpointRoles.witness)].length > 0, true);
+          assertEquals(freshCalls, 1);
+        } finally {
+          witness.makeLocScheme = makeLoc;
+        }
 
         const storedResponse = yield* fetchOp(
           `${hostUrl}/receipts?pre=${controller.pre}&sn=0`,
