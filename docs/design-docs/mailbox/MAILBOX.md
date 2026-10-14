@@ -51,7 +51,13 @@ exact envelope and correlates the accepted cue by query SAID, then verifies the
 addressed provider authorization before SSE opens. See [read authorization](READ_AUTHORIZATION.md).
 
 MailboxDirector owns correlation/provider reads; MailboxPoller owns remote
-polling and recipient cursors. SSE output reads one admitted stored record per
+polling and recipient cursors. Correlations use a CueDeck on the director's exact
+ResourcePolicy, with a tunable default of 64 held slots (local policy, not a
+protocol maximum). The producer admits the destination before removing its
+source cue. Matching borrows an owned cue through nested reader cancellation,
+pending-read join and unlock; an active match still occupies capacity. Shutdown
+joins active reads before clearing unmatched correlations. Injected query decks
+must use that same policy; raw Deck injection/pull is no longer supported. SSE output reads one admitted stored record per
 HTTP demand. Input awaits each complete event's consumer; unfinished EOF/timeout
 events leave cursor progress retryable. No unsolicited provider push is implied.
 
