@@ -51,6 +51,11 @@ CLI opening forwards it; AgentRuntime inherits it and rejects policy mismatches.
 Borrowed runtime shutdown leaves Baser ownership intact. Accepted cache/native
 admission and public borrowing adoption remain open in resource phase 4/storage phase 5.
 
+Authenticator borrows that exact policy even without an AgentRuntime. Its status-only
+GET reserves handle/URL credit before fetch; busy retains durable pending work.
+Joined response cleanup precedes credit release and authorization publication.
+Native fetch headers/buffering and pending-row allocation remain separate bounds.
+
 Shared ResourcePolicy credit belongs to an owner until consumption and joined
 cleanup complete. One shared instance is required; separate ledgers do not bound
 a runtime. Reactor reserves stream/cursor/producer credit before source acquisition

@@ -60,9 +60,20 @@ created root-map validation errors permit opaque fallback. Complete-input unsupp
 simple values, codec semantic failures and tag failures preserve identity; their malformed-error classification
 is unqualified in this base-token unit. CBOR-B
 remains open for BigInt/fraction arithmetic, packed/record/shared/bundle expansion,
-global extension callbacks/native extractors, and decoder-global DataView/string/
-packed retention beyond frame disposal. Base-token admission is not all-tag or
-codec-global residency closure.
+global extension callbacks/native extractors and native residency. Base-token
+admission is not all-tag allocation closure.
+
+CBOR-B1 resets message-bearing decoder globals before helper return: an outermost
+captured native decode of private fixed CBOR null clears strings, packed values,
+source, structures and references and replaces DataView backing with one byte.
+The private Decoder configures only two booleans, without instance structures or
+shared-value tables; map mode is restored after malformed forced-map operands.
+The admitted path reserves an additional scope64/callback96/reset-array64 working
+charge. Nested helpers defer reset until outermost completion. Reset bypasses
+injected payload methods; cleanup failures are foreign, and concurrent primary
+and cleanup failures retain identity inside AggregateError. Core standalone
+helpers also reset, but their allocations remain unadmitted. Injected tables/
+callbacks, native extractors/residency and encoder caches remain unqualified.
 
 ESSR Texters stream into an awaited sink, with separate `maxEssrBytes` (8 MiB
 concatenated decoded bytes) and `maxEssrItems` (16,384) defaults per owned tree. `maxTreeNodes` defaults to 256 including the root;

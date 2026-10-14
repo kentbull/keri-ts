@@ -3,7 +3,7 @@ import { Decoder as CborDecoder } from "cbor-x/decode";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import { decodeHex } from "jsr:@std/encoding/hex";
 import { concatBytes } from "../../../src/core/bytes.ts";
-import { decodeKeriCbor, encodeKeriCbor } from "../../../src/core/cbor.ts";
+import { cborSyntaxFailure, decodeKeriCbor, encodeKeriCbor } from "../../../src/core/cbor.ts";
 import { ResourceAdmissionError, ResourceLimitError } from "../../../src/core/errors.ts";
 import { discardFrame } from "../../../src/core/frame.ts";
 import { ResourcePolicy } from "../../../src/core/resource-policy.ts";
@@ -328,4 +328,55 @@ Deno.test("wrapped CBOR distinguishes known syntax boundaries from foreign decod
     ) === foreign,
   );
   assertEquals(resources.used.bytes, 0);
+});
+
+Deno.test("CBOR reset failures preserve identity and intrinsic primary errors without opaque fallback", async () => {
+  const native = CborDecoder.prototype.decode;
+  const cleanup = cborSyntaxFailure("foreign reset failed"); // Even a previously owned syntax error is foreign here.
+  let receiver: CborDecoder | undefined, primary: unknown;
+  const wrap = (token: Uint8Array) =>
+    new TextEncoder().encode(groupV2(
+      "-H",
+      new Texter({
+        raw: tokenBody(token, "CBOR"),
+        code: "4B",
+      }).qb64,
+    ));
+  for (const malformed of [false, true]) {
+    CborDecoder.prototype.decode = function(...args) {
+      receiver = this;
+      try {
+        return native.apply(this, args);
+      } catch (error) {
+        primary = error;
+        throw error;
+      } finally {
+        // Inject through the actual payload method's receiver; reset calls the captured native leaf.
+        Object.defineProperty(this, "sharedValues", {
+          configurable: true,
+          get: () => {
+            throw cleanup;
+          },
+        });
+      }
+    };
+    const resources = new ResourcePolicy();
+    try {
+      const failure = await assertRejects(() =>
+        parseBytes(wrap(Uint8Array.of(malformed ? 0x81 : 0x80)), {
+          resources,
+          classifyWireErrors: true,
+        })
+      );
+      if (malformed) {
+        assert(failure instanceof AggregateError);
+        assertEquals(failure.errors, [primary, cleanup]);
+      } else assert(failure === cleanup);
+      assertEquals(resources.used.bytes, 0);
+    } finally {
+      CborDecoder.prototype.decode = native;
+      if (receiver) Reflect.deleteProperty(receiver, "sharedValues");
+    }
+  }
+  assertEquals(decodeKeriCbor(Uint8Array.of(1)), 1);
 });

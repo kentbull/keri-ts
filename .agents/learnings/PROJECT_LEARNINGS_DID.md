@@ -34,9 +34,10 @@ Arbitrary CBOR/MGPK decoded growth remains unqualified. Internal artifact captur
 ReplyStreams output admission. Freeze winning endpoint body SAIDs and active
 credential/anchor/TEL horizons; body/proof hydration stays demand-owned. No creder
 survives acquisition. Known BADA replacement of missing captured reply material
-fails with a domain availability error; unrelated missing/corrupt rows and native
-failures retain infrastructure semantics. Current attachment rows are not a proof
-snapshot. Existing collectors and real dynamic CESR/export callers remain S2 work;
+fails with a domain availability error; reply/alias row faults and native preflight
+failures retain infrastructure semantics. KEL replay keeps its existing broad
+corrupt/incomplete proof skip; that native-proof catch remains phase 5 work.
+Current attachment rows are not a proof snapshot. Existing collectors and real dynamic CESR/export callers remain S2 work;
 finite capture limits do not establish a short guard-hold time.
 
 Designated aliases use ordinary registry-backed credentials and a SAID-checked

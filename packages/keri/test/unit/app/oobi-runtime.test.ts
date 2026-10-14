@@ -1,5 +1,5 @@
 import { call, run, spawn } from "effection";
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertStringIncludes } from "jsr:@std/assert";
 import { Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
@@ -18,6 +18,7 @@ import {
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 
+import { Authenticator } from "../../../src/app/authenticating.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -283,6 +284,7 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
   let wellKnownUrl = "";
   let failingWellKnownUrl = "";
   let controllerBytes = new Uint8Array();
+  let authRequests = 0;
 
   await run(function*() {
     const hby = yield* createHabery({
@@ -331,6 +333,7 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
       });
     }
     if (url.pathname === `/.well-known/keri/oobi/${pre}`) {
+      authRequests++;
       if (url.searchParams.get("mode") === "fail") {
         return new Response("missing", {
           status: 404,
@@ -370,7 +373,18 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         assertEquals(runtimePendingState(runtime).authQueued, false);
         assertEquals(runtimePendingState(runtime).authInFlight, true);
         assertEquals(runtimeOobiConverged(runtime, wellKnownUrl), false);
+        assertStrictEquals(new Authenticator(hby).services.resources, runtime.resources);
 
+        const occupied = runtime.resources.reserve({ streams: runtime.resources.limits.streams });
+        if (occupied.kind !== "reserve") throw new Error("Expected free HTTP capacity");
+        try {
+          yield* processRuntimeTurn(runtime);
+          assertEquals(authRequests, 0, "busy refuses before request acquisition");
+          assertEquals(hby.db.mfa.get(wellKnownUrl)?.state, "auth-pending");
+          assertEquals(hby.db.rmfa.get(wellKnownUrl), null);
+        } finally {
+          occupied.reservation.release();
+        }
         yield* processRuntimeTurn(runtime);
         assertEquals(hby.db.rmfa.get(wellKnownUrl)?.state, "resolved");
         assertEquals(runtimeHasWellKnownAuth(runtime, wellKnownUrl), true);
@@ -379,6 +393,7 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
           "resolved",
         );
         assertEquals(runtimeOobiConverged(runtime, wellKnownUrl), true);
+        assertEquals(runtime.resources.used.streams, 0);
 
         enqueueOobi(runtime, { url: failingWellKnownUrl });
         yield* processRuntimeTurn(runtime);
@@ -389,6 +404,60 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
           runtimeOobiTerminalState(runtime, failingWellKnownUrl).status,
           "failed",
         );
+
+        const cleanupUrl = `${wellKnownUrl}&cleanup=1`;
+        const cleanupFailure = new Error("well-known response cleanup failed");
+        let finishCleanup!: () => void, cleanupStarted!: () => void;
+        const cleaning = new Promise<void>((resolve) => finishCleanup = resolve);
+        const started = new Promise<void>((resolve) => cleanupStarted = resolve);
+        const signals: AbortSignal[] = [];
+        const auth = new Authenticator(hby, {
+          services: {
+            ...runtime.services,
+            http: {
+              fetch(_url, init) {
+                signals.push(init!.signal!);
+                return Promise.resolve(
+                  new Response(
+                    new ReadableStream({
+                      cancel() {
+                        cleanupStarted();
+                        return cleaning.then(() => {
+                          throw cleanupFailure;
+                        });
+                      },
+                    }),
+                  ),
+                );
+              },
+            },
+          },
+        });
+        hby.db.mfa.pin(cleanupUrl, { cid: pre, state: "auth-pending" });
+        const task = run(() => auth.processOnce());
+        try {
+          yield* call(() => started);
+          assertEquals(runtime.resources.used.streams, 1, "response cleanup retains handle credit");
+          const halted = task.halt();
+          let joined = false;
+          void halted.then(() => joined = true, () => joined = true);
+          yield* call(() => new Promise((resolve) => setTimeout(resolve, 0)));
+          assertEquals(joined, false, "cancellation must join the pending body cleanup");
+          assertEquals(hby.db.rmfa.get(cleanupUrl), null, "cleanup cannot publish authorization");
+          finishCleanup();
+          assertStrictEquals(yield* call(() => assertRejects(() => halted)), cleanupFailure);
+          assertEquals(signals[0].aborted, true);
+          assertEquals(runtime.resources.used.streams, 0);
+          assertEquals(hby.db.mfa.get(cleanupUrl)?.state, "auth-pending");
+          assertEquals(hby.db.rmfa.get(cleanupUrl), null);
+        } finally {
+          finishCleanup();
+          yield* call(() =>
+            task.halt().catch((error) => {
+              if (error !== cleanupFailure) throw error;
+            })
+          );
+        }
       } finally {
         yield* hby.close();
       }
