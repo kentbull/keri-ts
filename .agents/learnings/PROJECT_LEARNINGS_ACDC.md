@@ -95,6 +95,9 @@ Notifier visibility. Webhook retries/acks live in a separate sidecar, not Reger.
 Bounded runs rescan persisted revocation state; issuance ack cannot suppress a
 revocation, and rack prevents repeated revocation delivery. Verifier run sends;
 hook demo is only a sample receiver.
+VerifierAgent's guarded finite scan transfers existing revoked-cue owners.
+Unrelated owners preserve order; failed sidecar publication requeues original
+credit, while durable enqueue/duplicates release it before guard-free webhooks.
 
 ## Interoperability traps
 
