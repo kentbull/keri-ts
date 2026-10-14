@@ -154,6 +154,7 @@ Deno.test("Effection frames preserve late foreign source failures and join clean
           closing();
           await gate;
           returned = true;
+          // deno-lint-ignore no-unsafe-finally -- Exercise a failing source finalizer during cancellation.
           throw fault;
         }
       });
@@ -178,7 +179,8 @@ Deno.test("Effection frames preserve late foreign source failures and join clean
       await assertRejects(() =>
         run(function*() {
           const channel = yield* toEffectionFrames(async function*() {
-            throw fault;
+            // deno-lint-ignore no-unsafe-finally -- Exercise a failing source finalizer during cancellation.
+          throw fault;
           });
           const subscription = yield* channel.frames;
           yield* subscription.next();
@@ -195,6 +197,7 @@ Deno.test("Effection frames preserve late foreign source failures and join clean
         try {
           yield new Uint8Array(16).fill(0xff);
         } finally {
+          // deno-lint-ignore no-unsafe-finally -- Preserve distinct decoder and source finalization failures.
           throw cleanup;
         }
       });
