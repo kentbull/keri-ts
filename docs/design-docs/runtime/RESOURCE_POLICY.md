@@ -78,8 +78,11 @@ message ceiling of retained metadata. Captured FEL identities exclude later
 acceptances; proofs and signing keys remain current. Fresh flat-field/signature
 preparation uses a conservative allowance before construction. Native Komer,
 proof/key copies and existing no-SN corrupt-proof skipping remain phase 5 gaps.
-Finite Hab adapters cap total output at 8 MiB; forwarding caller adaptation remains
-open. This preserves TS role/source selection, including endpoint KELs and its
+Finite Hab and forwarding introduction adapters default to 8 MiB total.
+Introductions retain only admitted finite messages and reject explicit Infinity;
+ordinary forwarding/mailbox wrappers use the same finite convenience default.
+The lazy introduction source remains available, but its actual large-history
+transport caller and shared ownership qualification remain open. This preserves TS role/source selection, including endpoint KELs and its
 existing witness authorization condition, rather than claiming full 714 wire parity.
 
 Query delivery reserves 24 MiB of preparation credit and 8 MiB of retained request
