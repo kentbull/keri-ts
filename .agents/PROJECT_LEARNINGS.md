@@ -30,6 +30,7 @@ are separate boundaries. Parent signatures never authenticate nested children.
 Public registry intake borrows issuer KEL state independently of local Hab aliases.
 Raw evidence stays separate from opt-in strict seal projection.
 Native addon loading alone is not runtime compatibility; qualify large-row paths.
+Pinned nested-row preflight preserves active writers; shared copy admission remains separate.
 
 Normal remote outcomes use typed decisions. Exceptions retain invariant,
 infrastructure and caller-contract failures. Keep protocol compatibility and

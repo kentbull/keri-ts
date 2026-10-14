@@ -2,9 +2,10 @@
  * Core LMDB manager used by higher-level DB abstractions.
  */
 
-import { b, bytesEqual, bytesHex, t, toBytes } from "cesr-ts";
+import { b, bytesEqual, bytesHex, ResourceLimitError, t, toBytes } from "cesr-ts";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { Database, Key, open, RootDatabase } from "npm:lmdb@3.5.3";
+import * as lmdbBinding from "npm:lmdb@3.5.3";
 import { startsWith } from "../../core/bytes.ts";
 import { DatabaseKeyError, DatabaseNotOpenError, DatabaseOperationError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
@@ -15,6 +16,19 @@ import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-man
 export type BinKey = Uint8Array;
 /** Binary LMDB value type used by the low-level wrapper surface. */
 export type BinVal = Uint8Array;
+
+/** Pinned lmdb-js read hooks; unsupported modes fail before native row access. */
+interface NativeRowDb {
+  encoding: string;
+  compression?: false | object;
+  useVersions?: boolean;
+  env: { writeTxn?: object | null };
+  lastSize?: number;
+  _returnLargeBuffer: () => Uint8Array | undefined;
+  getBinaryFast(key: BinKey, options?: { transaction?: { done(): void } }): Uint8Array | undefined;
+  getBinary(key: BinKey, options?: { transaction?: { done(): void } }): Uint8Array | undefined;
+  useReadTransaction(): { done(): void };
+}
 
 /** Default separator used by ordinal/suffix key helpers (`onKey`, `suffix`). */
 const DOT_SEP = b(".");
@@ -641,6 +655,46 @@ export class LMDBer {
       }
     } catch (error) {
       throw this.formatDbKeyError(key, error);
+    }
+  }
+
+  /**
+   * Read one owned row only after its byte ceiling admits materialization.
+   * Pin 3.5.3 NAPI/compression-off hooks; pre-existing native scratch is separate.
+   * Borrow an active writer, otherwise hold one explicit snapshot through both reads.
+   * This ceiling supplies no shared resource reservation or bound on other read APIs.
+   */
+  getValBounded(db: Database<BinVal, BinKey>, key: Uint8Array, maxBytes: number): Uint8Array | null {
+    const env = this.requireEnv();
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Invalid LMDB row byte ceiling");
+    const native = db as unknown as NativeRowDb;
+    const version = (lmdbBinding as unknown as { version?: { nodeCompiledVersion?: number } }).version;
+    if (
+      !version || "nodeCompiledVersion" in version || native.encoding !== "binary"
+      || native.compression || native.useVersions
+      || native.env !== (env as unknown as NativeRowDb).env
+      || typeof native.getBinaryFast !== "function" || typeof native.getBinary !== "function"
+      || typeof native._returnLargeBuffer !== "function" || typeof native.useReadTransaction !== "function"
+    ) throw new DatabaseOperationError("Unsupported LMDB bounded-row binding; require lmdb 3.5.3 NAPI binary mode");
+    const writer = native.env.writeTxn ?? null;
+    const transaction = writer ? undefined : native.useReadTransaction();
+    try {
+      const probe = Object.create(native) as NativeRowDb;
+      // Native returns the required size before this hook grows/copies an insufficient target.
+      probe._returnLargeBuffer = () => undefined;
+      probe.getBinaryFast(key, { transaction });
+      const size = probe.lastSize;
+      if (size === -30798) return null; // MDB_NOTFOUND
+      if (!Number.isSafeInteger(size) || size! < 0) throw new DatabaseOperationError("Invalid LMDB row extent");
+      if (size! > maxBytes) throw new ResourceLimitError("Stored LMDB row exceeds byte ceiling");
+      if ((native.env.writeTxn ?? null) !== writer) throw new DatabaseOperationError("LMDB row transaction changed");
+      const value = native.getBinary(key, { transaction });
+      if (!value || value.length !== size || (native.env.writeTxn ?? null) !== writer) {
+        throw new DatabaseOperationError("LMDB row changed during bounded read");
+      }
+      return new Uint8Array(value);
+    } finally {
+      transaction?.done();
     }
   }
 
