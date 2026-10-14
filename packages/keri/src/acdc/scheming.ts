@@ -278,12 +278,17 @@ export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | 
       if (!validator.validateSchema(schema)) throw new InvalidSchema("Invalid Draft 2020-12 schema");
     }
     const copies = roots.map(copy);
-    for (const schema of copies) validator.addSchema(schema);
     let validate: ReturnType<Validator["getSchema"]>;
     try {
+      for (const schema of copies) validator.addSchema(schema);
       validate = validator.getSchema(uri(root.said));
     } catch (error) {
       if (error instanceof SyntaxError && error.message.includes("regular expression")) {
+        return { kind: "invalid", reason: error.message };
+      }
+      if (
+        error instanceof Error && /^reference "urn:said:[^"]+" resolves to more than one schema$/.test(error.message)
+      ) {
         return { kind: "invalid", reason: error.message };
       }
       throw error;

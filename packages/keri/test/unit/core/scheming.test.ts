@@ -137,6 +137,8 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
     "valid",
   );
   expect(make({ $ref: "#allowed" }, { $defs: { attribute: { $anchor: "allowed", type: "object" } } }), "valid");
+  const ambiguous = { left: { $anchor: "duplicate", type: "object" }, right: { $anchor: "duplicate", type: "string" } };
+  expect(make({ $ref: "#duplicate" }, { $defs: ambiguous }), "invalid");
   expect(make({ $ref: "#/allowed" }, { allowed: true }), "valid");
   const bundled: Record<string, unknown> = {
     $id: "did:keri:" + "#".repeat(44),
