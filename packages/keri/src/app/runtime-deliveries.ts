@@ -16,12 +16,11 @@ import { Schemes } from "../core/schemes.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
-import { CesrHttpRefusal } from "./cesr-egress.ts";
 import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
 import { prepareCueEmission } from "./cue-preparation.ts";
 import { prepareCueRoute } from "./cue-route.ts";
 import type { CueSink } from "./cue-runtime.ts";
-import { introduce, type RawCesrRoute, sendPreparedCesrTarget } from "./forwarding.ts";
+import { attemptPreparedCesrTarget, introduce, type RawCesrRoute } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
@@ -225,22 +224,9 @@ export class RuntimeDeliveries {
               entry.delivery.step(runtime, active.signal, (target) => self.retainFailed(target))
             )) === "done";
           } else {
-            let refusal: CesrHttpRefusal | undefined;
-            try {
-              yield* call(() =>
-                sendPreparedCesrTarget(
-                  entry.delivery.target,
-                  runtime.services,
-                  active.signal,
-                  (error) => refusal = error,
-                )
-              );
-            } catch (error) {
-              if (error !== refusal && !(error instanceof ResourceAdmissionError && error.reason === "busy")) {
-                throw error;
-              }
-              done = false;
-            }
+            done = (yield* call(() =>
+              attemptPreparedCesrTarget(entry.delivery.target, runtime.services, active.signal)
+            )) === "complete";
           }
         }
         // A cancelled/closed owner cannot acknowledge after successful HTTP cleanup.

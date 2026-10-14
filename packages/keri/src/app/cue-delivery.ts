@@ -2,10 +2,9 @@
 import { ResourceAdmissionError, ResourceLimitError, type ResourceReservation } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
 import type { AgentRuntime } from "./agent-runtime.ts";
-import { CesrHttpRefusal } from "./cesr-egress.ts";
 import type { PreparedCueEmission } from "./cue-preparation.ts";
 import type { PreparedCueRoute } from "./cue-route.ts";
-import { type PreparedCesrTarget, sendPreparedCesrTarget } from "./forwarding.ts";
+import { attemptPreparedCesrTarget, type PreparedCesrTarget } from "./forwarding.ts";
 import type { Hab } from "./habbing.ts";
 
 const wireBytes = 8 * 1024 ** 2, preparationBytes = 3 * wireBytes;
@@ -98,16 +97,9 @@ export class CueDelivery {
       if (done) return "done";
       if (busy) return "pending";
     }
-    let refusal: CesrHttpRefusal | undefined;
-    try {
-      yield* call(() =>
-        sendPreparedCesrTarget(this.prepared!.target, runtime.services, signal, (error) => refusal = error)
-      );
-    } catch (error) {
-      // Only an actual non-ok HTTP response permits independent failed-wire retention; other failures propagate.
-      signal.throwIfAborted();
-      if (error instanceof ResourceAdmissionError && error.reason === "busy") return "pending";
-      if (error !== refusal) throw error;
+    const outcome = yield* call(() => attemptPreparedCesrTarget(this.prepared!.target, runtime.services, signal));
+    if (outcome === "busy") return "pending";
+    if (outcome === "refused") {
       if (!retainFailed(this.prepared!)) return "pending";
       this.prepared = undefined;
       this.advance();

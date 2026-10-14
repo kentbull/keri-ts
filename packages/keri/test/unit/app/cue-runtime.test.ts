@@ -395,7 +395,7 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), second = hby.makeHab("second"), third = hby.makeHab("third");
-    const failed = new CesrHttpRefusal("injected transport failure", 503);
+    let failed: Error = new CesrHttpRefusal("injected transport failure", 503);
     let injected = true, acceptFirst = false, routes = 0;
     const packets: Record<string, Uint8Array[]> = { first: [], second: [], third: [], query: [] };
     const runtime = yield* createAgentRuntime(hby, {
@@ -445,6 +445,13 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
         failed,
       );
       assertEquals(runtime.deliveries.hasPending, true, "an unobserved typed transport failure preserves progress");
+      failed = new ResourceAdmissionError("foreign transport busy", "busy");
+      const retained = runtime.resources.used.bytes;
+      assertStrictEquals(
+        yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
+        failed,
+      );
+      assertEquals(runtime.resources.used.bytes, retained, "foreign busy retains the prepared cue owner");
       injected = false;
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 7, pending: true });
       assertEquals(
@@ -456,6 +463,18 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
       assertEquals([packets.second.length, packets.third.length], [1, 1], "failed first target does not stop siblings");
       assertEquals(runtime.resources.used.bytes, 24 * 1024 ** 2, "only independent failed packet credit remains");
       for (const wire of packets.first) assertEquals(wire, packets.first[0], "retries preserve the exact wire");
+      injected = true;
+      assertStrictEquals(
+        yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
+        failed,
+      );
+      assertEquals(runtime.resources.used.bytes, 24 * 1024 ** 2, "foreign busy retains the independent failed packet");
+      injected = false;
+      const occupied = runtime.resources.reserve({ streams: runtime.resources.limits.streams });
+      if (occupied.kind !== "reserve") throw new Error("Expected free stream capacity");
+      assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 0, pending: true });
+      assertEquals(runtime.resources.used.bytes, 24 * 1024 ** 2, "engine busy retains the packet for a later pass");
+      occupied.reservation.release();
       acceptFirst = true;
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });
       assertEquals(runtime.resources.used.bytes, 0);
