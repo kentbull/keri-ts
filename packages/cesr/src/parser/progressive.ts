@@ -1,5 +1,11 @@
 import { isCesrDomain, tokenSize, unitBytes } from "../core/domain.ts";
-import { ColdStartError, GroupSizeError, ResourceLimitError, ShortageError } from "../core/errors.ts";
+import {
+  ColdStartError,
+  GroupSizeError,
+  ResourceAdmissionError,
+  ResourceLimitError,
+  ShortageError,
+} from "../core/errors.ts";
 import { retainFrameCredit } from "../core/frame-credit.ts";
 import type { ResourcePolicy, ResourceReservation } from "../core/resource-policy.ts";
 import type { CesrFrame, EssrPayload } from "../core/types.ts";
@@ -365,7 +371,7 @@ export async function* parse(
     newTree: () => {
       const decision = resources?.reserve({ bytes: limit });
       if (decision?.kind === "refuse") {
-        throw new ResourceLimitError(`Tree admission refused: ${decision.reason}`);
+        throw new ResourceAdmissionError(`Tree admission refused: ${decision.reason}`, decision.reason);
       }
       const credit = decision?.reservation;
       if (credit) context.credits.add(credit);

@@ -38,7 +38,15 @@ resumption/closure of a generator suspended at delivery must finish before credi
 returns; parser termination alone never reclaims a delivered consumer owner.
 Reactor disposes every input root after dispatch and joined cleanup.
 
-Additional hydrated representations, ESSR staging, storage, queues and
-object/handle/work limits remain in the
+Complete-record ingress reserves retained byte credit before copying. Its record
+owns the lease through queued and processing states, including cue-capacity retry
+and typed temporary parser-admission refusal. Oversize admission releases the record.
+Local record/byte limits also include active processing. Clearing ingress releases
+only queued records and invalidates late retries; processing retains credit until
+joined cleanup. Runtime close and scope exit clear queued ownership. Parser backing
+credit is acquired separately, so both charges coexist during processing.
+
+Additional hydrated representations, ESSR staging, storage and object/handle/work
+limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
 Counter totals alone are not an RSS or native/mapped-memory guarantee.

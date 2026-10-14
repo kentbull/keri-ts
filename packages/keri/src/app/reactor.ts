@@ -4,8 +4,10 @@ import {
   discardFrame,
   Ilks,
   type ParseOptions,
+  ResourceAdmissionError,
   ResourceLimitError,
   ResourcePolicy,
+  type ResourceReservation,
   SerderKERI,
   Siger,
   Verfer,
@@ -16,6 +18,7 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
 import { Kevery, type MessagePolicy } from "../core/eventing.ts";
+import { type KramConfig, Kramer } from "../core/kraming.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
@@ -40,6 +43,12 @@ export interface IngressOptions extends ParseOptions {
   escrows?: boolean;
 }
 
+/** Retained copy and transferable shared credit for one queued or processing record. */
+interface IngressRecord {
+  bytes: Uint8Array;
+  reservation?: ResourceReservation;
+}
+
 /**
  * Shared message-routing component for one `Habery`.
  *
@@ -60,7 +69,7 @@ export class Reactor {
   readonly resources: ResourcePolicy;
   readonly cues: Deck<AgentCue>;
   /** Bounded complete-record queue; callers enter only through ingest(). */
-  private readonly ingress: Deck<Uint8Array>;
+  private readonly ingress: Deck<IngressRecord>;
   readonly router: Router;
   readonly revery: Revery;
   readonly replyRoutes: BasicReplyRouteHandler;
@@ -75,8 +84,10 @@ export class Reactor {
   private busy = false;
   /** Waiting turns are bounded independently of the lifetime of their input streams. */
   private readonly waiting = new Set<() => void>();
-  /** Resident bytes retained by the complete-record ingress deck. */
+  /** Resident queued and processing bytes retain local admission until joined cleanup. */
   private queuedBytes = 0;
+  private ingressRecords = 0;
+  private ingressGeneration = 0;
   /** Maximum simultaneous input sources and waiting runtime turns. */
   private readonly maxSources: number;
   /** Maximum bytes in the complete-record ingress deck. */
@@ -94,6 +105,8 @@ export class Reactor {
       maxPendingCues = 1024,
       messagePolicy,
       resources = new ResourcePolicy(),
+      kram,
+      now,
     }: {
       cues?: Deck<AgentCue>;
       local?: boolean;
@@ -108,6 +121,9 @@ export class Reactor {
       messagePolicy?: MessagePolicy;
       /** Borrow the host policy so other streams and recipients compete for the same credit. */
       resources?: ResourcePolicy;
+      /** Omitted preserves disabled intake; the receiver clock is runtime-owned. */
+      kram?: KramConfig;
+      now?: () => number;
     } = {},
   ) {
     for (const limit of [maxSources, maxQueuedBytes, maxPendingCues]) {
@@ -127,7 +143,8 @@ export class Reactor {
     this.revery = new Revery(hby.db, { rtr: this.router, cues: this.cues });
     this.replyRoutes = new BasicReplyRouteHandler(hby.db, this.revery);
     this.replyRoutes.registerReplyRoutes(this.router);
-    this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery, messagePolicy });
+    const kramer = kram ? new Kramer(hby.db, { config: kram, cues: this.cues, now }) : undefined;
+    this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery, messagePolicy, kramer });
     this.kevery.registerReplyRoutes(this.router);
     this.exchanger = new Exchanger(hby, { cues: this.cues });
     this.local = local;
@@ -162,10 +179,15 @@ export class Reactor {
       if (!Number.isSafeInteger(inputBytes)) throw new RangeError("Ingress input reservation exceeds safe range");
       // The admission lease predates the parser resource, so parser cleanup completes before release.
       yield* resource<void>(function*(hold) {
-        if (self.sources >= self.maxSources) throw new ResourceLimitError("Too many active ingress sources");
+        if (self.sources >= self.maxSources) {
+          throw new ResourceAdmissionError("Too many active ingress sources", "busy");
+        }
         const credit = self.resources.reserve({ streams: 1, bytes: inputBytes });
         if (credit.kind === "refuse") {
-          throw new ResourceLimitError(`Ingress ${credit.resource} admission refused: ${credit.reason}`);
+          throw new ResourceAdmissionError(
+            `Ingress ${credit.resource} admission refused: ${credit.reason}`,
+            credit.reason,
+          );
         }
         self.sources++;
         try {
@@ -229,14 +251,30 @@ export class Reactor {
       return yield* self.turn(function*() {
         let envelope: KeriDispatchEnvelope | undefined;
         let decision: DispatchDecision = undefined;
+        const finish = function*(ready: KeriDispatchEnvelope | undefined, current: DispatchDecision) {
+          if (escrows) yield* self.advanceEscrows();
+          self.replies.capture(self.cues);
+          if (consume) yield* consume(ready, current);
+        };
+        let consumed = false;
         if (frame) self.cues.checkSpace();
         if (frame) {
           envelope = envelopeFromFrame(frame, local);
-          decision = yield* dispatchEnvelope(envelope, self.revery, self.kevery, self.exchanger, self.vdr, mailboxAid);
+          decision = yield* dispatchEnvelope(
+            envelope,
+            self.revery,
+            self.kevery,
+            self.exchanger,
+            self.vdr,
+            mailboxAid,
+            function*(ready, current) {
+              consumed = true;
+              yield* finish(ready, current);
+            },
+          );
         }
-        if (escrows) yield* self.advanceEscrows();
-        self.replies.capture(self.cues);
-        if (consume) yield* consume(envelope, decision);
+        if (!consumed) yield* finish(envelope, decision);
+        // Only the original borrowed input escapes; hydrated ready owners stay inside finish().
         return envelope;
       });
     });
@@ -291,12 +329,41 @@ export class Reactor {
    * and remotely fetched OOBI artifacts.
    */
   ingest(bytes: Uint8Array): void {
-    if (this.ingress.length >= this.maxSources || bytes.byteLength > this.maxQueuedBytes - this.queuedBytes) {
-      throw new ResourceLimitError("Complete-record ingress queue is full");
+    if (bytes.byteLength > this.maxQueuedBytes) {
+      throw new ResourceAdmissionError("Queued ingress exceeds byte limit", "limit");
+    }
+    if (this.ingressRecords >= this.maxSources || bytes.byteLength > this.maxQueuedBytes - this.queuedBytes) {
+      throw new ResourceAdmissionError("Complete-record ingress queue is full", "busy");
+    }
+    const credit = bytes.byteLength ? this.resources.reserve({ bytes: bytes.byteLength }) : undefined;
+    if (credit?.kind === "refuse") {
+      throw new ResourceAdmissionError(
+        `Queued ingress ${credit.resource} admission refused: ${credit.reason}`,
+        credit.reason,
+      );
     }
     // Copy only the admitted extent so a tiny view cannot retain a much larger producer buffer.
-    this.ingress.push(bytes.slice());
+    try {
+      this.ingress.push({ bytes: bytes.slice(), reservation: credit?.reservation });
+    } catch (error) {
+      credit?.reservation.release();
+      throw error;
+    }
     this.queuedBytes += bytes.byteLength;
+    this.ingressRecords++;
+  }
+
+  /** Clear queued owners and invalidate late retries; active processing releases after joined cleanup. */
+  clearIngress(): void {
+    this.ingressGeneration++;
+    for (let record = this.ingress.pull(); record; record = this.ingress.pull()) this.releaseIngress(record);
+  }
+
+  /** Return both shared credit and local capacity when this record's owner finishes. */
+  private releaseIngress(record: IngressRecord): void {
+    this.queuedBytes -= record.bytes.byteLength;
+    this.ingressRecords--;
+    record.reservation?.release();
   }
 
   /** Consume one complete record through the same progressive source and dispatch path as network input. */
@@ -314,19 +381,40 @@ export class Reactor {
    */
   *processOnce(): Operation<void> {
     while (!this.ingress.empty) {
-      const chunk = this.ingress.peekHead()!;
+      const record = this.ingress.pull()!;
+      const generation = this.ingressGeneration;
+      if (yield* this.processIngress(record, generation)) return;
+    }
+  }
+
+  /** Install the owner before work so cancellation joins child cleanup before returning credit. */
+  private processIngress(record: IngressRecord, generation: number): Operation<boolean> {
+    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
+    const self = this;
+    return call(function*() {
+      let retained = false;
+      yield* resource<void>(function*(provide) {
+        try {
+          yield* provide();
+        } finally {
+          if (!retained) self.releaseIngress(record);
+        }
+      });
       try {
-        yield* this.processBytes(chunk);
+        yield* call(() => self.processBytes(record.bytes));
       } catch (error) {
         // Keep the record for retry after cue delivery; already accepted frames replay as duplicates.
-        if (error instanceof DeckFullError) return;
-        this.ingress.pull();
-        this.queuedBytes -= chunk.byteLength;
+        if (error instanceof DeckFullError || (error instanceof ResourceAdmissionError && error.reason === "busy")) {
+          if (generation === self.ingressGeneration) {
+            self.ingress.prepend(record);
+            retained = true;
+          }
+          return true;
+        }
         throw error;
       }
-      this.ingress.pull();
-      this.queuedBytes -= chunk.byteLength;
-    }
+      return false;
+    });
   }
 
   /**
@@ -343,6 +431,7 @@ export class Reactor {
   /** Advance component escrows while the caller already owns the runtime turn. */
   private *advanceEscrows(): Operation<void> {
     try {
+      this.kevery.kramer?.prune();
       this.kevery.processEscrows();
       this.revery.processEscrowReply();
       this.vdr.tvy?.processEscrows?.();

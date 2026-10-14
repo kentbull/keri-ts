@@ -4,7 +4,8 @@ Owner: roadmap **4**. Existing parser/tree/recipient/runtime guards are finite
 but independent. This phase must establish one admission policy across streams,
 habitats, recipients, decryptions, queues, storage copies and pending descendants.
 The ledger, runtime stream/cursor admission and explicit ESSR recipient
-reservations share one policy. Tree, queue and storage integration remain open.
+reservations share one policy. Ordinary trees and queued ingress retain the same
+credit through ownership and cleanup; storage and additional copies remain open.
 See the [reservation contract](../../design-docs/runtime/RESOURCE_POLICY.md).
 Coordinate the native row boundary with [storage phase 5](../db/STORAGE_RECOVERY_PLAN.md).
 
@@ -17,8 +18,8 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
 2. Runtime streams reserve producer/cursor backing before source acquisition;
    ordinary tree allowances now transfer to consumer owners.
 3. Ordinary tree reservations follow completed roots and parent-owned descendants
-   through parser and consumer cleanup. Queue, ESSR staging and additional hydrated
-   copy accounting remain open.
+   through parser and consumer cleanup; queued record copies retain shared credit
+   through retry and joined processing. ESSR staging and extra hydrated copies remain open.
 4. ESSR recipients borrow the exposed runtime policy; measured native-copy
    qualification remains open.
 5. Storage/hydration copy charges, coordinated with phase 5.
