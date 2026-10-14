@@ -13,6 +13,7 @@ export interface PreparedCueEmission {
   readonly emission: CueEmission | undefined;
   /** Irreducible input retention plus admitted output, excluding temporary interpretation credit. */
   readonly retainedBytes: number;
+  readonly resourcePolicy: ResourcePolicy;
   /** Called by the accepting owner after joined cleanup; repeated calls are harmless. */
   release(): void;
 }
@@ -83,6 +84,7 @@ export function prepareCueEmission(
     }
     const owner: PreparedCueEmission = {
       retainedBytes: inputBytes + wireBytes,
+      resourcePolicy: resources,
       get emission() {
         if (!live) throw new Error("Cue emission owner is released");
         return emission;

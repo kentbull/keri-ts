@@ -3,6 +3,7 @@ import { ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
 import {
   didWebsFromArtifactRequest,
   generateDidWebsArtifacts,
+  generateDidWebsJson,
   ValidationError,
 } from "keri-ts/runtime";
 import type { ArtifactFiles } from "../artifact-files.ts";
@@ -62,8 +63,9 @@ function dynamicArtifactResponse(
       didPath: didPathSegments(context.policy.dwsDidPath),
       aid: route.aid,
     });
-    const artifacts = generateDidWebsArtifacts(context.runtime!, { did });
-    const bytes = route.artifact === "did.json" ? artifacts.didJson : artifacts.keriCesr;
+    const bytes = route.artifact === "did.json"
+      ? generateDidWebsJson(context.runtime!, { did }).didJson
+      : generateDidWebsArtifacts(context.runtime!, { did }).keriCesr;
     return new Response(bodyBuffer(bytes), {
       headers: {
         "Content-Type": route.artifact === "did.json" ? "application/did+json" : "application/cesr",

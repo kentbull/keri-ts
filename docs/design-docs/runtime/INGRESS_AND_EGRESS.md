@@ -222,6 +222,12 @@ Other targets then progress while the exact failed wire remains pending.
 Queue retirement reports local owner progress, not durable transfer/acceptance.
 Actual Respondant/HTTP/witness cue adoption remains the next S1–3 unit.
 
+Prepared cue route capture reserves 1 MiB and at most 4096 targets before
+endpoint resolution; its owner clears captured metadata on release. The combined
+configured floor includes live cue/output and temporary interpretation credit.
+Resolution failures release unpublished route credit. This is logical metadata
+admission; native/decoded endpoint rows still require separate qualification.
+
 Completion records must distinguish local transmission drain, HTTP success,
 verified protocol replies and durable application acceptance. An HTTP status or
 socket drain proves only its own boundary. Consumers report protocol decisions;
@@ -446,6 +452,9 @@ The protocol handler and Hono app expose close; default handlers are owned while
 injected handlers remain caller-owned. OS reads are joined, not forcibly interrupted;
 native/filesystem residency still requires qualification. Dynamic generation/export
 still collects histories and remains transport S2 work.
+Dynamic `did.json` uses JSON-only artifact construction with the same local-AID
+validation, schema pinning and document bytes. It never opens CESR replay;
+finite JSON preparation admission and streamed CESR generation/export remain open.
 The Node host terminates a failing post-header body and reports its original error;
 it cannot replace already transmitted 200 headers with a new status.
 Finite JSON documents and receipt proofs retain whole-document semantics with

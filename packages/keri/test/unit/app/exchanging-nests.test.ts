@@ -34,6 +34,8 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import { openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
+import { DeckFullError } from "../../../src/core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { isKramHandoffActive, KramHandoff } from "../../../src/core/kram-handoff.ts";
 import { KramPolicy } from "../../../src/core/kram-policy.ts";
@@ -1356,6 +1358,109 @@ Deno.test("optional runtime KRAM forwards reopened nested evidence without accep
       yield* call(() => discardFrame(nest));
       yield* runtime.close();
       yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("EXN pending cue credit survives joined nested cleanup and rejects changed membership before publication", async () => {
+  await scenario(async (hby, sender, recipient, provider) => {
+    for (const exit of ["cancel", "changed"] as const) {
+      const nest = await child(sender, `pending-${exit}`);
+      await attachEssr(nest);
+      const original = nest.essr!;
+      const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1);
+      const handlers = [{
+        resource: "/fwd",
+        acceptsNests: true,
+        verify() {
+          return { kind: "escrow" as const, reason: "proof unavailable" };
+        },
+        handle() {
+          throw new Error("Pending exchange cannot dispatch");
+        },
+      }];
+      const exchanger = new Exchanger(hby, { resources, cues, handlers });
+      let entered!: () => void, finishRead!: () => void, cleanupEntered!: () => void, release!: () => void;
+      const reading = new Promise<void>((resolve) => entered = resolve);
+      const proceed = new Promise<void>((resolve) => finishRead = resolve);
+      const cleaning = new Promise<void>((resolve) => cleanupEntered = resolve);
+      const cleanup = new Promise<void>((resolve) => release = resolve);
+      let held = 0;
+      nest.essr = {
+        ...original,
+        wire: {
+          size: original.wire.size,
+          /** Hold a real serializer reader so cancellation must join its cleanup. */
+          async *open(signal) {
+            try {
+              held = resources.used.bytes;
+              assertEquals(held > NESTED_COPY_RESERVATION_BYTES, true);
+              entered();
+              await Promise.race([
+                proceed,
+                new Promise<void>((_resolve, reject) => {
+                  signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+                }),
+              ]);
+              yield* original.wire.open(signal);
+            } finally {
+              cleanupEntered();
+              await cleanup;
+              assertEquals(resources.used.bytes >= held, true);
+            }
+          },
+        },
+      };
+      const input = forward(sender, recipient, provider, nest), said = input.serder.said!;
+      const completed = { ...input, nests: [{ ...nest, essr: original }] };
+      const task = run(() => exchanger.processEvent(input));
+      await reading;
+      cues.clear();
+      assertThrows(() => cues.push({ kin: "proof", said: "occupied" }), DeckFullError);
+      assertEquals(hby.db.epse.get([said]), null);
+      assertEquals(hby.db.exchangeMeta.get([said]), null);
+      if (exit === "cancel") {
+        let joined = false;
+        const halting = task.halt().then(() => joined = true);
+        await cleaning;
+        assertEquals(joined, false);
+        assertEquals(resources.used.bytes, held);
+        assertThrows(() => cues.push({ kin: "proof", said: "occupied" }), DeckFullError);
+        release();
+        await halting;
+        assertEquals(resources.used.bytes, 0);
+        assertEquals(hby.db.epse.get([said]), null);
+        assertEquals(hby.db.exchangeMeta.get([said]), null);
+        assertEquals(Array.from(hby.db.enstStaging.sdb.getKeys()).length, 0);
+        assertEquals((await run(() => exchanger.processEvent(completed))).kind, "escrow");
+        const owner = cues.takeOwned()!;
+        assertEquals(owner.cue, { kin: "proof", said });
+        assertExists(hby.db.epse.get([said]));
+        assertEquals(resources.used.bytes > 0, true);
+        owner.release();
+        assertEquals(resources.used.bytes, 0);
+      } else {
+        const otherCues = new CueDeck(resources, 1);
+        const other = new Exchanger(hby, { resources, cues: otherCues, handlers });
+        assertEquals((await run(() => other.processEvent(completed))).kind, "escrow");
+        const retained = hby.db.enst.get([said]), date = hby.db.epsd.get([said])!.dts;
+        const meta = hby.db.exchangeMeta.get([said]);
+        finishRead();
+        await cleaning;
+        release();
+        await assertRejects(() => task, Error, "escrow membership changed");
+        assertEquals(hby.db.enst.get([said]), retained);
+        assertEquals(hby.db.epsd.get([said])!.dts, date);
+        assertEquals(hby.db.exchangeMeta.get([said]), meta);
+        assertEquals(Array.from(hby.db.enstStaging.sdb.getKeys()).length, 0);
+        assertEquals(cues.length, 0);
+        const owner = otherCues.takeOwned()!;
+        assertEquals(owner.cue, { kin: "proof", said });
+        assertEquals(resources.used.bytes > 0, true);
+        owner.release();
+        assertEquals(resources.used.bytes, 0);
+      }
+      await original.discard();
     }
   });
 });

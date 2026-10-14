@@ -24,6 +24,7 @@ import {
 } from "cesr-ts";
 import { call, type Operation, type Provide, resource } from "npm:effection@^3.6.0";
 import { resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
+import { CueDeck, type PreparedCueBatch } from "../core/cue-admission.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { PathedMaterialGroup, TransIdxSigGroup, type TransLastIdxSigGroup } from "../core/dispatch.ts";
@@ -318,6 +319,7 @@ export class Exchanger {
     let nestStage: string | undefined;
     let reopenedNests: CesrFrame[] = [];
     let copyCredit: ResourceReservation | undefined;
+    let pendingCues: PreparedCueBatch | undefined;
     let nests: readonly CesrFrame[] = args.nests ?? [];
     // Resources unwind in reverse order: I/O, payload cleanup, then admission release.
     yield* this.admission();
@@ -326,6 +328,7 @@ export class Exchanger {
       try {
         yield* provide(undefined);
       } finally {
+        pendingCues?.release();
         copyCredit?.release();
       }
     });
@@ -508,6 +511,40 @@ export class Exchanger {
     }
     // An already accepted exchange cannot be downgraded by an incomplete duplicate.
     if (pending && this.complete(said)) return pending;
+    // This exact plan precedes private nested staging and durable evidence/archive publication.
+    const owned = pending && this.cues instanceof CueDeck;
+    const newPending = () => {
+      if (this.complete(said)) return false;
+      if (missingSchema === undefined) return this.hby.db.epse.get([said]) === null;
+      if (!this.hby.db.emse || !this.hby.db.emsd) {
+        throw new ValidationError("Missing-schema storage is unavailable on this readonly layout.");
+      }
+      return this.hby.db.emse.get([said, missingSchema]) === null;
+    };
+    const plannedNew = owned ? newPending() : undefined;
+    if (plannedNew) {
+      const cues: AgentCue[] = [];
+      if (senderQuery) {
+        cues.push({
+          kin: "query",
+          pre: senderQuery.pre,
+          q: {
+            r: "logs",
+            pre: senderQuery.pre,
+            ...(senderQuery.sn === null ? {} : { sn: senderQuery.sn.toString(16) }),
+          },
+        });
+      }
+      if (needsProof) cues.push({ kin: "proof", said });
+      if (missingSchema) cues.push({ kin: "query", q: { r: "schema", said: missingSchema } });
+      if (cues.length) pendingCues = (this.cues as CueDeck).prepare(cues);
+    }
+    /** A different Exchanger may share the store; never apply a stale async membership plan. */
+    const checkPending = () => {
+      if (plannedNew !== undefined && newPending() !== plannedNew) {
+        throw new Error("Exchange escrow membership changed during admission");
+      }
+    };
     if (args.nests?.length) {
       nestStage = crypto.randomUUID();
       yield* abortable((signal) => stageNests(this.hby.db, nestStage!, nests, signal));
@@ -517,6 +554,7 @@ export class Exchanger {
       if (storedReceiverTime(this.hby.db.exchangeMeta.get([said])) !== priorReceipt) {
         throw new Error("Exchange receiver receipt changed during admission");
       }
+      checkPending();
       if (nestStage) publishNests(this.hby.db, said, nestStage);
       if (!pending && approved) {
         this.clearEscrow(said, true);
@@ -530,6 +568,9 @@ export class Exchanger {
         newEscrow = missingSchema === undefined
           ? this.escrowPartialSigned(args.serder, retainedFactors, args.ptds ?? [])
           : this.escrowMissingSchema(args.serder, missingSchema, retainedFactors, args.ptds ?? []);
+        if (plannedNew !== undefined && newEscrow !== plannedNew) {
+          throw new Error("Exchange escrow insertion did not match admission");
+        }
       }
       this.hby.db.exchangeMeta.pin([said], {
         mailboxAid,
@@ -547,6 +588,7 @@ export class Exchanger {
     };
     let stored = existing ?? essr;
     if (essr && !existing) {
+      checkPending();
       const wire = essr;
       // KERIpy-origin rows already have accepted/escrow ownership; failed import must preserve them.
       if (!retained) {
@@ -579,7 +621,8 @@ export class Exchanger {
       });
     }
     if (pending) {
-      if (newEscrow) {
+      if (newEscrow && pendingCues) pendingCues.publish();
+      else if (newEscrow && !owned) {
         if (senderQuery) this.cueMissingStates([senderQuery]);
         if (needsProof) this.cues.push({ kin: "proof", said });
         if (missingSchema) this.cues.push({ kin: "query", q: { r: "schema", said: missingSchema } });

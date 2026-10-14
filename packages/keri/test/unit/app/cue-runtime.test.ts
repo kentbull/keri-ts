@@ -4,6 +4,7 @@ import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "j
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { prepareCueEmission, type PreparedCueEmission } from "../../../src/app/cue-preparation.ts";
+import { prepareCueRoute } from "../../../src/app/cue-route.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
@@ -217,6 +218,18 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
       } finally {
         occupied.reservation.release();
       }
+      const floorPolicy = new ResourcePolicy({ bytes: 33 * 1024 ** 2 }), floorDeck = new Deck<AgentCue>([cue]);
+      let selected = 0;
+      const floorError = assertThrows(() =>
+        prepareCueEmission(hab, floorDeck, floorPolicy, (owner) => {
+          prepareCueRoute(floorPolicy, owner, () => {
+            selected++;
+            throw fault;
+          });
+          return undefined;
+        }), ResourceAdmissionError);
+      assertEquals([floorError.reason, selected, floorPolicy.used.bytes], ["limit", 0, 0]);
+      assertStrictEquals(floorDeck.peekHead(), cue);
       for (const deck of [ordinary, new CueDeck(resources, 1)]) {
         if (deck instanceof CueDeck) {
           deck.push(cue);
@@ -253,6 +266,59 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
         assertEquals(deck.length, 0);
         assertEquals(owner.emission?.kind, expected.kind);
         assertEquals(resources.used.bytes >= 8 * 1024 ** 2, true);
+        const baseline = resources.used.bytes;
+        let captures = 0;
+        const resolve = () => {
+          captures++;
+          return {
+            sender: hab.pre,
+            recipient: hab.pre,
+            topic: "/reply",
+            kind: "direct" as const,
+            bodyMode: "header" as const,
+            targets: [{ eid: hab.pre, url: "https://peer.test/" }],
+          };
+        };
+        assertThrows(() => prepareCueRoute(new ResourcePolicy(), owner, resolve), RangeError, "exact policy");
+        const blocked = resources.reserve({ bytes: resources.limits.bytes - baseline });
+        if (blocked.kind !== "reserve") throw new Error("Expected remaining credit");
+        assertEquals(
+          assertThrows(() => prepareCueRoute(resources, owner, resolve), ResourceAdmissionError).reason,
+          "busy",
+        );
+        assertEquals(captures, 0, "refusal precedes endpoint acquisition");
+        blocked.reservation.release();
+        assertStrictEquals(
+          assertThrows(() =>
+            prepareCueRoute(resources, owner, () => {
+              throw fault;
+            })
+          ),
+          fault,
+        );
+        assertThrows(
+          () =>
+            prepareCueRoute(
+              resources,
+              owner,
+              () => ({
+                ...resolve(),
+                targets: Array.from({ length: 4097 }, () => ({ eid: hab.pre, url: "https://peer.test/" })),
+              }),
+            ),
+          ResourceLimitError,
+        );
+        assertThrows(
+          () => prepareCueRoute(resources, owner, () => ({ ...resolve(), topic: "x".repeat(1024 ** 2) })),
+          ResourceLimitError,
+        );
+        assertEquals(resources.used.bytes, baseline);
+        const captured = prepareCueRoute(resources, owner, resolve);
+        assertEquals([captured.route.targets.length, resources.used.bytes - baseline], [1, 1024 ** 2]);
+        captured.release();
+        captured.release();
+        assertEquals(resources.used.bytes, baseline);
+        assertThrows(() => captured.route, Error, "released");
         if (!(deck instanceof CueDeck)) {
           deck.push(cue);
           deck.pull();
