@@ -1,5 +1,6 @@
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
+import * as lmdbBinding from "npm:lmdb@3.5.3";
 import { b, bytesEqual, ResourceAdmissionError, ResourceLimitError, t } from "../../../../../cesr/mod.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../../../../src/core/errors.ts";
 import { openLMDB } from "../../../../src/db/core/lmdber.ts";
@@ -61,6 +62,7 @@ Deno.test("db/core lmdber bounded rows admit before copy and retain read or writ
       _returnLargeBuffer(): Uint8Array;
       useReadTransaction(): { address: number; done(): void };
       compression: unknown;
+      useVersions?: boolean;
     };
     const large = new Uint8Array(16 * 1024 ** 2 + 1).fill(0xff);
     lmdber.setVal(plain, b("large"), large);
@@ -110,6 +112,20 @@ Deno.test("db/core lmdber bounded rows admit before copy and retain read or writ
       native.compression = true;
       assertThrows(() => lmdber.getValBounded(plain, b("small"), 4), DatabaseOperationError, "binding");
       native.compression = compression;
+      native.useVersions = true;
+      assertThrows(() => lmdber.getValBounded(plain, b("small"), 4), DatabaseOperationError, "binding");
+      native.useVersions = false;
+      const version = (lmdbBinding as unknown as { version: { nodeCompiledVersion?: number } }).version;
+      const compiled = version.nodeCompiledVersion;
+      try {
+        for (const unsupported of [20, -1, NaN]) {
+          version.nodeCompiledVersion = unsupported;
+          assertThrows(() => lmdber.getValBounded(plain, b("small"), 4), DatabaseOperationError, "binding");
+        }
+      } finally {
+        if (compiled === undefined) delete version.nodeCompiledVersion;
+        else version.nodeCompiledVersion = compiled;
+      }
       const fast = native.getBinaryFast;
       native.getBinaryFast = function(key, options) {
         const result = fast.call(this, key, options);

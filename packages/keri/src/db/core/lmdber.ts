@@ -3,6 +3,7 @@
  */
 
 import { b, bytesEqual, bytesHex, ResourceLimitError, t, toBytes } from "cesr-ts";
+import { versions } from "node:process";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { Database, Key, open, RootDatabase } from "npm:lmdb@3.5.3";
 import * as lmdbBinding from "npm:lmdb@3.5.3";
@@ -660,7 +661,8 @@ export class LMDBer {
 
   /**
    * Read one owned row only after its byte ceiling admits materialization.
-   * Pin 3.5.3 NAPI/compression-off hooks; pre-existing native scratch is separate.
+   * Pin 3.5.3 NAPI or matching native Node V8/compression-off hooks.
+   * Fast V8 reads may create mapped views; native scratch/residency are separate.
    * Borrow an active writer, otherwise hold one explicit snapshot through both reads.
    * A synchronous beforeCopy callback may reserve credit after extent admission; it must not mutate rows.
    * The caller owns that credit's lifetime; this ceiling does not bound other read APIs.
@@ -674,14 +676,28 @@ export class LMDBer {
     const env = this.requireEnv();
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Invalid LMDB row byte ceiling");
     const native = db as unknown as NativeRowDb;
-    const version = (lmdbBinding as unknown as { version?: { nodeCompiledVersion?: number } }).version;
+    const binding = lmdbBinding as unknown as {
+      version?: { nodeCompiledVersion?: number };
+      v8AccelerationEnabled?: boolean;
+    };
+    const version = binding.version;
+    const runtime = versions as typeof versions & { deno?: string; bun?: string };
+    const matchingNodeV8 = version && Number.isSafeInteger(version.nodeCompiledVersion)
+      && version.nodeCompiledVersion! >= 20
+      && version.nodeCompiledVersion === Number(runtime.node?.split(".")[0])
+      && Boolean(runtime.v8) && !runtime.deno && !runtime.bun
+      && binding.v8AccelerationEnabled === true;
     if (
-      !version || "nodeCompiledVersion" in version || native.encoding !== "binary"
+      !version || ("nodeCompiledVersion" in version && !matchingNodeV8) || native.encoding !== "binary"
       || native.compression || native.useVersions
       || native.env !== (env as unknown as NativeRowDb).env
       || typeof native.getBinaryFast !== "function" || typeof native.getBinary !== "function"
       || typeof native._returnLargeBuffer !== "function" || typeof native.useReadTransaction !== "function"
-    ) throw new DatabaseOperationError("Unsupported LMDB bounded-row binding; require lmdb 3.5.3 NAPI binary mode");
+    ) {
+      throw new DatabaseOperationError(
+        "Unsupported LMDB bounded-row binding; require lmdb 3.5.3 NAPI or matching native Node V8 binary mode",
+      );
+    }
     const writer = native.env.writeTxn ?? null;
     const transaction = writer ? undefined : native.useReadTransaction();
     try {

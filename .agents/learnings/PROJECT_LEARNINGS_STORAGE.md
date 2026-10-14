@@ -12,9 +12,12 @@ not hide a later fully witnessed tuple anchor.
 
 Use the repository-pinned LMDB release (runtime source currently 3.5.3), V1 data
 format for KERIpy interop, and the actual native rebuild/preflight path.
-Rebuild with official `ENABLE_V8_FUNCTIONS=false`: Node-header V8 imports can
-terminate Deno when a large row first reaches the mapped-buffer path.
-Qualify the actual addon under both runtimes, including rows above 16 MiB.
+Deno rebuilds with official `ENABLE_V8_FUNCTIONS=false`: Node-header V8 imports
+can terminate Deno on the large-row mapped-buffer path. Native Node may use the
+pinned official V8 build with matching compiled/runtime major and enabled V8
+acceleration. Preflight may create a mapped view, never an owned row copy before
+admission; mapping residency/metadata and fixed scratch remain separate overhead.
+Qualify actual addons under both runtimes, including rows above 16 MiB.
 TEL capture metadata and fixed pair composition own no event bodies or cursors;
 consumer readers close each cursor before clone/yield, including reopened stores.
 TEL replay preflights body rows before copies and reads native dupsort signatures
@@ -104,7 +107,7 @@ frame credit stays through scoped callback disposal without wrapping FilePayload
 
 ## Open boundary
 
-Nested wire reads use the pinned NAPI size preflight before owned row copies;
+Nested wire reads use the pinned native size preflight before owned row copies;
 active writers stay borrowed and ordinary reads share one explicit snapshot.
 Exchanger borrows runtime credit before nested row/serialization copies and holds
 it through joined admission/replay cleanup; reopened parser credits stay on actual
