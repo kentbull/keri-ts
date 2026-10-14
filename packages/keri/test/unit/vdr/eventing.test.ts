@@ -7,6 +7,8 @@ import {
   NumDex,
   parseBytes,
   Prefixer,
+  ResourceAdmissionError,
+  ResourcePolicy,
   SerderACDC,
   TraitDex,
   Vrsn_1_0,
@@ -15,14 +17,21 @@ import {
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
+import { DeckFullError } from "../../../src/core/deck.ts";
+import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { backerIssue, incept as inceptRegistry, issue, revoke } from "../../../src/core/protocol-vdr-eventing.ts";
+import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
+import { RegistryStateReceiver } from "../../../src/vdr/registry-tsn.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
+
+import { expectKind } from "../../private-access.ts";
 
 const SCHEMA_SAID = "Eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -547,6 +556,125 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
   });
 });
 
+Deno.test("registry TSN admits prospective state and dependency cues before proof or Broker effects", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const tvy = new Tevery({ db: hby.db, reger });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const state = tvy.tevers.get(vcp.pre!)!.state().asDict();
+      const est = hby.db.getEvtSerder(issuer.pre, hby.db.kels.getLast(issuer.pre, 0)!)!;
+      const stamp = makeNowIso8601().replace(/0\+00:00$/, "1+00:00");
+      const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1);
+      const rvy = new Revery(hby.db, { cues }), receiver = new RegistryStateReceiver(tvy, rvy);
+      const args = (stamp: string) => {
+        const serder = reply(`/tsn/registry/${issuer.pre}`, state, { pre: issuer.pre, stamp });
+        return {
+          serder,
+          diger: new Diger({ qb64: serder.said! }),
+          route: serder.route!,
+          aid: issuer.pre,
+          cigars: [],
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: issuer.pre }),
+              est.sner!,
+              new Diger({ qb64: est.said! }),
+              issuer.sign(serder.raw, true),
+            ),
+          ],
+        };
+      };
+      const prior = args(stamp), incoming = args(stamp.replace(/1\+00:00$/, "2+00:00"));
+      assertEquals(receiver.processReply(prior).kind, "accept");
+      cues.clear();
+      const unchanged = () => {
+        assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, prior.diger.qb64);
+        assertEquals(hby.db.rpys.get([incoming.diger.qb64]), null);
+        assertEquals(hby.db.sdts.get([incoming.diger.qb64]), null);
+        assertEquals([...hby.db.ssgs.getTopItemIter([incoming.diger.qb64], { topive: true })], []);
+        assertEquals(reger.txnsb.serderdb.get([incoming.diger.qb64]), null);
+        assertEquals(reger.txnsb.daterdb.get([incoming.diger.qb64]), null);
+        assertEquals(reger.txnsb.escrowdb.cnt(), 0);
+        assertExists(hby.db.rpys.get([prior.diger.qb64]));
+        assertEquals(cues.length, 0);
+      };
+      const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertEquals(assertThrows(() => receiver.processReply(incoming), ResourceAdmissionError).reason, "busy");
+      occupied.reservation.release();
+      unchanged();
+      const limitedRvy = new Revery(hby.db, { cues: new CueDeck(new ResourcePolicy({ bytes: 1 })) });
+      assertEquals(
+        assertThrows(() => new RegistryStateReceiver(tvy, limitedRvy).processReply(incoming), ResourceAdmissionError)
+          .reason,
+        "limit",
+      );
+      unchanged();
+      const slot = cues.prepare([{ kin: "proof", said: "occupied" }]);
+      const held = resources.used.bytes;
+      assertThrows(() => receiver.processReply(incoming), DeckFullError);
+      assertEquals(resources.used.bytes, held);
+      slot.release();
+      unchanged();
+      assertEquals(receiver.processReply(incoming).kind, "accept");
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, incoming.diger.qb64);
+      assertEquals(hby.db.rpys.get([prior.diger.qb64]), null);
+      const owner = cues.takeOwned()!;
+      assertEquals(owner.cue.kin, "txnStateSaved");
+      const retained = resources.used.bytes;
+      cues.clear();
+      assertEquals(resources.used.bytes, retained);
+      owner.release();
+      assertEquals(resources.used.bytes, 0);
+
+      const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const pendingReger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+      try {
+        const pendingResources = new ResourcePolicy(), pendingCues = new CueDeck(pendingResources, 1);
+        const pending = new RegistryStateReceiver(
+          new Tevery({ db: target.db, reger: pendingReger }),
+          new Revery(target.db, { cues: pendingCues }),
+        );
+        const full = expectKind(pendingResources.reserve({ bytes: pendingResources.limits.bytes }), "reserve");
+        assertThrows(() => pending.processReply(incoming), ResourceAdmissionError);
+        full.reservation.release();
+        assertEquals(pendingReger.txnsb.escrowdb.cnt(), 0);
+        assertEquals(pendingReger.txnsb.serderdb.get([incoming.diger.qb64]), null);
+        assertEquals(pendingReger.txnsb.daterdb.get([incoming.diger.qb64]), null);
+        assertEquals(expectKind(pending.processReply(incoming), "unverified").context?.escrow, "registry-mae");
+        assertEquals(pendingCues.toArray(), [{
+          kin: "query",
+          pre: issuer.pre,
+          src: issuer.pre,
+          route: "logs",
+          query: { i: issuer.pre },
+        }]);
+        pendingCues.clear();
+        pendingCues.capacity = 0;
+        const blocked = expectKind(pendingResources.reserve({ bytes: pendingResources.limits.bytes }), "reserve");
+        assertEquals(
+          expectKind(pending.processReply(incoming), "unverified").context?.escrow,
+          "registry-mae",
+          "existing bucket membership acquires no second query credit",
+        );
+        blocked.reservation.release();
+        assertEquals(pendingReger.txnsb.escrowdb.cnt(), 1);
+        assertEquals(pendingCues.length, 0);
+        assertEquals(pendingResources.used.bytes, 0);
+      } finally {
+        yield* pendingReger.close(true);
+        yield* target.close(true);
+      }
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("registry TSN missing issuer and TEL retry through the normal runtime turn", async () => {
   await run(function*() {
     const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -588,6 +716,33 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
       yield* turn();
       assertEquals(queries[0].i, issuer.pre);
       for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
+      const resources = new ResourcePolicy();
+      const ownedRvy = new Revery(hby.db, { cues: new CueDeck(resources, 1) });
+      const ownedReceiver = new RegistryStateReceiver(runtime.vdr.tvy! as Tevery, ownedRvy);
+      const est = sender.db.getEvtSerder(issuer.pre, sender.db.kels.getLast(issuer.pre, 0)!)!;
+      const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertThrows(() =>
+        ownedReceiver.processReply({
+          serder,
+          diger: new Diger({ qb64: serder.said! }),
+          route: serder.route!,
+          aid: issuer.pre,
+          cigars: [],
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: issuer.pre }),
+              est.sner!,
+              new Diger({ qb64: est.said! }),
+              issuer.sign(serder.raw, true),
+            ),
+          ],
+        }), ResourceAdmissionError);
+      occupied.reservation.release();
+      assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 1);
+      assertEquals(reger.txnsb.escrowdb.get(["registry-ooo", vcp.pre!, issuer.pre]).length, 0);
+      assertExists(reger.txnsb.serderdb.get([serder.said!]));
+      assertEquals(hby.db.rpys.get([serder.said!]), null, "refused TEL query cannot publish the incoming proof");
+      assertEquals(resources.used.bytes, 0);
       yield* turn();
       assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 0);
       assertEquals(reger.txnsb.escrowdb.get(["registry-ooo", vcp.pre!, issuer.pre]).length, 1);
