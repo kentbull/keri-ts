@@ -33,6 +33,8 @@ Missing-schema EXNs retain the same evidence ownership through emse/emsd and
 archive recovery. One absolute deadline spans sequential schema dependencies;
 TMSC opener plus lifetime differs from the receiver receipt. Equality is eligible.
 Remote dependency outcomes are typed; storage/corruption failures propagate.
+ESSR syntax failures reject; unexpected asynchronous payload read/hash failures
+propagate before retry can drop pending proofs or archive ownership.
 Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 
 ## Route ownership

@@ -4,6 +4,7 @@ import {
   type CesrFrame,
   Cigar,
   Dater,
+  DeserializeError,
   Diger,
   essrChunks,
   type EssrPayload,
@@ -20,7 +21,9 @@ import {
   type SealSource,
   Seqner,
   type SerderKERI,
+  ShortageError,
   type Siger,
+  UnknownCodeError,
 } from "cesr-ts";
 import { call, type Operation, type Provide, resource } from "npm:effection@^3.6.0";
 import { resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
@@ -58,6 +61,11 @@ import type { Hab, Habery } from "./habbing.ts";
 
 const textDecoder = new TextDecoder();
 const EXCHANGE_ESCROW_TIMEOUT_MS = 10_000;
+
+/** CESR syntax failures identify malformed evidence; I/O, limits, and hashing failures do not. */
+function malformedEssr(error: unknown): boolean {
+  return error instanceof DeserializeError || error instanceof ShortageError || error instanceof UnknownCodeError;
+}
 
 /** Private persisted receipt corruption is an invariant failure, never a remote refusal. */
 function storedReceiverTime(record: { receiverTime?: string } | null): string | undefined {
@@ -424,6 +432,7 @@ export class Exchanger {
       try {
         diger = new Diger({ qb64: args.serder.a });
       } catch (error) {
+        if (!malformedEssr(error)) throw error;
         return reject(`Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`);
       }
       try {
@@ -451,6 +460,7 @@ export class Exchanger {
           }
         }
       } catch (error) {
+        if (!malformedEssr(error)) throw error;
         return reject(`Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`);
       }
     }

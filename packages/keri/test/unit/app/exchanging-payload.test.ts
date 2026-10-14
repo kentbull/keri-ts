@@ -20,7 +20,7 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";
 import { EssrRecipient } from "../../../src/app/essr.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
@@ -151,6 +151,49 @@ Deno.test("exchange escrow reopens owned wire and retains mailbox provenance on 
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertExists(hby.db.exns.get([serder.said!]));
     assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw, 6), b("abcxyz"));
+  });
+});
+
+Deno.test("exchange escrow retry preserves evidence when its stored payload reader fails", async () => {
+  await scenario(async (hby, sender) => {
+    const serder = message(sender);
+    const said = serder.said!;
+    const incoming = await payload(hby);
+    const exchanger = new Exchanger(hby);
+    assertEquals((await run(() => exchanger.processEvent({ serder, essr: incoming }))).kind, "escrow");
+    await incoming.discard();
+    const group = signatures(sender, serder)[0];
+    for (const siger of group.sigers) hby.db.esigs.add([said, group.pre, group.snh, group.said], siger);
+    const failure = new Deno.errors.PermissionDenied("stored ESSR reader cannot open its file");
+    const getEssr = hby.db.getEssr;
+    hby.db.getEssr = async (said, signal, limits) => {
+      const stored = await getEssr.call(hby.db, said, signal, limits);
+      if (!stored) return null;
+      return {
+        ...stored,
+        raw: {
+          size: stored.raw.size,
+          /** Fail at the lazy read boundary after durable metadata was successfully opened. */
+          async *open() {
+            throw failure;
+          },
+        },
+      };
+    };
+    try {
+      assertStrictEquals(await assertRejects(() => run(() => exchanger.processEscrows())), failure);
+      assertExists(hby.db.epse.get([said]));
+      assertEquals(hby.db.esigs.get([said, group.pre, group.snh, group.said]).length, group.sigers.length);
+      assertExists(hby.db.exchangeMeta.get([said]));
+      assertExists(await (await hby.db.openPayloads()).get(`essr/${said}`));
+      assertEquals(exchanger.complete(said), false);
+    } finally {
+      hby.db.getEssr = getEssr;
+    }
+    await run(() => exchanger.processEscrows());
+    assertEquals(exchanger.complete(said), true);
+    assertEquals(hby.db.epse.get([said]), null);
+    assertEquals(await collectPayload((await hby.db.getEssr(said))!.raw, 6), b("abcxyz"));
   });
 });
 
