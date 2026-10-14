@@ -317,3 +317,7 @@ reserve finite queue/copy credit before construction and notice effects; publish
 transfers that credit, collapse/expiry/clear/close release it. The borrowed queue
 view is readonly and entries are immutable snapshots. Runtime/CLI close only their
 created producers; injected notification services share the exact Baser policy.
+
+Runtime output must be acquired after its database owners: Effection tears sibling
+resources down in reverse order. Explicit close alone cannot qualify cancellation
+or constructor-failure cleanup. Keep injected stores borrowed.
