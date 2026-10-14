@@ -39,11 +39,11 @@ import { MailboxDirector, type MailboxStreamLimits } from "./mailbox-director.ts
 import { openMailboxerForHabery } from "./mailboxing.ts";
 import { Notifier, openNoterForHabery } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
-import { QueryDeliveries } from "./query-transport.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { type AcdcRuntimeServices, Reactor, type VdrRuntimeServices } from "./reactor.ts";
 import { type ReplyStreamLimits, ReplyStreams } from "./reply-streams.ts";
 import { Respondant } from "./respondant.ts";
+import { RuntimeDeliveries } from "./runtime-deliveries.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
@@ -98,7 +98,7 @@ export interface AgentRuntime {
   /** Live lazy HTTP replies, closed before their database owners. */
   replyStreams: ReplyStreams;
   /** Bounded query deliveries drained outside guarded cue handling. */
-  queryDeliveries: QueryDeliveries;
+  deliveries: RuntimeDeliveries;
   vdr: VdrRuntimeServices;
   /** V2 registry services, separately owned from the legacy VDR environment. */
   acdc: AcdcRuntimeServices;
@@ -182,8 +182,8 @@ export function* createAgentRuntime(
       streams.close();
     }
   });
-  const queryDeliveries = yield* resource<QueryDeliveries>(function*(provide) {
-    const deliveries = new QueryDeliveries(resources);
+  const deliveries = yield* resource<RuntimeDeliveries>(function*(provide) {
+    const deliveries = new RuntimeDeliveries(resources);
     try {
       yield* provide(deliveries);
     } finally {
@@ -326,7 +326,7 @@ export function* createAgentRuntime(
     delegating,
     querying,
     replyStreams,
-    queryDeliveries,
+    deliveries,
     vdr,
     acdc,
     services,
@@ -335,7 +335,7 @@ export function* createAgentRuntime(
       const failures: unknown[] = [];
       const cleanup = [
         function*() {
-          yield* queryDeliveries.close();
+          yield* deliveries.close();
         },
         function*() {
           yield* call(() => Promise.resolve(replyStreams.close()));
@@ -543,7 +543,7 @@ export function* processRuntimeTurn(
   yield* runtime.delegating.processAllOnce();
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
-  yield* runtime.queryDeliveries.process(runtime);
+  yield* runtime.deliveries.process(runtime);
 }
 
 /**
@@ -569,7 +569,7 @@ export function runtimePendingState(
     delegationPending: runtime.hby.db.dpwe.cnt() > 0
       || runtime.hby.db.dune.cnt() > 0
       || runtime.hby.db.dpub.cnt() > 0,
-    queriesPending: runtime.querying.hasPendingWork() || runtime.queryDeliveries.hasPending,
+    queriesPending: runtime.querying.hasPendingWork() || runtime.deliveries.hasPending,
   };
 }
 
@@ -704,7 +704,7 @@ export function* runAgentRuntime(
   const tasks = [
     yield* spawn(function*() {
       while (true) {
-        yield* runtime.queryDeliveries.process(runtime);
+        yield* runtime.deliveries.process(runtime);
         yield* runtimeTurn();
       }
     }),

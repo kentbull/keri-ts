@@ -72,7 +72,9 @@ empty sources close before returning null and runtime close drops primed bytes.
 OOBI serving captures bounded endpoint/delegation descriptors only after admission,
 closes metadata cursors before hydration, and borrows Hab/store through cleanup.
 Fresh preparation caps are conservative; native metadata/proof allocation remains open.
-Query producers run only after preparation/request admission. Queued requests retain
+RuntimeDeliveries owns the existing finite query queue; retained cue adoption
+uses this same owner rather than adding a parallel queue. Query producers run
+only after preparation/request admission. Queued requests retain
 credit through failure/retry; shutdown releases an active head after transport cleanup joins.
 Runtime HTTP services must carry the runtime's exact policy. Frame requests acquire
 stream/copy credit before serialization or fetch and release it after joined cleanup;
