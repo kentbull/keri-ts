@@ -124,15 +124,15 @@ The [stack adoption inventory][transport-plan] marks remaining callers explicitl
 
 Two engines own transport work: CESR HTTP request/response scopes and an owned
 TCP connection with directional I/O. Small Effection operations/resources expose
-finite-message and source inputs. This mapping defines responsibilities; the TCP
-finite/source writers exist; complete caller integration remains planned in S1–9.
+finite-message and source inputs. TCP send adapters share one writer; connection-owned
+reply parsing remains planned in S6, S8–9; stack-wide caller adoption remains S1–9.
 
-| KERIpy responsibility | TypeScript entry / shared engine                    |
-| --------------------- | --------------------------------------------------- |
-| HTTPMessenger         | `requestFrame`; finite bytes via `postCesr`         |
-| HTTPStreamMessenger   | `postCesr` source and scoped response consumer      |
-| TCPMessenger          | `sendCesrTcp`; parsed-frame adapter remains planned |
-| TCPStreamMessenger    | `streamCesrTcp` abortable source on the same engine |
+| KERIpy responsibility | TypeScript entry / shared engine                        |
+| --------------------- | ------------------------------------------------------- |
+| HTTPMessenger         | `requestFrame`; finite bytes via `postCesr`             |
+| HTTPStreamMessenger   | `postCesr` source and scoped response consumer          |
+| TCPMessenger          | `sendCesrTcp` / `sendCesrTcpFrame` on one owned writer  |
+| TCPStreamMessenger    | `streamCesrTcp`; factory borrows bounded `Payload.open` |
 
 Do not add aliases or inheritance merely to mirror names. Reuse existing byte
 sources, serializers and response readers. A parsed frame bypasses byte parsing;
@@ -242,8 +242,14 @@ Connection timeout is separate from the absolute, non-refreshing end/close deadl
 which starts after source EOF. Active aggregate transfers have no total-duration cap.
 The default waits for peer close after local output end, preserving finite witness policy.
 The result describes local transmission, never authenticated remote acceptance.
-Parsed-frame pre-serializer admission and explicit concurrent reply parsing remain
-successors; no parsed input is serialized and reparsed by these operations.
+`sendCesrTcpFrame` borrows an already admitted tree directly through `framePayload`,
+without reparsing, adopting or discarding any frame/ESSR owner. HTTP and TCP share
+ordinary metadata counting: TCP reserves eight metadata-size copy allowances plus
+2 MiB for bounded serializer readers/output before constructing the serializer,
+in addition to its two transport chunk allowances. Serializer output is re-chunked
+under the configured backing ceiling. The caller retains its original owners until
+joined completion. This conservative policy is not an RSS bound. Explicit concurrent
+reply parsing and socket-to-application integration remain successors.
 Receipt endpoints intentionally return one finite proof: collection admits at
 most 1 MiB, failed-response diagnostics at most 16 KiB, and parsing requires one
 complete frame. Cancellation joins the body reader and releases its lock.
