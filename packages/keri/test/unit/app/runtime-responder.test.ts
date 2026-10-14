@@ -8,6 +8,7 @@ import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Respondant } from "../../../src/app/respondant.ts";
+import { drainWitnessCues, processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
