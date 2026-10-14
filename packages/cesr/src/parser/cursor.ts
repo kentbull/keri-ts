@@ -48,6 +48,10 @@ class Input {
   /** The one outstanding source pull and its cancellable local waiter. */
   private pending?: Promise<IteratorResult<Uint8Array>>;
   private rejectRead?: (reason: unknown) => void;
+  /** One scheduling timer per input; cancellation wakes and clears it synchronously. */
+  private resumeWork?: () => void;
+  private workBytes = 0;
+  private workItems = 0;
   /** This input alone owns source advancement and cleanup. */
   private readonly iterator: AsyncIterator<Uint8Array>;
   /** Caller cancellation is observed once for this input's lifetime. */
@@ -119,6 +123,9 @@ class Input {
         this.rejectRead = undefined;
         this.pending = undefined;
         this.check();
+        // Empty producer chunks consume work even without retained bytes.
+        const checkpoint = this.checkpoint();
+        if (checkpoint) await checkpoint;
         if (result.done) {
           this.eof = true;
           break;
@@ -163,7 +170,8 @@ class Input {
   }
 
   /** Advance once and unlink each fully consumed allocation immediately. */
-  consume(size: number): void {
+  consume(size: number): Promise<void> | undefined {
+    const start = this.offset;
     this.offset += size;
     this.available -= size;
     while (size > 0) {
@@ -178,6 +186,26 @@ class Input {
         if (!this.head) this.tail = undefined;
       }
     }
+    return this.checkpoint(this.offset - start);
+  }
+
+  /** Yield a host turn after 64 KiB or 4,096 pull/consume operations, shared by all scopes. */
+  private checkpoint(bytes = 0): Promise<void> | undefined {
+    this.workBytes += bytes;
+    this.workItems++;
+    if (this.workBytes < 65536 && this.workItems < 4096) return;
+    this.workBytes = this.workItems = 0;
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        this.resumeWork = undefined;
+        resolve();
+      }, 0);
+      this.resumeWork = () => {
+        clearTimeout(timer);
+        this.resumeWork = undefined;
+        resolve();
+      };
+    }).then(() => this.check());
   }
 
   /** Release queued allocations, wake the current read, and close upstream once. */
@@ -186,6 +214,7 @@ class Input {
     this.closed = true;
     this.failure = reason;
     this.signal?.removeEventListener("abort", this.abort);
+    this.resumeWork?.();
     this.head = this.tail = undefined;
     this.available = this.retained = 0;
     // Wake blocked readers before attempting upstream cleanup, which may itself be blocked.
@@ -287,7 +316,10 @@ export class Cursor {
       this.extent(size);
       if (!await this.input.ensure(size)) throw new ShortageError(size, this.input.available, this.offset);
       const bytes = this.input.copy(size);
-      if (consume) this.input.consume(size);
+      if (consume) {
+        const checkpoint = this.input.consume(size);
+        if (checkpoint) await checkpoint;
+      }
       return bytes;
     });
   }
@@ -306,7 +338,8 @@ export class Cursor {
       const size = Math.min(max, this.remaining, segment.bytes.length - segment.start);
       this.extent(size);
       const bytes = segment.bytes.subarray(segment.start, segment.start + size);
-      this.input.consume(size);
+      const checkpoint = this.input.consume(size);
+      if (checkpoint) await checkpoint;
       return bytes;
     });
   }

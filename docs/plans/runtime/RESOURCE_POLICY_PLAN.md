@@ -25,7 +25,9 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
 4. ESSR recipients borrow the exposed runtime policy; measured native-copy
    qualification remains open.
 5. Storage/hydration copy charges, coordinated with phase 5.
-6. Pending metadata, handles/waiters and consumed-work checkpoints.
+6. Parser input checkpoints yield after 64 KiB or 4,096 pull/consume operations,
+   including empty producers, with one cancellation-owned timer. Pending
+   metadata/handles and bounded escrow scan work remain separately owned.
 
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.
 Split further before publication if a complete boundary needs more. Qualification

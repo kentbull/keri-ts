@@ -486,6 +486,11 @@ export class OnSuber<T = string> extends OnSuberBase<T> {}
  * bytes, so raw message bodies must use this adapter instead.
  */
 export class BytesSuber extends Suber<Uint8Array> {
+  /** Read bounded raw bytes with this table's key encoding and optional pre-copy admission. */
+  getBounded(keys: Keys, maxBytes: number, beforeCopy?: (bytes: number) => void): Uint8Array | null {
+    return this._des(this.db.getValBounded(this.sdb, this._tokey(keys), maxBytes, beforeCopy));
+  }
+
   protected override _ser(val: Uint8Array): Uint8Array {
     return asUint8Array(val);
   }

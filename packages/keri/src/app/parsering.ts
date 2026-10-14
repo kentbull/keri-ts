@@ -104,8 +104,8 @@ export interface AcdcDispatchArgs {
 
 export interface TeveryLike {
   processEvent?(args: TelDispatchArgs): void;
-  /** Optional owner for v2 tels/tsn queries; the built-in Tevery does not yet implement it. */
-  processQuery?(args: QueryEnvelope): void;
+  /** TEL query owner; built-in replay is supported while TSN remains explicitly refused. */
+  processQuery?(args: QueryEnvelope): void | MessageDropDecision;
   processEscrows?(): void;
 }
 
@@ -127,6 +127,7 @@ export interface MessageDropDecision {
     | "senderNotAllowed"
     | "missingAuthentication"
     | "unsupportedRoute"
+    | "invalidQuery"
     | "missingProcessor"
     | "referenceStub";
 }
@@ -188,6 +189,9 @@ export function* dispatchEnvelope(
         tsgs: envelope.tsgs,
       });
     case Ilks.qry:
+      if (["tels", "tsn"].includes(serder.route ?? "")) {
+        return dispatchTelQuery(queryEnvelopeFromDispatch(envelope), vdr);
+      }
       kevery.processQuery(queryEnvelopeFromDispatch(envelope));
       break;
     case Ilks.rct:
@@ -287,8 +291,7 @@ function* dispatchReadyMessage(
       if (!query.source && !query.cigars?.length) return { kind: "drop", reason: "missingAuthentication" };
       if (["logs", "ksn", "mbx"].includes(serder.route ?? "")) return kevery.processQuery(query);
       if (serder.route === "tels" || serder.route === "tsn") {
-        if (!vdr.tvy?.processQuery) return { kind: "drop", reason: "missingProcessor" };
-        return vdr.tvy.processQuery(query);
+        return dispatchTelQuery(query, vdr);
       }
       return { kind: "drop", reason: "unsupportedRoute" };
     }
@@ -305,6 +308,13 @@ function* dispatchReadyMessage(
       // processXip/processPro/processBar are pass stubs at the frozen reference.
       return { kind: "drop", reason: "referenceStub" };
   }
+}
+
+/** Both body versions preserve requester prerequisites and the TEL owner's typed refusal. */
+function dispatchTelQuery(query: QueryEnvelope, vdr: VdrDispatchServices): void | MessageDropDecision {
+  if (!query.source && !query.cigars?.length) return { kind: "drop", reason: "missingAuthentication" };
+  if (!vdr.tvy?.processQuery) return { kind: "drop", reason: "missingProcessor" };
+  return vdr.tvy.processQuery(query);
 }
 
 /** Await the route owner while preserving parent, child and mailbox provenance. */

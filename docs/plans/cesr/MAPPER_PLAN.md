@@ -1,21 +1,19 @@
-# Standalone Mapper claimed-SAID repair
+# Mapper commitment and schema qualification
 
-Owner: final focused PR in the [parity roadmap](../PARITY_ROADMAP.md), unless a
-demonstrated dependency requires it earlier. This validation gap remains open.
+Owner: focused units in the [parity roadmap](../PARITY_ROADMAP.md).
+Standalone saidive Mapper now verifies configured top-level claims through the
+same semantic/raw/native binary constructor hook, with independent frozen Aggor
+maps and tampered variants across JSON, CBOR, MGPK and CESR. Wire round-trip
+checks remain. `makify` replaces claims and `verify:false` is an explicit opt-out.
+Compactor overrides only claim verification to preserve expanded disclosure
+construction; its group/wire checks remain. Aggor keeps independent verification.
 
-Reproduce: makify `{d: "", role: "holder"}` as JSON, change `role`, then construct
-`Mapper({saidive: true, verify: true})`. The stale claimed `d` is accepted because
-round-trip validation does not recompute that commitment.
-
-Repair claimed-SAID verification in every supported serialization format with
-independent valid and tampered fixtures. Reuse proven Aggor verification only
-where semantics match; preserve aggregate framing, partial disclosure and
-compactification boundaries. Do not conflate Compactor's disclosure construction
-with cryptographic proof verification. Document intentional reference differences.
-
-Keep the PR narrow, release-noted and independently reviewed. Rerun affected
-credential/disclosure/interoperability checks and update final qualification;
-the previous full inventory cannot qualify subsequently changed behavior.
+Supplied shallow JSON schema resources preserve verified bare-root/bundle identities
+across credential body formats. Schema-field construction uses that root ID as
+its compact commitment; Serder verification rejects stale claims rather than
+rederiving them. S1 independently checks bundle IDs, references and profile.
+Frozen default/unbound schema construction remains format-specific. Final
+qualification must distinguish these resource and default-builder paths.
 
 The current-main 71438328 schema profile adds a focused bundled-resource case.
 Given this exact JSON resource:
@@ -31,13 +29,18 @@ Given this exact JSON resource:
 
 Place it at `$defs.attribute` in a version `1.0.0` Draft 2020-12 object schema
 with `properties.a.$ref` equal to that URI. A shallow verified Schemer root has
-SAID `EHGtNwaXjtaoEEg2HQghVed6XEtiV2Qrpxr9TaUzVO9q`. `acdcmap` and
-`SerderACDC({makify:true})` rewrite the nested `$id` to
+SAID `EHGtNwaXjtaoEEg2HQghVed6XEtiV2Qrpxr9TaUzVO9q`. Recursive TypeScript
+schema construction rewrote the nested `$id` to
 `EApqU8I2fCrPY7oQXyDccHNO4VYsGeFjDy9zJusLpFnL` and the root to
 `EPHvklGgtA6R7laJHgxOJAqWzg1Cmt4rvqv_exLlVw9b`, leaving `$ref` unchanged.
-Correct and qualify this under the existing Mapper work; do not freeze the
-rewrite as expected behavior. S1 schema override/cached-root evidence validates
-the original resource and does not establish embedded construction parity.
+TypeScript preserves the original resource in expanded and section messages,
+with compact s equal to the verified root ID. The actual frozen927 builder with
+the 71438328 helper also preserves and validates this embedded JSON resource;
+Serdering source matches both pins (blob `d71412759c8a87055f5e04a66319ed2ea098c9cb`)
+and explicitly treats schema IDs as top-level. Existing tests qualify all four
+body formats, raw reopen and S1 validation. Retaining supplied JSON resource IDs
+across nonJSON body formats extends the reference's format-dependent builder
+while preserving frozen defaults; it does not change the commitment oracle.
 
 Qualify schema resource encoding separately from the credential body format.
 For `acdcmap(israid="EJt3vzyzwZsSlL-LRyjG3lsJta_gxHjTmdbSYp6foOcx", attribute={"d":"","name":"Ada"}, kind=kind)`, the actual 71438328 validator
@@ -49,5 +52,5 @@ The 71438328 builder and Mapper source match frozen 927c0cb8 (Git blobs
 builder/profile seam, not a change to the commitment oracle. Keep all frozen
 format commitments. A qualified correction must choose resource encoding
 explicitly and verify its ID rather than assuming every body format shares the
-JSON schema ID. S1/S3 cached JSON resource tests do not qualify generated embedded
-schemas in every format.
+JSON schema ID. Supplied bound JSON resources are qualified in every body format;
+generated nonJSON defaults remain outside the mandatory JSON-resource profile.
