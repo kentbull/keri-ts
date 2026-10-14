@@ -387,7 +387,7 @@ export class Reger extends LMDBer {
     return this.cloneTvt(pre, diger, gvrsn);
   }
 
-  /** Preserve one TEL body, choosing counters and ordinals for its minimum/requested genus. */
+  /** Preflight one TEL body and cap incremental proofs, preserving its minimum/requested genus. */
   cloneTvt(
     pre: KeyPart,
     dig: string | Uint8Array | Diger | Saider,
@@ -401,36 +401,35 @@ export class Reger extends LMDBer {
     const preText = keyText(pre);
     const digText = digestText(dig);
     const dgkey = dgKey(preText, digText);
-    const raw = this.tvts.get(dgkey);
+    const raw = this.tvts.getBounded(dgkey, maxMessageBytes);
     if (raw === null) {
       throw new ValidationError(`Missing event for dig=${digText}.`);
     }
 
-    if (raw.length > maxMessageBytes) throw new ResourceLimitError("TEL body exceeds replay message limit");
-    const tibs = this.tibs.get([preText, digText]);
+    // Native dupsort yields one fixed signature record at a time, without collecting its bucket.
+    const tibPayload: Uint8Array[] = [];
+    let remaining = maxMessageBytes - raw.length;
+    for (const tib of this.tibs.getIter([preText, digText])) {
+      const size = tib.qb64.length;
+      if (size > remaining) throw new ResourceLimitError("TEL proofs exceed replay message limit");
+      remaining -= size;
+      tibPayload.push(tib.qb64b);
+    }
     const couple = this.ancs.get(dgkey);
-    if (tibs.length === 0 && couple === null && !genusify) return raw;
+    if (tibPayload.length === 0 && couple === null && !genusify) return raw;
     // A requested genus is a floor; retain the body bytes and honor its declared minimum.
     gvrsn = resolveAttachmentGvrsn(new SerderKERI({ raw }), gvrsn);
     const selector = genusify ? Counter.makeGVC(gvrsn) : new Uint8Array();
-    if (tibs.length === 0 && couple === null) {
+    if (tibPayload.length === 0 && couple === null) {
       if (raw.length + selector.length > maxMessageBytes) {
         throw new ResourceLimitError("TEL selector exceeds message limit");
       }
       return concatBytes(selector, raw);
     }
     const attachments: Uint8Array[] = [];
-    if (tibs.length > 0) {
-      const tibPayload = tibs.map((tib) => tib.qb64b);
-      attachments.push(
-        attachmentCounterPayloadQb64b(
-          "WitnessIdxSigs",
-          tibs.length,
-          tibPayload,
-          gvrsn,
-        ),
-        ...tibPayload,
-      );
+    if (tibPayload.length > 0) {
+      attachments.push(attachmentCounterPayloadQb64b("WitnessIdxSigs", tibPayload.length, tibPayload, gvrsn));
+      for (const part of tibPayload) attachments.push(part);
     }
 
     if (couple !== null) {
@@ -455,7 +454,12 @@ export class Reger extends LMDBer {
     if (selector.length + raw.length + counter.length + attachmentBytes > maxMessageBytes) {
       throw new ResourceLimitError("TEL proofs exceed replay message limit");
     }
-    const atc = attachments.length === 0 ? new Uint8Array() : concatBytes(...attachments);
+    const atc = new Uint8Array(attachmentBytes);
+    let offset = 0;
+    for (const part of attachments) {
+      atc.set(part, offset);
+      offset += part.length;
+    }
     if (atc.length % 4 !== 0) {
       throw new ValidationError(
         `Invalid attachments size=${atc.length}, nonintegral quadlets.`,

@@ -54,7 +54,12 @@ ordinary/ESSR reservations through scoped consumer disposal. No file owner wrapp
 is introduced, and synchronous publication retains its collected wire credit.
 Configured KEL replay body reads now preflight native row size; lazy HTTP readers
 reserve reconstruction copies before opening an iterator. Companion proof-row reads
-and allocation measurements remain open. Broader KEL/reply replay (`clonePreIter`,
+and allocation measurements remain separate boundaries. Adopted TEL replay likewise
+preflights body rows before copies and consumes fixed-size native dupsort signatures
+incrementally, checking its message ceiling before payload retention. The existing
+reply lease precedes source acquisition and survives joined reader cleanup; ordinary
+standalone collection and native/mapped residency remain outside this claim.
+Broader KEL/reply replay (`clonePreIter`,
 `replyEndRole`), parent factors and query preparation/retained introductions still
 require native-row and copy audits. Queue/stream credit alone does not prove their
 pre-read boundary.
