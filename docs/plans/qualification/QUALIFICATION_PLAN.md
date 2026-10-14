@@ -89,6 +89,9 @@ partial delivery, cancellation, truncated EOF, shutdown and half-close deadline
 expiry. Measure both parsed and verified-usable latency at the application state
 boundary. Verify source pulls, pending bytes/items, credit and open handles plateau;
 report kernel/native buffering separately. Exercise source Deno and packed Node.
+Qualify installed tarballs at the advertised Node minimum as well as the current
+CI runtime. Transport promises use the older supported API; that repair alone
+does not qualify dependency, crypto, fetch or CLI compatibility at the minimum.
 Reuse these cases within representative matrix combinations, not another full
 cross-product. Include finite/source caller parity, parsed-frame input without
 reparsing, HTTP request framing/auth/method and scoped response consumption.
