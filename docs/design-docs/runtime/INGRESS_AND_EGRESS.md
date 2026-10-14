@@ -171,7 +171,8 @@ atomic transport transfer retires it. `pending.clear()` releases queued records,
 while an active head remains charged until processing joins. Runtime shutdown
 cancels and joins the coordinator before clearing it; a standalone coordinator
 caller owns its `close()` lifecycle. Hab references are borrowed accepted state,
-not recursively charged metadata. Nested metadata stays immutable until retirement.
+not recursively charged metadata. The top-level query/witness list is copied;
+nested query values remain aliases and must stay immutable while queued or consumed.
 Pending pull/push bypasses are rejected; use
 coordinator enqueue and completion/rotation ownership. Wire preparation still
 needs the caller's existing admission/guard, separately from this metadata lease.
