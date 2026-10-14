@@ -1,19 +1,24 @@
 import { action, call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import {
+  b,
   concatBytes,
   Counter,
   CtrDexV1,
+  CtrDexV2,
   Diger,
   NumberPrimitive,
   NumDex,
   Prefixer,
+  ResourceLimitError,
   Saider,
   Seqner,
   SerderACDC,
   SerderKERI,
   Siger,
   Signer,
+  type Versionage,
+  Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
@@ -207,6 +212,59 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
         atc,
       );
 
+      const replay = reger.replay(regk)!;
+      const rows = reger.tels.getAllItemIter.bind(reger.tels);
+      let reading = 0;
+      reger.tels.getAllItemIter = function*(...args) {
+        reading++;
+        try {
+          yield* rows(...args);
+        } finally {
+          reading--;
+        }
+      };
+      try {
+        const wide = b(`${regk}.${(1n << 53n).toString(16).padStart(32, "0")}`);
+        reger.putVal(reger.tels.sdb, wide, new Diger({ qb64: regk }).qb64b);
+        assertThrows(() => reger.replay(regk), ResourceLimitError, "supported range");
+        reger.delVal(reger.tels.sdb, wide);
+        const reader = replay[Symbol.iterator]();
+        assertEquals(reader.next().value, expected);
+        assertEquals(reading, 0, "Slow consumers and iterator cancellation retain no LMDB cursor");
+        reader.return?.();
+        assertEquals(reading, 0);
+        assertEquals(reger.cloneTvt(regk, regk, KERI_V1, expected.length), expected);
+        assertThrows(() => reger.cloneTvt(regk, regk, KERI_V1, expected.length - 1), ResourceLimitError);
+        assertThrows(() => [...reger.replay(regk, { maxMessageBytes: tel.raw.length - 1 })!], ResourceLimitError);
+        assertThrows(() => reger.replay(regk, { maxMessageBytes: 0 }), RangeError);
+        const v2Attachments = concatBytes(
+          new Counter({ code: CtrDexV2.WitnessIdxSigs, count: wiger.qb64b.length / 4, version: Vrsn_2_0 }).qb64b,
+          wiger.qb64b,
+          new Counter({
+            code: CtrDexV2.SealSourceCouples,
+            count: (sealNumber.qb64b.length + sealDiger.qb64b.length) / 4,
+            version: Vrsn_2_0,
+          }).qb64b,
+          sealNumber.qb64b,
+          sealDiger.qb64b,
+        );
+        const v2Expected = concatBytes(
+          tel.raw,
+          new Counter({ code: CtrDexV2.AttachmentGroup, count: v2Attachments.length / 4, version: Vrsn_2_0 }).qb64b,
+          v2Attachments,
+        );
+        assertEquals([...reger.replay(regk, { gvrsn: Vrsn_2_0 })!], [v2Expected]);
+        const genus: Versionage = { major: 2, minor: 0 };
+        const selected = reger.replay(regk, { gvrsn: genus, genusify: true })!;
+        genus.major = 1;
+        assertEquals([...selected], [concatBytes(Counter.makeGVC(Vrsn_2_0), v2Expected)]);
+        assertThrows(
+          () => [...reger.replay(regk, { gvrsn: Vrsn_2_0, genusify: true, maxMessageBytes: v2Expected.length + 7 })!],
+          ResourceLimitError,
+        );
+      } finally {
+        reger.tels.getAllItemIter = rows;
+      }
       assertEquals(reger.cloneTvt(regk, regk), expected);
       assertEquals(reger.cloneTvtAt(regk, 0), expected);
       assertEquals([...reger.clonePreIter(regk)], [expected]);

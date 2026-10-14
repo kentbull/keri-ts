@@ -126,14 +126,31 @@ against diminishing 24 MiB aggregate wire credit before its owned backing copies
 The pinned lmdb-js 3.5.3 NAPI hook reads size without growing an insufficient
 native target; supported binary, uncompressed, unversioned rows then copy under
 that same transaction. Active writers are borrowed, while ordinary reads hold
-an explicit snapshot. Unsupported bindings/modes fail closed. Publication still
+an explicit snapshot. A synchronous pre-copy callback can reserve shared credit
+for a found, ceiling-admitted row before its owned copies; the caller releases
+after its last use. Unsupported bindings/modes fail closed. Publication still
 belongs to the caller's transaction, so an over-limit suffix preserves earlier
 public evidence on rollback; loading disposes previously hydrated descendants.
 
-Native pre-existing scratch (initially 16 MiB), LMDB mapped residency and the
-admitted native/public copies are distinct costs. Other read paths can grow
-scratch or allocate whole rows. This ceiling acquires no shared resource lease
-and does not bound the runtime's aggregate copies, file readers or metadata.
+Exchanger borrows the runtime ResourcePolicy. Nested admission and replay reserve
+104 MiB + 64 KiB before serializer construction or row copying: two 24 MiB owned
+row copies, 24 MiB qualification, 24 MiB collected output, 8 MiB cursor backing
+and one 64 KiB reader chunk. This conservative allowance stays held through joined
+staging/descendant disposal, even on cancellation or cleanup failure. Reopened
+parsers additionally charge ordinary wire (capped by each row's stored extent)
+and each finite ESSR stage through their existing frame owners. FilePayload identity
+and adoption remain intact. Route handlers borrow hydrated descendants through
+handler completion; retaining additional copies afterward requires independent
+credit. Busy/limit refusal precedes copying and does not establish message
+invalidity; no automatic retry or waiter is introduced.
+
+Native pre-existing scratch (initially 16 MiB) and LMDB mapped residency remain
+separate, uncharged overhead. Other read paths can grow scratch or allocate whole
+rows; KRAM snapshots, parent-factor reads, strings/native copies and final RSS
+qualification remain open. Direct DB helpers require the caller's resource scope.
+Standalone Exchanger defaults are finite but independent ledgers do not bound a
+process. The 256 MiB default admits existing nested multisig and IPEX with shared
+input frame owners, including 73 MiB reserved ingress/crypto coexistence in IPEX.
 Remaining parent-tree credit still accounts for Texter-expanded ordinary bodies,
 attachment groups, descendant nodes and ESSR bytes/items before acceptance:
 8 MiB ordinary metadata, 8 MiB/16,384 ESSR bytes/items, 256 nodes and depth 64.
@@ -148,3 +165,13 @@ again, matching frozen Python `927c0cb8`. Failed replacement rolls back to the
 previous public rows. Parent `/fwd` verification checks exactly one child's valid
 body and the signed `a.evt` digest; child signature authentication belongs to its
 recipient. No recursive dispatch occurs at the forwarder.
+
+Private snapshot facilities require explicit shared credit. `kramSnapshotIdentity`
+uses `BytesSuber.getBounded` and holds 48 MiB for both owned row copies through its
+synchronous digest, including active writers. Stored wire above 24 MiB is corruption;
+byte contention is ResourceAdmissionError, and infrastructure errors propagate.
+`withKramSnapshot` holds 48 MiB through joined serialization and synchronous storage
+publication. Its callback cannot retain wire or return asynchronous work using it.
+Invalid extent metadata fails as a contract error before admission. Incoming payload
+owners remain borrowed. Runtime hash/serialization and load/hydration migration
+remain the next independent unit; these facilities alone do not close that boundary.

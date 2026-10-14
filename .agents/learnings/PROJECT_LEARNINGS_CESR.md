@@ -22,6 +22,10 @@
 - `Payload.open(signal)` must cooperate with cancellation. Generator return alone
   cannot interrupt blocked I/O. CESR root has no Effection import; its optional
   adapter owns one subscription, abort and joined cleanup.
+- Consumed-work scheduling belongs to the shared input owner, not each enclosure.
+  After 64 KiB or 4,096 pull/consume operations, yield a host turn; empty producer
+  chunks count. Abort clears the single checkpoint timer and retains source-error
+  identity. This is local scheduling policy, not a wire limit or RSS guarantee.
 
 ## Wire and version rules
 
@@ -74,7 +78,11 @@
   thresholds retain their domain. Configure before admitting work.
 - Accessor parity includes wrapper projections (`sner`, `tholder`, `ntholder`,
   `bner`, `berfers`), and legacy intive `bt` needs normalization. Remaining accessor
-  audit and Mapper claimed-SAID verification stay explicit plan obligations.
+  audit stays an explicit plan obligation. Standalone saidive Mapper verification
+  checks configured top-level claims in the selected format as well as wire
+  round trips; makify replaces claims and verify:false explicitly skips checks.
+  Compactor retains disclosure wire checks without flat-map claim verification;
+  expanded disclosures are checked by their credential/aggregate owners.
 
 ## Owners and follow-ups
 
