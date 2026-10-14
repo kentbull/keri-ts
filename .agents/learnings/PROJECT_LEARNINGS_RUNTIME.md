@@ -129,6 +129,9 @@ The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
 HTTP success, verified replies and durable acceptance are different outcomes.
+Mailbox SSE polling selects HTTP(S) only, as KERIpy 714 Poller/httpClient does. TCP-only
+remote mailbox roles keep precedence while awaiting HTTP; delivery URL selection
+retains TCP fallback. Witness-only polling also waits for HTTP(S).
 
 Poster route snapshots and synchronous target preparation own habitat/DB work;
 prepared sending owns HTTP only. Keep borrowed wire alive through joined cleanup.

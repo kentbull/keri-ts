@@ -25,6 +25,12 @@ mailboxes and otherwise falls back to direct controller/agent delivery. Enabled
 Outboxer state retains failed sends for retry. This operational selection is
 distinct from the inner message's validity.
 
+Delivery may fall back to TCP, while mailbox SSE polling selects HTTP(S) only,
+matching KERIpy 714 Poller/httpClient. A TCP-only authorized remote mailbox keeps
+mailbox-role precedence and produces no SSE target until it advertises HTTP(S);
+it does not silently poll an available witness instead. Witness-only polling
+also waits for an HTTP(S) endpoint. HTTPS priority is unchanged.
+
 Optional Outboxer publication commits payload, message metadata and target rows
 in one transaction. Terminal target state and final message pruning also commit
 together; failure preserves the prior retry obligation. Delivered status records
