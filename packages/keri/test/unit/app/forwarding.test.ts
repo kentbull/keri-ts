@@ -716,8 +716,6 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
 
         const runtime = yield* createAgentRuntime(hby, {
           mode: "local",
-          // This scenario drives Poster TCP; mailbox polling has its own HTTP/SSE contract.
-          mailboxPollTransport: { *poll() {} },
         });
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
