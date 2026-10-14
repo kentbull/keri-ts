@@ -1,5 +1,13 @@
 /** Internal cue retention admission; production runtime wiring waits for every producer/consumer port. */
-import { Indexer, Matter, ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, Serder } from "cesr-ts";
+import {
+  Indexer,
+  Matter,
+  ResourceAdmissionError,
+  ResourceLimitError,
+  type ResourcePolicy,
+  type ResourceReservation,
+  Serder,
+} from "cesr-ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck, DeckFullError } from "./deck.ts";
 import { RawRecord } from "./records.ts";
@@ -18,11 +26,17 @@ export class OwnedCue {
     if (!this.live) throw new Error("Cue owner is released or transferred");
     return this.value!;
   }
-  /** Move ownership without returning byte/item credit at the handoff. */
-  transfer(): OwnedCue {
+  /** Move ownership after optional synchronous atomic target admission, without returning credit. */
+  transfer(accept?: (next: OwnedCue) => void): OwnedCue {
     const cue = this.cue;
     const next = new OwnedCue(cue, this.dispose, this.duplicate);
     ownerDecks.set(next, ownerDecks.get(this)!);
+    try {
+      accept?.(next);
+    } catch (error) {
+      next.invalidate();
+      throw error;
+    }
     this.invalidate();
     return next;
   }
@@ -114,7 +128,7 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
 export class CueDeck extends Deck<AgentCue> {
   private held = 0;
   private publishing = false;
-  private readonly owners = new Map<AgentCue, OwnedCue[]>();
+  private owners = new Map<AgentCue, OwnedCue[]>();
   constructor(
     private readonly resources: ResourcePolicy,
     capacity = 1024,
@@ -142,14 +156,23 @@ export class CueDeck extends Deck<AgentCue> {
   prepare(cues: readonly AgentCue[]): PreparedCueBatch {
     this.checkSpace(cues.length);
     if (!cues.length) throw new RangeError("Empty cue preparation");
-    const credit = this.resources.reserve({ bytes: retainedBytes(cues, this.maxNodes) });
-    if (credit.kind === "refuse") throw new ResourceAdmissionError("Cue byte admission refused", credit.reason);
+    // Logical Set/descriptor/stack/copy allowance precedes even the metadata walk.
+    const inspection = this.resources.reserve({ bytes: 128 * this.maxNodes + 16 * cues.length + 16384 });
+    if (inspection.kind === "refuse") {
+      throw new ResourceAdmissionError("Cue inspection admission refused", inspection.reason);
+    }
+    let credit: ResourceReservation | undefined;
     let values: AgentCue[];
     try {
+      const retained = this.resources.reserve({ bytes: retainedBytes(cues, this.maxNodes) });
+      if (retained.kind === "refuse") throw new ResourceAdmissionError("Cue byte admission refused", retained.reason);
+      credit = retained.reservation;
       values = [...cues];
     } catch (error) {
-      credit.reservation.release();
+      credit?.release();
       throw error;
+    } finally {
+      inspection.reservation.release();
     }
     const count = values.length;
     this.held += count;
@@ -159,16 +182,22 @@ export class CueDeck extends Deck<AgentCue> {
       const owner = new OwnedCue(cue, () => {
         extra?.release();
         this.held--;
-        if (--references === 0) credit.reservation.release();
+        if (--references === 0) credit!.release();
       }, () => {
         this.checkSpace();
         const duplicate = this.resources.reserve({ bytes: 128 });
         if (duplicate.kind === "refuse") {
           throw new ResourceAdmissionError("Cue fanout admission refused", duplicate.reason);
         }
-        this.held++;
-        references++;
-        return makeOwner(cue, duplicate.reservation);
+        try {
+          const copy = makeOwner(cue, duplicate.reservation);
+          this.held++;
+          references++;
+          return copy;
+        } catch (error) {
+          duplicate.reservation.release();
+          throw error;
+        }
       });
       ownerDecks.set(owner, this);
       return owner;
@@ -177,23 +206,23 @@ export class CueDeck extends Deck<AgentCue> {
       if (state !== "prepared") return;
       state = "released";
       this.held -= count;
-      values = [];
-      credit.reservation.release();
+      values.length = 0;
+      credit!.release();
     };
     return {
       release,
       publish: () => {
         if (state !== "prepared") throw new Error("Cue preparation is no longer publishable");
         try {
+          const owners = new Map(this.owners);
+          for (const cue of values) {
+            owners.set(cue, [...(owners.get(cue) ?? []), makeOwner(cue)]);
+          }
           this.publishing = true;
           super.extend(values);
-          for (const cue of values) {
-            const owners = this.owners.get(cue) ?? [];
-            owners.push(makeOwner(cue));
-            this.owners.set(cue, owners);
-          }
+          this.owners = owners;
           state = "published";
-          values = [];
+          values.length = 0;
         } catch (error) {
           release();
           throw error;
@@ -238,15 +267,17 @@ export class CueDeck extends Deck<AgentCue> {
   requeue(owner: OwnedCue): void {
     const cue = owner.cue;
     if (ownerDecks.get(owner) !== this) throw new Error("Cue belongs to another admission deck");
-    try {
-      this.publishing = true;
-      super.prepend(cue);
-    } finally {
-      this.publishing = false;
-    }
-    const owners = this.owners.get(cue) ?? [];
-    owners.unshift(owner.transfer());
-    this.owners.set(cue, owners);
+    owner.transfer((next) => {
+      const owners = new Map(this.owners);
+      owners.set(cue, [next, ...(owners.get(cue) ?? [])]);
+      try {
+        this.publishing = true;
+        super.prepend(cue);
+        this.owners = owners;
+      } finally {
+        this.publishing = false;
+      }
+    });
   }
   /** Discard queued work only; active transferred owners retain their credit. */
   override clear(): void {

@@ -112,7 +112,11 @@ The logical charge counts complete ArrayBuffer backing once per batch, including
 views, and walks canonical enumerable Serder/record/primitive metadata without
 encoding it or calling accessors. Strings charge two bytes per code unit, scalar
 values eight bytes, objects 64 bytes, fields 16 bytes plus labels, and references
-128 bytes. Inspection is finite (65,536 values and depth 64 by default). It does
+128 bytes. Before inspection, temporary credit reserves `128 * maxNodes + 16 * batchCount + 16 KiB` for Set/descriptor work, stack and the batch copy;
+it stays through measurement/copy and returns in finally. The retained batch
+charge remains separate. Inspection visits at most 65,536 values/depth 64 by default;
+JavaScript enumeration internals still depend on canonical caller/parsed-data limits.
+Publication constructs owner metadata before the finite Deck append. It does
 not measure native heap overhead; prepared data must remain immutable through
 final release. One shared batch lease lasts until its last owner; fanout adds
 reference credit, not another payload charge. Opaque replay closures are refused

@@ -72,6 +72,16 @@ Deno.test("cue preparation holds slots and shared Serder bytes before publicatio
   first.release();
   assertEquals(resources.used.bytes, bytes);
   assertThrows(() => first.cue, Error, "transferred");
+  const prepend = Deck.prototype.prepend;
+  try {
+    Deck.prototype.prepend = () => {
+      throw new Error("requeue failed");
+    };
+    assertThrows(() => deck.requeue(transferred), Error, "requeue failed");
+  } finally {
+    Deck.prototype.prepend = prepend;
+  }
+  assertEquals([deck.length, resources.used.bytes], [1, bytes]);
   deck.requeue(transferred);
   assertEquals(resources.used.bytes, bytes);
   assertThrows(() => deck.push(cues[0]), DeckFullError, "occupied");
@@ -113,7 +123,15 @@ Deno.test("cue fanout and active consumers retain credit through queued cleanup"
 Deno.test("cue refusal and failed publication release preparation without queue mutation", () => {
   const cue: AgentCue = { kin: "proof", said: "dependency" };
   const resources = new ResourcePolicy({ bytes: 1 });
-  assertThrows(() => new CueDeck(resources).prepare([cue]), ResourceAdmissionError);
+  let walked = 0;
+  const inspected = new Proxy(cue, {
+    getOwnPropertyDescriptor(target, key) {
+      walked++;
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+  });
+  assertThrows(() => new CueDeck(resources).prepare([inspected]), ResourceAdmissionError, "inspection");
+  assertEquals(walked, 0, "Refused inspection cannot walk metadata");
   assertEquals(resources.used.bytes, 0);
   const normal = new ResourcePolicy();
   const deck = new CueDeck(normal, 1);
@@ -134,6 +152,26 @@ Deno.test("cue refusal and failed publication release preparation without queue 
   } finally {
     Deck.prototype.extend = original;
   }
+  const allocated = new CueDeck(normal, 2);
+  allocated.push(cue);
+  const existing = normal.used.bytes;
+  const allocation = allocated.prepare([{ kin: "proof", said: "new" }]);
+  const originalSet = WeakMap.prototype.set;
+  let caught: unknown;
+  try {
+    WeakMap.prototype.set = () => {
+      throw failure;
+    };
+    try {
+      allocation.publish();
+    } catch (error) {
+      caught = error;
+    }
+  } finally {
+    WeakMap.prototype.set = originalSet;
+  }
+  assertEquals([caught, allocated.toArray(), normal.used.bytes], [failure, [cue], existing]);
+  allocated.clear();
   assertThrows(() => new CueDeck(normal, 0).prepare([cue]), ResourceLimitError);
   assertThrows(() => new CueDeck(normal, 1, 1).prepare([cue]), ResourceLimitError);
   let reads = 0;
