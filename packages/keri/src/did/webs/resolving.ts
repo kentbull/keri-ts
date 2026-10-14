@@ -56,6 +56,8 @@ function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions
   });
   // EOF and parser cleanup precede convergence and any claim of a complete DID.
   yield* runtime.reactor.processEscrowsOnce();
+  // Preserve the second convergence turn previously run after settleRuntimeIngress's own pass.
+  yield* runtime.reactor.processEscrowsOnce();
   // Generated/hosted plaintext, collection and comparison copies stay owned through this scope.
   yield* holdArtifactCredit(runtime, 8 * 8 * 1024 ** 2, 1);
   const expected = generateBareDidDocument(runtime, parsed.canonical);
@@ -117,17 +119,19 @@ async function* artifactBytes(
       lastError = error;
       continue;
     }
+    let readerOwnsBody = false;
     try {
       signal.throwIfAborted();
       if (!response.ok) {
         lastError = new ValidationError(`Unable to fetch ${url}: HTTP ${response.status}.`);
         continue;
       }
+      readerOwnsBody = true;
       yield* streamBytes(response.body, { signal });
       return;
     } finally {
-      // Late fetch completion and parser failure still dispose the response before credit/fallback.
-      if (response.body && !response.body.locked) await response.body.cancel();
+      // The shared reader owns started-body cancellation; dispose only unacquired/failed headers here.
+      if (!readerOwnsBody && response.body) await response.body.cancel();
     }
   }
   throw lastError;

@@ -325,10 +325,15 @@ events remain on late failure/cancellation; no DID result or hosted JSON fetch
 precedes genuine CESR EOF and escrow processing. Complete generated-versus-hosted
 document comparison remains required. Hosted JSON retains an 8 MiB collection cap
 and one stream/64 MiB logical copy allowance through decoding, normalization and
-comparison. This is conservative admission, not a measured native/heap bound.
+comparison. This is conservative allowance, not a measured native/heap bound:
+accepted alias projection may grow independently of the incoming JSON cap.
+Decoded/projection copy qualification remains phase 4 work. The returned document
+transfers to caller ownership; resolution credit ends after joined cleanup.
 Only default native fetch-header TypeError and non-ok HTTP responses may try the
 existing alternate URL; injected client TypeError, body/parser/storage/admission
-and cancellation failures propagate. Cleanup failure prevents fallback. Existing
+and cancellation failures propagate. HTTP-refusal cleanup failure prevents fallback.
+The shared `streamBytes` reader still suppresses cancel rejection; propagation is
+a separate shared cleanup follow-on, not a DID-specific reader. Existing
 HTTP scheme fallback remains a compatibility policy, not strict TLS qualification.
 Artifact generation/serving still collects histories and remains transport S2 work.
 Finite JSON documents and receipt proofs retain whole-document semantics with

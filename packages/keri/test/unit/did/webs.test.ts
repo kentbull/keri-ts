@@ -189,6 +189,12 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         },
       },
     });
+    let escrowPasses = 0;
+    const advance = runtime.reactor.processEscrowsOnce.bind(runtime.reactor);
+    runtime.reactor.processEscrowsOnce = function*() {
+      escrowPasses++;
+      yield* advance();
+    };
     const hab = issuer.makeHab("issuer", undefined, { toad: 0 });
     const did = `did:webs:example.com:dws:${hab.pre}`;
     bindDesignatedAliases(source, { alias: "issuer", dids: [did, `did:keri:${hab.pre}`] });
@@ -215,6 +221,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       controller!.enqueue(artifacts.keriCesr.slice(first.length));
       controller!.close();
       assertEquals((yield* task).document.id, did);
+      assertEquals(escrowPasses, 2, "Preserve both legacy convergence passes after complete intake");
       assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
 
       fetches = [];
