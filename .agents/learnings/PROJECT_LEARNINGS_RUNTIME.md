@@ -39,7 +39,8 @@ and scope exit both join cleanup; scope exit after explicit close is harmless.
 
 Shared ResourcePolicy credit belongs to an owner until consumption and joined
 cleanup complete. One shared instance is required; separate ledgers do not bound
-a runtime. Busy and configured-limit refusals do not establish message invalidity.
+a runtime. ESSR requires the host's policy and holds crypto credit until I/O and
+untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
 See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md).
 
 ## Transport
