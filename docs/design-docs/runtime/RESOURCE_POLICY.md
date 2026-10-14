@@ -59,7 +59,9 @@ credit is acquired separately, so both charges coexist during processing.
 Lazy HTTP replies borrow the runtime policy and reserve one stream plus their
 maximum retained event and outgoing chunk before acquiring a replay iterator.
 Credit lasts through source cleanup on EOF, cancellation, failure and runtime
-shutdown. Local reply limits still apply. This accounts for retained replay/output
+shutdown. Iterator contract failures release admission; cleanup failures propagate
+after every live reader and the runtime-owned stores have been closed.
+Local reply limits still apply. This accounts for retained replay/output
 buffers; the storage source must separately admit its native and hydration copies.
 Temporary shared admission refusal maps to HTTP 503; configured size refusal
 remains 413. Neither response creates a retry queue.

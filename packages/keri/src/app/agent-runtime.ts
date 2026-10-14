@@ -323,19 +323,22 @@ export function* createAgentRuntime(
     *close(): Operation<void> {
       reactor.clearIngress();
       yield* queryDeliveries.close();
-      replyStreams.close();
-      mailboxDirector.close();
-      if (ownsNoter && noter?.opened) {
-        yield* noter.close();
-      }
-      if (ownsMailboxer && mailboxer?.opened) {
-        yield* mailboxer.close();
-      }
-      if (ownsRegistryEvidence && registryEvidence?.opened) {
-        yield* registryEvidence.close(hby.temp);
-      }
-      if (ownsReger && reger?.opened) {
-        yield* reger.close(hby.temp);
+      try {
+        replyStreams.close();
+      } finally {
+        mailboxDirector.close();
+        if (ownsNoter && noter?.opened) {
+          yield* noter.close();
+        }
+        if (ownsMailboxer && mailboxer?.opened) {
+          yield* mailboxer.close();
+        }
+        if (ownsRegistryEvidence && registryEvidence?.opened) {
+          yield* registryEvidence.close(hby.temp);
+        }
+        if (ownsReger && reger?.opened) {
+          yield* reger.close(hby.temp);
+        }
       }
     },
   };

@@ -60,6 +60,14 @@ Deno.test("HTTP replay pulls one bounded chunk and closes its iterator on cancel
     "source unavailable",
   );
   assertEquals(resources.used.bytes, 0);
+  for (const invalid of [undefined, {}]) {
+    assertThrows(
+      () => other.open({ [Symbol.iterator]: () => invalid } as unknown as Iterable<Uint8Array>),
+      TypeError,
+      "iterator",
+    );
+    assertEquals(resources.used.bytes, 0, "invalid caller iterators cannot retain admission");
+  }
   assertThrows(
     () => new ReplyStreams({ maxMessageBytes: 6, maxChunkBytes: 1 }, resources).open([]),
     ResourceAdmissionError,
@@ -71,6 +79,38 @@ Deno.test("HTTP replay pulls one bounded chunk and closes its iterator on cancel
   assertEquals(resources.used.bytes, 0);
   replies.close();
   other.close();
+});
+
+Deno.test("reply cleanup failures propagate after all reservations and readers close", async () => {
+  const resources = new ResourcePolicy();
+  const replies = new ReplyStreams({}, resources);
+  let closed = 0;
+  const messages = {
+    *[Symbol.iterator]() {
+      try {
+        yield Uint8Array.of(1);
+      } finally {
+        closed++;
+        throw new Error("storage reader close failed");
+      }
+    },
+  };
+  const cancelled = replies.open(messages).getReader();
+  await cancelled.read();
+  await assertRejects(() => cancelled.cancel(), Error, "storage reader close failed");
+  cancelled.releaseLock();
+  assertEquals(resources.used.bytes, 0);
+  const readers = [replies.open(messages).getReader(), replies.open(messages).getReader()];
+  for (const reader of readers) await reader.read();
+  const failure = assertThrows(() => replies.close(), AggregateError, "Reply shutdown failed");
+  assertEquals(failure.errors.length, 2);
+  assertEquals(closed, 3);
+  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+  for (const reader of readers) {
+    await assertRejects(() => reader.read(), AggregateError, "Reply cleanup failed");
+    reader.releaseLock();
+  }
+  replies.close();
 });
 
 Deno.test("runtime shutdown errors live replies and releases every replay iterator", async () => {

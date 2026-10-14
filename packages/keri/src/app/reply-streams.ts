@@ -54,6 +54,9 @@ export class ReplyStreams {
     let iterator: Iterator<Uint8Array> | undefined;
     try {
       iterator = messages[Symbol.iterator]();
+      if (!iterator || typeof iterator.next !== "function") {
+        throw new TypeError("Reply source must provide an iterator");
+      }
     } catch (error) {
       credit.reservation.release();
       throw error;
@@ -71,8 +74,9 @@ export class ReplyStreams {
       try {
         owned.return?.();
       } catch (error) {
-        // A failing source cleanup errors its response but cannot prevent other readers from closing.
-        reason ??= error;
+        const failure = reason === undefined ? error : new AggregateError([reason, error], "Reply cleanup failed");
+        stream.error(failure);
+        throw failure;
       } finally {
         credit.reservation.release();
       }
@@ -116,6 +120,14 @@ export class ReplyStreams {
   close(): void {
     this.closed = true;
     const reason = new DOMException("Runtime closed", "AbortError");
-    for (const close of this.readers) close(reason);
+    const failures: unknown[] = [];
+    for (const close of this.readers) {
+      try {
+        close(reason);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length) throw new AggregateError(failures, "Reply shutdown failed");
   }
 }
