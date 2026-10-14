@@ -11,6 +11,7 @@ import {
   NumDex,
   Prefixer,
   ResourceLimitError,
+  ResourcePolicy,
   Saider,
   Seqner,
   SerderACDC,
@@ -20,9 +21,11 @@ import {
   type Versionage,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
 import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, Reger } from "../../../src/db/reger.ts";
+import { CapturedTelReplay } from "../../../src/db/tel-replay.ts";
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 const SCHEMA_SAID = "Eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -213,7 +216,7 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
       );
 
       const replay = reger.replay(regk)!;
-      const rows = reger.tels.getAllItemIter.bind(reger.tels);
+      const table = reger.tels, rows = table.getAllItemIter.bind(table);
       let reading = 0;
       reger.tels.getAllItemIter = function*(...args) {
         reading++;
@@ -231,7 +234,7 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
         const reader = replay[Symbol.iterator]();
         assertEquals(reader.next().value, expected);
         assertEquals(reading, 0, "Slow consumers and iterator cancellation retain no LMDB cursor");
-        reader.return?.();
+        reader.return?.(undefined);
         assertEquals(reading, 0);
         assertEquals(reger.cloneTvt(regk, regk, KERI_V1, expected.length), expected);
         assertThrows(() => reger.cloneTvt(regk, regk, KERI_V1, expected.length - 1), ResourceLimitError);
@@ -258,12 +261,87 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
         const selected = reger.replay(regk, { gvrsn: genus, genusify: true })!;
         genus.major = 1;
         assertEquals([...selected], [concatBytes(Counter.makeGVC(Vrsn_2_0), v2Expected)]);
+        const pair = CapturedTelReplay.pair(selected, selected)!;
+        assertEquals(pair.ranges, [[regk, 0], [regk, 0]], "Duplicate ranges preserve exact wire order");
+        assertEquals(CapturedTelReplay.pair(null, selected), selected);
+        assertEquals(CapturedTelReplay.pair(null, null), null);
+        assertThrows(() => CapturedTelReplay.pair(replay, selected), RangeError, "wire settings");
+        assertThrows(() => CapturedTelReplay.pair(pair, selected), RangeError, "fixed pair");
+        assertThrows(() => Object.defineProperty(pair, "ranges", { value: [] }), TypeError);
+        assertThrows(() => (pair.ranges[0] as unknown as string[]).push("mutation"), TypeError);
+        const other = yield* createReger({ name: crypto.randomUUID(), temp: true });
+        try {
+          assertThrows(
+            () => CapturedTelReplay.pair(selected, new CapturedTelReplay(other, selected.ranges, selected.settings)),
+            RangeError,
+            "same borrowed store",
+          );
+        } finally {
+          yield* other.close(true);
+        }
+        /** Caller array subclasses may retain private data; captures copy only primitive tuples. */
+        class RangeList extends Array<readonly [string, number]> {
+          #data = new Uint8Array(1024 * 1024);
+          hiddenBytes(): number {
+            return this.#data.byteLength;
+          }
+        }
+        const input = new RangeList();
+        input.push([regk, 0]);
+        const normalized = new CapturedTelReplay(reger, input, selected.settings);
+        assertEquals(input.hiddenBytes(), 1024 * 1024);
+        assertEquals(Object.getPrototypeOf(normalized.ranges), Array.prototype);
+        assertEquals(Object.getPrototypeOf(normalized.ranges[0]), Array.prototype);
+        const resources = new ResourcePolicy(), deck = new CueDeck(resources, 1);
+        const iterate = CapturedTelReplay.prototype[Symbol.iterator];
+        let opened = 0;
+        try {
+          CapturedTelReplay.prototype[Symbol.iterator] = function() {
+            opened++;
+            return iterate.call(this);
+          };
+          yield* reger.close();
+          deck.push({ kin: "replay", messages: pair });
+          const owner = deck.takeOwned()!;
+          assertEquals([opened, reading], [0, 0], "Admission opens no iterator or store reader even while closed");
+          assertEquals(
+            resources.used.bytes > 0 && resources.used.bytes < 65536,
+            true,
+            "Only fixed metadata/reference is retained",
+          );
+          owner.release();
+          assertEquals(resources.used.bytes, 0);
+          assertThrows(
+            () => deck.prepare([{ kin: "replay", messages: Object.create(CapturedTelReplay.prototype) }]),
+            RangeError,
+            "Opaque",
+          );
+          /** Additional prototypes are not canonical replay owners. */
+          class DerivedCapture extends CapturedTelReplay {}
+          assertThrows(
+            () =>
+              deck.prepare([{
+                kin: "replay",
+                messages: new DerivedCapture(reger, selected.ranges, selected.settings),
+              }]),
+            RangeError,
+            "Opaque",
+          );
+          yield* reger.reopen();
+          assertEquals([...pair], [
+            concatBytes(Counter.makeGVC(Vrsn_2_0), v2Expected),
+            concatBytes(Counter.makeGVC(Vrsn_2_0), v2Expected),
+          ]);
+        } finally {
+          CapturedTelReplay.prototype[Symbol.iterator] = iterate;
+          if (!reger.opened) yield* reger.reopen();
+        }
         assertThrows(
           () => [...reger.replay(regk, { gvrsn: Vrsn_2_0, genusify: true, maxMessageBytes: v2Expected.length + 7 })!],
           ResourceLimitError,
         );
       } finally {
-        reger.tels.getAllItemIter = rows;
+        table.getAllItemIter = rows;
       }
       assertEquals(reger.cloneTvt(regk, regk), expected);
       assertEquals(reger.cloneTvtAt(regk, 0), expected);

@@ -7,6 +7,7 @@ import {
   NumDex,
   parseBytes,
   Prefixer,
+  ResourcePolicy,
   SerderACDC,
   TraitDex,
   Vrsn_1_0,
@@ -15,11 +16,13 @@ import {
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { backerIssue, incept as inceptRegistry, issue, revoke } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
+import { CapturedTelReplay } from "../../../src/db/tel-replay.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
@@ -279,6 +282,25 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
           assertExists(cue);
           if (cue.kin !== "replay") throw new Error("Expected TEL replay");
           assertEquals([cue.querySaid, cue.src, cue.dest], [request.said, issuer.pre, issuer.pre]);
+          assertEquals(CapturedTelReplay.is(cue.messages), true);
+          assertEquals((cue.messages as CapturedTelReplay).ranges, [[vcp.pre!, 0], [iss.pre!, 0]]);
+          const resources = new ResourcePolicy(), admitted = new CueDeck(resources, 1);
+          const clone = reger.cloneTvt;
+          let reads = 0;
+          try {
+            reger.cloneTvt = () => {
+              reads++;
+              throw new Error("Unexpected TEL body read during admission");
+            };
+            admitted.push(cue);
+            const owner = admitted.takeOwned()!;
+            assertEquals(reads, 0);
+            assertEquals(resources.used.bytes > 0, true);
+            owner.release();
+            assertEquals(resources.used.bytes, 0);
+          } finally {
+            reger.cloneTvt = clone;
+          }
           responses.push(cue.messages);
         } finally {
           reply.close();
