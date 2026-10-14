@@ -32,6 +32,8 @@ signatures, source seals, nested/ESSR wire and mailbox/receiver provenance acros
 reopen. The deadline is first admission plus 20 seconds, or existing TMSC `xdt + pxl`; receiver receipt time is not the transaction opener. Sequential schema
 dependencies keep that deadline. Equality remains eligible; strict expiry or
 terminal rejection releases pending evidence, acceptance retains its wire.
+TS retains and enforces this deadline through partial-proof migrations; inspected
+714 removes it after moving the final missing-schema branch to partial escrow.
 Storage/corruption failures propagate and retain pending ownership. Readonly
 legacy opens leave absent schema-escrow tables absent. S3 owns IPEX schema gates.
 

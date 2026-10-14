@@ -431,7 +431,7 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
     let now = Date.parse("2026-10-13T01:00:00.000000+00:00"), calls = 0, handled = 0;
     const first = new Diger({ raw: Diger.digest(b("schema one"), "E"), code: "E" }).qb64;
     const second = new Diger({ raw: Diger.digest(b("schema two"), "E"), code: "E" }).qb64;
-    let missing: string | undefined = first;
+    let missing: string | undefined = first, proof = false;
     try {
       const sender = hby.makeHab("sender");
       const serder = exchangeMessage("/ipex/grant", {}, { sender: sender.pre, version: Vrsn_2_0 })[0];
@@ -444,6 +444,7 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
           calls++;
           assertEquals(nests?.map((node) => node.body.raw), [child.raw], `schema verification ${calls}`);
           assertEquals(mailboxAid, sender.pre);
+          if (proof) return { kind: "escrow" as const, reason: "missing proof" };
           return missing ? { kind: "escrow" as const, reason: "missing schema", schema: missing } : true;
         },
         handle() {
@@ -479,12 +480,20 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
       yield* hby.db.reopen({ reuse: true });
       exchanger = new Exchanger(hby, { handlers, now: () => now });
       now += 10_000;
+      proof = true;
+      yield* exchanger.processEscrows();
+      assertExists(hby.db.epse.get([said]));
+      assertEquals(hby.db.emsd!.get([said])!.dts, deadline, "proof migration keeps the absolute schema deadline");
+      proof = false;
       missing = second;
       yield* exchanger.processEscrows();
       assertEquals(hby.db.emse!.get([said, first]), null);
       assertExists(hby.db.emse!.get([said, second]));
       assertEquals(hby.db.emsd!.get([said])!.dts, deadline);
-      assertEquals([...exchanger.cues], [{ kin: "query", q: { r: "schema", said: second } }]);
+      assertEquals([...exchanger.cues].filter((cue) => cue.kin === "query"), [{
+        kin: "query",
+        q: { r: "schema", said: second },
+      }]);
       now += 10_000;
       yield* exchanger.processEscrows();
       assertExists(hby.db.emse!.get([said, second]), "deadline equality remains eligible");
@@ -504,12 +513,17 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
         tsgs: [new TransIdxSigGroup(tsgs[0].prefixer, tsgs[0].seqner, tsgs[0].diger, sender.sign(expired.raw, true))],
       };
       yield* exchanger.processEvent(expiredInput);
-      now += 20_001;
+      now += 19_000;
+      proof = true;
+      yield* exchanger.processEscrows();
+      assertExists(hby.db.epse.get([expired.said!]));
+      now += 1_001;
       yield* exchanger.processEscrows();
       assertEquals(hby.db.emsd!.get([expired.said!]), null);
       assertEquals(hby.db.enst.get([expired.said!]), []);
       assertEquals([...hby.db.esigs.getTopItemIter([expired.said!, ""])], []);
       assertEquals(handled, 1);
+      proof = false;
       const lifetime =
         exchangeMessage("/ipex/grant", { lifetime: true }, { sender: sender.pre, version: Vrsn_2_0, xid: first })[0];
       const cacheKey = [sender.pre, first, lifetime.said!];

@@ -617,14 +617,21 @@ export class Exchanger {
         yield* call(() => this.dropEscrow(said));
         continue;
       }
-      const dater = schema ? this.hby.db.emsd?.get([said]) : this.hby.db.epsd.get([said]);
+      const deadline = this.hby.db.emsd?.get([said]);
+      const absolute = deadline && timestampMicros(deadline.dts);
+      if (deadline && absolute === null) throw new Error("Corrupt missing-schema deadline.");
+      const dater = schema ? deadline : this.hby.db.epsd.get([said]);
       const date = dater && timestampMicros(dater.dts);
       if (date === null || date === undefined) {
         if (schema) throw new Error("Corrupt missing-schema deadline.");
         yield* call(() => this.dropEscrow(said));
         continue;
       }
-      if (this.nowMicros() > date + (schema ? 0n : BigInt(EXCHANGE_ESCROW_TIMEOUT_MS) * 1000n)) {
+      const now = this.nowMicros();
+      if (
+        now > date + (schema ? 0n : BigInt(EXCHANGE_ESCROW_TIMEOUT_MS) * 1000n)
+        || absolute !== null && absolute !== undefined && now > absolute
+      ) {
         yield* call(() => this.dropEscrow(said));
         continue;
       }
@@ -1050,7 +1057,6 @@ export class Exchanger {
     if (this.complete(said)) return false;
     this.storeEscrowEvidence(serder, factors, ptds);
     this.hby.db.emse?.trim([said]);
-    this.hby.db.emsd?.rem([said]);
     // Preserve first admission time so repeated retries cannot keep stale wire alive forever.
     this.hby.db.epsd.put([said], new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601(new Date(this.now()))) }));
     return this.hby.db.epse.put([said], serder);
