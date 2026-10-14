@@ -131,6 +131,9 @@ CESR core depends on the small read-only contract `Payload { size, open() }`,
 iterator and accepts an optional abort signal; `write()` provides backpressure;
 `finish()` returns the reopenable owner; borrowed wire/raw views remain read-only. Sinks capture their operation signal.
 Aborting a sink after successful finish must not delete the returned payload.
+If ESSR qualification or returned metadata fails after sink finish, the writer
+owns and joins disposal of that untransferred payload. Disposal failure propagates
+an aggregate preserving the qualification failure and cleanup cause.
 Finite annotation uses the progressive engine through an internal complete-input
 collector, with an 8 MiB default input limit. Failed collection releases every
 undelivered payload, even when another cleanup fails. `annotate()` releases its
