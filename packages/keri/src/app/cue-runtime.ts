@@ -39,8 +39,9 @@ function resolveCueHab(
   if (hab) {
     return hab;
   }
-  const habitats = [...runtime.hby.habs.values()];
-  return habitats.length === 1 ? habitats[0] ?? null : null;
+  const habitats = runtime.hby.habs.values();
+  const first = habitats.next();
+  return first.done || !habitats.next().done ? null : first.value;
 }
 
 /**

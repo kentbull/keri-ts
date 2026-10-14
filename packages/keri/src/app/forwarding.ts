@@ -60,6 +60,7 @@ import {
   mailboxPollEndpoints,
   mailboxTopicKey,
 } from "./mailboxing.ts";
+import type { OobiReplyLimits } from "./oobi-replies.ts";
 import { Organizer } from "./organizing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -610,7 +611,7 @@ export class Poster {
     topic: string,
     message: Uint8Array,
     endpoint: { eid: string; url: string },
-    maxBytes?: number,
+    maxBytes = DEFAULT_FORWARD_BYTES,
   ): PreparedCesrTarget {
     if (this.hby.db.prefixes.has(endpoint.eid)) {
       const stored = this.requireMailboxer().storeMsg(
@@ -621,7 +622,7 @@ export class Poster {
       return { kind: "stored" };
     }
     const forwarded = buildForwardedDelivery(hab, { recipient, topic, message }, maxBytes);
-    const intro = introduce(hab, endpoint.eid, maxBytes === undefined ? undefined : maxBytes - forwarded.length);
+    const intro = introduce(hab, endpoint.eid, maxBytes - forwarded.length);
     return {
       kind: "http",
       url: endpoint.url,
@@ -1219,8 +1220,9 @@ function buildForwardedDelivery(
     topic: string;
     message: Uint8Array;
   },
-  maxBytes = Infinity,
+  maxBytes = DEFAULT_FORWARD_BYTES,
 ): Uint8Array {
+  if (args.message.buffer.byteLength > maxBytes) throw new ResourceLimitError("Forwarded payload exceeds byte limit");
   const [serder, attachments] = exchange(
     "/fwd",
     {},
@@ -1250,63 +1252,81 @@ function mailboxReplyPayload(
   recipient: string,
   topic: string,
   message: Uint8Array,
-  maxBytes = Infinity,
+  maxBytes = DEFAULT_FORWARD_BYTES,
 ): Uint8Array {
   if (topic !== "/reply" && topic !== "reply") {
     return message;
   }
+  if (message.buffer.byteLength > maxBytes) throw new ResourceLimitError("Mailbox reply exceeds byte limit");
   const introduction = introduce(hab, recipient, maxBytes - message.length);
   return introduction.length === 0 ? message : concatBytes(introduction, message);
 }
 
+/** Finite convenience wire ceiling; a local policy rather than a protocol maximum. */
+const DEFAULT_FORWARD_BYTES = 8 * 1024 * 1024;
+
 /**
- * Return the KERIpy-style introduction stream for one remote endpoint.
- *
- * This bootstrap material is intentionally broader than a bare endpoint reply:
- * - sender KEL replay
- * - delegation chain when present
- * - endpoint/location replies for later correspondence
- *
- * It is only sent when local DB state does not already show a receipt from the
- * remote endpoint for the sender's latest event.
+ * Borrow a Hab/store for lazy introduction output, preserving target KEL, oldest
+ * delegator first, then endpoint/location replies. Capture begins on iteration.
+ * No source is opened when a witness/receipt already makes introduction unnecessary.
+ * Native proof/key copies and the large-history transport caller remain separately qualified.
+ */
+export function introductionMessages(
+  hab: Hab,
+  remote: string,
+  limits: OobiReplyLimits = {},
+): Iterable<Uint8Array> {
+  const endpoints = hab.replyEndRoleMessages(hab.pre, undefined, [], "", limits);
+  const maxDepth = limits.maxDepth ?? 32;
+  const maxMessageBytes = limits.maxMessageBytes ?? DEFAULT_FORWARD_BYTES;
+  return {
+    *[Symbol.iterator]() {
+      const kever = hab.kever;
+      if (!kever || kever.wits.includes(remote)) return;
+      const latestSaid = kever.serder.said;
+      if (!latestSaid || remoteAlreadyReceiptedLatestEvent(hab, remote, latestSaid)) return;
+      const captured = hab.db.replay(hab.pre, 0, {
+        maxDepth,
+        maxMessageBytes,
+      });
+      if (captured) yield* captured;
+      yield* endpoints;
+    },
+  };
+}
+
+/**
+ * Collect a finite introduction under a configurable 8 MiB default; explicit
+ * Infinity is misuse. Admit every message before retention and the final join.
+ * Remaining credit may be zero when witness/receipt suppression produces no output.
+ * This convenience collector does not establish a shared runtime memory bound.
  */
 export function introduce(
   hab: Hab,
   remote: string,
-  maxBytes = Infinity,
+  maxBytes = DEFAULT_FORWARD_BYTES,
+  limits: OobiReplyLimits = {},
 ): Uint8Array {
-  const kever = hab.kever;
-  if (!kever) {
-    return new Uint8Array();
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Invalid introduction byte limit");
+  const configuredMessageBytes = limits.maxMessageBytes ?? DEFAULT_FORWARD_BYTES;
+  if (!Number.isSafeInteger(configuredMessageBytes) || configuredMessageBytes < 1) {
+    throw new RangeError("Invalid introduction message limit");
   }
-  if (kever.wits.includes(remote)) {
-    return new Uint8Array();
-  }
-
-  const latestSaid = kever.serder.said;
+  const configuredMetadataBytes = limits.maxDescriptorBytes ?? configuredMessageBytes;
   if (
-    !latestSaid || remoteAlreadyReceiptedLatestEvent(hab, remote, latestSaid)
+    !Number.isSafeInteger(configuredMetadataBytes) || configuredMetadataBytes < 0
+    || configuredMetadataBytes > configuredMessageBytes
   ) {
-    return new Uint8Array();
+    throw new RangeError("Invalid introduction metadata limit");
   }
-
+  const maxMessageBytes = Math.min(configuredMessageBytes, Math.max(1, maxBytes));
+  const maxDescriptorBytes = Math.min(configuredMetadataBytes, maxMessageBytes);
   const messages: Uint8Array[] = [];
   let size = 0;
-  /** Admit each replay event before retaining it for this finite introduction. */
-  const append = (bytes: Uint8Array) => {
+  for (const bytes of introductionMessages(hab, remote, { ...limits, maxMessageBytes, maxDescriptorBytes })) {
     if (bytes.length > maxBytes - size) throw new ResourceLimitError("Query introduction exceeds byte limit");
     size += bytes.length;
-    messages.push(bytes);
-  };
-  for (const msg of hab.db.clonePreIter(hab.pre)) {
-    append(msg);
-  }
-  for (const msg of hab.db.cloneDelegation(kever)) {
-    append(msg);
-  }
-  const endpoints = hab.replyEndRole(hab.pre);
-  if (endpoints.length > 0) {
-    append(endpoints);
+    if (bytes.length) messages.push(bytes);
   }
   return concatBytes(...messages);
 }
