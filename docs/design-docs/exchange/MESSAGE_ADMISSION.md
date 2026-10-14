@@ -79,8 +79,21 @@ proof copies belong only to Broker; terminal semantic refusal disposes the new
 unaccepted Baser proof without removing accepted or Broker-owned evidence. The saved
 pointer is the outer reply SAID, and `txnStateSaved` reaches the host as a notify
 emission. Recovery uses existing bounded query coordination, retaining exact TEL
-`ri/i/src` fields. Storage/invariant failures propagate. Credential replies and
-TSN query dispatch remain guarded; this is not v2 `RegistryStore` receiving.
+`ri/i/src` fields. Storage/invariant failures propagate. Credential TSN receiving
+also uses this proof ownership and accepted-trust boundary.
+TSN query dispatch remains guarded; this is not v2 `RegistryStore` receiving.
+
+Credential `/tsn/credential/{aid}` independently verifies registry availability,
+attester proof and the credential's current accepted TEL record. Its registry,
+state/digest, event timestamp and KEL/registry anchor commitments must match;
+accepted revocation prevents a later notice from resurrecting issuance. Actual 714
+accepts signed forged KEL-anchor metadata and old issuance notices after revocation;
+these refusals and the outer-SAID BADA pointer are intentional TS corrections.
+Missing registry, issuer/proof and credential TEL use finite `credential-mre/mae/ooo`
+Broker families and existing query delivery. Reopen/retry rechecks accepted state;
+no parent proof confers credential acceptance. Existing `vcState` row hydration
+costs remain inherited, not a shared-memory qualification.
+
 Legacy TEL/TSN ordinals above `Number.MAX_SAFE_INTEGER` are explicitly refused;
 protocol `NumberPrimitive` supports wider values, so this is not all-number parity.
 
