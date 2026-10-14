@@ -73,7 +73,7 @@ Deno.test("two request reservations survive an interleaved background cue drain"
       const replayB: ReplayCue = { kin: "replay", querySaid: "query-b", messages: [new Uint8Array([2])] };
       const ordinary: ReplayCue = { kin: "replay", messages: [new Uint8Array([3])] };
       const seen: AgentCue[] = [];
-      const runtime = { hby, reactor, cues: reactor.cues } as AgentRuntime;
+      const runtime = { hby, reactor, cues: reactor.cues, resources: reactor.resources } as AgentRuntime;
       const producing = yield* spawn(() =>
         reactor.settle(undefined, {}, function*() {
           // These model deferred query results produced after another turn has already begun waiting.
@@ -136,7 +136,7 @@ Deno.test("cue delivery owns one initial batch even when delivery appends more w
     const hby = yield* createHabery({ name: `cue-batch-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const reactor = new Reactor(hby, { maxPendingCues: 1 });
-      const runtime = { hby, reactor, cues: reactor.cues } as AgentRuntime;
+      const runtime = { hby, reactor, cues: reactor.cues, resources: reactor.resources } as AgentRuntime;
       // Exercise both the fallback interpreter and the habitat interpreter with the same bounded sink.
       for (const withHab of [false, true]) {
         const hab = withHab ? hby.makeHab("recipient") : undefined;
