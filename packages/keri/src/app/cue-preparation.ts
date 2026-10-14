@@ -11,6 +11,9 @@ const wireBytes = 8 * 1024 ** 2, preparationBytes = 3 * wireBytes;
 /** Borrow emission/evidence until the accepting delivery owner finishes consumption and joined cleanup. */
 export interface PreparedCueEmission {
   readonly emission: CueEmission | undefined;
+  /** Irreducible input retention plus admitted output, excluding temporary interpretation credit. */
+  readonly retainedBytes: number;
+  readonly resourcePolicy: ResourcePolicy;
   /** Called by the accepting owner after joined cleanup; repeated calls are harmless. */
   release(): void;
 }
@@ -39,12 +42,14 @@ export function prepareCueEmission(
   }
   let input: ResourceReservation | undefined, output: ResourceReservation | undefined;
   let preparation: ResourceReservation | undefined, original: OwnedCue | undefined;
+  let inputBytes = heldInput;
   let published = false, live = true;
   let emission: CueEmission | undefined;
   try {
     if (!(cues instanceof CueDeck)) {
       const before = resources.used.bytes;
       input = reserveCueBytes(resources, [cue]);
+      inputBytes = resources.used.bytes - before;
       // Synchronous inspection has no yield; classify this operation's own combined floor before contention.
       if (resources.used.bytes - before + wireBytes + preparationBytes > resources.limits.bytes) {
         throw new ResourceAdmissionError("Cue retention and interpretation exceed shared capacity", "limit");
@@ -78,6 +83,8 @@ export function prepareCueEmission(
       if (size > wireBytes) throw new ResourceLimitError("Cue output exceeds finite interpretation limit");
     }
     const owner: PreparedCueEmission = {
+      retainedBytes: inputBytes + wireBytes,
+      resourcePolicy: resources,
       get emission() {
         if (!live) throw new Error("Cue emission owner is released");
         return emission;

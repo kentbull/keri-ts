@@ -105,6 +105,9 @@ preparation, and atomic acceptance precedes ordinary source removal. Existing
 CueDeck credit transfers/requeues; lazy replay stays unopened. The accepting
 owner releases after joined consumption. This facility alone is not reliable
 handoff or guard-free delivery; port actual owners/callers before activation.
+Cue route capture reserves a separate 1 MiB/4096-target allowance before endpoint
+resolution. Its independent owner retains metadata until joined delivery cleanup;
+configured floors include the live cue and interpretation credit.
 
 Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB
