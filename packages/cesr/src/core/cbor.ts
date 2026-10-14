@@ -1,5 +1,6 @@
 import { Decoder } from "cbor-x/decode";
 import { Encoder } from "cbor-x/encode";
+import { DeserializeError } from "./errors.ts";
 
 /**
  * Normalize encoder output to a plain `Uint8Array`.
@@ -132,4 +133,46 @@ export function encodeKeriCbor(value: unknown): Uint8Array {
  */
 export function decodeKeriCbor<T = unknown>(raw: Uint8Array): T {
   return keriCborDecoder.decode(raw) as T;
+}
+
+const nativeDecode = Decoder.prototype.decode;
+const nativeTextDecode = TextDecoder.prototype.decode;
+const NativeArray = Array;
+const syntaxFailures = new WeakSet<DeserializeError>();
+
+/** Create only our own CBOR syntax refusal, preserving foreign same-class errors. */
+export function cborSyntaxFailure(message: string): DeserializeError {
+  const error = new DeserializeError(message);
+  syntaxFailures.add(error);
+  return error;
+}
+
+/** Identify only locally created admitted CBOR syntax failures for opaque fallback. */
+export function isCborSyntaxFailure(error: unknown): boolean {
+  return error instanceof DeserializeError && syntaxFailures.has(error);
+}
+
+/**
+ * Preserve the shared codec's exact shapes; only scanned malformed boundaries are intrinsic.
+ * Complete-input/tag/infrastructure failures propagate; incomplete/RangeError alone is not provenance.
+ * Global extensions, special tag expansion and retained codec globals remain unqualified.
+ */
+export function decodeAdmittedKeriCbor(
+  raw: Uint8Array,
+  boundaryFailure: boolean,
+  onFailure?: (error: unknown) => void,
+): unknown {
+  const decode = keriCborDecoder.decode;
+  try {
+    return decode.call(keriCborDecoder, raw);
+  } catch (error) {
+    if (
+      !boundaryFailure || decode !== nativeDecode || TextDecoder.prototype.decode !== nativeTextDecode
+      || Array !== NativeArray || !(error instanceof Error)
+    ) {
+      onFailure?.(error);
+      throw error;
+    }
+    throw cborSyntaxFailure(`Failed to decode CBOR Serder: ${String(error)}`);
+  }
 }
