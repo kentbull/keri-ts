@@ -97,58 +97,70 @@ Deno.test("ESSR wire classification excludes custom staging and joined cleanup f
   const v = vector(2);
   const essr = v.essr(new Texter({ raw: b("payload"), code: "4B" }).qb64, 1);
   const external = new ParserError("storage contract failure");
-  for (const phase of ["factory", "write", "finish", "abort", "metadata"] as const) {
+  const cleanup = new ParserError("storage disposal failure");
+  for (const phase of ["factory", "write", "finish", "abort", "metadata", "invalid-size", "discard"] as const) {
     let aborted = 0;
-    let owned: Awaited<ReturnType<PayloadSink["finish"]>> | undefined;
+    let discarded = 0;
+    let disposed = false;
     const input = v.selector + v.group(
       "BodyWithAttachmentGroup",
       v.body + v.group("AttachmentGroup", v.sig + essr + (phase === "abort" ? "-ZZZ" : "")),
     );
-    try {
-      const failure = await assertRejects(() =>
-        parse(chunks(b(input)), {
-          classifyWireErrors: true,
-          payloadSink(limit, signal) {
-            if (phase === "factory") throw external;
-            const sink = new MemoryPayloadSink(limit, signal);
-            return {
-              write(bytes) {
-                if (phase === "write") throw external;
-                return sink.write(bytes);
-              },
-              async finish() {
-                if (phase === "finish") throw external;
-                owned = await sink.finish();
-                if (phase === "metadata") {
-                  return {
-                    ...owned,
-                    get size(): number {
-                      throw external;
-                    },
-                  };
-                }
-                return owned;
-              },
-              async abort() {
-                aborted++;
-                await sink.abort();
-                if (phase === "abort") throw external;
-              },
-            };
-          },
-        }).next()
-      );
-      if (phase === "abort") {
-        assert(failure instanceof AggregateError);
-        assert(failure.errors.some((error) => error instanceof WireParseError));
-        assert(failure.errors.includes(external));
-      } else {
-        assert(failure === external, `${phase} must preserve the storage error identity`);
-      }
-      assertEquals(aborted, phase === "factory" ? 0 : 1);
-    } finally {
-      await owned?.discard();
+    const failure = await assertRejects(() =>
+      parse(chunks(b(input)), {
+        classifyWireErrors: true,
+        payloadSink(limit, signal) {
+          if (phase === "factory") throw external;
+          const sink = new MemoryPayloadSink(limit, signal);
+          return {
+            write(bytes) {
+              if (phase === "write") throw external;
+              return sink.write(bytes);
+            },
+            async finish() {
+              if (phase === "finish") throw external;
+              const owned = await sink.finish();
+              return {
+                ...owned,
+                get size(): number {
+                  if (phase === "metadata" || phase === "discard") throw external;
+                  return phase === "invalid-size" ? -1 : owned.size;
+                },
+                async discard() {
+                  discarded++;
+                  await new Promise((resolve) => setTimeout(resolve, 0));
+                  await owned.discard();
+                  disposed = true;
+                  if (phase === "discard") throw cleanup;
+                },
+              };
+            },
+            async abort() {
+              aborted++;
+              await sink.abort();
+              if (phase === "abort") throw external;
+            },
+          };
+        },
+      }).next()
+    );
+    if (phase === "abort") {
+      assert(failure instanceof AggregateError);
+      assert(failure.errors.some((error) => error instanceof WireParseError));
+      assert(failure.errors.includes(external));
+    } else if (phase === "discard") {
+      assert(failure instanceof AggregateError);
+      assertEquals(failure.errors, [external, cleanup]);
+      assert(failure.cause === external);
+    } else if (phase === "invalid-size") {
+      assert(failure instanceof RangeError);
+    } else {
+      assert(failure === external, `${phase} must preserve the storage error identity`);
     }
+    const transferred = ["metadata", "invalid-size", "discard"].includes(phase);
+    assertEquals(discarded, transferred ? 1 : 0);
+    assertEquals(disposed, transferred, "rejection must join transferred-owner disposal");
+    assertEquals(aborted, phase === "factory" ? 0 : 1);
   }
 });
 
