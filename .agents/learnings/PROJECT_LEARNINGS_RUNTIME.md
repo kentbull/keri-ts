@@ -200,6 +200,8 @@ Witness delegation passes the runtime's services into generic sends. TCP finite/
 creation, backing limits precede writes, and write callbacks/drain precede another
 pull. Credit follows source return plus socket close; calling destroy is not joined
 cleanup. End/close deadlines start at source EOF, not the beginning of a large transfer.
+Accepted-socket output borrows the connection stream slot, reserves separate output backing,
+and shares the outgoing callback/drain loop without ending the socket.
 Already admitted TCP frames use the serializer directly; shared HTTP/TCP metadata
 admission precedes qualification, and actual nested payload owners stay borrowed.
 
