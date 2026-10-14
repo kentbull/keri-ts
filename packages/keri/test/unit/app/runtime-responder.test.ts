@@ -1,5 +1,5 @@
-import { ResourceAdmissionError } from "cesr-ts";
-import { call, type Operation, run, spawn } from "effection";
+import { ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
+import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -8,7 +8,6 @@ import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Respondant } from "../../../src/app/respondant.ts";
-import { processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -181,61 +180,6 @@ Deno.test("app/runtime-responder - stream cues stay with mailbox query correlati
   assertEquals(retained, [cue]);
 });
 
-Deno.test("app/runtime-responder - witness ingress drains through responder instead of mailbox-local side effects", async () => {
-  const chunks: Array<{ bytes: Uint8Array; local: boolean }> = [];
-  const handled: Array<{ emission: CueEmission; hab: string }> = [];
-  const emission: CueEmission = {
-    kind: "wire",
-    cue: { kin: "witness", serder: { pre: "EDEST" } as never },
-    messages: [new Uint8Array([7])],
-  };
-  const serviceHab = {
-    pre: "EWIT",
-    processCuesIter() {
-      return [emission][Symbol.iterator]();
-    },
-  };
-  const runtime = {
-    cues: [],
-    reactor: {
-      *process(
-        source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
-        { local }: { local?: boolean },
-        consume: () => Operation<void>,
-      ) {
-        // The transport fixture records one bounded input and then exercises the real cue consumer.
-        const iterator = source(new AbortController().signal)[Symbol.asyncIterator]();
-        const chunk = yield* call(() => iterator.next());
-        chunks.push({ bytes: chunk.value!, local: local ?? false });
-        yield* call(() => iterator.return?.());
-        yield* consume();
-      },
-    },
-    respondant: {
-      *sendWithHab(current: CueEmission, hab: { pre: string }) {
-        handled.push({ emission: current, hab: hab.pre });
-      },
-    },
-    hby: {
-      habs: new Map([["EWIT", serviceHab]]),
-    },
-  };
-  const bytes = new Uint8Array([9, 9, 9]);
-
-  const emissions = await run(function*() {
-    return yield* processWitnessIngress(
-      runtime as never,
-      serviceHab as never,
-      bytes,
-      { local: true },
-    );
-  });
-
-  assertEquals(emissions, [emission]);
-  assertEquals(chunks, [{ bytes, local: true }]);
-  assertEquals(handled, [{ emission, hab: "EWIT" }]);
-});
-
 Deno.test("app/runtime-responder - receipt cues for witness-only recipients land in the hosted witness mailbox store", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -283,6 +227,50 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
           mailboxTopicKey(recipient.pre, "/receipt"),
         ) ?? [];
         assertEquals(stored, [message]);
+        const receipt = witness.witness.bind(witness);
+        let interpretations = 0, witnessWire: Uint8Array | undefined;
+        witness.witness = (...args) => {
+          interpretations++;
+          return witnessWire = receipt(...args);
+        };
+        runtime.cues.push({ kin: "witness", serder: hby.db.getEvtSerder(recipient.pre, recipient.kever!.said)! });
+        const emissions = yield* processWitnessIngress(
+          runtime,
+          witness,
+          acceptedEventReplayMessage(hby, recipient.pre, 0).message,
+          { local: true },
+        );
+        assertEquals(interpretations, 1, "callback and delivery borrow one witness interpretation");
+        const proof = emissions.find((emission) => emission.cue.kin === "witness")!;
+        const emitted = [...proof.messages];
+        assertEquals(emitted[0], witnessWire);
+        assertEquals(emitted[0].buffer === witnessWire!.buffer, false, "finite return owns independent wire");
+        const published = runtime.mailboxer!.getTopicMsgs(mailboxTopicKey(recipient.pre, "/receipt"));
+        assertEquals(published, [message, ...emitted], "the existing local mailbox policy uses that same wire");
+        for (let pass = 0; pass < 4 && runtime.deliveries.hasPending; pass++) {
+          yield* runtime.deliveries.process(runtime);
+        }
+        assertEquals(runtime.deliveries.hasPending, false);
+        assertEquals(runtime.resources.used.bytes, 0);
+        const chunk = new Uint8Array(4 * 1024 ** 2 + 1), messages = [chunk, chunk];
+        const iterator = messages[Symbol.iterator].bind(messages), cleanupFailure = new Error("witness cursor cleanup");
+        messages[Symbol.iterator] = () =>
+          Object.assign(iterator(), {
+            return() {
+              throw cleanupFailure;
+            },
+          });
+        runtime.cues.push({ kin: "replay", messages });
+        const failed = yield* call(() =>
+          assertRejects(
+            () => run(() => drainWitnessCues(runtime, witness, runtime.cues, { deliver: false })),
+            AggregateError,
+          )
+        );
+        assertEquals(failed.errors[0] instanceof ResourceLimitError, true);
+        assertEquals(failed.errors[0].message, "Finite witness output exceeds byte limit");
+        assertStrictEquals(failed.errors[1], cleanupFailure);
+        assertEquals(runtime.resources.used.bytes, 0, "late aggregate refusal publishes no partial result or credit");
       } finally {
         yield* runtime.close();
       }
@@ -314,6 +302,7 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
       const runtime = yield* createAgentRuntime(provider, { mode: "indirect" });
       const seen = Promise.withResolvers<void>(), returning = Promise.withResolvers<void>();
       const cleanup = Promise.withResolvers<void>();
+      const callbackClosing = Promise.withResolvers<void>(), callbackCleanup = Promise.withResolvers<void>();
       let continued = false, eof = false, emissions = 0;
       const task = run(function*() {
         yield* processWitnessIngressSource(
@@ -337,6 +326,15 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
             if (emission.cue.kin === "witness") {
               emissions++;
               seen.resolve();
+              yield* resource<void>(function*(provide) {
+                try {
+                  yield* provide();
+                } finally {
+                  callbackClosing.resolve();
+                  yield* call(() => callbackCleanup.promise);
+                }
+              });
+              yield* suspend();
             }
           },
         );
@@ -350,6 +348,15 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
         assertEquals([eof, emissions, continued], [false, 1, false]);
         let halted = false;
         const halt = task.halt().then(() => halted = true);
+        yield* call(() => callbackClosing.promise);
+        assertEquals(halted, false);
+        assertEquals(
+          runtime.resources.used.bytes >= 17 * 1024 ** 2,
+          true,
+          "joined callback cleanup retains the interpreted proof and parser",
+        );
+        yield* runtime.reactor.settle(undefined, {}, function*() {});
+        callbackCleanup.resolve();
         yield* call(() => returning.promise);
         assertEquals(halted, false);
         assertEquals(runtime.resources.used.streams, 1, "source cleanup retains parser admission");
@@ -363,6 +370,7 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
         assertEquals(provider.db.getKever(controller.pre)?.sn, 1);
       } finally {
         clearTimeout(timeout);
+        callbackCleanup.resolve();
         cleanup.resolve();
         yield* call(() => task.halt());
         yield* runtime.close();

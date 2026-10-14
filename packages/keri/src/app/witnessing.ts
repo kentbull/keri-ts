@@ -21,12 +21,15 @@ import {
   CtrDexV1,
   discardFrame,
   Ilks,
+  ResourceAdmissionError,
+  ResourceLimitError,
   type SerderKERI,
   type Siger,
 } from "cesr-ts";
 import { toEffectionFrames } from "cesr-ts/effection";
 import { action, call, each, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
+import { type Deck, DeckFullError } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { receipt as receiptEvent, reply as replyEvent } from "../core/protocol-eventing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
@@ -42,6 +45,7 @@ import {
   inspectCesrRequest,
   KERIPY_CESR_JSON_CONTENT_TYPE,
 } from "./cesr-http.ts";
+import { prepareCueEmission, type PreparedCueEmission } from "./cue-preparation.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { envelopeFromFrame } from "./parsering.ts";
@@ -260,52 +264,167 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
   if (serviceHab) {
     return serviceHab;
   }
-  const habitats = [...runtime.hby.habs.values()];
-  return habitats.length === 1 ? habitats[0] ?? null : null;
+  const habitats = runtime.hby.habs.values();
+  const first = habitats.next();
+  return first.done || !habitats.next().done ? null : first.value;
 }
 
 /**
- * Consume explicit cues under Reactor.settle, using the selected habitat.
+ * Consume a finite runtime cue pass outside Reactor, using the selected habitat.
  *
  * The host keeps mailbox side effects here so synchronous HTTP/TCP route
  * handlers can inspect witness/receipt wire emissions before the outer runtime
- * loop sees them.
+ * loop sees them. Returned finite snapshots are caller-owned, capped at 8 MiB
+ * and the runtime's captured cue-count limit; source callbacks do not collect.
  */
 export function* drainWitnessCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
-  cues: Iterable<AgentCue>,
+  cues: Deck<AgentCue>,
   {
     deliver = true,
+    onAdmissionRefusal,
   }: {
     deliver?: boolean;
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
   } = {},
 ): Operation<CueEmission[]> {
-  const emissions: CueEmission[] = [];
-  yield* consumeWitnessCues(runtime, serviceHab, cues, deliver, function*(emission) {
-    emissions.push(emission);
-  });
-  return emissions;
+  return yield* finiteWitnessEmissions(
+    runtime,
+    (consume) => consumeWitnessCues(runtime, serviceHab, cues, deliver, consume, onAdmissionRefusal),
+    onAdmissionRefusal,
+  );
 }
 
-/** Consume each borrowed emission under its current settle turn without an aggregate result. */
+/** Snapshot only finite wrappers: independent wire, no escaped replay reader, credit held through joined input cleanup. */
+function finiteWitnessEmissions(
+  runtime: AgentRuntime,
+  process: (consume: (emission: CueEmission) => Operation<void>) => Operation<void>,
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+): Operation<CueEmission[]> {
+  return call(function*() {
+    const maxBytes = 8 * 1024 ** 2, maxItems = runtime.cues.capacity;
+    yield* resource<void>(function*(provide) {
+      const admitted = runtime.resources.reserve({ bytes: maxBytes });
+      if (admitted.kind === "refuse") {
+        const refusal = new ResourceAdmissionError("Finite witness output refused", admitted.reason);
+        onAdmissionRefusal?.(refusal);
+        throw refusal;
+      }
+      try {
+        yield* provide();
+      } finally {
+        admitted.reservation.release();
+      }
+    });
+    const emissions: CueEmission[] = [];
+    let size = 0;
+    yield* process(function*(emission) {
+      if (emissions.length === maxItems) throw new ResourceLimitError("Finite witness emission count exceeds limit");
+      const messages: Uint8Array[] = [];
+      const source = emission.messages[Symbol.iterator]();
+      let failure: { error: unknown } | undefined;
+      try {
+        while (true) {
+          const next = source.next();
+          if (next.done) break;
+          const message = next.value;
+          if (!(message instanceof Uint8Array)) throw new TypeError("Witness output must be binary");
+          if (size + message.byteLength > maxBytes) {
+            throw new ResourceLimitError("Finite witness output exceeds byte limit");
+          }
+          size += message.byteLength;
+          messages.push(new Uint8Array(message));
+        }
+      } catch (error) {
+        failure = { error };
+      }
+      try {
+        source.return?.();
+      } catch (error) {
+        if (failure && failure.error !== error) {
+          throw new AggregateError([failure.error, error], "Witness output cleanup failed");
+        }
+        throw error;
+      }
+      if (failure) throw failure.error;
+      emissions.push({
+        ...emission,
+        messages,
+        cue: emission.cue.kin === "replay" ? { ...emission.cue, messages } : emission.cue,
+      });
+    });
+    return emissions;
+  });
+}
+
+/** Transfer a finite source pass, borrowing emissions only through joined callback cleanup outside Reactor. */
 function* consumeWitnessCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
-  cues: Iterable<AgentCue>,
+  cues: Deck<AgentCue>,
   deliver: boolean,
   consume?: (emission: CueEmission) => Operation<void>,
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): Operation<void> {
+  if (cues !== runtime.cues) throw new RangeError("Witness cue drain requires the runtime source deck");
   const hab = cueHab(runtime, serviceHab);
   if (!hab) return;
-  for (const emission of hab.processCuesIter(cues)) {
-    if (deliver) yield* runtime.respondant.sendWithHab(emission, hab);
-    if (consume) yield* consume(emission);
+  let count = 0;
+  yield* runtime.reactor.settle(undefined, {}, function*() {
+    count = cues.length;
+  });
+  for (let index = 0; index < count; index++) {
+    const more = yield* call(function*() {
+      let owner: PreparedCueEmission | undefined, refusal: ResourceAdmissionError | DeckFullError | undefined;
+      const note = (error: ResourceAdmissionError | DeckFullError) => {
+        refusal = error;
+        if (error instanceof ResourceAdmissionError) onAdmissionRefusal?.(error);
+      };
+      yield* resource<void>(function*(provide) {
+        try {
+          yield* provide();
+        } finally {
+          owner?.release();
+        }
+      });
+      try {
+        yield* runtime.reactor.settle(undefined, {}, function*() {
+          if (deliver) {
+            owner = runtime.deliveries.prepareWitnessCue(
+              runtime,
+              hab,
+              (emission) => runtime.respondant.routeForEmission(emission, hab),
+              note,
+            );
+          } else {
+            prepareCueEmission(hab, cues, runtime.resources, (prepared) => {
+              owner = prepared;
+              return undefined;
+            }, note);
+          }
+          if (owner?.emission) runtime.querying.observeCue(owner.emission.cue);
+        });
+      } catch (error) {
+        if (refusal && error === refusal && (refusal instanceof DeckFullError || refusal.reason === "busy")) {
+          return false;
+        }
+        throw error;
+      }
+      if (!owner) return false;
+      const emission = owner.emission;
+      if (emission && consume) yield* consume(emission);
+      return true;
+    });
+    if (deliver) yield* runtime.deliveries.process(runtime);
+    if (!more) break;
   }
 }
 
 /** Witness-local dispatch and existing responder delivery policy for one ingress source. */
 export interface WitnessIngressOptions {
+  /** Invocation-local observation of this engine's own admission refusals, never foreign errors. */
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
   /** Let hosts distinguish intrinsic wire refusals from source, storage and cleanup failures. */
   classifyWireErrors?: boolean;
   /** Accept with witness-local semantics; default false preserves ordinary ingress policy. */
@@ -317,20 +436,25 @@ export interface WitnessIngressOptions {
 /**
  * Own one progressive witness parser and settle each frame before requesting more input.
  * Consume emissions individually, without retaining an aggregate result. The callback
- * borrows its emission under Reactor's guard/current frame lifetime. Retaining work
+ * borrows admitted emission/evidence outside Reactor through joined cleanup. Retaining work
  * requires independently admitted ownership transfer; never retain lazy owners or
- * reenter guarded Reactor work. Source abort/cleanup belongs to the
- * parser scope. Existing responder delivery stays guarded until bounded handoff adoption.
+ * expose scoped lazy owners. Source abort/cleanup belongs to the parser scope.
+ * Queued delivery and the callback share one interpretation until both finish.
  */
 export function* processWitnessIngressSource(
   runtime: AgentRuntime,
   serviceHab: Hab,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
-  { local = false, deliver = true, classifyWireErrors = false }: WitnessIngressOptions = {},
+  { local = false, deliver = true, classifyWireErrors = false, onAdmissionRefusal }: WitnessIngressOptions = {},
   consume?: (emission: CueEmission) => Operation<void>,
 ): Operation<void> {
-  yield* runtime.reactor.process(source, { local, escrows: true, classifyWireErrors }, function*() {
-    yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume);
+  yield* call(function*() {
+    const channel = yield* runtime.reactor.frames(source, { classifyWireErrors, onAdmissionRefusal });
+    for (const frame of yield* each(channel.frames)) {
+      yield* runtime.reactor.settle(frame, { local, escrows: true });
+      yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume, onAdmissionRefusal);
+      yield* each.next();
+    }
   });
 }
 
@@ -344,6 +468,9 @@ export function* processWitnessIngressSource(
  * - immediately drain the resulting cues through the hosted witness habitat
  * - return those cue emissions so the caller can make any request-scoped
  *   response decision
+ *
+ * Returned emission snapshots own finite wire arrays (8 MiB aggregate and captured
+ * cue-count ceiling); callers own them after return. Source callbacks borrow instead.
  *
  * `local=true` is the crucial switch for the witness receipt path: accepted
  * events that list the hosted witness emit `witness` cues instead of ordinary
@@ -362,17 +489,14 @@ export function* processWitnessIngress(
   bytes: Uint8Array,
   options: WitnessIngressOptions = {},
 ): Operation<CueEmission[]> {
-  const emissions: CueEmission[] = [];
-  yield* processWitnessIngressSource(
-    runtime,
-    serviceHab,
-    (signal) => chunkBytes(bytes, { signal }),
-    options,
-    function*(emission) {
-      emissions.push(emission);
-    },
-  );
-  return emissions;
+  return yield* finiteWitnessEmissions(runtime, (consume) =>
+    processWitnessIngressSource(
+      runtime,
+      serviceHab,
+      (signal) => chunkBytes(bytes, { signal }),
+      options,
+      consume,
+    ), options.onAdmissionRefusal);
 }
 
 /** Resolve the authoritative witness list for one accepted event. */

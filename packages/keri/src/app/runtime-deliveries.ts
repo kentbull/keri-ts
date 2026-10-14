@@ -206,6 +206,36 @@ export class RuntimeDeliveries {
     return transferred;
   }
 
+  /** Guarded witness transfer; the callback borrow and queued targets share one prepared wire lifetime. */
+  prepareWitnessCue(
+    runtime: AgentRuntime,
+    hab: Hab,
+    resolve: (emission: CueEmission) => RawCesrRoute | null,
+    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
+  ): PreparedCueEmission | undefined {
+    if (runtime.resources !== this.resources) throw new RangeError("Wrong witness resource policy");
+    if (this.closed) throw new Error("Runtime deliveries are closed");
+    try {
+      this.pending.checkSpace();
+    } catch (error) {
+      if (error instanceof DeckFullError) onAdmissionRefusal?.(error);
+      throw error;
+    }
+    let borrow: PreparedCueEmission | undefined;
+    DirectReplyDelivery.prepareCue(runtime, hab, runtime.cues, resolve, (delivery, prepared) => {
+      const emission = prepared.emission;
+      if (emission?.kind === "transport" && emission.cue.kin === "stream") {
+        runtime.mailboxDirector.retainQueryCue(emission.cue, onAdmissionRefusal);
+      } else if (emission?.cue.kin === "query" && emission.kind !== "wire") {
+        runtime.querying.enqueueCue(emission.cue, onAdmissionRefusal);
+      }
+      if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
+      else delivery.release();
+      borrow = prepared;
+    }, onAdmissionRefusal);
+    return borrow;
+  }
+
   /** Atomically publish one bounded direct-reply batch and its HTTP stream; no network runs here. */
   openReply(
     runtime: AgentRuntime,

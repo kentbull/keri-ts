@@ -1,20 +1,21 @@
-/** One interpreted reply batch owned by delivery and, when requested, borrowed by HTTP until both close. */
+/** One interpreted reply batch owned by delivery and a borrowed HTTP/witness consumer until both close. */
 import { ResourceAdmissionError } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import { reserveCueBytes } from "../core/cue-admission.ts";
-import type { AgentCue } from "../core/cues.ts";
+import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
 import { prepareCueEmission, type PreparedCueEmission } from "./cue-preparation.ts";
 import { prepareCueRoute, type PreparedCueRoute } from "./cue-route.ts";
+import type { RawCesrRoute } from "./forwarding.ts";
 import type { Hab } from "./habbing.ts";
 import type { QueryReply } from "./query-replies.ts";
 
 /** Queue-only or two-consumer reply lifetime; consumers cannot retain bytes after cleanup. */
 export class DirectReplyDelivery {
   private index = 0;
-  private responseDone = false;
+  private borrowDone = false;
   private deliveryDone = false;
   private published = false;
   private readonly owners: PreparedCueEmission[] = [];
@@ -49,6 +50,71 @@ export class DirectReplyDelivery {
     return transferred;
   }
 
+  /** Share one admitted cue between queued targets and a scoped witness consumer; neither reinterprets it. */
+  static prepareCue(
+    runtime: AgentRuntime,
+    hab: Hab,
+    cues: Deck<AgentCue>,
+    resolve: (emission: CueEmission) => RawCesrRoute | null,
+    accept: (delivery: DirectReplyDelivery, borrow: PreparedCueEmission) => void,
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+  ): boolean {
+    const batch = new DirectReplyDelivery();
+    try {
+      const prepared = prepareCueEmission(hab, cues, runtime.resources, (owner) => {
+        batch.owners.push(owner);
+        if (owner.emission?.kind === "wire") {
+          const route = prepareCueRoute(runtime.resources, owner, () =>
+            resolve(owner.emission!) ?? {
+              sender: hab.pre,
+              recipient: "",
+              topic: "",
+              bodyMode: runtime.hby.cesrBodyMode,
+              kind: "direct",
+              targets: [],
+            }, onAdmissionRefusal);
+          batch.routes.push(route);
+          if (route.route.targets.length) {
+            batch.deliveries.push(
+              new CueDelivery(
+                {
+                  get emission() {
+                    return owner.emission;
+                  },
+                  retainedBytes: owner.retainedBytes,
+                  resourcePolicy: owner.resourcePolicy,
+                  release() {},
+                },
+                runtime.hby.habs.get(route.route.sender) ?? hab,
+                route,
+              ),
+            );
+          }
+        }
+        let live = true;
+        accept(batch, {
+          get emission() {
+            if (!live) throw new Error("Witness cue borrow is released");
+            return owner.emission;
+          },
+          retainedBytes: owner.retainedBytes,
+          resourcePolicy: owner.resourcePolicy,
+          release() {
+            if (!live) return;
+            live = false;
+            batch.closeBorrow();
+          },
+        });
+        return undefined;
+      }, onAdmissionRefusal);
+      batch.published = prepared;
+      batch.finish([]);
+      return prepared;
+    } finally {
+      if (!batch.published) for (const route of batch.routes) route.release();
+    }
+  }
+
   /** One atomic wire preparation serves either queue-only delivery or the existing two consumers. */
   private static prepareBatch(
     runtime: AgentRuntime,
@@ -59,7 +125,7 @@ export class DirectReplyDelivery {
     onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): ReadableStream<Uint8Array> | null {
     const batch = new DirectReplyDelivery();
-    batch.responseDone = !publish;
+    batch.borrowDone = !publish;
     const responseBytes = publish ? runtime.replyStreams.preparationByteFloor : 0;
     let stream: ReadableStream<Uint8Array> | null = null;
     try {
@@ -94,7 +160,7 @@ export class DirectReplyDelivery {
                     *[Symbol.iterator]() {
                       for (const owner of batch.owners) yield* owner.emission!.messages;
                     },
-                  }, () => batch.closeResponse()));
+                  }, () => batch.closeBorrow()));
               } else enqueue!(batch);
               batch.published = true;
               return;
@@ -186,12 +252,12 @@ export class DirectReplyDelivery {
     this.deliveries.length = 0;
     this.finish(cleanups);
   }
-  private closeResponse(): void {
-    this.responseDone = true;
+  private closeBorrow(): void {
+    this.borrowDone = true;
     if (this.published) this.finish([]);
   }
   private finish(cleanups: (() => void)[]): void {
-    if (this.published && this.responseDone && this.deliveryDone) {
+    if (this.published && this.borrowDone && this.deliveryDone) {
       const releaseInput = this.releaseInput;
       cleanups.push(
         ...this.routes.map((route) => () => route.release()),
