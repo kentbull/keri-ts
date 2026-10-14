@@ -21,7 +21,7 @@ import { type EssrBudget, essrFactory, type EssrOptions, type EssrWriter } from 
 
 /** Resource limits and cancellation for one progressive stream invocation. */
 export interface ParseOptions extends CursorOptions, EssrOptions {
-  /** Shared ordinary-tree allowance; delivered roots retain credit until discardFrame(). */
+  /** Shared ordinary-tree and ESSR-stage allowances, retained until root disposal. */
   resources?: ResourcePolicy;
   /** Resident body and ordinary attachment byte limit per owned tree; streamed ESSR is budgeted separately. */
   maxFrameBytes?: number;
@@ -78,7 +78,7 @@ interface PendingFrame {
   frame: CesrFrame;
   /** Frame genus remains independent of temporary attachment-wrapper selectors. */
   gvrsn: Versionage;
-  /** Admission credit shared with descendants; streamed ESSR is charged separately. */
+  /** Admission credit shared with descendants, including their finite ESSR stages. */
   tree: TreeBudget;
   /** Pending descendants retain their own writers until root delivery. */
   nests: PendingFrame[];
@@ -114,7 +114,7 @@ interface ParseContext {
   stages: Set<EssrWriter>;
   /** Finished owners remain parser-owned until every descendant finishes. */
   owners: Set<EssrPayload>;
-  /** Reserved ordinary-tree allowances not yet transferred at public delivery. */
+  /** Reserved tree/stage allowances not yet transferred at public delivery. */
   credits: Set<ResourceReservation>;
 }
 
@@ -359,6 +359,8 @@ export async function* parse(
   if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) {
     throw new RangeError("Tree node limit must be a positive safe integer");
   }
+  const maxEssrBytes = options.maxEssrBytes ?? 8 * 1024 ** 2;
+  const maxEssrItems = options.maxEssrItems ?? 16384;
   // One invocation owns every stage that has not crossed the public yield below.
   const context: ParseContext = {
     limit,
@@ -369,19 +371,27 @@ export async function* parse(
     owners: new Set(),
     credits: new Set(),
     newTree: () => {
-      const decision = resources?.reserve({ bytes: limit });
-      if (decision?.kind === "refuse") {
-        throw new ResourceAdmissionError(`Tree admission refused: ${decision.reason}`, decision.reason);
-      }
-      const credit = decision?.reservation;
+      const reservations: ResourceReservation[] = [];
+      const reserve = (bytes: number) => {
+        if (!resources || bytes === 0) return;
+        const decision = resources.reserve({ bytes });
+        if (decision.kind === "refuse") {
+          throw new ResourceAdmissionError(`Tree admission refused: ${decision.reason}`, decision.reason);
+        }
+        reservations.push(decision.reservation);
+      };
+      reserve(limit);
+      // One consumer owner retains all child stages through parser and disposal cleanup.
+      const credit = resources && { release: () => reservations.forEach((held) => held.release()) };
       if (credit) context.credits.add(credit);
       return {
         credit,
         resident: 0,
         groups: 0,
         nodes: 0,
-        bytes: options.maxEssrBytes ?? 8 * 1024 ** 2,
-        items: options.maxEssrItems ?? 16384,
+        bytes: maxEssrBytes,
+        items: maxEssrItems,
+        admitStage: reserve,
       };
     },
   };

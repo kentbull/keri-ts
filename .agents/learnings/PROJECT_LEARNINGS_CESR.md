@@ -12,7 +12,7 @@
   independent sibling cannot revoke earlier delivered owners.
 - A shared cursor bounds consumption and input backing. Tree credits cover
   ordinary bytes/leaves, decoded ESSR/items, nodes and depth. No full raw envelope
-  or per-Texter manifest is retained. Optional shared ordinary-wire reservations
+  or per-Texter manifest is retained. Optional shared ordinary-wire and finite ESSR-stage reservations
   belong to delivered roots, never independently to nested children. They do not
   account for all hydrated copies or heap overhead.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each
