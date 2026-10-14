@@ -256,8 +256,16 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
     };
     const hab = issuer.makeHab("issuer", undefined, { toad: 0 });
     const did = `did:webs:example.com:dws:${hab.pre}`;
-    bindDesignatedAliases(source, { alias: "issuer", dids: [did, `did:keri:${hab.pre}`] });
+    const aliases = bindDesignatedAliases(source, { alias: "issuer", dids: [did, `did:keri:${hab.pre}`] });
     const artifacts = generateDidWebsArtifacts(source, { alias: "issuer", did });
+    const clearSavedCue = () => {
+      assertEquals(runtime.cues.toArray().map((cue) => cue.kin === "saved" ? cue.creder.said : cue.kin), [
+        aliases.issued,
+      ]);
+      assertEquals((runtime.vdr.reger as Reger).saved.get([aliases.issued])?.qb64, aliases.issued);
+      assertEquals(resources.used, { bytes: 5487, streams: 0, decryptions: 0 });
+      runtime.cues.clear();
+    };
     const first = [...issuer.db.clonePreIter(hab.pre)][0];
     let controller: ReadableStreamDefaultController<Uint8Array>, canceled = false, finishCleanup = () => {};
     const cleanup = new Promise<void>((resolve) => finishCleanup = resolve);
@@ -281,6 +289,24 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       controller!.close();
       assertEquals((yield* task).document.id, did);
       assertEquals(escrowPasses, 2, "Preserve both legacy convergence passes after complete intake");
+      assertEquals(
+        runtime.cues.toArray().map((cue) =>
+          cue.kin === "receipt"
+            ? [cue.kin, cue.serder.pre, cue.serder.said]
+            : cue.kin === "keyStateSaved"
+            ? [cue.kin, cue.ksn.i, cue.ksn.d]
+            : cue.kin === "saved"
+            ? [cue.kin, cue.creder.said]
+            : [cue.kin]
+        ),
+        [...issuer.db.getKelItemIter(hab.pre)].flatMap(([, said]) =>
+          ["receipt", "keyStateSaved"].map((kin) => [kin, hab.pre, said])
+        ).concat([["saved", aliases.issued]]),
+      );
+      assertEquals(target.db.getState(hab.pre)?.d, hab.kever!.said);
+      assertEquals((runtime.vdr.reger as Reger).saved.get([aliases.issued])?.qb64, aliases.issued);
+      assertEquals(resources.used, { bytes: 17882, streams: 0, decryptions: 0 });
+      runtime.cues.clear(); // Preserve the zero below as a transport-owner check after queued output disposal.
       assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
 
       fetches = [];
@@ -352,6 +378,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         runtime.reactor.processEscrowsOnce = escrows;
       }
       assertEquals(fetches.length, 1, "Escrow/storage failures cannot become an alternate artifact fetch");
+      clearSavedCue();
       assertEquals(resources.used.bytes, 0);
 
       fetches = [];
@@ -404,6 +431,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       });
       assertEquals((yield* resolveDidWebs(runtime, { did })).document.id, did);
       assertEquals(fetches.slice(0, 2).map((url) => new URL(url).protocol), ["https:", "http:"]);
+      clearSavedCue();
       assertEquals(resources.used.bytes, 0);
       for (const [failure, expected] of [["mismatch", ValidationError], ["limit", ResourceLimitError]] as const) {
         mode = failure;
@@ -422,6 +450,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         }
         assertEquals(rejected instanceof expected, true);
         assertEquals(fetches.length, 2, "DID JSON/content failures cannot trigger transport fallback");
+        clearSavedCue();
         assertEquals(resources.used.bytes, 0);
       }
     } finally {
