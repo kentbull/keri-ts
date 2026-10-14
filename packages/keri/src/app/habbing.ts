@@ -66,6 +66,7 @@ import {
   normalizeSaltQb64,
   saltySigner,
 } from "./keeping.ts";
+import { collectOobiReplies, type OobiReplyLimits, oobiReplyMessages } from "./oobi-replies.ts";
 import { loadStoredReply } from "./stored-replies.ts";
 
 /** Reserved alias for the local signatory habitat record. */
@@ -1150,113 +1151,35 @@ export class Hab {
     return concatMessages(messages);
   }
 
-  /**
-   * Generate the reply/message stream used for role-based OOBI discovery.
-   *
-   * Current composition order:
-   * 1. cloned KEL messages for the controller AID
-   * 2. witness location/auth material when serving witness OOBIs
-   * 3. endpoint location/auth replies from `locs.` and `ends.`
-   *
-   * This mirrors the shape of KERIpy's `replyEndRole()` output while remaining
-   * limited to the Gate E bootstrap role families.
-   */
-  replyEndRole(
+  /** Borrow this Hab/store through lazy role output; metadata capture starts only on iterator acquisition. */
+  replyEndRoleMessages(
     cid: string,
     role?: Role | string,
-    eids: string[] = [],
+    eids: readonly string[] = [],
     scheme = "",
-  ): Uint8Array {
-    const messages: Uint8Array[] = [];
-    const cloned = new Set<string>();
-    const delegatedReady = (pre: string): boolean => {
-      const kever = this.db.getKever(pre);
-      if (!kever?.delegated) {
-        return true;
-      }
-      const estSaid = kever.lastEst.d || kever.said;
-      if (!estSaid || !this.db.aess.get(dgKey(pre, estSaid))) {
-        return false;
-      }
-      const chain = [...this.db.cloneDelegation(kever)];
-      if (chain.length === 0) {
-        return false;
-      }
-      messages.push(...chain);
-      return true;
-    };
-    const appendClone = (pre: string) => {
-      if (!pre || cloned.has(pre)) {
-        return;
-      }
-      if (!delegatedReady(pre)) {
-        return;
-      }
-      messages.push(...this.db.clonePreIter(pre));
-      cloned.add(pre);
-    };
-    appendClone(cid);
-
-    if (role === Roles.witness) {
-      const kever = this.db.getKever(cid);
-      for (const eid of kever?.wits ?? []) {
-        if (eids.length > 0 && !eids.includes(eid)) {
-          continue;
-        }
-        appendClone(eid);
-        messages.push(
-          eid === this.pre ? this.replyLocScheme(eid, scheme) : this.loadLocScheme(eid, scheme),
-        );
-        if (cid === this.pre) {
-          messages.push(this.makeEndRole(eid, Roles.witness, true));
-        }
-      }
-    }
-
-    for (
-      const [keys, end] of this.db.ends.getTopItemIter([cid], { topive: true })
-    ) {
-      const currentRole = keys[1];
-      const eid = keys[2];
-      if (!currentRole || !eid || !(end.allowed || end.enabled)) {
-        continue;
-      }
-      if (role && currentRole !== role) {
-        continue;
-      }
-      if (eids.length > 0 && !eids.includes(eid)) {
-        continue;
-      }
-      appendClone(eid);
-      messages.push(this.loadLocScheme(eid, scheme));
-      messages.push(this.loadEndRole(cid, eid, currentRole));
-    }
-
-    return concatMessages(messages.filter((msg) => msg.length > 0));
+    limits: OobiReplyLimits = {},
+  ): Iterable<Uint8Array> {
+    return oobiReplyMessages(this, cid, role, eids, scheme, false, limits);
   }
 
-  /**
-   * Entry point used by OOBI HTTP resource serving.
-   *
-   * The current bootstrap implementation delegates directly to `replyEndRole()`
-   * so the recognizable KERIpy seam exists before broader discovery policy is
-   * implemented.
-   */
-  replyToOobi(
+  /** Finite role output admits each message before retaining it; large callers use the lazy source. */
+  replyEndRole(cid: string, role?: Role | string, eids: string[] = [], scheme = ""): Uint8Array {
+    return collectOobiReplies(this.replyEndRoleMessages(cid, role, eids, scheme));
+  }
+
+  /** Lazy OOBI output preserves the top-level delegated readiness guard under the consuming owner. */
+  replyToOobiMessages(
     aid: string,
     role?: Role | string,
-    eids: string[] = [],
-  ): Uint8Array {
-    const kever = this.db.getKever(aid);
-    const estSaid = kever?.lastEst.d || kever?.said;
-    if (
-      kever?.delegated
-      && (!estSaid || !this.db.aess.get(dgKey(aid, estSaid))
-        || [...this.db.cloneDelegation(kever)].length === 0)
-    ) {
-      return new Uint8Array();
-    }
-    return this.replyEndRole(aid, role, eids);
+    eids: readonly string[] = [],
+    limits: OobiReplyLimits = {},
+  ): Iterable<Uint8Array> {
+    return oobiReplyMessages(this, aid, role, eids, "", true, limits);
+  }
+
+  /** Collect explicitly finite OOBI output; incomplete delegated state still returns empty bytes. */
+  replyToOobi(aid: string, role?: Role | string, eids: string[] = []): Uint8Array {
+    return collectOobiReplies(this.replyToOobiMessages(aid, role, eids));
   }
 
   /**

@@ -70,6 +70,17 @@ residency remain separately audited boundaries.
 Temporary shared admission refusal maps to HTTP 503; configured size refusal
 remains 413. Neither response creates a retry queue.
 
+OOBI HTTP output uses the same response owner, priming one bounded message after
+admission for 404 readiness. Metadata cursors close before hydration/yield; local
+ceilings default to 4,096 inspected descriptors, 32 delegation levels and one
+message ceiling of retained metadata. Captured FEL identities exclude later
+acceptances; proofs and signing keys remain current. Fresh flat-field/signature
+preparation uses a conservative allowance before construction. Native Komer,
+proof/key copies and existing no-SN corrupt-proof skipping remain phase 5 gaps.
+Finite Hab adapters cap total output at 8 MiB; forwarding caller adaptation remains
+open. This preserves TS role/source selection, including endpoint KELs and its
+existing witness authorization condition, rather than claiming full 714 wire parity.
+
 Query delivery reserves 24 MiB of preparation credit and 8 MiB of retained request
 credit before invoking its synchronous wire producer. The preparation allowance
 covers bounded query wire, introduction events and their joined buffer; native

@@ -17,6 +17,7 @@ import {
   CtrDexV2,
   Diger,
   parseCounterFromText,
+  ResourceLimitError,
   SerderKERI,
   Siger,
   smell,
@@ -802,6 +803,31 @@ Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approve
         ...hby.db.clonePreIter(delegate.pre),
       );
       assertEquals([...approved], [...expected]);
+      const read = hby.db.getValBounded;
+      const fault = new Error("event hydration must follow metadata admission");
+      hby.db.getValBounded = () => {
+        throw fault;
+      };
+      const source = delegate.replyToOobiMessages(delegate.pre);
+      assertThrows(() => [...delegate.replyToOobiMessages(delegate.pre, undefined, [], {
+        maxDescriptors: 0,
+      })], ResourceLimitError);
+      assertThrows(() => [...source], Error, fault.message);
+      hby.db.getValBounded = read;
+
+      const iterator = source[Symbol.iterator]();
+      const first = iterator.next();
+      assertExists(first.value);
+      delegator.interact(); // Accepted after acquisition: excluded from this captured horizon.
+      const remainder = [...{ [Symbol.iterator]: () => iterator }];
+      assertEquals([...concatBytes(first.value, ...remainder)], [...approved]);
+      const replayRange = hby.db.replayRange;
+      hby.db.replayRange = function*(range, limit) {
+        if (range[0] !== delegate.pre) return; // Durable anchor exists, but no readable parent chain.
+        yield* replayRange.call(this, range, limit);
+      };
+      assertEquals([...delegate.replyToOobiMessages(delegate.pre)], []);
+      hby.db.replayRange = replayRange;
     } finally {
       yield* hby.close(true);
     }
