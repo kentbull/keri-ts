@@ -1,5 +1,5 @@
 import { Dater, Diger, Prefixer, SerderKERI, TraitDex } from "cesr-ts";
-import { CueDeck } from "../core/cue-admission.ts";
+import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
 import { RegStateRecord } from "../core/records.ts";
@@ -52,7 +52,10 @@ export function registryRecord(data: unknown): RegStateRecord | null {
  * Credential and registry notices require independent reply authentication.
  */
 export class RegistryStateReceiver {
-  constructor(private readonly tvy: Tevery, private readonly rvy: Revery) {}
+  private readonly publisher: CuePublisher;
+  constructor(private readonly tvy: Tevery, private readonly rvy: Revery) {
+    this.publisher = cuePublisher(rvy.cues);
+  }
 
   /** Called by Revery's SAID-checked route or typed Broker retry. */
   processReply({ serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs): ReplyProcessDecision {
@@ -79,7 +82,7 @@ export class RegistryStateReceiver {
       return reject("Mismatched issuer or stale registry state.");
     }
     const kever = this.tvy.db.getKever(issuer, { refresh: true });
-    if (!(this.rvy.cues instanceof CueDeck)) this.rvy.cues.checkSpace();
+    this.publisher.preflight(1);
     const escrow = (typ: string, query: boolean, proof?: PreparedReply) => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, regk, aid, diger);
       const cues: AgentCue[] = isNew && query
@@ -92,7 +95,7 @@ export class RegistryStateReceiver {
         }]
         : [];
       this.rvy.cues.checkSpace(cues.length);
-      const child = cues.length && this.rvy.cues instanceof CueDeck ? this.rvy.cues.prepare(cues) : undefined;
+      const child = cues.length ? this.publisher.prepare(cues) : undefined;
       try {
         proof?.applyProofs();
         const added = this.tvy.reger.txnsb.escrowStateNotice({
@@ -109,8 +112,7 @@ export class RegistryStateReceiver {
         // Broker now owns copied pending proof; retain prior accepted BADA evidence in Baser.
         disposeIncoming();
         proof?.publishQueries();
-        if (child) child.publish();
-        else this.rvy.cues.extend(cues);
+        child?.publish();
         return refuse("Registry state dependency unavailable.", typ);
       } finally {
         child?.release();
@@ -164,14 +166,13 @@ export class RegistryStateReceiver {
       const dater = new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) });
       const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
       this.rvy.cues.checkSpace(cues.length);
-      const child = this.rvy.cues instanceof CueDeck ? this.rvy.cues.prepare(cues) : undefined;
+      const child = this.publisher.prepare(cues);
       try {
         proof.applyProofs();
         this.tvy.reger.txnsb.updateReply(aid, serder, diger, dater);
         if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
         proof.publishQueries();
-        if (child) child.publish();
-        else this.rvy.cues.extend(cues);
+        child?.publish();
         return acceptReplyDecision();
       } finally {
         child?.release();
