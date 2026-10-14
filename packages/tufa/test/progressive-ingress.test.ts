@@ -11,6 +11,7 @@ import {
   NumberPrimitive,
   parseBytes,
   Prefixer,
+  ResourceAdmissionError,
   SealEvent,
   SerderKERI,
   Texter,
@@ -191,6 +192,27 @@ Deno.test("HTTP cancellation closes a blocked body and joins its parser task", a
         assertEquals([refusedPulls, refusedClosed], [0, true]);
       } finally {
         occupied.reservation.release();
+      }
+      for (
+        const fault of [
+          new ResourceAdmissionError("foreign source busy", "busy"),
+          new ResourceAdmissionError("foreign source limit", "limit"),
+        ]
+      ) {
+        const body = new ReadableStream<Uint8Array>({
+          pull() {
+            throw fault;
+          },
+        }, { highWaterMark: 0 });
+        const failed = createProtocolHandler(runtime)(
+          new Request("http://localhost/", {
+            method: "POST",
+            headers: { "content-type": "application/cesr" },
+            body,
+          }),
+        );
+        assertStrictEquals(yield* call(() => assertRejects(() => failed)), fault);
+        assertEquals([body.locked, runtime.resources.used.bytes], [false, 0]);
       }
       let reading!: () => void;
       const ready = new Promise<void>((resolve) => {
@@ -421,6 +443,34 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       }
       assertEquals(ordinary.includes(alice.pre), true);
       assertEquals(ordinary.includes(bob.pre), true);
+      for (let pass = 0; pass < 8 && runtime.deliveries.hasPending; pass++) yield* runtime.deliveries.process(runtime);
+      assertEquals(runtime.deliveries.hasPending, false);
+      const deniedBody = query("logs", { i: bob.pre, src: alice.pre }, { pre: alice.pre, pvrsn: Vrsn_2_0 });
+      // An older matching capture must not authorize this exact denied frame's ordinary delivery.
+      runtime.cues.push({
+        kin: "replay",
+        querySaid: deniedBody.said!,
+        src: alice.pre,
+        dest: alice.pre,
+        messages: [acceptedEventReplayMessage(hby, bob.pre, 0).message],
+      });
+      runtime.reactor.kevery.denyList.add(alice.pre);
+      const before = [...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)];
+      const denied = yield* call(() =>
+        handler(
+          new Request("http://localhost/", {
+            method: "POST",
+            headers: { "content-type": "application/cesr" },
+            body: concatBytes(
+              messagize(deniedBody, { sigers: alice.sign(deniedBody.raw, true), gvrsn: Vrsn_2_0 }),
+              acceptedEventReplayMessage(hby, bob.pre, 0).message,
+            ) as Uint8Array<ArrayBuffer>,
+          }),
+        )
+      );
+      assertEquals(denied.status, 204, "the independent trailing event still controls its own result");
+      assertEquals([...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)], before);
+      runtime.reactor.kevery.denyList.clear();
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

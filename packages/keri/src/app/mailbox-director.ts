@@ -18,6 +18,7 @@
 import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy, type ResourceReservation } from "cesr-ts";
 import { CueDeck, type OwnedCue } from "../core/cue-admission.ts";
 import type { StreamCue } from "./../core/cues.ts";
+import type { DeckFullError } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { MbxTopicCursor } from "../core/mailbox-topics.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
@@ -179,9 +180,12 @@ export class MailboxDirector {
   }
 
   /** Admit one immutable query cue before the caller removes its source owner; busy leaves that source intact. */
-  retainQueryCue(cue: StreamCue): void {
+  retainQueryCue(
+    cue: StreamCue,
+    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
+  ): void {
     if (this.correlationsClosed) throw new Error("Mailbox query correlation is closed");
-    this.queryCues.append(cue);
+    this.queryCues.prepare([cue], onAdmissionRefusal).publish();
   }
 
   /**

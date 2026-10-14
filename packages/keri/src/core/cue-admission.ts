@@ -228,17 +228,24 @@ export class CueDeck extends Deck<AgentCue> {
     if (!Number.isSafeInteger(value) || value < (this.held ?? 0)) throw new RangeError("Invalid held cue capacity");
     super.capacity = value;
   }
-  override checkSpace(count = 1): void {
+  override checkSpace(count = 1, onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void): void {
     if (!Number.isSafeInteger(count) || count < 0) throw new RangeError("Invalid cue admission count");
     if (this.publishing) return;
     if (count > this.capacity) throw new ResourceLimitError("Cue batch exceeds item capacity");
-    if (count > this.capacity - this.held) throw new DeckFullError("Cue item capacity is occupied");
+    if (count > this.capacity - this.held) {
+      const refusal = new DeckFullError("Cue item capacity is occupied");
+      onAdmissionRefusal?.(refusal);
+      throw refusal;
+    }
   }
   /** Reserve the actual batch before durable writes; finally release unused preparation. */
-  prepare(cues: readonly AgentCue[]): PreparedCueBatch {
-    this.checkSpace(cues.length);
+  prepare(
+    cues: readonly AgentCue[],
+    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
+  ): PreparedCueBatch {
+    this.checkSpace(cues.length, onAdmissionRefusal);
     if (!cues.length) throw new RangeError("Empty cue preparation");
-    const credit = reserveCueBytes(this.resources, cues, this.maxNodes);
+    const credit = reserveCueBytes(this.resources, cues, this.maxNodes, onAdmissionRefusal);
     let values: AgentCue[];
     try {
       values = [...cues];

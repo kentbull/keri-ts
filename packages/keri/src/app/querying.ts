@@ -647,36 +647,36 @@ export class QueryCoordinator implements CueSink {
   }
 
   /** Observe a source cue only after the downstream owner has atomically retained eligible delivery. */
-  admitCue(runtime: AgentRuntime, interpreter: Hab | null): CueAdmission {
+  admitCue(runtime: AgentRuntime, interpreter: Hab | null, sink: CueSink = this.sink): CueAdmission {
     const cue = runtime.cues.peekHead();
     let admission: CueAdmission;
-    if (cue?.kin === "query" && this.sink.admitQuery) {
-      admission = this.sink.admitQuery(cue, () => {
+    if (cue?.kin === "query" && sink.admitQuery) {
+      admission = sink.admitQuery(cue, () => {
         const emission = interpreter?.interpretCue(cue);
-        return emission?.kind === "wire" ? emission : this.transientQueryEmission(cue);
+        return emission?.kind === "wire" ? emission : this.transientQueryEmission(cue, interpreter ?? undefined);
       });
       if (admission === "transferred") {
         if (runtime.cues.peekHead() !== cue) throw new Error("Query source changed during admission");
         const original = runtime.cues instanceof CueDeck ? runtime.cues.takeOwned()! : undefined;
         if (!original) runtime.cues.pull();
         try {
-          this.observeContinuations(cue);
+          this.observeCue(cue);
         } finally {
           original?.release();
         }
         return "transferred";
       }
-    } else admission = this.sink.admitCue?.(runtime, interpreter) ?? "ineligible";
+    } else admission = sink.admitCue?.(runtime, interpreter) ?? "ineligible";
     if (admission !== "transferred" && admission !== "busy" && admission !== "ineligible") {
       throw new TypeError("Invalid query source admission");
     }
-    if (cue && admission === "transferred") this.observeContinuations(cue);
+    if (cue && admission === "transferred") this.observeCue(cue);
     return admission;
   }
 
   /** Observe and resolve incomplete queries synchronously under the caller's local preparation ownership. */
   prepareEmission(emission: CueEmission): CueEmission {
-    this.observeContinuations(emission.cue);
+    this.observeCue(emission.cue);
     const prepared = emission.cue.kin === "query" && emission.kind !== "wire"
       ? this.transientQueryEmission(emission.cue) ?? emission
       : emission;
@@ -840,7 +840,8 @@ export class QueryCoordinator implements CueSink {
     return requestHab ?? this.hab ?? soleHab(this.hby);
   }
 
-  private observeContinuations(cue: AgentCue): void {
+  /** Observe retained cue evidence after its immediate destination transfer. */
+  observeCue(cue: AgentCue): void {
     for (const continuation of this.continuations) {
       try {
         continuation.observe(cue, this);
@@ -880,12 +881,13 @@ export class QueryCoordinator implements CueSink {
    * Convert one incomplete portable query cue into a wire-ready request when
    * runtime can honestly resolve its queried prefix.
    */
-  private transientQueryEmission(cue: QueryCue): CueEmission | null {
+  private transientQueryEmission(cue: QueryCue, hab?: Hab): CueEmission | null {
     const pre = extractQueriedPrefix(cue);
     if (!pre) {
       return null;
     }
     return this.wireEmissionForRequest({
+      hab,
       pre,
       route: cue.route ?? "logs",
       query: normalizeOutboundQuery(cue),

@@ -184,6 +184,12 @@ resources so cancellation joins child cleanup before release. Initial pass count
 and eligible immediate transfer/busy semantics stay bounded. QueryCoordinator
 transforms under the same preparation/output check and sends without repeating
 observation/signing. Standalone custom pending queries retain caller-owned bounds.
+Generic HTTP drains reuse that owner with invocation-local service-habitat/sink
+selection. Transfer stream/query metadata before source removal; observe query
+continuations only after transfer. Earlier captured query batches use their own
+exact dispatch authorization and queued-only delivery, never a later frame or
+an old matching SAID cue. Network waits and joined fallback cleanup stay outside
+Reactor; capacity mappings require the actual invocation's created refusal.
 Cue route capture reserves a separate 1 MiB/4096-target allowance before endpoint
 resolution. Its independent owner retains metadata until joined delivery cleanup;
 configured floors include the live cue and interpretation credit.

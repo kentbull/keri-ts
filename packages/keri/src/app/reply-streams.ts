@@ -56,7 +56,7 @@ export class ReplyStreams {
   }
 
   /** Admit a synchronous direct-reply preparation before signing; open transfers, release abandons. */
-  prepare(): {
+  prepare(onAdmissionRefusal?: (error: ResourceAdmissionError) => void): {
     open(messages: Iterable<Uint8Array>, dispose: () => void): ReadableStream<Uint8Array>;
     release(): void;
   } {
@@ -66,7 +66,9 @@ export class ReplyStreams {
     }
     const admitted = this.resources.reserve({ streams: 1, bytes: this.reservationBytes });
     if (admitted.kind === "refuse") {
-      throw new ResourceAdmissionError("Reply preparation admission refused", admitted.reason);
+      const refusal = new ResourceAdmissionError("Reply preparation admission refused", admitted.reason);
+      onAdmissionRefusal?.(refusal);
+      throw refusal;
     }
     this.prepared++;
     let live = true;
