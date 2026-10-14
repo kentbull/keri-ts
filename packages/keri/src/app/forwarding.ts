@@ -26,7 +26,7 @@ import {
   SerderKERI,
   Vrsn_2_0,
 } from "cesr-ts";
-import { action, call, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
+import { action, call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
 import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
@@ -41,7 +41,7 @@ import {
   type MailboxInboxLimits,
 } from "../db/mailbox-inbox.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
-import type { OutboxerLike } from "../db/outboxing.ts";
+import type { OutboxerLike, PendingOutboxEntry } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
@@ -533,14 +533,61 @@ export class Poster {
    * Retry behavior is per mailbox endpoint, not per logical message. A removed
    * mailbox cancels only that endpoint's target row. Runtime route/signing and
    * outcome publication use short turns; transport cleanup joins outside the guard.
-   * The existing live outbox iterator/materialized rows retain their caller-owned scan bounds.
+   * Runtime scans require pre-copy bounded reads and retain admitted copies through joined cleanup.
+   * Standalone/custom iteration retains its caller-owned preparation and retention contract.
    */
   processPending(runtime?: AgentRuntime): Operation<void> {
     if (runtime && runtime.hby !== this.hby) throw new RangeError("Poster retry requires its owning Habery runtime");
     // deno-lint-ignore no-this-alias -- One retry pass owns transport cleanup before guarded publication.
     const self = this;
     return call(function*() {
-      for (const pending of self.outboxer.iterPending()) {
+      if (runtime && !self.outboxer.enabled) return;
+      const limits = { maxMessageBytes: DEFAULT_FORWARD_BYTES, maxMetadataBytes: 65536 };
+      if (runtime && self.outboxer.enabled && !self.outboxer.iterPendingBounded) {
+        throw new RangeError("Runtime outbox retries require bounded reads from the custom store");
+      }
+      // Four payload copies (including pull overlap), retained wire plus three preparation copies, metadata/key work.
+      // Register credit first: nested transport and cursor cleanup join before this owner releases.
+      let busy = false;
+      yield* resource<void>(function*(provide) {
+        const credit = runtime && self.outboxer.enabled
+          ? runtime.resources.reserve({ bytes: 8 * limits.maxMessageBytes + 8 * limits.maxMetadataBytes + 131072 })
+          : undefined;
+        if (credit?.kind === "refuse") {
+          if (credit.reason === "busy") busy = true;
+          else throw new ResourceAdmissionError("Outbox read/copy admission exceeds shared capacity", credit.reason);
+        }
+        try {
+          yield* provide();
+        } finally {
+          if (credit?.kind === "reserve") credit.reservation.release();
+        }
+      });
+      if (busy) return;
+      let iterator: Generator<PendingOutboxEntry> | undefined;
+      yield* resource<void>(function*(provide) {
+        try {
+          yield* provide();
+        } finally {
+          const close = function*() {
+            iterator?.return(undefined);
+          };
+          if (runtime) yield* runtime.reactor.settle(undefined, {}, close);
+          else yield* close();
+        }
+      });
+      while (true) {
+        let next: IteratorResult<PendingOutboxEntry> | undefined;
+        const pull = function*() {
+          iterator ??= runtime && self.outboxer.enabled
+            ? self.outboxer.iterPendingBounded!(limits)
+            : self.outboxer.iterPending();
+          next = iterator.next();
+        };
+        if (runtime) yield* runtime.reactor.settle(undefined, {}, pull);
+        else yield* pull();
+        if (next!.done) break;
+        const pending = next!.value;
         const state: { target?: PreparedCesrTarget; failure?: { error: unknown } } = {};
         const prepare = function*() {
           const hab = self.hby.habs.get(pending.message.sender);

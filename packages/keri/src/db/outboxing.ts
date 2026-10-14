@@ -42,6 +42,12 @@ export interface PendingOutboxEntry {
   target: OutboxTargetRecord;
 }
 
+/** Finite native row ceilings; caller admits copies before constructing or pulling this iterator. */
+export interface OutboxReadLimits {
+  maxMessageBytes: number;
+  maxMetadataBytes: number;
+}
+
 /**
  * Shared outbox contract used by both the real and disabled implementations.
  *
@@ -54,6 +60,8 @@ export interface OutboxerLike {
   pendingCount(): number;
   /** Iterate each mailbox-target delivery that is still pending. */
   iterPending(): Generator<PendingOutboxEntry>;
+  /** Optional pre-copy capability required by composed runtime retries; standalone scans remain caller-owned. */
+  iterPendingBounded?(limits: OutboxReadLimits): Generator<PendingOutboxEntry>;
   /** Persist one logical outbound message and seed target rows for each mailbox. */
   queueMessage(
     said: string,
@@ -149,6 +157,13 @@ class BytesSuber extends Suber<Uint8Array> {
   }
 }
 
+/** Native metadata preflight before the existing record decoder; no general Komer policy change. */
+class OutboxKomer<T extends OutboxMessageRecord | OutboxTargetRecord> extends Komer<T> {
+  getBounded(keys: OutboxKeys, maxBytes: number): T | null {
+    return this._des(this.db.getValBounded(this.sdb, this._tokey(keys), maxBytes));
+  }
+}
+
 /**
  * Durable sender-side mailbox delivery retry storage.
  *
@@ -160,8 +175,8 @@ class BytesSuber extends Suber<Uint8Array> {
 export class Outboxer extends LMDBer implements OutboxerLike {
   readonly enabled = true;
   public msgs!: BytesSuber;
-  public items!: Komer<OutboxMessageRecord>;
-  public tgts!: Komer<OutboxTargetRecord>;
+  public items!: OutboxKomer<OutboxMessageRecord>;
+  public tgts!: OutboxKomer<OutboxTargetRecord>;
 
   /** Default primary path for Tufa-owned outbox environments. */
   static override readonly TailDirPath = "keri/obx";
@@ -177,9 +192,7 @@ export class Outboxer extends LMDBer implements OutboxerLike {
     super(options, {
       tailDirPath: Outboxer.TailDirPath,
       cleanTailDirPath: "keri/clean/obx",
-      altTailDirPath: compat
-        ? Outboxer.CompatAltTailDirPath
-        : Outboxer.AltTailDirPath,
+      altTailDirPath: compat ? Outboxer.CompatAltTailDirPath : Outboxer.AltTailDirPath,
       altCleanTailDirPath: compat ? ".keri/clean/obx" : ".tufa/clean/obx",
       tempPrefix: Outboxer.TempPrefix,
       maxNamedDBs: Outboxer.MaxNamedDBs,
@@ -195,11 +208,11 @@ export class Outboxer extends LMDBer implements OutboxerLike {
     }
 
     this.msgs = new BytesSuber(this, { subkey: "msgs." });
-    this.items = new Komer(this, {
+    this.items = new OutboxKomer(this, {
       subkey: "items.",
       recordClass: OutboxMessageRecord,
     });
-    this.tgts = new Komer(this, {
+    this.tgts = new OutboxKomer(this, {
       subkey: "tgts.",
       recordClass: OutboxTargetRecord,
     });
@@ -280,6 +293,26 @@ export class Outboxer extends LMDBer implements OutboxerLike {
         raw,
         target,
       };
+    }
+  }
+
+  /**
+   * Keys-only live scan avoids native value materialization by getRange. Each target,
+   * metadata and payload row uses the pinned bounded read before copying or decoding.
+   * Caller retains finite copy/metadata credit through iterator return and last use.
+   */
+  *iterPendingBounded(limits: OutboxReadLimits): Generator<PendingOutboxEntry> {
+    for (const limit of [limits.maxMessageBytes, limits.maxMetadataBytes]) {
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Invalid outbox row ceiling");
+    }
+    for (const key of this.tgts.sdb.getKeys({ snapshot: false })) {
+      const [said, eid] = this.tgts._tokeys(key);
+      if (!said || !eid) continue;
+      const target = this.tgts.getBounded(key, limits.maxMetadataBytes);
+      if (!target || target.status !== "pending") continue;
+      const message = this.items.getBounded([said], limits.maxMetadataBytes);
+      const raw = this.msgs.getBounded(said, limits.maxMessageBytes);
+      if (message && raw) yield { said, message, raw, target };
     }
   }
 

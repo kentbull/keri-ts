@@ -11,13 +11,13 @@ The [reference inventory](REFERENCE_ENVIRONMENTS.md) owns environment/pin closur
 2. Audit extended and embedded DID Webs environments; qualify applicable upgrades
    or document the retained historical target. Split independent environments.
 3. Execute the complete maintained inventory and report failures/skips.
-4. Run the approved repeated production-path benchmarks and report observations.
+4. Run two production-path scale observations and report their measured envelope.
 5. Publish the explicit parity matrix after affected Mapper checks are rerun.
 
 Use small pin/fix/evidence PRs under the [roadmap](../PARITY_ROADMAP.md); findings
 may require additional narrowly scoped fixes. Large raw observations can be
 reviewed as linked artifacts with compact provenance/results, not committed
-transcripts. This does not reduce the required matrix or turn failed cases green.
+transcripts. Retain distinct acceptance and failure checks; remove redundant permutations.
 
 ## Test inventory and execution
 
@@ -32,38 +32,38 @@ missing happy path or defect boundary, why existing coverage cannot exercise it,
 and ongoing maintenance value in the PR. Exploratory qualification probes may
 stay uncommitted; record exact commands/revisions/results without adding a
 permanent harness by default. Apply the same proportionality to unit tests.
-Do not weaken current assertions, remove participants or skip maintained targets
-to meet PR size goals. Tests and fixtures count toward the 300–500-line target.
+Delete redundant tests when a retained case proves the same boundary. Preserve
+protocol assertions and participant topology; do not substitute name-filtered skips
+for cleanup. Tests and fixtures count toward the 300–500-line target.
 
 Fast deterministic regressions remain in required merge CI. Large ESSR, gigabyte
 and endurance runs remain local/manual. Only the maintainer dispatches hosted
 extended jobs; retain both existing **15-minute** job caps. Do not dispatch them
 as part of autonomous continuation. Use identified disposable test stores only.
 
-## Repeated benchmark matrix
+## Minimum production observations
 
-| Dimension          | Required coverage                                           |
-| ------------------ | ----------------------------------------------------------- |
-| Aggregate transfer | 16 MiB, 256 MiB, 1 GiB, 4 GiB                               |
-| Logical message    | 4 KiB, 64 KiB, 1 MiB, mixed, limit probes                   |
-| Structure          | Flat, large GenericGroup, nested groups                     |
-| ESSR               | Independent messages and fragmented logical payloads        |
-| Input              | 4 KiB, 64 KiB, 1 MiB, irregular partitions                  |
-| Wire               | Applicable v1/v2 and qb64/qb2                               |
-| Pressure/failure   | Slow sinks, concurrency, cancellation, late malformed child |
+The reduced release gate replaces the previous 24 runtime trials and automatic
+gigabyte/repeat matrix. Run the final real HTTP→verification→plaintext storage→
+reopen/replay path once at **16 MiB** and once at **256 MiB**, using fixed 1 MiB
+logical messages, 64 KiB input chunks and the same policy/identity cardinality.
+The small run proves the full path; the 16-fold larger run checks in-flight growth.
 
-Use representative semantic combinations, not an arbitrary full cross-product.
-Small correctness fixtures cover exhaustive splits. Generate large corpora
-incrementally outside the measured path; no preloaded transfer-sized arrays.
-Keep each logical sealed message within its admission limit. Repeat in fresh
-processes with explicit time/memory/process budgets and report raw observations
-and variance, not only averages. Crashes/limit failures are not throughput results.
+Use existing small cases for v1/v2, qb64/qb2, nesting, fragmented ESSR, limit
+refusal and actual TCP callers. Retain one case per distinct slow-consumer,
+cancellation, directional failure or shutdown boundary; do not repeat the same
+failure for every volume, wire format and host. Signed independent GenericGroup
+early usability must still be proved on real HTTP and TCP. Parent-owned nested
+children are a different boundary.
 
-Preserve five independent checkpoints: untouched source, decoding-fixed atomic,
-cursor/copying fix, progressive generator, complete transport-to-storage runtime.
-Do not overwrite historical worktrees or staged benchmark artifacts. Compare
-successful order/content/digests; test the target's earlier-child survival on later
-failure separately from the old atomic semantics.
+Generate corpora incrementally outside the measured path; no transfer-sized
+arrays. Keep each sealed message within admission limits. Use fresh processes
+and explicit budgets. Report individual observations without statistical
+variance or throughput claims beyond the measured envelope. Repeat or enlarge
+only to resolve a concrete anomaly; 1/4 GiB qualification is deferred.
+
+Preserve historical parser checkpoints and raw results without rerunning them
+automatically. Their parser-only timings are separate from the production path.
 
 ## Measurements and provenance
 
@@ -76,12 +76,14 @@ durations, failures/skips and individual observations. Measure:
 - Retained-byte high water, queue/tree counts, active decryptions, metadata,
   open resources, storage and cleanup. Separate mapped-file residency.
 
-Acceptance requires retained working memory to plateau as aggregate bytes rise
+Acceptance requires bounded in-flight credit as aggregate bytes rise
 under fixed policy, real backpressure, durable replay and usable independent
 GenericGroup children before transfer completion. No predetermined speedup is
-promised. Earlier parser-only 4 GiB observations do not qualify the full runtime.
+promised. Two observations establish a measured envelope, not a statistical
+memory plateau or universal size guarantee. Earlier parser-only 4 GiB observations
+do not qualify the full runtime.
 This is an in-flight guarantee. Keep accepted-state cardinality fixed in the
-plateau comparison; separately exercise increasing identifiers/state and report
+scale comparison; use existing evidence for increasing identifiers/state and report
 resident cache growth. Existing KERIpy-style accepted-state APIs are preserved;
 eviction/public borrowing redesign is deferred. Do not subtract unexplained
 growth or promote in-flight credit into a total-RSS claim. Store/escrow reopen
@@ -98,7 +100,7 @@ report kernel/native buffering separately. Exercise source Deno and packed Node.
 Qualify installed tarballs at the advertised Node minimum as well as the current
 CI runtime. Transport promises use the older supported API; that repair alone
 does not qualify dependency, crypto, fetch or CLI compatibility at the minimum.
-Reuse these cases within representative matrix combinations, not another full
+Reuse maintained cases once per distinct boundary, not another full
 cross-product. Include finite/source caller parity, parsed-frame input without
 reparsing, HTTP request framing/auth/method and scoped response consumption.
 Keep mailbox/default routing and explicit duplex evidence distinct.

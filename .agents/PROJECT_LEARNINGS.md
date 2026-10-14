@@ -32,6 +32,7 @@ Accepted legacy bytes remain readable; new intake requires full witnessed tuples
 Raw evidence stays separate from opt-in strict seal projection.
 Native addon loading alone is not runtime compatibility; qualify large-row paths.
 Pinned nested-row preflight preserves active writers; shared copy admission remains separate.
+Finite retry credit precedes native row materialization and outlives joined transport/cursor cleanup.
 
 Active KERIpy parity targets `7143832813cac6a394ab1faf9be83bb3372be87c`.
 Keep historical 927 fixtures and fork/legacy compatibility results labeled by their actual sources.
