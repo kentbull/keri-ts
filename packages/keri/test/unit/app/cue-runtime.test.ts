@@ -1,7 +1,8 @@
 import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
-import { call, resource, run, suspend } from "effection";
-import { assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { call, resource, run, spawn, suspend } from "effection";
+import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { prepareCueEmission, type PreparedCueEmission } from "../../../src/app/cue-preparation.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -319,6 +320,151 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
       assertEquals(oversized.length, 1);
       assertEquals(resources.used.bytes, 0);
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("runtime cue delivery retains exact failed wire while admitted fanout and query owners progress", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), second = hby.makeHab("second"), third = hby.makeHab("third");
+    const failed = new CesrHttpRefusal("injected transport failure", 503);
+    let injected = true, acceptFirst = false, routes = 0;
+    const packets: Record<string, Uint8Array[]> = { first: [], second: [], third: [], query: [] };
+    const runtime = yield* createAgentRuntime(hby, {
+      services: {
+        http: {
+          async fetch(url, init) {
+            const target = new URL(url).hostname.split(".")[0];
+            packets[target].push(new Uint8Array(await new Response(init!.body).arrayBuffer()));
+            if (target === "first" && injected) throw failed;
+            return new Response(null, { status: target === "first" && !acceptFirst ? 503 : 204 });
+          },
+        },
+      },
+    });
+    const cue = { kin: "query" as const, pre: sender.pre, src: sender.pre, route: "logs", query: {} };
+    const route = () => {
+      routes++;
+      return {
+        sender: sender.pre,
+        recipient: second.pre,
+        topic: "/reply",
+        kind: "direct" as const,
+        bodyMode: "header" as const,
+        targets: [sender, second, third].map((hab, index) => ({
+          eid: hab.pre,
+          url: `https://${["first", "second", "third"][index]}.test/`,
+        })),
+      };
+    };
+    try {
+      runtime.cues.push(cue);
+      assertThrows(() =>
+        runtime.deliveries.enqueueCue(sender, runtime.cues, () => ({
+          ...route(),
+          targets: Array.from({ length: 4097 }, () => ({ eid: second.pre, url: "https://second.test/" })),
+        })), ResourceLimitError);
+      assertEquals([runtime.cues.length, runtime.resources.used.bytes], [1, 0]);
+      assertEquals(runtime.deliveries.enqueueCue(sender, runtime.cues, route), true);
+      const query = sender.query(sender.pre, sender.pre, {}, "logs");
+      for (let index = 0; index < 7; index++) {
+        runtime.deliveries.enqueue(() => ({
+          url: "https://query.test/",
+          body: query,
+          bodyMode: "header",
+          destination: sender.pre,
+        }));
+      }
+      runtime.cues.push(cue);
+      assertThrows(() => runtime.deliveries.enqueueCue(sender, runtime.cues, route), Error, "Deck capacity");
+      assertEquals([runtime.cues.length, routes], [1, 2], "item refusal precedes interpretation/route acquisition");
+      assertStrictEquals(
+        yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
+        failed,
+      );
+      assertEquals(runtime.deliveries.hasPending, true, "an unobserved typed transport failure preserves progress");
+      injected = false;
+      assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 7, pending: true });
+      assertEquals(
+        packets.query.length,
+        7,
+        "the full eight-slot queue retains first-target failure and drains queries",
+      );
+      for (let pass = 0; pass < 4; pass++) yield* runtime.deliveries.process(runtime);
+      assertEquals([packets.second.length, packets.third.length], [1, 1], "failed first target does not stop siblings");
+      assertEquals(runtime.resources.used.bytes, 24 * 1024 ** 2, "only independent failed packet credit remains");
+      for (const wire of packets.first) assertEquals(wire, packets.first[0], "retries preserve the exact wire");
+      acceptFirst = true;
+      assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });
+      assertEquals(runtime.resources.used.bytes, 0);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("cue delivery releases its guarded turn but retains owners until HTTP cleanup joins", async () => {
+  let cleaning!: () => void, release!: () => void;
+  const cleanup = new Promise<void>((resolve) => cleaning = resolve);
+  const gate = new Promise<void>((resolve) => release = resolve);
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("sender");
+    const runtime = yield* createAgentRuntime(hby, {
+      services: {
+        http: {
+          async fetch(_url, init) {
+            await new Response(init!.body).arrayBuffer();
+            return new Response(
+              new ReadableStream<Uint8Array>({
+                async cancel() {
+                  cleaning();
+                  await gate;
+                },
+              }),
+            );
+          },
+        },
+      },
+    });
+    runtime.cues.push({ kin: "query", pre: hab.pre, src: hab.pre, route: "logs" });
+    runtime.deliveries.enqueueCue(hab, runtime.cues, () => ({
+      sender: hab.pre,
+      recipient: hab.pre,
+      topic: "/reply",
+      kind: "direct",
+      bodyMode: "header",
+      targets: [{ eid: hab.pre, url: "https://peer.test/" }],
+    }));
+    const delivery = yield* spawn(function*() {
+      try {
+        yield* runtime.deliveries.process(runtime);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
+      }
+    });
+    try {
+      yield* call(() => cleanup);
+      let guarded = false, closed = false;
+      yield* runtime.reactor.settle(undefined, {}, function*() {
+        guarded = true;
+      });
+      const closing = yield* spawn(function*() {
+        yield* runtime.deliveries.close();
+        closed = true;
+      });
+      assertEquals([guarded, closed, runtime.resources.used.bytes >= 33 * 1024 ** 2], [true, false, true]);
+      release();
+      yield* closing;
+      yield* delivery;
+      assertEquals([closed, runtime.deliveries.hasPending, runtime.resources.used.bytes], [true, false, 0]);
+    } finally {
+      release();
+      yield* delivery.halt();
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });
