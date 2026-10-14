@@ -37,7 +37,8 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    finite proof planning. Semantic /ksn admits its actual keyStateSaved child
    before proof/state writes while retaining prepared reply/query ownership.
    Frozen KEL replay ranges are inspectable without opening event readers.
-   Registry/credential children, capture-time/query effects, TEL/composed sources,
+   KEL query source-seal repair follows concrete output admission on live/retry paths.
+   Registry/credential children, capture-time allocations, TEL/composed sources,
    OOBI and other durable producers remain open, followed by query/mailbox/delivery
    transfers. Complete these ownership ports before Runtime activation.
 

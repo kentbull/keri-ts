@@ -143,8 +143,13 @@ Baser reference. Inspection charges this metadata without reading bodies or open
 iterators/cursors, and never walks the runtime-owned store. Finite message arrays
 charge their complete backing normally. Opaque/TEL/composed replay closures remain
 refused; arbitrary work is never opened for measurement. Capture-time temporary
-allocations and query source-seal repair still need producer admission; this retained
+allocations still need producer admission; this retained
 owner seam does not activate Runtime or close the full query/delivery boundary.
+
+Live and retried KEL queries admit their actual output batch before repairing
+delegation source-seal hints. Busy, configured-limit and item refusal leave `aess`
+unchanged; admitted replay readers see the repair at consumption. Unexpected
+repair failures release unpublished credit without implying database rollback.
 
 Kevery now prepares the concrete acceptance/clone/state batch before logging,
 with prospective first-seen ordinal/date and group/witness policy. Logging checks
