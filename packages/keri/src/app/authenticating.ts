@@ -1,10 +1,11 @@
-import { call, type Operation } from "npm:effection@^3.6.0";
+import { ResourceAdmissionError } from "cesr-ts";
+import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { OobiRecord } from "../core/records.ts";
 import type { Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
 import { persistResolvedContact } from "./organizing.ts";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 interface AuthenticatorOptions {
@@ -29,7 +30,10 @@ export class Authenticator {
   readonly services: RuntimeServices;
 
   constructor(hby: Habery, options: AuthenticatorOptions = {}) {
-    const { services = defaultRuntimeServices } = options;
+    const services = options.services ?? resolveRuntimeServices({ resources: hby.db.resources });
+    if (services.resources !== hby.db.resources) {
+      throw new RangeError("Authenticator requires its Habery's resource policy");
+    }
     this.hby = hby;
     this.services = services;
   }
@@ -115,6 +119,21 @@ export class Authenticator {
     url: string,
     record: OobiRecord,
   ): Operation<void> {
+    // This endpoint uses only HTTP status, never an unbounded body collector.
+    // Logical request/handle allowance does not bound native headers or fetch buffers.
+    const admission = this.services.resources.reserve({ streams: 1, bytes: 64 * 1024 + 128 + 2 * url.length });
+    if (admission.kind === "refuse") {
+      if (admission.reason === "busy") return; // Leave the existing durable pending head untouched.
+      throw new ResourceAdmissionError("Well-known HTTP request exceeds configured capacity", admission.reason);
+    }
+    // Registered before fetch: its response and late cleanup finish before this permit returns.
+    yield* resource<void>(function*(provide) {
+      try {
+        yield* provide();
+      } finally {
+        admission.reservation.release();
+      }
+    });
     const cid = record.cid
       ?? parseOobiUrl(url, record.oobialias ?? undefined).cid
       ?? null;
@@ -143,7 +162,7 @@ export class Authenticator {
 
 function* fetchAuthResponse(
   url: string,
-  services: RuntimeServices = defaultRuntimeServices,
+  services: RuntimeServices,
 ): Operation<Response> {
   const { response } = yield* fetchResponseHandle(url, {}, {
     services,

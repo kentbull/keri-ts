@@ -156,6 +156,13 @@ rather than being wrapped in a CESR POST. A finite collector needs a semantic
 reason and enforced admission/cap, not merely a legacy byte-input API.
 The [stack adoption inventory][transport-plan] marks remaining callers explicitly.
 
+Well-known authentication is a status-only GET exception: no response body is
+collected. `Authenticator` uses its Habery's exact policy and reserves a stream
+plus URL/handle allowance before fetch. Busy leaves durable pending authorization
+untouched. The response and pending cleanup join before credit returns; cleanup
+failure cannot publish success. Native headers/buffering and durable pending-row
+allocation are separate qualification boundaries.
+
 Default library, host and command composition follows these same ownership
 boundaries. A convenience wrapper must not silently select a private collector,
 separate policy or detached transport task. Finite document/proof exceptions
