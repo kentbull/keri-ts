@@ -14,7 +14,9 @@ Use the repository-pinned LMDB release (runtime source currently 3.5.3), V1 data
 format for KERIpy interop, and the actual native rebuild/preflight path.
 Rebuild with official `ENABLE_V8_FUNCTIONS=false`: Node-header V8 imports can
 terminate Deno when a large row first reaches the mapped-buffer path.
-Qualify the actual addon under both runtimes, including rows above 16 MiB. A lockfile
+Qualify the actual addon under both runtimes, including rows above 16 MiB.
+Native CI caches include NAPI and rebuild-script identity; every cache hit must
+pass both native metadata and emitted V1-format probes before reuse. A lockfile
 can retain older packages; inspect the imported addon. Map sizing respects explicit
 options, KERI_LMDB_MAP_SIZE/KERI_BASER_MAP_SIZE and stored metadata.
 
