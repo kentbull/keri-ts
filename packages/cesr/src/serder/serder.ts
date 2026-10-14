@@ -1788,7 +1788,7 @@ export class SerderKERI extends Serder {
   }
 
   get sner(): NumberPrimitive | null {
-    return makeNumberPrimitive(this.snh);
+    return makeNumberPrimitive(this.ked && typeof this.ked.s === "string" ? this.ked.s : null);
   }
 
   get sn(): number | null {
@@ -1796,7 +1796,7 @@ export class SerderKERI extends Serder {
   }
 
   get snh(): string | null {
-    return this.ked && typeof this.ked.s === "string" ? this.ked.s : null;
+    return this.sner?.numh ?? null;
   }
 
   /**

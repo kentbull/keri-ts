@@ -229,6 +229,9 @@ Deno.test("serder: SerderKERI exposes KERIpy-style numeric, threshold, and backe
 
   assertEquals(serder.sner?.numh, "a");
   assertEquals(serder.sn, 10);
+  assertEquals(serder.snh, "a");
+  const leading = new SerderKERI({ sad: { ...serder.sad, s: "000A" }, makify: true });
+  assertEquals([leading.sner?.numh, leading.snh, leading.sn], ["a", "a", 10]);
   assertEquals(serder.tholder?.sith, "1");
   assertEquals(serder.ntholder?.sith, "1");
   assertEquals(serder.bner?.numh, "1");
@@ -245,11 +248,12 @@ Deno.test("serder: SerderKERI exposes KERIpy-style numeric, threshold, and backe
   const hydrated = new SerderKERI({
     raw: legacy.raw,
     smellage: smell(legacy.raw).smellage,
-    ked: { ...legacy.sad, u: "" },
+    ked: { ...legacy.sad, u: "", s: 9 },
     ilk: legacy.ilk,
     said: legacy.said,
   });
   assertEquals([hydrated.uuid, hydrated.nonce], ["", ""]);
+  assertEquals([hydrated.sner, hydrated.snh, hydrated.sn], [null, null, null], "non-string sequence stays absent");
   const current = new SerderKERI({
     sad: { t: "xip", i: key, u: nonce },
     pvrsn: Vrsn_2_0,
@@ -257,6 +261,7 @@ Deno.test("serder: SerderKERI exposes KERIpy-style numeric, threshold, and backe
     makify: true,
   });
   assertEquals([current.uuid, current.nonce], [nonce, nonce], "current u and its alias retain the same value");
+  assertEquals([current.sner, current.snh, current.sn], [null, null, null], "missing sequence remains absent");
 });
 
 Deno.test("serder: SerderKERI hydrates weighted threshold accessors from semantic arrays", () => {
