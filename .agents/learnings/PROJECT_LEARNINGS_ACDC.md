@@ -54,6 +54,8 @@ Explicit anchoring validates event membership/prior before storing the couple.
 Queued progression commits one event at a time; later failures do not undo prior acceptance.
 Reopen named v2 registries from the stored rip issuer, not the first available
 Hab. Duplicate aliases share one instance; injected RegBaser ownership stays with its caller.
+Local blinded updates follow a unique staged frontier across both escrows after an
+accepted head. De-duplicate sightings, reject forks, and never equate staging with acceptance.
 
 IPEX conversations, issuer proofs and wallet acceptance remain separate. Follow
 [exchange learnings](PROJECT_LEARNINGS_EXCHANGE.md) for v2 nested routes and

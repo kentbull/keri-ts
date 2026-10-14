@@ -266,6 +266,8 @@ These invariants are mandatory for parity-compatible DB behavior in `keri-ts`.
 3. `B64*` paths preserve delimiter/field semantics and reject invalid
    separator-containing value components where required by design.
 4. `Komer` paths round-trip structured object records without keyspace drift.
+5. Event-seal discovery selects full tuples from raw accepted KEL `a` entries;
+   other data shapes are skipped without forcing strict Serder projection.
 
 ### D. Keyspace Invariants
 
