@@ -1,10 +1,11 @@
 /** One owned TCP writer shared by finite values and pull-driven sources. */
-import { ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
+import { type CesrFrame, framePayload, ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
 import { createConnection } from "node:net";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { abortable } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
+import { cesrOutputMetadataBytes } from "./cesr-output.ts";
 import { defaultRuntimeServices, type RuntimeServices, type RuntimeTimer } from "./runtime-services.ts";
 
 /** Output limits and cancellation shared by all TCP input forms. */
@@ -51,6 +52,31 @@ export function streamCesrTcp(
   options: TcpSendOptions = {},
 ): Operation<TcpTransmission> {
   return writeTcp(url, source, options, 0);
+}
+
+/**
+ * Send an already admitted frame tree directly through its serializer, never reparsing.
+ * Borrow every actual frame/ESSR/child owner until joined completion; this neither
+ * adopts nor discards them. Conservative HTTP-equivalent metadata credit precedes
+ * serializer construction; fixed reader/output backing credit covers re-chunking.
+ */
+export function sendCesrTcpFrame(
+  url: string,
+  frame: CesrFrame,
+  options: TcpSendOptions = {},
+): Operation<TcpTransmission> {
+  const cap = positive(options.maxChunkBytes ?? 65536, "maxChunkBytes");
+  const metadata = 8 * cesrOutputMetadataBytes(frame) + 2 * 1024 ** 2;
+  return writeTcp(
+    url,
+    async function*(signal) {
+      for await (const chunk of framePayload(frame).open(signal)) {
+        yield* chunkBytes(chunk, { signal, maxChunkBytes: cap });
+      }
+    },
+    options,
+    metadata,
+  );
 }
 
 /** Validate caller budgets before admission or socket acquisition. */

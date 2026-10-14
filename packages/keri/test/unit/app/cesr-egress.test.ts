@@ -4,6 +4,7 @@ import {
   concatBytes,
   Counter,
   decodeB64,
+  discardFrame,
   essrPayload,
   MemoryPayloadSink,
   parse,
@@ -13,13 +14,16 @@ import {
   Texter,
 } from "cesr-ts";
 import type { CesrFrame, OwnedPayload } from "cesr-ts";
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { createServer, type Socket } from "node:net";
 import { call, run } from "npm:effection@^3.6.0";
 import { KERIPY_V1_JSON_ICP_BODY as json } from "../../../../cesr/test/fixtures/external-vectors.ts";
+import vectors from "../../../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { postCesr, requestFrame } from "../../../src/app/cesr-egress.ts";
 import { CESR_ATTACHMENT_HEADER } from "../../../src/app/cesr-http.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
+import { sendCesrTcpFrame } from "../../../src/app/tcp-egress.ts";
 
 /** One v2 enclosure around a v1 JSON body and two small ESSR fragments. */
 function fixture(): Uint8Array {
@@ -554,4 +558,128 @@ Deno.test("CESR transport headers preserve authorization without replacing frame
       }),
     });
   });
+});
+
+Deno.test("TCP frame output admits before serialization and borrows nested owners through joined cancellation", async () => {
+  const frame = await read(b(vectors.rows.find((row) => row.name === "child-genus-selector")!.qb64));
+  const child = frame.nests![0], payloadFrame = await read(fixture());
+  child.essr = payloadFrame.essr;
+  const wire = child.essr!.wire as OwnedPayload, originalOpen = wire.open, originalDiscard = wire.discard;
+  const size = wire.size;
+  let metadataReads = 0, discards = 0, reads = 0;
+  Object.defineProperty(wire, "size", {
+    get() {
+      metadataReads++;
+      return size;
+    },
+    configurable: true,
+  });
+  wire.open = function(signal) {
+    reads++;
+    return originalOpen.call(this, signal);
+  };
+  wire.discard = async function() {
+    discards++;
+    await originalDiscard.call(this);
+  };
+  const sockets = new Set<Socket>(), received = Promise.withResolvers<CesrFrame>();
+  let connections = 0;
+  const server = createServer({ allowHalfOpen: true }, (socket) => {
+    const connection = ++connections;
+    sockets.add(socket);
+    socket.on("error", () => {});
+    socket.once("close", () => sockets.delete(socket));
+    // This signed fixture is finite; the production writer never collects its source.
+    const bytes = new Uint8Array(16384);
+    let length = 0;
+    socket.on("data", (part) => {
+      bytes.set(part, length);
+      length += part.length;
+    });
+    socket.once("end", async () => {
+      try {
+        if (connection === 1) received.resolve(await read(bytes.subarray(0, length)));
+        socket.end();
+      } catch (error) {
+        received.reject(error);
+        socket.destroy();
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const resources = new ResourcePolicy({ streams: 1 });
+  const transport = { ...defaultRuntimeServices, resources };
+  try {
+    await assertRejects(
+      () =>
+        run(() =>
+          sendCesrTcpFrame(url, frame, {
+            services: { ...transport, resources: new ResourcePolicy({ bytes: 1 }) },
+          })
+        ),
+      ResourceAdmissionError,
+      "limit",
+    );
+    assertEquals([connections, metadataReads, reads], [0, 0, 0], "refusal precedes serializer metadata and I/O");
+    const result = await run(() => sendCesrTcpFrame(url, frame, { services: transport, maxChunkBytes: 7 }));
+    assertEquals(result.kind, "transmitted");
+    const roundtrip = await received.promise;
+    try {
+      for (const [actual, expected] of [[roundtrip, frame], [roundtrip.nests![0], child]]) {
+        assertEquals(actual.body.raw, expected.body.raw);
+        assertEquals(actual.gvrsn, expected.gvrsn);
+        assertEquals(actual.attachments.map((group) => group.raw), expected.attachments.map((group) => group.raw));
+      }
+      assertEquals(await collectPayload(roundtrip.nests![0].essr!.raw, 6), b("abcxyz"));
+    } finally {
+      await discardFrame(roundtrip);
+    }
+    assertStrictEquals(child.essr!.wire, wire, "the original payload owner remains with the caller");
+    assertEquals(discards, 0);
+    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
+    const entered = Promise.withResolvers<void>(), returning = Promise.withResolvers<void>();
+    const cleanup = Promise.withResolvers<void>();
+    wire.open = async function*(signal) {
+      try {
+        yield b("4BAB");
+        await new Promise<never>((_, reject) => {
+          signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+          entered.resolve();
+        });
+      } finally {
+        returning.resolve();
+        await cleanup.promise;
+        assertEquals(resources.used.streams, 1, "reader cleanup still owns transport credit");
+      }
+    };
+    let continued = false;
+    const task = run(function*() {
+      yield* sendCesrTcpFrame(url, frame, { services: transport });
+      continued = true;
+    });
+    try {
+      await entered.promise;
+      let halted = false;
+      const halt = task.halt().then(() => halted = true);
+      await returning.promise;
+      assertEquals([halted, continued, discards], [false, false, 0]);
+      assertStrictEquals(child.essr!.wire, wire);
+      assertEquals(resources.used.bytes > 2 * 1024 ** 2, true);
+      cleanup.resolve();
+      await halt;
+      assertEquals(continued, false);
+      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+    } finally {
+      cleanup.resolve();
+      await task.halt();
+    }
+  } finally {
+    wire.open = originalOpen;
+    await discardFrame(frame);
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+  assertEquals(discards, 1, "only the caller disposes its actual child owner");
 });

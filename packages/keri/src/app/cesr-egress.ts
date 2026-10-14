@@ -20,6 +20,7 @@ import {
   type CesrBodyMode,
   KERIPY_CESR_JSON_CONTENT_TYPE,
 } from "./cesr-http.ts";
+import { cesrOutputMetadataBytes } from "./cesr-output.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 
 /** Transport choices and finite HTTP metadata limits for an admitted CESR frame. */
@@ -139,18 +140,10 @@ function byteLimit(value: number, name: string): number {
   return value;
 }
 
-/** Inspect already parsed metadata without qualifying or reading any payload. */
-function ordinaryBytes(root: CesrFrame): number {
-  let size = root.body.raw.length;
-  for (const group of root.attachments) size += group.raw.length;
-  for (const child of root.nests ?? []) size += ordinaryBytes(child);
-  return byteLimit(size, "output metadata bytes");
-}
-
 /**
  * Open one frame response as an Effection resource owned by the caller's scope.
  *
- * Body mode streams a complete frame; header mode explicitly caps text-qualified
+ * The caller supplies an already admitted frame tree. Body mode streams a complete frame; header mode explicitly caps text-qualified
  * attachments. Scope exit aborts fetch and its body iterator, joins pending I/O,
  * and closes the response. The caller retains ownership of frame.essr.
  */
@@ -178,7 +171,7 @@ function openFrameResponse(
     const headerLimit = byteLimit(options.maxHeaderBytes ?? 64 * 1024, "maxHeaderBytes");
     const errorLimit = byteLimit(options.maxErrorBytes ?? 16 * 1024, "maxErrorBytes");
     // Retain conservative qualification/header/diagnostic copies plus bounded serializer reader/output backing.
-    const bytes = 8 * ordinaryBytes(frame) + 6 * headerLimit + 4 * errorLimit + 2 * 1024 ** 2;
+    const bytes = 8 * cesrOutputMetadataBytes(frame) + 6 * headerLimit + 4 * errorLimit + 2 * 1024 ** 2;
     const credit = services.resources.reserve({ streams, bytes });
     if (credit.kind === "refuse") {
       throw new ResourceAdmissionError(
