@@ -516,6 +516,14 @@ export class QueryCoordinator implements CueSink {
     });
   }
 
+  /** Retain a portable recovery cue using the normal field normalization and bounded pending queue. */
+  enqueueCue(cue: QueryCue): boolean {
+    const pre = extractQueriedPrefix(cue);
+    if (!pre) return false;
+    this.enqueue({ pre, route: cue.route ?? "logs", query: normalizeOutboundQuery(cue), src: cue.src, wits: cue.wits });
+    return true;
+  }
+
   /**
    * Consume one emitted cue, synthesizing any broader query/reply side effects
    * before forwarding to the configured downstream sink.

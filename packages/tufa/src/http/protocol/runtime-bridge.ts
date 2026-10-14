@@ -22,7 +22,8 @@ export function* drainRuntimeCues(
 
   const emissions: CueEmission[] = [];
   for (const emission of hab.processCuesIter(cues)) {
-    yield* runtime.respondant.sendWithHab(emission, hab);
+    if (emission.cue.kin === "query" && emission.kind !== "wire") runtime.querying.enqueueCue(emission.cue);
+    else yield* runtime.respondant.sendWithHab(emission, hab);
     emissions.push(emission);
   }
   return emissions;
