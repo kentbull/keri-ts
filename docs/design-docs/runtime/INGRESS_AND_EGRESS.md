@@ -140,6 +140,14 @@ Poster/Respondant choose destination and delivery policy; Reactor verifies and
 mutates accepted state. Signing, routing snapshots and local DB preparation stay
 in short guarded turns; independently owned network work and capacity waits do not.
 
+Poster’s `resolveBytesRoute` snapshots sender, recipient, target URLs and body
+mode. Synchronous `prepareBytesTarget` performs local mailbox writes or prepares
+one signed introduction/forwarded request. `sendPreparedCesrTarget` consumes that
+wire through the shared HTTP sender without habitat or DB access. Its bytes stay
+caller-owned through joined cleanup. Existing `sendBytes` composes these steps;
+S1–3 still owns admitted handoff, guard-free runtime callers and delivery outcomes.
+The extraction itself adds no queue or shared allocation guarantee.
+
 Completion records must distinguish local transmission drain, HTTP success,
 verified protocol replies and durable application acceptance. An HTTP status or
 socket drain proves only its own boundary. Consumers report protocol decisions;
