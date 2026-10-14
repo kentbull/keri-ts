@@ -72,6 +72,20 @@ currently collects until connection completion. Existing cue consumers can still
 await network I/O under the guard. The [transport plan][transport-plan] owns closure;
 these requirements do not describe completed TCP support.
 
+`socketBytes` is the shared KERI runtime TCP source prerequisite; listener/parser
+integration remains pending. It acquires exclusive binary readable-mode ownership
+on first pull, returns independent backing allocations of at most 64 KiB by default,
+and permits one pending pull. Do not mix data/flow readers with it. Abort, failure
+and early return destroy and join socket close; genuine receive EOF releases only
+read ownership, preserving the writable half. The connection owner must handle
+socket errors before acquisition and after EOF, and own output drain/final close.
+Before pulling, admit the connection and two bounded materialized read/copy
+allocations, retaining credit through parser/source cleanup. A native-returned
+view may pin pool/socket backing larger than a small configured chunk ceiling:
+twice that ceiling does not cover all native backing. The host must separately
+account for fixed pools, readable/native/kernel buffering and qualify its actual
+configuration; this adapter supplies no full native or RSS bound.
+
 The guard protects protocol interpretation, signing, routing snapshots and local
 DB side effects. Network waits and capacity waits belong outside it. Transfer a
 cue only after its bounded delivery owner accepts it; saturation must retain the
