@@ -139,6 +139,13 @@ rather than being wrapped in a CESR POST. A finite collector needs a semantic
 reason and enforced admission/cap, not merely a legacy byte-input API.
 The [stack adoption inventory][transport-plan] marks remaining callers explicitly.
 
+Default library, host and command composition follows these same ownership
+boundaries. A convenience wrapper must not silently select a private collector,
+separate policy or detached transport task. Finite document/proof exceptions
+retain their framing but expose an enforced ceiling, admission owner and
+cancellable joined response lifetime. Document the reason at the owning API;
+byte-input convenience alone does not justify buffering an entire history.
+
 Two engines own transport work: CESR HTTP request/response scopes and an owned
 TCP connection with directional I/O. Small Effection operations/resources expose
 finite-message and source inputs. TCP adapters share one writer with optional owned
