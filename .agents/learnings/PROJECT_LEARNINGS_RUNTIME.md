@@ -116,6 +116,8 @@ Witness delegation passes the runtime's services into generic sends. TCP finite/
 creation, backing limits precede writes, and write callbacks/drain precede another
 pull. Credit follows source return plus socket close; calling destroy is not joined
 cleanup. End/close deadlines start at source EOF, not the beginning of a large transfer.
+Already admitted TCP frames use the serializer directly; shared HTTP/TCP metadata
+admission precedes qualification, and actual nested payload owners stay borrowed.
 
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove
