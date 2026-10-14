@@ -137,8 +137,10 @@ and one 64 KiB reader chunk. This conservative allowance stays held through join
 staging/descendant disposal, even on cancellation or cleanup failure. Reopened
 parsers additionally charge ordinary wire (capped by each row's stored extent)
 and each finite ESSR stage through their existing frame owners. FilePayload identity
-and adoption remain intact. Busy/limit refusal precedes copying and does not
-establish message invalidity; no automatic retry or waiter is introduced.
+and adoption remain intact. Route handlers borrow hydrated descendants through
+handler completion; retaining additional copies afterward requires independent
+credit. Busy/limit refusal precedes copying and does not establish message
+invalidity; no automatic retry or waiter is introduced.
 
 Native pre-existing scratch (initially 16 MiB) and LMDB mapped residency remain
 separate, uncharged overhead. Other read paths can grow scratch or allocate whole
