@@ -21,6 +21,9 @@ owners. Promise adaptation belongs at real edges. Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state.
+Shared transport readers cancel once, join that Promise and always unlock;
+single errors retain identity and distinct read/cleanup failures aggregate.
+Parent cancellation diagnostics still need composed owner qualification.
 
 Owned hydration uses an isolated consume callback with direct joined finalization.
 A bare yielding finalizer can resume cancelled parent work; resource-only teardown

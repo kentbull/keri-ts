@@ -24,6 +24,28 @@ Deno.test("transport reads wait for consumption and cancel on early return", asy
   await source.return(undefined);
   assertEquals(cancelled, true);
   assertEquals(stream.locked, false);
+  const cleanup = new Error("transport cancel failed");
+  let finish = (_error: Error) => {}, cancels = 0;
+  const gate = new Promise<void>((_resolve, reject) => finish = reject);
+  const failing = new ReadableStream<Uint8Array>({
+    pull(current) {
+      current.enqueue(Uint8Array.of(1));
+    },
+    cancel() {
+      cancels++;
+      return gate;
+    },
+  }, { highWaterMark: 0 });
+  const owned = streamBytes(failing);
+  await owned.next();
+  let joined = false;
+  const returning = owned.return(undefined).finally(() => joined = true);
+  const rejected = assertRejects(() => returning);
+  await Promise.resolve();
+  assertEquals([joined, failing.locked, cancels], [false, true, 1]);
+  finish(cleanup);
+  assertEquals(await rejected, cleanup, "Early return must expose cleanup failure after joining it");
+  assertEquals([joined, failing.locked, cancels], [true, false, 1]);
 });
 
 Deno.test("transport abort interrupts a pending read and releases its reader", async () => {
@@ -41,6 +63,20 @@ Deno.test("transport abort interrupts a pending read and releases its reader", a
   await assertRejects(() => read, Error, "stop");
   assertEquals(cancelled, true);
   assertEquals(stream.locked, false);
+  const primary = new Error("abort primary"), cleanup = new Error("abort cleanup");
+  let cancels = 0;
+  const broken = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancels++;
+      throw cleanup;
+    },
+  });
+  const abort = new AbortController(), input = streamBytes(broken, { signal: abort.signal });
+  const pending = input.next();
+  const rejected = assertRejects(() => pending, AggregateError);
+  abort.abort(primary);
+  assertEquals((await rejected).errors, [primary, cleanup]);
+  assertEquals([broken.locked, cancels], [false, 1], "Abort/finally share exactly one cancel and always unlock");
 });
 
 Deno.test("transport budgets count backing buffers and finite collection closes overflowed sources", async () => {
@@ -50,6 +86,30 @@ Deno.test("transport budgets count backing buffers and finite collection closes 
     },
   });
   await assertRejects(() => streamBytes(stream, { maxChunkBytes: 8 }).next(), ResourceLimitError);
+  const cleanup = new Error("overflow cleanup");
+  const oversized = new ReadableStream<Uint8Array>({
+    start(current) {
+      current.enqueue(new Uint8Array(16));
+    },
+    cancel() {
+      throw cleanup;
+    },
+  });
+  const error = await assertRejects(() => streamBytes(oversized, { maxChunkBytes: 8 }).next(), AggregateError);
+  assertEquals([error.errors[0] instanceof ResourceLimitError, error.errors[1]], [true, cleanup]);
+  assertEquals(oversized.locked, false);
+  const fault = new Error("native read fault");
+  const errored = new ReadableStream<Uint8Array>({
+    start(current) {
+      current.error(fault);
+    },
+  });
+  assertEquals(
+    await assertRejects(() => streamBytes(errored).next()),
+    fault,
+    "Repeated native fault preserves identity",
+  );
+  assertEquals(errored.locked, false);
   let closed = false;
   async function* chunks() {
     // Two small writes cross the aggregate budget without relying on a giant transport allocation.
