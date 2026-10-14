@@ -92,6 +92,9 @@ and CLI callers. Adopt the shared engines/response owners rather than private
 collectors; pass the runtime's exact services/policy. Finite JSON/receipt semantics
 require enforced caps, cancellation and joined cleanup. OOBI/DID completion still
 requires full evidence; processing before EOF does not imply artifact success.
+Close adoption through default library/host/CLI callers, not only engine tests.
+Every finite exception needs a semantic reason, ceiling, admission owner and
+joined response lifetime; audit newly introduced I/O on the final release head.
 The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
@@ -110,6 +113,9 @@ preparation, and atomic acceptance precedes ordinary source removal. Existing
 CueDeck credit transfers/requeues; lazy replay stays unopened. The accepting
 owner releases after joined consumption. This facility alone is not reliable
 handoff or guard-free delivery; port actual owners/callers before activation.
+Cue route capture reserves a separate 1 MiB/4096-target allowance before endpoint
+resolution. Its independent owner retains metadata until joined delivery cleanup;
+configured floors include the live cue and interpretation credit.
 
 Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB
