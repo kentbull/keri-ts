@@ -6,8 +6,9 @@ emitted by KERIpy `StreamPoster` at commit
 this module is a new receiver integration, not a port of an upstream receiver.
 
 Construct one service for an explicitly hosted `Hab`, its `PayloadStore`, a
-finite ciphertext byte limit, and a finite concurrency limit. The default is
-one active decrypt. Excess concurrent work is rejected immediately rather than
+finite ciphertext byte limit, the host's shared `ResourcePolicy`, and an optional
+per-recipient concurrency limit (default one). Every recipient in the host must
+borrow that same policy. Its default permits one active decryption across instances. Excess concurrent work is rejected immediately rather than
 retained in a queue. Aggregate transfer size can exceed the message limit: the
 limit applies to one logical sealed message, potentially split across several
 Texters.
@@ -76,10 +77,16 @@ values with plaintext or pointers. Relays and replay consumers need not invoke
 recipient decryption. Transport route wiring selects whether to invoke this
 recipient operation for a hosted habitat.
 
-Working memory includes one admitted ciphertext, one authenticated plaintext,
-and crypto-library temporaries. These guards bound one recipient's admitted
-work; they do not establish a runtime-wide memory bound across recipient
-instances, streams, queues, or storage copies. The shared-resource phase in the
-[existing roadmap](../../plans/PARITY_ROADMAP.md)
-owns integration with shared admission/reservations. Clearing the owned plaintext buffer after
-writing is not a claim that the runtime or crypto backend erases every copy.
+Before reading ciphertext, admission reserves one shared decryption slot and
+`max(64 MiB, 8 × ciphertext size)` bytes. This is the approved initial conservative
+crypto credit, not a measurement of native copies. Oversized configuration and
+busy capacity remain distinct refusals. The reservation is held through input
+cleanup and disposal of any untransferred plaintext, then released once. Successful
+file ownership transfer releases crypto credit; subsequent file reads belong to
+the consumer's admission boundary.
+
+Streams, queues, storage copies and file-reader ownership still require integration
+through the [shared-resource phase](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
+This recipient integration alone does not establish a runtime-wide memory bound.
+Clearing the owned plaintext buffer after writing is not a claim that the runtime
+or crypto backend erases every copy.

@@ -7,6 +7,8 @@ import {
   ParserError,
   parseTagger,
   type Payload,
+  type ResourcePolicy,
+  type ResourceReservation,
 } from "cesr-ts";
 import { call, type Operation, resource } from "effection";
 import type { FilePayload, PayloadStore } from "../db/payload-store.ts";
@@ -51,7 +53,9 @@ export class EssrRecipient {
     private readonly store: PayloadStore,
     /** Ciphertext allocation cap, including the 48-byte sealed-box overhead. */
     private readonly maxMessageBytes: number,
-    /** Maximum admitted requests; excess work rejects instead of queueing. */
+    /** Shared with every recipient and other admitted work in the hosting runtime. */
+    private readonly policy: ResourcePolicy,
+    /** Maximum admitted requests for this recipient; excess work refuses instead of queueing. */
     private readonly maxConcurrent = 1,
   ) {
     if (!Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 48) {
@@ -77,16 +81,28 @@ export class EssrRecipient {
   private *receive(said: string, ciphertext: Payload, signal?: AbortSignal): Operation<EssrDecision> {
     let received: EssrMessage | undefined;
     let transferred = false;
+    const admission: { reservation?: ResourceReservation } = {};
+    const release = () => {
+      if (admission.reservation) {
+        admission.reservation.release();
+        admission.reservation = undefined;
+        this.active--;
+      }
+    };
     // The later I/O child is cancelled and joined before this owner is finalized.
     yield* resource(function*(provide) {
       try {
         yield* provide(undefined);
       } finally {
-        if (!transferred && received) yield* call(() => received!.plaintext.discard());
+        try {
+          if (!transferred && received) yield* call(() => received!.plaintext.discard());
+        } finally {
+          release();
+        }
       }
     });
     const result = yield* abortable(async (scopeSignal) => {
-      const decision = await this.decryptMessage(said, ciphertext, scopeSignal);
+      const decision = await this.decryptMessage(said, ciphertext, scopeSignal, admission);
       if (decision.kind === "accept") received = decision.message;
       scopeSignal.throwIfAborted();
       return decision;
@@ -96,14 +112,28 @@ export class EssrRecipient {
   }
 
   /** Own the finite crypto buffer and unfinished file until signal-aware cleanup completes. */
-  private async decryptMessage(said: string, ciphertext: Payload, signal: AbortSignal): Promise<EssrDecision> {
+  private async decryptMessage(
+    said: string,
+    ciphertext: Payload,
+    signal: AbortSignal,
+    admission: { reservation?: ResourceReservation },
+  ): Promise<EssrDecision> {
     signal.throwIfAborted();
     if (!Number.isSafeInteger(ciphertext.size) || ciphertext.size < 0) {
       throw new RangeError("Invalid payload size or limit");
     }
     if (ciphertext.size > this.maxMessageBytes) return { kind: "refuse", reason: "limit" };
     if (ciphertext.size < 48) return { kind: "reject", reason: "envelope" };
-    if (this.active >= this.maxConcurrent) return { kind: "refuse", reason: "busy" };
+    // Use the approved initial eightfold crypto credit, at least 64 MiB per request.
+    // This is conservative admission policy; native-copy measurements still need qualification.
+    if (ciphertext.size > Math.floor(this.policy.limits.bytes / 8)) return { kind: "refuse", reason: "limit" };
+    const credit = this.policy.reserve({ bytes: Math.max(64 * 1024 ** 2, ciphertext.size * 8), decryptions: 1 });
+    if (credit.kind === "refuse") return { kind: "refuse", reason: credit.reason };
+    if (this.active >= this.maxConcurrent) {
+      credit.reservation.release();
+      return { kind: "refuse", reason: "busy" };
+    }
+    admission.reservation = credit.reservation;
     this.active++;
     // Keep buffers and any finished file owned until the result can transfer them.
     let plain: Uint8Array | null = null;
@@ -167,7 +197,6 @@ export class EssrRecipient {
       throw error;
     } finally {
       plain?.fill(0);
-      this.active--;
     }
   }
 }
