@@ -1,7 +1,7 @@
 import { t } from "../core/bytes.ts";
 import { DeserializeError, ResourceLimitError } from "../core/errors.ts";
 
-/** JSON logical allocation credit shared by a root and its descendants. */
+/** JSON logical credit shared by a root and descendants; supplied bytes remain immutable through decode. */
 export interface JsonBudget {
   jsonBytes: number;
   onJsonFailure?: (error: unknown) => void;

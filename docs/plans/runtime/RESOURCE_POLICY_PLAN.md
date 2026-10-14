@@ -49,8 +49,10 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    Registry/schema membership and every-attempt chain cue distinctions remain exact.
    EXN pending sender/proof/schema batches precede nested staging and durable evidence,
    archive and escrow publication; earlier owners survive joined async cleanup and
-   commit checks reject changed membership. Authentication queries and KRAM/IPEX
-   notification ports remain open, along with private verification snapshots.
+   commit checks reject changed membership. EXN authentication queries admit their
+   per-invocation ordered deduplicated batch after charged metadata scratch and
+   unique-item preflight. Earlier coordinate arrays/native reads, KRAM/IPEX
+   notification ports and private verification snapshots remain open.
    Constructors/native copies, crash recovery and capture-time allocations remain
    open. OOBI queueing, staged
    multi-URL fanout and multi-parent completion admit exact batches before

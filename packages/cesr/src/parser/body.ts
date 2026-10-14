@@ -90,10 +90,6 @@ function wrappedBody(input: Uint8Array, domain: CesrDomain, gvrsn: Versionage, j
     return reapSerder(matter.raw, jsonBudget).serder;
   } catch (error) {
     if (metadata?.kind === Kinds.json && !isJsonSyntaxFailure(error)) throw error;
-    if (
-      !(error instanceof DeserializeError || error instanceof ShortageError || error instanceof VersionError
-        || error instanceof UnknownCodeError)
-    ) throw error;
     return {
       raw: matter.raw,
       ked: null,
