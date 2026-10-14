@@ -303,3 +303,9 @@ qualify older supported Node versions.
 Shared admission and first verified usable child evidence remain in the
 [roadmap](../../docs/plans/PARITY_ROADMAP.md). Stale/timeout continuation breadth
 and broader DB parity need source-grounded evidence, not repeated foundation work.
+
+Signaler owns transient reload hints, not durable Noter rows. Method-managed pings
+reserve finite queue/copy credit before construction and notice effects; publish
+transfers that credit, collapse/expiry/clear/close release it. The borrowed queue
+view is readonly and entries are immutable snapshots. Runtime/CLI close only their
+created producers; injected notification services share the exact Baser policy.

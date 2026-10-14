@@ -182,6 +182,14 @@ export function* createAgentRuntime(
   ) {
     throw new RangeError("AgentRuntime requires the Habery Baser resource policy; supply it when opening Habery");
   }
+  const injectedSignaler = options.signaler ?? options.notifier?.signaler;
+  if (
+    (injectedSignaler && injectedSignaler.resources !== resources)
+    || (options.notifier && options.notifier.hby !== hby)
+    || (options.signaler && options.notifier && options.signaler !== options.notifier.signaler)
+  ) {
+    throw new RangeError("AgentRuntime notification services require its exact Habery and resource policy");
+  }
   const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
     const streams = new ReplyStreams(options.replyLimits, resources);
     try {
@@ -204,9 +212,17 @@ export function* createAgentRuntime(
   const mailboxer = options.mailboxer
     ?? (enableMailboxStore ? (yield* openMailboxerForHabery(hby)) : null);
   const ownsMailboxer = options.mailboxer === undefined && mailboxer !== null;
-  const signaler = options.signaler
-    ?? options.notifier?.signaler
-    ?? (hby.signator ? new Signaler() : null);
+  const ownsSignaler = injectedSignaler === undefined && hby.signator !== null;
+  const signaler = injectedSignaler ?? (ownsSignaler
+    ? (yield* resource<Signaler>(function*(provide) {
+      const owned = new Signaler({ resources });
+      try {
+        yield* provide(owned);
+      } finally {
+        owned.close();
+      }
+    }))
+    : null);
   const noter = options.noter
     ?? options.notifier?.noter
     ?? (!hby.readonly && hby.signator ? (yield* openNoterForHabery(hby)) : null);
@@ -342,6 +358,9 @@ export function* createAgentRuntime(
       reactor.clearIngress();
       const failures: unknown[] = [];
       const cleanup = [
+        function*() {
+          if (ownsSignaler) signaler?.close();
+        },
         function*() {
           yield* deliveries.close();
         },

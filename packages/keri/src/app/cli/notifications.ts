@@ -63,6 +63,7 @@ function* withNotifier<TResult>(
       try {
         return yield* use({ notifier });
       } finally {
+        notifier.close();
         if (notifier.noter.opened) {
           yield* notifier.noter.close();
         }
