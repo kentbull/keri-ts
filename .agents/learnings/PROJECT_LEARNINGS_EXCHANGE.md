@@ -38,7 +38,11 @@ frames; remote-first approval reopens evidence. CLI proposal/join remains v1.
 Preserve first-notice behavior or retries can republish approval unnecessarily.
 
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
-proof; conversation acceptance is not wallet acceptance. Observer registry import
+proof; metadata offers withhold issuer proofs but still validate carried schemas.
+Grant order is issuer authentication, own schemas, edge pins, then presentation.
+Same-schema identity never bypasses payload constraints; missing schema is a
+typed dependency, while infrastructure/resource failures propagate.
+Conversation acceptance is not wallet acceptance. Observer registry import
 is separate from issuer registry processing. Presentation registries still require
 receiver-owned KRAM time; deeper nests and unfinished routes remain guarded.
 
