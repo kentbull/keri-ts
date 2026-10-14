@@ -113,13 +113,15 @@ function* fetchResponseHandleInternal(
       if (timeoutId !== undefined) services.clock.clearTimeout(timeoutId);
     };
     let pending: Promise<Response> | undefined;
+    let deliveredFailure: { error: unknown } | undefined;
     try {
       pending = services.http.fetch(url, { ...init, signal: controller.signal });
       let response: Response;
       try {
         response = yield* call(() => pending!);
       } catch (error) {
-        if (nullOnAbort && error instanceof DOMException && error.name === "AbortError" && timedOut) {
+        deliveredFailure = { error };
+        if (nullOnAbort && timedOut && error === controller.signal.reason) {
           clearTimer();
           yield* provide(null);
           return;
@@ -134,8 +136,15 @@ function* fetchResponseHandleInternal(
       if (pending) {
         yield* call(async () => {
           // A fetch completing during cancellation still transfers its response to this owner.
-          const response = await pending!.catch(() => undefined);
-          if (response?.body && !response.body.locked) {
+          let response: Response;
+          try {
+            response = await pending!;
+          } catch (error) {
+            // Only this controller's abort or the already-propagated identical failure is consumed.
+            if (error === controller.signal.reason || (deliveredFailure && error === deliveredFailure.error)) return;
+            throw error;
+          }
+          if (response.body && !response.body.locked) {
             try {
               await response.body.cancel();
             } catch (error) {
