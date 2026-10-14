@@ -46,7 +46,9 @@ for recipients; shared deployments must inject one policy into all runtimes.
 Internal CueDeck preparation holds concrete metadata/backing and item credit;
 ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
 clone/state and decision-carried duplicate/escrow cues now prepare before effects
-when CueDeck is explicitly injected. Runtime activation
+when CueDeck is explicitly injected. Revery's own missing-signer query batches
+also prepare before BADA/proof/escrow effects; semantic /ksn and registry state
+child cues and OOBI publication remain open. Runtime activation
 waits for every producer/consumer port; count checks alone cannot reserve byte credit.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
