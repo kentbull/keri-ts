@@ -86,6 +86,9 @@ Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB
 preparation, then transfer admitted delivery ownership before network I/O. Never
 wait for queue space under the guard or remove a cue before successful transfer.
+Witness source intake shares the Reactor parser with its finite wrapper; consume
+emissions individually under the guarded frame lifetime, with independently admitted
+ownership for retained work. Finite receipt delivery suppression stays explicit.
 Genuine receive EOF, transmit failure and remote acceptance are separate facts.
 Explicit duplex preserves default routing; half-close drain deadlines cannot be
 extended by activity. The [transport plan](../../docs/plans/runtime/TRANSPORT_PLAN.md)
