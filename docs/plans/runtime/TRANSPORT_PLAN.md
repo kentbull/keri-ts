@@ -80,9 +80,9 @@ resolution only after complete successful intake. JSON/schema branches remain
 bounded document parsing. Serve OOBI replay and witness GET KEL queries lazily,
 including required role/location proofs, without joining whole histories. Stored
 reply reconstruction has finite native body/proof-retention/wire-size ceilings;
-lazy role selection and forwarding collection still need adoption. Current TS
-newest-group/all-cigar reconstruction differs from actual 714 all-groups/one-cigar
-output and requires the next small S2 parity correction.
+lazy role selection and forwarding collection still need adoption. Stored output preserves actual
+714 all-groups/exactly-one-cigar rules and fails without an authenticator, under
+the explicit caller genus floor. Native proof-row pre-admission remains phase 5.
 DID Webs resolution streams `keri.cesr` into accepted KERI/VDR state; success still
 requires complete evidence, escrow resolution and comparison with hosted `did.json`.
 Dynamic artifact output and static file serving pull under response demand;
