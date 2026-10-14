@@ -419,8 +419,14 @@ export class Exchanger {
       });
     }
     if (typeof args.serder.a === "string") {
+      let diger: Diger;
+      // Commitment construction is synchronous syntax work; payload verification owns asynchronous reads.
       try {
-        const diger = new Diger({ qb64: args.serder.a });
+        diger = new Diger({ qb64: args.serder.a });
+      } catch (error) {
+        return reject(`Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      try {
         const raw = essr?.raw;
         if (!raw || !(yield* abortable((signal) => diger.verifyStream(raw.open(signal))))) {
           return reject("Exchange ESSR payload digest does not match its signed commitment.");
