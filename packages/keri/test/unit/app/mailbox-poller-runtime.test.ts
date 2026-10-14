@@ -286,7 +286,7 @@ Deno.test("processMailboxTurn settles complete body-only mailbox records", async
  * Proves bounded command-local polling stays sequential and budgeted.
  *
  * The first slow endpoint may consume the whole bounded budget, in which case
- * `processOnce()` must stop without serializing on later endpoints.
+ * `processOnce()` must stop and resume at the next endpoint on its next turn.
  */
 Deno.test("MailboxPoller.processOnce stops after the bounded command-local budget is exhausted", async () => {
   await run(function*(): Operation<void> {
@@ -297,10 +297,15 @@ Deno.test("MailboxPoller.processOnce stops after the bounded command-local budge
       skipSignator: true,
     });
     const clock = new ManualRuntimeClock();
-    const transport = new FakeMailboxPollTransport([{ advanceMs: 60 }], clock);
+    const transport = new FakeMailboxPollTransport([
+      { advanceMs: 60 },
+      { advanceMs: 60 },
+      { advanceMs: 60, messages: [mailboxMessage("proxy replay")] },
+      { advanceMs: 60 },
+    ], clock);
 
     try {
-      const { poller } = makePollerFixture(hby, {
+      const { poller, endpoints } = makePollerFixture(hby, {
         endpointCount: 2,
         clock,
         transport,
@@ -311,10 +316,26 @@ Deno.test("MailboxPoller.processOnce stops after the bounded command-local budge
         },
       });
 
+      const proxy = makeTransferableHab(hby, "proxy");
+      const proxyEndpoint = seedMailboxEndpoint(hby, proxy.pre, "proxy");
       yield* poller.processOnce();
-
       assertEquals(transport.polls.length, 1);
       assertEquals(transport.polls[0]!.timeouts.requestOpenTimeoutMs, 50);
+      yield* poller.processOnce();
+      assertEquals(transport.polls.length, 2, "another slow endpoint keeps the absolute turn budget");
+      const batches = yield* poller.processOnce();
+      assertEquals(batches[0]!.pre, proxy.pre, "later habitats progress despite earlier empty long polls");
+      assertEquals(hby.db.tops.get([proxy.pre, proxyEndpoint.eid])?.topics, { "/challenge": 0 });
+      yield* poller.processOnce();
+      assertEquals(transport.polls.map((request) => request.endpoint.url), [
+        endpoints[0].url,
+        endpoints[1].url,
+        proxyEndpoint.url,
+        endpoints[0].url,
+      ], "resume spans endpoints and habitats, then wraps without retaining a new queue");
+      assertEquals(transport.polls.every((request) => request.timeouts.requestOpenTimeoutMs === 50), true);
+      assertEquals(clock.now(), 240);
+      assertEquals(hby.db.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     } finally {
       yield* hby.close();
     }
