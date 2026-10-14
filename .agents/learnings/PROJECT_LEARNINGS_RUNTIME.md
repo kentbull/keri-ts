@@ -105,8 +105,10 @@ prepared sending owns HTTP only. Keep borrowed wire alive through joined cleanup
 An explicit target cap validates backing and bounds introduction plus forwarded wire
 before their final concatenation; direct wire becomes an independent copy. The
 caller must reserve preparation/copy credit first and retain it through joined send.
-Actual HTTP refusal observation is invocation-local; source/fetch/cleanup failures
-retain their original identity. These facilities do not yet move runtime callers
+Actual HTTP and source/tree/output admission refusal observation is invocation-local;
+source/fetch/sink/cleanup and external observer failures retain original identity.
+Prepared target attempts return local complete/refused/busy only after joined
+cleanup, matching observed engine-created errors rather than foreign classes. These facilities do not yet move runtime callers
 outside their guard or admit all decoded/native preparation copies.
 Admitted cue interpretation is synchronous: destination item admission precedes
 preparation, and atomic acceptance precedes ordinary source removal. Existing
