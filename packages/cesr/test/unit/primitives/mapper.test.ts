@@ -1,8 +1,16 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { SemanticInterpretationError, SyntaxParseError } from "../../../src/core/errors.ts";
+import { DeserializeError, SemanticInterpretationError, SyntaxParseError } from "../../../src/core/errors.ts";
 import { parseLabeler } from "../../../src/primitives/labeler.ts";
-import { interpretMapperBodySyntax, parseMapperBody, parseMapperBodySyntax } from "../../../src/primitives/mapper.ts";
+import {
+  interpretMapperBodySyntax,
+  Mapper,
+  type MapperMap,
+  parseMapperBody,
+  parseMapperBodySyntax,
+} from "../../../src/primitives/mapper.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
+import type { Kind } from "../../../src/tables/versions.ts";
+import vectors from "../../fixtures/aggregate-vectors.json" with { type: "json" };
 import { counterV2, token } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
 import { txt } from "../../fixtures/primitive-test-helpers.ts";
@@ -61,3 +69,44 @@ Deno.test("mapper: rejects malformed syntax and dangling labels", () => {
     SemanticInterpretationError,
   );
 });
+
+for (const row of vectors.rows) {
+  const kind = row.kind as Kind;
+  Deno.test(`mapper: ${kind} verifies frozen claims across semantic and wire inputs`, () => {
+    const mad = structuredClone(row.ael[1]) as MapperMap;
+    const init = { kind, saidive: true };
+    const valid = Mapper.fromSad(mad, init);
+    assertEquals(valid.mad, mad);
+    assertEquals(new Mapper({ ...init, raw: valid.raw }).mad, mad);
+    if (kind === "CESR") {
+      assertEquals(new Mapper({ ...init, qb64: valid.qb64 }).mad, mad);
+      assertEquals(new Mapper({ ...init, qb64b: valid.qb64b }).mad, mad);
+      assertEquals(new Mapper({ ...init, qb2: valid.qb2 }).mad, mad);
+    }
+
+    for (const changed of [{ ...mad, role: "changed" }, { ...mad, d: row.compact[2] }, { ...mad, d: "malformed" }]) {
+      const wire = Mapper.fromSad(changed, { ...init, verify: false });
+      assertThrows(() => Mapper.fromSad(changed, init), DeserializeError, "SAID at d does not verify");
+      assertThrows(() => new Mapper({ ...init, raw: wire.raw }), DeserializeError, "SAID at d does not verify");
+      if (kind === "CESR") {
+        for (const input of [{ qb64: wire.qb64 }, { qb64b: wire.qb64b }, { qb2: wire.qb2 }]) {
+          assertThrows(() => new Mapper({ ...init, ...input }), DeserializeError, "SAID at d does not verify");
+        }
+      }
+      assertEquals(new Mapper({ ...init, raw: wire.raw, verify: false }).mad, changed);
+      assertEquals(Mapper.fromSad(changed, { ...init, saidive: false }).mad, changed);
+      // makify replaces claims rather than validating stale input claims.
+      const repaired = Mapper.fromSad(changed, { ...init, makify: true });
+      assertEquals(Mapper.fromSad(repaired.mad, init).mad, repaired.mad);
+    }
+    const noClaim = { role: "holder" };
+    assertEquals(Mapper.fromSad(noClaim, init).mad, noClaim);
+    const alternate = Mapper.fromSad({ id: "", role: "holder" }, { ...init, saids: { id: "E" }, makify: true });
+    assertEquals(Mapper.fromSad(alternate.mad, { ...init, saids: { id: "E" } }).mad, alternate.mad);
+    assertThrows(
+      () => Mapper.fromSad({ ...alternate.mad, role: "changed" }, { ...init, saids: { id: "E" } }),
+      DeserializeError,
+      "SAID at id does not verify",
+    );
+  });
+}
