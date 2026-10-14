@@ -69,7 +69,7 @@ interface IngressRecord {
  */
 export class Reactor {
   readonly hby: Habery;
-  /** Shared host credit; standalone reactors create one explicit local policy by default. */
+  /** Shared host credit; omitted policy borrows the Habery Baser's existing ledger. */
   readonly resources: ResourcePolicy;
   readonly cues: Deck<AgentCue>;
   /** Bounded complete-record queue; callers enter only through ingest(). */
@@ -196,14 +196,18 @@ export class Reactor {
       // The admission lease predates the parser resource, so parser cleanup completes before release.
       yield* resource<void>(function*(hold) {
         if (self.sources >= self.maxSources) {
-          throw new ResourceAdmissionError("Too many active ingress sources", "busy");
+          const error = new ResourceAdmissionError("Too many active ingress sources", "busy");
+          options.onAdmissionRefusal?.(error);
+          throw error;
         }
         const credit = self.resources.reserve({ streams: 1, bytes: inputBytes });
         if (credit.kind === "refuse") {
-          throw new ResourceAdmissionError(
+          const error = new ResourceAdmissionError(
             `Ingress ${credit.resource} admission refused: ${credit.reason}`,
             credit.reason,
           );
+          options.onAdmissionRefusal?.(error);
+          throw error;
         }
         self.sources++;
         try {

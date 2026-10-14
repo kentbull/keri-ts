@@ -305,7 +305,7 @@ export class RuntimeDeliveries {
             )) === "done";
           } else {
             done = (yield* call(() =>
-              attemptPreparedCesrTarget(entry.delivery.target, runtime.services, active.signal)
+              attemptPreparedCesrTarget(entry.delivery.target, runtime.services, active.signal, runtime)
             )) === "complete";
           }
         }
