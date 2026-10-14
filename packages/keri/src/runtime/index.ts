@@ -53,8 +53,10 @@ export { BUILD_METADATA, DISPLAY_VERSION, PACKAGE_VERSION } from "../app/version
 export {
   drainWitnessCues,
   processWitnessIngress,
+  processWitnessIngressSource,
   Receiptor,
   type WitnessAuthMap,
+  type WitnessIngressOptions,
   witnessKeyStateGet,
   type WitnessKeyStateGetResult,
   witnessQueryGet,

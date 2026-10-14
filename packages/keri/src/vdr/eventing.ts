@@ -34,6 +34,7 @@ import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
 import { CapturedTelReplay } from "../db/tel-replay.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import { prepareTsnQuery } from "./tsn-query.ts";
 
 type TelIlk =
   | typeof Ilks.vcp
@@ -976,11 +977,17 @@ export class Tevery {
     }
   }
 
-  /** Serve legacy TEL replay in management/credential order; TSN processing remains explicitly unsupported.
-   * Frozen 927 leaves query signature validation TODO. Requester material identifies the destination;
+  /** Serve legacy TEL replay or an ordered TSN pair with independent receiver verification.
+   * Actual 714 leaves query signature validation TODO. Requester material identifies the destination;
    * optional KRAM and sender policy remain separate. Replay output uses the reference's default v2 genus.
    */
   processQuery({ serder, source, cigars }: QueryEnvelope): TelQueryDecision {
+    if (serder.route === "tsn") {
+      const result = prepareTsnQuery({ serder, source, cigars }, this.tevers);
+      if (result.kind === "drop") return result;
+      if (result.kind === "reply") this.cues.extend(result.replies);
+      return;
+    }
     if (serder.route !== "tels") return { kind: "drop", reason: "unsupportedRoute" };
     const dest = source?.qb64 ?? cigars?.[0]?.verfer?.qb64;
     if (!dest) return { kind: "drop", reason: "missingAuthentication" };

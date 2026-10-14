@@ -1,11 +1,12 @@
 import { call, type Operation, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Respondant } from "../../../src/app/respondant.ts";
-import { processWitnessIngress } from "../../../src/app/witnessing.ts";
+import { processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
 
 Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forward through poster instead of mailbox storage", async () => {
   const posterCalls: Array<{
@@ -281,6 +282,88 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
       }
     } finally {
       yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("witness source verifies actual counted Hab output before EOF and joins cancellation", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `witness-progress-source-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    const provider = yield* createHabery({
+      name: `witness-progress-provider-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    try {
+      const witness = provider.makeHab("witness", undefined, { transferable: false });
+      const controller = source.makeHab("controller", undefined, { wits: [witness.pre], toad: 1 });
+      // Real replay/interaction producers supply their own counted attachment boundaries.
+      assertEquals(provider.db.getKever(controller.pre), null, "the receiver has no controller state yet");
+      const first = acceptedEventReplayMessage(source, controller.pre, 0).message;
+      const later = controller.interact();
+      const runtime = yield* createAgentRuntime(provider, { mode: "indirect" });
+      const seen = Promise.withResolvers<void>(), returning = Promise.withResolvers<void>();
+      const cleanup = Promise.withResolvers<void>();
+      let continued = false, eof = false, emissions = 0;
+      const task = run(function*() {
+        yield* processWitnessIngressSource(
+          runtime,
+          witness,
+          async function*(signal) {
+            try {
+              yield first;
+              await new Promise<never>((_, reject) => {
+                signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+              });
+              yield later;
+              eof = true;
+            } finally {
+              returning.resolve();
+              await cleanup.promise;
+            }
+          },
+          { local: true, deliver: false },
+          function*(emission) {
+            if (emission.cue.kin === "witness") {
+              emissions++;
+              seen.resolve();
+            }
+          },
+        );
+        continued = true;
+      });
+      const timeout = setTimeout(() => seen.reject(new Error("Witness acceptance waited for source EOF")), 2000);
+      try {
+        yield* call(() => seen.promise);
+        assertEquals(provider.db.getKever(controller.pre)?.sn, 0);
+        assertEquals(provider.db.wigs.get(dgKey(controller.pre, provider.db.getKever(controller.pre)!.said)).length, 1);
+        assertEquals([eof, emissions, continued], [false, 1, false]);
+        let halted = false;
+        const halt = task.halt().then(() => halted = true);
+        yield* call(() => returning.promise);
+        assertEquals(halted, false);
+        assertEquals(runtime.resources.used.streams, 1, "source cleanup retains parser admission");
+        cleanup.resolve();
+        yield* call(() => halt);
+        assertEquals(continued, false);
+        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        assertEquals(provider.db.getKever(controller.pre)?.sn, 0, "cancelled input cannot deliver its later event");
+        const finite = yield* processWitnessIngress(runtime, witness, later, { local: true, deliver: false });
+        assertEquals(finite.filter((emission) => emission.cue.kin === "witness").length, 1);
+        assertEquals(provider.db.getKever(controller.pre)?.sn, 1);
+      } finally {
+        clearTimeout(timeout);
+        cleanup.resolve();
+        yield* call(() => task.halt());
+        yield* runtime.close();
+      }
+    } finally {
+      yield* provider.close(true);
+      yield* source.close(true);
     }
   });
 });

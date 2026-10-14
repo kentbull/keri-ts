@@ -117,7 +117,11 @@ function querySseResponse(
 }
 
 /** Open lazy direct reply bytes under runtime ownership; the request signal ends with ingress. */
-function directQueryResponse(runtime: AgentRuntime, emissions: readonly CueEmission[]): Response | null {
+function directQueryResponse(
+  runtime: AgentRuntime,
+  emissions: readonly CueEmission[],
+  release: () => void,
+): Response | null {
   const replies = emissions.filter((emission) =>
     emission.kind === "wire" && (emission.cue.kin === "replay" || emission.cue.kin === "reply")
   );
@@ -128,7 +132,7 @@ function directQueryResponse(runtime: AgentRuntime, emissions: readonly CueEmiss
       for (const reply of replies) yield* reply.messages;
     },
   };
-  return new Response(runtime.replyStreams.open(messages), {
+  return new Response(runtime.replyStreams.open(messages, release), {
     status: 200,
     headers: { "Content-Type": "application/cesr" },
   });
@@ -145,9 +149,17 @@ function* deferredDirectQueryResponse(
   do {
     let response: Response | null = null;
     yield* runtime.reactor.settle(undefined, { escrows: true }, function*() {
-      const cue = reply.take();
-      if (cue) {
-        response = directQueryResponse(runtime, yield* drainRuntimeCues(runtime, context.policy.serviceHab, [cue]));
+      const batch = reply.takeAll();
+      if (batch) {
+        try {
+          response = directQueryResponse(
+            runtime,
+            yield* drainRuntimeCues(runtime, context.policy.serviceHab, batch.cues),
+            batch.release,
+          );
+        } finally {
+          if (!response) batch.release();
+        }
       }
     });
     if (response) return response;
@@ -217,8 +229,14 @@ function* ingest(context: ProtocolRequestContext, hosted: HostedRouteResolution)
             // A later frame makes this an ordinary query; transfer its reply before releasing its reservation.
             yield* runtime.reactor.settle(undefined, {}, function*() {
               try {
-                const cue = previous.take();
-                if (cue) yield* drainRuntimeCues(runtime, context.policy.serviceHab, [cue]);
+                const batch = previous.takeAll();
+                if (batch) {
+                  try {
+                    yield* drainRuntimeCues(runtime, context.policy.serviceHab, batch.cues);
+                  } finally {
+                    batch.release();
+                  }
+                }
               } finally {
                 previous.close();
               }

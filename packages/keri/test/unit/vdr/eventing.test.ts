@@ -339,10 +339,8 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
         reason: "missingAuthentication",
       });
       assertEquals(tvy.processQuery({ serder: request(""), source }), { kind: "drop", reason: "invalidQuery" });
-      assertEquals(tvy.processQuery({ serder: request(vcp.pre!, "", "tsn"), source }), {
-        kind: "drop",
-        reason: "unsupportedRoute",
-      });
+      assertEquals(tvy.processQuery({ serder: request(vcp.pre!, "", "tsn"), source }), undefined);
+      assertEquals(runtime.cues.pull()?.kin, "reply");
       const unsigned = hby.makeHab("nontransferable", undefined, { transferable: false });
       const serder = request();
       assertEquals(tvy.processQuery({ serder, cigars: unsigned.sign(serder.raw, false) }), undefined);
@@ -358,7 +356,7 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
   });
 });
 
-Deno.test("TSN producer prepares ordered independent state replies without enabling runtime intake", async () => {
+Deno.test("TSN producer prepares ordered independent state replies without publishing cues", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
@@ -448,7 +446,9 @@ Deno.test("TSN producer prepares ordered independent state replies without enabl
       if (cigarResult.kind !== "reply") throw new Error("Expected cigar destination");
       assertEquals(cigarResult.replies[0].dest, outsider.pre);
       assertEquals(tvy.cues.length, 0, "Preparing replies publishes nothing");
-      assertEquals(tvy.processQuery({ serder: request(), source }), { kind: "drop", reason: "unsupportedRoute" });
+      tvy.processQuery({ serder: request(), source });
+      assertEquals(tvy.cues.toArray().map((cue) => cue.kin), ["reply", "reply"]);
+      tvy.cues.clear();
       yield* reger.close();
       assertThrows(() => prepareTsnQuery({ serder: request(), source }, tvy.tevers), Error, "not open");
       yield* reger.reopen();
@@ -546,10 +546,8 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, valid.said);
       assertExists(hby.db.sdts.get([valid.said!]), "Pending/rejected semantic state retains previous BADA metadata");
       assertEquals(runtime.cues.length, 0);
-      assertEquals(tvy.processQuery({ serder: query("tsn", { ri: vcp.pre, i: "" }), source: issuer.kever!.prefixer }), {
-        kind: "drop",
-        reason: "unsupportedRoute",
-      });
+      tvy.processQuery({ serder: query("tsn", { ri: vcp.pre, i: "" }), source: issuer.kever!.prefixer });
+      assertEquals(tvy.cues.pull()?.kin, "reply", "Direct borrowed processor calls retain their supplied cue owner");
       yield* reger.close();
       let failure: unknown;
       try {
@@ -898,6 +896,88 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       yield* runtime.close();
       yield* hby.close(true);
       yield* source.close(true);
+      yield* sender.close(true);
+    }
+  });
+});
+
+Deno.test("TSN runtime query delivers ordered replies with independent credential acceptance", async () => {
+  await run(function*() {
+    const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = sender.makeHab("issuer"), runtime = yield* createAgentRuntime(sender);
+    const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const requester = receiver.makeHab("requester"), target = yield* createAgentRuntime(receiver);
+    const reger = runtime.vdr.reger! as Reger, tvy = runtime.vdr.tvy! as Tevery, received = target.vdr.reger! as Reger;
+    try {
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const credential = makeCredential(issuer.pre), iss = issue(credential.said!, vcp.pre!);
+      assertEquals(tvy.processEvent({ serder: iss, ...anchorTel(issuer, iss) }).kind, "accept");
+      for (const bytes of sender.db.clonePreIter(issuer.pre)) yield* target.reactor.processBytes(bytes);
+      for (const event of [vcp, iss]) yield* target.reactor.processBytes(reger.cloneTvt(event.pre!, event.said!));
+      const queryWire = requester.query(issuer.pre, issuer.pre, { ri: vcp.pre, i: credential.said }, "tsn");
+      yield* runtime.reactor.processBytes(queryWire);
+      const replies = [...issuer.processCuesIter(runtime.cues)];
+      assertEquals(
+        replies.map((emission) => [emission.cue.kin, emission.cue.kin === "reply" ? emission.cue.dest : undefined]),
+        [["reply", requester.pre], [
+          "reply",
+          requester.pre,
+        ]],
+      );
+      const bodies = [];
+      for (const emission of replies) {
+        const [frame] = yield* call(() => parseBytes([...emission.messages][0]));
+        try {
+          bodies.push(envelopeFromFrame(frame).serder);
+        } finally {
+          yield* call(() => discardFrame(frame));
+        }
+      }
+      assertEquals(bodies.map((body) => body.route), [`/tsn/registry/${issuer.pre}`, `/tsn/credential/${issuer.pre}`]);
+      yield* target.reactor.processBytes([...replies[0].messages][0]);
+      assertEquals(received.txnsb.current([vcp.pre!, issuer.pre])?.qb64, bodies[0].said);
+      assertEquals(
+        received.txnsb.current([credential.said!, issuer.pre]),
+        null,
+        "Registry reply cannot authenticate child state",
+      );
+      yield* target.reactor.processBytes(requester.endorse(bodies[1]));
+      assertEquals(
+        received.txnsb.current([credential.said!, issuer.pre]),
+        null,
+        "Foreign proof cannot authenticate credential attester",
+      );
+      yield* target.reactor.processBytes([...replies[1].messages][0]);
+      assertEquals(received.txnsb.current([credential.said!, issuer.pre])?.qb64, bodies[1].said);
+      yield* received.close();
+      yield* received.reopen();
+      yield* target.reactor.processBytes([...replies[1].messages][0]);
+      assertEquals(received.txnsb.current([credential.said!, issuer.pre])?.qb64, bodies[1].said);
+      yield* runtime.reactor.processBytes(
+        requester.query(issuer.pre, issuer.pre, { ri: vcp.pre, i: requester.pre }, "tsn"),
+      );
+      assertEquals(
+        runtime.cues.toArray().map((cue) => cue.kin),
+        ["reply"],
+        "Unknown credential keeps registry response only",
+      );
+      runtime.cues.clear();
+      runtime.cues.capacity = 1;
+      assertThrows(
+        () =>
+          tvy.processQuery({
+            serder: query("tsn", { ri: vcp.pre, i: credential.said }),
+            source: requester.kever!.prefixer,
+          }),
+        Error,
+        "capacity",
+      );
+      assertEquals(runtime.cues.length, 0, "A pair cannot publish only its first cue on local refusal");
+    } finally {
+      yield* target.close();
+      yield* receiver.close(true);
+      yield* runtime.close();
       yield* sender.close(true);
     }
   });
