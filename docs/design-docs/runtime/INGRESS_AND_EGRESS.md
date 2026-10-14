@@ -204,10 +204,21 @@ sender as forwarding. Witness authorization is preserved across content-type
 retries; caller headers cannot replace CESR framing or destination metadata.
 Generic witness sends borrow explicit runtime services; runtime delegation passes
 its own services through this seam. Standalone callers may use the shared default.
-TCP reserves one stream, the supplied buffer's backing and one transport copy
-before socket acquisition. The caller owns allocation of that input. Completion,
-failure and cancellation join socket close before returning credit; kernel buffers
-and native residency require separate measurement.
+TCP finite/source sending shares `sendCesrTcp`/`streamCesrTcp`. One stream slot
+and two bounded chunk allowances precede socket and abortable factory acquisition;
+finite input additionally charges its retained backing. The allowances cover one
+producer chunk and a transport copy; finite input is copied into bounded backing.
+Factories must observe abort, yield immutable backing within the configured ceiling,
+and join cleanup on iterator return. Their pre-yield allocations remain their responsibility.
+Each write callback and any required drain settle before the next source pull.
+Source cleanup, write callbacks and final socket close join before credit release;
+cleanup/infrastructure failures propagate. Native pools/socket/kernel residency is separate.
+Connection timeout is separate from the absolute, non-refreshing end/close deadline,
+which starts after source EOF. Active aggregate transfers have no total-duration cap.
+The default waits for peer close after local output end, preserving finite witness policy.
+The result describes local transmission, never authenticated remote acceptance.
+Parsed-frame pre-serializer admission and explicit concurrent reply parsing remain
+successors; no parsed input is serialized and reparsed by these operations.
 Receipt endpoints intentionally return one finite proof: collection admits at
 most 1 MiB, failed-response diagnostics at most 16 KiB, and parsing requires one
 complete frame. Cancellation joins the body reader and releases its lock.

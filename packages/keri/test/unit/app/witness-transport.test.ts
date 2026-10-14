@@ -1,9 +1,10 @@
 import { concatBytes, ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+import { sendCesrTcp, streamCesrTcp } from "../../../src/app/tcp-egress.ts";
 import { Receiptor, sendWitnessMessage } from "../../../src/app/witnessing.ts";
 
 /** Seed accepted local identifiers and the remote HTTP location used by witness transport. */
@@ -138,7 +139,7 @@ Deno.test("TCP witness admission owns its socket through cancellation and permit
         try {
           yield* call(() => received.promise);
           assertEquals(services.resources.used.streams, 1);
-          assertEquals(services.resources.used.bytes, wire.buffer.byteLength + wire.byteLength);
+          assertEquals(services.resources.used.bytes, wire.buffer.byteLength + 2 * Math.min(65536, wire.byteLength));
         } finally {
           yield* call(() => task.halt());
         }
@@ -231,5 +232,211 @@ Deno.test("halting a receipt read closes the peer body without continuing its ca
   } finally {
     await task.halt();
     await server.shutdown();
+  }
+});
+
+Deno.test("TCP streamed output stops pulling under socket pressure and joins source cleanup before credit release", async () => {
+  const accepted = Promise.withResolvers<Socket>(), cleanup = Promise.withResolvers<void>();
+  const returning = Promise.withResolvers<void>();
+  const server = createServer({ allowHalfOpen: true, pauseOnConnect: true }, (socket) => {
+    socket.on("error", () => {});
+    accepted.resolve(socket);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const services = { ...defaultRuntimeServices, resources: new ResourcePolicy({ streams: 1, bytes: 131072 }) };
+  let pulls = 0, opened = 0, continued = false;
+  const source = async function*(signal: AbortSignal) {
+    opened++;
+    try {
+      for (let index = 0; index < 1024; index++) {
+        signal.throwIfAborted();
+        pulls++;
+        yield new Uint8Array(65536);
+      }
+    } finally {
+      returning.resolve();
+      await cleanup.promise;
+    }
+  };
+  const busy = services.resources.reserve({ streams: 1 });
+  if (busy.kind !== "reserve") throw new Error("Expected free test capacity");
+  try {
+    await assertRejects(() => run(() => streamCesrTcp(url, source, { services })), ResourceAdmissionError, "busy");
+    assertEquals(opened, 0, "admission precedes source acquisition");
+  } finally {
+    busy.reservation.release();
+  }
+  const task = run(function*() {
+    yield* streamCesrTcp(url, source, { services });
+    continued = true;
+  });
+  const socket = await accepted.promise;
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assertEquals(pulls > 0 && pulls < 1024, true, "paused real receiver prevents whole-source prefetch");
+    const stopped = pulls;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assertEquals(pulls, stopped, "pressure stops source demand");
+    let halted = false;
+    const halt = task.halt().then(() => halted = true);
+    await returning.promise;
+    assertEquals(halted, false);
+    assertEquals(services.resources.used, { streams: 1, bytes: 131072, decryptions: 0 });
+    cleanup.resolve();
+    await halt;
+    assertEquals(continued, false);
+    assertEquals(services.resources.used, { streams: 0, bytes: 0, decryptions: 0 });
+  } finally {
+    cleanup.resolve();
+    await task.halt();
+    socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+Deno.test("TCP output rejects oversized backing, freezes drain deadline and permits a later finite send", async () => {
+  const sockets = new Set<Socket>();
+  let received = 0, finish = false;
+  const server = createServer({ allowHalfOpen: true }, (socket) => {
+    sockets.add(socket);
+    socket.on("error", () => {});
+    socket.once("close", () => sockets.delete(socket));
+    socket.on("data", (bytes) => received += bytes.length);
+    socket.once("end", () => {
+      if (finish) socket.end();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const services = { ...defaultRuntimeServices, resources: new ResourcePolicy({ streams: 1 }) };
+  try {
+    await assertRejects(
+      () =>
+        run(() =>
+          streamCesrTcp(url, async function*() {
+            yield new Uint8Array(100).subarray(0, 1);
+          }, { services, maxChunkBytes: 4 })
+        ),
+      ResourceLimitError,
+      "backing",
+    );
+    assertEquals(received, 0, "oversized backing is refused before socket write");
+    await assertRejects(
+      () =>
+        run(() =>
+          streamCesrTcp(url, async function*() {
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            yield Uint8Array.of(1, 2);
+          }, { services, drainTimeoutMs: 10 })
+        ),
+      Error,
+      "drain deadline",
+    );
+    assertEquals(received, 2, "active production outlives the later drain deadline");
+    assertEquals(services.resources.used, { streams: 0, bytes: 0, decryptions: 0 });
+    const fault = new Error("source cleanup infrastructure fault");
+    let returned = 0;
+    const failure = await assertRejects(
+      () =>
+        run(() =>
+          streamCesrTcp(url, () => ({
+            [Symbol.asyncIterator]() {
+              return {
+                next() {
+                  return Promise.resolve({ done: false as const, value: new Uint8Array(5) });
+                },
+                return() {
+                  returned++;
+                  return Promise.reject(fault);
+                },
+              };
+            },
+          }), { services, maxChunkBytes: 4 })
+        ),
+      AggregateError,
+      "cleanup failed",
+    );
+    assertStrictEquals(failure.errors[1], fault);
+    assertEquals(returned, 1);
+    assertEquals(services.resources.used, { streams: 0, bytes: 0, decryptions: 0 });
+    const openingFault = new Error("source factory infrastructure fault");
+    assertStrictEquals(
+      await assertRejects(() =>
+        run(() =>
+          streamCesrTcp(url, () => {
+            throw openingFault;
+          }, { services })
+        )
+      ),
+      openingFault,
+    );
+    assertStrictEquals(
+      await assertRejects(() =>
+        run(() =>
+          sendCesrTcp(url, Uint8Array.of(1), {
+            services: {
+              ...services,
+              clock: {
+                ...services.clock,
+                setTimeout() {
+                  throw openingFault;
+                },
+              },
+            },
+          })
+        )
+      ),
+      openingFault,
+    );
+    assertEquals(services.resources.used, { streams: 0, bytes: 0, decryptions: 0 });
+    const reading = Promise.withResolvers<void>(), returning = Promise.withResolvers<void>();
+    const cleanup = Promise.withResolvers<void>();
+    const task = run(() =>
+      streamCesrTcp(url, async function*(signal) {
+        try {
+          await new Promise<never>((_, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            reading.resolve();
+          });
+        } finally {
+          returning.resolve();
+          await cleanup.promise;
+        }
+      }, { services })
+    );
+    try {
+      await reading.promise;
+      let halted = false;
+      const halt = task.halt().then(() => halted = true);
+      await returning.promise;
+      assertEquals(halted, false, "a pending source read joins its cleanup");
+      assertEquals(services.resources.used.streams, 1);
+      cleanup.resolve();
+      await halt;
+      assertEquals(services.resources.used, { streams: 0, bytes: 0, decryptions: 0 });
+    } finally {
+      cleanup.resolve();
+      await task.halt();
+    }
+    finish = true;
+    assertEquals(await run(() => sendCesrTcp(url, Uint8Array.of(3, 4), { services })), {
+      kind: "transmitted",
+      bytes: 2,
+    });
+    assertEquals(received, 4);
+    assertEquals(
+      await run(() =>
+        streamCesrTcp(url, async function*() {
+          for (let index = 0; index < 3; index++) yield Uint8Array.of(5, 6);
+        }, { services, maxChunkBytes: 2 })
+      ),
+      { kind: "transmitted", bytes: 6 },
+    );
+    assertEquals(received, 10);
+    assertEquals(services.resources.used, { streams: 0, bytes: 0, decryptions: 0 });
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
