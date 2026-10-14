@@ -1,4 +1,5 @@
 /** Bind the generated npm runtime to the exact reviewed sodium ESM distribution.
+ * The private loader supplies older Node secure randomness before the pinned wrapper loads.
  * Only the wrapper's raw-module import and the generated private entry import change.
  * Types may still reference the exact external wrapper package; runtime never does.
  */
@@ -59,6 +60,8 @@ export function vendorSodium(outDir: string, distribution = sodiumDistribution()
   const vendor = join(dirname(entry), "sodium-0.8.4");
   Deno.mkdirSync(vendor); // Fresh DNT output only; never silently overwrite an earlier copy.
   Deno.writeTextFileSync(join(vendor, "wrapper.mjs"), source, { createNew: true });
+  const runtime = Deno.readFileSync(new URL("./sodium-runtime.mjs", import.meta.url));
+  Deno.writeFileSync(join(vendor, "runtime.mjs"), runtime, { createNew: true });
   Deno.writeFileSync(join(vendor, "raw.mjs"), distribution.raw, { createNew: true });
   Deno.writeFileSync(join(vendor, "LICENSE"), distribution.license, { createNew: true });
   Deno.writeTextFileSync(
@@ -69,6 +72,8 @@ export function vendorSodium(outDir: string, distribution = sodiumDistribution()
         packages: { "libsodium-wrappers-sumo": version, "libsodium-sumo": version },
         original_sha256: pins,
         wrapper_sha256: hash(new TextEncoder().encode(source)),
+        runtime_sha256: hash(runtime),
+        initialization: "The private loader supplies absent Node Web Crypto before evaluating the pinned wrapper.",
         modification: "The wrapper's one libsodium-sumo import points to adjacent raw.mjs; no crypto code changes.",
       },
       null,
@@ -76,5 +81,5 @@ export function vendorSodium(outDir: string, distribution = sodiumDistribution()
     ) + "\n",
     { createNew: true },
   );
-  Deno.writeTextFileSync(entry, original.replace(runtimeImport, 'import sodium from "./sodium-0.8.4/wrapper.mjs";'));
+  Deno.writeTextFileSync(entry, original.replace(runtimeImport, 'import sodium from "./sodium-0.8.4/runtime.mjs";'));
 }
