@@ -204,15 +204,13 @@ function* ingest(context: ProtocolRequestContext, hosted: HostedRouteResolution)
       for (const frame of yield* each(channel.frames)) {
         yield* call(function*() {
           // Invalid trailing frames still own payloads even when they never reach runtime dispatch.
-          if (frame.essr || frame.nests?.length) {
-            yield* resource<void>(function*(provide) {
-              try {
-                yield* provide();
-              } finally {
-                yield* call(() => discardFrame(frame));
-              }
-            });
-          }
+          yield* resource<void>(function*(provide) {
+            try {
+              yield* provide();
+            } finally {
+              yield* call(() => discardFrame(frame));
+            }
+          });
           if (query?.reply) {
             const previous = query.reply;
             // A later frame makes this an ordinary query; transfer its reply before releasing its reservation.
