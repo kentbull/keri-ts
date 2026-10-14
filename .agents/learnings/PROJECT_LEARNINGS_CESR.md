@@ -32,7 +32,10 @@
   transfer, and propagates joined disposal failures alongside the primary error.
 - `Payload.open(signal)` must cooperate with cancellation. Generator return alone
   cannot interrupt blocked I/O. CESR root has no Effection import; its optional
-  adapter owns one subscription, abort and joined cleanup.
+  adapter owns one subscription, abort and joined cleanup. Its earlier next-scope
+  resource joins the same close Promise, preserving late source failures through
+  cancellation; only exact owned abort/already-reported failures are consumed.
+  Discard, parser and source cleanup all run before distinct failures propagate.
 - Host wire-refusal classification is opt-in at progressive decode only. Sources,
   custom staging, finalization, cancellation and cleanup preserve error provenance;
   a `ParserError` class alone never establishes a remote-input failure.
