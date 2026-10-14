@@ -39,8 +39,8 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
    implemented. Qualify their composed workflows; do not recreate foundations.
    The retired #172 snapshot remains recoverable evidence.
 2. Finish real frozen-reference TEL/TSN processors in small query/reply units.
-   Registry and credential TSN consumers are implemented; qualify their query composition
-   before enabling TSN queries. `xip/pro/bar` remain reference stubs.
+   Registry/credential TSN query and independent receiving composition is implemented;
+   retain the full workflow qualification gate. `xip/pro/bar` remain reference stubs.
 3. Complete shared admission (4), storage/recovery (5) and production
    backpressure (6) through the active stack below and its remaining owner gates.
    The socket-to-application streamability work is phase 6's S1–9 sequence:

@@ -1406,7 +1406,10 @@ export class Hab {
           yield {
             cue,
             messages: [
-              cue.serder ? this.endorse(cue.serder) : this.reply(cue.route, cue.data ?? {}),
+              cue.serder ? this.endorse(cue.serder) : this.reply(
+                ["/tsn/registry", "/tsn/credential"].includes(cue.route) ? `${cue.route}/${this.pre}` : cue.route,
+                cue.data ?? {},
+              ),
             ],
             kind: "wire",
           };
