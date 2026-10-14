@@ -1,6 +1,6 @@
-# KERIpy parity and bounded runtime roadmap
+# KERIpy parity and bounded in-flight runtime roadmap
 
-Verified boundary: keri-ts `41748042` after #246; transport and qualification remain open.
+Verified boundary: keri-ts `c21d6dca` after #301; transport and qualification remain open.
 Frozen upstream: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
@@ -10,6 +10,10 @@ The workload is many bounded logical messages in large aggregate transfers.
 Structural parsing is implemented. Full runtime parity and bounded-memory
 qualification are **incomplete**. Parent-owned nested children are never
 independently accepted GenericGroup siblings.
+The approved release bound covers in-flight work. Accepted-state cache residency
+is reported separately; eviction, generation ownership and public borrowing API
+redesign are deferred. Existing storage/escrow recovery is qualified as implemented,
+without inventing a general durable-delivery guarantee to claim KERIpy parity.
 
 ## Acceptance matrix
 
@@ -47,14 +51,11 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
    bounded cue handoff, network waits outside the guard, progressive TCP intake,
    supervised connections, streamed output, explicit duplex and composed proof.
    Finite/source messenger entries share two engines within those units; HTTP
-   preserves its framed POST contract. The transport inventory also owns OOBI,
-   witness GET replay, DID CESR artifact output, mailbox, CLI service wiring and bounded
-   JSON exceptions; adoption throughout the stack is part of the same release gate.
-   It is required in the next release, not deferred post-release qualification.
-   Witness GET KEL replay now uses bounded lazy responses; proof/native-copy and
-   full transport qualification remain open. OOBI/DID output stays in S2.
-   DID resolution intake streams through Reactor and compares full documents
-   after EOF; native/heap and full workflow qualification remain open.
+   preserves its framed POST contract. Required caller adoption is limited to
+   streaming supported by KERIpy 714: continuous TCP intake/replies, owned HTTP
+   messenger work and mailbox SSE. Keep already merged TS integrations, but defer
+   further stack-wide artifact/export/JSON conversion. Actual caller and lifecycle
+   qualification remain release gates; reference finite collection is permitted.
 4. Qualify delivered Mapper claims (#223) and bundled schema IDs (#226) in the
    final composition; keep format-dependent default-builder limits explicit.
 5. Run the maintained full inventory and repeated end-to-end qualification (7)
@@ -104,8 +105,10 @@ hosted extended jobs, whose existing 15-minute cap remains unchanged.
 ## Final release gate
 
 The approved final task is publication of `cesr-ts`, `keri-ts` and `@keri-ts/tufa`
-for downstream diddaemon adoption. Complete transport S1–9, its stack-wide
-adoption inventory and its shared-budget and durable-recovery dependencies before merging #104 or publishing. Prove real
+for downstream diddaemon adoption. Complete the reference-backed transport S1–9
+caller scope, bounded in-flight work and existing storage/escrow recovery checks
+before merging #104 or publishing. Cache redesign, exhaustive CBOR accounting and
+additional stack-wide streaming are deferred, not release blockers. Prove real
 HTTP/TCP progress through verified acceptance before transfer completion; parser
 tests, finite TCP admission and local write completion cannot satisfy this gate.
 Recheck #104's generated versions, dependency
