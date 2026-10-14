@@ -111,7 +111,7 @@ function writeTcp(
       socket.on("error", fail);
       const abort = () => socket.destroy();
       signal.addEventListener("abort", abort, { once: true });
-      let timer: RuntimeTimer | undefined;
+      let timer: RuntimeTimer, timerActive = false;
       socket.once("close", () => {
         if (!socket.writableFinished) fail(new Error("TCP closed before output completed"));
       });
@@ -121,6 +121,7 @@ function writeTcp(
       let failure: unknown, bytes = 0, finished = false;
       try {
         timer = services.clock.setTimeout(() => fail(new Error("TCP connect deadline exceeded")), connectTimeout);
+        timerActive = true;
         await interrupted(
           new Promise<void>((resolve, reject) => {
             socket.once("connect", resolve);
@@ -129,7 +130,7 @@ function writeTcp(
           signal,
         );
         services.clock.clearTimeout(timer);
-        timer = undefined;
+        timerActive = false;
         const source = await factory(signal);
         iterator = source[Symbol.asyncIterator]();
         signal.throwIfAborted();
@@ -160,6 +161,7 @@ function writeTcp(
           bytes += part.value.length;
         }
         timer = services.clock.setTimeout(() => fail(new Error("TCP drain deadline exceeded")), drainTimeout);
+        timerActive = true;
         pendingWrite = new Promise<void>((resolve, reject) =>
           socket.end((error?: Error) => error ? reject(error) : resolve())
         );
@@ -183,7 +185,7 @@ function writeTcp(
           await closed;
           signal.removeEventListener("abort", abort);
           socket.removeListener("error", fail);
-          if (timer !== undefined) services.clock.clearTimeout(timer);
+          if (timerActive) services.clock.clearTimeout(timer);
         }
       }
       if (failure !== undefined) throw failure;

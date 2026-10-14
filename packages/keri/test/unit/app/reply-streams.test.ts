@@ -3,7 +3,7 @@ import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { ReplyStreams } from "../../../src/app/reply-streams.ts";
 
 Deno.test("HTTP replay pulls one bounded chunk and closes its iterator on cancellation", async () => {
-  const resources = new ResourcePolicy({ bytes: 5, streams: 2 });
+  const resources = new ResourcePolicy({ bytes: 26, streams: 2 });
   const replies = new ReplyStreams({ maxStreams: 1, maxMessageBytes: 3, maxChunkBytes: 2 }, resources);
   const other = new ReplyStreams({ maxMessageBytes: 3, maxChunkBytes: 2 }, resources);
   let events = 0;
@@ -16,7 +16,7 @@ Deno.test("HTTP replay pulls one bounded chunk and closes its iterator on cancel
         events++;
         yield Uint8Array.of(4);
       } finally {
-        assertEquals(resources.used.bytes, 5, "credit outlives source cleanup");
+        assertEquals(resources.used.bytes, 26, "credit outlives source cleanup");
         closed = true;
       }
     },
@@ -35,7 +35,7 @@ Deno.test("HTTP replay pulls one bounded chunk and closes its iterator on cancel
     "busy",
   );
   assertEquals(opened, false);
-  assertEquals(resources.used.bytes, 5);
+  assertEquals(resources.used.bytes, 26);
   // A Response may wait indefinitely before the client requests any bytes.
   await Promise.resolve();
   assertEquals(events, 0);

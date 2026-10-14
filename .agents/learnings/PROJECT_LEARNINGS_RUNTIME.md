@@ -81,6 +81,12 @@ Explicit duplex preserves default routing; half-close drain deadlines cannot be
 extended by activity. The [transport plan](../../docs/plans/runtime/TRANSPORT_PLAN.md)
 owns the remaining implementation and release gate.
 
+TCP socketBytes uses one exclusive binary readable-mode owner and one pending pull.
+Its caller admits both read/copy backing allowances before acquisition and owns
+socket errors outside the readable lifetime. Abort/return joins close; genuine EOF
+leaves the writable half for explicit connection drain. Never mix flow readers,
+or treat high-water buffering as a hard shared-memory ceiling.
+
 Direct replies reserve query SAIDs before dispatch; only the final query owns the
 HTTP response. Earlier responses transfer to ordinary delivery. A response scope
 outlives fetch headers and must not inherit a request signal that aborts when the

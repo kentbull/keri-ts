@@ -25,8 +25,29 @@ Deno.test("replay sources reopen their captured extent without including later f
       // The counter and every proof byte count toward the exact final allocation budget.
       assertEquals(hby.db.cloneEvtMsg(hab.pre, 0, said, first.length), first);
       assertThrows(() => hby.db.cloneEvtMsg(hab.pre, 0, said, first.length - 1), ResourceLimitError);
-      // Rebuilding a finite event must obey the caller's policy even though the aggregate is streamed.
-      assertThrows(() => [...hby.db.replay(hab.pre, 0, { maxMessageBytes: 8 })!], ResourceLimitError);
+      // Refusal occurs at native preflight, before either ordinary or admitted row materialization.
+      const native = hby.db.evts.sdb as unknown as {
+        get(key: Uint8Array): Uint8Array | undefined;
+        getBinary(key: Uint8Array, options?: object): Uint8Array | undefined;
+      };
+      const original = { get: native.get, getBinary: native.getBinary };
+      native.get = native.getBinary = () => {
+        throw new Error("oversized replay body was materialized");
+      };
+      try {
+        assertThrows(() => [...hby.db.replay(hab.pre, 0, { maxMessageBytes: 8 })!], ResourceLimitError);
+      } finally {
+        Object.assign(native, original);
+      }
+      const fault = new Error("native replay read failed");
+      native.getBinary = () => {
+        throw fault;
+      };
+      try {
+        assertEquals(assertThrows(() => [...replay]), fault, "native failures cannot become empty replay success");
+      } finally {
+        native.getBinary = original.getBinary;
+      }
       // Corrupt stored events still skip independently; resource-limit failures above must not disappear.
       hby.db.setEvt(dgKey(hab.pre, hab.kever!.said), Uint8Array.of(1));
       assertEquals([...hby.db.replay(hab.pre)!].length, 1);

@@ -41,9 +41,12 @@ KRAM snapshot/hash/serialization and reopened hydration now share runtime credit
 Temporary rows/cursors release after parser join; real frame owners retain their
 ordinary/ESSR reservations through scoped consumer disposal. No file owner wrapper
 is introduced, and synchronous publication retains its collected wire credit.
-Broader KEL/reply replay (`clonePreIter`, `replyEndRole`), parent factors and query
-preparation/retained introductions still require native-row and copy audits.
-Queue/stream credit alone does not prove their pre-read boundary.
+Configured KEL replay body reads now preflight native row size; lazy HTTP readers
+reserve reconstruction copies before opening an iterator. Companion proof-row reads
+and allocation measurements remain open. Broader KEL/reply replay (`clonePreIter`,
+`replyEndRole`), parent factors and query preparation/retained introductions still
+require native-row and copy audits. Queue/stream credit alone does not prove their
+pre-read boundary.
 Fixed native scratch (initially 16 MiB), growth through other read APIs and LMDB
 mapped residency remain separate overhead. Shared leases and measured native/string
 coexistence must cover these categories before a runtime-total/RSS claim.
