@@ -85,6 +85,12 @@ library and runnable-package artifacts. The key boundary is now explicit:
 
 ## Public Surface Rules
 
+Generated KERI/Tufa npm manifests require Node 18.17 or later: transport cancellation
+uses native `AbortSignal.any`, introduced in [18.17][node-abort-any]. Packed-artifact
+checks must exercise the declared minimum without optional global-Web-Crypto flags,
+as well as the ordinary CI runtime. A build or module import alone does not qualify
+host, storage and transport behavior; final workflow qualification remains required.
+
 1. `keri-ts` should expose the narrow library surface only.
 2. `tufa` owns the runnable CLI/host/runtime package surface.
 3. Do not let internal build paths or accidental exports leak into npm package
@@ -118,3 +124,5 @@ library and runnable-package artifacts. The key boundary is now explicit:
 2. Build metadata is empty unless a release/artifact path opts into stamping
 3. When CLI or host behavior changes, validate the packed `tufa` artifact, not
    only the source tree
+
+[node-abort-any]: https://nodejs.org/download/release/v18.17.0/docs/api/globals.html#static-method-abortsignalanysignals

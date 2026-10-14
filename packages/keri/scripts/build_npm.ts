@@ -308,7 +308,7 @@ try {
         "libsodium-wrappers-sumo": "0.8.4",
       },
       engines: {
-        node: ">=18",
+        node: ">=18.17",
       },
       scripts: {
         prepublishOnly: "npm run test",

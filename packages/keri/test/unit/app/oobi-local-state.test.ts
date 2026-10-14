@@ -1,16 +1,29 @@
 import { type Operation, run } from "effection";
-import { assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert";
-import { Diger, Prefixer, ResourceLimitError, Seqner, SerderKERI, Vrsn_2_0 } from "../../../../cesr/mod.ts";
+import { assertEquals, assertExists, assertStringIncludes, assertThrows } from "jsr:@std/assert";
+import {
+  Diger,
+  Prefixer,
+  ResourceAdmissionError,
+  ResourceLimitError,
+  ResourcePolicy,
+  Seqner,
+  SerderKERI,
+  Vrsn_2_0,
+} from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { isWellKnownOobiUrl, parseOobiUrl } from "../../../src/app/oobiery.ts";
+import { isWellKnownOobiUrl, Oobiery, parseOobiUrl } from "../../../src/app/oobiery.ts";
+import { Reactor } from "../../../src/app/reactor.ts";
 import { loadStoredReply } from "../../../src/app/stored-replies.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { reply } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
+import { expectKind } from "../../private-access.ts";
+import { FakeRuntimeHttpClient, fakeRuntimeServices } from "../../support/runtime-service-fakes.ts";
 import { assertOperationThrows, testCLICommand } from "../../utils.ts";
 
 const textDecoder = new TextDecoder();
@@ -371,6 +384,145 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
       assertEquals(hby.db.oobis.get(introducedUrl)?.cid, hab.pre);
       assertEquals(hby.db.oobis.get(introducedUrl)?.state, "queued");
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("OOBI queue and multi-parent publication admit complete cue ownership before durable effects", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const resources = new ResourcePolicy(), cues = new CueDeck(resources, 2), reactor = new Reactor(hby, { resources });
+    const http = new FakeRuntimeHttpClient();
+    const oobi = new Oobiery(hby, reactor, { cues, services: fakeRuntimeServices({ http }) });
+    try {
+      const cid = hby.makeHab("source").pre;
+      const parent = `http://oobi.test/oobi/${cid}/controller?multi=1`;
+      const children = [
+        `http://oobi.test/oobi/${cid}/controller?child=1`,
+        `http://oobi.test/.well-known/keri/oobi/${cid}?child=2`,
+      ];
+      const busy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertEquals(assertThrows(() => oobi.resolve(parent, "source"), ResourceAdmissionError).reason, "busy");
+      busy.reservation.release();
+      assertEquals(hby.db.oobis.get(parent), null);
+      const limited = new Oobiery(hby, reactor, { cues: new CueDeck(new ResourcePolicy({ bytes: 1 })) });
+      assertEquals(assertThrows(() => limited.resolve(parent), ResourceAdmissionError).reason, "limit");
+      assertEquals(hby.db.oobis.get(parent), null);
+      oobi.resolve(parent, "source");
+      const queued = cues.takeOwned()!;
+      assertEquals(queued.cue.kin, "oobiQueued");
+      assertExists(hby.db.oobis.get(parent));
+      cues.clear();
+      assertEquals(resources.used.bytes > 0, true);
+      queued.release();
+      assertEquals(resources.used.bytes, 0);
+
+      let urls = [...children], pressure = false;
+      let held: ReturnType<ResourcePolicy["reserve"]> | undefined;
+      http.registerOrigin("http://oobi.test", () => {
+        const reply = new SerderKERI({
+          sad: { t: "rpy", dt: makeNowIso8601(), r: "/oobi/controller", a: { aid: cid, urls } },
+          makify: true,
+        });
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              // The finite document lease is already held; saturate remaining bytes at the fanout boundary.
+              if (pressure) held = resources.reserve({ bytes: resources.limits.bytes - resources.used.bytes });
+              controller.enqueue(reply.raw);
+              controller.close();
+            },
+          }, { highWaterMark: 0 }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      });
+      const untouched = () => {
+        assertExists(hby.db.oobis.get(parent));
+        assertEquals(hby.db.moobi.get(parent), null);
+        assertEquals(hby.db.roobi.get(parent), null);
+        assertEquals(hby.db.cons.get([cid]), null);
+        assertEquals(hby.db.coobi.get(parent), null);
+        for (const child of children) {
+          assertEquals(hby.db.oobis.get(child), null);
+          assertEquals(hby.db.woobi.get(child), null);
+        }
+        assertEquals(cues.length, 0);
+      };
+      urls = [children[0], "invalid later URL"];
+      let invalid: unknown;
+      try {
+        yield* oobi.processOnce();
+      } catch (error) {
+        invalid = error;
+      }
+      assertEquals(invalid instanceof TypeError, true);
+      untouched();
+      urls = [...children, children[0]];
+      cues.capacity = 1;
+      let limit: unknown;
+      try {
+        yield* oobi.processOnce();
+      } catch (error) {
+        limit = error;
+      }
+      assertEquals(limit instanceof ResourceLimitError, true);
+      untouched();
+      cues.capacity = 2;
+      const item = cues.prepare([{ kin: "proof", said: "occupied" }]);
+      yield* oobi.processOnce(); // The existing worker keeps queued work on temporary item saturation.
+      untouched();
+      item.release();
+      pressure = true;
+      yield* oobi.processOnce();
+      untouched();
+      expectKind(held!, "reserve").reservation.release();
+      assertEquals(resources.used.bytes, 0);
+      pressure = false;
+      yield* oobi.processOnce();
+      assertEquals(hby.db.oobis.get(parent), null);
+      assertEquals(hby.db.moobi.get(parent)?.urls, children);
+      assertEquals(hby.db.oobis.get(children[0])?.oobialias, "source");
+      assertEquals(hby.db.woobi.get(children[1])?.oobialias, "source");
+      assertEquals(cues.toArray(), children.map((url) => ({ kin: "oobiQueued", url, alias: "source" })));
+      cues.clear();
+      for (const child of children) {
+        hby.db.oobis.rem(child);
+        hby.db.woobi.rem(child);
+        hby.db.roobi.pin(child, { state: "resolved" });
+      }
+      const pending = hby.db.moobi.get(parent)!;
+      const terminalBusy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      yield* oobi.processOnce();
+      terminalBusy.reservation.release();
+      assertEquals(hby.db.moobi.get(parent), pending);
+      assertEquals(hby.db.roobi.get(parent), null);
+      assertEquals(hby.db.cons.get([cid]), null);
+      yield* oobi.processOnce();
+      assertEquals(hby.db.moobi.get(parent), null);
+      assertEquals(hby.db.roobi.get(parent)?.state, "resolved");
+      assertExists(hby.db.cons.get([cid]));
+      const result = cues.takeOwned()!;
+      assertEquals(result.cue.kin, "oobiResolved");
+      assertEquals(resources.used.bytes > 0, true);
+      result.release();
+      const failedParent = `${parent}&failed=1`;
+      hby.db.moobi.pin(failedParent, pending);
+      hby.db.eoobi.pin(children[0], { state: "http-404" });
+      const occupied = cues.prepare([{ kin: "proof", said: "held" }, { kin: "proof", said: "held2" }]);
+      yield* oobi.processOnce();
+      assertExists(hby.db.moobi.get(failedParent));
+      assertEquals(hby.db.eoobi.get(failedParent), null);
+      occupied.release();
+      yield* oobi.processOnce();
+      assertEquals(hby.db.moobi.get(failedParent), null);
+      assertEquals(hby.db.eoobi.get(failedParent)?.state, "child-failed");
+      const failed = cues.takeOwned()!;
+      assertEquals(failed.cue, { kin: "oobiFailed", url: failedParent, reason: "child failed" });
+      failed.release();
+      assertEquals(resources.used.bytes, 0);
+    } finally {
+      cues.clear();
       yield* hby.close(true);
     }
   });
