@@ -1,4 +1,4 @@
-import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
+import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy, ShortageError } from "cesr-ts";
 import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
@@ -286,6 +286,25 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         runtime.reactor.processEscrowsOnce = escrows;
       }
       assertEquals(fetches.length, 1, "Escrow/storage failures cannot become an alternate artifact fetch");
+      assertEquals(resources.used.bytes, 0);
+
+      fetches = [];
+      body = new ReadableStream({
+        start(current) {
+          current.enqueue(first);
+          current.enqueue(Uint8Array.of(123));
+          current.close();
+        },
+      });
+      let truncated: unknown;
+      try {
+        yield* resolveDidWebs(runtime, { did });
+      } catch (error) {
+        truncated = error;
+      }
+      assertEquals(truncated instanceof ShortageError, true);
+      assertEquals(fetches.length, 1, "Truncated EOF cannot finish a cached DID or trigger fallback");
+      assertExists(target.db.getState(hab.pre));
       assertEquals(resources.used.bytes, 0);
 
       fetches = [];
