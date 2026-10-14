@@ -226,6 +226,18 @@ Aggregate replay length is not collected or capped; ordinary single-event bytes
 and concurrent HTTP replies remain independently bounded. Other finite callers
 of `cloneEvtMsg` without a limit retain their existing allocation behavior.
 
+## Witness source intake
+
+`processWitnessIngressSource` owns one Reactor parser and settles each frame,
+consuming witness emissions individually without an aggregate result. Its callback
+borrows each emission under the current guarded frame lifetime; retained work needs
+independent admitted ownership transfer, and lazy input owners cannot escape.
+The finite `processWitnessIngress` wrapper keeps its collected result and chunk cap;
+`/receipts` retains `local: true, deliver: false`. Source cancellation joins parser
+and producer cleanup. Default responder delivery still runs under the guard until
+bounded handoff adoption. Tufa TCP listener supervision and socket-to-application
+wiring remain S6 work; this source API alone does not enable that route.
+
 ## Witness and exchange output
 
 Signed exchanges and generic HTTP witness delivery use the same progressive
