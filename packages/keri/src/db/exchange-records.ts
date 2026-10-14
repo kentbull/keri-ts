@@ -5,6 +5,8 @@ import { RawRecord } from "../core/records.ts";
 export interface ExchangeRecordShape {
   /** Hosted endpoint that received this message, retained across signature escrow. */
   mailboxAid: string | null;
+  /** First qualified receiver receipt, distinct from the signed message timestamp. */
+  receiverTime?: string;
   /** Canonical Texter count, decoded byte length, and replay genus. */
   essr?: { count: number; size: number; gvrsn: Versionage };
 }
@@ -13,6 +15,8 @@ export interface ExchangeRecordShape {
 export class ExchangeRecord extends RawRecord<ExchangeRecordShape> implements ExchangeRecordShape {
   /** Local mailbox context explicitly retained for delayed verification and dispatch. */
   declare mailboxAid: string | null;
+  /** Retained through proof escrow/reopen and subsequent accepted duplicates. */
+  declare receiverTime?: string;
   /** Constant-size canonical wire reconstruction metadata. */
   declare essr?: ExchangeRecordShape["essr"];
 }
