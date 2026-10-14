@@ -15,9 +15,12 @@ import { listActiveDesignatedAliasCredentials, pinDesignatedAliasesSchema } from
 import { parseDidWebs } from "./dids.ts";
 import { generateDidDocument } from "./documenting.ts";
 
-export interface DidWebsArtifacts {
+export interface DidWebsJsonArtifact {
   readonly aid: string;
   readonly didJson: Uint8Array;
+}
+
+export interface DidWebsArtifacts extends DidWebsJsonArtifact {
   readonly keriCesr: Uint8Array;
 }
 
@@ -32,6 +35,24 @@ export function generateDidWebsArtifacts(
   runtime: AgentRuntime,
   options: GenerateDidWebsArtifactsOptions,
 ): DidWebsArtifacts {
+  const { aid, hab, didJson } = prepareHostedJson(runtime, options);
+  return { aid, didJson, keriCesr: generateDidWebsCesr(runtime, aid, { hab }) };
+}
+
+/** Generate only the hosted JSON artifact; never open the CESR replay history. */
+export function generateDidWebsJson(
+  runtime: AgentRuntime,
+  options: GenerateDidWebsArtifactsOptions,
+): DidWebsJsonArtifact {
+  const { aid, didJson } = prepareHostedJson(runtime, options);
+  return { aid, didJson };
+}
+
+/** Preserve local-AID validation and document projection for both artifact entry points. */
+function prepareHostedJson(
+  runtime: AgentRuntime,
+  options: GenerateDidWebsArtifactsOptions,
+): DidWebsJsonArtifact & { readonly hab: Hab } {
   const parsed = parseDidWebs(options.did);
   const hab = options.alias ? requireHab(runtime, options.alias) : runtime.hby.habs.get(parsed.aid);
   if (!hab?.pre) {
@@ -49,8 +70,8 @@ export function generateDidWebsArtifacts(
   });
   return {
     aid: parsed.aid,
+    hab,
     didJson: new TextEncoder().encode(`${JSON.stringify(document, null, 2)}\n`),
-    keriCesr: generateDidWebsCesr(runtime, parsed.aid, { hab }),
   };
 }
 
