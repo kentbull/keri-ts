@@ -42,8 +42,9 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    ownership. Capture-time/query effects, TEL/composed
    sources remain open. OOBI queueing, staged multi-URL fanout and multi-parent
    completion admit exact batches before queue/terminal/contact effects;
-   response and introduction publication remain open, alongside other durable
-   producers, followed by
+   introductions hold prepared reply/query ownership while admitting actual
+   queued children before proof/queue writes. Response publication remains open,
+   alongside other durable producers, followed by
    query/mailbox/delivery ownership transfers. Complete these ports before Runtime
    activation.
 
