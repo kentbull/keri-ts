@@ -148,13 +148,25 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
   };
   bundled.$id = "did:keri:" + new Diger({ raw: Diger.digest(dumps(bundled, "JSON"), "E"), code: "E" }).qb64;
   const root = make({ $ref: bundled.$id }, { $defs: { attribute: bundled } });
-  // Use the actual 71438328 override/cache surface; embedded construction's nested-ID rewrite is separate.
+  // The 71438328 override/cache oracle and corrected TS embedded construction remain separately qualified.
   assertEquals(validateSchema(credential(root.said), db, root.sed), { kind: "valid" });
   cache.set(root.said, root);
   assertEquals(validateSchema(credential(root.said), db), { kind: "valid" });
   assertEquals(validateSchema(credential(root.said, 7), db).kind, "invalid");
+  for (const kind of ["JSON", "CBOR", "MGPK", "CESR"] as const) {
+    const embedded = acdcmap(issuer, { kind, schema: root.sed as MapperMap, attribute: { d: "", name: "Ada" } });
+    assertEquals(embedded.schema, root.sed);
+    assertEquals(validateSchema(embedded, db), { kind: "valid" });
+  }
   const changed = make({ $ref: bundled.$id }, { $defs: { attribute: { ...bundled, type: "string" } } });
   assertEquals(validateSchema(credential(root.said), db, changed.sed).kind, "invalid");
+  const rebound = credential(changed.sed);
+  assertEquals(
+    rebound.verify(),
+    true,
+    "Serder verifies the new root content commitment, not bundled-resource validity",
+  );
+  assertEquals(validateSchema(rebound, db).kind, "invalid", "re-said root cannot authenticate the stale bundle ID");
   cache.set(external.said, simple);
   expect(make({ $ref: external.said }), "invalid");
   assertEquals(new TextDecoder().decode(simple.raw), unchanged, "validation never changes cache or borrowed schemas");
