@@ -52,7 +52,7 @@ before yielding, and preserves frozen v2 proof counters with an explicit genus
 selector. Requester material identifies the destination; upstream query signature
 validation is TODO. Internal TSN production calls actual `vcState(vci)`, correcting
 714's broken query keyword. Missing credentials retain the registry reply;
-credential receiving is implemented while TSN queries remain guarded. Registry
+credential receiving and ordered TSN query replies are implemented. Registry
 receiving verifies BADA/trust/TEL correspondence.
 State-record construction proves no acceptance. Complete-message caps do not prove native pre-read admission.
 Revery BADA preserves microseconds. Its bounded proof plan discovers the complete
@@ -74,6 +74,8 @@ Hold PreparedReply query ownership and the actual dependency/state child before
 proof/Broker effects. Test exact family membership without bulk copies and check
 the insertion invariant before publishing. Semantic rejected plans remain unapplied.
 TEL recovery must preserve credential `i` separately from the queried issuer.
+TSN cue-to-wire routes require the signing attester suffix; actual 714 emits bare
+routes. HTTP pair capture and success do not replace independent receiver proofs.
 Credential TSN admission matches its own current TEL/registry/anchor record; accepted
 revocation cannot be overwritten by a newly signed old issuance notice. Actual 714
 accepts forged anchor metadata and old issuance state, intentional TS refusals.

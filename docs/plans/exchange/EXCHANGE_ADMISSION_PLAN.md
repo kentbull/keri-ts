@@ -13,13 +13,15 @@ reference-stub refusals. Evidence: signed frozen-reference delegation fixtures,
 real runtime acceptance/invalid-signature tests, joined owner disposal and HTTP
 refusal/readmission. Built-in legacy `tels` replay and internal TSN production
 are implemented; authenticated registry TSN receiving and typed dependency/proof
-retry and credential TSN receiving are implemented. TSN query dispatch remains guarded.
+retry, credential receiving and ordered TSN query replies are implemented.
 Production corrects 714's `vcState(vcpre=...)` keyword bug
 using independently observed `vcState(vci)` records, without claiming receiving
 workflow qualification. Registry receiving intentionally corrects 714's self-listed
 backer trust and TEL-digest BADA pointer defects using accepted trust and outer
 reply evidence. Credential receiving also refuses forged carried anchors and superseded
-issuance, which actual 714 accepts; qualify query/reply composition before enabling TSN queries.
+issuance, which actual 714 accepts. TSN wire routes append the attester absent from
+714 cue serialization; focused query/HTTP-pair/independent-receiver composition is
+qualified. The maintained full workflow matrix remains required.
 
 ## Remaining processing boundary
 

@@ -49,7 +49,7 @@ export function registryRecord(data: unknown): RegStateRecord | null {
 /** Registry-only TSN admission; every reply owns its attester proof and accepted TEL correspondence.
  * Accepted configuration supplies trust, correcting 714's self-listed backer flaw.
  * The accepted pointer is the outer reply SAID, correcting 714's TEL-digest BADA bug.
- * Credential receiving and TSN query dispatch remain separate guarded facilities.
+ * Credential and registry notices require independent reply authentication.
  */
 export class RegistryStateReceiver {
   constructor(private readonly tvy: Tevery, private readonly rvy: Revery) {}

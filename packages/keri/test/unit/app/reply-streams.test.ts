@@ -146,3 +146,40 @@ Deno.test("HTTP replay enforces its finite event limit before transferring bytes
   reader.releaseLock();
   replies.close();
 });
+
+Deno.test("transferred response ownership survives until source cleanup even without a pull", async () => {
+  const replies = new ReplyStreams({ maxMessageBytes: 3 }), order: string[] = [];
+  const messages: Iterable<Uint8Array> = {
+    [Symbol.iterator]() {
+      return {
+        next: () => ({ done: false, value: Uint8Array.of(1) }),
+        return() {
+          order.push("source");
+          return { done: true, value: undefined };
+        },
+      };
+    },
+  };
+  const stream = replies.open(messages, () => order.push("owner"));
+  assertEquals(order, []);
+  await stream.cancel();
+  assertEquals(order, ["source", "owner"]);
+  assertThrows(
+    () =>
+      replies.open({
+        [Symbol.iterator]() {
+          throw new Error("acquisition");
+        },
+      }, () => order.push("failed")),
+    Error,
+    "acquisition",
+  );
+  const failed = replies.open([], () => {
+    throw new Error("owner cleanup failed");
+  }).getReader();
+  await assertRejects(() => failed.read(), Error, "owner cleanup failed");
+  failed.releaseLock();
+  replies.close();
+  assertThrows(() => replies.open([], () => order.push("closed")), Error, "closed");
+  assertEquals(order, ["source", "owner", "failed", "closed"]);
+});

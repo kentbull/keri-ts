@@ -281,19 +281,55 @@ export function* drainWitnessCues(
     deliver?: boolean;
   } = {},
 ): Operation<CueEmission[]> {
-  const hab = cueHab(runtime, serviceHab);
-  if (!hab) {
-    return [];
-  }
-
   const emissions: CueEmission[] = [];
-  for (const emission of hab.processCuesIter(cues)) {
-    if (deliver) {
-      yield* runtime.respondant.sendWithHab(emission, hab);
-    }
+  yield* consumeWitnessCues(runtime, serviceHab, cues, deliver, function*(emission) {
     emissions.push(emission);
-  }
+  });
   return emissions;
+}
+
+/** Consume each borrowed emission under its current settle turn without an aggregate result. */
+function* consumeWitnessCues(
+  runtime: AgentRuntime,
+  serviceHab: Hab | undefined,
+  cues: Iterable<AgentCue>,
+  deliver: boolean,
+  consume?: (emission: CueEmission) => Operation<void>,
+): Operation<void> {
+  const hab = cueHab(runtime, serviceHab);
+  if (!hab) return;
+  for (const emission of hab.processCuesIter(cues)) {
+    if (deliver) yield* runtime.respondant.sendWithHab(emission, hab);
+    if (consume) yield* consume(emission);
+  }
+}
+
+/** Witness-local dispatch and existing responder delivery policy for one ingress source. */
+export interface WitnessIngressOptions {
+  /** Accept with witness-local semantics; default false preserves ordinary ingress policy. */
+  local?: boolean;
+  /** Deliver through the existing responder; receipts use false to produce their own finite proof. */
+  deliver?: boolean;
+}
+
+/**
+ * Own one progressive witness parser and settle each frame before requesting more input.
+ * Consume emissions individually, without retaining an aggregate result. The callback
+ * borrows its emission under Reactor's guard/current frame lifetime. Retaining work
+ * requires independently admitted ownership transfer; never retain lazy owners or
+ * reenter guarded Reactor work. Source abort/cleanup belongs to the
+ * parser scope. Existing responder delivery stays guarded until bounded handoff adoption.
+ */
+export function* processWitnessIngressSource(
+  runtime: AgentRuntime,
+  serviceHab: Hab,
+  source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
+  { local = false, deliver = true }: WitnessIngressOptions = {},
+  consume?: (emission: CueEmission) => Operation<void>,
+): Operation<void> {
+  yield* runtime.reactor.process(source, { local, escrows: true }, function*() {
+    yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume);
+  });
 }
 
 /**
@@ -322,18 +358,18 @@ export function* processWitnessIngress(
   runtime: AgentRuntime,
   serviceHab: Hab,
   bytes: Uint8Array,
-  {
-    local = false,
-    deliver = true,
-  }: {
-    local?: boolean;
-    deliver?: boolean;
-  } = {},
+  options: WitnessIngressOptions = {},
 ): Operation<CueEmission[]> {
   const emissions: CueEmission[] = [];
-  yield* runtime.reactor.process((signal) => chunkBytes(bytes, { signal }), { local, escrows: true }, function*() {
-    emissions.push(...(yield* drainWitnessCues(runtime, serviceHab, runtime.cues, { deliver })));
-  });
+  yield* processWitnessIngressSource(
+    runtime,
+    serviceHab,
+    (signal) => chunkBytes(bytes, { signal }),
+    options,
+    function*(emission) {
+      emissions.push(emission);
+    },
+  );
   return emissions;
 }
 
