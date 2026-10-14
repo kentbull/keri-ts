@@ -44,6 +44,11 @@ export class ReplyStreams {
     if (!Number.isSafeInteger(this.reservationBytes)) throw new RangeError("Reply reservation exceeds safe range");
   }
 
+  /** Source producers use this same captured ceiling for native preflight before hydration. */
+  get messageByteLimit(): number {
+    return this.maxMessageBytes;
+  }
+
   /** Borrow a reopenable source without advancing until HTTP requests bytes.
    * Transfer the optional disposer through source closure, including admission/acquisition refusal.
    */
