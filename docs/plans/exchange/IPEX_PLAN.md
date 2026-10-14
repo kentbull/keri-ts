@@ -1,6 +1,6 @@
 # IPEX plan
 
-Owner: roadmap **3e**, partially delivered through #168. See the
+Owner: roadmap **3e**. See the
 [design](../../design-docs/exchange/IPEX.md) and
 [delivery evidence](../../reports/parity/DELIVERED_THROUGH_168.md).
 
@@ -10,22 +10,26 @@ V2 conversation routes validate prior exchange/parties/xid and response ordering
 Nested offer/grant validates disclosure plans, open/closed graphs, edge/schema
 rules and each node's issuer proof independently. Registry evidence precedes
 issuer anchors, then current issuer signatures. Exchanger persists accepted
-parents and dependency escrows; observer registry imports are atomic and retain
-newer heads. Pure body construction and byte-input ownership follow the multisig
+parents and dependency escrows. Public observer intake uses the registry engine's
+per-event atomic acceptance; the custom bulk import was removed. Pure body construction and byte-input ownership follow the multisig
 split. IPEX now assembles bounded accepted chains through RegistryStore; missing
 heads are dependencies, while contradictory accepted rows remain corruption.
-V1 pathed workflows remain separate.
+V1 pathed workflows remain separate. Presentation checks use the trusted first
+KRAM receipt, node-local BLIDs, exact grant target and witnessed Issuee sources.
+The current-main schema profile verifies issuer proofs before grant schemas;
+missing resources enter durable schema escrow. Explicit schema OOBI retrieval
+exists; bare-SAID host discovery is an upstream integration gap.
 
 Evidence includes the frozen-upstream wire oracle, real two-Habery dependency
-retry/reopen, observer chain import, independent child proofs, and cancellation
+retry/reopen, observer intake, independent child proofs, and cancellation
 that joins blocked reads and disposes owners. This is not full production-path
 or bounded-memory qualification.
 
 ## Remaining acceptance
 
-1. Complete presentation registries after the [registry foundation](../credentials/REGISTRY_PLAN.md)
-   and [KRAM sequence](KRAM_PLAN.md) supply actual services and a receiver-observed
-   cutoff. Never invent a sender timestamp or treat parent acceptance as a child proof.
+1. Qualify composed presentations through the [registry services](../credentials/REGISTRY_PLAN.md)
+   and [KRAM intake](KRAM_PLAN.md), including dependency retry, reopen and replay.
+   Never substitute a sender timestamp or parent acceptance for child proofs.
 2. Keep unsupported deeper nests, registry compact-attribute cases and unfinished
    processing guarded. Preserve frozen edge/operator outcomes and document any
    narrower TypeScript API rather than claiming unsupported operators work.
@@ -40,5 +44,5 @@ or bounded-memory qualification.
 5. Distinguish accepted EXN conversations, authenticated disclosed nodes, saved
    credentials and registry freshness; none implies all the others.
 
-Issuer-side v2 registry machinery is not supplied by the observer reader/import
-API. Full wire transport and runtime resource evidence remain phases 4–7.
+Issuer-side v2 registry machinery and public observer intake have separate owners.
+Full wire transport and runtime resource evidence remain phases 4–7.

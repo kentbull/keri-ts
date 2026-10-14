@@ -1,6 +1,6 @@
 # KERIpy parity and bounded runtime roadmap
 
-Verified boundary: keri-ts `6ca5575d` after [#202][registry-observer].
+Verified boundary: keri-ts `248b3ea7` after [#223][mapper-repair].
 Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
@@ -16,37 +16,45 @@ independently accepted GenericGroup siblings.
 Each linked owner contains the evidence gate and unresolved limitations. Phase
 numbers refer to the seven follow-on phases, not the earlier migration steps.
 
-| Requirement      | Current boundary | Owner                 | Evidence                | Open limit          |
-| ---------------- | ---------------- | --------------------- | ----------------------- | ------------------- |
-| CESR parsing     | Delivered        | [1–2][cesr]           | [Wire/tree][delivered]  | Accessor audit      |
-| Multisig         | Four routes      | [3d][multisig]        | [#160–161][delivered]   | Native/CLI scope    |
-| IPEX             | Nested runtime   | [3e][ipex]            | [#166–168][delivered]   | Presentations       |
-| V1/V2 registries | Updates/observer | [R10b–R12][registry]  | [R1–R10a][registry]     | Runtime/callers     |
-| EXN proofs       | Implemented      | [3e/3f][exchange]     | [#162/165][delivered]   | KRAM integration    |
-| v2 intake        | KRAM foundations | [K7–K10][kram]        | [K1–K6b][kram]          | Intake/TEL/stubs    |
-| ESSR outcomes    | Shared admission | [4 integration][essr] | [Policy][resource]      | Native copies       |
-| Shared budget    | Streams/crypto   | [4][resource]         | [Policy][resource]      | Trees/queues/copies |
-| Storage/recovery | Durable wire     | [5][storage]          | [Required][storage]     | Whole-row reads     |
-| Transport        | Streaming paths  | [6][transport]        | [Required][transport]   | Usable-child proof  |
-| Reference pins   | Mixed targets    | [7][qualification]    | [Inventory][pins]       | Actual imports      |
-| Qualification    | Small corpora    | [7][qualification]    | [Matrix][qualification] | Full runtime        |
-| Mapper SAID      | Stale claim gap  | [Final][mapper]       | [Required][mapper]      | Aggor semantics     |
-| npm release      | Pending          | [#104][release]       | Published artifacts     | Final goal gate     |
+| Requirement      | Current boundary | Owner                     | Evidence                | Open limit          |
+| ---------------- | ---------------- | ------------------------- | ----------------------- | ------------------- |
+| CESR parsing     | Delivered        | [1–2][cesr]               | [Wire/tree][delivered]  | Accessor audit      |
+| Multisig         | Four routes      | [3d][multisig]            | [#160–161][delivered]   | Native/CLI scope    |
+| IPEX             | Proofs/cutoffs   | [3e][ipex]                | [R11/S1–3][registry]    | Full workflow       |
+| V1/V2 registries | Runtime/observer | [Qualification][registry] | [R1–R12][registry]      | Wire/store matrix   |
+| EXN proofs       | Implemented      | [3e/3f][exchange]         | [#162/165][delivered]   | Full workflow       |
+| v2 intake        | Optional KRAM    | [TEL/TSN][exchange]       | [K1–K10][kram]          | TEL/TSN/stubs       |
+| ESSR outcomes    | Shared admission | [4 integration][essr]     | [Policy][resource]      | Native copies       |
+| Shared budget    | Trees/queues     | [4 stack][resource]       | [Policy][resource]      | Copies/metadata     |
+| Storage/recovery | Nested preflight | [5][storage]              | [#214][native-rows]     | Other rows/recovery |
+| Transport        | Streaming paths  | [6][transport]            | [Required][transport]   | Usable-child proof  |
+| Reference pins   | Imports audited  | [7][qualification]        | [Inventory][pins]       | Actual workflows    |
+| Qualification    | Small corpora    | [7][qualification]        | [Matrix][qualification] | Full runtime        |
+| Mapper SAID      | Claims verified  | [M2][mapper]              | [#223][mapper-repair]   | Bundled schema IDs  |
+| npm release      | Pending          | [#104][release]           | Published artifacts     | Final goal gate     |
 
 ## Publication sequence
 
-1. Docs (#169), sender admission (#170) and store ownership (#171) are delivered.
-   Replace the unmerged #172 integration snapshot with [K1–K10][kram].
-   Independent registry analysis/storage can proceed alongside KRAM.
-2. Prioritize full v2 registry foundations [R1–R12][registry], preserving v1 and
-   existing v2 stores. Then finish built-in TEL queries and IPEX presentations.
-   Keep unimplemented consumers guarded; `xip/pro/bar` are reference stubs.
-3. Shared admission (4), storage/recovery (5), production backpressure (6).
-4. Full reference audit and repeated end-to-end qualification (7).
-5. Focused standalone Mapper repair; rerun affected qualification after it.
+1. KRAM K1–K10, registry R1–R12, IPEX cutoffs and schema gates S1–S3 are
+   implemented. Qualify their composed workflows; do not recreate foundations.
+   The retired #172 snapshot remains recoverable evidence.
+2. Finish real frozen-reference TEL/TSN processors in small query/reply units.
+   Keep unfinished consumers guarded; `xip/pro/bar` are reference stubs.
+3. Complete shared admission (4), storage/recovery (5) and production
+   backpressure (6) through the active stack below and its remaining owner gates.
+4. Complete bundled schema-ID repair M2 after delivered Mapper claim repair M1.
+5. Run the maintained full inventory and repeated end-to-end qualification (7)
+   against the final composition. Import probes alone do not qualify workflows.
 6. Finish with the npm release: refresh and merge [#104][release] only after
    the preceding work and qualification, then publish and verify the exact
    package artifacts. The version PR alone does not prove publication.
+
+At this boundary, the active resource stack owns ESSR staging [#213][stage-credit],
+nested storage [#221][nested-credit], HTTP replies [#218][reply-credit], query
+preparation [#219][query-credit], HTTP frame preparation [#224][http-credit] and
+outgoing parsing [#225][output-credit]. KRAM storage follows nested storage.
+Pending metadata/work accounting, other native reads, crash recovery and the
+production measurements remain open in their subject plans.
 
 The multisig responsibility extraction (#161), ESSR outcome extraction (#163),
 and proof cleanup (#165) are delivered. Do not recreate them. Target **300–500
@@ -93,6 +101,14 @@ Report exact published versions and release evidence for the downstream chat;
 do not close the goal on a merged version PR or a successful build alone.
 
 [registry-observer]: https://github.com/kentbull/keri-ts/pull/202
+[mapper-repair]: https://github.com/kentbull/keri-ts/pull/223
+[native-rows]: https://github.com/kentbull/keri-ts/pull/214
+[stage-credit]: https://github.com/kentbull/keri-ts/pull/213
+[nested-credit]: https://github.com/kentbull/keri-ts/pull/221
+[reply-credit]: https://github.com/kentbull/keri-ts/pull/218
+[query-credit]: https://github.com/kentbull/keri-ts/pull/219
+[http-credit]: https://github.com/kentbull/keri-ts/pull/224
+[output-credit]: https://github.com/kentbull/keri-ts/pull/225
 [release]: https://github.com/kentbull/keri-ts/pull/104
 [kram]: exchange/KRAM_PLAN.md
 [registry]: credentials/REGISTRY_PLAN.md
