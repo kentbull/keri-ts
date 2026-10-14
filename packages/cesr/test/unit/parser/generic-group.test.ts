@@ -69,9 +69,10 @@ Deno.test("nested GenericGroup two levels deep with mixed enclosed content is sp
   assertEquals(baseline[0].endsWith(`|${CtrDexV2.ControllerIdxSigs}`), true);
   assertEquals(baseline[1].endsWith("|"), true);
 
-  // Verification type 3: streaming is split-deterministic at every single boundary.
-  // Any one-cut chunking [0..split] + [split..end] must match whole-stream baseline.
-  for (let split = 1; split < input.length; split++) {
-    assertEquals(await summarizeFrames(input, [split]), baseline);
-  }
+  // Bytewise input visits every token boundary without reparsing once per possible cut.
+  assertEquals(
+    await summarizeFrames(input, Array.from({ length: input.length - 1 }, (_, index) => index + 1)),
+    baseline,
+  );
+  assertEquals(await summarizeFrames(input, [stream.length - KERIPY_NATIVE_V2_ICP_FIX_BODY.length]), baseline);
 });

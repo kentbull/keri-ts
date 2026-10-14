@@ -10,14 +10,19 @@ import { createMailboxer, Mailboxer } from "../../../src/db/mailboxing.ts";
 Deno.test("db/mailboxing - admitted stream reads reject an oversized native row before copying", async () => {
   await run(function*() {
     const mailboxer = yield* createMailboxer({ name: `bounded-mailbox-${crypto.randomUUID()}`, temp: true });
-    const bytes = new Uint8Array(4 * 1024 ** 2 + 1).fill(7);
-    mailboxer.storeMsg("aid/reply", bytes);
-    assertThrows(
-      () => Array.from(mailboxer.cloneTopicIter("aid/reply", 0, 4 * 1024 ** 2)),
-      ResourceLimitError,
-      "byte ceiling",
-    );
-    assertEquals(Array.from(mailboxer.cloneTopicIter("aid/reply"))[0][2], bytes);
+    // The ceiling is configurable; large native target preflight is covered by lmdber-plain.
+    const bytes = new Uint8Array(65).fill(7);
+    try {
+      mailboxer.storeMsg("aid/reply", bytes);
+      assertThrows(
+        () => Array.from(mailboxer.cloneTopicIter("aid/reply", 0, 64)),
+        ResourceLimitError,
+        "byte ceiling",
+      );
+      assertEquals(Array.from(mailboxer.cloneTopicIter("aid/reply"))[0][2], bytes);
+    } finally {
+      yield* mailboxer.close(true);
+    }
   });
 });
 
