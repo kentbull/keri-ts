@@ -8,7 +8,7 @@ checks remain. `makify` replaces claims and `verify:false` is an explicit opt-ou
 Compactor overrides only claim verification to preserve expanded disclosure
 construction; its group/wire checks remain. Aggor keeps independent verification.
 
-Supplied shallow JSON schema resources preserve verified root/bundle identities
+Supplied shallow JSON schema resources preserve verified bare-root/bundle identities
 across credential body formats. Schema-field construction uses that root ID as
 its compact commitment; Serder verification rejects stale claims rather than
 rederiving them. S1 independently checks bundle IDs, references and profile.

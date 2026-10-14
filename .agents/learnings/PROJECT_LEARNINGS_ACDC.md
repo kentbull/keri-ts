@@ -69,7 +69,7 @@ resource, invalid content, resource limits and infrastructure failures distinct.
 The static 71438328 schema profile is separately qualified; preserve frozen927
 commitments and legacy Schemer behavior. Validation consumes borrowed originals,
 compiles private copies and never fetches references. Content-bound shallow JSON
-schemas retain original bundled URI IDs across credential body formats; compact
+bare-root schemas retain original bundled URI IDs across credential body formats; compact
 s is their root ID. Serder checks commitments, while S1 checks each resource and
 its profile. Verification never repairs stale explicit schema claims. Frozen
 default/unbound format-specific schema construction remains separately qualified.
