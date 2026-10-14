@@ -16,6 +16,10 @@ export interface KeripyProvenance {
   pythonVersion: string;
   /** Verified CLI module for this source revision. */
   cliModule: string;
+  /** Source imports checked against Git bytes, or installed hashes recorded without that claim. */
+  importVerification: "git-bytes" | "installed-record";
+  /** Startup imports only; actual commands must qualify their additional lazy imports. */
+  loadedModules: Record<string, { path: string; sha256: string }>;
   /** Runtime dependency versions; a missing distribution is recorded as null. */
   dependencies: Record<string, string | null>;
 }
