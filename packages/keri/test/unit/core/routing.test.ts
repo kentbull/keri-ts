@@ -224,6 +224,8 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
       // External escrow must not virtually aggregate proofs which its semantic owner has not published.
       const pending = expectKind(rvy.acceptReply({ ...args, externalEscrow: true }), "unverified");
       assertEquals(pending.context?.pending, true);
+      assertEquals(Object.isFrozen(pending), true);
+      assertEquals(Object.isFrozen(pending.context), true);
       assertEquals(cues.toArray(), [{ kin: "query", pre: hab.pre, q: { pre: hab.pre } }]);
       cues.clear();
       unchanged();
@@ -266,6 +268,24 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
       allBytes.reservation.release();
       assertEquals(hby.db.rpys.get([saider.qb64]), null, "default BADA supersession removes previous proof");
       assertEquals([cues.length, resources.used.bytes], [0, 0], "cue-free acceptance needs no cue credit");
+      const preparedBody = body("2026-10-13T00:00:00.000004+00:00");
+      const prepared = rvy.prepareReply({
+        serder: preparedBody,
+        saider: new Diger({ qb64: preparedBody.said! }),
+        route: args.route,
+        aid: hab.pre,
+        tsgs: [group(preparedBody, [0, 1])],
+      });
+      assertEquals(Object.isFrozen(prepared.decision), true);
+      assertThrows(() => prepared.publishQueries(), Error, "successful proof application");
+      assertEquals(hby.db.rpys.get([preparedBody.said!]), null);
+      prepared.applyProofs();
+      assertThrows(() => prepared.applyProofs(), Error, "no longer applicable");
+      prepared.publishQueries();
+      assertThrows(() => prepared.publishQueries(), Error, "successful proof application");
+      prepared.release();
+      prepared.release();
+      assertThrows(() => prepared.applyProofs(), Error, "no longer applicable");
     } finally {
       yield* hby.close(true);
     }

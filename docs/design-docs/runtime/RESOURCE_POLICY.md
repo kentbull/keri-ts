@@ -165,8 +165,20 @@ pins preserve same-call aggregation, while externalEscrow leaves pending evidenc
 with its semantic owner. Resource refusal during RPE replay cannot delete the row.
 Ordinary Deck retains its existing conservative reply count guard.
 
-Semantic /ksn and registry state child publication remain open: Revery query
-admission alone does not reserve their cues before proof or projection writes.
-Next integrate those children, OOBI, EXN/KRAM and legacy credential/TEL producers.
+Revery.prepareReply exposes a caller-owned PreparedReply with an immutable
+decision and one-shot applyProofs/publishQueries/release operations. Keep the
+entire use in one synchronous guarded turn; suspending can invalidate evaluated
+BADA state. Borrowed proofs remain immutable until application/release, and
+application drops their retained references. Release clears unpublished query
+credit; published query ownership stays with the deck/consumer.
+
+Kevery /ksn holds that preparation while admitting its actual keyStateSaved child
+before accepted reply/proof or key-state writes, on shared or distinct decks.
+Semantic invalidity cannot publish a new unaccepted proof. Unverified replies
+still apply their existing escrow/query effects without a state child. Exceptions
+after writes release unpublished query/child credit and do not imply DB rollback.
+
+Registry/credential state child publication remains open, followed by OOBI,
+EXN/KRAM and legacy credential/TEL producers.
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.

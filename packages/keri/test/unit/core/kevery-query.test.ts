@@ -1,8 +1,19 @@
 import { run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
-import { Dater, Diger, Prefixer, SerderKERI, type Siger } from "../../../../cesr/mod.ts";
+import {
+  Dater,
+  Diger,
+  NumberPrimitive,
+  Prefixer,
+  ResourceAdmissionError,
+  ResourcePolicy,
+  SerderKERI,
+  type Siger,
+} from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
+import { DeckFullError } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { type KeverEventEnvelope, Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
@@ -11,7 +22,7 @@ import { Roles } from "../../../src/core/roles.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
-import { eventingTestApi, expectKind } from "../../private-access.ts";
+import { eventingTestApi, expectKind, withPatchedMethod } from "../../private-access.ts";
 
 function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
   let total = 0;
@@ -265,6 +276,129 @@ Deno.test("Kevery reply routing persists `/ksn` key-state notices through `knas.
       yield* hby.close(true);
     }
   });
+});
+
+Deno.test("KSN publication admits reply and state owners before writes on shared or distinct decks", async () => {
+  for (const shared of [false, true]) {
+    await run(function*() {
+      const hby = yield* createHabery({ name: `ksn-owners-${crypto.randomUUID()}`, temp: true });
+      try {
+        const hab = hby.makeHab("alice");
+        const kever = hab.kever!;
+        const resources = new ResourcePolicy();
+        const queries = new CueDeck(resources, shared ? 2 : 1);
+        const states = shared ? queries : new CueDeck(resources, 1);
+        const rvy = new Revery(hby.db, { cues: queries });
+        const kvy = new Kevery(hby.db, { rvy, cues: states });
+        kvy.registerReplyRoutes(rvy.rtr);
+        const route = `/ksn/${hab.pre}`;
+        const serder = makeReplySerder(route, kever.state().asDict());
+        const group = (body: SerderKERI, sn = kever.sner) =>
+          new TransIdxSigGroup(
+            new Prefixer({ qb64: hab.pre }),
+            sn,
+            new Diger({ qb64: kever.said }),
+            hab.sign(body.raw, true),
+          );
+        const known = group(serder), missing = group(serder, NumberPrimitive.fromNum(1n));
+        const key = [serder.said!];
+        const unchanged = () => {
+          assertEquals(hby.db.rpys.get(key), null);
+          assertEquals(hby.db.sdts.get(key), null);
+          assertEquals([...hby.db.ssgs.getTopItemIter(key, { topive: true })], []);
+          assertEquals(hby.db.rpes.get([route]), []);
+          assertEquals(hby.db.knas.get([hab.pre, hab.pre]), null);
+          assertEquals(hby.db.ksns.get([kever.said]), null);
+          assertEquals(hby.db.kdts.get([kever.said]), null);
+          assertEquals(queries.length, 0);
+        };
+        // Known proof produces no query reservation: shared byte refusal is specifically the child admission.
+        const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+        assertEquals(
+          assertThrows(() => rvy.processReply({ serder, tsgs: [known] }), ResourceAdmissionError).reason,
+          "busy",
+        );
+        occupied.reservation.release();
+        unchanged();
+        const limitedResources = new ResourcePolicy({ bytes: 1 });
+        const limitedQueries = new CueDeck(limitedResources);
+        const limitedStates = shared ? limitedQueries : new CueDeck(limitedResources);
+        const limitedRvy = new Revery(hby.db, { cues: limitedQueries });
+        new Kevery(hby.db, { rvy: limitedRvy, cues: limitedStates }).registerReplyRoutes(limitedRvy.rtr);
+        assertEquals(
+          assertThrows(() => limitedRvy.processReply({ serder, tsgs: [known] }), ResourceAdmissionError).reason,
+          "limit",
+        );
+        unchanged();
+        // A successfully held query must roll back when its semantic child cannot acquire a slot.
+        const slot = shared ? undefined : states.prepare([{ kin: "proof", said: "occupied child" }]);
+        const held = resources.used.bytes;
+        if (shared) queries.capacity = 1;
+        assertThrows(() => rvy.processReply({ serder, tsgs: [missing, known] }), DeckFullError);
+        assertEquals(resources.used.bytes, held);
+        slot?.release();
+        if (shared) queries.capacity = 2;
+        unchanged();
+        const invalid = makeReplySerder(route, { ...kever.state().asDict(), d: serder.said });
+        assertThrows(
+          () =>
+            rvy.processReply({ serder: invalid, tsgs: [group(invalid, NumberPrimitive.fromNum(1n)), group(invalid)] }),
+          ValidationError,
+          "Mismatch key state",
+        );
+        assertEquals(hby.db.rpys.get([invalid.said!]), null, "semantic refusal cannot publish an unaccepted proof");
+        assertEquals(hby.db.sdts.get([invalid.said!]), null);
+        assertEquals(resources.used.bytes, 0);
+        unchanged();
+        assertEquals(rvy.processReply({ serder, tsgs: [missing, known] }).kind, "accept");
+        assertExists(hby.db.rpys.get(key));
+        assertEquals(hby.db.ksns.get([kever.said]), kever.state());
+        assertEquals(hby.db.knas.get([hab.pre, hab.pre])?.qb64, kever.said);
+        assertEquals(queries.toArray().map((cue) => cue.kin), shared ? ["query", "keyStateSaved"] : ["query"]);
+        if (!shared) assertEquals(states.toArray().map((cue) => cue.kin), ["keyStateSaved"]);
+        const queryOwner = queries.takeOwned()!;
+        const stateOwner = states.takeOwned()!;
+        const bytes = resources.used.bytes;
+        queries.clear();
+        states.clear();
+        assertEquals(resources.used.bytes, bytes, "active owners survive queued cleanup");
+        queryOwner.release();
+        assertEquals(resources.used.bytes > 0, true, "state ownership survives query consumption");
+        assertEquals(stateOwner.cue.kin, "keyStateSaved");
+        stateOwner.release();
+        assertEquals(resources.used.bytes, 0);
+        // Unverified replies still publish their admitted query/escrow without trying to reserve a state child.
+        const pending = makeReplySerder(route, kever.state().asDict(), "2026-10-13T00:00:00.000001+00:00");
+        if (shared) queries.capacity = 1;
+        else states.capacity = 0;
+        assertEquals(
+          rvy.processReply({ serder: pending, tsgs: [group(pending, NumberPrimitive.fromNum(2n))] }).kind,
+          "unverified",
+        );
+        assertExists(hby.db.rpys.get([pending.said!]));
+        assertEquals(queries.toArray().map((cue) => cue.kin), ["query"]);
+        assertEquals(hby.db.ksns.get([kever.said]), kever.state());
+        queries.clear();
+        if (shared) queries.capacity = 2;
+        else states.capacity = 1;
+        const failed = makeReplySerder(route, kever.state().asDict(), "2026-10-13T00:00:00.000002+00:00");
+        withPatchedMethod(hby.db.ksns, "pin", () => {
+          throw new Error("state publication failed");
+        }, () => {
+          assertThrows(
+            () =>
+              rvy.processReply({ serder: failed, tsgs: [group(failed, NumberPrimitive.fromNum(3n)), group(failed)] }),
+            Error,
+            "state publication failed",
+          );
+        });
+        assertEquals([queries.length, states.length, resources.used.bytes], [0, 0, 0]);
+        assertExists(hby.db.rpys.get([failed.said!]), "infrastructure failure is not durable rollback");
+      } finally {
+        yield* hby.close(true);
+      }
+    });
+  }
 });
 
 Deno.test("Kevery reply routing accepts `/ksn` from self, backer, and configured watcher sources in non-lax mode", async () => {

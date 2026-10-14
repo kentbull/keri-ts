@@ -1,5 +1,5 @@
-import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "cesr-ts";
-import { call, type Operation } from "npm:effection@^3.6.0";
+import { type Cigar, Diger, Ilks, Prefixer, ResourceAdmissionError, SerderKERI } from "cesr-ts";
+import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
@@ -11,14 +11,14 @@ import { type Role, Roles } from "../core/roles.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
 import { Schemer } from "../core/scheming.ts";
 import { abortable } from "./abortable.ts";
-import { chunkBytes, collectBytes, streamBytes } from "./byte-source.ts";
+import { collectBytes, streamBytes } from "./byte-source.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import type { Notifier } from "./notifying.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import type { Reactor } from "./reactor.ts";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import { defaultRuntimeServices, resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 export const OOBI_REQUEST_ROUTE = "/oobis";
@@ -65,13 +65,15 @@ export class Oobiery {
   readonly reactor: Reactor;
   readonly cues: Deck<AgentCue>;
   readonly services: RuntimeServices;
+  private active = false;
 
   constructor(hby: Habery, reactor: Reactor, options: OobieryOptions = {}) {
     const { cues, services = defaultRuntimeServices } = options;
     this.hby = hby;
     this.reactor = reactor;
     this.cues = cues ?? new Deck();
-    this.services = services;
+    // The Reactor owns admission; injected clock/HTTP services borrow its exact ledger.
+    this.services = resolveRuntimeServices({ ...services, resources: reactor.resources });
   }
 
   /** Register `/introduce` on the shared reply router. */
@@ -103,19 +105,11 @@ export class Oobiery {
    * - transitions the durable record into `eoobi.` or `roobi.`
    */
   *processOnce(): Operation<void> {
-    if (this.cues.length === this.cues.capacity) return;
+    if (this.active || this.cues.length === this.cues.capacity) return;
     const item = this.nextQueued();
     if (item) {
       const [kind, url, record] = item;
-      try {
-        // Release the response resource after this job, rather than retaining it in the continuous worker.
-        yield* call(() => this.processJob(kind, url, record));
-      } catch (error) {
-        if (!(error instanceof DeckFullError)) throw error;
-        // Another producer filled the shared deck during I/O. Keep durable retry ownership.
-        this.hby.db.coobi.rem(url);
-        this.pinQueueStore(kind, url, record);
-      }
+      yield* this.processQueued(kind, url, record);
       return;
     }
 
@@ -124,6 +118,38 @@ export class Oobiery {
       const [url, record] = multi;
       this.completeMultiOobi(url, record);
     }
+  }
+
+  /** Hold job ownership before work so cancellation joins every response/parser owner before retry. */
+  private processQueued(kind: OobiQueueKind, url: string, record: OobiRecord): Operation<void> {
+    // deno-lint-ignore no-this-alias -- The callback borrows this OOBI worker's durable queue.
+    const self = this;
+    return call(function*() {
+      const admitted = yield* resource<boolean>(function*(provide) {
+        if (self.active) {
+          yield* provide(false);
+          return;
+        }
+        self.active = true;
+        try {
+          yield* provide(true);
+        } finally {
+          self.active = false;
+        }
+      });
+      if (!admitted) return;
+      try {
+        // Each finite child joins its body, fetch and parser before releasing the earlier job owner.
+        yield* call(() => self.processJob(kind, url, record));
+      } catch (error) {
+        if (!(error instanceof DeckFullError || (error instanceof ResourceAdmissionError && error.reason === "busy"))) {
+          throw error;
+        }
+        // Temporary cue/resource saturation leaves durable work for the existing worker's later turn.
+        self.hby.db.coobi.rem(url);
+        self.pinQueueStore(kind, url, record);
+      }
+    });
   }
 
   /**
@@ -186,6 +212,19 @@ export class Oobiery {
     url: string,
     record: OobiRecord,
   ): Operation<void> {
+    const services = this.services;
+    yield* resource<void>(function*(provide) {
+      // A finite minimum charge bounds pending GET handles; Reactor owns the one active body stream slot.
+      const admission = services.resources.reserve({ bytes: 1024 ** 2 });
+      if (admission.kind === "refuse") {
+        throw new ResourceAdmissionError("OOBI response admission refused", admission.reason);
+      }
+      try {
+        yield* provide();
+      } finally {
+        admission.reservation.release();
+      }
+    });
     const meta = {
       ...parseOobiUrl(url, record.oobialias ?? undefined),
       ...record,
@@ -203,7 +242,23 @@ export class Oobiery {
     };
     this.pinQueueStore(kind, url, queuedRecord);
 
-    const response = yield* fetchOobiResponse(url, this.services);
+    const response = yield* fetchOobiResponse(url, services);
+    try {
+      yield* this.processResponse(kind, url, queuedRecord, meta, response);
+    } finally {
+      this.hby.db.coobi.rem(url);
+    }
+  }
+
+  /** Consume one owned response; queued ownership ends only after a terminal result is persisted. */
+  private *processResponse(
+    kind: OobiQueueKind,
+    url: string,
+    queuedRecord: OobiRecordShape,
+    meta: { cid?: string | null; role?: string | null; eid?: string | null },
+    response: Response,
+  ): Operation<void> {
+    const services = this.services;
     if (!response.ok) {
       yield* closeResponseBody(response);
       this.cues.checkSpace();
@@ -221,42 +276,56 @@ export class Oobiery {
       return;
     }
 
+    const type = mediaType(response.headers.get("content-type") ?? "");
+    if (isCesrMediaType(type) || !type.includes("json")) {
+      // Keep durable retry ownership throughout partial acceptance and joined cancellation.
+      this.hby.db.coobi.pin(url, { ...queuedRecord, state: "streaming" });
+      yield* this.resolveCesrOobiResponse(url, queuedRecord, meta, response);
+      this.remQueueStore(kind, url);
+      return;
+    }
+    yield* resource<void>(function*(provide) {
+      // Finite JSON/schema collection and decoding remain bounded document work, not a replay collector.
+      const admission = services.resources.reserve({ bytes: 8 * 8 * 1024 ** 2 });
+      if (admission.kind === "refuse") {
+        throw new ResourceAdmissionError("OOBI document admission refused", admission.reason);
+      }
+      try {
+        yield* provide();
+      } finally {
+        admission.reservation.release();
+      }
+    });
     const bytes = yield* readResponseBytes(response);
-    const contentType = response.headers.get("content-type")?.toLowerCase()
-      ?? "";
-    this.remQueueStore(kind, url);
     this.hby.db.coobi.pin(url, {
       ...queuedRecord,
       date: new Date().toISOString(),
       state: "fetched",
     });
 
-    const type = mediaType(contentType);
     if (type === "application/schema+json") {
       if (this.processSchemaOobiResponse(url, queuedRecord, bytes)) {
+        this.remQueueStore(kind, url);
         return;
       }
       this.failFetchedOobi(url, queuedRecord, "invalid-schema-oobi");
-      return;
-    }
-
-    if (isCesrMediaType(type)) {
-      yield* this.resolveCesrOobiResponse(url, queuedRecord, meta, bytes);
+      this.remQueueStore(kind, url);
       return;
     }
 
     if (type.includes("json")) {
       if (this.processSchemaOobiResponse(url, queuedRecord, bytes)) {
+        this.remQueueStore(kind, url);
         return;
       }
       if (this.processJsonOobiResponse(url, queuedRecord, bytes)) {
+        this.remQueueStore(kind, url);
         return;
       }
       this.failFetchedOobi(url, queuedRecord, "invalid-json-oobi");
+      this.remQueueStore(kind, url);
       return;
     }
-
-    yield* this.resolveCesrOobiResponse(url, queuedRecord, meta, bytes);
   }
 
   /** Mark an OOBI resolved only after its complete CESR response has been dispatched. */
@@ -264,9 +333,9 @@ export class Oobiery {
     url: string,
     queuedRecord: OobiRecordShape,
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
-    bytes: Uint8Array,
+    response: Response,
   ): Operation<void> {
-    yield* this.reactor.process((signal) => chunkBytes(bytes, { signal }));
+    yield* this.reactor.process((signal) => streamBytes(response.body, { signal }));
 
     this.cues.checkSpace();
     this.hby.db.coobi.rem(url);
@@ -728,7 +797,7 @@ function mediaType(contentType: string): string {
 }
 
 function isCesrMediaType(type: string): boolean {
-  return type === "application/cesr" || type.endsWith("+cesr");
+  return type === "application/cesr" || type === "application/cesr+json" || type.endsWith("+cesr");
 }
 
 export { OOBI_MAILBOX_TOPIC };
