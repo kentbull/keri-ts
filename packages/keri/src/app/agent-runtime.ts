@@ -97,7 +97,7 @@ export interface AgentRuntime {
   querying: QueryCoordinator;
   /** Live lazy HTTP replies, closed before their database owners. */
   replyStreams: ReplyStreams;
-  /** Bounded query deliveries drained outside guarded cue handling. */
+  /** Bounded query/cue deliveries drained outside guarded cue handling. */
   deliveries: RuntimeDeliveries;
   vdr: VdrRuntimeServices;
   /** V2 registry services, separately owned from the legacy VDR environment. */
@@ -152,6 +152,8 @@ export interface RuntimePendingState {
   delegationPending: boolean;
   /** True when query continuations or deferred correspondence requests remain. */
   queriesPending: boolean;
+  /** True while independently retained query/cue delivery owners remain. */
+  deliveriesPending: boolean;
 }
 
 export interface RuntimeOobiTerminalState {
@@ -569,7 +571,8 @@ export function runtimePendingState(
     delegationPending: runtime.hby.db.dpwe.cnt() > 0
       || runtime.hby.db.dune.cnt() > 0
       || runtime.hby.db.dpub.cnt() > 0,
-    queriesPending: runtime.querying.hasPendingWork() || runtime.deliveries.hasPending,
+    queriesPending: runtime.querying.hasPendingWork(),
+    deliveriesPending: runtime.deliveries.hasPending,
   };
 }
 
@@ -580,7 +583,8 @@ export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
     || state.oobiQueued || state.oobiInFlight || state.multiPending
     || state.authQueued || state.authInFlight || state.outboxPending
     || state.delegationPending
-    || state.queriesPending;
+    || state.queriesPending
+    || state.deliveriesPending;
 }
 
 /** Return true when a well-known URL has been authorized into `wkas.`. */

@@ -7,15 +7,20 @@ import {
 } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
+import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
+import { DeckFullError } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Roles } from "../core/roles.ts";
 import { Schemes } from "../core/schemes.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
+import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
+import { prepareCueEmission } from "./cue-preparation.ts";
+import { prepareCueRoute } from "./cue-route.ts";
 import type { CueSink } from "./cue-runtime.ts";
-import { introduce } from "./forwarding.ts";
+import { attemptPreparedCesrTarget, introduce, type RawCesrRoute } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
@@ -74,18 +79,16 @@ const requestBytes = 8 * 1024 * 1024;
 // Query wire, retained introduction events and their joined introduction may coexist during preparation.
 const preparationBytes = 3 * requestBytes;
 
-/** A retained request keeps its byte reservation through retries and joined transport cleanup. */
-interface AdmittedQuery {
-  delivery: QueryDelivery;
-  reservation: ResourceReservation;
-}
+/** One shared item slot owns either query bytes, a lazy cue cursor or an exact failed packet. */
+type AdmittedDelivery =
+  | { kind: "query"; delivery: QueryDelivery; release(): void }
+  | { kind: "cue"; delivery: CueDelivery; release(): void }
+  | { kind: "target"; delivery: OwnedCueTarget; release(): void };
 
-/** Own finite query requests; network responses are consumed only outside a guarded cue turn. */
+/** Own query/cue delivery on one finite queue; network work executes outside guarded preparation. */
 export class RuntimeDeliveries {
-  /** At most eight 8 MiB requests, including the active head. */
-  private readonly pending = new Deck<AdmittedQuery>(undefined, 8);
-  /** Shutdown must not release an active request until its transport resources have joined. */
-  private delivering?: AdmittedQuery;
+  /** Eight owner items including the active head; each kind retains its own admitted bytes. */
+  private readonly pending = new Deck<AdmittedDelivery>(undefined, 8);
   /** Command-local and background drains cannot deliver the same head concurrently. */
   private draining = false;
   /** Active delivery cancellation and its joined completion belong to runtime shutdown. */
@@ -119,7 +122,7 @@ export class RuntimeDeliveries {
       if (delivery.body.buffer.byteLength > requestBytes) {
         throw new ResourceLimitError("Query request exceeds byte limit");
       }
-      this.pending.push({ delivery, reservation: retained.reservation });
+      this.pending.push({ kind: "query", delivery, release: () => retained.reservation.release() });
       queued = true;
     } finally {
       preparation?.release();
@@ -127,26 +130,79 @@ export class RuntimeDeliveries {
     }
   }
 
+  /** Guarded item preflight precedes interpretation; route resolution borrows admitted output synchronously. */
+  enqueueCue(
+    hab: Hab,
+    cues: Deck<AgentCue>,
+    route: (emission: CueEmission) => RawCesrRoute,
+    sender = hab,
+    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
+  ): boolean {
+    if (this.closed) throw new Error("Runtime deliveries are closed");
+    try {
+      this.pending.checkSpace();
+    } catch (error) {
+      if (error instanceof DeckFullError) onAdmissionRefusal?.(error);
+      throw error;
+    }
+    return prepareCueEmission(hab, cues, this.resources, (owner) => {
+      if (!owner.emission || owner.emission.kind !== "wire") throw new RangeError("Cue delivery requires wire");
+      const captured = prepareCueRoute(this.resources, owner, () => route(owner.emission!), onAdmissionRefusal);
+      let queued = false;
+      try {
+        const delivery = new CueDelivery(owner, sender, captured);
+        this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
+        queued = true;
+        return undefined;
+      } finally {
+        if (!queued) captured.release();
+      }
+    }, onAdmissionRefusal);
+  }
+
+  /** A failed independent packet retains the same lease; no target advances if the queue cannot accept it. */
+  private retainFailed(target: OwnedCueTarget): boolean {
+    if (this.closed) return false;
+    try {
+      this.pending.checkSpace();
+    } catch (error) {
+      if (error instanceof DeckFullError) return false;
+      throw error;
+    }
+    this.pending.push({ kind: "target", delivery: target, release: () => target.release() });
+    return true;
+  }
+
   /** Include queued transport in runtime convergence checks. */
   get hasPending(): boolean {
     return this.draining || !this.pending.empty;
   }
 
-  /** Release unsent request bytes at runtime shutdown. */
+  /** Join active transport before releasing retained cue, query and failed-packet owners. */
   *close(): Operation<void> {
     this.closed = true;
-    for (const entry of this.pending) if (entry !== this.delivering) entry.reservation.release();
-    this.pending.clear();
     this.active?.abort();
     if (this.joined) yield* call(() => this.joined!);
+    const errors: unknown[] = [];
+    const count = this.pending.length;
+    for (let index = 0; index < count; index++) {
+      const entry = this.pending.pull()!;
+      try {
+        entry.release();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length) throw new AggregateError(errors, "Runtime delivery cleanup failed");
   }
 
-  /** Send a finite snapshot outside Reactor.settle, then progressively settle each response. */
-  process(runtime: AgentRuntime): Operation<void> {
+  /** A bounded pass advances each owner once; cue preparation is guarded, all HTTP waits are outside. */
+  process(runtime: AgentRuntime): Operation<{ retiredOwners: number; pending: boolean }> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     return call(function*() {
-      if (self.draining || self.closed) return;
+      if (self.draining || self.closed) return { retiredOwners: 0, pending: self.hasPending };
       self.draining = true;
       const active = self.active = new AbortController();
       let complete!: () => void;
@@ -156,8 +212,6 @@ export class RuntimeDeliveries {
         try {
           yield* provide();
         } finally {
-          if (self.closed) self.delivering?.reservation.release();
-          self.delivering = undefined;
           self.draining = false;
           self.active = undefined;
           self.joined = undefined;
@@ -165,18 +219,42 @@ export class RuntimeDeliveries {
         }
       });
       const count = self.pending.length;
+      let retiredOwners = 0;
       for (let index = 0; index < count && !self.closed; index++) {
         const entry = self.pending.peekHead();
         if (!entry) break;
         active.signal.throwIfAborted();
-        self.delivering = entry;
-        yield* call(() => postQueryMessage(runtime, entry.delivery, active));
-        // Shutdown may clear the queue while successful response cleanup is still yielding.
+        let done = true;
+        if (entry.kind === "query") yield* call(() => postQueryMessage(runtime, entry.delivery, active));
+        else {
+          if (runtime.resources !== self.resources) {
+            throw new RangeError("Cue delivery requires runtime's exact policy");
+          }
+          if (entry.kind === "cue") {
+            done = (yield* call(() =>
+              entry.delivery.step(runtime, active.signal, (target) => self.retainFailed(target))
+            )) === "done";
+          } else {
+            done = (yield* call(() =>
+              attemptPreparedCesrTarget(entry.delivery.target, runtime.services, active.signal)
+            )) === "complete";
+          }
+        }
+        // A cancelled/closed owner cannot acknowledge after successful HTTP cleanup.
         active.signal.throwIfAborted();
-        self.pending.pull();
-        self.delivering = undefined;
-        entry.reservation.release();
+        if (done) {
+          try {
+            entry.release();
+          } finally {
+            self.pending.pull();
+          }
+          retiredOwners++;
+        } else {
+          self.pending.pull();
+          self.pending.push(entry);
+        }
       }
+      return { retiredOwners, pending: !self.pending.empty };
     });
   }
 }

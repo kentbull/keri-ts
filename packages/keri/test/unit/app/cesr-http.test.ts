@@ -5,9 +5,9 @@
  * aligned with KERIpy by default while still allowing Tufa's optional body
  * mode.
  */
-import { attachmentPayload, collectPayload, parseBytes } from "cesr-ts";
+import { attachmentPayload, collectPayload, parseBytes, ResourceLimitError } from "cesr-ts";
 import { run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { concatBytes } from "../../../../cesr/mod.ts";
 import { acdcatt } from "../../../src/acdc/messaging.ts";
 import {
@@ -31,6 +31,27 @@ function makeEmbeddedExchangeMessage(
   const [serder, attachments] = exchangeMessage(route, payload, args);
   return { serder, attachments };
 }
+
+/** Header refusal must still join an unacquired body and report distinct cleanup failure. */
+Deno.test("CESR HTTP - finite intake preserves header refusal and outer body cleanup failure", async () => {
+  const fault = new Error("unacquired request cleanup failed");
+  let cancelled = 0;
+  const req = new Request("https://peer.test/", {
+    method: "POST",
+    headers: { "content-type": "application/cesr", [CESR_ATTACHMENT_HEADER]: "A".repeat(65537) },
+    body: new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled++;
+        throw fault;
+      },
+    }),
+  });
+  const error = await assertRejects(() => readCesrRequestBytes(req), AggregateError);
+  assertEquals(error.errors.length, 2);
+  assertEquals(error.errors[0] instanceof ResourceLimitError, true);
+  assertStrictEquals(error.errors[1], fault);
+  assertEquals(cancelled, 1);
+});
 
 /** Proves KERIpy-style header framing for one mailbox/query request. */
 Deno.test("CESR HTTP - header mode splits attachments into the CESR header", async () => {

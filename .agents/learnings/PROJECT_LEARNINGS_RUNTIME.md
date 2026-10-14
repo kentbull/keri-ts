@@ -23,6 +23,11 @@ Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state.
 Shared transport readers cancel once, join that Promise and always unlock;
 single errors retain identity and distinct read/cleanup failures aggregate.
+Response cancellation uses an earlier scope resource: a bare yielding finally
+can join its Promise while losing a late failure during cancellation. Unacquired
+HTTP response/request bodies propagate cleanup failure instead of discarding it.
+Fetch's exact controller abort reason remains cancellation; foreign same-class
+AbortErrors still propagate. Preserve the mailbox's ordinary idle-timeout outcome.
 Parent cancellation diagnostics still need composed owner qualification.
 
 Owned hydration uses an isolated consume callback with direct joined finalization.
@@ -105,11 +110,21 @@ prepared sending owns HTTP only. Keep borrowed wire alive through joined cleanup
 An explicit target cap validates backing and bounds introduction plus forwarded wire
 before their final concatenation; direct wire becomes an independent copy. The
 caller must reserve preparation/copy credit first and retain it through joined send.
+RuntimeDeliveries uses the same eight owner slots for query requests, cue cursors
+and failed target packets. Retain exact independent wire until joined delivery or
+shutdown; one target per pass keeps admitted siblings progressing. Route metadata
+has its own pre-admitted finite credit. Retired owners are local progress, not
+protocol success or durable retry. Respondant source heads now transfer immediately
+under the guard; their queued network work drains outside it. Unsupported/custom
+cues retain existing sink handling; occupied capacity never destructively falls back.
+Source queries and request-local HTTP/witness owners still require adoption.
 Actual HTTP and source/tree/output admission refusal observation is invocation-local;
 source/fetch/sink/cleanup and external observer failures retain original identity.
 Prepared target attempts return local complete/refused/busy only after joined
-cleanup, matching observed engine-created errors rather than foreign classes. These facilities do not yet move runtime callers
-outside their guard or admit all decoded/native preparation copies.
+cleanup, matching observed engine-created errors rather than foreign classes.
+Cue preparation/item refusal follows the same exact invocation rule; foreign
+interpretation, route, reserve and observer failures propagate. This does not
+admit all decoded/native preparation copies.
 Admitted cue interpretation is synchronous: destination item admission precedes
 preparation, and atomic acceptance precedes ordinary source removal. Existing
 CueDeck credit transfers/requeues; lazy replay stays unopened. The accepting

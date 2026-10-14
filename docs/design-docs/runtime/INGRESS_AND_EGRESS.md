@@ -46,6 +46,14 @@ supplies a sink. Ordinary frames do not open that archive.
 Promise leaves must observe the supplied signal. `abortable` isolates the leaf,
 aborts it, and joins its completion; resources that depend on it must be
 registered before starting that leaf.
+Explicit response-body cancellation registers its cleanup owner before starting
+the cancellation Promise; joined late failures remain visible even during scope
+cancellation. Finite request intake preserves distinct read/header and outer-body
+cleanup failures. Unacquired response cleanup also propagates failure; it cannot
+silently turn failed cleanup into success.
+An already errored Fetch body may reject cancellation with its controller's exact
+abort reason; that remains cancellation. Other cleanup errors, including foreign
+AbortErrors during shutdown, propagate. Mailbox idle timeout keeps its ordinary outcome.
 
 HTTP query replies carry the requesting query SAID. A bounded request reservation
 captures matching replies before background consumption. Duplicate requests
@@ -128,6 +136,15 @@ or durability. Failed delivery retains live ownership; restart recovery requires
 a separately proven durable obligation or reconstruction path, not just a queue.
 
 [transport-plan]: ../../plans/runtime/TRANSPORT_PLAN.md
+
+Eligible Respondant source cues now transfer synchronously into RuntimeDeliveries
+before source removal. Occupied item/byte capacity preserves the head; ineligible
+custom cues keep their existing sink. QueryCoordinator observes transferred cues
+only after acceptance. Packet delivery then runs outside Reactor, while failed
+wire/progress remains owned. Exact preparation refusal notification separates
+engine busy outcomes from foreign same-class interpretation/routing failures.
+Source-query admission, request-local HTTP/witness response ownership, mailbox
+workers and the remaining stack inventory still require their caller ports.
 
 ## Messenger responsibilities
 
@@ -220,6 +237,19 @@ it cannot be async, mutate the source deck or release early. Refusal preserves
 input/credit; successful transfer frees the ordinary Deck slot and retains credit
 until destination consumption and joined cleanup finish. Actual retained-delivery
 adoption and guard-free network waits remain S1–3; this facility adds neither.
+
+RuntimeDeliveries retains query requests, cue cursors and independently copied
+failed packets on the existing eight-item queue. Cue output retains 8 MiB plus
+source credit, route metadata 1 MiB/4096 targets, and each target preparation
+24 MiB until joined delivery or explicit shutdown. Route capture follows admission;
+its metadata bounds do not qualify native/decoded allocation. A bounded pass
+advances one target per cue. Only the observed exact HTTP refusal may transfer
+a failed packet into another admitted slot; otherwise its cursor stays put.
+Other targets then progress while the exact failed wire remains pending.
+Queue retirement reports local owner progress, not durable transfer/acceptance.
+Synchronous cursor-finalization failure propagates after every independent cleanup
+attempt and credit release; the retired owner never repeats transport/cleanup.
+Actual Respondant/HTTP/witness cue adoption remains the next S1–3 unit.
 
 Prepared cue route capture reserves 1 MiB and at most 4096 targets before
 endpoint resolution; its owner clears captured metadata on release. The combined

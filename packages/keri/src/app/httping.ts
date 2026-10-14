@@ -1,4 +1,4 @@
-import { action, call, type Operation, resource } from "npm:effection@^3.6.0";
+import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 
 /** One live HTTP response plus the controller that can still abort its body. */
@@ -74,9 +74,18 @@ export function* closeResponseBody(response: Response): Operation<void> {
     return;
   }
 
-  yield* action((resolve, reject) => {
-    response.body!.cancel().then(() => resolve(undefined)).catch(reject);
-    return () => {};
+  yield* call(function*() {
+    let pending: Promise<void> | undefined;
+    yield* resource<void>(function*(provide) {
+      try {
+        yield* provide();
+      } finally {
+        // Register before starting cleanup; cancellation joins it and preserves later failure.
+        if (pending) yield* call(() => pending!);
+      }
+    });
+    pending = response.body!.cancel();
+    yield* call(() => pending!);
   });
 }
 
@@ -126,7 +135,15 @@ function* fetchResponseHandleInternal(
         yield* call(async () => {
           // A fetch completing during cancellation still transfers its response to this owner.
           const response = await pending!.catch(() => undefined);
-          if (response?.body && !response.body.locked) await response.body.cancel().catch(() => {});
+          if (response?.body && !response.body.locked) {
+            try {
+              await response.body.cancel();
+            } catch (error) {
+              // Fetch may already have errored the body with this controller's exact abort reason.
+              // Foreign AbortErrors and cleanup failures still propagate, even during cancellation.
+              if (error !== controller.signal.reason) throw error;
+            }
+          }
         });
       }
     }

@@ -56,7 +56,9 @@ and potential indefinite map/Set/root-Map projection entries (reference plus two
 indefinite arrays/maps and tag/default shapes remain codec-owned. Pinned short
 string scalar-unit work, source DataView field, context and possible raw copy are
 admitted with root lifetime. Only untagged scanner-known malformed boundaries
-permit opaque fallback; complete-input/tag failures preserve identity. CBOR-B
+permit opaque fallback. Complete-input unsupported simple values, semantic decode
+failures and tag failures preserve identity; their malformed-error classification
+is unqualified in this base-token unit. CBOR-B
 remains open for BigInt/fraction arithmetic, packed/record/shared/bundle expansion,
 global extension callbacks/native extractors, and decoder-global DataView/string/
 packed retention beyond frame disposal. Base-token admission is not all-tag or

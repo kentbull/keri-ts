@@ -76,8 +76,8 @@ export function admitCbor(raw: Uint8Array, budget: DecodedBodyBudget): boolean {
     offset += payload;
   }
   // Pinned JS strings use scalar-unit arrays at <=64 bytes; decoder caches a DataView
-  // on the source. Context, uint64/Date scalar scratch, raw copy and temporary units
-  // survive root cleanup.
+  // on the source. Working credit for context, uint64/Date scratch, raw copy and
+  // temporary units stays with the root until cleanup; codec-global retention may outlive it.
   const working = 64 + 16 + 64 + 26 * shortString + 64 + 2 * 16 + 8 + raw.length;
   budget.admitStage?.(working);
   budget.admitStage?.(budget.decodedBytes - remaining);
