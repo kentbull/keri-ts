@@ -44,7 +44,9 @@ a runtime. Reactor reserves stream/cursor/producer credit before source acquisit
 and retains it through joined parser cleanup. AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
 Internal CueDeck preparation holds concrete metadata/backing and item credit;
-ownership transfers through fanout/requeue until final cleanup. Runtime activation
+ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
+clone/state and decision-carried duplicate/escrow cues now prepare before effects
+when CueDeck is explicitly injected. Runtime activation
 waits for every producer/consumer port; count checks alone cannot reserve byte credit.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.

@@ -6,6 +6,15 @@
 applies post-acceptance effects. Expected remote outcomes use typed decisions
 under [ADR-0005](../../docs/adr/adr-0005-kel-decision-control-flow.md), not exceptions.
 Local inception/interaction uses the same acceptance path as remote events.
+Kevery builds finalized first-seen/date, clone and acceptance cues before accepted
+writes, and holds concrete CueDeck batches before duplicate/escrow effects too.
+Kever logging checks the prospective FEL tail before writes; synchronous writer
+ownership must persist through append. Group-prefix publication follows admission.
+Busy/limit refusal leaves that decision unapplied; an unexpected infrastructure
+failure after writes is not a durable rollback or cue recovery guarantee.
+Ordinary Runtime Deck keeps its conservative acceptance/duplicate count guard
+until owned producers/consumers are fully ported; changing that boundary changes
+ingress and escrow retry ownership even when the actual cue batch fits.
 
 `states.` is durable key-state authority; `kels.`/`fels.`/`dtss.` retain event
 history. Habery.habs and db.kevers are caches. Query/event routing must use
