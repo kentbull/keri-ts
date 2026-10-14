@@ -138,7 +138,10 @@ Apply these remaining ports within the existing units, in dependency order:
   and streamed static files are delivered; whole-history generation and
   credential-list callers still need replacement/admission. Internal owned ID
   capture and bounded selected-row reads are prerequisites; they do not close
-  active-state/proof capture or actual artifact callers.
+  actual artifact callers. Internal guarded capture now freezes winning body SAIDs,
+  active credentials and KEL/TEL horizons; current proof rows and availability after
+  BADA replacement remain explicit. Unit 3 must qualify actual host/export adoption,
+  guard duration and shared concurrency before this row closes.
 - **S2 receipt/catchup and mailbox administration:** thread the exact runtime
   services/policy into response readers and Receiptor; close database cursors
   before network suspension. Stream replay-sized mailbox submissions and admit

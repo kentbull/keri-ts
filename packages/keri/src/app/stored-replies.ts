@@ -30,6 +30,7 @@ export function loadStoredReply(db: Baser, said: string, limits: StoredReplyLimi
   const raw = db.getValBounded(db.rpys.sdb, b(said), maxBytes);
   if (!raw) return new Uint8Array();
   const serder = new SerderKERI({ raw });
+  if (serder.said !== said) throw new DatabaseOperationError("Corrupt stored reply body identity");
   let rows = 0, retainedBytes = raw.length;
   const admit = (bytes: number) => {
     if (++rows > maxRows || bytes > maxBytes - retainedBytes) {

@@ -304,3 +304,25 @@ synchronous consumers borrow hydrated values through `8 * maxBodyBytes + 4096`
 credit and must not retain them. That conservative allowance is not a qualified
 bound on arbitrary CBOR/MGPK decoding/projection. Whole wallet arrays and actual
 DID CESR host/export adoption remain open in transport S2.
+
+The internal DID artifact source acquires its metadata inside an existing guarded
+Reactor consume callback, after ReplyStreams output credit. Admission checks the
+combined configured floor: the reply owner's preparation bytes, descriptor credit
+(`4 * maxDescriptorBytes + 128 * maxDescriptors`), alias-ID credit and one temporary
+credential allowance. Insufficient configuration is `limit`; occupied credit is
+`busy`. Defaults are 4096 inspection steps, 64 KiB descriptors and delegation depth
+32. Primitive headers are charged before retention; decoded creders are discarded
+before tail hydration. Captured KEL ranges are reordered root-through-parent then
+target; witness order, agent/mailbox DB order, location-before-role, lexical active
+credentials and repeated registry TEL output remain unchanged.
+
+Acquisition freezes winning reply SAIDs, active credential decisions/source triples
+and KEL/TEL horizons. Consumption reads current attachment rows for those bodies;
+this is an availability contract, not a global database/proof snapshot. A missing
+captured reply with a known different accepted winner raises `DidArtifactStateChangedError`;
+missing material without that provenance remains an invariant failure. Never
+substitute the new winner or silently complete an incomplete artifact. Late failure
+closes the body and returns metadata/output credit after source closure; no automatic
+retry follows partial application. Native endpoint/TEL metadata and proof copies,
+arbitrary decoded growth and real host/export guard-duration/concurrency qualification
+remain open. The internal source has not activated production artifact callers.

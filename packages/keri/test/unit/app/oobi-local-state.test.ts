@@ -208,6 +208,9 @@ Deno.test("OOBI local state - transferable controller OOBI reply seal attachment
       const bare = new SerderKERI({ raw: hab.makeLocScheme("http://127.0.0.1:1", pre, "http") });
       hby.db.rpys.pin([bare.said!], bare);
       assertThrows(() => loadStoredReply(hby.db, bare.said!), ValidationError, "Missing attached signatures");
+      hby.db.rpys.pin(["misbound"], bare);
+      assertThrows(() => loadStoredReply(hby.db, "misbound"), DatabaseOperationError, "body identity");
+      hby.db.rpys.rem(["misbound"]);
       assertEquals(loadStoredReply(hby.db, "missing").length, 0);
       assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: -1 }), RangeError);
       const newer = reply("/loc/scheme", { eid: pre, scheme: "http", url: hostUrl }, { pre, pvrsn: Vrsn_2_0 });

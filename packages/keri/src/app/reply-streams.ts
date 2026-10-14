@@ -49,6 +49,11 @@ export class ReplyStreams {
     return this.maxMessageBytes;
   }
 
+  /** Configured output/preparation byte floor; producers can check combined metadata requirements before acquisition. */
+  get preparationByteFloor(): number {
+    return this.reservationBytes;
+  }
+
   /** Borrow a reopenable source without advancing until HTTP requests bytes.
    * Transfer the optional disposer through source closure, including admission/acquisition refusal.
    */

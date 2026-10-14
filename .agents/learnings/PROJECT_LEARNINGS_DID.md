@@ -30,9 +30,14 @@ copies, freezes lexical issuer/schema membership and releases after source clean
 The pinned NAPI decoder checks extent/count before copying; copy the admitted row
 before nested schema lookup reuses native scratch. Selected credential body/anchor
 reads preflight raw rows before decode under a conservative hydration allowance.
-Arbitrary CBOR/MGPK decoded growth remains unqualified. Existing wallet collectors,
-active-state/endpoint-proof capture and dynamic CESR/export caller adoption remain
-S2 work; ID membership alone does not establish an active alias cutoff.
+Arbitrary CBOR/MGPK decoded growth remains unqualified. Internal artifact capture now opens under Reactor.settle's consume guard after
+ReplyStreams output admission. Freeze winning endpoint body SAIDs and active
+credential/anchor/TEL horizons; body/proof hydration stays demand-owned. No creder
+survives acquisition. Known BADA replacement of missing captured reply material
+fails with a domain availability error; unrelated missing/corrupt rows and native
+failures retain infrastructure semantics. Current attachment rows are not a proof
+snapshot. Existing collectors and real dynamic CESR/export callers remain S2 work;
+finite capture limits do not establish a short guard-hold time.
 
 Designated aliases use ordinary registry-backed credentials and a SAID-checked
 JSON schema. Current binding revokes the issuer/schema's active credentials before

@@ -1,11 +1,12 @@
 import { b, ResourceAdmissionError, ResourceLimitError, ResourcePolicy, ShortageError } from "cesr-ts";
-import { run, sleep, spawn } from "effection";
+import { call, run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
 import type { Reger } from "../../../src/db/reger.ts";
 import {
   bindDesignatedAliases,
@@ -14,12 +15,14 @@ import {
   didWebsArtifactUrls,
   generateBareDidDocument,
   generateDidWebsArtifacts,
+  generateDidWebsCesr,
   listActiveDesignatedAliasCredentials,
   parseDid,
   pinDesignatedAliasesSchema,
   resolveDidWebs,
 } from "../../../src/did/index.ts";
 import { CapturedAliasIds, consumeAliasCredential } from "../../../src/did/webs/alias-credentials.ts";
+import { DidArtifactStateChangedError, openDidArtifactCesr } from "../../../src/did/webs/artifact-source.ts";
 
 Deno.test("did/webs - parses DID Webs host, path, AID, and artifact URLs", () => {
   const parsed = parseDid("did:webs:127.0.0.1%3A7678:dws:EAid?meta=true");
@@ -473,6 +476,51 @@ Deno.test("did/webs - keri.cesr replays controller KEL once and appends DA mater
         alias: "issuer",
         did,
       });
+      const baseline = runtime.resources.used;
+      const floorError = assertThrows(() =>
+        openDidArtifactCesr(runtime, hab.pre, {
+          maxMetadataBytes: runtime.resources.limits.bytes,
+        }), ResourceAdmissionError);
+      assertEquals(floorError.reason, "limit");
+      assertEquals(runtime.resources.used, baseline);
+      let body!: ReadableStream<Uint8Array>;
+      yield* runtime.reactor.settle(undefined, {}, function*() {
+        assertThrows(() => openDidArtifactCesr(runtime, hab.pre, { maxDescriptors: 1 }), ResourceLimitError);
+        body = openDidArtifactCesr(runtime, hab.pre);
+      });
+      yield* call(() => body.cancel());
+      assertEquals(runtime.resources.used, baseline, "Cancellation before consumption releases captured metadata");
+      yield* runtime.reactor.settle(undefined, {}, function*() {
+        body = openDidArtifactCesr(runtime, hab.pre);
+      });
+      const heldBytes = runtime.resources.used.bytes - baseline.bytes;
+      // New state cannot enter captured KEL/TEL horizons or change the frozen active-credential decision.
+      hab.rotate();
+      bindDesignatedAliases(runtime, { alias: "issuer", dids: [`did:keri:${hab.pre}`] });
+      const afterMutation = runtime.resources.used.bytes - heldBytes;
+      const frozen = yield* call(async () => new Uint8Array(await new Response(body).arrayBuffer()));
+      assertEquals(frozen, artifacts.keriCesr);
+      assertEquals(runtime.resources.used.bytes, afterMutation);
+      const beforeReplacement = runtime.resources.used.bytes;
+      yield* runtime.reactor.settle(undefined, {}, function*() {
+        body = openDidArtifactCesr(runtime, hab.pre);
+      });
+      const replacementCredit = runtime.resources.used.bytes - beforeReplacement;
+      ingestKeriBytes(runtime, hab.makeEndRole(hab.pre, EndpointRoles.mailbox, false));
+      yield* processRuntimeTurn(runtime, { hab });
+      const replacementBaseline = runtime.resources.used.bytes - replacementCredit;
+      let replacementError: unknown;
+      try {
+        yield* call(() => new Response(body).arrayBuffer());
+      } catch (error) {
+        replacementError = error;
+      }
+      assertEquals(replacementError instanceof DidArtifactStateChangedError, true);
+      assertEquals(
+        runtime.resources.used.bytes,
+        replacementBaseline,
+        "Late replacement joins source and metadata cleanup",
+      );
       const keriCesr = new TextDecoder().decode(artifacts.keriCesr);
       assertEquals(
         countOccurrences(
@@ -486,6 +534,22 @@ Deno.test("did/webs - keri.cesr replays controller KEL once and appends DA mater
       assertEquals(keriCesr.includes("\"v\":\"ACDC"), true);
       assertEquals(keriCesr.includes("\"r\":\"/loc/scheme\""), true);
       assertEquals(keriCesr.includes("\"role\":\"mailbox\""), true);
+      const root = hby.makeHab("artifact-root");
+      const child = hby.makeHab("artifact-child", undefined, { delpre: root.pre });
+      root.interact({ data: [{ i: child.pre, s: "0", d: child.kever!.said }] });
+      assertExists(
+        hby.db.aess.get(dgKey(child.pre, child.kever!.said!)),
+        "Accepted root anchor repairs the real child source seal",
+      );
+      const childExpected = generateDidWebsCesr(runtime, child.pre);
+      yield* runtime.reactor.settle(undefined, {}, function*() {
+        body = openDidArtifactCesr(runtime, child.pre);
+      });
+      const childWire = yield* call(async () => new Uint8Array(await new Response(body).arrayBuffer()));
+      assertEquals(childWire, childExpected);
+      const childText = new TextDecoder().decode(childWire);
+      const rootIndex = childText.indexOf(`"t":"icp","d":"${root.pre}"`), childIndex = childText.indexOf(`"t":"dip"`);
+      assertEquals(rootIndex >= 0 && childIndex > rootIndex, true);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

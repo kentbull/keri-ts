@@ -34,17 +34,23 @@ export class CapturedAliasIds implements Iterable<string> {
     this.#credit = credit;
   }
 
-  /** Reserve before duplicate reads/copies; finite synchronous capture excludes later insertions. */
-  static capture(runtime: AgentRuntime, aid: string, limits: AliasIdLimits = {}): CapturedAliasIds {
-    const { maxIds = 4096, maxMetadataBytes = 1024 ** 2, maxIdBytes = 128 } = limits;
+  /** Same conservative metadata charge used by capture; composition can refuse an impossible combined floor. */
+  static byteFloor({ maxIds = 4096, maxMetadataBytes = 1024 ** 2, maxIdBytes = 128 }: AliasIdLimits = {}): number {
     for (const limit of [maxIds, maxMetadataBytes, maxIdBytes]) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Invalid alias ID capture limit");
     }
+    const bytes = 4 * maxMetadataBytes + 64 * maxIds + 1024;
+    if (!Number.isSafeInteger(bytes)) throw new RangeError("Alias metadata charge exceeds supported range");
+    return bytes;
+  }
+
+  /** Reserve before duplicate reads/copies; finite synchronous capture excludes later insertions. */
+  static capture(runtime: AgentRuntime, aid: string, limits: AliasIdLimits = {}): CapturedAliasIds {
+    const { maxIds = 4096, maxMetadataBytes = 1024 ** 2, maxIdBytes = 128 } = limits;
+    const bytes = CapturedAliasIds.byteFloor({ maxIds, maxMetadataBytes, maxIdBytes });
     if (typeof aid !== "string" || !aid || aid.length > maxIdBytes) {
       throw new ResourceLimitError("Alias issuer exceeds configured identifier limit");
     }
-    const bytes = 4 * maxMetadataBytes + 64 * maxIds + 1024;
-    if (!Number.isSafeInteger(bytes)) throw new RangeError("Alias metadata charge exceeds supported range");
     const decision = runtime.resources.reserve({ bytes });
     if (decision.kind === "refuse") {
       throw new ResourceAdmissionError(`Alias metadata admission refused: ${decision.reason}`, decision.reason);
@@ -129,6 +135,14 @@ export class CapturedAliasIds implements Iterable<string> {
   }
 }
 
+/** Conservative decoded/copy allowance; arbitrary CBOR/MGPK growth remains separately unqualified. */
+export function aliasCredentialByteFloor(maxBodyBytes: number): number {
+  if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 1) throw new RangeError("Invalid alias credential limit");
+  const bytes = 8 * maxBodyBytes + 4096;
+  if (!Number.isSafeInteger(bytes)) throw new RangeError("Alias credential charge exceeds supported range");
+  return bytes;
+}
+
 /** Consume one bounded credential synchronously; callback borrows hydrated values and must not retain them. */
 export function consumeAliasCredential(
   runtime: AgentRuntime,
@@ -136,12 +150,9 @@ export function consumeAliasCredential(
   consume: (credential: ReturnType<Reger["cloneCred"]>) => undefined,
   maxBodyBytes = runtime.replyStreams.messageByteLimit,
 ): void {
-  if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 1) throw new RangeError("Invalid alias credential limit");
+  const bytes = aliasCredentialByteFloor(maxBodyBytes);
   if (typeof said !== "string" || !said) throw new RangeError("Invalid alias credential identifier");
   if (said.length > 512) throw new ResourceLimitError("Alias credential identifier exceeds local key limit");
-  // Conservative decode/copy allowance; arbitrary CBOR/MGPK decoded growth is not yet qualified.
-  const bytes = 8 * maxBodyBytes + 4096;
-  if (!Number.isSafeInteger(bytes)) throw new RangeError("Alias credential charge exceeds supported range");
   const decision = runtime.resources.reserve({ bytes });
   if (decision.kind === "refuse") {
     throw new ResourceAdmissionError(`Alias credential admission refused: ${decision.reason}`, decision.reason);
