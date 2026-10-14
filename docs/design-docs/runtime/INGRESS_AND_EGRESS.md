@@ -129,6 +129,15 @@ a separately proven durable obligation or reconstruction path, not just a queue.
 
 [transport-plan]: ../../plans/runtime/TRANSPORT_PLAN.md
 
+Eligible Respondant source cues now transfer synchronously into RuntimeDeliveries
+before source removal. Occupied item/byte capacity preserves the head; ineligible
+custom cues keep their existing sink. QueryCoordinator observes transferred cues
+only after acceptance. Packet delivery then runs outside Reactor, while failed
+wire/progress remains owned. Exact preparation refusal notification separates
+engine busy outcomes from foreign same-class interpretation/routing failures.
+Source-query admission, request-local HTTP/witness response ownership, mailbox
+workers and the remaining stack inventory still require their caller ports.
+
 ## Messenger responsibilities
 
 Incremental source/sink I/O is the default for CESR network traffic across KERI

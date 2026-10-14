@@ -593,16 +593,16 @@ Deno.test("serder: stale explicit schema claims cannot enter verification fallba
 Deno.test("JSON admission counts lexical containers, references, fields, scalars and UTF-16 upper bounds", () => {
   const raw = b("{\"a\":[0,\"é\",{},true,null],\"a\":\"\\u0041\"}");
   const charges: number[] = [];
-  const budget = { jsonBytes: 428, admitStage: (bytes: number) => charges.push(bytes) };
+  const budget = { decodedBytes: 428, admitStage: (bytes: number) => charges.push(bytes) };
   admitJson(raw, budget);
   assertEquals(charges, [64 + 2 * raw.length, 428]);
-  assertEquals(budget.jsonBytes, 0);
+  assertEquals(budget.decodedBytes, 0);
   assertEquals(JSON.parse(new TextDecoder().decode(raw)), { a: "A" }); // Duplicate keys and escapes keep native semantics.
 });
 
 Deno.test("admitted JSON reuses only stable independent exact backing and admits before suffix copies", () => {
   const raw = b(v2ify("{\"v\":\"KERI20JSON000000_\",\"a\":\"\\\"[]{}:é\"}"));
-  const budget = () => ({ jsonBytes: 10000 });
+  const budget = () => ({ decodedBytes: 10000 });
   assertEquals(reapSerder(raw, budget()).serder.raw === raw, true);
   assertEquals(reapSerder(raw).serder.raw === raw, false, "standalone reap retains its copy contract");
   const oversized = new Uint8Array(raw.length + 1);
@@ -629,7 +629,7 @@ Deno.test("admitted JSON reuses only stable independent exact backing and admits
   assertEquals(
     assertThrows(() =>
       reapSerder(view, {
-        jsonBytes: 10000,
+        decodedBytes: 10000,
         admitStage: () => {
           throw refusal;
         },

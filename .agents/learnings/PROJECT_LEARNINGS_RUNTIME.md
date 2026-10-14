@@ -114,12 +114,17 @@ RuntimeDeliveries uses the same eight owner slots for query requests, cue cursor
 and failed target packets. Retain exact independent wire until joined delivery or
 shutdown; one target per pass keeps admitted siblings progressing. Route metadata
 has its own pre-admitted finite credit. Retired owners are local progress, not
-protocol success or durable retry. Runtime cue callers still require adoption.
+protocol success or durable retry. Respondant source heads now transfer immediately
+under the guard; their queued network work drains outside it. Unsupported/custom
+cues retain existing sink handling; occupied capacity never destructively falls back.
+Source queries and request-local HTTP/witness owners still require adoption.
 Actual HTTP and source/tree/output admission refusal observation is invocation-local;
 source/fetch/sink/cleanup and external observer failures retain original identity.
 Prepared target attempts return local complete/refused/busy only after joined
-cleanup, matching observed engine-created errors rather than foreign classes. These facilities do not yet move runtime callers
-outside their guard or admit all decoded/native preparation copies.
+cleanup, matching observed engine-created errors rather than foreign classes.
+Cue preparation/item refusal follows the same exact invocation rule; foreign
+interpretation, route, reserve and observer failures propagate. This does not
+admit all decoded/native preparation copies.
 Admitted cue interpretation is synchronous: destination item admission precedes
 preparation, and atomic acceptance precedes ordinary source removal. Existing
 CueDeck credit transfers/requeues; lazy replay stays unopened. The accepting

@@ -30,15 +30,20 @@ export function prepareCueEmission(
   cues: Deck<AgentCue>,
   resources: ResourcePolicy,
   accept: (owner: PreparedCueEmission) => undefined,
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): boolean {
   const cue = cues.peekHead();
   if (!cue) return false;
   if (cues instanceof CueDeck && cues.resourcePolicy !== resources) {
     throw new RangeError("Cue interpretation requires the source deck's exact policy");
   }
+  const refuse: (error: ResourceAdmissionError) => never = (error) => {
+    onAdmissionRefusal?.(error);
+    throw error;
+  };
   const heldInput = cues instanceof CueDeck ? cues.headRetentionBytes() : 0;
   if (heldInput + wireBytes + preparationBytes > resources.limits.bytes) {
-    throw new ResourceAdmissionError("Cue interpretation exceeds shared byte capacity", "limit");
+    refuse(new ResourceAdmissionError("Cue interpretation exceeds shared byte capacity", "limit"));
   }
   let input: ResourceReservation | undefined, output: ResourceReservation | undefined;
   let preparation: ResourceReservation | undefined, original: OwnedCue | undefined;
@@ -48,19 +53,19 @@ export function prepareCueEmission(
   try {
     if (!(cues instanceof CueDeck)) {
       const before = resources.used.bytes;
-      input = reserveCueBytes(resources, [cue]);
+      input = reserveCueBytes(resources, [cue], undefined, onAdmissionRefusal);
       inputBytes = resources.used.bytes - before;
       // Synchronous inspection has no yield; classify this operation's own combined floor before contention.
       if (resources.used.bytes - before + wireBytes + preparationBytes > resources.limits.bytes) {
-        throw new ResourceAdmissionError("Cue retention and interpretation exceed shared capacity", "limit");
+        refuse(new ResourceAdmissionError("Cue retention and interpretation exceed shared capacity", "limit"));
       }
     }
     const retained = resources.reserve({ bytes: wireBytes });
-    if (retained.kind === "refuse") throw new ResourceAdmissionError("Cue output admission refused", retained.reason);
+    if (retained.kind === "refuse") refuse(new ResourceAdmissionError("Cue output admission refused", retained.reason));
     output = retained.reservation;
     const temporary = resources.reserve({ bytes: preparationBytes });
     if (temporary.kind === "refuse") {
-      throw new ResourceAdmissionError("Cue interpretation admission refused", temporary.reason);
+      refuse(new ResourceAdmissionError("Cue interpretation admission refused", temporary.reason));
     }
     preparation = temporary.reservation;
     if (cues instanceof CueDeck) original = cues.takeOwned()!;
