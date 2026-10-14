@@ -48,8 +48,9 @@ and scope exit both join cleanup; scope exit after explicit close is harmless.
 
 Baser fixes its ResourcePolicy before reopen and local Habery/signator construction.
 CLI opening forwards it; AgentRuntime inherits it and rejects policy mismatches.
-Borrowed runtime shutdown leaves Baser ownership intact. Accepted cache/native
-admission and public borrowing adoption remain open in resource phase 4/storage phase 5.
+Borrowed runtime shutdown leaves Baser ownership intact. Native transient copy
+admission remains phases 4/5; accepted cache residency and public borrowing/eviction
+redesign are deferred. Report state growth separately from the in-flight guarantee.
 
 Authenticator borrows that exact policy even without an AgentRuntime. Its status-only
 GET reserves handle/URL credit before fetch; busy retains durable pending work.
@@ -102,9 +103,9 @@ See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md
 
 ## Transport
 
-Incremental CESR I/O is the stack-wide default, including discovery, artifacts
-and CLI callers. Adopt the shared engines/response owners rather than private
-collectors; pass the runtime's exact services/policy. Finite JSON/receipt semantics
+Require streaming where KERIpy 714 supports it; further stack-wide discovery,
+artifact and CLI conversion is deferred. Required callers use shared engines and
+response owners with the runtime's exact services/policy. Finite JSON/receipt semantics
 require enforced caps, cancellation and joined cleanup. OOBI/DID completion still
 requires full evidence; processing before EOF does not imply artifact success.
 Close adoption through default library/host/CLI callers, not only engine tests.
