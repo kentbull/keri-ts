@@ -18,6 +18,9 @@ The [runtime contract][runtime] distinguishes current behavior from the target.
 Reuse the active admission stack: HTTP frame/output work (#224–225), finite TCP
 ownership (#230), parser scheduling (#231), and mailbox stream admission.
 Those units are dependencies, not proof of end-to-end socket streamability.
+Lazy replies, query queues, HTTP frame preparation and outgoing source parsing
+share owner credit. Standalone sender wiring and native/storage copies still
+require qualification through real slow sinks.
 
 ## Review units
 
