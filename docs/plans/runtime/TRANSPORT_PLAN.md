@@ -130,7 +130,7 @@ lines or fewer. Split again if necessary; preserve the single parser engine.
 | S8   | Explicit duplex replies and half-close drain | S3, S6–7         |
 | S9   | Composed socket/HTTP qualification           | S1–8, phases 4–5 |
 
-**S1–3: bounded delivery.** Reuse Deck/QueryDeliveries ownership. Reserve bytes
+**S1–3: bounded delivery.** Reuse Deck/RuntimeDeliveries ownership. Reserve bytes
 and items before interpretation; remove the source cue only after admitted
 transfer. Phase 4 must also charge retained cue bytes before producer enqueue or
 acceptance and transfer that credit; a charged delivery queue alone is insufficient.

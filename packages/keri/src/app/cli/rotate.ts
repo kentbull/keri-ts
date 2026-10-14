@@ -15,7 +15,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { createAgentRuntime, processRuntimeUntil } from "../agent-runtime.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
-import { queryTransportSink } from "../query-transport.ts";
+import { queryTransportSink } from "../runtime-deliveries.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { withExistingHab } from "./common/context.ts";
 import {

@@ -11,7 +11,7 @@ import {
 import { type Configer, createConfiger } from "../configing.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import type { Habery } from "../habbing.ts";
-import { queryTransportSink } from "../query-transport.ts";
+import { queryTransportSink } from "../runtime-deliveries.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import { InceptFileOptions, loadInceptFileOptions, parseDataItems, parseThresholdOption } from "./common/parsing.ts";

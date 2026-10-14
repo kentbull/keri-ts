@@ -18,7 +18,7 @@ import { Roles } from "../../core/roles.ts";
 import { processRuntimeTurn, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
 import type { Hab } from "../habbing.ts";
 import { flattenRoleUrls } from "../mailboxing.ts";
-import { queryTransportSink } from "../query-transport.ts";
+import { queryTransportSink } from "../runtime-deliveries.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
 import { printExternal } from "./common/displaying.ts";
 
