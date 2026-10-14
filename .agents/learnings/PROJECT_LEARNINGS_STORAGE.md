@@ -114,3 +114,9 @@ admission are separate from native proof-row decoding/copy admission. Current
 TS group/cigar reconstruction must not be labeled intentional 714 parity.
 
 [db]: ../../docs/design-docs/db/db-architecture.md
+
+Mailbox publication commits opaque body and ordered topic together. Identical
+bodies overwrite successfully while repeated topic appearances keep distinct
+ordinals; zero is a valid first ordinal. False pin/invalid ordinal is an invariant
+failure and rolls back publication. This is a TS atomicity extension over714's
+two-write storeMsg, not a shared-copy/native admission claim.

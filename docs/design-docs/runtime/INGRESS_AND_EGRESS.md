@@ -186,6 +186,10 @@ wire through the shared HTTP sender without habitat or DB access. Its bytes stay
 caller-owned through joined cleanup. Existing `sendBytes` composes these steps;
 S1–3 still owns admitted handoff, guard-free runtime callers and delivery outcomes.
 The extraction itself adds no queue or shared allocation guarantee.
+Local stored delivery requires completed body/topic publication in one mailbox
+transaction. Repeated body appearances preserve topic order and raw deduplication;
+false publication cannot acknowledge delivery. This strengthens714 storeMsg's
+atomicity while retaining its layout, and adds no shared-copy/native admission.
 
 `Hab.interpretCue` synchronously borrows one cue without dequeuing. Internal
 `prepareCueEmission` pre-admits input retention and 8 MiB finite output plus
