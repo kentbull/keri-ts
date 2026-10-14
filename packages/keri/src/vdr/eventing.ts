@@ -22,6 +22,7 @@ import {
   Verfer,
   Vrsn_2_0,
 } from "cesr-ts";
+import { CueDeck, type PreparedCueBatch } from "../core/cue-admission.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -410,7 +411,9 @@ export class Tever {
     return count === 0 ? null : count - 1;
   }
 
-  update(args: TelProcessEventArgs): TelProcessDecision {
+  /** Apply TEL input; the internal recorder preserves owned-cue publication failures through router catches. */
+  update(args: TelProcessEventArgs, recordCueFailure?: (error: unknown) => void): TelProcessDecision {
+    let cueFailure: { error: unknown } | undefined;
     try {
       const serder = args.serder;
       const ilk = telIlk(serder);
@@ -422,10 +425,21 @@ export class Tever {
         return this.issue(serder, sn, args);
       }
       if (ilk === Ilks.rev || ilk === Ilks.brv) {
-        return this.revoke(serder, sn, args);
+        return this.revoke(
+          serder,
+          sn,
+          args,
+          this.cues instanceof CueDeck
+            ? (error) => {
+              cueFailure = { error };
+              recordCueFailure?.(error);
+            }
+            : undefined,
+        );
       }
       return reject(`Unsupported TEL ilk=${ilk}.`, serder, this.regk);
     } catch (error) {
+      if (cueFailure && cueFailure.error === error) throw error;
       return reject(error instanceof Error ? error.message : String(error), args.serder, this.regk);
     }
   }
@@ -618,6 +632,7 @@ export class Tever {
     serder: SerderKERI,
     sn: number,
     args: TelProcessEventArgs,
+    recordCueFailure?: (error: unknown) => void,
   ): TelProcessDecision {
     const vci = okPre(serder);
     const prior = digestForTel(this.reger, vci, sn - 1);
@@ -639,15 +654,7 @@ export class Tever {
         this.escrowALEvent(serder, args.seqner ?? null, args.saider ?? null);
         return escrow("anchorless", "Missing KEL anchor for TEL revoke.", serder, this.regk);
       }
-      this.cues.checkSpace();
-      this.logEvent({
-        pre: vci,
-        sn,
-        serder,
-        seqner: args.seqner ?? null,
-        saider: args.saider ?? null,
-      });
-      this.cues.push({ kin: "revoked", serder });
+      this.logRevoked(serder, sn, args, undefined, recordCueFailure);
       return accept(serder, this.regk);
     }
 
@@ -669,17 +676,41 @@ export class Tever {
     if (checked.kind !== "accept") {
       return checked.decision;
     }
-    this.cues.checkSpace();
-    this.logEvent({
-      pre: vci,
-      sn,
-      serder,
-      seqner: args.seqner ?? null,
-      saider: args.saider ?? null,
-      bigers: checked.bigers,
-    });
-    this.cues.push({ kin: "revoked", serder });
+    this.logRevoked(serder, sn, args, checked.bigers, recordCueFailure);
     return accept(serder, this.regk);
+  }
+
+  /** Admit the actual revocation cue before accepted TEL writes; publication follows the existing log boundary. */
+  private logRevoked(
+    serder: SerderKERI,
+    sn: number,
+    args: TelProcessEventArgs,
+    bigers?: readonly Siger[],
+    recordCueFailure?: (error: unknown) => void,
+  ): void {
+    let prepared: PreparedCueBatch | undefined;
+    try {
+      try {
+        const cue: AgentCue = { kin: "revoked", serder };
+        prepared = this.cues instanceof CueDeck ? this.cues.prepare([cue]) : undefined;
+        if (!prepared) this.cues.checkSpace();
+        this.logEvent({
+          pre: okPre(serder),
+          sn,
+          serder,
+          seqner: args.seqner ?? null,
+          saider: args.saider ?? null,
+          bigers,
+        });
+        if (prepared) prepared.publish();
+        else this.cues.push(cue);
+      } finally {
+        prepared?.release();
+      }
+    } catch (error) {
+      recordCueFailure?.(error);
+      throw error;
+    }
   }
 
   private validateToad(toad: number, baks: readonly string[]): void {
@@ -916,6 +947,7 @@ export class Tevery {
   }
 
   processEvent(args: TelProcessEventArgs): TelProcessDecision {
+    let cueFailure: { error: unknown } | undefined;
     try {
       const serder = args.serder;
       const ilk = telIlk(serder);
@@ -966,13 +998,15 @@ export class Tevery {
         return duplicate(`TEL event sn=${sn} older than expected=${expected}.`, serder, regk);
       }
 
-      const decision = tever.update(args);
+      const decision = tever.update(args, (error) => {
+        cueFailure = { error };
+      });
       if (decision.kind === "accept" && ilk === Ilks.vrt) {
         this.cacheTever(regk, tever);
       }
       return decision;
     } catch (error) {
-      if (error instanceof DeckFullError) throw error;
+      if (error instanceof DeckFullError || (cueFailure && cueFailure.error === error)) throw error;
       return reject(error instanceof Error ? error.message : String(error), args.serder);
     }
   }
