@@ -111,6 +111,12 @@ of `cloneEvtMsg` without a limit retain their existing allocation behavior.
 Signed exchanges and generic HTTP witness delivery use the same progressive
 sender as forwarding. Witness authorization is preserved across content-type
 retries; caller headers cannot replace CESR framing or destination metadata.
+Generic witness sends borrow explicit runtime services; runtime delegation passes
+its own services through this seam. Standalone callers may use the shared default.
+TCP reserves one stream, the supplied buffer's backing and one transport copy
+before socket acquisition. The caller owns allocation of that input. Completion,
+failure and cancellation join socket close before returning credit; kernel buffers
+and native residency require separate measurement.
 Receipt endpoints intentionally return one finite proof: collection admits at
 most 1 MiB, failed-response diagnostics at most 16 KiB, and parsing requires one
 complete frame. Cancellation joins the body reader and releases its lock.

@@ -11,7 +11,8 @@ dependencies, preserving the current transport engine:
 
 1. Ingress read credit and bounded handoff through verification/storage.
 2. Lazy replies, query queues, frame preparation and outgoing source parsing
-   share owner credit. Finish standalone sender wiring and native/storage copy
+   share owner credit. Generic witness sends and runtime delegation share services;
+   TCP credit follows joined socket close. Finish other standalone sender wiring and native/storage copy
    qualification, then qualify through a slow sink.
 3. Cancellation, disconnect and failed-processing ownership cleanup.
 4. Shutdown/EOF/late-malformed-child reconciliation.
