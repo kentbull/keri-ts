@@ -17,7 +17,10 @@ terminate Deno when a large row first reaches the mapped-buffer path.
 Qualify the actual addon under both runtimes, including rows above 16 MiB.
 TEL capture metadata and fixed pair composition own no event bodies or cursors;
 consumer readers close each cursor before clone/yield, including reopened stores.
-TEL body/proof-row pre-read allocation remains separately open.
+TEL replay preflights body rows before copies and reads native dupsort signatures
+incrementally, checking its ceiling before payload retention. Each native duplicate
+is finite (LMDB's 511-byte maximum); ordinary standalone hydration, native scratch
+and mapped residency remain separate qualification limits.
 Finite KEL replay preflights event bodies before owned copies; HTTP source credit
 must cover reconstruction before iterator acquisition, not only yielded bytes.
 Witness GET no-SN captures target-only FEL ranges; SN captures KEL/FEL horizons

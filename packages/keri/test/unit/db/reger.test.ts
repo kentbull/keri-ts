@@ -236,9 +236,51 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
         assertEquals(reading, 0, "Slow consumers and iterator cancellation retain no LMDB cursor");
         reader.return?.(undefined);
         assertEquals(reading, 0);
-        assertEquals(reger.cloneTvt(regk, regk, KERI_V1, expected.length), expected);
         assertThrows(() => reger.cloneTvt(regk, regk, KERI_V1, expected.length - 1), ResourceLimitError);
-        assertThrows(() => [...reger.replay(regk, { maxMessageBytes: tel.raw.length - 1 })!], ResourceLimitError);
+        const bounded = reger.tvts.getBounded.bind(reger.tvts);
+        let copies = 0;
+        reger.tvts.getBounded = (keys, limit) => bounded(keys, limit, () => copies++);
+        try {
+          assertThrows(() => [...reger.replay(regk, { maxMessageBytes: tel.raw.length - 1 })!], ResourceLimitError);
+          assertEquals(copies, 0, "Native body preflight refuses before either owned row copy");
+          assertEquals(reger.cloneTvt(regk, regk, KERI_V1, expected.length), expected);
+          assertEquals(copies, 1, "The admitted native read copies exactly one body under its ceiling");
+        } finally {
+          reger.tvts.getBounded = bounded;
+        }
+        const getProofs = reger.tibs.get, iterateProofs = reger.tibs.getIter.bind(reger.tibs);
+        let proofsRead = 0, proofCursorClosed = false;
+        reger.tibs.pin([regk, regk], [wiger, ...[1, 2].map((index) => signer.sign(tel.raw, { index }) as Siger)]);
+        reger.tibs.get = () => {
+          throw new Error("Replay must not materialize the complete native proof bucket");
+        };
+        reger.tibs.getIter = function*(...args) {
+          try {
+            for (const proof of iterateProofs(...args)) {
+              proofsRead++;
+              yield proof;
+            }
+          } finally {
+            proofCursorClosed = true;
+          }
+        };
+        try {
+          assertThrows(
+            () => [...reger.replay(regk, { maxMessageBytes: tel.raw.length + wiger.qb64.length })!],
+            ResourceLimitError,
+          );
+          assertEquals([proofsRead, proofCursorClosed], [2, true], "Refusal stops before the third native proof");
+          const fault = new Error("foreign proof storage failure");
+          reger.tibs.getIter = function*() {
+            throw fault;
+          };
+          assertEquals(assertThrows(() => [...replay]), fault);
+        } finally {
+          reger.tibs.get = getProofs;
+          reger.tibs.getIter = iterateProofs;
+          reger.tibs.pin([regk, regk], [wiger]);
+        }
+        assertEquals([...replay], [expected], "Failed bounded reads preserve stored body and proof wire");
         assertThrows(() => reger.replay(regk, { maxMessageBytes: 0 }), RangeError);
         const v2Attachments = concatBytes(
           new Counter({ code: CtrDexV2.WitnessIdxSigs, count: wiger.qb64b.length / 4, version: Vrsn_2_0 }).qb64b,

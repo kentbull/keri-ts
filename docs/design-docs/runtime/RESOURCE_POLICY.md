@@ -203,7 +203,11 @@ Finite message arrays charge their complete backing normally. Other opaque repla
 closures remain refused; arbitrary work is never opened for measurement. Capture-time temporary
 allocations still need producer admission; this retained
 owner seam does not activate Runtime or close the full query/delivery boundary.
-TEL body/proof-row pre-read allocation admission remains a phase 5 obligation.
+TEL replay preflights its body row before owned copies and iterates native dupsort
+signatures without collecting their bucket. Its message ceiling is checked before
+retaining each qualified payload; LMDB bounds each duplicate record at 511 bytes.
+The existing reconstruction lease covers the source through joined cleanup. Other
+native hydration, scratch and mapped residency remain qualification limits.
 
 Live and retried KEL queries admit their actual output batch before repairing
 delegation source-seal hints. Busy, configured-limit and item refusal leave `aess`
