@@ -124,7 +124,13 @@ one unambiguous staged successor per slot across both escrows, including after
 reopen. Competing successors refuse construction; staged bodies never establish
 acceptance. Bound-state options remain separate from body serialization options.
 The engine chooses the ordinal and refuses caller-supplied blinder overrides.
-Presentation/vacuous operations and runtime installation remain separate gates.
+Registry `present` and `vacate` reuse that frontier and disclosure derivation.
+Presentation validates only the grant target's digest syntax; it authenticates
+neither the grant nor its sender. Empty-target/state vacuous steps preserve the
+preceding binding only when `vetBinds` receives every intervening disclosure.
+`Registrar` delegates creation, issuance, presentation and vacuous updates over
+its borrowed Regery, resolving direct instances, then keys, then local aliases.
+These facades acquire no owners; runtime installation remains a separate gate.
 Frontier traversal still has local store-sized work; shared scan credit is pending.
 Acceptance advances already anchored successors one transaction at a time.
 Explicit `processEscrows` retries both families, pruning invalid prior links;
@@ -138,6 +144,20 @@ event SAID (code-point order). Unanchored candidates sort last. Dangling bodies
 and stale candidates leave escrow; corrupt records and I/O failures propagate.
 The read cursor closes before replay writes. This pass still collects registry
 escrow rows; shared scan admission remains part of the resource-policy phase.
+
+Explicit `RegistryObserver` parsed intake borrows public Baser and RegistryStore,
+requiring no local controlling Hab or aliases. This is TypeScript integration
+beyond frozen 927, using the ported engine rather than a bulk chain transaction.
+It is not a global freshness observer or automatic parser/runtime route. Incoming
+updates before inception stage body/anchor-escrow rows, never accepted markers;
+the stored, self-validating inception supplies issuer identity after reopen.
+`processEscrows(regid)` explicitly retries one registry through ordinary engine
+anchoring and ordering. Its full tuple/witness policy deliberately exceeds
+digest-only `vet` evidence. A finite ordinal ceiling bounds accepted chain length
+and prevents tighter configurations from replaying oversized staged rows; it
+does not bound escrow counts, scans, native allocation or total runtime memory.
+Each accepted event commits independently, preserving a prefix if a later event
+fails. Corrupt stored inception/accepted state and datastore failures propagate.
 
 Existing #168 stores retain their paths, bodies, 32-digit ordinal keys and head
 markers. Readonly opening binds the existing three tables without rewriting or

@@ -38,6 +38,8 @@ store and workflow. Supplied anchored prefixes cannot hide an unanchored suffix.
 Disclosed issuer/target/rd, blinded/bound state and historical cutoff are separate
 checks. Shared time/mod.ts parsing retains exact microseconds and requires an explicit
 RFC3339 zone; cutoff selection includes events exactly at the supplied timestamp.
+IPEX borrows RegistryStore and checks its finite chain ceiling before collecting
+accepted updates; an existing head with missing accepted rows is corruption.
 Supplied chain authentication does not prove global freshness. IPEX
 presentation cutoffs require receiver-observed KRAM time, still pending.
 Share parsed rip/bup field validation across observer and local processing, but
@@ -46,6 +48,10 @@ tuple plus witness-receipt requirement. Field validity is not TEL acceptance.
 Local TEL publication must atomically commit body, anchor, accepted ordinal/head
 and escrow cleanup; bind instance state only after the transaction succeeds.
 Stored body presence alone never counts as acceptance or an accepted predecessor.
+Explicit parsed RegistryObserver borrows public KEL/store without local Hab aliases.
+Before inception, updates stay in durable anchor escrow; retry reconstructs issuer
+from stored inception. Full tuple/witness intake is stronger than digest-only vet
+and extends upstream integration, without establishing global registry freshness.
 Duplicate replay is read-only and cannot move the head backward. Missing anchors
 precede ordering escrow; unsafe numeric storage ordinals require explicit refusal.
 Retry arbitrates anchored siblings as a set, using earliest anchor then digest
@@ -54,6 +60,10 @@ Explicit anchoring validates event membership/prior before storing the couple.
 Queued progression commits one event at a time; later failures do not undo prior acceptance.
 Reopen named v2 registries from the stored rip issuer, not the first available
 Hab. Duplicate aliases share one instance; injected RegBaser ownership stays with its caller.
+Registrar acquires no owners: resolve direct instances, then registry keys, then
+aliases. Presentation checks target SAID syntax only; grant authentication stays
+with IPEX. Empty-target/state vacuous steps need their own disclosures when
+verifying the preceding effective binding. Blinded updates reuse the staged frontier.
 Local blinded updates follow a unique staged frontier across both escrows after an
 accepted head. De-duplicate sightings, reject forks, and never equate staging with acceptance.
 
