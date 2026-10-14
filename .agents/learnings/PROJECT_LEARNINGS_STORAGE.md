@@ -17,6 +17,11 @@ terminate Deno when a large row first reaches the mapped-buffer path.
 Qualify the actual addon under both runtimes, including rows above 16 MiB.
 Finite KEL replay preflights event bodies before owned copies; HTTP source credit
 must cover reconstruction before iterator acquisition, not only yielded bytes.
+Witness GET no-SN captures target-only FEL ranges; SN captures KEL/FEL horizons
+and resumes sequence/duplicate order without holding a cursor across hydration.
+New accepted duplicates beyond the FEL horizon are excluded; current index/proof
+metadata is not an immutable snapshot. Broad no-SN proof skip and native proof-copy
+qualification remain open; do not turn that path into a native-failure guarantee.
 Native CI caches include NAPI and rebuild-script identity; every cache hit must
 pass both native metadata and emitted V1-format probes before reuse. A lockfile
 can retain older packages; inspect the imported addon. Map sizing respects explicit

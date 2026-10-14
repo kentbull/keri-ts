@@ -73,7 +73,7 @@ export type WitnessReceiptGetResult =
 
 /** Host-side decision for `GET /query`. */
 export type WitnessQueryGetResult =
-  | { kind: "accepted"; status: 200; body: Uint8Array }
+  | { kind: "accepted"; status: 200; messages: Iterable<Uint8Array> }
   | { kind: "reject"; status: number; message: string };
 
 /** Controller-side result of posting to one witness receipt endpoint. */
@@ -535,6 +535,7 @@ export function witnessReceiptGet(
 export function witnessQueryGet(
   serviceHab: Hab,
   query: { typ?: string | null; pre?: string | null; sn?: number | null },
+  maxMessageBytes = 8 * 1024 ** 2,
 ): WitnessQueryGetResult {
   const typ = query.typ ?? null;
   if (!typ) {
@@ -555,7 +556,6 @@ export function witnessQueryGet(
       };
     }
 
-    const parts: Uint8Array[] = [];
     if (query.sn !== null && query.sn !== undefined) {
       const first = serviceHab.db.kels.getLast(pre, query.sn);
       if (!first) {
@@ -565,25 +565,12 @@ export function witnessQueryGet(
           message: `non-existent event at seq-num ${query.sn}`,
         };
       }
-      for (const said of serviceHab.db.kels.getAllIter(pre, query.sn)) {
-        const fn = serviceHab.db.getFelFn(pre, said);
-        if (fn === null) {
-          continue;
-        }
-        try {
-          parts.push(serviceHab.db.cloneEvtMsg(pre, fn, said));
-        } catch {
-          continue;
-        }
-      }
-    } else {
-      parts.push(...serviceHab.db.clonePreIter(pre));
     }
 
     return {
       kind: "accepted",
       status: 200,
-      body: parts.length === 0 ? new Uint8Array() : concatBytes(...parts),
+      messages: serviceHab.db.witnessReplay(pre, query.sn ?? null, maxMessageBytes) ?? [],
     };
   }
 
