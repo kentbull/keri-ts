@@ -259,8 +259,20 @@ inspect that stored amount without walking stores or opening replay.
 Accept must immediately/atomically retain the owner or throw without publication;
 it cannot be async, mutate the source deck or release early. Refusal preserves
 input/credit; successful transfer frees the ordinary Deck slot and retains credit
-until destination consumption and joined cleanup finish. Actual retained-delivery
-adoption and guard-free network waits remain S1–3; this facility adds neither.
+until destination consumption and joined cleanup finish.
+
+`processCuesOnce` prepares each custom/ineligible cue in a short Reactor turn,
+then waits for its sink outside the guard. One scoped owner is registered before
+sink resources, retaining input/output through their joined cleanup on success,
+failure or cancellation. Busy preserves the source head; a pass retains its
+initial count limit and eligible `admitCue` handoffs remain immediate. No queue
+or stream slot is added. `QueryCoordinator.prepareEmission` observes continuations
+and resolves/signs incomplete queries within that admitted preparation and final
+finite output check; `sendPrepared` performs no repeated local preparation.
+Actual runtime/host callers enter this drain outside an enclosing Reactor turn.
+`processPending(runtime)` also guards fallback signing before custom delivery;
+standalone/custom pending queries retain caller-owned byte bounds. Runtime default
+CueDeck activation remains dependent on the remaining producer/consumer ports.
 
 RuntimeDeliveries retains query requests, cue cursors and independently copied
 failed packets on the existing eight-item queue. Cue output retains 8 MiB plus

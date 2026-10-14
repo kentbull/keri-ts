@@ -21,7 +21,9 @@ export interface PreparedCueEmission {
 /**
  * Caller preflights its existing destination item slot under the guard. Accept must
  * immediately and atomically retain this owner, or throw without publishing it;
- * async acceptance, source mutation and early release are forbidden. Failed preparation leaves the original cue/credit
+ * async acceptance, source mutation and early release are forbidden. Optional local
+ * transformation runs within preparation credit and the final finite output check.
+ * Failed preparation leaves the original cue/credit
  * available for retry. Replay metadata stays borrowed and unopened, never collected.
  * This is logical copy/retention allowance, not a decoded/capture/native allocation bound.
  */
@@ -31,6 +33,7 @@ export function prepareCueEmission(
   resources: ResourcePolicy,
   accept: (owner: PreparedCueEmission) => undefined,
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+  transformEmission?: (emission: CueEmission) => CueEmission,
 ): boolean {
   const cue = cues.peekHead();
   if (!cue) return false;
@@ -74,6 +77,7 @@ export function prepareCueEmission(
       messages: [],
       kind: cue.kin === "stream" ? "transport" as const : "notify" as const,
     };
+    if (emission && transformEmission) emission = transformEmission(emission);
     if (emission && Array.isArray(emission.messages)) {
       const backing = new Set<ArrayBufferLike>();
       let size = 0;
