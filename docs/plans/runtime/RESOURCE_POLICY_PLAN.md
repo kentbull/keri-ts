@@ -24,10 +24,12 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    before acquisition; extra hydrated and reader copies remain open.
 4. ESSR recipients borrow the exposed runtime policy; measured native-copy
    qualification remains open.
-5. Progressive JSON/MGPK decoded-body admission precedes codec allocation and
+5. Progressive JSON/MGPK/CBOR decoded-body admission precedes codec allocation and
    avoidable raw copying, sharing cumulative logical credit with the root and its
    descendants through parser/consumer cleanup. MGPK declared array/map capacity
-   and pinned decoder work are admitted before members; CBOR/native bodies, wrapped
+   and pinned decoder work are admitted before members. CBOR-A admits declared/base
+   tokens and bounded standard view/record work; CBOR-B tag expansion/arithmetic and
+   decoder-global retention remain open, alongside native bodies and wrapped
    Matter preparation, standalone verification/projections and store/cache hydration
    remain successor gates. Storage/hydration copy charges coordinate with phase 5. Mailbox providers
    reserve one shared stream/copy lease through joined close and preflight native

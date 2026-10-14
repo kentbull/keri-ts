@@ -26,12 +26,12 @@ and the avoidable Serder raw copy. One O(1) byte lexical scan counts containers
 (64), value references and property fields (16 each), scalar tokens (8), and string
 source bytes (2 each, a UTF-16 upper bound). Escapes and duplicate keys deliberately
 overcharge; native JSON syntax/semantics remain authoritative. A root and descendants
-share JSON/MGPK decoded credit equal to the supplied ResourcePolicy byte capacity, or its
+share JSON/MGPK/CBOR decoded credit equal to the supplied ResourcePolicy byte capacity, or its
 existing 256 MiB default when unshared. Shared admission also charges 64 bytes of
 fixed scanner workspace and twice the body extent for decode text before scanning;
 these working allowances conservatively survive through root cleanup. Exact stable
 independent backing may be reused only by these admitted body paths. Standalone
-Serder ownership, bounded version probes, wrapped Matter preparation, CBOR/native
+Serder ownership, bounded version probes, wrapped Matter preparation, native
 hydration, verification/projection copies and stored/cache bodies remain separate
 phase 4/5 boundaries. Resource and unexpected decoder failures retain provenance;
 only intrinsic JSON syntax failure permits wrapped opaque fallback.
@@ -47,7 +47,20 @@ codec (timestamp/ExtData), excluding mutable global custom extensions. Codec syn
 remains authoritative; only locally marked intrinsic failures permit opaque MGPK.
 Preflight-complete unexpected RangeErrors preserve identity. Arbitrary global JS
 mutations/custom extension allocations are outside this private codec boundary.
-This leaves CBOR/native, standalone/storage/cache and native residency gates open.
+This leaves native, standalone/storage/cache and native residency gates open.
+
+CBOR-A admits base token allocations before the shared codec: declared definite
+array slots/map pairs, string upper bounds, binary/possible typed-array views and
+copy bytes, and Tag/Date records. Flat O(1) inspection overcharges trailing tokens
+and potential indefinite map/Set/root-Map projection entries (reference plus two fields); existing
+indefinite arrays/maps and tag/default shapes remain codec-owned. Pinned short
+string scalar-unit work, source DataView field, context and possible raw copy are
+admitted with root lifetime. Only untagged scanner-known malformed boundaries
+permit opaque fallback; complete-input/tag failures preserve identity. CBOR-B
+remains open for BigInt/fraction arithmetic, packed/record/shared/bundle expansion,
+global extension callbacks/native extractors, and decoder-global DataView/string/
+packed retention beyond frame disposal. Base-token admission is not all-tag or
+codec-global residency closure.
 
 ESSR Texters stream into an awaited sink, with separate `maxEssrBytes` (8 MiB
 concatenated decoded bytes) and `maxEssrItems` (16,384) defaults per owned tree. `maxTreeNodes` defaults to 256 including the root;
