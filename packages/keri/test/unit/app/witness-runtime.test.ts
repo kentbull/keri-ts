@@ -1,11 +1,13 @@
-import { action, call, type Operation, run, spawn } from "effection";
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
-import { parseBytes } from "../../../../cesr/mod.ts";
+import { action, call, type Operation, race, run, spawn } from "effection";
+import { assert, assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { once } from "node:events";
+import { createConnection, type Socket } from "node:net";
+import { b, parseBytes, ParserError, WireParseError } from "../../../../cesr/mod.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest } from "../../../src/app/cesr-http.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
 import { Receiptor } from "../../../src/app/witnessing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -504,14 +506,23 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
       yield* seedRemoteWitnessLocation(sourceHby, witness, tcpUrl, Schemes.tcp);
 
       const runtime = yield* createAgentRuntime(providerHby, { mode: "local" });
-      const tcpTask = yield* spawn(function*() {
-        yield* startWitnessTcpServer(
-          tcpPort,
-          "127.0.0.1",
-          runtime,
-          witness,
-        );
-      });
+      const refusals: string[] = [];
+      const sockets: Socket[] = [];
+      const failed = Promise.withResolvers<unknown>();
+      const serve = function*(): Operation<void> {
+        try {
+          yield* startWitnessTcpServer(
+            tcpPort,
+            "127.0.0.1",
+            runtime,
+            witness,
+            { onRefusal: (reason) => refusals.push(reason) },
+          );
+        } catch (error) {
+          failed.resolve(error);
+        }
+      };
+      let tcpTask = yield* spawn(serve);
 
       try {
         yield* sleepOp(50);
@@ -519,8 +530,140 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         yield* receiptor.catchup(controller.pre, witness.pre);
         yield* sleepOp(50);
         assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
+        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        controller.interact();
+        const message = acceptedEventReplayMessage(sourceHby, controller.pre, 1).message;
+        // Byte contention refuses the paused handle before acquiring a parser or accepting its event.
+        const occupied = runtime.resources.reserve({ bytes: runtime.resources.limits.bytes });
+        assert(occupied.kind === "reserve");
+        try {
+          const refused = createConnection({ port: tcpPort, host: "127.0.0.1" });
+          sockets.push(refused);
+          refused.on("error", () => {});
+          const closed = new Promise<void>((resolve) => refused.once("close", resolve));
+          refused.write(message);
+          yield* race([
+            call(() => closed),
+            (function*() {
+              yield* sleepOp(2000);
+              throw new Error("Refusal did not close");
+            })(),
+          ]);
+          assertEquals(runtime.resources.used.streams, 0);
+          assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
+          assertEquals(refusals, ["busy"]);
+        } finally {
+          occupied.reservation.release();
+        }
+        for (const reset of [false, true]) {
+          const rejected = createConnection({ port: tcpPort, host: "127.0.0.1" });
+          sockets.push(rejected);
+          rejected.on("error", () => {});
+          rejected.resume();
+          const closed = new Promise<void>((resolve) => rejected.once("close", resolve));
+          yield* call(() => once(rejected, "connect"));
+          if (reset) {
+            rejected.write(message.slice(0, 20));
+            yield* sleepOp(10);
+            rejected.resetAndDestroy();
+          } else rejected.end(b("-ZZZ"));
+          yield* race([
+            call(() => closed),
+            (function*() {
+              yield* sleepOp(2000);
+              throw new Error("Rejected input did not close");
+            })(),
+          ]);
+          yield* sleepOp(10);
+          assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
+          assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        }
+        assertEquals(refusals, ["busy", "wire", "peer"]);
+        // Occupied cue slots are temporary capacity refusal, rather than a configured byte limit.
+        const capacity = runtime.cues.capacity;
+        runtime.cues.capacity = 1;
+        runtime.cues.push({ kin: "proof", said: "occupied" });
+        const blocked = createConnection({ port: tcpPort, host: "127.0.0.1" });
+        sockets.push(blocked);
+        blocked.on("error", () => {});
+        const blockedClosed = new Promise<void>((resolve) => blocked.once("close", resolve));
+        blocked.write(message);
+        yield* race([
+          call(() => blockedClosed),
+          (function*() {
+            yield* sleepOp(2000);
+            throw new Error("Cue saturation did not close");
+          })(),
+        ]);
+        assertEquals(refusals.pop(), "busy");
+        assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
+        runtime.cues.clear();
+        runtime.cues.capacity = capacity;
+        // Actual signed replay is accepted while the producer deliberately leaves the connection open.
+        const active = createConnection({ port: tcpPort, host: "127.0.0.1" });
+        sockets.push(active);
+        active.on("error", () => {});
+        active.resume();
+        yield* call(() => once(active, "connect"));
+        active.write(message);
+        for (let attempt = 0; attempt < 200 && providerHby.db.getKever(controller.pre)?.sn !== 1; attempt++) {
+          yield* sleepOp(10);
+        }
+        assertEquals(providerHby.db.getKever(controller.pre)?.sn, 1);
+        assertEquals(active.writableEnded, false);
+        assertEquals(runtime.resources.used.streams, 1);
+        const idle = createConnection({ port: tcpPort, host: "127.0.0.1" });
+        sockets.push(idle);
+        idle.on("error", () => {});
+        idle.resume();
+        yield* call(() => once(idle, "connect"));
+        for (let attempt = 0; attempt < 200 && runtime.resources.used.streams !== 2; attempt++) yield* sleepOp(10);
+        assertEquals(runtime.resources.used.streams, 2, "two receives consume exactly two parser permits");
+        const excess = createConnection({ port: tcpPort, host: "127.0.0.1" });
+        sockets.push(excess);
+        excess.on("error", () => {});
+        const closed = new Promise<void>((resolve) => excess.once("close", resolve));
+        yield* race([
+          call(() => closed),
+          (function*() {
+            yield* sleepOp(2000);
+            throw new Error("Saturation did not close");
+          })(),
+        ]);
+        assertEquals(runtime.resources.used.streams, 2);
+        assertEquals(refusals, ["busy", "wire", "peer", "busy"]);
+        yield* waitForTaskHalt(tcpTask);
+        assert(sockets.every((socket) => socket.destroyed));
+        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        assertEquals(refusals, ["busy", "wire", "peer", "busy"], "cancellation is distinct from peer refusal");
+        tcpTask = yield* spawn(serve);
+        yield* sleepOp(50);
+        const damaged = createConnection({ port: tcpPort, host: "127.0.0.1" });
+        sockets.push(damaged);
+        damaged.on("error", () => {});
+        damaged.resume();
+        yield* call(() => once(damaged, "connect"));
+        // Durable verifier corruption is a host failure, not a peer wire refusal.
+        const state = providerHby.db.getState(controller.pre);
+        assertExists(state);
+        providerHby.db.pinState(controller.pre, { ...state, k: ["!"] });
+        providerHby.db.kevers.delete(controller.pre);
+        controller.interact();
+        damaged.write(acceptedEventReplayMessage(sourceHby, controller.pre, 2).message);
+        const failure = yield* race([
+          call(() => failed.promise),
+          (function*() {
+            yield* sleepOp(2000);
+            throw new Error("Storage failure did not reach the host owner");
+          })(),
+        ]);
+        assert(failure instanceof ParserError);
+        assert(!(failure instanceof WireParseError));
+        assertEquals(refusals, ["busy", "wire", "peer", "busy"]);
       } finally {
         yield* waitForTaskHalt(tcpTask);
+        assert(sockets.every((socket) => socket.destroyed), "host shutdown must close its active peers");
+        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         yield* runtime.close();
       }
     } finally {
