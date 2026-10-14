@@ -447,6 +447,11 @@ cancels and joins the single pending read. Long-lived mailbox workers admit and
 hand off each event before requesting the next. Command-local polling retains
 only a finite batch (256 records / 16 MiB by default), with a 4 MiB per-record
 limit; the durable inbox retains its independent capacity and explicit disposition.
+The earlier reader owner also observes late read/cancel failures after scope halt
+and always attempts lock release. Only exact owned abort reasons or a failure
+already propagated by this invocation are suppressed; foreign AbortErrors remain
+failures. Distinct consumer/read and cleanup failures propagate together. Successful
+idle/deadline expiry still ends a poll without accepting its incomplete event.
 
 Provider SSE performs no mailbox reads without HTTP demand, releases each LMDB
 iterator before suspension, and copies at most 64 KiB per transport pull from one
