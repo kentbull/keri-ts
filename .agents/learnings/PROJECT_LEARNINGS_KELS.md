@@ -79,6 +79,9 @@ routes. HTTP pair capture and success do not replace independent receiver proofs
 Credential TSN admission matches its own current TEL/registry/anchor record; accepted
 revocation cannot be overwritten by a newly signed old issuance notice. Actual 714
 accepts forged anchor metadata and old issuance state, intentional TS refusals.
+Credential receiving holds PreparedReply and admits actual dependency/state cues
+before proof/Broker effects, using the same exact family membership invariant.
+Busy refusal must preserve dependency indexes and prior accepted proof.
 
 Canonical transferable receipt output groups proofs by the complete receiptor
 establishment seal (`-F` in v1). Durable vrcs quadruples and legacy decoding remain.
