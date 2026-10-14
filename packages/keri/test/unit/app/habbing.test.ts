@@ -808,14 +808,26 @@ Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approve
       hby.db.getValBounded = () => {
         throw fault;
       };
-      const source = delegate.replyToOobiMessages(delegate.pre);
+      let selectorReads = 0;
+      const selectors = [delegate.pre];
+      Object.defineProperty(selectors, 0, {
+        get() {
+          selectorReads++;
+          return delegate.pre;
+        },
+      });
+      const source = delegate.replyToOobiMessages(delegate.pre, undefined, selectors);
+      assertEquals(selectorReads, 0); // Input is borrowed until admitted acquisition.
+
       assertThrows(() => [...delegate.replyToOobiMessages(delegate.pre, undefined, [], {
         maxDescriptors: 0,
       })], ResourceLimitError);
       assertThrows(() => [...source], Error, fault.message);
+      assertEquals(selectorReads, 1);
       hby.db.getValBounded = read;
 
       const iterator = source[Symbol.iterator]();
+      assertEquals(selectorReads, 2); // Acquisition, before its first next(), captures the filter.
       const first = iterator.next();
       assertExists(first.value);
       delegator.interact(); // Accepted after acquisition: excluded from this captured horizon.

@@ -71,7 +71,8 @@ Temporary shared admission refusal maps to HTTP 503; configured size refusal
 remains 413. Neither response creates a retry queue.
 
 OOBI HTTP output uses the same response owner, priming one bounded message after
-admission for 404 readiness. Metadata cursors close before hydration/yield; local
+admission for 404 readiness. Selector inputs are borrowed, immutable until admitted
+acquisition. Metadata cursors close before hydration/yield; local
 ceilings default to 4,096 inspected descriptors, 32 delegation levels and one
 message ceiling of retained metadata. Captured FEL identities exclude later
 acceptances; proofs and signing keys remain current. Fresh flat-field/signature

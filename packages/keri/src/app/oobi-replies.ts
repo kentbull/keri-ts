@@ -24,6 +24,7 @@ type Part =
 
 /**
  * Capture bounded primitive descriptors, then emit finite messages in the established OOBI order.
+ * Selector inputs are borrowed and must stay immutable until acquisition under the caller's owner.
  * Captured identities stop at FEL horizons; proofs/signing keys remain consumption-time state.
  */
 export function oobiReplyMessages(
@@ -49,126 +50,132 @@ export function oobiReplyMessages(
   if (maxDescriptorBytes > maxMessageBytes) {
     throw new RangeError("OOBI metadata exceeds response preparation allowance");
   }
-  if (eids.length > maxDescriptors) throw new ResourceLimitError("OOBI endpoint filter exceeds metadata limit");
-  const selected: string[] = [];
-  let filterBytes = 2 * (cid.length + (role?.length ?? 0) + scheme.length);
-  if (filterBytes > maxDescriptorBytes) throw new ResourceLimitError("OOBI selector exceeds metadata byte limit");
-  for (const eid of eids) {
-    if (typeof eid !== "string") throw new TypeError("OOBI endpoint filter must contain strings");
-    filterBytes += 2 * eid.length;
-    if (filterBytes > maxDescriptorBytes) throw new ResourceLimitError("OOBI endpoint filter exceeds byte limit");
-    selected.push(eid);
-  }
   const proofLimits = { maxMessageBytes, maxProofRows };
   return {
-    *[Symbol.iterator]() {
-      const parts: Part[] = [], cloned = new Set<string>();
-      let nodes = 0, metadataBytes = filterBytes;
-      const inspect = () => {
-        if (++nodes > maxDescriptors) throw new ResourceLimitError("OOBI descriptor/work limit exceeded");
-      };
-      const add = (part: Part, fields: readonly string[], containers = 1) => {
-        inspect();
-        const bytes = 64 * containers + fields.reduce((sum, field) => sum + 2 * field.length, 0);
-        if (bytes > maxDescriptorBytes - metadataBytes) {
-          throw new ResourceLimitError("OOBI descriptor byte limit exceeded");
-        }
-        metadataBytes += bytes;
-        parts.push(part);
-      };
-      const clone = (pre: string) => {
-        if (!pre || cloned.has(pre)) return;
-        const kever = hab.db.getKever(pre);
-        const delegated = kever?.delegated ?? false;
-        if (delegated && !hab.db.aess.get(dgKey(pre, kever!.lastEst.d || kever!.said))) return;
-        inspect();
-        const depth = Math.min(maxDepth, maxDescriptors - nodes);
-        if (depth < 1) throw new ResourceLimitError("OOBI replay metadata limit exceeded");
-        const captured = hab.db.replay(pre, 0, { maxDepth: depth, maxMessageBytes });
-        if (!captured) return;
-        const ranges = [
-          ...captured.ranges.filter(([aid]) => aid !== pre),
-          ...captured.ranges.filter(([aid]) => aid === pre),
-        ];
-        for (const [aid] of ranges) inspect();
-        add({ kind: "kel", pre, ranges, delegated }, ranges.map(([aid]) => aid), 1 + ranges.length);
-        cloned.add(pre);
-      };
-      const locations = (eid: string, fresh: boolean) => {
-        const keys = scheme ? [eid, scheme] : [eid];
-        if (fresh) {
-          for (const [path, loc] of hab.db.locs.getTopItemIter(keys, { topive: !scheme })) {
-            inspect();
-            if (!path[1] || !loc.url) continue;
-            if (typeof loc.url !== "string") throw new DatabaseOperationError("Corrupt OOBI location URL");
-            add({ kind: "loc", eid, scheme: path[1], url: loc.url }, [eid, path[1], loc.url]);
-          }
-        } else {
-          for (const [, said] of hab.db.lans.getTopItemIter(keys, { topive: !scheme })) {
-            inspect();
-            add({ kind: "stored", said: said.qb64 }, [said.qb64]);
-          }
-        }
-      };
-      try {
-        const target = hab.db.getKever(cid);
-        if (requireReady && target?.delegated && !hab.db.aess.get(dgKey(cid, target.lastEst.d || target.said))) return;
-        clone(cid);
-        if (requireReady && target?.delegated && !parts.some((part) => part.kind === "kel" && part.pre === cid)) return;
-        if (role === Roles.witness) {
-          for (const eid of target?.wits ?? []) {
-            inspect();
-            if (selected.length && !selected.includes(eid)) continue;
-            clone(eid);
-            locations(eid, eid === hab.pre);
-            if (cid === hab.pre) add({ kind: "auth", eid, role: Roles.witness }, [eid, Roles.witness]);
-          }
-        }
-        for (const [keys, end] of hab.db.ends.getTopItemIter([cid], { topive: true })) {
-          inspect();
-          const currentRole = keys[1], eid = keys[2];
-          if (
-            !currentRole || !eid || !(end.allowed || end.enabled) || (role && currentRole !== role)
-            || (selected.length && !selected.includes(eid))
-          ) continue;
-          clone(eid);
-          locations(eid, false);
-          const said = hab.db.eans.get([cid, currentRole, eid]);
-          if (said) add({ kind: "stored", said: said.qb64 }, [said.qb64]);
-        }
-        // Metadata cursors have all closed before any event/body preparation or yield.
-        for (const part of parts) {
-          if (part.kind === "kel") {
-            let chainContent = false;
-            for (const range of part.ranges) {
-              if (range[0] === part.pre && part.delegated && !chainContent) break;
-              for (const bytes of hab.db.replayRange(range, maxMessageBytes)) {
-                if (range[0] !== part.pre) chainContent = true;
-                yield bytes;
-              }
-            }
-            if (requireReady && part.pre === cid && part.delegated && !chainContent) return;
-          } else if (part.kind === "stored") {
-            yield loadStoredReply(hab.db, part.said, proofLimits);
-          } else {
-            const fields = part.kind === "loc"
-              ? [hab.pre, part.eid, part.scheme, part.url]
-              : [hab.pre, part.eid, part.role];
-            const signers = hab.kever?.verfers.length ?? 0;
-            // Conservative flat-field JSON escaping + bounded signature/framing allowance, before construction.
-            const preparation = 512 + 256 * signers + fields.reduce((sum, field) => sum + 6 * field.length, 0);
-            if (signers > maxProofRows || preparation > maxMessageBytes) {
-              throw new ResourceLimitError("Fresh OOBI reply exceeds preparation allowance");
-            }
-            yield part.kind === "loc"
-              ? hab.makeLocScheme(part.url, part.eid, part.scheme)
-              : hab.makeEndRole(part.eid, part.role, true);
-          }
-        }
-      } finally {
-        parts.length = 0;
-        cloned.clear();
+    [Symbol.iterator]() {
+      if (eids.length > maxDescriptors) throw new ResourceLimitError("OOBI endpoint filter exceeds metadata limit");
+      const selected: string[] = [];
+      let filterBytes = 2 * (cid.length + (role?.length ?? 0) + scheme.length);
+      if (filterBytes > maxDescriptorBytes) throw new ResourceLimitError("OOBI selector exceeds metadata byte limit");
+      for (const eid of eids) {
+        if (typeof eid !== "string") throw new TypeError("OOBI endpoint filter must contain strings");
+        filterBytes += 2 * eid.length;
+        if (filterBytes > maxDescriptorBytes) throw new ResourceLimitError("OOBI endpoint filter exceeds byte limit");
+        selected.push(eid);
       }
+      return (function*() {
+        const parts: Part[] = [], cloned = new Set<string>();
+        let nodes = 0, metadataBytes = filterBytes;
+        const inspect = () => {
+          if (++nodes > maxDescriptors) throw new ResourceLimitError("OOBI descriptor/work limit exceeded");
+        };
+        const add = (part: Part, fields: readonly string[], containers = 1) => {
+          inspect();
+          const bytes = 64 * containers + fields.reduce((sum, field) => sum + 2 * field.length, 0);
+          if (bytes > maxDescriptorBytes - metadataBytes) {
+            throw new ResourceLimitError("OOBI descriptor byte limit exceeded");
+          }
+          metadataBytes += bytes;
+          parts.push(part);
+        };
+        const clone = (pre: string) => {
+          if (!pre || cloned.has(pre)) return;
+          const kever = hab.db.getKever(pre);
+          const delegated = kever?.delegated ?? false;
+          if (delegated && !hab.db.aess.get(dgKey(pre, kever!.lastEst.d || kever!.said))) return;
+          inspect();
+          const depth = Math.min(maxDepth, maxDescriptors - nodes);
+          if (depth < 1) throw new ResourceLimitError("OOBI replay metadata limit exceeded");
+          const captured = hab.db.replay(pre, 0, { maxDepth: depth, maxMessageBytes });
+          if (!captured) return;
+          const ranges = [
+            ...captured.ranges.filter(([aid]) => aid !== pre),
+            ...captured.ranges.filter(([aid]) => aid === pre),
+          ];
+          for (const [aid] of ranges) inspect();
+          add({ kind: "kel", pre, ranges, delegated }, ranges.map(([aid]) => aid), 1 + ranges.length);
+          cloned.add(pre);
+        };
+        const locations = (eid: string, fresh: boolean) => {
+          const keys = scheme ? [eid, scheme] : [eid];
+          if (fresh) {
+            for (const [path, loc] of hab.db.locs.getTopItemIter(keys, { topive: !scheme })) {
+              inspect();
+              if (!path[1] || !loc.url) continue;
+              if (typeof loc.url !== "string") throw new DatabaseOperationError("Corrupt OOBI location URL");
+              add({ kind: "loc", eid, scheme: path[1], url: loc.url }, [eid, path[1], loc.url]);
+            }
+          } else {
+            for (const [, said] of hab.db.lans.getTopItemIter(keys, { topive: !scheme })) {
+              inspect();
+              add({ kind: "stored", said: said.qb64 }, [said.qb64]);
+            }
+          }
+        };
+        try {
+          const target = hab.db.getKever(cid);
+          if (requireReady && target?.delegated && !hab.db.aess.get(dgKey(cid, target.lastEst.d || target.said))) {
+            return;
+          }
+          clone(cid);
+          if (requireReady && target?.delegated && !parts.some((part) => part.kind === "kel" && part.pre === cid)) {
+            return;
+          }
+          if (role === Roles.witness) {
+            for (const eid of target?.wits ?? []) {
+              inspect();
+              if (selected.length && !selected.includes(eid)) continue;
+              clone(eid);
+              locations(eid, eid === hab.pre);
+              if (cid === hab.pre) add({ kind: "auth", eid, role: Roles.witness }, [eid, Roles.witness]);
+            }
+          }
+          for (const [keys, end] of hab.db.ends.getTopItemIter([cid], { topive: true })) {
+            inspect();
+            const currentRole = keys[1], eid = keys[2];
+            if (
+              !currentRole || !eid || !(end.allowed || end.enabled) || (role && currentRole !== role)
+              || (selected.length && !selected.includes(eid))
+            ) continue;
+            clone(eid);
+            locations(eid, false);
+            const said = hab.db.eans.get([cid, currentRole, eid]);
+            if (said) add({ kind: "stored", said: said.qb64 }, [said.qb64]);
+          }
+          // Metadata cursors have all closed before any event/body preparation or yield.
+          for (const part of parts) {
+            if (part.kind === "kel") {
+              let chainContent = false;
+              for (const range of part.ranges) {
+                if (range[0] === part.pre && part.delegated && !chainContent) break;
+                for (const bytes of hab.db.replayRange(range, maxMessageBytes)) {
+                  if (range[0] !== part.pre) chainContent = true;
+                  yield bytes;
+                }
+              }
+              if (requireReady && part.pre === cid && part.delegated && !chainContent) return;
+            } else if (part.kind === "stored") {
+              yield loadStoredReply(hab.db, part.said, proofLimits);
+            } else {
+              const fields = part.kind === "loc"
+                ? [hab.pre, part.eid, part.scheme, part.url]
+                : [hab.pre, part.eid, part.role];
+              const signers = hab.kever?.verfers.length ?? 0;
+              // Conservative flat-field JSON escaping + bounded signature/framing allowance, before construction.
+              const preparation = 512 + 256 * signers + fields.reduce((sum, field) => sum + 6 * field.length, 0);
+              if (signers > maxProofRows || preparation > maxMessageBytes) {
+                throw new ResourceLimitError("Fresh OOBI reply exceeds preparation allowance");
+              }
+              yield part.kind === "loc"
+                ? hab.makeLocScheme(part.url, part.eid, part.scheme)
+                : hab.makeEndRole(part.eid, part.role, true);
+            }
+          }
+        } finally {
+          parts.length = 0;
+          cloned.clear();
+        }
+      })();
     },
   };
 }
