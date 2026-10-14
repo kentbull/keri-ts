@@ -18,15 +18,16 @@ env:
   # Match the main CI toolchain exactly so OS is the primary variable changing.
   DENO_DIR: ${{ github.workspace }}/.deno-cache
   DENO_VERSION: "2.8.2"
-  KERIPY_GIT_URL: https://github.com/kentbull/keripy.git
-  KERIPY_GIT_SHA: 450ae1c2a7eac61d92bc7b830cb6883c41e6a798
+  KERIPY_INTEROP_EXPECTED_COMMIT: b08ddeb047fd865d60affe82a0dc77f5efaf4672
+  KERIPY_INTEROP_ROOT: ${{ github.workspace }}/.cache/keripy-mailbox-main
+  KERIPY_INTEROP_PYTHON: ${{ github.workspace }}/.cache/keripy-venv/bin/python
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
   LMDB_DATA_V1: "true"
   NODE_VERSION: "25.9.0"
   PYTHON_VERSION: "3.14"
   DEPS_CACHE_KEY_PREFIX: ci-deps-v3
   INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v2
-  KERIPY_CACHE_KEY_PREFIX: keripy-v3-mailbox-impl
+  KERIPY_CACHE_KEY_PREFIX: keripy-mailbox-source-v1
 
 jobs:
   # Single job on purpose: this workflow is about end-to-end cross-platform
@@ -83,7 +84,10 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          # Separate resolver dependencies require 3.13; CLI selects 3.14.
+          python-version: |
+            3.13
+            ${{ env.PYTHON_VERSION }}
 
       - name: install KERIpy native library
         # A cached venv still needs native libsodium. /bin/bash strips DYLD_*
@@ -101,21 +105,34 @@ jobs:
             sudo ln -s "${SODIUM_LIB}" "${SODIUM_LINK}"
           fi
 
+      - name: check out exact mailbox fork qualification peer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: kentbull/keripy
+          ref: ${{ env.KERIPY_INTEROP_EXPECTED_COMMIT }}
+          path: .cache/keripy-mailbox-main
+
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERIPY_VENV }}
-          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
+          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_INTEROP_EXPECTED_COMMIT }}
 
       - name: install pinned KERIpy CLI
-        # Cross-platform interop confidence still depends on the same pinned
-        # external KERI peer, not the latest available KERIpy.
+        # Interop parity includes mailbox commands against both implementations.
+        # PATH and shared helpers must use this same fork, independently of 927 tables.
         if: steps.keripy-cache.outputs.cache-hit != 'true'
         run: |
           python -m venv "${KERIPY_VENV}"
           "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
-          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
+          "${KERIPY_VENV}/bin/python" -m pip install -e "${KERIPY_INTEROP_ROOT}"
+
+      - name: verify imported fork source before running scenarios
+        run: >-
+          "${KERIPY_INTEROP_PYTHON}" scripts/ci/probe-keripy.py
+          --root "${KERIPY_INTEROP_ROOT}"
+          --expected-commit "${KERIPY_INTEROP_EXPECTED_COMMIT}"
 
       - name: add KERIpy CLI to PATH
         run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"

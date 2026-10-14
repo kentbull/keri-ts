@@ -13,6 +13,7 @@ import {
 } from "cesr-ts";
 import { validateRip, validateUpdate, verifyRegistryAnchor, vetBinds } from "../acdc/regeventing.ts";
 import type { RegistryStore } from "../acdc/registering.ts";
+import { validateSchema } from "../acdc/scheming.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseOperationError } from "../core/errors.ts";
 import { type ExchangeFactors, verifyExchangeProofs } from "../core/exchange-proofing.ts";
@@ -20,6 +21,7 @@ import type { ExchangeRouteHandler, ExchangeRouteVerification } from "./exchangi
 import type { Habery } from "./habbing.ts";
 import {
   type DisclosurePlan,
+  type IpexGraph,
   validDisclosurePlan,
   verifyIpexDisclosure,
   verifyIpexRelations,
@@ -145,7 +147,10 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (["agree", "admit"].includes(verb) && (requiresAnchor || priorAnchor)) {
       return sscs.length ? this.sourceAnchor(serder, serder.pre!, sscs.at(-1)!) : false;
     }
-    if (verb === "offer" && nests.length) return walkIpexGraph((attrs.o as string[])[0], nests, false) !== null;
+    if (verb === "offer" && nests.length) {
+      const graph = walkIpexGraph((attrs.o as string[])[0], nests, false);
+      return graph ? this.nodeSchemas(graph) : false;
+    }
     if (verb !== "grant") return true;
     const plan = this.plan(serder);
     if (!plan) return false;
@@ -162,11 +167,18 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (!single(attrs.o, "string") || !this.validOrigin(attrs.o[0]) || !nests.length) return false;
     const origin = attrs.o[0] as string;
     const graph = walkIpexGraph(origin, nests, true);
-    if (!graph || !verifyIpexRelations(graph, this.hby.db) || !verifyIpexDisclosure(plan, origin, graph)) return false;
+    if (!graph || !verifyIpexDisclosure(plan, origin, graph)) return false;
     for (const said of graph.order) {
       const result = this.issuer(graph.nodes.get(said)!);
       if (result !== true) return result;
     }
+    const schemas = this.nodeSchemas(graph);
+    if (schemas !== true) return schemas;
+    const relations = verifyIpexRelations(graph, this.hby.db);
+    if (typeof relations === "object") {
+      return { kind: "escrow", reason: "Missing edge schema.", schema: relations.said };
+    }
+    if (!relations) return false;
     if (!evidence) return false; // Exchanger must supply its selected supplemental factor set.
     const tethered = new Set<string>();
     for (const said of graph.order) {
@@ -201,6 +213,16 @@ export class IpexV2Handler implements ExchangeRouteHandler {
   /** Notify only after Exchanger has durably accepted the parent and its evidence. */
   handle({ serder }: Parameters<ExchangeRouteHandler["handle"]>[0]): void {
     this.notifier?.add({ r: `/exn${serder.route}`, d: serder.said, m: (serder.sad!.a as Record<string, unknown>).m });
+  }
+
+  /** Metadata offers withhold issuer proofs; grants call this only after every issuer authenticates. */
+  private nodeSchemas(graph: IpexGraph): ExchangeRouteVerification {
+    for (const said of graph.order) {
+      const result = validateSchema(graph.nodes.get(said)!.body, this.hby.db);
+      if (result.kind === "invalid") return false;
+      if (result.kind === "missing") return { kind: "escrow", reason: "Missing node schema.", schema: result.said };
+    }
+    return true;
   }
 
   /** Origin commitments are SAIDs, never implicit signatures over the node. */
