@@ -17,7 +17,11 @@ Verify Python interpreter, revision and actually imported modules. Console entry
 exit status matters: python -m can ignore main's return. Explicitly select body
 protocol and replay genus. Current witness CLI lacks protocol selection, so v1
 fixtures use public Habery/setupWitness APIs. Fork-on-main and upstream evidence
-remain separate in the [reference inventory](../../docs/plans/qualification/REFERENCE_ENVIRONMENTS.md).
+remain separate. Source-root startup probes compare every loaded KERI module to
+pinned Git bytes; installed hashes alone do not prove Git equivalence. Qualify
+command-specific lazy imports separately. macOS PATH and shared helpers select
+one explicit fork checkout; DID Webs retains a separate dependency environment
+in the [reference inventory](../../docs/plans/qualification/REFERENCE_ENVIRONMENTS.md).
 
 LMDB V1 needs its own native rebuild/preflight and cache boundary. On macOS,
 provision libsodium independently of cached venvs; expose the resolved Homebrew
