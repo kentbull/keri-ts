@@ -29,7 +29,8 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    descendants through parser/consumer cleanup. MGPK declared array/map capacity
    and pinned decoder work are admitted before members. CBOR-A admits declared/base
    tokens and bounded standard view/record work; CBOR-B tag expansion/arithmetic and
-   decoder-global retention remain open, alongside native bodies and wrapped
+   external codec retention remain open; CBOR-B1 clears configured message globals
+   before returning ownership. Native bodies and wrapped
    Matter preparation, standalone verification/projections and store/cache hydration
    remain successor gates. Storage/hydration copy charges coordinate with phase 5. Mailbox providers
    reserve one shared stream/copy lease through joined close and preflight native

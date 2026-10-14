@@ -124,10 +124,12 @@ MGPK declared container capacity and pinned decoder work use the same root owner
 shared key caching/global custom extensions are excluded from admitted MGPK.
 CBOR-A shares root decoded/stage credit for declared/base tokens and documented
 standard view/record work. CBOR-B still owns BigInt/fraction and packed/record/shared/
-bundle expansion, global extensions/extractors and decoder-global DataView/string/
-packed retention; frame disposal does not establish codec residency cleanup.
+bundle expansion and global extensions/extractors. CBOR-B1 now clears the configured
+decoder's message-bearing globals before return, using a captured native null decode
+and admitted fixed reset work. Its instance configures no cached structures/shared
+values; injected tables, encoder caches and native residency remain unqualified.
 
-This does not admit wrapped Matter preparation, CBOR tag expansion/global retention and native hydration, standalone
+This does not admit wrapped Matter preparation, CBOR tag expansion/external retention and native hydration, standalone
 verification, storage/cache copies or every JavaScript/native allocation.
 
 Additional hydrated representations, reader copies, storage and object/handle/work

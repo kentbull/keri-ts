@@ -1,4 +1,4 @@
-import { Decoder } from "cbor-x/decode";
+import { clearSource, Decoder } from "cbor-x/decode";
 import { Encoder } from "cbor-x/encode";
 import { DeserializeError } from "./errors.ts";
 
@@ -97,7 +97,7 @@ const keriCborEncoder = new Encoder({
 const keriCborDecoder = new Decoder({
   useRecords: false,
   mapsAsObjects: true,
-});
+}) as Decoder & { mapsAsObjects: boolean };
 
 /**
  * Encode KERI/ACDC CBOR with the same preferred map-size choices as KERIpy's
@@ -132,13 +132,55 @@ export function encodeKeriCbor(value: unknown): Uint8Array {
  * storage paths.
  */
 export function decodeKeriCbor<T = unknown>(raw: Uint8Array): T {
-  return keriCborDecoder.decode(raw) as T;
+  return decodeCborScope(raw, keriCborDecoder.decode) as T;
 }
 
 const nativeDecode = Decoder.prototype.decode;
 const nativeTextDecode = TextDecoder.prototype.decode;
 const NativeArray = Array;
 const syntaxFailures = new WeakSet<DeserializeError>();
+// Private fixed bytes never reach an injected decode method or tag callback.
+const resetSource = Uint8Array.of(0xf6);
+Object.defineProperty(resetSource, "dataView", { value: new DataView(resetSource.buffer) });
+let decodeDepth = 0;
+
+/**
+ * Reset message-bearing decoder globals before returning ownership to the caller.
+ * Pinned native null decoding clears strings/packed/source/structures/references and
+ * replaces dataView with fixed one-byte backing. Instance options configure no tables;
+ * encoder state, injected callbacks and native residency remain separate boundaries.
+ */
+function decodeCborScope(
+  raw: Uint8Array,
+  decode: Decoder["decode"],
+  onResetFailure?: (error: unknown) => void,
+): unknown {
+  decodeDepth++;
+  let value: unknown, primary: unknown, failed = false;
+  try {
+    value = decode.call(keriCborDecoder, raw);
+  } catch (error) {
+    primary = error;
+    failed = true;
+  } finally {
+    decodeDepth--;
+  }
+  if (decodeDepth === 0) {
+    try {
+      // Tag259 can leave this option false on malformed/non-map input.
+      keriCborDecoder.mapsAsObjects = true;
+      nativeDecode.call(keriCborDecoder, resetSource);
+    } catch (cleanup) {
+      clearSource(); // A foreign option/getter failure may precede checkedRead cleanup.
+      if (cleanup instanceof DeserializeError) syntaxFailures.delete(cleanup);
+      const failure = failed ? new AggregateError([primary, cleanup], "CBOR decode and reset failed") : cleanup;
+      onResetFailure?.(failure);
+      throw failure;
+    }
+  }
+  if (failed) throw primary;
+  return value;
+}
 
 /** Create only our own CBOR syntax refusal, preserving foreign same-class errors. */
 export function cborSyntaxFailure(message: string): DeserializeError {
@@ -155,7 +197,7 @@ export function isCborSyntaxFailure(error: unknown): boolean {
 /**
  * Preserve the shared codec's exact shapes; only scanned malformed boundaries are intrinsic.
  * Complete-input/tag/infrastructure failures propagate; incomplete/RangeError alone is not provenance.
- * Global extensions, special tag expansion and retained codec globals remain unqualified.
+ * Special tag expansion, external table/callback mutation and native residency remain unqualified.
  */
 export function decodeAdmittedKeriCbor(
   raw: Uint8Array,
@@ -163,9 +205,14 @@ export function decodeAdmittedKeriCbor(
   onFailure?: (error: unknown) => void,
 ): unknown {
   const decode = keriCborDecoder.decode;
+  let resetFailed = false;
   try {
-    return decode.call(keriCborDecoder, raw);
+    return decodeCborScope(raw, decode, (error) => {
+      resetFailed = true;
+      onFailure?.(error);
+    });
   } catch (error) {
+    if (resetFailed) throw error;
     if (
       !boundaryFailure || decode !== nativeDecode || TextDecoder.prototype.decode !== nativeTextDecode
       || Array !== NativeArray || !(error instanceof Error)
