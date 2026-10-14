@@ -9,6 +9,16 @@ layout or the addon ABI. Ordinary reads still copy whole rows; fixed shared
 scratch, mapped residency and admission before row allocation remain separate
 [storage work](../../plans/db/STORAGE_RECOVERY_PLAN.md).
 
+`LMDBer.getValBounded` (also exposed by Baser) admits one row byte extent before
+owned copies using a per-call prototype; it never changes the shared DB object
+or global read buffer. Its explicit `npm:lmdb@3.5.3` pin, NAPI native metadata
+(`nodeCompiledVersion` must be absent), compression/version modes, hook shapes
+and environment ownership are checked before reading. Two reads share an active
+writer or one acquired read transaction, released on refusal/failure. Upgrade
+qualification must inspect `read.js#getBinaryFast/_returnLargeBuffer` and native
+`dbi.cpp#doGetByBinary`/`misc.cpp#valToBinaryFast`; generic hook presence alone is
+not proof for a future package. Existing unbounded read APIs remain unchanged.
+
 ## Purpose
 
 This document is the DB architecture contract for `keri-ts` parity work against
