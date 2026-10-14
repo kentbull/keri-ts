@@ -43,8 +43,9 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    sources remain open. OOBI queueing, staged multi-URL fanout and multi-parent
    completion admit exact batches before queue/terminal/contact effects;
    introductions hold prepared reply/query ownership while admitting actual
-   queued children before proof/queue writes. Response publication remains open,
-   alongside other durable producers, followed by
+   queued children before proof/queue writes. CESR result credit survives joined
+   stream/parser cleanup; HTTP/schema/JSON results admit before schema/terminal
+   writes. Other durable producers remain open, followed by
    query/mailbox/delivery ownership transfers. Complete these ports before Runtime
    activation.
 

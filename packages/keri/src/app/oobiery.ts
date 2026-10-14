@@ -1,7 +1,7 @@
 import { type Cigar, Diger, Ilks, Prefixer, ResourceAdmissionError, SerderKERI } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import { CueDeck } from "../core/cue-admission.ts";
-import type { AgentCue } from "../core/cues.ts";
+import { CueDeck, type PreparedCueBatch } from "../core/cue-admission.ts";
+import type { AgentCue, OobiResolvedCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -278,24 +278,23 @@ export class Oobiery {
     if (!response.ok) {
       yield* closeResponseBody(response);
       this.cues.checkSpace();
-      this.remQueueStore(kind, url);
-      this.hby.db.eoobi.pin(url, {
-        ...queuedRecord,
-        date: new Date().toISOString(),
-        state: `http-${response.status}`,
-      });
-      this.cues.push({
-        kin: "oobiFailed",
-        url,
-        reason: `HTTP ${response.status}`,
-      });
+      const result = { ...queuedRecord, date: new Date().toISOString(), state: `http-${response.status}` };
+      const cues: AgentCue[] = [{ kin: "oobiFailed", url, reason: `HTTP ${response.status}` }];
+      const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+      try {
+        this.remQueueStore(kind, url);
+        this.hby.db.eoobi.pin(url, result);
+        if (batch) batch.publish();
+        else this.cues.extend(cues);
+      } finally {
+        batch?.release();
+      }
       return;
     }
 
     const type = mediaType(response.headers.get("content-type") ?? "");
     if (isCesrMediaType(type) || !type.includes("json")) {
       // Keep durable retry ownership throughout partial acceptance and joined cancellation.
-      this.hby.db.coobi.pin(url, { ...queuedRecord, state: "streaming" });
       yield* this.resolveCesrOobiResponse(url, queuedRecord, meta, response);
       this.remQueueStore(kind, url);
       return;
@@ -351,25 +350,36 @@ export class Oobiery {
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
     response: Response,
   ): Operation<void> {
-    yield* this.reactor.process((signal) => streamBytes(response.body, { signal }));
-
-    this.cues.checkSpace();
-    this.hby.db.coobi.rem(url);
-    this.hby.db.roobi.pin(url, {
-      ...queuedRecord,
-      date: new Date().toISOString(),
-      state: "resolved",
-    });
-    persistResolvedContact(this.hby, meta.cid, {
-      alias: queuedRecord.oobialias,
-      oobi: url,
-    });
-    this.cues.push({
+    const cue: OobiResolvedCue = {
       kin: "oobiResolved",
       url,
       cid: meta.cid ?? undefined,
       role: meta.role ?? undefined,
       eid: meta.eid ?? undefined,
+    };
+    const batch = yield* this.holdResolvedOobi(cue);
+    this.hby.db.coobi.pin(url, { ...queuedRecord, state: "streaming" });
+    yield* this.reactor.process((signal) => streamBytes(response.body, { signal }));
+
+    if (!batch) this.cues.checkSpace(); // Preserve the ordinary Deck's existing post-intake guard.
+    this.hby.db.coobi.rem(url);
+    this.hby.db.roobi.pin(url, { ...queuedRecord, date: new Date().toISOString(), state: "resolved" });
+    persistResolvedContact(this.hby, meta.cid, { alias: queuedRecord.oobialias, oobi: url });
+    if (batch) batch.publish();
+    else this.cues.push(cue);
+  }
+
+  /** Keep prospective CESR result credit until all later body/parser owners join cleanup. */
+  private *holdResolvedOobi(cue: OobiResolvedCue): Operation<PreparedCueBatch | undefined> {
+    const deck = this.cues;
+    if (!(deck instanceof CueDeck)) return undefined;
+    return yield* resource<PreparedCueBatch>(function*(provide) {
+      const batch = deck.prepare([cue]);
+      try {
+        yield* provide(batch);
+      } finally {
+        batch.release();
+      }
     });
   }
 
@@ -394,17 +404,18 @@ export class Oobiery {
     }
 
     this.cues.checkSpace();
-    this.hby.db.schema.pin(schemer.said, schemer);
-    this.hby.db.coobi.rem(url);
-    this.hby.db.roobi.pin(url, {
-      ...record,
-      date: new Date().toISOString(),
-      state: "resolved",
-    });
-    this.cues.push({
-      kin: "oobiResolved",
-      url,
-    });
+    const result = { ...record, date: new Date().toISOString(), state: "resolved" };
+    const cues: AgentCue[] = [{ kin: "oobiResolved", url }];
+    const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    try {
+      this.hby.db.schema.pin(schemer.said, schemer);
+      this.hby.db.coobi.rem(url);
+      this.hby.db.roobi.pin(url, result);
+      if (batch) batch.publish();
+      else this.cues.extend(cues);
+    } finally {
+      batch?.release();
+    }
     return true;
   }
 
@@ -524,17 +535,17 @@ export class Oobiery {
     state: string,
   ): void {
     this.cues.checkSpace();
-    this.hby.db.coobi.rem(url);
-    this.hby.db.eoobi.pin(url, {
-      ...record,
-      date: new Date().toISOString(),
-      state,
-    });
-    this.cues.push({
-      kin: "oobiFailed",
-      url,
-      reason: state,
-    });
+    const result = { ...record, date: new Date().toISOString(), state };
+    const cues: AgentCue[] = [{ kin: "oobiFailed", url, reason: state }];
+    const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    try {
+      this.hby.db.coobi.rem(url);
+      this.hby.db.eoobi.pin(url, result);
+      if (batch) batch.publish();
+      else this.cues.extend(cues);
+    } finally {
+      batch?.release();
+    }
   }
 
   /** Persist one queued record into the selected durable queue. */

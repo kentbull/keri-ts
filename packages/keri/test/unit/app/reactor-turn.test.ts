@@ -9,6 +9,7 @@ import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbi
 import { Oobiery } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue, ReplayCue } from "../../../src/core/cues.ts";
 import { DeckFullError } from "../../../src/core/deck.ts";
 
@@ -442,12 +443,25 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
     ["cancel", "application/json+cesr"],
     ["failure", "application/cesr"],
   ] as const;
-  for (const [mode, contentType] of scenarios) {
+  const cases = scenarios.flatMap(([mode, contentType]) => [
+    [mode, contentType, false] as const,
+    [mode, contentType, true] as const,
+  ]);
+  for (const [mode, contentType, owned] of cases) {
     await run(function*() {
-      const source = yield* createHabery({ name: `oobi-source-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-      const target = yield* createHabery({ name: `oobi-target-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+      const source = yield* createHabery({
+        name: `oobi-source-${crypto.randomUUID()}`,
+        temp: true,
+        skipConfig: true,
+      });
+      const target = yield* createHabery({
+        name: `oobi-target-${crypto.randomUUID()}`,
+        temp: true,
+        skipConfig: true,
+      });
       const resources = new ResourcePolicy();
       const reactor = new Reactor(target, { resources });
+      const resultCues = owned ? new CueDeck(resources, 1) : reactor.cues;
       const hab = source.makeHab("source");
       const first = acceptedEventReplayMessage(source, hab.pre, 0).message;
       hab.interact();
@@ -475,7 +489,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
         },
       }, { highWaterMark: 0 });
       const oobi = new Oobiery(target, reactor, {
-        cues: reactor.cues,
+        cues: resultCues,
         services: {
           ...defaultRuntimeServices,
           http: {
@@ -500,6 +514,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
       };
       const url = `http://oobi.test/oobi/${hab.pre}/controller`;
       oobi.resolve(url);
+      resultCues.clear();
       reactor.cues.clear();
       const worker = yield* spawn(function*() {
         try {
@@ -526,7 +541,8 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
         assertEquals([finished, target.db.roobi.get(url), target.db.eoobi.get(url)], [false, null, null]);
         assertEquals(target.db.oobis.get(url)?.state, "queued");
         assertEquals(target.db.coobi.get(url)?.state, "streaming");
-        assertEquals(reactor.cues.toArray().some((cue) => cue.kin === "oobiResolved"), false);
+        assertEquals(resultCues.toArray().some((cue) => cue.kin === "oobiResolved"), false);
+        if (owned) assertThrows(() => resultCues.checkSpace(), DeckFullError);
         if (mode === "cancel") {
           let haltFinished = false;
           const halted = yield* spawn(function*() {
@@ -535,6 +551,10 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           });
           yield* call(() => cancelling.wait);
           assertEquals(resources.used.streams, 1, "The parser stream owner outlives body cleanup");
+          if (owned) {
+            resultCues.clear();
+            assertThrows(() => resultCues.checkSpace(), DeckFullError, "capacity");
+          }
           assertEquals(haltFinished, false);
           yield* oobi.processOnce();
           assertEquals(requests, 1, "In-flight durable work cannot be fetched twice");
@@ -543,6 +563,15 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
         } else {
           next.open();
           yield* worker;
+        }
+        if (owned && mode === "complete") {
+          const result = (resultCues as CueDeck).takeOwned()!;
+          assertEquals(result.cue.kin, "oobiResolved");
+          const held = resources.used.bytes;
+          assertEquals(held > 0, true);
+          resultCues.clear();
+          assertEquals(resources.used, { bytes: held, streams: 0, decryptions: 0 });
+          result.release();
         }
         assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         assertEquals(signal?.aborted, true);
@@ -561,12 +590,18 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           assertEquals(target.db.getState(hab.pre)?.s, "1");
           assertEquals(target.db.roobi.get(url)?.state, "resolved");
           assertEquals(target.db.oobis.get(url), null);
+          if (owned) {
+            const result = (resultCues as CueDeck).takeOwned()!;
+            assertEquals(result.cue.kin, "oobiResolved");
+            result.release();
+          }
           assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         }
       } finally {
         next.open();
         cleanup.open();
         yield* worker.halt();
+        resultCues.clear();
         yield* target.close(true);
         yield* source.close(true);
       }
@@ -633,6 +668,62 @@ Deno.test("OOBI refusal precedes fetch or finite document reads and releases res
         }
         assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         hby.db.oobis.rem(url);
+      }
+      for (const mode of ["bytes", "items"] as const) {
+        const resources = new ResourcePolicy();
+        const reactor = new Reactor(hby, { resources }), cues = new CueDeck(resources, 1);
+        let requests = 0, reads = 0, cancelled = false;
+        let held: ReturnType<ResourcePolicy["reserve"]> | undefined;
+        const oobi = new Oobiery(hby, reactor, {
+          cues,
+          services: {
+            ...defaultRuntimeServices,
+            http: {
+              fetch() {
+                requests++;
+                if (requests === 1 && mode === "bytes") {
+                  held = resources.reserve({ bytes: resources.limits.bytes - resources.used.bytes });
+                }
+                return Promise.resolve(
+                  new Response(
+                    requests === 1
+                      ? new ReadableStream<Uint8Array>({
+                        pull() {
+                          reads++;
+                          throw new Error("Unadmitted CESR response was read");
+                        },
+                        cancel() {
+                          cancelled = true;
+                        },
+                      }, { highWaterMark: 0 })
+                      : null,
+                    { headers: { "Content-Type": "application/cesr" } },
+                  ),
+                );
+              },
+            },
+          },
+        });
+        const url = `http://admission.test/oobi?cue=${mode}`;
+        oobi.resolve(url);
+        cues.clear();
+        const slot = mode === "items" ? cues.prepare([{ kin: "proof", said: "occupied" }]) : undefined;
+        yield* oobi.processOnce();
+        assertEquals([requests, reads, cancelled], [1, 0, true]);
+        assertEquals([hby.db.coobi.get(url), hby.db.roobi.get(url), hby.db.eoobi.get(url)], [null, null, null]);
+        assertEquals(hby.db.oobis.get(url)?.state, "queued");
+        assertEquals(cues.length, 0);
+        if (held?.kind === "reserve") held.reservation.release();
+        slot?.release();
+        assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        yield* oobi.processOnce();
+        assertEquals(requests, 2);
+        assertEquals(hby.db.oobis.get(url), null);
+        assertEquals(hby.db.roobi.get(url)?.state, "resolved");
+        const result = cues.takeOwned()!;
+        assertEquals(result.cue.kin, "oobiResolved");
+        result.release();
+        assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
       }
     } finally {
       yield* hby.close(true);
