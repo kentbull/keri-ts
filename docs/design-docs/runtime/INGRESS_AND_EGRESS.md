@@ -362,6 +362,12 @@ Readonly Habery construction creates neither default store. A writable Habery
 without an injected store acquires a default in the current Effection scope;
 explicit ownership flags govern runtime.close(). Scope exit also joins database
 close and removes temporary stores, including failed construction and cancellation.
+Runtime-created notification and provider-mailbox stores are scope-owned before
+reopen can suspend. Acquisition failure, cancellation and explicit shutdown join
+`close(hby.temp)`, clearing temporary paths while retaining persistent rows.
+Injected stores stay caller-owned; standalone opening helpers retain their caller
+lifecycle contract. Runtime output closes before its borrowed store owners.
+
 Explicit close followed by scope exit is harmless. The v2 manager factory owns
 acquisition cleanup until it transfers the manager, including alias-load failure.
 Reactor retries named registry escrows before IPEX; automatic foreign `rip/bup`

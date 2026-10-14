@@ -4,6 +4,7 @@ import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
+import { DatabaseNotOpenError } from "../core/errors.ts";
 import type { MessagePolicy } from "../core/eventing.ts";
 import type { KramConfig } from "../core/kraming.ts";
 import {
@@ -15,8 +16,8 @@ import {
 } from "../core/mailbox-topics.ts";
 import type { OobiRecord } from "../core/records.ts";
 import type { MailboxInboxLimits } from "../db/mailbox-inbox.ts";
-import type { Mailboxer } from "../db/mailboxing.ts";
-import type { Noter } from "../db/noting.ts";
+import { Mailboxer } from "../db/mailboxing.ts";
+import { Noter } from "../db/noting.ts";
 import { createReger, Reger } from "../db/reger.ts";
 import { Regery as VdrRegery } from "../vdr/credentialing.ts";
 import { Tevery } from "../vdr/eventing.ts";
@@ -36,8 +37,8 @@ import { loadMultisigHandlers } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { loadIpexHandlers } from "./ipexing.ts";
 import { MailboxDirector, type MailboxStreamLimits } from "./mailbox-director.ts";
-import { openMailboxerForHabery } from "./mailboxing.ts";
-import { Notifier, openNoterForHabery } from "./notifying.ts";
+import { mailboxerOptionsForHabery } from "./mailboxing.ts";
+import { noterOptionsForHabery, Notifier } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { type AcdcRuntimeServices, Reactor, type VdrRuntimeServices } from "./reactor.ts";
@@ -194,7 +195,7 @@ export function* createAgentRuntime(
   const services = resolveRuntimeServices({ ...options.services, resources });
   const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
   const mailboxer = options.mailboxer
-    ?? (enableMailboxStore ? (yield* openMailboxerForHabery(hby)) : null);
+    ?? (enableMailboxStore ? (yield* openRuntimeMailboxer(hby)) : null);
   const ownsMailboxer = options.mailboxer === undefined && mailboxer !== null;
   const ownsSignaler = injectedSignaler === undefined && hby.signator !== null;
   const signaler = injectedSignaler ?? (ownsSignaler
@@ -209,7 +210,7 @@ export function* createAgentRuntime(
     : null);
   const noter = options.noter
     ?? options.notifier?.noter
-    ?? (!hby.readonly && hby.signator ? (yield* openNoterForHabery(hby)) : null);
+    ?? (!hby.readonly && hby.signator ? (yield* openRuntimeNoter(hby)) : null);
   const ownsNoter = options.noter === undefined
     && options.notifier === undefined
     && noter !== null;
@@ -382,10 +383,10 @@ export function* createAgentRuntime(
           yield* call(() => mailboxDirector.close());
         },
         function*() {
-          if (ownsNoter && noter?.opened) yield* noter.close();
+          if (ownsNoter && noter?.opened) yield* noter.close(hby.temp);
         },
         function*() {
-          if (ownsMailboxer && mailboxer?.opened) yield* mailboxer.close();
+          if (ownsMailboxer && mailboxer?.opened) yield* mailboxer.close(hby.temp);
         },
         function*() {
           if (ownsAcdcRegery && acdcRegery?.store.opened) yield* acdcRegery.close();
@@ -405,6 +406,34 @@ export function* createAgentRuntime(
       if (failures.length) throw new AggregateError(failures, "Runtime cleanup failed");
     },
   };
+}
+
+/** Own the runtime notification store before its cancellable open can yield. */
+function* openRuntimeNoter(hby: Habery): Operation<Noter> {
+  return yield* resource<Noter>(function*(provide) {
+    const options = noterOptionsForHabery(hby);
+    const store = new Noter(options);
+    try {
+      if (!(yield* store.reopen(options))) throw new DatabaseNotOpenError("Failed to open runtime Noter");
+      yield* provide(store);
+    } finally {
+      yield* store.close(hby.temp);
+    }
+  });
+}
+
+/** Own the provider mailbox store through acquisition failure and runtime scope exit. */
+function* openRuntimeMailboxer(hby: Habery): Operation<Mailboxer> {
+  return yield* resource<Mailboxer>(function*(provide) {
+    const options = mailboxerOptionsForHabery(hby);
+    const store = new Mailboxer(options);
+    try {
+      if (!(yield* store.reopen(options))) throw new DatabaseNotOpenError("Failed to open runtime Mailboxer");
+      yield* provide(store);
+    } finally {
+      yield* store.close(hby.temp);
+    }
+  });
 }
 
 /** Open v2 registry services owned by the current Effection scope. */
