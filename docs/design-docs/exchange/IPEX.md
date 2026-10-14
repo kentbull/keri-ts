@@ -33,8 +33,8 @@ manager, and assembles its own complete accepted chain through `seqEvent` and
 `headEvent`. Its `maxRegistryEvents` limit (default 16,384 including inception)
 is checked before collecting updates. A missing head is a retryable dependency;
 a declared accepted head with missing rows or inconsistent markers is corruption.
-I/O failures propagate. AgentRuntime owns its default store and joins close;
-injected stores remain caller-owned. There is no automatic `rip/bup` parser intake
+I/O failures propagate. AgentRuntime owns its default `acdc.rgy` manager and joins close;
+injected managers remain caller-owned. IPEX borrows that manager's store. There is no automatic `rip/bup` parser intake
 route; local registry services are separate. The event ceiling bounds one read/import, not
 runtime memory; native whole-row allocation and shared admission remain phases 4–5.
 
