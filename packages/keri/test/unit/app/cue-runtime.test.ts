@@ -265,15 +265,20 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
           ready.resolve();
           yield* suspend();
         });
-        yield* call(() => ready.promise);
-        let joined = false;
-        const halted = consuming.halt().then(() => joined = true);
-        yield* call(() => returning.promise);
-        assertEquals(joined, false);
-        assertEquals(resources.used.bytes >= 8 * 1024 ** 2, true);
-        release.resolve();
-        yield* call(() => halted);
-        assertEquals(resources.used.bytes, 0);
+        try {
+          yield* call(() => ready.promise);
+          let joined = false;
+          const halted = consuming.halt().then(() => joined = true);
+          yield* call(() => returning.promise);
+          assertEquals(joined, false);
+          assertEquals(resources.used.bytes >= 8 * 1024 ** 2, true);
+          release.resolve();
+          yield* call(() => halted);
+          assertEquals(resources.used.bytes, 0);
+        } finally {
+          release.resolve();
+          yield* call(() => consuming.halt());
+        }
         owner.release();
         assertThrows(() => owner.emission, Error, "released");
       }
