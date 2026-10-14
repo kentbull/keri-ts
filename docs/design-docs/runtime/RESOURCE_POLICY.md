@@ -38,6 +38,16 @@ resumption/closure of a generator suspended at delivery must finish before credi
 returns; parser termination alone never reclaims a delivered consumer owner.
 Reactor disposes every input root after dispatch and joined cleanup.
 
+Before acquiring each ESSR sink, the tree reserves its finite canonical-wire cap:
+`4 * ceil(maxEssrBytes / 3) + 12 * maxEssrItems`. This conservatively covers the
+built-in memory sink including slab rounding and empty-item headers. File sinks
+use the same admission charge. Nested writers each reserve their cap and transfer
+it with the enclosing root; failure, cancellation and disposal join every stage
+before credit returns. Consumers call `discardFrame(root)`; discarding only an
+ESSR view cannot release its enclosing root. Custom sinks must respect the finite
+cap and cancellation contract, and their factory owns cleanup until it returns. A busy refusal never opens the refused sink or pulls its
+Texter body. Independent decoded-byte/item limits remain shared by the tree.
+
 Complete-record ingress reserves retained byte credit before copying. Its record
 owns the lease through queued and processing states, including cue-capacity retry
 and typed temporary parser-admission refusal. Oversize admission releases the record.
@@ -46,7 +56,7 @@ only queued records and invalidates late retries; processing retains credit unti
 joined cleanup. Runtime close and scope exit clear queued ownership. Parser backing
 credit is acquired separately, so both charges coexist during processing.
 
-Additional hydrated representations, ESSR staging, storage and object/handle/work
+Additional hydrated representations, reader copies, storage and object/handle/work
 limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
 Counter totals alone are not an RSS or native/mapped-memory guarantee.

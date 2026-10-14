@@ -2,8 +2,16 @@ import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
 import { toEffectionFrames } from "../../../effection.ts";
 import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
-import { DeserializeError, GroupSizeError, ResourceLimitError, ShortageError } from "../../../src/core/errors.ts";
+import {
+  DeserializeError,
+  GroupSizeError,
+  ResourceAdmissionError,
+  ResourceLimitError,
+  ShortageError,
+} from "../../../src/core/errors.ts";
+import { discardFrame } from "../../../src/core/frame.ts";
 import { collectPayload, MemoryPayloadSink, type PayloadSink } from "../../../src/core/payload.ts";
+import { ResourcePolicy } from "../../../src/core/resource-policy.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parse } from "../../../src/parser/progressive.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
@@ -116,6 +124,62 @@ Deno.test("ESSR streams mixed Texter lengths in both genera/domains and reopens 
       await assertRejects(() => collectPayload(essr.raw, 50000), Error, "discarded");
     }
   }
+});
+
+Deno.test("shared ESSR stages refuse before sink acquisition and retain credit with the root", async () => {
+  const v = vector(2);
+  const wire = b(v.selector + v.group("BodyWithAttachmentGroup", v.body + v.essr("4BABYWJj", 1)));
+  const resources = new ResourcePolicy({ bytes: 2 * 1024 + 16 });
+  const observed = tracking();
+  const options = { resources, maxFrameBytes: 1024, maxEssrBytes: 3, maxEssrItems: 1, payloadSink: observed.factory };
+  const parser = parse(chunks(wire), options);
+  const frame = (await parser.next()).value!;
+  await parser.return(undefined);
+  assertEquals(resources.used.bytes, 1024 + 16);
+  let payloadReads = 0;
+  let sinks = 0;
+  const second = parse(
+    (async function*() {
+      yield wire.slice(0, -8);
+      payloadReads++;
+      yield wire.slice(-8);
+    })(),
+    {
+      ...options,
+      payloadSink(limit, signal) {
+        sinks++;
+        return observed.factory(limit, signal);
+      },
+    },
+  );
+  await assertRejects(() => second.next(), ResourceAdmissionError, "busy");
+  assertEquals([sinks, payloadReads], [0, 0]);
+  assertEquals(resources.used.bytes, 1024 + 16);
+  await discardFrame(frame);
+  assertEquals(resources.used.bytes, 0);
+
+  const tooLarge = parse(chunks(wire), { ...options, maxEssrBytes: 2048 });
+  await assertRejects(() => tooLarge.next(), ResourceAdmissionError, "limit");
+  assertEquals(resources.used.bytes, 0);
+  await assertRejects(
+    () =>
+      parse(chunks(wire), {
+        ...options,
+        payloadSink() {
+          throw new Error("stage unavailable");
+        },
+      }).next(),
+    Error,
+    "stage unavailable",
+  );
+  assertEquals(resources.used.bytes, 0);
+  const retry = parse(chunks(wire), options);
+  const accepted = (await retry.next()).value!;
+  assertEquals(await collectPayload(accepted.essr!.raw, 3), b("abc"));
+  await discardFrame(accepted);
+  assertEquals(resources.used.bytes, 1024 + 16, "suspended parser retains the complete tree allowance");
+  await retry.return(undefined);
+  assertEquals(resources.used.bytes, 0);
 });
 
 Deno.test("ESSR headers survive every source split and small and big codes preserve canonical wire", async () => {
@@ -381,9 +445,12 @@ Deno.test("ESSR Effection scope preserves delivered ownership and aborts pending
   await delivered.essr.discard();
 
   const writing = Promise.withResolvers<void>();
+  const cleanup = Promise.withResolvers<void>();
+  const resources = new ResourcePolicy();
   let abandoned = false;
   const task = run(function*() {
     const channel = yield* toEffectionFrames(() => chunks(wire), {
+      resources,
       payloadSink(limit, signal) {
         const sink = new MemoryPayloadSink(limit, signal);
         return {
@@ -401,6 +468,7 @@ Deno.test("ESSR Effection scope preserves delivered ownership and aborts pending
           async abort() {
             await sink.abort();
             abandoned = true;
+            await cleanup.promise;
           },
         };
       },
@@ -409,6 +477,11 @@ Deno.test("ESSR Effection scope preserves delivered ownership and aborts pending
     yield* subscription.next();
   });
   await writing.promise;
-  await task.halt();
+  const halted = Promise.resolve(task.halt());
+  while (!abandoned) await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEquals(resources.used.bytes > 8 * 1024 ** 2, true, "stage credit remains held during joined cleanup");
+  cleanup.resolve();
+  await halted;
+  assertEquals(resources.used.bytes, 0);
   assertEquals(abandoned, true);
 });

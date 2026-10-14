@@ -283,7 +283,7 @@ Deno.test("earlier delivered trees survive a malformed later independent tree", 
 });
 
 Deno.test("cancellation while finishing a descendant discards earlier finished owners", async () => {
-  const resources = new ResourcePolicy({ bytes: 4096 });
+  const resources = new ResourcePolicy({ bytes: 4096 + 3 * 48 });
   const controller = new AbortController();
   const sinks = tracking();
   let finishes = 0;
@@ -291,6 +291,8 @@ Deno.test("cancellation while finishing a descendant discards earlier finished o
     parseBytes(b(payloadTree()), {
       resources,
       maxFrameBytes: 4096,
+      maxEssrBytes: 9,
+      maxEssrItems: 3,
       signal: controller.signal,
       payloadSink(limit, signal) {
         const sink = sinks.factory(limit, signal);
@@ -369,7 +371,13 @@ Deno.test("shared tree credit follows parent ownership across delivery, failure 
 
   const cleanup = Promise.withResolvers<void>();
   let started = false;
-  const [owned] = await parseBytes(b(payloadTree()), options);
+  const staged = new ResourcePolicy({ bytes: 4096 + 3 * 48 });
+  const [owned] = await parseBytes(b(payloadTree()), {
+    ...options,
+    resources: staged,
+    maxEssrBytes: 9,
+    maxEssrItems: 3,
+  });
   const discard = owned.nests![0].essr!.discard;
   owned.nests![0].essr!.discard = async () => {
     started = true;
@@ -378,8 +386,8 @@ Deno.test("shared tree credit follows parent ownership across delivery, failure 
   };
   const disposing = discardFrame(owned);
   assertEquals(started, true);
-  assertEquals(resources.used.bytes, 4096, "credit outlives descendant cleanup");
+  assertEquals(staged.used.bytes, 4096 + 3 * 48, "tree and stage credit outlive descendant cleanup");
   cleanup.resolve();
   await disposing;
-  assertEquals(resources.used.bytes, 0);
+  assertEquals(staged.used.bytes, 0);
 });

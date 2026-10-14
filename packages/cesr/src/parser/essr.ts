@@ -28,6 +28,8 @@ export interface EssrBudget {
   bytes: number;
   /** Available Texters, including zero-length values. */
   items: number;
+  /** Reserve one finite canonical-wire stage before its sink is acquired. */
+  admitStage?: (wireBytes: number) => void;
 }
 
 /** Texter headers are aligned whole quadlets/triplets in both Bytes code families. */
@@ -218,10 +220,12 @@ export function essrFactory(
   // Each item needs at most two lead bytes and an eight-character qualified header.
   const wireLimit = 4 * Math.ceil(bytes / 3) + 12 * items;
   if (!Number.isSafeInteger(wireLimit)) throw new RangeError("ESSR wire limit exceeds safe integer range");
+  const payloadSink = options.payloadSink;
   return async (gvrsn, budget) => {
+    budget?.admitStage?.(wireLimit);
     // A custom sink receives the same finite wire cap and operation cancellation signal.
-    const sink = options.payloadSink
-      ? await options.payloadSink(wireLimit, signal)
+    const sink = payloadSink
+      ? await payloadSink(wireLimit, signal)
       : new MemoryPayloadSink(wireLimit, signal);
     return new EssrWriter(sink, bytes, items, gvrsn, budget);
   };

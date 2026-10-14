@@ -40,7 +40,10 @@ root and survives parser exit; failure releases undelivered credit after owner
 cleanup. A generator suspended at yield also retains the tree, so credit is
 released only after consumer disposal and the next `next()`/`return()` call.
 This accounts for ordinary wire allowance, not all hydrated representations,
-ESSR staging, storage copies or JavaScript heap overhead.
+storage copies or JavaScript heap overhead. Each ESSR stage additionally reserves
+its finite canonical-wire cap before sink acquisition, retaining it with the
+root through joined cleanup. Empty item headers and memory-slab rounding fit
+that cap; custom sinks must honor the same bounded contract.
 
 Bodies hydrate once through Serder. Ordinary attachment leaves remain admitted
 finite values; attachment wrappers flatten into ordered semantic leaves. Enclosed
