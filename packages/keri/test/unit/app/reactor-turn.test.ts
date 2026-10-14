@@ -706,12 +706,13 @@ Deno.test("OOBI refusal precedes fetch or finite document reads and releases res
         });
         const url = `http://admission.test/oobi?cue=${mode}`;
         oobi.resolve(url);
+        const queuedRecord = hby.db.oobis.get(url)!;
         cues.clear();
         const slot = mode === "items" ? cues.prepare([{ kin: "proof", said: "occupied" }]) : undefined;
         yield* oobi.processOnce();
         assertEquals([requests, reads, cancelled], [1, 0, true]);
         assertEquals([hby.db.coobi.get(url), hby.db.roobi.get(url), hby.db.eoobi.get(url)], [null, null, null]);
-        assertEquals(hby.db.oobis.get(url)?.state, "queued");
+        assertEquals(hby.db.oobis.get(url), queuedRecord, "Unadmitted attempt metadata never replaces queued work");
         assertEquals(cues.length, 0);
         if (held?.kind === "reserve") held.reservation.release();
         slot?.release();

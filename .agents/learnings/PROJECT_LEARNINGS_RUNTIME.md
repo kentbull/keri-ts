@@ -149,7 +149,10 @@ parent resolved/failed cues before terminal/contact effects. Preserve ordinary
 Deck guards. Introductions hold PreparedReply and admit actual queued children
 before BADA/proof/queue effects; unverified replies retain existing escrow/query
 publication without a child. Keep the one-shot plan in a single synchronous turn.
-CESR result credit is an earlier scope resource held before streaming metadata
+Attempt queue metadata stays staged until result admission; current queue retry
+uses row presence, not attempt-date TTL. Finite results preserve the original row
+until terminal publication. CESR result credit is an earlier scope resource held
+before queue and streaming metadata
 and Reactor body reads through joined cleanup. Failure/cancellation releases only
 unpublished result credit; full retrieval retains the published owner and is not
 universal protocol acceptance. HTTP/schema/JSON results admit before terminal

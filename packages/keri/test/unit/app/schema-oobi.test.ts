@@ -145,9 +145,10 @@ Deno.test("OOBI response results admit actual cue credit before schema or termin
         ));
       try {
         oobi.resolve(url);
+        const queuedRecord = hby.db.oobis.get(url)!;
         cues.clear();
         yield* oobi.processOnce();
-        assertExists(hby.db.oobis.get(url));
+        assertEquals(hby.db.oobis.get(url), queuedRecord, "Finite result refusal preserves original queue metadata");
         assertEquals(hby.db.coobi.get(url), null);
         assertEquals(hby.db.roobi.get(url), null);
         assertEquals(hby.db.eoobi.get(url), null);

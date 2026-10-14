@@ -256,8 +256,7 @@ export class Oobiery {
       oobialias: meta.alias ?? meta.oobialias ?? null,
       said: meta.said ?? null,
     };
-    this.pinQueueStore(kind, url, queuedRecord);
-
+    // Stage attempt metadata only; the original queue row stays owned until result admission.
     const response = yield* fetchOobiResponse(url, services);
     try {
       yield* this.processResponse(kind, url, queuedRecord, meta, response);
@@ -295,7 +294,7 @@ export class Oobiery {
     const type = mediaType(response.headers.get("content-type") ?? "");
     if (isCesrMediaType(type) || !type.includes("json")) {
       // Keep durable retry ownership throughout partial acceptance and joined cancellation.
-      yield* this.resolveCesrOobiResponse(url, queuedRecord, meta, response);
+      yield* this.resolveCesrOobiResponse(kind, url, queuedRecord, meta, response);
       this.remQueueStore(kind, url);
       return;
     }
@@ -345,6 +344,7 @@ export class Oobiery {
 
   /** Mark an OOBI resolved only after its complete CESR response has been dispatched. */
   private *resolveCesrOobiResponse(
+    kind: OobiQueueKind,
     url: string,
     queuedRecord: OobiRecordShape,
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
@@ -358,6 +358,7 @@ export class Oobiery {
       eid: meta.eid ?? undefined,
     };
     const batch = yield* this.holdResolvedOobi(cue);
+    this.pinQueueStore(kind, url, queuedRecord);
     this.hby.db.coobi.pin(url, { ...queuedRecord, state: "streaming" });
     yield* this.reactor.process((signal) => streamBytes(response.body, { signal }));
 
