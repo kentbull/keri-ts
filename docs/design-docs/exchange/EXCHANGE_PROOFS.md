@@ -24,6 +24,17 @@ can create escrow. Sender-signature query cues and route dependency proof cues
 follow insertion of a new escrow row; missing-state query lists deduplicate their
 coordinates within each reference-equivalent invocation.
 
+After sender authentication, routes may name a complete missing schema SAID.
+`emse.` stores the EXN at `(EXN SAID, schema SAID)` and `emsd.` its shared absolute
+deadline. Each new pair emits `{kin: "query", q: {r: "schema", said: schemaSAID}}`;
+the host schema fetcher is unimplemented. Retry rechecks proofs and preserves
+signatures, source seals, nested/ESSR wire and mailbox/receiver provenance across
+reopen. The deadline is first admission plus 20 seconds, or existing TMSC `xdt + pxl`; receiver receipt time is not the transaction opener. Sequential schema
+dependencies keep that deadline. Equality remains eligible; strict expiry or
+terminal rejection releases pending evidence, acceptance retains its wire.
+Storage/corruption failures propagate and retain pending ownership. Readonly
+legacy opens leave absent schema-escrow tables absent. S3 owns IPEX schema gates.
+
 An incomplete duplicate reports its pending attempt even when the exchange was
 previously accepted. It cannot replace accepted evidence, create escrow, emit a
 new-escrow cue, or invoke handling. `complete(said)` reports durable acceptance

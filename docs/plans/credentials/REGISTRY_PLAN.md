@@ -84,7 +84,8 @@ The inspected current-main schema delta is pinned separately to
 | S3   | Offer/grant node and edge schemas, issuer-first grant order and dependency routing |
 
 S1 uses local verified resources and decoded credential data; legacy Schemer is
-unchanged. S2/S3 remain pending. Qualify the 714 helper separately, retaining all
+unchanged. S2 supplies durable dependencies/deadlines; S3 gates remain pending.
+The schema query cue has no host fetch orchestration yet. Qualify 714 separately, retaining all
 927 vectors/labels. Embedded bundled-resource construction also requires the
 [existing Mapper correction](../cesr/MAPPER_PLAN.md); working override/cache
 validation does not qualify that builder path.

@@ -20,6 +20,11 @@ Keep ests/eidx and cigar verifier context; recheck proof factors on replay.
 Retry captures an initial horizon, reads one key and closes the LMDB cursor before
 awaiting/removing rows. Mutating a suspended range can skip the next escrow.
 Group leadership intentionally uses group signatures, excluding foreign endorsements.
+Missing-schema EXNs retain the same evidence ownership through emse/emsd and
+archive recovery. One absolute deadline spans sequential schema dependencies;
+TMSC opener plus lifetime differs from the receiver receipt. Equality is eligible.
+Remote dependency outcomes are typed; storage/corruption failures propagate.
+Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 
 ## Route ownership
 

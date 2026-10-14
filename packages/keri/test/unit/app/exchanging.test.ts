@@ -1,9 +1,9 @@
 import { call, run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
-import { b, Diger, essrPayload, Prefixer, Texter, Vrsn_1_0 } from "../../../../cesr/mod.ts";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { b, Diger, essrPayload, Prefixer, Texter, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { loadChallengeHandlers } from "../../../src/app/challenging.ts";
-import { Exchanger } from "../../../src/app/exchanging.ts";
+import { Exchanger, type ExchangeRouteHandler } from "../../../src/app/exchanging.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
@@ -419,6 +419,126 @@ Deno.test("Exchanger verifies an ESSR string digest before accepting payload sta
       assertEquals((yield* exchanger.processEvent({ serder, tsgs, essr: payload(essrs) })).kind, "accept");
       assertEquals(hby.db.exns.get([serder.said!])?.said, serder.said);
       assertEquals(hby.db.essrs.get([serder.said!]).map((item) => item.text), ["abc", "xyz"]);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("missing schemas preserve EXN evidence and one absolute deadline through reopen and retry", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    let now = Date.parse("2026-10-13T01:00:00.000000+00:00"), calls = 0, handled = 0;
+    const first = new Diger({ raw: Diger.digest(b("schema one"), "E"), code: "E" }).qb64;
+    const second = new Diger({ raw: Diger.digest(b("schema two"), "E"), code: "E" }).qb64;
+    let missing: string | undefined = first;
+    try {
+      const sender = hby.makeHab("sender");
+      const serder = exchangeMessage("/ipex/grant", {}, { sender: sender.pre, version: Vrsn_2_0 })[0];
+      const child = exchangeMessage("/child", {}, { sender: sender.pre, version: Vrsn_2_0 })[0];
+      const said = serder.said!;
+      const handlers: ExchangeRouteHandler[] = [{
+        resource: "/ipex/grant",
+        acceptsNests: true,
+        verify({ nests, mailboxAid }) {
+          calls++;
+          assertEquals(nests?.map((node) => node.body.raw), [child.raw], `schema verification ${calls}`);
+          assertEquals(mailboxAid, sender.pre);
+          return missing ? { kind: "escrow" as const, reason: "missing schema", schema: missing } : true;
+        },
+        handle() {
+          handled++;
+        },
+      }];
+      let exchanger = new Exchanger(hby, { handlers, now: () => now });
+      const tsgs = [
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: sender.pre }),
+          sender.kever!.sner,
+          new Diger({ qb64: sender.kever!.said }),
+          sender.sign(serder.raw, true),
+        ),
+      ];
+      const input = { serder, tsgs, nests: [{ body: child, attachments: [] }], mailboxAid: sender.pre };
+      // Missing schema is never consulted before independent sender authentication.
+      yield* exchanger.processEvent({ ...input, tsgs: [] });
+      assertEquals(calls, 0);
+      assertEquals(hby.db.emse!.get([said, first]), null);
+      assertEquals((yield* exchanger.processEvent(input)).kind, "escrow");
+      const deadline = hby.db.emsd!.get([said])!.dts;
+      assertEquals(deadline, "2026-10-13T01:00:20.000000+00:00");
+      yield* exchanger.processEvent(input);
+      assertEquals([...exchanger.cues].filter((cue) => cue.kin === "query"), [{
+        kin: "query",
+        q: { r: "schema", said: first },
+      }]);
+      assertEquals(hby.db.epse.get([said]), null);
+      assertEquals([...hby.db.esigs.getTopItemIter([said, ""])].length, 1);
+      assertEquals(hby.db.exns.get([said]), null);
+      yield* hby.db.close();
+      yield* hby.db.reopen({ reuse: true });
+      exchanger = new Exchanger(hby, { handlers, now: () => now });
+      now += 10_000;
+      missing = second;
+      yield* exchanger.processEscrows();
+      assertEquals(hby.db.emse!.get([said, first]), null);
+      assertExists(hby.db.emse!.get([said, second]));
+      assertEquals(hby.db.emsd!.get([said])!.dts, deadline);
+      assertEquals([...exchanger.cues], [{ kin: "query", q: { r: "schema", said: second } }]);
+      now += 10_000;
+      yield* exchanger.processEscrows();
+      assertExists(hby.db.emse!.get([said, second]), "deadline equality remains eligible");
+      missing = undefined;
+      yield* exchanger.processEscrows();
+      assertEquals(handled, 1);
+      assertExists(hby.db.exns.get([said]));
+      assertEquals(hby.db.emsd!.get([said]), null);
+      assertEquals([...hby.db.emse!.getTopItemIter([said])], []);
+      assertEquals([...hby.db.esigs.getTopItemIter([said, ""])].length, 1, "accepted proofs survive cleanup");
+      // Expiry is strict, terminal, and releases the stored nested evidence.
+      missing = first;
+      const expired = exchangeMessage("/ipex/grant", { expired: true }, { sender: sender.pre, version: Vrsn_2_0 })[0];
+      const expiredInput = {
+        ...input,
+        serder: expired,
+        tsgs: [new TransIdxSigGroup(tsgs[0].prefixer, tsgs[0].seqner, tsgs[0].diger, sender.sign(expired.raw, true))],
+      };
+      yield* exchanger.processEvent(expiredInput);
+      now += 20_001;
+      yield* exchanger.processEscrows();
+      assertEquals(hby.db.emsd!.get([expired.said!]), null);
+      assertEquals(hby.db.enst.get([expired.said!]), []);
+      assertEquals([...hby.db.esigs.getTopItemIter([expired.said!, ""])], []);
+      assertEquals(handled, 1);
+      const lifetime =
+        exchangeMessage("/ipex/grant", { lifetime: true }, { sender: sender.pre, version: Vrsn_2_0, xid: first })[0];
+      const cacheKey = [sender.pre, first, lifetime.said!];
+      hby.db.tmsc.pin(cacheKey, { xdt: "2026-10-13T01:00:00.000123+00:00", pxl: 25_000 });
+      const lifetimeInput = {
+        ...input,
+        serder: lifetime,
+        tsgs: [new TransIdxSigGroup(tsgs[0].prefixer, tsgs[0].seqner, tsgs[0].diger, sender.sign(lifetime.raw, true))],
+      };
+      yield* exchanger.processEvent(lifetimeInput);
+      assertEquals(hby.db.emsd!.get([lifetime.said!])!.dts, "2026-10-13T01:00:25.000123+00:00");
+      const get = hby.db.emsd!.get.bind(hby.db.emsd);
+      hby.db.emsd!.get = () => {
+        throw new Error("schema deadline storage unavailable");
+      };
+      try {
+        yield* call(() =>
+          assertRejects(() => run(() => exchanger.processEvent(lifetimeInput)), Error, "storage unavailable")
+        );
+      } finally {
+        hby.db.emsd!.get = get;
+      }
+      assertExists(hby.db.emse!.get([lifetime.said!, first]));
+      // Corrupt durable deadlines propagate and retain retry evidence instead of becoming ordinary expiry.
+      hby.db.emsd!.rem([lifetime.said!]);
+      yield* call(() =>
+        assertRejects(() => run(() => exchanger.processEscrows()), Error, "Corrupt missing-schema deadline.")
+      );
+      assertExists(hby.db.emse!.get([lifetime.said!, first]));
     } finally {
       yield* hby.close(true);
     }

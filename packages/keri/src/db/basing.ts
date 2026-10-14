@@ -287,7 +287,7 @@ export class Baser {
           if (said !== previous) {
             previous = said;
             // Preserve KERIpy-origin wire evidence without requiring our private metadata.
-            owned = this.exns.sdb.doesExist(saidKey) || this.epse.sdb.doesExist(saidKey);
+            owned = this.exns.sdb.doesExist(saidKey) || this.epse.sdb.doesExist(saidKey) || this.hasSchemaEscrow(said);
           }
           if (!owned) removed = table.sdb.removeSync(key) || removed;
         }
@@ -340,7 +340,7 @@ export class Baser {
 
   /** Preserve the insertion order and deduplication already represented by KERIpy rows. */
   private borrowEssr(said: string, maxBytes: number, maxItems: number, signal?: AbortSignal): EssrPayload | null {
-    if (!this.exns.get([said]) && !this.epse.get([said])) return null;
+    if (!this.exns.get([said]) && !this.epse.get([said]) && !this.hasSchemaEscrow(said)) return null;
     let count = 0;
     let size = 0;
     let wireSize = 0;
@@ -446,6 +446,9 @@ export class Baser {
   public cgms!: CesrSuber<Diger>; // Completed group multisig references.
   public epse!: SerderSuber<SerderKERI>; // Exchange-message partial signature escrow messages.
   public epsd!: CesrSuber<Dater>; // Exchange-message partial signature escrow datetimes.
+  /** Optional on readonly legacy stores; schema dependencies share one absolute deadline. */
+  public emse: SerderSuber<SerderKERI> | null = null;
+  public emsd: CesrSuber<Dater> | null = null;
   public exns!: SerderSuber<SerderKERI>; // Exchange messages keyed by their digest.
   public erpy!: CesrSuber<Saider>; // Forward pointers to provided reply messages.
   public esigs!: CesrIoSetSuber<Siger>; // Exchange-message indexed signatures.
@@ -543,6 +546,14 @@ export class Baser {
   /** Report whether the root LMDB environment and typed subdb bindings are open. */
   get opened(): boolean {
     return this.lmdber.opened;
+  }
+
+  /** Test a schema dependency ownership marker without hydrating its stored exchange. */
+  hasSchemaEscrow(said: string): boolean {
+    if (this.emse) {
+      for (const key of this.emse.sdb.getKeys({ start: b(`${said}.`), limit: 1 })) return t(key).startsWith(`${said}.`);
+    }
+    return false;
   }
 
   /** Report whether this `Baser` uses a temporary backing directory. */
@@ -850,6 +861,12 @@ export class Baser {
         subkey: "epsd.",
         ctor: Dater,
       });
+      this.emse = !this.lmdber.readonly || this.env!.getBinary(b("emse.")) !== undefined
+        ? new SerderSuber(this.lmdber, { subkey: "emse." })
+        : null;
+      this.emsd = !this.lmdber.readonly || this.env!.getBinary(b("emsd.")) !== undefined
+        ? new CesrSuber(this.lmdber, { subkey: "emsd.", ctor: Dater })
+        : null;
 
       // Exchange messages keyed by digest.
       this.exns = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "exns." });

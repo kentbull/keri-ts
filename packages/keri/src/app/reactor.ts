@@ -129,7 +129,7 @@ export class Reactor {
     const kramer = kram ? new Kramer(hby.db, { config: kram, cues: this.cues, now }) : undefined;
     this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery, messagePolicy, kramer });
     this.kevery.registerReplyRoutes(this.router);
-    this.exchanger = new Exchanger(hby, { cues: this.cues });
+    this.exchanger = new Exchanger(hby, { cues: this.cues, now });
     this.local = local;
     this.vdr = vdr;
   }
