@@ -3,6 +3,7 @@ import {
   type CesrFrame,
   Diger,
   NumberPrimitive,
+  ParserError,
   Prefixer,
   ResourceLimitError,
   type SealEvent,
@@ -10,7 +11,7 @@ import {
   SerderACDC,
   type SerderKERI,
 } from "cesr-ts";
-import { validateRip, validateUpdate, vetBinds } from "../acdc/regeventing.ts";
+import { validateRip, validateUpdate, verifyRegistryAnchor, vetBinds } from "../acdc/regeventing.ts";
 import type { RegistryStore } from "../acdc/registering.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseOperationError } from "../core/errors.ts";
@@ -58,7 +59,7 @@ function missing(reason: string): ExchangeRouteVerification {
 /**
  * Authenticate each disclosed node independently before Exchanger persists an EXN.
  * Registry evidence is caller-owned; notifier delivery follows durable acceptance.
- * Presentation registries remain guarded until receiver-owned KRAM intake exists.
+ * Presentation registries require the retained receiver receipt and node-local proofs.
  */
 export class IpexV2Handler implements ExchangeRouteHandler {
   readonly protocolMajor = 2;
@@ -104,7 +105,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
   }
 
   /** Validate conversation, disclosure and authentication obligations in reference order. */
-  verify({ serder, nests = [], sscs = [], evidence }: VerifyArgs): ExchangeRouteVerification {
+  verify({ serder, nests = [], sscs = [], evidence, receiverTime }: VerifyArgs): ExchangeRouteVerification {
     if (serder.pvrsn.major !== 2 || serder.route !== this.resource) return false;
     const route = serder.route.split("/");
     const verb = route[2];
@@ -166,14 +167,21 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       const result = this.issuer(graph.nodes.get(said)!);
       if (result !== true) return result;
     }
-    // A receiver-owned KRAM timestamp is required for presentation registries.
-    // Until consolidated processMsg intake owns it, never substitute sender time.
-    for (const node of graph.nodes.values()) {
+    if (!evidence) return false; // Exchanger must supply its selected supplemental factor set.
+    const tethered = new Set<string>();
+    for (const said of graph.order) {
+      const node = graph.nodes.get(said)!;
       const declarations = this.presentationRegistries(node.body);
-      if (declarations === null || declarations.length) return false;
+      if (declarations === null) return false;
+      if (declarations.length && !receiverTime) return false;
+      for (const [issuee, registry] of declarations) {
+        const result = this.presentation(node, registry, issuee, serder.said!, receiverTime!);
+        if (result !== true) return result;
+        tethered.add(issuee);
+      }
     }
     if (requiresAnchor || priorAnchor) {
-      const anchorers = new Set<string>();
+      const anchorers = tethered;
       if (sscs.length) {
         const result = this.sourceAnchor(serder, serder.pre!, sscs.at(-1)!);
         if (typeof result === "object") return result;
@@ -358,8 +366,61 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       : result.tsgs.length + result.cigars.length > 0;
   }
 
-  /** Detect hidden issuer registries and disclosed presentation requirements without accepting them. */
-  private presentationRegistries(serder: SerderACDC): readonly unknown[] | null {
+  /** Authenticate a grant target against this node's Issuee TEL and explicit fully witnessed KEL sources. */
+  private presentation(
+    frame: CesrFrame & { body: SerderACDC },
+    regid: string,
+    issuee: string,
+    target: string,
+    cutoff: string,
+  ): ExchangeRouteVerification {
+    const envelope = envelopeFromFrame(frame), blinders = [...envelope.bsqs, ...envelope.bsss];
+    if (!blinders.length || !this.registry) return false;
+    const chain = this.registryEvidence(regid);
+    if (!chain) return missing(`Missing presentation TEL evidence for ${regid}.`);
+    const sources = new Map<string, string>();
+    let unresolved = false;
+    for (const seal of envelope.ssts) {
+      if (seal.i.qb64 !== issuee) continue;
+      const said = seal.s.num > BigInt(Number.MAX_SAFE_INTEGER)
+        ? null
+        : this.hby.db.kels.getLast(issuee, Number(seal.s.num));
+      if (!said) {
+        unresolved = true;
+        continue;
+      }
+      if (said !== seal.d.qb64) continue;
+      if (!this.hby.db.getEvtSerder(issuee, said)) {
+        unresolved = true;
+        continue;
+      }
+      for (const update of chain.updates) {
+        const checked = validateUpdate(update, regid);
+        if (checked.kind !== "valid") throw new DatabaseOperationError("Accepted presentation update is corrupt.");
+        if (verifyRegistryAnchor(checked.event, { db: this.hby.db, issuer: issuee, number: seal.s, diger: seal.d })) {
+          sources.set(update.said!, seal.d.qb64);
+        }
+      }
+    }
+    if (!sources.size && unresolved) return missing(`Missing presentation anchor source for ${regid}.`);
+    const result = vetBinds({
+      ...chain,
+      db: this.hby.db,
+      blinders,
+      target,
+      controller: issuee,
+      cutoff,
+      sources,
+      requireSource: true,
+    });
+    if (result.kind === "missing" || (result.kind === "reject" && result.reason === "anchor" && unresolved)) {
+      return missing(`Missing presentation TEL anchor for ${regid}.`);
+    }
+    return result.kind === "verified" && result.state.regid === regid;
+  }
+
+  /** Reject hidden requirements and preserve unique, validated Issuee/registry pairs in wire order. */
+  private presentationRegistries(serder: SerderACDC): readonly (readonly [string, string])[] | null {
     const a = serder.sad!.a;
     const aggregate = serder.sad!.A;
     if (!serder.regid) {
@@ -373,6 +434,21 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       if (!aggregate.slice(1).every(record)) return null;
       sections.push(...aggregate.slice(1) as Record<string, unknown>[]);
     } else if (record(aggregate)) sections.push(aggregate);
-    return sections.filter((section) => section.rd && section.i);
+    const declarations: [string, string][] = [];
+    for (const section of sections) {
+      const regid = section.rd, issuee = section.i;
+      if (!regid || !issuee) continue;
+      if (typeof regid !== "string" || typeof issuee !== "string") return null;
+      try {
+        if (new Diger({ qb64: regid }).qb64 !== regid || new Prefixer({ qb64: issuee }).qb64 !== issuee) return null;
+      } catch (error) {
+        if (!(error instanceof ParserError) || error instanceof ResourceLimitError) throw error;
+        return null;
+      }
+      if (!declarations.some(([aid, registry]) => aid === issuee && registry === regid)) {
+        declarations.push([issuee, regid]);
+      }
+    }
+    return declarations;
   }
 }
