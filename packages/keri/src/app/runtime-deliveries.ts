@@ -18,7 +18,7 @@ import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
 import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
-import { prepareCueEmission } from "./cue-preparation.ts";
+import { prepareCueEmission, type PreparedCueEmission } from "./cue-preparation.ts";
 import { prepareCueRoute } from "./cue-route.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import { DirectReplyDelivery } from "./direct-reply-delivery.ts";
@@ -182,9 +182,16 @@ export class RuntimeDeliveries {
       if (error instanceof DeckFullError) onAdmissionRefusal?.(error);
       throw error;
     }
-    return prepareCueEmission(hab, cues, this.resources, (owner) => {
+    let unrouted: PreparedCueEmission | undefined;
+    const transferred = prepareCueEmission(hab, cues, this.resources, (owner) => {
       if (!owner.emission || owner.emission.kind !== "wire") throw new RangeError("Cue delivery requires wire");
       const captured = prepareCueRoute(this.resources, owner, () => route(owner.emission!), onAdmissionRefusal);
+      if (!captured.route.targets.length) {
+        // Responder routing is best-effort when no endpoint exists; retire only after source publication.
+        unrouted = owner;
+        captured.release();
+        return undefined;
+      }
       let queued = false;
       try {
         const delivery = new CueDelivery(owner, sender, captured);
@@ -195,14 +202,23 @@ export class RuntimeDeliveries {
         if (!queued) captured.release();
       }
     }, onAdmissionRefusal);
+    unrouted?.release();
+    return transferred;
   }
 
   /** Atomically publish one bounded direct-reply batch and its HTTP stream; no network runs here. */
-  openReply(runtime: AgentRuntime, hab: Hab, reply: QueryReply): ReadableStream<Uint8Array> | null {
+  openReply(
+    runtime: AgentRuntime,
+    hab: Hab,
+    reply: QueryReply,
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+  ): ReadableStream<Uint8Array> | null {
     if (runtime.resources !== this.resources) throw new RangeError("Wrong reply resource policy");
     if (this.closed) throw new Error("Runtime deliveries are closed");
     if (this.pending.length === this.pending.capacity) {
-      throw new ResourceAdmissionError("Direct reply delivery slots are busy", "busy");
+      const refusal = new ResourceAdmissionError("Direct reply delivery slots are busy", "busy");
+      onAdmissionRefusal?.(refusal);
+      throw refusal;
     }
     this.pending.checkSpace();
     return DirectReplyDelivery.prepare(runtime, hab, reply, (delivery, open) => {
@@ -211,22 +227,29 @@ export class RuntimeDeliveries {
       if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
       else delivery.release();
       return stream;
-    });
+    }, onAdmissionRefusal);
   }
 
   /** Atomically retain an earlier query reply without opening a request-local response stream. */
-  enqueueReply(runtime: AgentRuntime, hab: Hab, reply: QueryReply): boolean {
+  enqueueReply(
+    runtime: AgentRuntime,
+    hab: Hab,
+    reply: QueryReply,
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+  ): boolean {
     if (runtime.resources !== this.resources) throw new RangeError("Wrong reply resource policy");
     if (this.closed) throw new Error("Runtime deliveries are closed");
     if (this.pending.length === this.pending.capacity) {
-      throw new ResourceAdmissionError("Queued reply delivery slots are busy", "busy");
+      const refusal = new ResourceAdmissionError("Queued reply delivery slots are busy", "busy");
+      onAdmissionRefusal?.(refusal);
+      throw refusal;
     }
     this.pending.checkSpace();
     return DirectReplyDelivery.prepareQueued(runtime, hab, reply, (delivery) => {
       this.pending.checkSpace();
       if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
       else delivery.release();
-    });
+    }, onAdmissionRefusal);
   }
 
   /** A failed independent packet retains the same lease; no target advances if the queue cannot accept it. */

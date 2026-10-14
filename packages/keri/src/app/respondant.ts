@@ -67,7 +67,15 @@ export class Respondant implements CueSink {
       const transferred = runtime.deliveries.enqueueCue(
         interpreter,
         runtime.cues,
-        () => this.poster.resolveBytesRoute(sender, { recipient, topic }),
+        () =>
+          this.poster.findBytesRoute(sender, { recipient, topic }) ?? {
+            sender: sender.pre,
+            recipient,
+            topic,
+            bodyMode: this.hby.cesrBodyMode,
+            kind: "direct",
+            targets: [],
+          },
         sender,
         (error) => refusal = error,
       );

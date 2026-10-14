@@ -13,9 +13,10 @@ The [runtime contract][runtime] distinguishes current behavior from the target.
   still returns a bounded aggregate of emissions.
 - Final direct HTTP query replies atomically share one interpreted batch between
   ReplyStreams and queued targets; no network runs during that preparation.
-  Earlier-query and ordinary HTTP/witness cue drains still require adoption.
-- Generic HTTP ingress already parses progressively, but HTTP/witness/runtime
-  cue drains can await `Respondant` network delivery under the Reactor guard.
+  Earlier queries now use queue-only owned delivery after their own authorization.
+- Generic HTTP cue preparation transfers to RuntimeDeliveries, owned mailbox
+  correlation or pending queries before removal; network waits and scoped fallback
+  cleanup run outside Reactor. Witness cue drain adoption remains separate.
 - The TCP sender shares a finite/source/frame writer and explicit same-socket
   reply processing (#271). Actual conversation callers remain S8; mailbox/direct
   routing remains the default. The Tufa accepted listener now returns correlated

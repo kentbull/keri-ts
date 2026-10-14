@@ -460,13 +460,13 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
         assertStrictEquals(active.cues.peekHead(), cue);
         occupied.reservation.release();
         const foreign = new ResourceAdmissionError("foreign cue preparation busy", "busy");
-        const resolve = active.poster.resolveBytesRoute;
+        const resolve = active.poster.findBytesRoute;
         for (const phase of ["interpret", "route"]) {
           if (phase === "interpret") {
             sender.interpretCue = () => {
               throw foreign;
             };
-          } else {active.poster.resolveBytesRoute = () => {
+          } else {active.poster.findBytesRoute = () => {
               throw foreign;
             };}
           try {
@@ -478,7 +478,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
             assertEquals(active.resources.used.bytes, 0, "foreign failure releases unpublished preparation");
           } finally {
             sender.interpretCue = interpretation;
-            active.poster.resolveBytesRoute = resolve;
+            active.poster.findBytesRoute = resolve;
           }
         }
         let returned = false;

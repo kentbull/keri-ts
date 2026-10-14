@@ -28,8 +28,9 @@ export class DirectReplyDelivery {
     hab: Hab,
     reply: QueryReply,
     publish: (delivery: DirectReplyDelivery, open: () => ReadableStream<Uint8Array>) => ReadableStream<Uint8Array>,
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): ReadableStream<Uint8Array> | null {
-    return this.prepareBatch(runtime, hab, reply, publish);
+    return this.prepareBatch(runtime, hab, reply, publish, undefined, onAdmissionRefusal);
   }
 
   /** Transfer an earlier query batch to delivery only, without reserving an HTTP response permit. */
@@ -38,12 +39,13 @@ export class DirectReplyDelivery {
     hab: Hab,
     reply: QueryReply,
     accept: (delivery: DirectReplyDelivery) => void,
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): boolean {
     let transferred = false;
     this.prepareBatch(runtime, hab, reply, undefined, (delivery) => {
       accept(delivery);
       transferred = true;
-    });
+    }, onAdmissionRefusal);
     return transferred;
   }
 
@@ -54,6 +56,7 @@ export class DirectReplyDelivery {
     reply: QueryReply,
     publish?: (delivery: DirectReplyDelivery, open: () => ReadableStream<Uint8Array>) => ReadableStream<Uint8Array>,
     enqueue?: (delivery: DirectReplyDelivery) => void,
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): ReadableStream<Uint8Array> | null {
     const batch = new DirectReplyDelivery();
     batch.responseDone = !publish;
@@ -63,7 +66,7 @@ export class DirectReplyDelivery {
       reply.admit((cues, release) => {
         batch.releaseInput = release;
         const before = runtime.resources.used.bytes;
-        const input = reserveCueBytes(runtime.resources, cues, undefined, undefined, {
+        const input = reserveCueBytes(runtime.resources, cues, undefined, onAdmissionRefusal, {
           additionalBytes: reply.retainedBytes + responseBytes
             + cues.length * 33 * 1024 ** 2,
           maxBytes: 8 * 1024 ** 2,
@@ -77,10 +80,12 @@ export class DirectReplyDelivery {
               + 2 * (runtime.resources.used.bytes - before),
           });
           if (combined.kind === "refuse") {
-            throw new ResourceAdmissionError("Direct reply preparation refused", combined.reason);
+            const refusal = new ResourceAdmissionError("Direct reply preparation refused", combined.reason);
+            onAdmissionRefusal?.(refusal);
+            throw refusal;
           }
           combined.reservation.release();
-          if (publish) response = runtime.replyStreams.prepare();
+          if (publish) response = runtime.replyStreams.prepare(onAdmissionRefusal);
           const prepare = (index: number): void => {
             if (index === cues.length) {
               if (publish) {
@@ -115,7 +120,7 @@ export class DirectReplyDelivery {
                     kind: "direct",
                     targets: [],
                   };
-              });
+              }, onAdmissionRefusal);
               batch.routes.push(route);
               if (route.route.targets.length) {
                 const sender = runtime.hby.habs.get(route.route.sender) ?? hab;
@@ -136,7 +141,7 @@ export class DirectReplyDelivery {
               }
               prepare(index + 1);
               return undefined;
-            });
+            }, onAdmissionRefusal);
           };
           prepare(0);
         } finally {
