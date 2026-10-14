@@ -9,7 +9,7 @@ import vectors from "../../fixtures/current-text-vectors.json" with { type: "jso
 import { currentTextVectors } from "../../fixtures/current-text-vectors.ts";
 
 Deno.test("current text: frozen Python literals decode with exact extents in both domains", () => {
-  assertEquals(vectors.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
+  assertEquals(vectors.reference, "7143832813cac6a394ab1faf9be83bb3372be87c");
   for (const domain of ["txt", "bny"] as const) {
     for (const vector of vectors.bexters) {
       const wire = domain === "txt" ? b(vector.qb64) : hexWire(vector.qb2);

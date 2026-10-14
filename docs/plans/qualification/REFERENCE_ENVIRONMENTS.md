@@ -3,27 +3,34 @@
 Owner: [phase 7](QUALIFICATION_PLAN.md). Pins below are the observed continuation
 baseline, not proof of current execution. Re-verify each path and **actual imported
 modules** before changing a pin or claiming qualification. Upgrade applicable
-paths to the frozen target, or document why historical compatibility is retained.
+paths to the approved 714 target, or document why historical compatibility is retained.
 
 | Environment             | Declared target              | Owning entrypoint            |
 | ----------------------- | ---------------------------- | ---------------------------- |
-| Ordinary table CI       | Upstream 927                 | `pr-stage-gate.yml`          |
+| Ordinary table CI       | Upstream 714                 | `pr-stage-gate.yml`          |
 | Extended interop        | Mailbox fork                 | `keri-extended-interop.yml`  |
 | Shared local CLI        | Mailbox fork                 | `interop-test-helpers.ts`    |
-| Independent wire probes | Upstream 927                 | `scripts/reference-*.py`     |
+| CESR/live wire probes   | Upstream 714                 | CESR reference / qualifiers  |
+| Historical KERI vectors | Upstream 927                 | Fixture generators           |
 | macOS compatibility     | Mailbox fork                 | `macos-compatibility.yml`    |
 | Sally CLI harness       | Historical 98                | `vlei-tufa-sally-interop.sh` |
 | Embedded DID Webs       | Resolver 839 / KERIpy 1.2.14 | Separate Python environment  |
 
 ## Immutable authorities
 
-- Upstream 927: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+- Active upstream: `7143832813cac6a394ab1faf9be83bb3372be87c`.
+- Historical upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+  Existing KERI registry/IPEX/KRAM/replay fixtures retain their actual source
+  labels and reproducibility pins. They do not alone qualify changed 714 behavior.
 - Mailbox fork: `kentbull/keripy` `b08ddeb047fd865d60affe82a0dc77f5efaf4672`,
   based on upstream 927. Ports mailbox commits `1faba4f2`/`9924fffa`, adapts
   nested messages, and adds explicit mailbox/credential protocol selection,
   receipt lookup repair, export genus selection, JSON slash-topic queries and
   protocol-specific admit rehydration. Keep this **fork-on-main** evidence
   separate from unmodified-upstream evidence.
+  Retain this compatibility target because unmodified 714 lacks the required
+  mailbox commands/extensions. Its 927 ancestry does not qualify 714 schema logic;
+  current-upstream probes and composed qualification supply that evidence separately.
 - Historical 450: `450ae1c2a7eac61d92bc7b830cb6883c41e6a798`, retired from
   macOS selection. `test:quality` includes `interop-parity`, whose existing
   `interop-kli-tufa.test.ts` exercises mailbox operations in both directions.
@@ -59,7 +66,8 @@ uncommitted actual-command probes. No hosted workflow was dispatched.
 
 | Env                | Start | CLI | Evidence                  |
 | ------------------ | ----: | --: | ------------------------- |
-| macOS 927          |    98 | 193 | Git bytes                 |
+| macOS 714          |    98 |   — | Git bytes; current source |
+| macOS 927          |    98 | 193 | Historical Git bytes      |
 | macOS b08          |    99 | 195 | Git bytes; temp source    |
 | Linux 927          |    98 | 193 | Git bytes; fork deps      |
 | Linux b08          |    99 | 195 | Git bytes; own venv       |
@@ -67,6 +75,15 @@ uncommitted actual-command probes. No hosted workflow was dispatched.
 | macOS resolver 839 |    37 |   — | Installed hashes only     |
 
 Start/CLI count loaded KERI modules at startup and actual command discovery.
+The clean local 714 checkout and all 98 startup imports matched Git bytes. Ten
+CESR corpora were regenerated with their actual source guards at 714; all wire
+and semantic values matched their 927 predecessors. Generated tables also matched.
+The local probe uses Python 3.14.2; full runtime qualification remains separate.
+Linux Python 3.14.6 with actual 714 source and fork-environment dependencies also
+accepted 12 stored nested rows, 15 proof-factor exchanges/replays and 12 multisig
+wrappers/child replays through the maintained live qualifiers. Their imported
+KERI source checks matched 714. The native default EXN builder still fails its
+independent decoder and remains an explicit reference limitation.
 927 used `kli --help`; b08 and Sally 98 used `kli mailbox start --help`.
 Every source/command comparison matched the selected pin's Git bytes. macOS
 used Python 3.14.2; Linux used 3.14.6. macOS b08 used a temporary clean checkout

@@ -19,7 +19,7 @@ env:
   PYTHON_VERSION: "3.14"
   LMDB_DATA_V1: "true"
   DEPS_CACHE_KEY_PREFIX: ci-deps-v6
-  KERIPY_TABLE_SHA: 927c0cb8794d7c84fc17143c67df64aab9deda6c
+  KERIPY_TABLE_SHA: 7143832813cac6a394ab1faf9be83bb3372be87c
   KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
 
 jobs:

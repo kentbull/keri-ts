@@ -63,6 +63,11 @@ See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md
 
 ## Transport
 
+The target finite and streamed messenger entry points share two engines. Parsed
+frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
+`postCesr` means successive POSTs, even when each frame body streams. Local drain,
+HTTP success, verified replies and durable acceptance are different outcomes.
+
 Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB
 preparation, then transfer admitted delivery ownership before network I/O. Never

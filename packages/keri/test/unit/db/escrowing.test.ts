@@ -1,7 +1,8 @@
 import { run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Signer } from "../../../../cesr/mod.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { acceptEscrow, dropEscrow, keepEscrow } from "../../../src/core/kever-decisions.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import { Broker } from "../../../src/db/escrowing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -321,6 +322,83 @@ Deno.test("db/escrowing - Broker updateReply pins current-state pointers by (pre
       assertExists(broker.daterdb.get([diger.qb64]));
     } finally {
       yield* lmdber.close(true);
+    }
+  });
+});
+
+Deno.test("Broker typed finite retry advances kept rows and preserves failures", async () => {
+  await run(function*() {
+    const db = yield* createLMDBer({ name: crypto.randomUUID(), temp: true });
+    try {
+      const broker = new Broker(db, "typed", { timeout: 1 });
+      const stamp = "2026-10-13T00:00:00.000001+00:00";
+      const add = (pre: string) => {
+        const serder = makeReplySerder("/tsn/registry/Eaid", pre);
+        const diger = new Diger({ qb64: serder.said! });
+        broker.escrowStateNotice({
+          typ: "registry-mae",
+          pre,
+          aid: "Eaid",
+          serder,
+          diger,
+          dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
+          cigars: [makeCigar(serder.raw)],
+        });
+        return diger;
+      };
+      const first = add("E01"), second = add("E02"), last = add("E03");
+      const visited: string[] = [];
+      const retry = () =>
+        broker.retryStateNotices("registry-mae", ({ serder, cigars }) => {
+          assertEquals(cigars.length, 1);
+          visited.push(String((serder.sad!.a as Record<string, unknown>).i));
+          if (visited.length === 1) {
+            add("E00");
+            add("E99");
+          }
+          return keepEscrow("recoverableError");
+        }, { maxRows: 2, now: stamp });
+      assertEquals(retry(), { processed: 2, done: false });
+      assertEquals(retry(), { processed: 1, done: true });
+      assertEquals(visited, ["E01", "E02", "E03"], "Insertions cannot extend the captured horizon");
+      const failure = new Error("storage unavailable");
+      assertThrows(
+        () =>
+          broker.retryStateNotices("registry-mae", () => {
+            throw failure;
+          }, { now: stamp }),
+        Error,
+        "storage unavailable",
+      );
+      assertEquals(broker.escrowdb.cnt(), 5, "Infrastructure failure removes nothing");
+      const next: string[] = [];
+      assertEquals(
+        broker.retryStateNotices("registry-mae", ({ serder }) => {
+          next.push(String((serder.sad!.a as Record<string, unknown>).i));
+          return next.length === 1 ? acceptEscrow() : dropEscrow("processingError");
+        }, { now: stamp }),
+        { processed: 5, done: true },
+      );
+      assertEquals(next, ["E00", "E01", "E02", "E03", "E99"], "Next pass includes insertions behind checkpoint");
+      assertEquals(broker.escrowdb.cnt(), 0);
+      for (const diger of [first, second, last]) assertExists(broker.serderdb.get([diger.qb64]));
+      add("E04");
+      let calls = 0;
+      const expiry = (now: string) =>
+        broker.retryStateNotices("registry-mae", () => {
+          calls++;
+          return keepEscrow("recoverableError");
+        }, { now });
+      assertEquals(expiry("2026-10-13T00:00:01.000001+00:00").processed, 1);
+      assertEquals(expiry("2026-10-13T00:00:01.000002+00:00").processed, 1);
+      assertEquals(calls, 1, "Inclusive TTL preserves the exact boundary and expires one microsecond later");
+      assertEquals(broker.escrowdb.cnt(), 0);
+      const corrupt = add("E05");
+      broker.daterdb.rem([corrupt.qb64]);
+      assertThrows(() => expiry(stamp), Error, "Corrupt Broker retry artifacts");
+      assertEquals(broker.escrowdb.cnt(), 1, "Corruption is not converted into terminal remote refusal");
+    } finally {
+      yield* db.close(true);
     }
   });
 });

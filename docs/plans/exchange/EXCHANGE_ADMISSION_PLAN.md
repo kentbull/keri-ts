@@ -33,7 +33,7 @@ Existing explicit schema data-OOBI retrieval verifies the expected SAID in both
 implementations. That supported OOBI path requires qualification; inventing an
 automatic SAID-to-URL resolver is not an additional completion gate.
 Inspect `core/parsing.py`, `core/eventing.py` and `core/kraming.py` at
-`927c0cb8794d7c84fc17143c67df64aab9deda6c` before editing. Verify the imported
+`7143832813cac6a394ab1faf9be83bb3372be87c` before editing. Verify the imported
 modules in each evidence run. `processXip`, `processPro` and `processBar` are
 stubs there; do not invent processing to claim parity.
 
