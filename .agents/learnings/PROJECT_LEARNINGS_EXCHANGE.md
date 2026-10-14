@@ -51,7 +51,7 @@ last-establishment group is present. Optional KRAM remains
 Internal cache policy owns exact route/ilk/catchall selection and compact exemptions.
 Persist staged windows with cache rows; reconfigure from active windows, preserve
 drift and keep pruning at least as long as active acceptance. Restart safety and
-stale-owner refresh strengthen the frozen reference; intake remains pending.
+stale-owner refresh strengthen the frozen reference; runtime composition owns intake.
 
 KRAM source authentication checks only the last couple or sender-matching triple.
 Keep known-invalid separate from missing state: only the former permits signature
@@ -73,7 +73,7 @@ marker; later KEL recovery alone cannot reinterpret unknown saved signatures.
 
 Do not invent xip/pro/bar processing: frozen upstream has stubs. Native outer EXN
 empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
-not prove that path. Full runtime/resource qualification remains open.
+not prove that path. Full resource qualification and presentation cutoffs remain open.
 
 KRAM time plans are read-only: cached multi partials reuse original windows; receipt
 time freezes on completion. Recheck plans atomically with current keys and durable
@@ -82,6 +82,10 @@ readiness before publication so competing receipts cannot replace the first one.
 KRAM pruning closes read cursors before atomic cleanup and defers for live handoff
 owners. Finite orphan scans restart on committed database changes; unrelated writes
 can postpone cleanup. Remove the shared opener only after the final participant.
+
+Optional runtime KRAM keeps the transport consumer inside scoped ready handoff;
+never return hydrated owners or authorize HTTP from an older cue after refusal.
+Receiver receipt propagation to presentation cutoffs remains independently guarded.
 
 [Proofs](../../docs/design-docs/exchange/EXCHANGE_PROOFS.md),
 [multisig](../../docs/design-docs/exchange/MULTISIG.md),

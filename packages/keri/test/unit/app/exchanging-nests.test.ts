@@ -9,6 +9,7 @@ import {
   discardFrame,
   type EssrPayload,
   essrPayload,
+  framePayload,
   MemoryPayloadSink,
   nestedPayload,
   NumberPrimitive,
@@ -23,6 +24,7 @@ import {
 import { call, run, suspend } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import depthVector from "../../../../cesr/test/fixtures/nested-depth.json" with { type: "json" };
+import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
 import { ForwardHandler } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
@@ -33,7 +35,7 @@ import { KeriDispatchEnvelope, TransIdxSigGroup } from "../../../src/core/dispat
 import { isKramHandoffActive, KramHandoff } from "../../../src/core/kram-handoff.ts";
 import { KramPolicy } from "../../../src/core/kram-policy.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
-import { serializeMessage } from "../../../src/core/protocol-serialization.ts";
+import { messageAttachmentGroups, serializeMessage } from "../../../src/core/protocol-serialization.ts";
 import { chargeNests, discardNests, loadNests, publishNests, stageNests } from "../../../src/db/exchange-nests.ts";
 import { MAX_NESTED_WIRE_BYTES } from "../../../src/db/exchange-nests.ts";
 import {
@@ -1007,5 +1009,64 @@ Deno.test("KRAM handoff cancellation holds capacity until serialization and hydr
       "consumer resource fault",
     );
     assertEquals(exempt.busy, false);
+  });
+});
+
+Deno.test("optional runtime KRAM forwards reopened nested evidence without accepting its child", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender", undefined, { icount: 3, isith: "2", ncount: 3, nsith: "2" });
+    const provider = hby.makeHab("provider", undefined, { transferable: false });
+    const recipient = hby.makeHab("recipient", undefined, { wits: [provider.pre], toad: 1 });
+    const runtime = yield* createAgentRuntime(hby, {
+      enableMailboxStore: true,
+      kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+    });
+    const nest = yield* call(() => child(sender, "independent"));
+    const wire = yield* call(() => attachEssr(nest)), input = forward(sender, recipient, provider, nest);
+    const original = input.tsgs![0], key = [sender.pre, input.serder.said!];
+    const group = (index: number) =>
+      new TransIdxSigGroup(original.prefixer, original.seqner, original.diger, [original.sigers[index]]);
+    try {
+      const first = yield* call(() =>
+        collectPayload(
+          framePayload({
+            body: input.serder,
+            attachments: messageAttachmentGroups({ tsgs: [group(0)] }, Vrsn_2_0),
+            nests: [nest],
+            gvrsn: Vrsn_2_0,
+          }),
+          8192,
+        )
+      );
+      yield* runtime.reactor.processBytes(first, { mailboxAid: provider.pre });
+      assertEquals([hby.db.exns.get(input.serder.said!), hby.db.exns.get(nest.body.said!)], [null, null]);
+      assertExists(hby.db.kpnd.get(key));
+      yield* hby.db.reopen();
+      const [retry] = yield* call(() =>
+        parseBytes(serializeMessage(input.serder, { tsgs: [group(1)], gvrsn: Vrsn_2_0, genusify: true }))
+      );
+      const returned = yield* runtime.reactor.settle(retry, { mailboxAid: provider.pre }, function*(ready) {
+        assertEquals(ready!.nests[0].body.raw, nest.body.raw);
+        assertEquals(yield* call(() => collectPayload(ready!.nests[0].essr!.wire, 1024)), wire);
+        assertExists(hby.db.kready.get(key), "transport callback owns hydrated evidence before acknowledgement");
+        assertEquals(hby.db.exns.get(nest.body.said!), null);
+      });
+      assertEquals(returned!.nests.length, 0, "hydrated descendants never escape the ready callback");
+      assertExists(hby.db.exns.get(input.serder.said!));
+      assertEquals([hby.db.pmkm.get(key), hby.db.kpnd.get(key), hby.db.kready.get(key)], [null, null, null]);
+      const saved = [...runtime.mailboxDirector.topicIter(recipient.pre, "/nested")];
+      assertEquals(saved.length, 1);
+      yield* runtime.reactor.processBytes(saved[0].msg);
+      assertEquals(
+        hby.db.exns.get(nest.body.said!)!.raw,
+        nest.body.raw,
+        "recipient separately authenticates the child's own signatures",
+      );
+    } finally {
+      yield* call(() => discardFrame(nest));
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
   });
 });

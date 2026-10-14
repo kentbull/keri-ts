@@ -10,6 +10,7 @@ export * from "./core/cbor.ts";
 export * from "./core/errors.ts";
 export * from "./core/frame.ts";
 export * from "./core/payload.ts";
+export * from "./core/resource-policy.ts";
 export * from "./core/types.ts";
 export * from "./core/vocabulary.ts";
 export { parseAttachmentGroup } from "./parser/attachments.ts";
