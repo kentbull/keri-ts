@@ -210,7 +210,8 @@ export class Outboxer extends LMDBer implements OutboxerLike {
    * Persist one logical outbound message and seed per-mailbox-target state.
    *
    * The message SAID identifies the logical message, while target rows track
-   * delivery independently per mailbox endpoint.
+   * delivery independently per mailbox endpoint. Payload, metadata and target
+   * publication share one transaction, including failed replacement rollback.
    */
   queueMessage(
     said: string,
@@ -218,18 +219,20 @@ export class Outboxer extends LMDBer implements OutboxerLike {
     message: OutboxMessageRecordShape,
     eids: Iterable<string>,
   ): void {
-    this.msgs.pin(said, raw);
-    this.items.pin([said], message);
-    for (const eid of eids) {
-      this.tgts.pin([said, eid], {
-        eid,
-        status: "pending",
-        attempts: 0,
-        lastAttemptAt: null,
-        deliveredAt: null,
-        lastError: null,
-      });
-    }
+    this.commitMessageRows(() => {
+      this.msgs.pin(said, raw);
+      this.items.pin([said], message);
+      for (const eid of eids) {
+        this.tgts.pin([said, eid], {
+          eid,
+          status: "pending",
+          attempts: 0,
+          lastAttemptAt: null,
+          deliveredAt: null,
+          lastError: null,
+        });
+      }
+    });
   }
 
   /** Return the raw signed payload for one logical outbound message. */
@@ -282,20 +285,22 @@ export class Outboxer extends LMDBer implements OutboxerLike {
 
   /**
    * Mark one mailbox target delivered and prune the parent message when all
-   * targets are terminal.
+   * targets are terminal. The target outcome and final pruning commit together.
    */
   markDelivered(
     said: string,
     eid: string,
     deliveredAt: string,
   ): void {
-    this.pinTarget(said, eid, {
-      status: "delivered",
-      deliveredAt,
-      lastAttemptAt: deliveredAt,
-      lastError: null,
+    this.commitMessageRows(() => {
+      this.pinTarget(said, eid, {
+        status: "delivered",
+        deliveredAt,
+        lastAttemptAt: deliveredAt,
+        lastError: null,
+      });
+      this.pruneIfComplete(said);
     });
-    this.pruneIfComplete(said);
   }
 
   /**
@@ -331,12 +336,14 @@ export class Outboxer extends LMDBer implements OutboxerLike {
     cancelledAt: string,
     error = "cancelled",
   ): void {
-    this.pinTarget(said, eid, {
-      status: "cancelled",
-      lastAttemptAt: cancelledAt,
-      lastError: error,
+    this.commitMessageRows(() => {
+      this.pinTarget(said, eid, {
+        status: "cancelled",
+        lastAttemptAt: cancelledAt,
+        lastError: error,
+      });
+      this.pruneIfComplete(said);
     });
-    this.pruneIfComplete(said);
   }
 
   /** Cancel every pending target that points at one removed mailbox AID. */
@@ -351,11 +358,20 @@ export class Outboxer extends LMDBer implements OutboxerLike {
     }
   }
 
-  /** Remove the payload, metadata, and all target rows for one logical message. */
+  /** Atomically remove payload, metadata and all target rows for one logical message. */
   removeMessage(said: string): void {
-    this.msgs.rem(said);
-    this.items.rem([said]);
-    this.tgts.trim([said], { topive: true });
+    this.commitMessageRows(() => {
+      this.msgs.rem(said);
+      this.items.rem([said]);
+      this.tgts.trim([said], { topive: true });
+    });
+  }
+
+  /** Keep each logical message's row ownership in one synchronous LMDB transaction. */
+  private commitMessageRows(update: () => void): void {
+    const env = this.env;
+    if (!env) throw new DatabaseNotOpenError("Outbox environment is not open");
+    env.transactionSync(update);
   }
 
   private pinTarget(
