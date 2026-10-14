@@ -93,6 +93,12 @@ Reuse these cases within representative matrix combinations, not another full
 cross-product. Include finite/source caller parity, parsed-frame input without
 reparsing, HTTP request framing/auth/method and scoped response consumption.
 Keep mailbox/default routing and explicit duplex evidence distinct.
+Reconcile the transport adoption inventory against actual KERI/Tufa call sites:
+OOBI intake/serving, witness GET replay, DID CESR resolution/generation/static
+hosting, mailbox, commands and webhook/admin exceptions. Qualify representative
+existing callers with slow sinks/cancellation and shared services in both hosts;
+record each retained collector's semantic reason, ceiling and admission owner.
+Streaming intake must not report DID/OOBI completion before their final checks.
 Reopen/retry evidence must identify the durable owner; a live delivery queue or
 local socket drain does not prove recovery or remote acceptance.
 

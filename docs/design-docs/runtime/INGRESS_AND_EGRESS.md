@@ -114,17 +114,25 @@ a separately proven durable obligation or reconstruction path, not just a queue.
 
 ## Messenger responsibilities
 
+Incremental source/sink I/O is the default for CESR network traffic across KERI
+and Tufa. Callers share the runtime's exact services/resource policy, preserve
+borrowed owners and propagate cancellation through joined cleanup. GET retrieval,
+SSE and non-CESR documents preserve their framing; they reuse ownership facilities
+rather than being wrapped in a CESR POST. A finite collector needs a semantic
+reason and enforced admission/cap, not merely a legacy byte-input API.
+The [stack adoption inventory][transport-plan] marks remaining callers explicitly.
+
 Two engines own transport work: CESR HTTP request/response scopes and an owned
 TCP connection with directional I/O. Small Effection operations/resources expose
 finite-message and source inputs. This mapping defines responsibilities; the TCP
-entries and complete caller integration remain planned in S1–9.
+finite/source writers exist; complete caller integration remains planned in S1–9.
 
-| KERIpy responsibility | TypeScript entry / shared engine                          |
-| --------------------- | --------------------------------------------------------- |
-| HTTPMessenger         | `requestFrame`; finite bytes via `postCesr`               |
-| HTTPStreamMessenger   | `postCesr` source and scoped response consumer            |
-| TCPMessenger          | Finite bytes/frame adapter to owned TCP engine (planned)  |
-| TCPStreamMessenger    | Abortable source/payload on the same TCP engine (planned) |
+| KERIpy responsibility | TypeScript entry / shared engine                    |
+| --------------------- | --------------------------------------------------- |
+| HTTPMessenger         | `requestFrame`; finite bytes via `postCesr`         |
+| HTTPStreamMessenger   | `postCesr` source and scoped response consumer      |
+| TCPMessenger          | `sendCesrTcp`; parsed-frame adapter remains planned |
+| TCPStreamMessenger    | `streamCesrTcp` abortable source on the same engine |
 
 Do not add aliases or inheritance merely to mirror names. Reuse existing byte
 sources, serializers and response readers. A parsed frame bypasses byte parsing;
@@ -271,8 +279,12 @@ ceiling before copying. Director/runtime close joins cancellation before stores.
 
 Finite OOBI and DID verification currently admit at most 8 MiB per fetched
 artifact, including their CESR replay document. Moving those complete verification
-flows to streamed artifacts remains separate work. Mailbox admin response metadata
-admits 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those
+flows to streamed CESR artifacts is required by transport S2 before release.
+DID resolution remains complete-evidence verification, even when intake streams.
+OOBI/DID replay serving and witness GET query output still collect histories;
+these are open adoption gaps. Finite JSON documents and receipt proofs retain
+whole-document semantics with bounded admission and joined cancellation.
+Mailbox admin response metadata admits 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those
 finite collectors use the same owned, cancellable byte reader.
 
 Provider connections and per-request topics now share finite runtime admission.
