@@ -12,7 +12,9 @@ Kever logging checks the prospective FEL tail before writes. Kevery.processEvent
 owns one native writer through decision, cue admission and durable effects, then
 publishes live state/cues after commit. Explicit decide/apply and already nested
 writer callers retain caller-owned commit/publication ordering. Group-prefix
-publication follows admission.
+publication follows admission. Default event escrow promotion uses the same
+owning writer, including bucket movement/removal before post-commit publication;
+same-bucket retries do not rewrite rows or emit additional cues.
 Busy/limit refusal leaves that decision unapplied; an unexpected infrastructure
 failure after writes is not a durable rollback or cue recovery guarantee.
 Ordinary Runtime Deck keeps its conservative acceptance/duplicate count guard

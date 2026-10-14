@@ -159,6 +159,14 @@ type ReceiptEventDecision =
     event: { pre: string; said: string; serder: SerderKERI; wits: string[] };
   };
 
+/** Existing event escrow coordinates retained only for one replay invocation. */
+interface EventEscrowEntry {
+  kind: EscrowKind;
+  pre: string;
+  on: number | null;
+  said: string;
+}
+
 /** One invocation's admitted KEL effects, published after its owning native commit. */
 interface PreparedKeverDecision {
   write(): void;
@@ -251,21 +259,38 @@ export class Kevery {
    * Exceptions are reserved for invariant/corruption cases during application.
    */
   processEvent(envelope: KeverEventEnvelope): KeverDecision {
+    return this.settleEventDecision(envelope);
+  }
+
+  /** Commit event effects and any replay bucket change before publishing admitted state/cues. */
+  private settleEventDecision(envelope: KeverEventEnvelope): KeverDecision;
+  private settleEventDecision(read: () => KeverEventEnvelope | null, escrow: EventEscrowEntry): KeverDecision | null;
+  private settleEventDecision(
+    input: KeverEventEnvelope | (() => KeverEventEnvelope | null),
+    escrow?: EventEscrowEntry,
+  ): KeverDecision | null {
     const env = this.db.env!;
-    // Nested callers retain their existing caller-owned commit/publication contract.
-    if ((env as unknown as { env: { writeTxn?: unknown } }).env.writeTxn) {
-      const decision = this.decideEvent(envelope);
-      this.applyDecision(decision);
-      return decision;
-    }
     let prepared: PreparedKeverDecision | undefined;
     try {
-      const decision = env.transactionSync(() => {
+      const write = () => {
+        // Replay hydration may repair an existing delegation source hint; it belongs to this writer too.
+        const envelope = typeof input === "function" ? input() : input;
+        if (!envelope) {
+          if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
+          return null;
+        }
         const decision = this.decideEvent(envelope);
+        // A still-pending replay keeps its existing row and emits no additional cues.
+        if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) return decision;
         prepared = this.prepareDecision(decision);
         prepared?.write();
+        if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
         return decision;
-      });
+      };
+      // Nested callers retain their existing caller-owned commit/publication contract.
+      const decision = (env as unknown as { env: { writeTxn?: unknown } }).env.writeTxn
+        ? write()
+        : env.transactionSync(write);
       prepared?.publish();
       return decision;
     } finally {
@@ -3032,8 +3057,8 @@ export class Kevery {
    *
    * Event-escrow replay differs from receipt/query/reply replay:
    * - the escrowed event is reconstructed back into a normal event envelope
-   * - the same `decideEvent()` and `applyDecision()` path is reused
-   * - escrow movement happens by changing buckets, not by custom replay logic
+   * - the same native writer and prepared decision path as live intake is reused
+   * - escrow movement/removal commits with event effects before state/cue publication
    */
   private replayEscrowEntry(
     currentEscrow: EscrowKind,
@@ -3041,29 +3066,10 @@ export class Kevery {
     on: number | null,
     said: string,
   ): void {
-    const envelope = this.rehydrateEscrowEnvelope(currentEscrow, pre, said);
-    if (!envelope) {
-      this.removeEscrow(currentEscrow, pre, on, said);
-      return;
-    }
-
-    const decision = this.decideEvent(envelope);
-    switch (decision.kind) {
-      case "accept":
-      case "duplicate":
-        this.applyDecision(decision);
-        this.removeEscrow(currentEscrow, pre, on, said);
-        break;
-      case "reject":
-        this.removeEscrow(currentEscrow, pre, on, said);
-        break;
-      case "escrow":
-        if (decision.reason !== currentEscrow) {
-          this.applyDecision(decision);
-          this.removeEscrow(currentEscrow, pre, on, said);
-        }
-        break;
-    }
+    this.settleEventDecision(
+      () => this.rehydrateEscrowEnvelope(currentEscrow, pre, said),
+      { kind: currentEscrow, pre, on, said },
+    );
   }
 
   /** Remove one stored escrow pointer from its current bucket. */

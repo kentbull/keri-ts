@@ -2726,9 +2726,13 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
         makify: true,
       });
       const sigers = hab.sign(serder.raw, true);
-      const kvy = new Kevery(hby.db, { local: true });
+      const resources = new ResourcePolicy();
+      const cues = new CueDeck(resources);
+      const kvy = new Kevery(hby.db, { local: true, cues });
+      const priorState = kever.state();
+      const key = dgKey(hab.pre, serder.said!);
 
-      const partial = kvy.decideEvent({
+      const partial = kvy.processEvent({
         serder,
         sigers: [sigers[0]],
         wigers: [],
@@ -2742,8 +2746,16 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
         throw new Error("Expected weighted partial signature escrow.");
       }
       assertEquals(partial.reason, "partialSigs");
+      assertEquals(hby.db.pses.getOn(hab.pre, 1), [serder.said]);
+      withPatchedMethod(hby.db.dtss, "put", () => {
+        throw new Error("same-bucket replay must not rewrite escrow material");
+      }, () => kvy.processEscrowPartialSigs());
+      assertEquals(hby.db.pses.getOn(hab.pre, 1), [serder.said]);
+      assertEquals(cues.length, 0);
+      assertEquals(resources.used.bytes, 0);
+      hby.db.sigs.put(key, [sigers[1]]);
 
-      const accepted = kvy.processEvent({
+      const accepted = kvy.decideEvent({
         serder,
         sigers,
         wigers: [],
@@ -2753,7 +2765,42 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
         local: true,
       });
       assertEquals(accepted.kind, "accept");
+      const native = (hby.db.env! as unknown as {
+        env: { writeTxn?: object; commitTxn(): void; abortTxn(): void };
+      }).env;
+      const commit = native.commitTxn.bind(native);
+      const nextOrdinal = hby.db.nextFelOrdinal.bind(hby.db);
+      const failure = new Error("native escrow promotion commit refused");
+      let writer: object | undefined;
+      withPatchedMethod(hby.db, "nextFelOrdinal", (pre) => {
+        assert(native.writeTxn, "escrow FEL preparation holds the native writer");
+        writer ??= native.writeTxn;
+        assertEquals(native.writeTxn === writer, true);
+        return nextOrdinal(pre);
+      }, () =>
+        withPatchedMethod(native, "commitTxn", () => {
+          if (native.writeTxn !== writer) return commit();
+          assertEquals(kever.state(), priorState);
+          assertEquals(cues.length, 0, "promotion cues wait for the owning commit");
+          assert(resources.used.bytes > 0);
+          assertEquals(hby.db.pses.getOn(hab.pre, 1), [], "bucket removal shares the event writer");
+          native.abortTxn();
+          throw failure;
+        }, () => assertEquals(assertThrows(() => kvy.processEscrowPartialSigs()), failure)));
+      assertEquals(kever.state(), priorState);
+      assertEquals(hby.db.getState(hab.pre), priorState);
+      assertEquals(hby.db.pses.getOn(hab.pre, 1), [serder.said], "failed commit restores the original bucket");
+      assertEquals(hby.db.getFel(hab.pre, 1), null);
+      assertEquals(hby.db.fons.get(key), null);
+      assertEquals(cues.length, 0);
+      assertEquals(resources.used.bytes, 0);
+      kvy.processEscrowPartialSigs();
       assertEquals(hby.db.getKever(hab.pre)?.sn, 1);
+      assertEquals(hby.db.getFel(hab.pre, 1), serder.said);
+      assertEquals(hby.db.pses.getOn(hab.pre, 1), []);
+      assertEquals(cues.toArray().map((cue) => cue.kin), ["keyStateSaved"]);
+      cues.clear();
+      assertEquals(resources.used.bytes, 0);
     } finally {
       yield* hby.close(true);
     }
