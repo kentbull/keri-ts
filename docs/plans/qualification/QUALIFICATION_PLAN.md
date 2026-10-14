@@ -80,6 +80,12 @@ Acceptance requires retained working memory to plateau as aggregate bytes rise
 under fixed policy, real backpressure, durable replay and usable independent
 GenericGroup children before transfer completion. No predetermined speedup is
 promised. Earlier parser-only 4 GiB observations do not qualify the full runtime.
+This is an in-flight guarantee. Keep accepted-state cardinality fixed in the
+plateau comparison; separately exercise increasing identifiers/state and report
+resident cache growth. Existing KERIpy-style accepted-state APIs are preserved;
+eviction/public borrowing redesign is deferred. Do not subtract unexplained
+growth or promote in-flight credit into a total-RSS claim. Store/escrow reopen
+and existing payload-staging recovery checks do not imply new delivery durability.
 
 The next-release [transport S9 gate](../runtime/TRANSPORT_PLAN.md) uses real TCP
 sockets and HTTP bodies, not a parser-only source substitution. Include signed
@@ -96,15 +102,12 @@ Reuse these cases within representative matrix combinations, not another full
 cross-product. Include finite/source caller parity, parsed-frame input without
 reparsing, HTTP request framing/auth/method and scoped response consumption.
 Keep mailbox/default routing and explicit duplex evidence distinct.
-Reconcile the transport adoption inventory against actual KERI/Tufa call sites:
-OOBI intake/serving, witness GET replay, DID CESR resolution/generation/static
-hosting, mailbox, commands and webhook/admin exceptions. Qualify representative
-existing callers with slow sinks/cancellation and shared services in both hosts;
-record each retained collector's semantic reason, ceiling and admission owner.
-Each adoption row identifies the actual default caller/source revision and its
-completion boundary, plus refusal-before-read/allocation and joined-stop evidence.
-Audit socket, fetch and body readers again on the release head to catch bypasses
-introduced after the inventory. Shared-engine tests alone leave a caller unqualified.
+Reconcile the reference-backed TCP/HTTP messenger, direct TCP and mailbox SSE
+callers with KERIpy 714. Qualify actual callers under slow sinks/cancellation and
+shared services in both hosts; record framing, completion and joined-stop evidence.
+Upstream finite collection is permitted. Further stack-wide artifact, export,
+JSON and cache conversion is deferred; separately label already merged TS additions.
+Shared-engine tests alone leave a required reference-backed caller unqualified.
 Streaming intake must not report DID/OOBI completion before their final checks.
 Reopen/retry evidence must identify the durable owner; a live delivery queue or
 local socket drain does not prove recovery or remote acceptance.

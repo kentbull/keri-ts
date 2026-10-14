@@ -1,5 +1,11 @@
 # Shared resource reservations
 
+The release contract bounds in-flight parsing, transport, decryptions, queues and
+storage copies. It does not bound durable protocol state or accepted-state cache
+residency. Preserve existing accepted-state APIs; cache eviction and public scoped
+borrowing are deferred architecture work, not KERIpy parity. Report cache growth,
+native/mapped residency and total RSS separately from admitted working retention.
+
 `cesr-ts` exports a framework-neutral `ResourcePolicy`. Components sharing the
 same instance share byte, active-stream and active-decryption credit. Defaults
 are 256 MiB, two streams and one decryption; zero capacity disables a dimension.
@@ -24,8 +30,8 @@ through joined cleanup. `Baser.resources` is fixed at construction, before reope
 loads. Supply a deployment policy through Habery/CLI opening options.
 AgentRuntime inherits that exact policy and rejects distinct runtime or service
 policies before acquiring resources. Runtime shutdown borrows Habery and does not
-release Baser-owned reservations. Accepted-state/cache admission is still pending;
-policy installation alone does not account those allocations.
+release Baser-owned reservations. Policy installation does not account accepted
+cache residency; that category is outside this release's in-flight guarantee.
 `AgentRuntime.resources` is shared with its Reactor and
 must be passed to hosted ESSR recipients. Inject the same policy into multiple
 runtimes when they share one deployment boundary; independent defaults do not
@@ -129,11 +135,17 @@ shared request: an impossible tree is `limit`; competing owners cause `busy`.
 MGPK declared container capacity and pinned decoder work use the same root owner;
 shared key caching/global custom extensions are excluded from admitted MGPK.
 CBOR-A shares root decoded/stage credit for declared/base tokens and documented
-standard view/record work. CBOR-B still owns BigInt/fraction and packed/record/shared/
-bundle expansion and global extensions/extractors. CBOR-B1 now clears the configured
+standard view/record work. Exhaustive BigInt/fraction, standard sharing and global
+extension/extractor accounting is deferred; retain the explicit unqualified envelope.
+CBOR-B1 clears the configured
 decoder's message-bearing globals before return, using a captured native null decode
 and admitted fixed reset work. Its instance configures no cached structures/shared
 values; injected tables, encoder caches and native residency remain unqualified.
+CBOR-B2 refuses actual JS-only packed/record/bundle/generic-object/forced-Map/table
+export handlers and combination ranges before decoding. CborAdmissionError signals
+unqualified format ownership, not invalid proof or busy contention; standalone
+hydration remains unqualified. Empty-schema record IDs and 6/14/15 retain bounded
+Tag fallback. The CESR contract records cbor2 6.1.4 unknown-tag divergence.
 
 This does not admit wrapped Matter preparation, CBOR tag expansion/external retention and native hydration, standalone
 verification, storage/cache copies or every JavaScript/native allocation.
@@ -244,7 +256,8 @@ membership is checked synchronously before publication. Busy/configured-limit re
 on replay preserves the existing escrow family. Typed remote decisions control family
 cleanup; thrown infrastructure/invariant failures propagate unchanged. Unexpected post-write failures release
 unpublished credit without DB rollback. Ordinary Deck keeps its original count guard.
-Credential constructors, proof/native copies and durable cue recovery remain phase 4/5 gates.
+Transient credential/proof/native copies remain qualification boundaries. New
+general durable cue recovery is deferred; existing escrow behavior remains intact.
 
 Oobiery.resolve admits its actual queued cue before the queue write. Multi-URL
 fanout validates and stages every child record, then admits the exact ordered cue
@@ -289,7 +302,7 @@ verification coordinate arrays, native proof reads, KRAM/IPEX notification ports
 private ESSR verification snapshots and native/copy admission remain open.
 
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
-owners before Runtime enables this deck. This does not close durable cue recovery.
+owners before Runtime enables this deck. This does not promise durable cue recovery.
 
 Internal DID alias-ID capture holds `4 * maxMetadataBytes + 64 * maxIds + 1024`
 bytes from the exact runtime policy before native duplicate iteration. Defaults

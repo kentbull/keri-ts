@@ -23,6 +23,8 @@ Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state.
 Shared transport readers cancel once, join that Promise and always unlock;
 single errors retain identity and distinct read/cleanup failures aggregate.
+SSE's earlier reader owner re-observes its pending read/cancel Promises after
+halt, preserving late failures and releasing the lock even when cleanup fails.
 Response cancellation uses an earlier scope resource: a bare yielding finally
 can join its Promise while losing a late failure during cancellation. Unacquired
 HTTP response/request bodies propagate cleanup failure instead of discarding it.
@@ -51,8 +53,9 @@ and scope exit both join cleanup; scope exit after explicit close is harmless.
 
 Baser fixes its ResourcePolicy before reopen and local Habery/signator construction.
 CLI opening forwards it; AgentRuntime inherits it and rejects policy mismatches.
-Borrowed runtime shutdown leaves Baser ownership intact. Accepted cache/native
-admission and public borrowing adoption remain open in resource phase 4/storage phase 5.
+Borrowed runtime shutdown leaves Baser ownership intact. Native transient copy
+admission remains phases 4/5; accepted cache residency and public borrowing/eviction
+redesign are deferred. Report state growth separately from the in-flight guarantee.
 
 Authenticator borrows that exact policy even without an AgentRuntime. Its status-only
 GET reserves handle/URL credit before fetch; busy retains durable pending work.
@@ -105,14 +108,18 @@ See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md
 
 ## Transport
 
-Incremental CESR I/O is the stack-wide default, including discovery, artifacts
-and CLI callers. Adopt the shared engines/response owners rather than private
-collectors; pass the runtime's exact services/policy. Finite JSON/receipt semantics
+Require streaming where KERIpy 714 supports it; further stack-wide discovery,
+artifact and CLI conversion is deferred. Required callers use shared engines and
+response owners with the runtime's exact services/policy. Finite JSON/receipt semantics
 require enforced caps, cancellation and joined cleanup. OOBI/DID completion still
 requires full evidence; processing before EOF does not imply artifact success.
 Close adoption through default library/host/CLI callers, not only engine tests.
 Every finite exception needs a semantic reason, ceiling, admission owner and
 joined response lifetime; audit newly introduced I/O on the final release head.
+Audit producer preparation and retained output as well as the shared engine:
+history collection before sending and uncharged copies after reading bypass the
+contract. Finite JSON/proofs may require whole-document semantics, with admission
+before avoidable allocation and ownership through consumption or explicit transfer.
 The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,

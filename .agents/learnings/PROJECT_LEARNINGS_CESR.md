@@ -17,7 +17,9 @@
   account for all hydrated copies or heap overhead. Progressive JSON/MGPK/CBOR separately
   admit lexical/token logical decoded/work charges before codec allocation, retaining
   them with root credit. CBOR-A covers base tokens/standard views and records; CBOR-B
-  still owns tag expansion/arithmetic. CBOR-B1 resets configured message globals before
+  exhaustive arithmetic/share/extension accounting is deferred. B2 guards actual JS-only tag allocators;
+  record IDs and 6/14/15 remain bounded Tags with definitions blocked/no private tables.
+  cbor2 6.1.4 unknown tags are not mandatory JS expansion parity. CBOR-B1 resets configured message globals before
   helper return; injected tables/handlers, native residency and encoder caches remain open. Wrapped Matter, native, standalone
   verification and store/cache allocation boundaries remain open. Native syntax owns JSON
   semantics; MGPK uses private standard extensions and disables shared key caching.

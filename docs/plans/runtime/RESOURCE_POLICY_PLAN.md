@@ -1,8 +1,11 @@
-# Shared runtime resource policy plan
+# Shared in-flight resource policy plan
 
 Owner: roadmap **4**. Existing parser/tree/recipient/runtime guards are finite
 but independent. This phase must establish one admission policy across streams,
 habitats, recipients, decryptions, queues, storage copies and pending descendants.
+The next-release requirement bounds in-flight work, not total resident accepted
+state. Accepted-state cache eviction and public borrowing API redesign are deferred;
+report their growth separately rather than claiming a process-wide RSS ceiling.
 The ledger, runtime stream/cursor admission and explicit ESSR recipient
 reservations share one policy. Ordinary trees and queued ingress retain the same
 credit through ownership and cleanup, including finite ESSR staging; storage
@@ -28,11 +31,13 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    avoidable raw copying, sharing cumulative logical credit with the root and its
    descendants through parser/consumer cleanup. MGPK declared array/map capacity
    and pinned decoder work are admitted before members. CBOR-A admits declared/base
-   tokens and bounded standard view/record work; CBOR-B tag expansion/arithmetic and
-   external codec retention remain open; CBOR-B1 clears configured message globals
-   before returning ownership. Native bodies and wrapped
-   Matter preparation, standalone verification/projections and store/cache hydration
-   remain successor gates. Storage/hydration copy charges coordinate with phase 5. Mailbox providers
+   tokens and bounded standard view/record work. CBOR-B1 clears configured message
+   globals before returning ownership; B2 guards actual unqualified JS tag expansion
+   while preserving bounded unknown Tag fallback and standalone behavior. Standard
+   exhaustive bignum/fraction/share/extension accounting is deferred. Report its
+   unqualified envelope rather than inventing codec behavior or a full allocation
+   claim. Qualify the supported in-flight paths and existing finite guards; native
+   transient copies remain a measurement boundary, not a cache redesign project. Storage/hydration copy charges coordinate with phase 5. Mailbox providers
    reserve one shared stream/copy lease through joined close and preflight native
    rows; retained query cues and remote-worker handles remain open.
 6. Parser input checkpoints yield after 64 KiB or 4,096 pull/consume operations,
@@ -78,42 +83,24 @@ existing role/source topology and body-driven genus selection.
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.
 Split further before publication if a complete boundary needs more. Qualification
 uses existing scenarios and uncommitted pressure probes rather than a new suite
-by default. These units jointly establish the runtime bound; no partial unit does.
+by default. These units jointly establish the in-flight bound; no partial unit does.
 
-## Accepted-state ownership closure
+## Deferred accepted-state residency
 
 Baser now fixes its shared policy before reopen, Habery reconstruction and signator
 creation. CLI openers forward an injected policy; AgentRuntime inherits that exact
 instance and refuses mismatches before resource acquisition. Runtime borrows Habery,
 so shutdown cannot release Baser-owned credit. This installation alone charges no
-accepted Kevers and does not establish a cache or native-allocation bound.
+accepted Kevers. KERIpy 714's `statedict` is a growing read-through cache; it has
+no finite eviction or scoped borrowing API. Preserve the current accepted-state
+APIs for this release and disclose cache growth in qualification.
 
-Continue within phases 4/5, each unit within the existing review-size target:
-
-1. Introduce independently owned accepted generations and prospective admission
-   before Kever materialization and accepted writes. Copy only the accepted body
-   and state under credit; parser/tree credit remains until its own cleanup, so
-   parent proofs and sibling trees do not become permanent cache owners.
-2. Admit cold/refresh/reload state and event rows before native copies and decoding;
-   charge local/signator/group pins and their metadata before construction.
-3. Separate durable accepted-state membership/iteration from cache residency,
-   including wrong-issuer anchor detection. Preserve normal resident Kever identity
-   while old borrowed generations retain their charges across updates.
-4. Port core, local/group, async runtime and default CLI/DID consumers to explicit
-   scoped borrows or independently admitted copies. Transfer ownership with outputs
-   retained across suspension; release only after joined consumption.
-5. Activate finite foreign-resident eviction only after those ports. Reclaim bodies
-   and entry metadata deterministically when no borrower or local pin remains;
-   refuse admission when live pins/borrows exhaust capacity. Qualify with existing
-   reopen, anchor, group and cancellation tests plus the production pressure probe.
-
-The public borrowing contract requires a coordinated API change: unrestricted
-`getKever`/Map access and raw Serder/array aliases cannot retain validity indefinitely
-while their credit is reclaimed. Bounded callers must retain an explicit owner or
-copy into another admitted owner. Arbitrary externally retained legacy raw aliases
-cannot be included in a deterministic bound. Do not silently release their credit,
-rely on GC/finalizers, or enable eviction before agreeing and adopting this contract.
-This unit does not change those public borrowing APIs.
+Finite residency would be a future TypeScript architecture change, requiring
+independent accepted generations, charged local pins, durable membership separate
+from residency and explicit borrower adoption before safe eviction. Raw public
+aliases prevent deterministic reclamation. This redesign is not a release gate
+and must not be introduced as a parity prerequisite. Transient hydration/copy
+admission in streaming paths remains in phases 4/5.
 
 ## Approved initial deployment defaults
 

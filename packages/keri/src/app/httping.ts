@@ -141,7 +141,7 @@ function* fetchResponseHandleInternal(
             response = await pending!;
           } catch (error) {
             // Only this controller's abort or the already-propagated identical failure is consumed.
-            if (error === controller.signal.reason || error === deliveredFailure?.error) return;
+            if (error === controller.signal.reason || (deliveredFailure && error === deliveredFailure.error)) return;
             throw error;
           }
           if (response.body && !response.body.locked) {
