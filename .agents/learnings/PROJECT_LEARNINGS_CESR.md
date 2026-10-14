@@ -22,6 +22,10 @@
 - `Payload.open(signal)` must cooperate with cancellation. Generator return alone
   cannot interrupt blocked I/O. CESR root has no Effection import; its optional
   adapter owns one subscription, abort and joined cleanup.
+- Consumed-work scheduling belongs to the shared input owner, not each enclosure.
+  After 64 KiB or 4,096 pull/consume operations, yield a host turn; empty producer
+  chunks count. Abort clears the single checkpoint timer and retains source-error
+  identity. This is local scheduling policy, not a wire limit or RSS guarantee.
 
 ## Wire and version rules
 

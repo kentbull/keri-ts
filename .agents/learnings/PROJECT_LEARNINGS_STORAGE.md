@@ -75,6 +75,10 @@ not reconstruct authentication inputs. Incoming trees stay borrowed; reopened
 file owners remain Effection-scoped. Cancellation joins serialization/parser work
 before disposal, and scope exit attempts every descendant owner. Parent/child
 storage does not accept either message or publish ordinary exchange wire.
+Explicit-credit snapshot identity/publication facilities admit native copies before
+allocation and retain serialization credit through joined cleanup and publication.
+Register passive credit before abortable leaves; a plain finally can release it
+while cancelled source cleanup still runs. Runtime hydration/plumbing remains next.
 
 ## Open boundary
 

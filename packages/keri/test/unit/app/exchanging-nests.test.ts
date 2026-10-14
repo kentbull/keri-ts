@@ -43,10 +43,12 @@ import { suffix } from "../../../src/db/core/keys.ts";
 import { chargeNests, discardNests, loadNests, publishNests, stageNests } from "../../../src/db/exchange-nests.ts";
 import { MAX_NESTED_WIRE_BYTES, NESTED_COPY_RESERVATION_BYTES } from "../../../src/db/exchange-nests.ts";
 import {
+  kramSnapshotIdentity,
   removeKramSnapshot,
   snapshotKram,
   storeKramSnapshot,
   withKramHydration,
+  withKramSnapshot,
 } from "../../../src/db/kram-snapshots.ts";
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 
@@ -618,6 +620,62 @@ Deno.test("private KRAM snapshots reopen scalar factors and independent children
     const incoming = envelopeFromFrame(parent), key = [sender.pre, parent.body.said!];
     const snapshot = await run(() => snapshotKram(incoming));
     assertExists(snapshot);
+    const resources = new ResourcePolicy();
+    assertEquals(
+      await run(() =>
+        withKramSnapshot(incoming, resources, (wire) => {
+          assertEquals(resources.used.bytes, 2 * MAX_NESTED_WIRE_BYTES);
+          assertEquals(wire, snapshot);
+          hby.db.env!.transactionSync(() => storeKramSnapshot(hby.db, key, wire));
+          return "published";
+        })
+      ),
+      "published",
+    );
+    assertEquals(resources.used.bytes, 0);
+    await assertRejects(
+      () =>
+        run(() =>
+          withKramSnapshot(incoming, resources, (wire) => {
+            hby.db.env!.transactionSync(() => {
+              hby.db.kpnd.pin(key, wire!.slice(0, -4));
+              throw new Error("snapshot publication unavailable");
+            });
+          })
+        ),
+      Error,
+      "snapshot publication unavailable",
+    );
+    assertEquals(resources.used.bytes, 0);
+    assertEquals(hby.db.kpnd.get(key), snapshot, "failed transaction preserves durable wire");
+    const native = hby.db.kpnd.sdb, copy = native.getBinary;
+    let copies = 0;
+    native.getBinary = function(...args) {
+      copies++;
+      return copy.apply(this, args);
+    };
+    try {
+      const unavailable = new ResourcePolicy({ bytes: 0 });
+      assertEquals(kramSnapshotIdentity(hby.db, ["absent"], unavailable), null);
+      assertThrows(() => kramSnapshotIdentity(hby.db, key, unavailable), ResourceAdmissionError);
+      assertEquals(copies, 0, "shared refusal precedes private-row owned copies");
+      hby.db.kpnd.pin(key, new Uint8Array(MAX_NESTED_WIRE_BYTES + 1));
+      const corrupt = assertThrows(() => kramSnapshotIdentity(hby.db, key, unavailable), Error, "Oversized stored");
+      assertEquals(corrupt instanceof ResourceLimitError, false);
+      assertEquals(copies, 0, "corrupt extent fails before copies and shared admission");
+      hby.db.kpnd.pin(key, snapshot);
+      const digest = new Diger({ raw: Diger.digest(snapshot, "E"), code: "E" }).qb64;
+      assertEquals(kramSnapshotIdentity(hby.db, key, resources), digest);
+      hby.db.env!.transactionSync(() => assertEquals(kramSnapshotIdentity(hby.db, key, resources), digest));
+      assertEquals(resources.used.bytes, 0);
+      native.getBinary = () => {
+        throw new Error("private row unavailable");
+      };
+      assertThrows(() => kramSnapshotIdentity(hby.db, key, resources), Error, "private row unavailable");
+      assertEquals(resources.used.bytes, 0);
+    } finally {
+      native.getBinary = copy;
+    }
     hby.db.env!.transactionSync(() => {
       hby.db.pmkm.pin(key, input.serder);
       hby.db.pmks.put(key, input.tsgs![0].sigers);
@@ -721,6 +779,16 @@ Deno.test("private KRAM snapshots reopen scalar factors and independent children
         )
       ), ResourceLimitError);
     const invalid = { ...incoming.essr!, count: NaN };
+    await assertRejects(() =>
+      run(() =>
+        withKramSnapshot(
+          new KeriDispatchEnvelope({ ...incoming, attachmentGroups: [], essr: invalid }),
+          new ResourcePolicy({ bytes: 0 }),
+          () => {
+            throw new Error("invalid extent cannot publish");
+          },
+        )
+      ), RangeError);
     for (const nested of [false, true]) {
       await assertRejects(() =>
         run(() =>
@@ -780,19 +848,24 @@ Deno.test("KRAM snapshot cancellation joins serialization and every scoped owner
         },
       },
     };
-    const task = run(function*() {
-      const snapshot = yield* snapshotKram(incoming);
-      storeKramSnapshot(hby.db, key, snapshot);
-      published = true;
-    });
+    const resources = new ResourcePolicy();
+    const task = run(() =>
+      withKramSnapshot(incoming, resources, (snapshot) => {
+        storeKramSnapshot(hby.db, key, snapshot);
+        published = true;
+      })
+    );
     await reading;
+    assertEquals(resources.used.bytes, 2 * MAX_NESTED_WIRE_BYTES);
     let halted = false;
     const halting = task.halt().then(() => halted = true);
     await aborted;
     assertEquals([halted, closed, published], [false, false, false]);
+    assertEquals(resources.used.bytes, 2 * MAX_NESTED_WIRE_BYTES);
     release();
     await halting;
     assertEquals([closed, published], [true, false]);
+    assertEquals(resources.used.bytes, 0);
     assertEquals(hby.db.kpnd.get(key), null);
     assertEquals(await collectPayload(owner.wire, 1024), wire, "serialization borrows incoming owners");
     nest.essr = owner;
