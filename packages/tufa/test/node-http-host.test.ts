@@ -1,5 +1,59 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { openDenoServerHost, openNodeServerHost } from "../src/host/http-server.ts";
+
+Deno.test("Node HTTP host terminates a late body failure without rewriting sent headers", async () => {
+  const lifetime = new AbortController(), request = new AbortController();
+  const listening = Promise.withResolvers<number>(), fail = Promise.withResolvers<void>();
+  const fault = new Error("late artifact read failed"), reported: unknown[] = [];
+  const host = openNodeServerHost({
+    port: 0,
+    hostname: "127.0.0.1",
+    signal: lifetime.signal,
+    onListen: ({ port }) => listening.resolve(port),
+    onError: (error) => {
+      reported.push(error);
+      return new Response(null, { status: 500 });
+    },
+  }, () =>
+    Promise.resolve(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(Uint8Array.of(1));
+          },
+          async pull(controller) {
+            await fail.promise;
+            controller.error(fault);
+          },
+        }),
+        { headers: { "Content-Length": "2" } },
+      ),
+    ));
+  const client = Deno.createHttpClient({});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const response = await fetch(`http://127.0.0.1:${await listening.promise}/`, { client, signal: request.signal });
+    assertEquals(response.status, 200);
+    fail.resolve();
+    await assertRejects(() =>
+      Promise.race([
+        response.arrayBuffer(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Failed body did not terminate")), 1000);
+        }),
+      ]), TypeError);
+    assertEquals(reported.length, 1);
+    assertStrictEquals(reported[0], fault);
+  } finally {
+    clearTimeout(timer);
+    fail.resolve();
+    request.abort();
+    host.close();
+    lifetime.abort();
+    await host.server.finished;
+    client.close();
+  }
+});
 
 // Both platform close events precede asynchronous handler cleanup after a peer disconnects.
 for (const [name, open] of [["Node", openNodeServerHost], ["Deno", openDenoServerHost]] as const) {
