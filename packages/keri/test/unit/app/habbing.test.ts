@@ -9,6 +9,7 @@ import {
   assertStringIncludes,
   assertThrows,
 } from "jsr:@std/assert";
+import { createServer, type Socket } from "node:net";
 import {
   Cigar,
   concatBytes,
@@ -272,8 +273,8 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
         isith: "1",
         toad: 0,
       });
-      hby.db.locs.pin([delegatorWitness.pre, "http"], {
-        url: "http://127.0.0.1:9451/",
+      hby.db.locs.pin([delegatorWitness.pre, "tcp"], {
+        url: "tcp://127.0.0.1:9451",
       });
       const delegator = hby.makeHab("delegator", undefined, {
         transferable: true,
@@ -466,77 +467,138 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
 });
 
 Deno.test("Anchorer completes delegated inception once the delegator approval is locally discoverable", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({
-      name: `habery-delegate-coordinator-complete-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    try {
-      const delegator = hby.makeHab("delegator", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const proxy = hby.makeHab("proxy", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const delegate = hby.makeHab("delegate", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-        delpre: delegator.pre,
-      });
-
-      const poster = {
-        *sendExchange() {
-          return { deliveries: ["mock"], queued: [] };
-        },
-        *sendBytes() {
-          return { deliveries: ["mock"], queued: [] };
-        },
-      } as unknown as Poster;
-      const querying = {
-        enqueue() {
-          return;
-        },
-      } as unknown as QueryCoordinator;
-      const coordinator = new Anchorer(hby, { poster, querying });
-
-      coordinator.beginLatest(delegate.pre, 0, {
-        communicationHab: proxy,
-      });
-      yield* coordinator.processAllOnce();
-
-      assertExists(delegate.kever?.said);
-      delegator.interact({
-        data: [{
-          i: delegate.pre,
-          s: "0",
-          d: delegate.kever.said,
-        }],
-      });
-
-      const completed = yield* coordinator.processAllOnce();
-      assertEquals(completed[0]?.kind, "complete");
-      assertExists(hby.db.aess.get(dgKey(delegate.pre, delegate.kever.said)));
-      assertEquals(hby.db.cdel.cntOn(delegate.pre), 1);
-      assertEquals(hby.db.dune.cnt(), 0);
-      assertEquals(coordinator.complete(delegate.pre, 0), true);
-    } finally {
-      yield* hby.close(true);
-    }
+  let reply: Uint8Array = new Uint8Array();
+  let publications = 0;
+  const sockets = new Set<Socket>();
+  const server = createServer({ allowHalfOpen: true }, (socket) => {
+    publications++;
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+    socket.on("error", () => {});
+    socket.resume();
+    socket.once("end", () => socket.end(reply));
   });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({
+        name: `habery-delegate-coordinator-complete-${crypto.randomUUID()}`,
+        temp: true,
+      });
+      try {
+        const delegator = hby.makeHab("delegator", undefined, {
+          transferable: true,
+          icount: 1,
+          isith: "1",
+          ncount: 1,
+          nsith: "1",
+          toad: 0,
+        });
+        const proxy = hby.makeHab("proxy", undefined, {
+          transferable: true,
+          icount: 1,
+          isith: "1",
+          ncount: 1,
+          nsith: "1",
+          toad: 0,
+        });
+        const delegate = hby.makeHab("delegate", undefined, {
+          transferable: true,
+          icount: 1,
+          isith: "1",
+          ncount: 1,
+          nsith: "1",
+          toad: 0,
+          delpre: delegator.pre,
+        });
+
+        const poster = {
+          *sendExchange() {
+            return { deliveries: ["mock"], queued: [] };
+          },
+          *sendBytes() {
+            return { deliveries: ["mock"], queued: [] };
+          },
+        } as unknown as Poster;
+        const querying = {
+          enqueue() {
+            return;
+          },
+        } as unknown as QueryCoordinator;
+        const coordinator = new Anchorer(hby, { poster, querying });
+
+        coordinator.beginLatest(delegate.pre, 0, {
+          communicationHab: proxy,
+        });
+        yield* coordinator.processAllOnce();
+
+        assertExists(delegate.kever?.said);
+        delegator.interact({
+          data: [{
+            i: delegate.pre,
+            s: "0",
+            d: delegate.kever.said,
+          }],
+        });
+
+        const completed = yield* coordinator.processAllOnce();
+        assertEquals(completed[0]?.kind, "complete");
+        assertExists(hby.db.aess.get(dgKey(delegate.pre, delegate.kever.said)));
+        assertEquals(hby.db.cdel.cntOn(delegate.pre), 1);
+        assertEquals(hby.db.dune.cnt(), 0);
+        assertEquals(coordinator.complete(delegate.pre, 0), true);
+        const peerHby = yield* createHabery({
+          name: `anchor-peer-${crypto.randomUUID()}`,
+          temp: true,
+          skipConfig: true,
+        });
+        try {
+          const peer = peerHby.makeHab("peer");
+          reply = eventReplayMessage(peerHby, peer.kever!.serder);
+          const witness = hby.makeHab("publication-witness", undefined, { transferable: false });
+          const witnessed = hby.makeHab("witnessed-delegate", undefined, {
+            delpre: delegator.pre,
+            wits: [witness.pre],
+            toad: 1,
+          });
+          const event = witnessed.kever!.serder;
+          hby.db.wigs.put(dgKey(witnessed.pre, event.said!), witness.sign(event.raw, true));
+          hby.db.locs.pin([witness.pre, "tcp"], {
+            url: `tcp://127.0.0.1:${(server.address() as { port: number }).port}`,
+          });
+          delegator.interact({ data: [{ i: witnessed.pre, s: "0", d: event.said }] });
+          const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+          try {
+            runtime.poster.sendBytes = poster.sendBytes; // Reuse the fixture's delegator mailbox sink; witness TCP is real.
+            runtime.delegating.beginLatest(witnessed.pre, 0, { communicationHab: proxy });
+            // Start at the already-receipted anchor-waiting frontier; publication runs in the default runtime turn.
+            hby.db.dpwe.rem([witnessed.pre, "0"]);
+            hby.db.dune.pin([witnessed.pre, "0"], event);
+            assertEquals(hby.db.getKever(peer.pre), null);
+            yield* processRuntimeTurn(runtime, { pollMailbox: false });
+            assertEquals(publications > 0, true);
+            assertEquals(
+              hby.db.getKever(peer.pre)?.sn,
+              0,
+              "Anchorer borrows the default runtime for verified TCP reply intake",
+            );
+            assertEquals(runtime.delegating.complete(witnessed.pre, 0), true);
+            assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+            yield* runtime.reactor.processEscrowsOnce();
+          } finally {
+            yield* runtime.close();
+          }
+        } finally {
+          yield* peerHby.close(true);
+        }
+      } finally {
+        yield* hby.close(true);
+      }
+    });
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 });
 
 Deno.test("Anchorer fails delegated inception without an explicit proxy", async () => {
