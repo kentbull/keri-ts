@@ -66,6 +66,8 @@ close/scope exit clears queued leases without releasing active processing early.
 Lazy HTTP replay reserves shared stream/event/chunk credit before opening its
 iterator and returns it only after source cleanup. Busy HTTP admission returns 503;
 configured size refusal remains 413. Neither creates retry scheduling.
+Nonempty response detection primes one bounded event under that same owner;
+empty sources close before returning null and runtime close drops primed bytes.
 Query producers run only after preparation/request admission. Queued requests retain
 credit through failure/retry; shutdown releases an active head after transport cleanup joins.
 Runtime HTTP services must carry the runtime's exact policy. Frame requests acquire
