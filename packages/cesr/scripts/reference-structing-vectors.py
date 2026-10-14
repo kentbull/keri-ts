@@ -12,7 +12,7 @@ from keri.core import coring, counting, parsing, structing
 from keri.kering import Colds, MaterialError, ValidationError, Vrsn_1_0, Vrsn_2_0
 
 # The semantic baseline is independent of older runtime interop pins.
-REFERENCE = "927c0cb8794d7c84fc17143c67df64aab9deda6c"
+REFERENCE = "7143832813cac6a394ab1faf9be83bb3372be87c"
 
 
 def verify_source():

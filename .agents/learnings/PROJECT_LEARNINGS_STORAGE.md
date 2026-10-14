@@ -78,7 +78,9 @@ storage does not accept either message or publish ordinary exchange wire.
 Explicit-credit snapshot identity/publication facilities admit native copies before
 allocation and retain serialization credit through joined cleanup and publication.
 Register passive credit before abortable leaves; a plain finally can release it
-while cancelled source cleanup still runs. Runtime hydration/plumbing remains next.
+while cancelled source cleanup still runs. Runtime KRAM borrows the same ledger as
+Exchanger. Hydration releases row/cursor credit only after parser closure; actual
+frame credit stays through scoped callback disposal without wrapping FilePayload.
 
 ## Open boundary
 
@@ -87,7 +89,7 @@ active writers stay borrowed and ordinary reads share one explicit snapshot.
 Exchanger borrows runtime credit before nested row/serialization copies and holds
 it through joined admission/replay cleanup; reopened parser credits stay on actual
 frame owners. Keep both owned row copies charged. Direct DB helpers need a caller
-scope. Other LMDB APIs/KRAM snapshots still allocate before checks; fixed native
+scope. Other LMDB APIs and parent-factor reads still allocate before checks; fixed native
 scratch and mapped residency remain separate overhead, so this is no RSS bound.
 [Resource phase 4](../../docs/plans/runtime/RESOURCE_POLICY_PLAN.md) and
 [storage phase 5](../../docs/plans/db/STORAGE_RECOVERY_PLAN.md) jointly own closure.

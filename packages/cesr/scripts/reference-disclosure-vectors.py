@@ -6,7 +6,7 @@ import subprocess
 import sys
 from keri.core import mapping
 
-REFERENCE = "927c0cb8794d7c84fc17143c67df64aab9deda6c"
+REFERENCE = "7143832813cac6a394ab1faf9be83bb3372be87c"
 root = pathlib.Path(mapping.__file__).resolve().parents[3]
 assert subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip() == REFERENCE
 for name, module in list(sys.modules.items()):

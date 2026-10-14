@@ -1,10 +1,23 @@
 /** Internal atomic KRAM staging; the handoff owner supplies capacity, queries and acknowledgement. */
-import { Dater, DigDex, Diger, NumberPrimitive, type Prefixer, ResourceLimitError, type Siger } from "cesr-ts";
+import {
+  Dater,
+  Diger,
+  NumberPrimitive,
+  type Prefixer,
+  ResourceLimitError,
+  type ResourcePolicy,
+  type Siger,
+} from "cesr-ts";
 import type { Operation } from "effection";
 import type { Baser } from "../db/basing.ts";
-import { MAX_NESTED_WIRE_BYTES } from "../db/exchange-nests.ts";
 import { rehydrateKramFactors, removeKramFactors, storeKramFactors, validateKramFactors } from "../db/kram-factors.ts";
-import { removeKramSnapshot, snapshotKram, storeKramSnapshot, withKramHydration } from "../db/kram-snapshots.ts";
+import {
+  kramSnapshotIdentity,
+  removeKramSnapshot,
+  storeKramSnapshot,
+  withKramHydration,
+  withKramSnapshot,
+} from "../db/kram-snapshots.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup } from "./dispatch.ts";
 import type { Kever } from "./kever.ts";
@@ -69,13 +82,6 @@ function receivedFactors(db: Baser, incoming: KeriDispatchEnvelope) {
   });
   received.ssgs.splice(0, received.ssgs.length, ...pending);
   return { received, resolvedLast };
-}
-/** Fingerprint private wire so a concurrent replacement cannot be overwritten by an older prepared tree. */
-function snapshotIdentity(db: Baser, key: readonly string[]): string | null {
-  const wire = db.kpnd.get(key);
-  if (!wire) return null;
-  if (wire.length > MAX_NESTED_WIRE_BYTES) throw new Error("Oversized stored KRAM snapshot");
-  return new Diger({ raw: Diger.digest(wire, DigDex.Blake3_256), code: DigDex.Blake3_256 }).qb64;
 }
 /** Recheck replay, source precedence, sender rotation, verified factors and the selected cache windows. */
 function candidate(
@@ -169,6 +175,7 @@ function discardPartial(db: Baser, key: readonly string[]): void {
 export function* stageKram<T>(
   db: Baser,
   policy: KramPolicy,
+  resources: ResourcePolicy,
   incoming: KeriDispatchEnvelope,
   receiverTime: string,
   consume: (ready: KeriDispatchEnvelope, key: readonly string[], receiverTime: string) => Operation<T>,
@@ -187,62 +194,65 @@ export function* stageKram<T>(
   }
   if (initial.kind !== "candidate") return initial;
   const { received, resolvedLast } = receivedFactors(db, initial.envelope);
-  const key = initial.plan.key, snapshotBefore = snapshotIdentity(db, key);
-  return yield* withKramHydration(db, key, received, function*(hydrated) {
-    const snapshot = yield* snapshotKram(hydrated);
-    const staged = db.env!.transactionSync(() => {
-      const fresh = candidate(db, policy, received, receiverTime);
-      if (fresh.kind === "rotated") {
-        discardPartial(db, fresh.key);
-        return { kind: "drop", reason: "replay" } as const;
-      }
-      if (fresh.kind !== "candidate") return fresh;
-      if (initial.receipt && fresh.receipt !== initial.receipt) {
-        throw new Error("KRAM ready receipt changed during staging");
-      }
-      if (fresh.establishment !== initial.establishment || snapshotIdentity(db, key) !== snapshotBefore) {
-        return { kind: "drop", reason: "changed" } as const;
-      }
-      const { plan } = fresh;
-      if (plan.record instanceof TxnMsgCacheRecord) {
-        db.tmsc.pin(plan.cacheKey, plan.record);
-        db.xdt.pin(plan.xid, new Dater({ qb64: encodeDateTimeToDater(plan.record.xdt!) }));
-      } else db.msgc.pin(key, plan.record);
-      db.pmkm.pin(key, incoming.serder);
-      for (const sig of fresh.pool) db.pmks.add(key, sig);
-      if (fresh.pool.length) {
-        db.pmsk.pin(key, [
-          NumberPrimitive.fromNum(BigInt(fresh.kever.lastEst.s)),
-          new Diger({ qb64: fresh.kever.lastEst.d }),
-        ]);
-      }
-      // Unknown foreign last groups were unknown at receipt; preserve their markers without later reinterpretation.
-      const factors = new KeriDispatchEnvelope({
-        ...fresh.envelope,
-        attachmentGroups: [...fresh.envelope.attachmentGroups],
-        ssgs: [],
-        unresolvedLast: [...fresh.envelope.unresolvedLast, ...fresh.envelope.ssgs.map((group) => group.prefixer)],
-      });
-      storeKramFactors(db, key, factors);
-      // Only a fresh receipt-known last group supersedes its previous unknown marker.
-      for (const prefix of resolvedLast) db.ulgs.rem(key, prefix);
-      validateKramFactors(db, key);
-      storeKramSnapshot(db, key, snapshot);
-      if (fresh.complete) db.kready.pin(key, fresh.receipt ?? plan.receiverTime);
-      const delivery = rehydrateKramFactors(db, key, fresh.envelope);
-      if (fresh.multi) {
-        delivery.sigers.splice(0, delivery.sigers.length, ...[...fresh.pool].sort((a, b) => a.index - b.index));
-        if (incoming.serder.ilk === "exn") {
-          delivery.tsgs.splice(
-            0,
-            delivery.tsgs.length,
-            establishmentGroup(fresh.kever, fresh.pool),
-            ...delivery.tsgs.filter((group) => group.pre !== incoming.serder.pre),
-          );
+  const key = initial.plan.key, snapshotBefore = kramSnapshotIdentity(db, key, resources);
+  return yield* withKramHydration(db, key, received, resources, function*(hydrated) {
+    const publish = (snapshot: Uint8Array | undefined) =>
+      db.env!.transactionSync(() => {
+        const fresh = candidate(db, policy, received, receiverTime);
+        if (fresh.kind === "rotated") {
+          discardPartial(db, fresh.key);
+          return { kind: "drop", reason: "replay" } as const;
         }
-      }
-      return { kind: "staged", fresh, delivery } as const;
-    });
+        if (fresh.kind !== "candidate") return fresh;
+        if (initial.receipt && fresh.receipt !== initial.receipt) {
+          throw new Error("KRAM ready receipt changed during staging");
+        }
+        if (
+          fresh.establishment !== initial.establishment || kramSnapshotIdentity(db, key, resources) !== snapshotBefore
+        ) {
+          return { kind: "drop", reason: "changed" } as const;
+        }
+        const { plan } = fresh;
+        if (plan.record instanceof TxnMsgCacheRecord) {
+          db.tmsc.pin(plan.cacheKey, plan.record);
+          db.xdt.pin(plan.xid, new Dater({ qb64: encodeDateTimeToDater(plan.record.xdt!) }));
+        } else db.msgc.pin(key, plan.record);
+        db.pmkm.pin(key, incoming.serder);
+        for (const sig of fresh.pool) db.pmks.add(key, sig);
+        if (fresh.pool.length) {
+          db.pmsk.pin(key, [
+            NumberPrimitive.fromNum(BigInt(fresh.kever.lastEst.s)),
+            new Diger({ qb64: fresh.kever.lastEst.d }),
+          ]);
+        }
+        // Unknown foreign last groups were unknown at receipt; preserve their markers without later reinterpretation.
+        const factors = new KeriDispatchEnvelope({
+          ...fresh.envelope,
+          attachmentGroups: [...fresh.envelope.attachmentGroups],
+          ssgs: [],
+          unresolvedLast: [...fresh.envelope.unresolvedLast, ...fresh.envelope.ssgs.map((group) => group.prefixer)],
+        });
+        storeKramFactors(db, key, factors);
+        // Only a fresh receipt-known last group supersedes its previous unknown marker.
+        for (const prefix of resolvedLast) db.ulgs.rem(key, prefix);
+        validateKramFactors(db, key);
+        storeKramSnapshot(db, key, snapshot);
+        if (fresh.complete) db.kready.pin(key, fresh.receipt ?? plan.receiverTime);
+        const delivery = rehydrateKramFactors(db, key, fresh.envelope);
+        if (fresh.multi) {
+          delivery.sigers.splice(0, delivery.sigers.length, ...[...fresh.pool].sort((a, b) => a.index - b.index));
+          if (incoming.serder.ilk === "exn") {
+            delivery.tsgs.splice(
+              0,
+              delivery.tsgs.length,
+              establishmentGroup(fresh.kever, fresh.pool),
+              ...delivery.tsgs.filter((group) => group.pre !== incoming.serder.pre),
+            );
+          }
+        }
+        return { kind: "staged", fresh, delivery } as const;
+      });
+    const staged = yield* withKramSnapshot(hydrated, resources, publish);
     if (staged.kind !== "staged") return staged;
     if (!staged.fresh.complete) return { kind: "pending", key } as const;
     const receipt = staged.fresh.receipt ?? staged.fresh.plan.receiverTime;

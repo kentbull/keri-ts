@@ -659,6 +659,11 @@ Deno.test("private KRAM snapshots reopen scalar factors and independent children
       assertEquals(kramSnapshotIdentity(hby.db, ["absent"], unavailable), null);
       assertThrows(() => kramSnapshotIdentity(hby.db, key, unavailable), ResourceAdmissionError);
       assertEquals(copies, 0, "shared refusal precedes private-row owned copies");
+      await assertRejects(
+        () => run(() => withKramHydration(hby.db, key, incoming, unavailable, function*() {})),
+        ResourceAdmissionError,
+      );
+      assertEquals(copies, 0, "hydration admission precedes both owned row copies");
       hby.db.kpnd.pin(key, new Uint8Array(MAX_NESTED_WIRE_BYTES + 1));
       const corrupt = assertThrows(() => kramSnapshotIdentity(hby.db, key, unavailable), Error, "Oversized stored");
       assertEquals(corrupt instanceof ResourceLimitError, false);
@@ -687,15 +692,17 @@ Deno.test("private KRAM snapshots reopen scalar factors and independent children
     assertEquals(hby.db.kpnd.get(key), snapshot);
     await discardFrame(parent);
     await run(() => hby.db.reopen());
+    const archive = await hby.db.openPayloads();
     let owned!: EssrPayload;
     await run(() =>
-      withKramHydration(hby.db, key, retry, function*(restored) {
+      withKramHydration(hby.db, key, retry, resources, function*(restored) {
         assertEquals(restored.sigers.map((sig) => sig.qb64), input.tsgs![0].sigers.map((sig) => sig.qb64));
         assertEquals(restored.tsgs, [], "snapshot parent signatures are not reconstructed into scalar factors");
         assertEquals(restored.nests[0].body.raw, nest.body.raw);
         assertEquals(restored.nests[0].attachments, nest.attachments);
         assertEquals(yield* call(() => collectPayload(restored.nests[0].essr!.wire, 1024)), childWire);
         owned = restored.essr!;
+        assertEquals(archive.files.owns(owned.wire), true);
         assertEquals(yield* call(() => collectPayload(owned.wire, 1024)), originalWire);
         assertEquals(yield* call(() => collectPayload(owned.raw, 1024)), b("abcabcxyz"));
         assertEquals(hby.db.exns.get([parent.body.said!]), null);
@@ -703,22 +710,27 @@ Deno.test("private KRAM snapshots reopen scalar factors and independent children
         assertEquals(hby.db.enst.get([parent.body.said!]), []);
       })
     );
+    assertEquals(resources.used.bytes, 0, "row, cursor and actual owner credit all joined");
     await assertRejects(() => collectPayload(owned.wire, 1024));
     for (const failConsumer of [false, true]) {
       let disposals = 0;
-      const failure = await assertRejects(() =>
-        run(() =>
-          withKramHydration(hby.db, key, retry, function*(restored) {
-            const discard = restored.essr!.discard.bind(restored.essr);
-            restored.essr!.discard = async () => {
-              disposals++;
-              await discard();
-              throw new Error("owner disposal fault");
-            };
-            if (failConsumer) throw new Error("consumer fault");
-          })
-        ), AggregateError);
+      const failure = await assertRejects(
+        () =>
+          run(() =>
+            withKramHydration(hby.db, key, retry, resources, function*(restored) {
+              const discard = restored.essr!.discard.bind(restored.essr);
+              restored.essr!.discard = async () => {
+                disposals++;
+                await discard();
+                throw new Error("owner disposal fault");
+              };
+              if (failConsumer) throw new Error("consumer fault");
+            })
+          ),
+        AggregateError,
+      );
       assertEquals(disposals, 1);
+      assertEquals(resources.used.bytes, 0, "consumer/disposal failure still releases frame credit");
       if (failConsumer) assertEquals((failure.cause as Error).message, "consumer fault");
       assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
     }
@@ -726,7 +738,7 @@ Deno.test("private KRAM snapshots reopen scalar factors and independent children
     await attachEssr(fresh);
     const freshInput = new KeriDispatchEnvelope({ ...retry, attachmentGroups: [], nests: [fresh], essr: fresh.essr });
     await run(() =>
-      withKramHydration(hby.db, key, freshInput, function*(restored) {
+      withKramHydration(hby.db, key, freshInput, resources, function*(restored) {
         assertStrictEquals(restored.nests, freshInput.nests);
         assertStrictEquals(restored.essr, freshInput.essr);
       })
@@ -735,7 +747,7 @@ Deno.test("private KRAM snapshots reopen scalar factors and independent children
     await discardFrame(fresh);
     for (const bad of [concatBytes(snapshot, snapshot), snapshot.slice(0, -4)]) {
       storeKramSnapshot(hby.db, key, bad);
-      await assertRejects(() => run(() => withKramHydration(hby.db, key, retry, function*() {})));
+      await assertRejects(() => run(() => withKramHydration(hby.db, key, retry, resources, function*() {})));
       assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
     }
     storeKramSnapshot(hby.db, key, snapshot);
@@ -750,6 +762,7 @@ Deno.test("private KRAM snapshots reopen scalar factors and independent children
               attachmentGroups: [],
               serder: exchange("/different", {}, { sender: sender.pre, pvrsn: Vrsn_2_0 })[0],
             }),
+            resources,
             function*() {},
           )
         ),
@@ -876,7 +889,7 @@ Deno.test("KRAM snapshot cancellation joins serialization and every scoped owner
     const disposed = new Promise<void>((resolve) => dispose = resolve);
     const retry = new KeriDispatchEnvelope({ serder: input.serder, attachmentGroups: [], local: false });
     const consumer = run(() =>
-      withKramHydration(hby.db, key, retry, function*(restored) {
+      withKramHydration(hby.db, key, retry, resources, function*(restored) {
         const reopened = restored.nests[0].essr!, discard = reopened.discard.bind(reopened);
         reopened.discard = async () => {
           discarding();
@@ -888,13 +901,17 @@ Deno.test("KRAM snapshot cancellation joins serialization and every scoped owner
       })
     );
     await ready;
+    const held = resources.used.bytes;
+    assertEquals(held > 0 && held < 2 * MAX_NESTED_WIRE_BYTES, true);
     let joined = false;
     const stopping = consumer.halt().then(() => joined = true);
     await disposing;
     assertEquals(joined, false);
+    assertEquals(resources.used.bytes, held, "actual owner holds frame credit through joined disposal");
     assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 1);
     dispose();
     await stopping;
+    assertEquals(resources.used.bytes, 0);
     assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
     assertExists(hby.db.kpnd.get(key), "scope exit does not consume durable pending wire");
     await discardFrame(nest);
@@ -903,6 +920,7 @@ Deno.test("KRAM snapshot cancellation joins serialization and every scoped owner
 
 Deno.test("cancelling private KRAM hydration joins parser writes and deletes unfinished owned files", async () => {
   await scenario(async (hby, sender, recipient, provider) => {
+    const resources = new ResourcePolicy();
     const nest = await child(sender, "cancel-parse");
     await attachEssr(nest);
     const input = forward(sender, recipient, provider, nest), key = [sender.pre, input.serder.said!];
@@ -941,18 +959,22 @@ Deno.test("cancelling private KRAM hydration joins parser writes and deletes unf
     };
     const retry = new KeriDispatchEnvelope({ serder: input.serder, attachmentGroups: [], local: false });
     const task = run(function*() {
-      yield* withKramHydration(hby.db, key, retry, function*() {});
+      yield* withKramHydration(hby.db, key, retry, resources, function*() {});
       continued = true;
     });
     try {
       await entered;
+      const held = resources.used.bytes;
       let halted = false;
       const halting = task.halt().then(() => halted = true);
       await stopped;
       assertEquals([halted, closed, continued], [false, false, false]);
+      assertEquals(resources.used.bytes, held, "cancellation still owns native copies and cursor backing");
+      assertEquals(held >= 2 * MAX_NESTED_WIRE_BYTES + 8 * 1024 ** 2 + 65536, true);
       release();
       await halting;
       assertEquals([closed, continued], [true, false]);
+      assertEquals(resources.used.bytes, 0, "parser/source join precedes row/cursor credit release");
       assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
       assertExists(hby.db.kpnd.get(key));
       assertEquals(await collectPayload(nest.essr!.raw, 1024), b("abcabcxyz"));
@@ -1282,6 +1304,9 @@ Deno.test("optional runtime KRAM forwards reopened nested evidence without accep
       enableMailboxStore: true,
       kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
     });
+    const cryptoCredit = runtime.resources.reserve({ bytes: 64 * 1024 ** 2, decryptions: 1 });
+    assertEquals(cryptoCredit.kind, "reserve");
+    if (cryptoCredit.kind !== "reserve") throw new Error("default crypto allowance");
     const nest = yield* call(() => child(sender, "independent"));
     const wire = yield* call(() => attachEssr(nest)), input = forward(sender, recipient, provider, nest);
     const original = input.tsgs![0], key = [sender.pre, input.serder.said!];
@@ -1302,16 +1327,19 @@ Deno.test("optional runtime KRAM forwards reopened nested evidence without accep
       yield* runtime.reactor.processBytes(first, { mailboxAid: provider.pre });
       assertEquals([hby.db.exns.get(input.serder.said!), hby.db.exns.get(nest.body.said!)], [null, null]);
       assertExists(hby.db.kpnd.get(key));
+      assertEquals(runtime.resources.used.bytes, 64 * 1024 ** 2, "pending KRAM stages release temporary credit");
       yield* hby.db.reopen();
       const [retry] = yield* call(() =>
         parseBytes(serializeMessage(input.serder, { tsgs: [group(1)], gvrsn: Vrsn_2_0, genusify: true }))
       );
       const returned = yield* runtime.reactor.settle(retry, { mailboxAid: provider.pre }, function*(ready) {
+        assertEquals(runtime.resources.used.bytes > 64 * 1024 ** 2, true, "KRAM shares runtime owner credit");
         assertEquals(ready!.nests[0].body.raw, nest.body.raw);
         assertEquals(yield* call(() => collectPayload(ready!.nests[0].essr!.wire, 1024)), wire);
         assertExists(hby.db.kready.get(key), "transport callback owns hydrated evidence before acknowledgement");
         assertEquals(hby.db.exns.get(nest.body.said!), null);
       });
+      assertEquals(runtime.resources.used.bytes, 64 * 1024 ** 2, "hydrated credit releases after acknowledgement");
       assertEquals(returned!.nests.length, 0, "hydrated descendants never escape the ready callback");
       assertExists(hby.db.exns.get(input.serder.said!));
       assertEquals([hby.db.pmkm.get(key), hby.db.kpnd.get(key), hby.db.kready.get(key)], [null, null, null]);
@@ -1324,6 +1352,7 @@ Deno.test("optional runtime KRAM forwards reopened nested evidence without accep
         "recipient separately authenticates the child's own signatures",
       );
     } finally {
+      cryptoCredit.reservation.release();
       yield* call(() => discardFrame(nest));
       yield* runtime.close();
       yield* hby.close(true);

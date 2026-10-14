@@ -136,38 +136,55 @@ export function removeKramSnapshot(db: Baser, key: readonly string[]): void {
 }
 
 /** Parse one finite parent while the caller's operation owns every yielded descendant. */
-function loadSnapshot(db: Baser, key: readonly string[], frames: CesrFrame[]): Operation<void> {
+function loadSnapshot(
+  db: Baser,
+  key: readonly string[],
+  frames: CesrFrame[],
+  resources: ResourcePolicy,
+): Operation<void> {
   return abortable(async (signal) => {
-    // LMDB allocates the row before this check; storage phase 5 still owns that boundary.
-    const stored = db.kpnd.get(key);
-    if (!stored) return;
-    const bytes = stored;
-    if (bytes.length > MAX_NESTED_WIRE_BYTES) throw new Error("Oversized stored KRAM snapshot");
-    /** Copy finite chunks so parser backing never pins the whole LMDB row. */
-    async function* source() {
-      for (let offset = 0; offset < bytes.length; offset += 65536) {
-        signal.throwIfAborted();
-        yield bytes.slice(offset, offset + 65536);
+    let rowCredit: ResourceReservation | undefined, cursorCredit: ResourceReservation | undefined;
+    try {
+      const stored = readSnapshot(db, key, () => {
+        rowCredit = reserveCopies(resources, 2 * MAX_NESTED_WIRE_BYTES);
+      });
+      if (!stored) return;
+      const bytes = stored;
+      cursorCredit = reserveCopies(resources, 8 * 1024 ** 2 + 65536);
+      /** Copy finite chunks so parser backing never pins the whole LMDB row. */
+      const source = async function*() {
+        for (let offset = 0; offset < bytes.length; offset += 65536) {
+          signal.throwIfAborted();
+          yield bytes.slice(offset, offset + 65536);
+        }
+      };
+      for await (
+        const frame of parse(source(), {
+          signal,
+          resources,
+          maxChunkBytes: 65536,
+          maxBufferedBytes: 8 * 1024 ** 2,
+          maxFrameBytes: Math.max(1, Math.min(8 * 1024 ** 2, bytes.length)),
+          maxEssrBytes: 8 * 1024 ** 2,
+          maxTreeNodes: 256,
+          maxAttachmentGroups: 4096,
+          maxEssrItems: 16384,
+          maxDepth: 64,
+          payloadSink: async (limit, stageSignal) =>
+            (await db.openPayloads(stageSignal)).files.stage(limit, stageSignal),
+        })
+      ) {
+        // Claim before cardinality/limits so failures cannot strand a yielded owner.
+        frames.push(frame);
+        if (frames.length > 1) throw new Error("KRAM snapshot contains multiple parents");
+        validateTree(frame);
       }
+      if (frames.length !== 1) throw new Error("KRAM snapshot has no parent");
+    } finally {
+      // Parser/source closure has joined; transferred frame credit belongs to hydration disposal.
+      cursorCredit?.release();
+      rowCredit?.release();
     }
-    for await (
-      const frame of parse(source(), {
-        signal,
-        maxFrameBytes: 8 * 1024 ** 2,
-        maxEssrBytes: 8 * 1024 ** 2,
-        maxTreeNodes: 256,
-        maxAttachmentGroups: 4096,
-        maxEssrItems: 16384,
-        maxDepth: 64,
-        payloadSink: async (limit, stageSignal) => (await db.openPayloads(stageSignal)).files.stage(limit, stageSignal),
-      })
-    ) {
-      // Claim before cardinality/limits so failures cannot strand a yielded owner.
-      frames.push(frame);
-      if (frames.length > 1) throw new Error("KRAM snapshot contains multiple parents");
-      validateTree(frame);
-    }
-    if (frames.length !== 1) throw new Error("KRAM snapshot has no parent");
   });
 }
 
@@ -175,18 +192,20 @@ function loadSnapshot(db: Baser, key: readonly string[], frames: CesrFrame[]): O
  * Consume hydrated factors/trees within their operation; reopened owners live through the callback only.
  * Direct finally joins disposal before returning, preserving consumer and cleanup failures.
  * Fresh input stays borrowed; snapshot parent signatures never reconstruct authentication inputs.
+ * Explicit resource credit follows parsing phases and actual frame owners, never an escaping callback result.
  */
 export function withKramHydration<T>(
   db: Baser,
   key: readonly string[],
   envelope: KeriDispatchEnvelope,
+  resources: ResourcePolicy,
   consume: (envelope: KeriDispatchEnvelope) => Operation<T>,
 ): Operation<T> {
   return call(function*() {
     const frames: CesrFrame[] = [];
     let failed = false, failure: unknown;
     try {
-      yield* loadSnapshot(db, key, frames);
+      yield* loadSnapshot(db, key, frames, resources);
       const saved = frames[0];
       if (
         saved && (saved.body.raw.length !== envelope.serder.raw.length

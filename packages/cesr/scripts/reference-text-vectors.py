@@ -1,6 +1,6 @@
 """Generate frozen text vectors or decode actual TS output in both wire domains.
 
-Run with PYTHONPATH selecting KERIpy 927c0cb8. This probe opens no databases.
+Run with PYTHONPATH selecting KERIpy 71438328. This probe opens no databases.
 """
 import json
 import pathlib
@@ -10,7 +10,7 @@ import sys
 from keri.core import coring
 
 # Text semantics are pinned independently of any runtime interop environment.
-REFERENCE = "927c0cb8794d7c84fc17143c67df64aab9deda6c"
+REFERENCE = "7143832813cac6a394ab1faf9be83bb3372be87c"
 
 
 def verify_source():

@@ -90,7 +90,9 @@ expiry. Measure both parsed and verified-usable latency at the application state
 boundary. Verify source pulls, pending bytes/items, credit and open handles plateau;
 report kernel/native buffering separately. Exercise source Deno and packed Node.
 Reuse these cases within representative matrix combinations, not another full
-cross-product. Keep mailbox/default routing and explicit duplex evidence distinct.
+cross-product. Include finite/source caller parity, parsed-frame input without
+reparsing, HTTP request framing/auth/method and scoped response consumption.
+Keep mailbox/default routing and explicit duplex evidence distinct.
 Reopen/retry evidence must identify the durable owner; a live delivery queue or
 local socket drain does not prove recovery or remote acceptance.
 

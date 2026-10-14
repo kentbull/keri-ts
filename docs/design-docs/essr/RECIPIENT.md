@@ -2,7 +2,7 @@
 
 `EssrRecipient` is an explicit recipient service for the SCS plaintext envelope
 emitted by KERIpy `StreamPoster` at commit
-`927c0cb8794d7c84fc17143c67df64aab9deda6c`. That reference implements the sender;
+`7143832813cac6a394ab1faf9be83bb3372be87c`. That reference implements the sender;
 this module is a new receiver integration, not a port of an upstream receiver.
 
 Construct one service for an explicitly hosted `Hab`, its `PayloadStore`, a

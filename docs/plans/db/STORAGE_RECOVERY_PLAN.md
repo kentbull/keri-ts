@@ -37,7 +37,10 @@ allowance through joined cleanup; this covers its cooperating row/serialization
 and cursor phases, with parser frames charging ordinary/ESSR staging separately.
 Mailbox provider reads use native size preflight before copies, backed by shared
 message/chunk/metadata admission through joined close.
-KRAM snapshot/hash/serialization admission is the next independent unit.
+KRAM snapshot/hash/serialization and reopened hydration now share runtime credit.
+Temporary rows/cursors release after parser join; real frame owners retain their
+ordinary/ESSR reservations through scoped consumer disposal. No file owner wrapper
+is introduced, and synchronous publication retains its collected wire credit.
 Broader KEL/reply replay (`clonePreIter`, `replyEndRole`), parent factors and query
 preparation/retained introductions still require native-row and copy audits.
 Queue/stream credit alone does not prove their pre-read boundary.

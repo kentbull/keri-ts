@@ -18,9 +18,25 @@ The [runtime contract][runtime] distinguishes current behavior from the target.
 Reuse the active admission stack: HTTP frame/output work (#224–225), finite TCP
 ownership (#230), parser scheduling (#231), and mailbox stream admission.
 Those units are dependencies, not proof of end-to-end socket streamability.
+HTTP already shares `requestFrame` (parsed frame) and `postCesr` (byte source);
+its successful-response consumer is optional, so ordinary sends do not prove
+verified protocol replies or durable remote acceptance.
 Lazy replies, query queues, HTTP frame preparation and outgoing source parsing
 share owner credit. Standalone sender wiring and native/storage copies still
 require qualification through real slow sinks.
+
+## Messenger organization
+
+Use two shared transport engines, with small finite-message and source entry
+points. The [API/ownership mapping][messengers] assigns the responsibilities of
+KERIpy’s four Messenger names without four classes, duplicate state machines or
+new `msgs`/`sent` queues. Parsed frames go directly to serializers; finite bytes
+adapt to the same source engine. HTTP keeps successive framed POST requests,
+including per-frame streamed body mode, rather than adopting upstream’s bulk PUT.
+
+This is part of S1–9: S1–3 owns HTTP callers, response lifetimes and guarded
+preparation; S6–8 owns TCP connection, finite/source output and conversation
+policy. Preserve Poster/Respondant routing and Reactor verification boundaries.
 
 ## Review units
 
@@ -30,12 +46,12 @@ lines or fewer. Split again if necessary; preserve the single parser engine.
 | Unit | Responsibility                               | Depends on       |
 | ---- | -------------------------------------------- | ---------------- |
 | S1   | Admitted cue-to-delivery ownership           | Shared policy    |
-| S2   | Network delivery outside Reactor guard       | S1               |
+| S2   | Guard-free delivery and HTTP ownership       | S1               |
 | S3   | Delivery failure and acknowledgement         | S2               |
 | S4   | Source-based witness ingress                 | S2               |
 | S5   | Pull-based TCP byte source                   | Read credit      |
 | S6   | Supervised TCP connections and shutdown      | S4–5             |
-| S7   | Backpressured TCP stream writer              | #230             |
+| S7   | Shared finite/stream TCP writer              | #230             |
 | S8   | Explicit duplex replies and half-close drain | S3, S6–7         |
 | S9   | Composed socket/HTTP qualification           | S1–8, phases 4–5 |
 
@@ -51,7 +67,10 @@ Update HTTP/witness drains, runtime turns and CLI callers; use a bounded joined
 delivery worker, not detached tasks. Preserve request-local HTTP reply ownership
 and `/receipts`' finite `deliver=false` path. Retain failed work and report partial
 mailbox failures; acknowledge only joined delivery or verified durable transfer.
-Keep cancellation, cleanup and infrastructure failures visible. This live queue
+Converge actual HTTP callers on shared admission and scoped response consumption,
+preserving receipt and SSE contracts. Distinguish transport completion from
+verified replies and durable acceptance; do not expose ambiguous `sent`/`idle`
+success. Keep cancellation, cleanup and infrastructure failures visible. This live queue
 does not survive restart: phase 5 owns [durable recovery][storage], including the
 accepted-event-to-cue gap and the optional mailbox-only outbox's atomicity.
 
@@ -64,7 +83,10 @@ starting reads; supervise and join every task. Shutdown stops admission, aborts
 reads, joins parser/dispatch/output cleanup, releases sockets, then closes stores.
 Preserve witness-local dispatch, escrow turns, proof separation and genus scopes.
 
-**S7–8: streaming output and duplex.** Adapt existing serializer sources; await
+**S7–8: streaming output and duplex.** Use one owned TCP engine for complete
+messages and abortable sources/owned payloads; already-parsed frames use the
+serializer without reparsing. Acquire credit before opening sources or allocating
+output; retain borrowed owners through joined consumption. Await
 `write(false)`/`drain` before pulling again, with finite charged pending output.
 Parse replies concurrently with sending in an explicit same-socket reply mode;
 retain mailbox/direct delivery as the default. Same-socket connections use
@@ -114,6 +136,9 @@ S9 extends existing transport/runtime tests for decisive regressions:
   half-close and absolute drain expiry. Earlier independent frames survive later
   failure. An unwrapped final message may await a following body or real EOF;
   temporary byte exhaustion and arbitrary chunks never establish CESR framing.
+- Exercise finite/source parity through actual callers, including parsed-frame
+  input without reparsing. Verify HTTP method, destination, authorization, media
+  type, response consumption and one-request-per-frame behavior under pressure.
 - Verify actual serializer output bidirectionally with the declared Python
   environment. Preserve parent signatures, child evidence and local genus scopes.
 
@@ -131,6 +156,7 @@ fork behavior for upstream wire evidence. Node's [stream threshold][buffering]
 is not a hard memory ceiling; qualify actual Deno and packed Node paths.
 
 [runtime]: ../../design-docs/runtime/INGRESS_AND_EGRESS.md
+[messengers]: ../../design-docs/runtime/INGRESS_AND_EGRESS.md#messenger-responsibilities
 [storage]: ../db/STORAGE_RECOVERY_PLAN.md
 [gleif]: https://github.com/GLEIF-IT/keripy/blob/a55a712d1dd92121ab659d76ee71942155f6caa9/src/keri/app/directing.py
 [buffering]: https://nodejs.org/api/stream.html#buffering
