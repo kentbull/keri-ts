@@ -1,10 +1,128 @@
-import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy, SerderKERI } from "cesr-ts";
-import { run } from "effection";
+import { b, Dater, ResourceAdmissionError, ResourceLimitError, ResourcePolicy, SerderKERI } from "cesr-ts";
+import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { ReplyStreams } from "../../../src/app/reply-streams.ts";
+import { witnessQueryGet } from "../../../src/app/witnessing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
-import { dgKey } from "../../../src/db/core/keys.ts";
+import { DatabaseOperationError } from "../../../src/core/errors.ts";
+import { interact } from "../../../src/core/protocol-eventing.ts";
+import { dgKey, onKey } from "../../../src/db/core/keys.ts";
 import { CapturedKelReplay } from "../../../src/db/kel-replay.ts";
+
+Deno.test("witness GET captures target FEL or KEL duplicate order without retaining cursors", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const hab = hby.makeHab("alice"), initial = hab.kever!.said;
+      hab.interact();
+      const first = hab.kever!.said;
+      hab.interact();
+      const second = hab.kever!.said;
+      // Signed conflicting-sequence storage fixtures exercise duplicate selection, not acceptance.
+      const storeFork = (label: string): string => {
+        const event = interact(hab.pre, initial, 1, [{ label }]);
+        const said = event.said!;
+        hby.db.putEvtSerder(hab.pre, said, event.raw);
+        hby.db.putSigs(hab.pre, said, hab.sign(event.raw, true));
+        hby.db.putDts(hab.pre, said, new Dater({ dts: "2026-10-13T12:00:00.000000+00:00" }).qb64);
+        hby.db.kels.add(hab.pre, 1, said);
+        hby.db.appendFel(hab.pre, said);
+        return said;
+      };
+      const fork = storeFork("captured");
+      const resources = new ResourcePolicy(), replies = new ReplyStreams({}, resources);
+      const read = hby.db.getValBounded;
+      hby.db.getValBounded = () => {
+        throw new Error("event hydration before response admission");
+      };
+      let ordered: Iterable<Uint8Array>, fel: Iterable<Uint8Array>, body: ReadableStream<Uint8Array>;
+      try {
+        const bySequence = witnessQueryGet(hab, { typ: "kel", pre: hab.pre, sn: 1 }, replies.messageByteLimit);
+        const byFirstSeen = witnessQueryGet(hab, { typ: "kel", pre: hab.pre }, replies.messageByteLimit);
+        if (bySequence.kind !== "accepted" || byFirstSeen.kind !== "accepted") throw new Error("Expected capture");
+        ordered = bySequence.messages;
+        fel = byFirstSeen.messages;
+        body = replies.open(ordered);
+        assertEquals(resources.used.streams, 1);
+      } finally {
+        hby.db.getValBounded = read;
+      }
+      storeFork("late");
+      hab.interact();
+      const table = hby.db.kels, nativeRows = table.sdb.getValues;
+      let cursors = 0, visited = 0;
+      table.sdb.getValues = function(...args) {
+        const rows = nativeRows.apply(this, args);
+        return {
+          *[Symbol.iterator]() {
+            cursors++;
+            try {
+              for (const value of rows) {
+                visited++;
+                yield value;
+              }
+            } finally {
+              cursors--;
+            }
+          },
+        } as unknown as ReturnType<typeof nativeRows>;
+      };
+      try {
+        assertEquals([...ordered!].map((bytes) => new SerderKERI({ raw: bytes }).said), [first, fork, second]);
+        assertEquals(visited, 4); // Each duplicate is fetched once, including the excluded late insertion.
+        assertEquals([...fel!].map((bytes) => new SerderKERI({ raw: bytes }).said), [initial, first, second, fork]);
+        const reader = body!.getReader();
+        yield* call(() => reader.read());
+        assertEquals(cursors, 0);
+        yield* call(() => reader.cancel());
+        reader.releaseLock();
+        assertEquals(resources.used.bytes, 0);
+        const native = hby.db.evts.sdb as unknown as { getBinary(key: Uint8Array): Uint8Array | undefined };
+        const binary = native.getBinary;
+        native.getBinary = () => {
+          throw new Error("oversized event was allocated");
+        };
+        try {
+          assertThrows(() => [...hby.db.witnessReplay(hab.pre, 1, 8)!], ResourceLimitError);
+        } finally {
+          native.getBinary = binary;
+        }
+        const fault = new Error("native proof read failed"), sigs = hby.db.sigs.getIter;
+        hby.db.sigs.getIter = function*() {
+          throw fault;
+        };
+        try {
+          assertEquals(assertThrows(() => [...ordered!]), fault);
+        } finally {
+          hby.db.sigs.getIter = sigs;
+        }
+        yield* hby.db.close();
+        yield* hby.db.reopen();
+        assertEquals([...ordered!].map((bytes) => new SerderKERI({ raw: bytes }).said), [first, fork, second]);
+        const changing = ordered![Symbol.iterator]();
+        assertEquals(new SerderKERI({ raw: changing.next().value! }).said, first);
+        hby.db.kels.remOn(hab.pre, 1, first);
+        assertEquals(new SerderKERI({ raw: changing.next().value! }).said, fork);
+        assertEquals(new SerderKERI({ raw: changing.next().value! }).said, second);
+        assertEquals(changing.next().done, true);
+        assertEquals(cursors, 0);
+        const key = onKey(hab.pre, 1), malformed = b("!malformed-proem");
+        hby.db.kels.sdb.putSync(key, malformed);
+        try {
+          assertThrows(() => [...ordered!], DatabaseOperationError, "insertion proem");
+        } finally {
+          hby.db.kels.sdb.removeSync(key, malformed);
+        }
+      } finally {
+        table.sdb.getValues = nativeRows;
+        replies.close();
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
 
 Deno.test("replay sources reopen their captured extent without including later first-seen events", async () => {
   await run(function*() {

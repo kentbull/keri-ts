@@ -51,6 +51,50 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
       }
       const event = [...peer.db.clonePreIter(controller.pre)][0];
       assertEquals((yield* witnessReceiptPost(runtime, witness, event)).kind, "accepted");
+      // The actual query handler captures metadata without hydrating an event or pulling output early.
+      const read = hby.db.getValBounded;
+      hby.db.getValBounded = () => {
+        throw new Error("GET hydrated before response pull");
+      };
+      try {
+        const lazy = yield* call(() => handle(new Request(origin + `/query?typ=kel&pre=${controller.pre}`)));
+        assertEquals([lazy.status, runtime.resources.used.streams], [200, 1]);
+        const occupied = runtime.resources.reserve({ streams: 1 });
+        if (occupied.kind !== "reserve") throw new Error("Expected remaining stream credit");
+        try {
+          const busy = yield* call(() => handle(new Request(origin + `/query?typ=kel&pre=${controller.pre}`)));
+          assertEquals(busy.status, 503);
+          yield* call(() => busy.text());
+        } finally {
+          occupied.reservation.release();
+        }
+        yield* call(() => lazy.body!.cancel());
+        assertEquals(runtime.resources.used.bytes, 0);
+      } finally {
+        hby.db.getValBounded = read;
+      }
+      for (
+        const [query, status] of [
+          ["", 400],
+          ["?typ=kel", 400],
+          ["?typ=tel", 501],
+          ["?typ=unknown", 400],
+          ["?typ=kel&pre=unknown", 200],
+          [`?typ=kel&pre=${controller.pre}&sn=99`, 400],
+        ] as const
+      ) {
+        const result = yield* call(() => fetch(origin + "/query" + query, { client }));
+        assertEquals(result.status, status);
+        const bytes = yield* call(() => result.arrayBuffer());
+        if (status === 200) assertEquals(bytes.byteLength, 0);
+      }
+      const replay = yield* call(() => fetch(origin + `/query?typ=kel&pre=${controller.pre}&sn=0`, { client }));
+      assertEquals(replay.status, 200);
+      assertEquals(
+        new SerderKERI({ raw: new Uint8Array(yield* call(() => replay.arrayBuffer())) }).said,
+        controller.pre,
+      );
+      assertEquals(runtime.resources.used.bytes, 0);
       const response = yield* call(() => get(controller.pre));
       assertEquals(response.status, 200);
       assertEquals(response.headers.get("content-type"), "application/cesr");
