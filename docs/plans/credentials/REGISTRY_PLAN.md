@@ -16,8 +16,9 @@ public observer verification must remain independent of issuer private state.
 
 `RegBaser` owns public registry layout and joined LMDB lifecycle. `RegistryStore`
 provides storage access, local aliases, earliest-anchor retention and ordered
-escrows without authenticating evidence. `RegistryEvidenceStore` extends the
-same owner for complete-chain observer reads and atomic verified import.
+escrows without authenticating evidence. RegistryObserver delegates public parsed
+intake to the engine; IPEX assembles complete accepted chains through that store.
+The custom import/reader/factory are removed; their exact design remains deferred.
 These are storage facilities, not a full v2 Regery. Pure `regcept`/`blindate`
 construction and JSON/native vectors already exist in `acdc/messaging.ts`; reuse
 them. Runtime acquisition retains explicit scopes and joined failure cleanup.

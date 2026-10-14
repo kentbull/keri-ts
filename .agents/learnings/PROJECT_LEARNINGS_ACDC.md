@@ -33,8 +33,8 @@ Verifier owns cached schemas, registry/schema/chain dependencies and saved index
 direct revoked saves and revoked-chain rejection are distinct. Regery/Registry/
 Registrar/Credentialer compose issuer-side operations. Normal outcomes stay typed.
 
-V2 `regeventing.vet/vetBinds` observer verification is read-only; import/persistence belongs to its
-store and workflow. Supplied anchored prefixes cannot hide an unanchored suffix.
+V2 `regeventing.vet/vetBinds` observer verification is read-only; explicit
+RegistryObserver intake owns per-event engine publication, without bulk import. Supplied anchored prefixes cannot hide an unanchored suffix.
 Disclosed issuer/target/rd, blinded/bound state and historical cutoff are separate
 checks. Shared time/mod.ts parsing retains exact microseconds and requires an explicit
 RFC3339 zone; cutoff selection includes events exactly at the supplied timestamp.
@@ -90,7 +90,7 @@ hook demo is only a sample receiver.
 ## Remaining work
 
 The [registry foundation](../../docs/plans/credentials/REGISTRY_PLAN.md) owns
-full v2 services and the custom-import audit. Preserve legacy VDR and #168 stores;
+full v2 services and the recorded upstream intake gap. Preserve legacy VDR and #168 stores;
 storage readability, observer vetting and issuer processing are separate gates.
 
 Standalone Mapper currently accepts a tampered map with a stale claimed d despite

@@ -1,15 +1,16 @@
-/** Registry observer imports retain only complete verified chains across reopen. */
+/** Public registry intake preserves accepted prefixes and historical storage bytes across reopen. */
 import { b, Diger, discardFrame, NumberPrimitive, parseBytes, ResourceLimitError, SerderACDC } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
+import { blindate, regcept } from "../../../src/acdc/messaging.ts";
+import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { RegBaser } from "../../../src/acdc/regbasing.ts";
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
 import { createRegery, Regery } from "../../../src/acdc/registraring.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
 import { LMDBer } from "../../../src/db/core/lmdber.ts";
-import { createRegistryEvidenceStore } from "../../../src/db/registry-evidence.ts";
 import fixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
 
 Deno.test("named v2 registries reopen by stored issuer and retain explicit store ownership", async () => {
@@ -117,57 +118,63 @@ Deno.test("named registry acquisition closes its owned store when alias loading 
   }
 });
 
-Deno.test("registry evidence import verifies before publication and preserves newer accepted heads", async () => {
+Deno.test("public registry intake preserves accepted prefixes across missing anchors, limits and reopen", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const store = yield* createRegistryEvidenceStore({ name: crypto.randomUUID(), temp: true });
-    const limited = yield* createRegistryEvidenceStore({ name: crypto.randomUUID(), temp: true, maxEvents: 1 });
-    const rip = new SerderACDC({ raw: b(fixture.bodies.rip) });
-    const issued = new SerderACDC({ raw: b(fixture.bodies.issued) });
+    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const limitedBaser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const store = new RegistryStore(baser), limitedStore = new RegistryStore(limitedBaser);
+    const observer = new RegistryObserver(hby.db, store);
+    const limited = new RegistryObserver(hby.db, limitedStore, { maxEvents: 1 });
+    const issuer = source.makeHab("issuer"), rip = regcept(issuer.pre);
+    const issued = blindate(rip.said!, rip.said!, fixture.disclosures.issued.d);
     try {
-      const args = { rip, updates: [issued], db: hby.db };
-      assertEquals(store.importEvidence(args).kind, "missing");
-      assertEquals(store.read(rip.said!), null);
-      for (const wire of fixture.wires.slice(0, 3)) {
-        const frames = yield* call(() => parseBytes(b(wire)));
-        try {
-          for (const frame of frames) yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
-        } finally {
-          yield* call(() => Promise.all(frames.map(discardFrame)));
+      assertEquals(observer.processEvent(rip).kind, "escrow");
+      assertEquals(observer.processEvent(issued).kind, "escrow");
+      assertEquals([store.head(rip.said!), ...[0, 1].map((sn) => store.seqSaider(rip.said!, sn))], [null, null, null]);
+      for (const [sn, event] of [rip, issued].entries()) {
+        const anchor = issuer.interact({ data: [{ i: rip.said!, s: sn.toString(16), d: event.said! }] });
+        const wires = sn ? [anchor] : [acceptedEventReplayMessage(source, issuer.pre, 0).message, anchor];
+        for (const wire of wires) {
+          const frames = yield* call(() => parseBytes(wire));
+          try {
+            for (const frame of frames) yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
+          } finally {
+            yield* call(() => Promise.all(frames.map(discardFrame)));
+          }
         }
+        observer.processEscrows(rip.said!);
+        assertEquals(store.head(rip.said!)!.qb64, event.said);
+        if (sn === 0) assertEquals(store.seqSaider(rip.said!, 1), null, "unanchored suffix remains unaccepted");
       }
-      assertEquals(store.importEvidence({ ...args, updates: [] }).kind, "verified");
-      assertEquals(store.importEvidence(args).kind, "missing");
-      assertEquals(store.read(rip.said!)!.updates.length, 0);
-      const [anchor] = yield* call(() => parseBytes(b(fixture.wires[3])));
-      try {
-        yield* dispatchEnvelope(envelopeFromFrame(anchor), hby.rvy, hby.kevery);
-      } finally {
-        yield* call(() => discardFrame(anchor));
-      }
-      assertEquals(store.importEvidence(args).kind, "verified");
-      assertEquals(store.importEvidence({ ...args, updates: [] }).kind, "verified");
-      assertEquals(store.read(rip.said!)!.updates.map((e) => e.said), [issued.said]);
-      yield* store.reopen();
-      assertEquals(store.read(rip.said!)!.rip.raw, rip.raw);
-      assertEquals(store.read(rip.said!)!.updates[0].raw, issued.raw);
-      assertEquals(store.importEvidence({ ...args, updates: [issued, issued] }).kind, "verified");
-      assertThrows(() => limited.importEvidence(args), ResourceLimitError, "event limit");
-      assertEquals(limited.read(rip.said!), null);
-      assertEquals(limited.importEvidence({ ...args, updates: [] }).kind, "verified");
-      assertExists(limited.read(rip.said!));
-      const bad = new SerderACDC({ raw: b(fixture.bodies["wrong-prior"]) });
-      assertEquals(store.importEvidence({ ...args, updates: [bad] }).kind, "reject");
-      assertEquals(store.read(rip.said!)!.updates.map((e) => e.said), [issued.said]);
+      assertEquals(hby.habs.size, 0, "the registry issuer is independently controlled");
+      assertEquals(observer.processEvent(rip).kind, "duplicate");
+      assertEquals(store.head(rip.said!)!.qb64, issued.said, "prefix replay cannot downgrade the head");
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      assertEquals(store.seqEvent(rip.said!, 0)!.raw, rip.raw);
+      assertEquals(store.seqEvent(rip.said!, 1)!.raw, issued.raw);
+      for (const event of [issued, issued]) assertEquals(observer.processEvent(event).kind, "duplicate");
+      assertEquals([...baser.tels.getTopItemIter(rip.said!)].length, 2);
+      assertThrows(() => limited.processEvent(issued), ResourceLimitError, "event limit");
+      assertEquals([limitedStore.head(rip.said!), limitedStore.event(issued.said!)], [null, null]);
+      assertEquals(limited.processEvent(rip).kind, "accept");
+      assertEquals(limitedStore.head(rip.said!)!.qb64, rip.said);
+      const bad = blindate(rip.said!, rip.said!, fixture.disclosures.issued.d, { sn: 2 });
+      assertEquals(observer.processEvent(bad), { kind: "reject", reason: "prior" });
+      assertEquals(store.event(bad.said!), null);
+      assertEquals(store.head(rip.said!)!.qb64, issued.said);
     } finally {
-      yield* limited.close(true);
-      yield* store.close(true);
+      yield* limitedBaser.close(true);
+      yield* baser.close(true);
+      yield* source.close(true);
       yield* hby.close(true);
     }
   });
 });
 
-Deno.test("RegBaser and observer reader reopen old three-table stores readonly without migration", async () => {
+Deno.test("RegBaser and public registry facade reopen old three-table stores readonly without migration", async () => {
   const headDirPath = Deno.makeTempDirSync({ prefix: "old-registry-" });
   const options = { name: "legacy", headDirPath, temp: false };
   const databasePath = `${headDirPath}/keri/acdc/reg/legacy`;
@@ -219,11 +226,12 @@ Deno.test("RegBaser and observer reader reopen old three-table stores readonly w
       } finally {
         yield* baser.close();
       }
-      const reader = yield* createRegistryEvidenceStore({ ...options, readonly: true });
+      const reader = yield* openRegistry({ ...options, readonly: true });
       try {
         assertEquals(reader instanceof RegBaser, true);
-        assertEquals(reader.read(rip.said!)!.rip.raw, rip.raw);
-        assertEquals(reader.read(rip.said!)!.updates[0].raw, issued.raw);
+        const facade = new RegistryStore(reader);
+        assertEquals(facade.seqEvent(rip.said!, 0)!.raw, rip.raw);
+        assertEquals(facade.seqEvent(rip.said!, 1)!.raw, issued.raw);
       } finally {
         yield* reader.close();
       }

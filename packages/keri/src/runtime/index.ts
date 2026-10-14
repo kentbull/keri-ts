@@ -92,5 +92,3 @@ export { abortable } from "../app/abortable.ts";
 
 export * from "../acdc/observing.ts";
 export * from "../acdc/regeventing.ts";
-
-export * from "../db/registry-evidence.ts";
