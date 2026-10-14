@@ -86,6 +86,16 @@ Ownership in `keri-ts`:
 - `packages/cesr/src/primitives/mapper.ts`
 - `packages/cesr/src/primitives/compactor.ts`
 
+Standalone `Mapper({saidive:true, verify:true})` verifies each present configured
+top-level claim against the selected serialization format, regardless of input
+representation. `makify` replaces claims; `verify:false` skips verification.
+Compactor retains its existing wire round-trip and group validation through the
+same constructor path but overrides only standalone claim verification: expanded
+disclosure maps can carry commitments to their compact representation. This is
+an explicit TypeScript disclosure boundary, not issuer authentication. Serder
+verifies compact credential commitments, while Aggor independently verifies
+visible map claims and its list commitment.
+
 ### 3. List/selective disclosure
 
 This is the `Aggor` path.

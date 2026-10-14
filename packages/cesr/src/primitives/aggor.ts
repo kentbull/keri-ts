@@ -186,8 +186,8 @@ export class Aggor {
       verify: false,
     });
     if (!makify) {
-      // Mapper currently verifies wire round trips only. Aggor also needs the
-      // claimed map SAIDs verified before they can represent disclosed content.
+      // Keep aggregate verification independent: these freshly saidified maps
+      // must match the original claims before representing disclosed content.
       const computed = mapper.mad;
       for (const label of Object.keys(this.saids)) {
         if (label in element && element[label] !== computed[label]) {

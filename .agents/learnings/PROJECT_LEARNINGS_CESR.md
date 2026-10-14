@@ -74,7 +74,11 @@
   thresholds retain their domain. Configure before admitting work.
 - Accessor parity includes wrapper projections (`sner`, `tholder`, `ntholder`,
   `bner`, `berfers`), and legacy intive `bt` needs normalization. Remaining accessor
-  audit and Mapper claimed-SAID verification stay explicit plan obligations.
+  audit stays an explicit plan obligation. Standalone saidive Mapper verification
+  checks configured top-level claims in the selected format as well as wire
+  round trips; makify replaces claims and verify:false explicitly skips checks.
+  Compactor retains disclosure wire checks without flat-map claim verification;
+  expanded disclosures are checked by their credential/aggregate owners.
 
 ## Owners and follow-ups
 
