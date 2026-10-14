@@ -21,6 +21,7 @@ import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "..
 import { Kevery, type MessagePolicy } from "../core/eventing.ts";
 import { type KramConfig, Kramer } from "../core/kraming.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
+import { CredentialStateReceiver } from "../vdr/credential-tsn.ts";
 import { Tevery } from "../vdr/eventing.ts";
 import { RegistryStateReceiver } from "../vdr/registry-tsn.ts";
 import { chunkBytes } from "./byte-source.ts";
@@ -98,6 +99,7 @@ export class Reactor {
   readonly vdr: VdrRuntimeServices;
   readonly acdc: AcdcRuntimeServices;
   private readonly registryStates?: RegistryStateReceiver;
+  private readonly credentialStates?: CredentialStateReceiver;
 
   constructor(
     hby: Habery,
@@ -160,6 +162,8 @@ export class Reactor {
     if (vdr.tvy instanceof Tevery) {
       this.registryStates = new RegistryStateReceiver(vdr.tvy, this.revery);
       this.router.addRoute("/tsn/registry/{aid}", this.registryStates);
+      this.credentialStates = new CredentialStateReceiver(vdr.tvy, this.revery);
+      this.router.addRoute("/tsn/credential/{aid}", this.credentialStates);
     }
   }
 
@@ -448,6 +452,7 @@ export class Reactor {
       this.revery.processEscrowReply();
       this.vdr.tvy?.processEscrows?.();
       this.registryStates?.processEscrows();
+      this.credentialStates?.processEscrows();
       this.vdr.vry?.processEscrows?.();
       this.acdc.rgy?.processEscrows();
       yield* this.exchanger.processEscrows();
