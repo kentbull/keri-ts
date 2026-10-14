@@ -146,7 +146,10 @@ the FEL prediction before its first write; caller-held synchronous writer owners
 continues through append. Decision-carried duplicate/escrow cues use the same
 pre-effect admission. Empty duplicate batches acquire no credit. Busy/limit refusal
 leaves the decision unapplied; unexpected post-write faults release unpublished
-preparation but do not roll back durable effects. Ordinary Deck remains supported.
+preparation but do not roll back durable effects. Ordinary Runtime Deck retains
+its original conservative acceptance/duplicate count guard and retry boundary.
+Exact measured batch admission applies only to injected CueDeck until Runtime
+producer/consumer ownership is fully ported.
 
 Next integrate Revery/OOBI, EXN/KRAM and legacy credential/TEL producers.
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer

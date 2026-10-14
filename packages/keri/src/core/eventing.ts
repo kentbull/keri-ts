@@ -884,6 +884,13 @@ export class Kevery {
    *   post-acceptance cue emission
    */
   applyDecision(decision: KeverDecision): void {
+    // Ordinary Runtime decks retain their existing refusal/retry boundary until ownership is fully ported.
+    if (!(this.cues instanceof CueDeck)) {
+      this.cues.checkSpace(
+        ("cues" in decision ? decision.cues?.length ?? 0 : 0)
+          + (decision.kind === "accept" ? 4 : decision.kind === "duplicate" ? 1 : 0),
+      );
+    }
     if (decision.kind === "reject") return;
     if (decision.kind === "accept") {
       const kever = this.kevers.get(decision.transition.pre);
