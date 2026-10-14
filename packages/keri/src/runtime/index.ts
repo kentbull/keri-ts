@@ -71,7 +71,7 @@ export {
 } from "../app/witnessing.ts";
 export * from "../core/attachment-countering.ts";
 export * from "../core/cues.ts";
-export { DeckFullError } from "../core/deck.ts";
+export { Deck, DeckFullError } from "../core/deck.ts";
 export * from "../core/errors.ts";
 export * from "../core/eventing.ts";
 export * from "../core/kever.ts";
@@ -90,6 +90,8 @@ export * from "../did/index.ts";
 export * from "../time/mod.ts";
 export * from "../vdr/credentialing.ts";
 export * from "../vdr/eventing.ts";
+
+export { prepareCueEmission, type PreparedCueEmission } from "../app/cue-preparation.ts";
 
 export { type QueryReply } from "../app/query-replies.ts";
 

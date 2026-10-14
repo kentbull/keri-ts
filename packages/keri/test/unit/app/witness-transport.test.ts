@@ -93,7 +93,7 @@ Deno.test("TCP witness admission owns its socket through cancellation and permit
       received.resolve();
     });
     socket.once("end", () => {
-      if (finish) socket.end();
+      if (finish) socket.end(Uint8Array.of(11, 12));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -695,7 +695,7 @@ Deno.test("TCP output rejects oversized backing, freezes drain deadline and perm
     socket.once("close", () => sockets.delete(socket));
     socket.on("data", (bytes) => received += bytes.length);
     socket.once("end", () => {
-      if (finish) socket.end();
+      if (finish) socket.end(Uint8Array.of(11, 12));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

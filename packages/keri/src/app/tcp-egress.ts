@@ -334,6 +334,8 @@ function writeTcp(
       const controller = new AbortController(), signal = AbortSignal.any([upstream, controller.signal]);
       const socket = createConnection({ host: parsed.hostname, port, allowHalfOpen: !!replies });
       if (replies) socket.pause();
+      // Transmit-only completion still drains ignored peer bytes so genuine EOF/close can arrive.
+      else socket.resume();
       connectedSocket = socket;
       const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
       const fail = (error: unknown) => controller.abort(error);
