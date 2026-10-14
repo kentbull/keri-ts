@@ -110,6 +110,11 @@ prepared sending owns HTTP only. Keep borrowed wire alive through joined cleanup
 An explicit target cap validates backing and bounds introduction plus forwarded wire
 before their final concatenation; direct wire becomes an independent copy. The
 caller must reserve preparation/copy credit first and retain it through joined send.
+RuntimeDeliveries uses the same eight owner slots for query requests, cue cursors
+and failed target packets. Retain exact independent wire until joined delivery or
+shutdown; one target per pass keeps admitted siblings progressing. Route metadata
+has its own pre-admitted finite credit. Retired owners are local progress, not
+protocol success or durable retry. Runtime cue callers still require adoption.
 Actual HTTP and source/tree/output admission refusal observation is invocation-local;
 source/fetch/sink/cleanup and external observer failures retain original identity.
 Prepared target attempts return local complete/refused/busy only after joined
