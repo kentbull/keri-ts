@@ -1,5 +1,5 @@
 import { assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
-import { Ilks, Kinds, Mapper, SerderACDC, t } from "../../../../cesr/mod.ts";
+import { Ilks, Kinds, Mapper, type MapperMap, SerderACDC, t } from "../../../../cesr/mod.ts";
 import {
   acdcatt,
   acdcmap,
@@ -12,6 +12,7 @@ import {
   update,
 } from "../../../src/acdc/messaging.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
+import { Schemer } from "../../../src/core/scheming.ts";
 
 const issuer = "EA2X8Lfrl9lZbCGz8cfKIvM_cqLyTYVLSFLhnttezlzQ";
 const issuee = "EAKCxMOuoRzREVHsHCkLilBrUXTvyenBiuM2QtV8BB0C";
@@ -21,6 +22,41 @@ const regid = "EM1hJSHgqklxe-SFOWkGRKRTIzbSh7yd0inf8RZ8paR8";
 const blid = "EBTAKXL5si31rCKCimOwR_gJTRmLaqixvrJEj5OzK769";
 const tsaid = "EBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ";
 const updateStamp = "2020-08-23T18:06:10.988921+00:00";
+
+Deno.test("acdc/messaging - bound JSON schema resources retain bundle URI IDs across body kinds", () => {
+  const bundle = {
+    $id: "did:keri:EIVGZurJI7YwSxfzXgyrVPiqEmuZjKQcPy1AtLIhfvVQ",
+    version: "1.0.0",
+    type: "object",
+    properties: { name: { type: "string" } },
+  };
+  const root = new Schemer({
+    sed: {
+      $id: "",
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      version: "1.0.0",
+      type: "object",
+      properties: { a: { $ref: bundle.$id } },
+      $defs: { attribute: bundle },
+    },
+  });
+  assertEquals(root.said, "EHGtNwaXjtaoEEg2HQghVed6XEtiV2Qrpxr9TaUzVO9q");
+  for (const kind of ["JSON", "CBOR", "MGPK", "CESR"] as const) {
+    const options = { kind, schema: root.sed as MapperMap, attribute: { d: "", name: "Ada" } };
+    const expanded = acdcmap(issuer, options);
+    assertEquals(expanded.schema, root.sed);
+    if (kind === "JSON") assertEquals(expanded.said, "EJqd7GpEidgthE0Cgcw9pAcoH7H_z5IMYn4iexEktVtP"); // actual frozen927 builder
+    const compact = acdcmap(issuer, { ...options, compactify: true });
+    assertEquals(compact.schema, root.said);
+    assertEquals(expanded.said, compact.said);
+    assertEquals(new SerderACDC({ raw: expanded.raw }).schema, root.sed);
+    const sections = sectionate(issuer, options);
+    assertEquals(sections[0].schema, root.said);
+    assertEquals(sections[1].schema, root.sed);
+    assertEquals(new SerderACDC({ raw: sections[1].raw }).schema, root.sed);
+  }
+  assertEquals(bundle.$id, "did:keri:EIVGZurJI7YwSxfzXgyrVPiqEmuZjKQcPy1AtLIhfvVQ");
+});
 
 Deno.test("acdc/messaging - regcept matches KERIpy JSON and CESR vectors", () => {
   const json = regcept(issuer, { uuid, stamp });
