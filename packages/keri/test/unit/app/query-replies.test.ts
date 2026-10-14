@@ -18,9 +18,15 @@ Deno.test("query reply reservations isolate interleaved results from the backgro
   const other: ReplayCue = { kin: "replay", querySaid: "query-b", messages: [new Uint8Array([2])] };
   const background: ReplayCue = { kin: "replay", messages: [new Uint8Array([3])] };
   const cues = new Deck<AgentCue>([other, background, replay, replay]);
+  let wakes = 0;
+  const unobserve = first.observeReady(() => wakes++);
+  assertEquals(first.ready, false);
+  assertThrows(() => first.observeReady(() => {}), Error, "observer");
   // A background turn can drain its own cue after reservation capture without stealing either response.
   replies.capture(cues);
   assertEquals([...cues], [background]);
+  assertEquals([first.ready, wakes], [true, 1]);
+  unobserve();
   assertStrictEquals(first.take(), replay);
   assertStrictEquals(duplicate.take(), replay);
   assertStrictEquals(second.take(), other);

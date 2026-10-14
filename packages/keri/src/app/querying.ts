@@ -555,24 +555,26 @@ export class QueryCoordinator implements CueSink {
     return admission;
   }
 
+  /** Observe and resolve incomplete queries synchronously under the caller's local preparation ownership. */
+  prepareEmission(emission: CueEmission): CueEmission {
+    this.observeContinuations(emission.cue);
+    const prepared = emission.cue.kin === "query" && emission.kind !== "wire"
+      ? this.transientQueryEmission(emission.cue) ?? emission
+      : emission;
+    return this.sink.prepareEmission?.(prepared) ?? prepared;
+  }
+
+  /** Await downstream consumption of a prepared emission, with no repeated local signing or observation. */
+  *sendPrepared(emission: CueEmission): Operation<void> {
+    yield* (this.sink.sendPrepared ?? this.sink.send).call(this.sink, emission);
+  }
+
   /**
-   * Consume one emitted cue, synthesizing any broader query/reply side effects
-   * before forwarding to the configured downstream sink.
+   * Direct convenience operation: the caller supplies local preparation ownership/guard
+   * and emission lifetime. Runtime cue drains prepare under their turn and send outside it.
    */
   *send(emission: CueEmission): Operation<void> {
-    this.observeContinuations(emission.cue);
-
-    if (emission.cue.kin === "query" && emission.kind !== "wire") {
-      const replacement = this.transientQueryEmission(emission.cue);
-      if (replacement) {
-        yield* this.sink.send(replacement);
-      } else {
-        yield* this.sink.send(emission);
-      }
-    } else {
-      yield* this.sink.send(emission);
-    }
-
+    yield* this.sendPrepared(this.prepareEmission(emission));
     if (!this.sink.admitQuery) yield* this.processPending();
   }
 
@@ -582,7 +584,8 @@ export class QueryCoordinator implements CueSink {
    * This is the Effection analogue of the KERIpy query/noticer doers: inspect
    * local state, emit any initial or follow-on queries that can honestly be
    * constructed, and retain unresolved work for later turns.
-   * Admitted transport sinks require their owning runtime for a short guarded preparation turn.
+   * Runtime callers prepare signing in a short guarded turn. Admitted transport sinks also
+   * retain shared byte ownership; standalone/custom pending delivery retains caller-owned bounds.
    */
   processPending(runtime?: AgentRuntime): Operation<void> {
     // deno-lint-ignore no-this-alias -- The isolated generator owns one complete drain pass.
@@ -623,7 +626,13 @@ export class QueryCoordinator implements CueSink {
             self.pending.push(request);
             continue;
           }
-          const emission = self.wireEmissionForRequest(request);
+          const prepared: { emission?: CueEmission | null } = {};
+          if (runtime) {
+            yield* runtime.reactor.settle(undefined, {}, function*() {
+              prepared.emission = self.wireEmissionForRequest(request);
+            });
+          } else prepared.emission = self.wireEmissionForRequest(request);
+          const emission = prepared.emission;
           if (emission) {
             // Keep the head and its capacity reservation while the transport can suspend or fail.
             yield* self.sink.send(emission);

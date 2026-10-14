@@ -44,6 +44,8 @@ can hide disposal errors after delivery. Fail cleanup before returning to its ca
 KRAM handoff retains its local busy guard until that disposal and checked durable
 acknowledgement finish. Failed callbacks, disposal or ack preserve ready retries;
 callback side effects/owner adoption are at least once, without rollback.
+Kramer/handoff borrow Baser's exact policy; acknowledgement snapshots reserve before
+copying and retain credit through staged consumption, joined disposal and acknowledgement.
 Per-Baser active scope counts exclude synchronous cache maintenance, while
 admission remains guarded per instance; neither supplies a shared memory budget.
 
@@ -156,7 +158,12 @@ Admitted cue interpretation is synchronous: destination item admission precedes
 preparation, and atomic acceptance precedes ordinary source removal. Existing
 CueDeck credit transfers/requeues; lazy replay stays unopened. The accepting
 owner releases after joined consumption. This facility alone is not reliable
-handoff or guard-free delivery; port actual owners/callers before activation.
+handoff by itself. Custom runtime cue drains now prepare one input/output owner per
+short turn and await the sink outside the guard; register that owner before sink
+resources so cancellation joins child cleanup before release. Initial pass count
+and eligible immediate transfer/busy semantics stay bounded. QueryCoordinator
+transforms under the same preparation/output check and sends without repeating
+observation/signing. Standalone custom pending queries retain caller-owned bounds.
 Cue route capture reserves a separate 1 MiB/4096-target allowance before endpoint
 resolution. Its independent owner retains metadata until joined delivery cleanup;
 configured floors include the live cue and interpretation credit.
@@ -182,7 +189,9 @@ or treat high-water buffering as a hard shared-memory ceiling.
 Tufa TCP immediate event proofs and query replies own bounded correlated slots;
 Kevery accept/duplicate decisions gate event output. Signing stays guarded, socket
 writes borrow the connection stream slot outside the guard. Unrelated cues retain
-Respondant routing; deferred query escrow output is still a connection-ownership gap.
+Respondant routing. One missing-state logs/ksn query may stay in its existing bounded
+slot; readiness wakes socket output while one joined parser pull stays live. The host
+runtime driver owns escrow retries; a standalone listener borrower must supply it.
 Tufa TCP bounds admitted/closing tasks before source acquisition; Reactor alone
 charges the receive stream. Earlier connection credit outlives joined parser/socket
 cleanup. Intrinsic wire refusal must preserve source/storage provenance, and a
@@ -226,6 +235,12 @@ runtime/owners through joined directional cleanup. RX EOF cannot end TX; TX EOF
 starts the absolute drain deadline. Concurrent children belong to the abortable
 I/O scope so cancellation reaches both before either cleanup waits. A drained
 connection/dispatch count proves neither verified replies nor remote acceptance.
+WitnessReceiptor preserves HTTP-first selection and uses local same-socket intake
+for TCP-only witnesses; explicit Receiptor endpoint calls remain HTTP-only. Success requires persisted wigs at the requested witness
+index before complementary fanout. Receiptor/catchup borrow an explicitly supplied
+runtime or own one scoped receiver; borrowed cleanup leaves its stores open.
+Generic sendWitnessMessage remains transmit-only without receiver context. Never
+open a second runtime merely to receive replies over an existing runtime's Habery.
 
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove
@@ -291,3 +306,9 @@ qualify older supported Node versions.
 Shared admission and first verified usable child evidence remain in the
 [roadmap](../../docs/plans/PARITY_ROADMAP.md). Stale/timeout continuation breadth
 and broader DB parity need source-grounded evidence, not repeated foundation work.
+
+Signaler owns transient reload hints, not durable Noter rows. Method-managed pings
+reserve finite queue/copy credit before construction and notice effects; publish
+transfers that credit, collapse/expiry/clear/close release it. The borrowed queue
+view is readonly and entries are immutable snapshots. Runtime/CLI close only their
+created producers; injected notification services share the exact Baser policy.

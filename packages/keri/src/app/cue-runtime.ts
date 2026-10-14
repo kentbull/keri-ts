@@ -1,6 +1,8 @@
-import { type Operation } from "npm:effection@^3.6.0";
+import { ResourceAdmissionError } from "cesr-ts";
+import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { CueEmission, QueryCue } from "../core/cues.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
+import { prepareCueEmission, type PreparedCueEmission } from "./cue-preparation.ts";
 import type { Hab } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
@@ -13,6 +15,10 @@ export interface CueSink {
   admitCue?(runtime: AgentRuntime, interpreter: Hab | null): CueAdmission;
   /** Admit source retention and one finite query before invoking its synchronous signing/route preparation. */
   admitQuery?(cue: QueryCue, prepare: () => CueEmission | null): CueAdmission;
+  /** Synchronous local transformation under admitted interpretation/output credit and the Reactor guard. */
+  prepareEmission?(emission: CueEmission): CueEmission;
+  /** Delivery of a prepared emission; all waits/cleanup run outside the guard. */
+  sendPrepared?(emission: CueEmission): Operation<void>;
   send(emission: CueEmission): Operation<void>;
 }
 
@@ -48,10 +54,12 @@ function resolveCueHab(
  * Drain one bounded cue-processing pass for a shared runtime host.
  *
  * Eligible sinks immediately transfer admitted work before source removal.
- * Ineligible/custom cues keep habitat-owned interpretation and the original refill behavior. When no habitat can be resolved, cues are still
+ * Ineligible/custom cues acquire independent input/output ownership in a short turn;
+ * sink waits run outside the guard and retain ownership through joined cleanup.
+ * Only the initial bounded batch is drained. When no habitat can be resolved, cues are still
  * surfaced to the host as notify/transport emissions instead of being dropped.
  */
-export function* processCuesOnce(
+export function processCuesOnce(
   runtime: AgentRuntime,
   {
     hab,
@@ -61,22 +69,54 @@ export function* processCuesOnce(
     sink?: CueSink;
   } = {},
 ): Operation<void> {
-  yield* runtime.reactor.settle(undefined, {}, function*() {
-    const cueHab = resolveCueHab(runtime, hab);
-    const count = runtime.cues.length;
+  return call(function*() {
+    let cueHab: Hab | null = null, count = 0;
+    yield* runtime.reactor.settle(undefined, {}, function*() {
+      cueHab = resolveCueHab(runtime, hab);
+      count = runtime.cues.length;
+    });
     for (let index = 0; index < count; index++) {
-      const admission = sink.admitCue?.(runtime, cueHab) ?? "ineligible";
-      if (admission === "transferred") continue;
-      if (admission === "busy") break;
-      if (admission !== "ineligible") throw new TypeError("Invalid immediate cue admission");
-      const cue = runtime.cues.pull();
-      if (!cue) break;
-      const emission = cueHab ? cueHab.interpretCue(cue) : {
-        cue,
-        messages: [],
-        kind: cue.kin === "stream" ? "transport" as const : "notify" as const,
-      };
-      if (emission) yield* sink.send(emission);
+      const more = yield* call(function*() {
+        let owner: PreparedCueEmission | undefined;
+        // Register before the sink's children: reverse teardown joins them before releasing retained evidence.
+        yield* resource<void>(function*(provide) {
+          try {
+            yield* provide();
+          } finally {
+            owner?.release();
+          }
+        });
+        const result: { admission: CueAdmission } = { admission: "ineligible" };
+        let refused: { error: ResourceAdmissionError } | undefined;
+        try {
+          yield* runtime.reactor.settle(undefined, {}, function*() {
+            result.admission = sink.admitCue?.(runtime, cueHab) ?? "ineligible";
+            if (result.admission === "transferred" || result.admission === "busy") return;
+            if (result.admission !== "ineligible") throw new TypeError("Invalid immediate cue admission");
+            prepareCueEmission(
+              cueHab,
+              runtime.cues,
+              runtime.resources,
+              (prepared) => {
+                owner = prepared;
+                return undefined;
+              },
+              (error) => refused = { error },
+              (emission) => sink.prepareEmission?.(emission) ?? emission,
+            );
+          });
+          if (result.admission === "busy") return false;
+          if (result.admission === "transferred") return true;
+          if (!owner) return false;
+          const emission = owner.emission;
+          if (emission) yield* (sink.sendPrepared ?? sink.send).call(sink, emission);
+          return true;
+        } catch (error) {
+          if (refused && refused.error === error && refused.error.reason === "busy") return false;
+          throw error;
+        }
+      });
+      if (!more) break;
     }
   });
 }

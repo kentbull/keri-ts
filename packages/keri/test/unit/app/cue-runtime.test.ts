@@ -7,6 +7,7 @@ import { prepareCueEmission, type PreparedCueEmission } from "../../../src/app/c
 import { prepareCueRoute } from "../../../src/app/cue-route.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { Reactor } from "../../../src/app/reactor.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
@@ -140,7 +141,85 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
         },
       };
 
-      yield* processRuntimeTurn(runtime, { sink });
+      // Exercise the real runtime QueryCoordinator wrapper, with both ordinary and owned input.
+      for (const owned of [false, true]) {
+        const cues = owned ? new CueDeck(runtime.resources, runtime.cues.capacity) : runtime.cues;
+        const active = owned
+          ? { ...runtime, cues, reactor: new Reactor(hby, { cues, resources: runtime.resources }) }
+          : runtime;
+        if (owned) {
+          cues.extend([
+            { kin: "stream", serder: event, pre: hab.pre, src: hab.pre, topics: { logs: 0 } },
+            { kin: "oobiFailed", url: "http://127.0.0.1:9999/oobi/abc/controller", reason: "HTTP 404" },
+          ]);
+        }
+        const head = active.cues.peekHead(), before = active.resources.used.bytes;
+        const occupied = active.resources.reserve({ bytes: active.resources.limits.bytes - before });
+        if (occupied.kind !== "reserve") throw new Error("Expected remaining credit");
+        yield* processRuntimeTurn(active, { sink });
+        assertStrictEquals(active.cues.peekHead(), head, "busy preparation preserves the source head");
+        occupied.reservation.release();
+        if (!owned) {
+          yield* processRuntimeTurn(active, { sink });
+          continue;
+        }
+        const started = Promise.withResolvers<void>(), cleanup = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let held = 0;
+        const draining = yield* spawn(() =>
+          processRuntimeTurn(active, {
+            sink: {
+              *send(emission) {
+                assertEquals(emission.kind, "transport");
+                held = active.resources.used.bytes;
+                assertEquals(held > before, true);
+                yield* resource<void>(function*(provide) {
+                  try {
+                    yield* provide();
+                  } finally {
+                    cleanup.resolve();
+                    yield* call(() => release.promise);
+                    assertEquals(active.resources.used.bytes, held, "sink cleanup still owns input/output");
+                  }
+                });
+                started.resolve();
+                yield* suspend();
+              },
+            },
+          })
+        );
+        yield* call(() => started.promise);
+        // No outer host/query guard may serialize this turn behind the suspended sink.
+        yield* active.reactor.settle();
+        const halting = yield* spawn(() => draining.halt());
+        yield* call(() => cleanup.promise);
+        assertEquals(active.resources.used.bytes, held);
+        release.resolve();
+        yield* halting;
+        assertEquals(active.cues.length, 1);
+        assertEquals(active.resources.used.bytes > 0, true, "the remaining cue retains its owner");
+        yield* processRuntimeTurn(active, { sink });
+        assertEquals(active.resources.used.bytes, 0);
+        active.cues.push({ kin: "oobiFailed", url: "http://peer.test/", reason: "gone" });
+        const fault = new ResourceAdmissionError("foreign sink failure", "busy");
+        yield* call(() =>
+          assertRejects(
+            () =>
+              run(() =>
+                processCuesOnce(active, {
+                  sink: {
+                    *send() {
+                      throw fault;
+                    },
+                  },
+                })
+              ),
+            ResourceAdmissionError,
+            "foreign sink failure",
+          )
+        );
+        assertEquals(active.resources.used.bytes, 0, "failed sink releases its transferred owner");
+      }
     } finally {
       yield* hby.close();
     }
@@ -148,6 +227,7 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
 
   assertEquals(emissions, [
     { kind: "transport", kin: "stream" },
+    { kind: "notify", kin: "oobiFailed" },
     { kind: "notify", kin: "oobiFailed" },
   ]);
 });
@@ -218,6 +298,14 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
       } finally {
         occupied.reservation.release();
       }
+      assertThrows(() =>
+        prepareCueEmission(null, ordinary, resources, () => undefined, undefined, (emission) => ({
+          ...emission,
+          messages: [new Uint8Array(9 * 1024 ** 2)],
+          kind: "wire",
+        })), ResourceLimitError);
+      assertStrictEquals(ordinary.peekHead(), cue);
+      assertEquals(resources.used.bytes, 0, "transformed output remains subject to finite wire admission");
       const floorPolicy = new ResourcePolicy({ bytes: 33 * 1024 ** 2 }), floorDeck = new Deck<AgentCue>([cue]);
       let selected = 0;
       const floorError = assertThrows(() =>

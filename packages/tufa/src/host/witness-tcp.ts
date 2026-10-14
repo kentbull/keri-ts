@@ -1,4 +1,5 @@
 import {
+  type CesrFrame,
   discardFrame,
   Ilks,
   ResourceAdmissionError,
@@ -6,7 +7,7 @@ import {
   type ResourceReservation,
   WireParseError,
 } from "cesr-ts";
-import { action, call, createScope, each, type Operation, race, resource, useScope } from "effection";
+import { action, call, createScope, type Operation, race, resource, useScope } from "effection";
 import {
   type AgentRuntime,
   chunkBytes,
@@ -16,6 +17,7 @@ import {
   prepareCueEmission,
   type PreparedCueEmission,
   processCuesOnce,
+  type QueryReply,
   socketBytes,
   writeCesrTcpSocket,
 } from "keri-ts/runtime";
@@ -124,75 +126,196 @@ function* processWitnessSocket(
           };
           return source;
         }, { classifyWireErrors: true });
-        for (const frame of yield* each(channel.frames)) {
-          yield* call(function*() {
-            yield* resource<void>(function*(provide) {
-              try {
-                yield* provide();
-              } finally {
-                yield* call(() => discardFrame(frame));
-              }
+        let pending: QueryReply | undefined;
+        let next: IteratorResult<CesrFrame, void> | undefined,
+          readFailure: { error: unknown; reported?: boolean } | undefined;
+        let pulling = false, rxEOF = false, wake: (() => void) | undefined;
+        const frames = yield* channel.frames;
+        const [reads, haltReads] = createScope(yield* useScope());
+        /** Join the one pull, dispose its unclaimed frame, and release the slot even after cleanup failure. */
+        function* closeReadOwner(): Operation<void> {
+          const errors: unknown[] = [];
+          try {
+            yield* haltReads();
+          } catch (error) {
+            errors.push(error);
+          }
+          try {
+            const unclaimed = next;
+            if (unclaimed && !unclaimed.done) yield* call(() => discardFrame(unclaimed.value));
+          } catch (error) {
+            errors.push(error);
+          }
+          if (readFailure && !readFailure.reported && !errors.includes(readFailure.error)) {
+            errors.push(readFailure.error);
+          }
+          try {
+            pending?.close();
+          } catch (error) {
+            errors.push(error);
+          }
+          if (errors.length === 1) throw errors[0];
+          if (errors.length) throw new AggregateError(errors, "TCP read/reply cleanup failed");
+        }
+        yield* resource<void>(function*(provide) {
+          try {
+            yield* provide();
+          } finally {
+            yield* closeReadOwner();
+          }
+        });
+        type Batch = NonNullable<ReturnType<QueryReply["takeAll"]>>;
+        /** Borrow one captured batch until every admitted output and source cleanup joins. */
+        function* sendBatch(batch: Batch): Operation<void> {
+          yield* resource<void>(function*(provide) {
+            try {
+              yield* provide();
+            } finally {
+              batch.release();
+            }
+          });
+          for (const cue of batch.cues) {
+            yield* call(function*() {
+              let output: PreparedCueEmission | undefined;
+              yield* resource<void>(function*(provide) {
+                const hydration = runtime.resources.reserve({ bytes: runtime.replyStreams.preparationByteFloor });
+                if (hydration.kind === "refuse") {
+                  throw new ResourceAdmissionError("TCP reply preparation refused", hydration.reason);
+                }
+                try {
+                  yield* provide();
+                } finally {
+                  output?.release();
+                  hydration.reservation.release();
+                }
+              });
+              yield* runtime.reactor.settle(undefined, {}, function*() {
+                prepareCueEmission(serviceHab, new Deck([cue]), runtime.resources, (owner) => {
+                  output = owner;
+                  return undefined;
+                });
+              });
+              yield* writeCesrTcpSocket(socket, async function*(signal) {
+                for (const message of output!.emission!.messages) {
+                  yield* chunkBytes(message, { signal, maxChunkBytes: 65536 });
+                }
+              }, { services: runtime.services });
             });
-            const body = frame.body;
-            const pre = typeof body.ked?.i === "string" ? body.ked.i : undefined;
-            const slot = body.ilk === Ilks.qry && body.said
-              ? runtime.reactor.replies.reserve(body.said)
-              : ([Ilks.icp, Ilks.dip, Ilks.rot, Ilks.drt, Ilks.ixn] as readonly string[]).includes(body.ilk!) && pre
-                  && body.said
-              ? runtime.reactor.replies.reserveEvent(pre, body.said)
-              : undefined;
-            let batch: ReturnType<NonNullable<typeof slot>["takeAll"]>;
-            yield* resource<void>(function*(provide) {
-              try {
-                yield* provide();
-              } finally {
-                batch?.release();
-                slot?.close();
-              }
-            });
-            yield* runtime.reactor.settle(frame, { local: true, escrows: true }, function*(_envelope, decision) {
-              // SAIDs do not include signatures: this exact dispatch must authorize its output.
+          }
+        }
+        /** Settle current input and retain at most one authorized missing-state query on this connection. */
+        function* processFrame(frame: CesrFrame): Operation<void> {
+          yield* resource<void>(function*(provide) {
+            try {
+              yield* provide();
+            } finally {
+              yield* call(() => discardFrame(frame));
+            }
+          });
+          const body = frame.body;
+          if (body.ilk === Ilks.qry && pending) throw new DeckFullError("TCP pending query slot is occupied");
+          const pre = typeof body.ked?.i === "string" ? body.ked.i : undefined;
+          let slot = body.ilk === Ilks.qry && body.said
+            ? runtime.reactor.replies.reserve(body.said)
+            : ([Ilks.icp, Ilks.dip, Ilks.rot, Ilks.drt, Ilks.ixn] as readonly string[]).includes(body.ilk!) && pre
+                && body.said
+            ? runtime.reactor.replies.reserveEvent(pre, body.said)
+            : undefined;
+          let batch: ReturnType<NonNullable<typeof slot>["takeAll"]>;
+          yield* resource<void>(function*(provide) {
+            try {
+              yield* provide();
+            } finally {
+              batch?.release();
+              slot?.close();
+            }
+          });
+          yield* runtime.reactor.settle(frame, { local: true, escrows: true }, function*(_envelope, decision) {
+            // SAIDs do not include signatures: this exact dispatch must authorize its output.
+            if (
+              body.ilk === Ilks.qry
+                ? decision?.kind !== "drop" && decision?.kind !== "pending" && decision?.kind !== "missing"
+                : decision?.kind === "accept" || decision?.kind === "duplicate"
+            ) {
               if (
-                body.ilk === Ilks.qry
-                  ? decision?.kind !== "drop" && decision?.kind !== "pending" && decision?.kind !== "missing"
-                  : decision?.kind === "accept" || decision?.kind === "duplicate"
+                body.ilk === Ilks.qry && decision?.kind === "escrow"
+                && ["logs", "ksn"].includes(String(body.ked?.r))
               ) {
-                batch = slot?.takeAll();
-              }
+                pending = slot;
+                slot = undefined;
+              } else batch = slot?.takeAll();
+            }
+          });
+          yield* processCuesOnce(runtime, { hab: serviceHab, sink: runtime.respondant.forHab(serviceHab) });
+          if (batch) yield* sendBatch(batch);
+        }
+        while (!rxEOF || pending) {
+          if (pending?.ready) {
+            yield* call(function*() {
+              let batch: Batch | undefined;
+              yield* resource<void>(function*(provide) {
+                try {
+                  yield* provide();
+                } finally {
+                  batch?.release();
+                }
+              });
+              yield* runtime.reactor.settle(undefined, {}, function*() {
+                batch = pending!.takeAll();
+              });
+              if (batch) yield* sendBatch(batch);
             });
-            yield* processCuesOnce(runtime, { hab: serviceHab, sink: runtime.respondant.forHab(serviceHab) });
-            if (!batch) return;
-            // Reconstruct/sign one admitted proof at a time; only its scoped owner crosses the guard.
-            for (const cue of batch.cues) {
+            pending.close();
+            pending = undefined;
+            continue;
+          }
+          if (readFailure) {
+            readFailure.reported = true;
+            throw readFailure.error;
+          }
+          if (next) {
+            const result = next;
+            if (result.done) {
+              next = undefined;
+              rxEOF = true;
+            } else {
+              // Register ownership before the pending pull transfers its one complete frame.
               yield* call(function*() {
-                let output: PreparedCueEmission | undefined;
                 yield* resource<void>(function*(provide) {
-                  const hydration = runtime.resources.reserve({ bytes: runtime.replyStreams.preparationByteFloor });
-                  if (hydration.kind === "refuse") {
-                    throw new ResourceAdmissionError("TCP reply preparation refused", hydration.reason);
-                  }
                   try {
                     yield* provide();
                   } finally {
-                    output?.release();
-                    hydration.reservation.release();
+                    yield* call(() => discardFrame(result.value));
                   }
                 });
-                yield* runtime.reactor.settle(undefined, {}, function*() {
-                  prepareCueEmission(serviceHab, new Deck([cue]), runtime.resources, (owner) => {
-                    output = owner;
-                    return undefined;
-                  });
-                });
-                yield* writeCesrTcpSocket(socket, async function*(signal) {
-                  for (const message of output!.emission!.messages) {
-                    yield* chunkBytes(message, { signal, maxChunkBytes: 65536 });
-                  }
-                }, { services: runtime.services });
+                next = undefined;
+                yield* processFrame(result.value);
               });
             }
+            pulling = false;
+            continue;
+          }
+          if (!rxEOF && !pulling) {
+            pulling = true;
+            reads.run(function*() {
+              try {
+                next = yield* frames.next();
+              } catch (error) {
+                readFailure = { error };
+              }
+              wake?.();
+            });
+          }
+          // One cancellable observer and one joined parser pull; no result queue or Promise waiter growth.
+          yield* action<void>((resolve) => {
+            wake = resolve;
+            const unobserve = pending?.observeReady(resolve);
+            if (next || readFailure) resolve();
+            return () => {
+              wake = undefined;
+              unobserve?.();
+            };
           });
-          yield* each.next();
         }
         // Genuine RX EOF leaves TX available until every scoped reply has drained.
         yield* call(() =>
