@@ -35,7 +35,10 @@ Preserve first-notice behavior or retries can republish approval unnecessarily.
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
 proof; conversation acceptance is not wallet acceptance. Observer registry import
 is separate from issuer registry processing. Presentation registries still require
-receiver-owned KRAM time; deeper nests and unfinished routes remain guarded.
+receiver-owned KRAM time, node-local BLIDs and explicit fully witnessed Issuee
+source triples. Bind the exact grant target at the inclusive receipt cutoff;
+later accepted TEL updates cannot refresh it. Preserve missing proof escrow and
+independent issuer verification; deeper/hidden paths and unfinished routes remain guarded.
 
 Pure multisig/IPEX body builders take parsed Serders synchronously. Byte convenience
 operations own cancellable parseBytes, finite nested-wire collection and finally
@@ -89,7 +92,8 @@ Private envelope-bound receipt authority expires with the consumer and requires
 completed nonexempt intake. Freeze first exchange receiverTime through route proof
 escrow, retry and reopen; recheck publication against competing receipt writes.
 Signed dt, disabled/exempt/v1 intake and forged capabilities never confer cutoffs.
-Presentation registry processing remains independently guarded.
+Disclosed presentation registry processing consumes retained receipt provenance;
+hidden declarations and unfinished graphs remain guarded.
 
 [Proofs](../../docs/design-docs/exchange/EXCHANGE_PROOFS.md),
 [multisig](../../docs/design-docs/exchange/MULTISIG.md),

@@ -111,8 +111,9 @@ The ready transport consumer runs inside handoff before joined disposal and ack.
 Callback results are void; Reactor returns only its original borrowed input. HTTP
 refuses current pending, missing, busy and replay outcomes despite older cues.
 HTTP recovery queries enter the bounded coordinator and drain on ordinary host turns.
-No automatic ESSR decryption or child dispatch is enabled; presentation-registry
-cutoff processing remains separately guarded.
+No automatic ESSR decryption or child dispatch is enabled. Disclosed IPEX
+presentation registries use the retained trusted receipt; hidden and unfinished
+graph paths remain guarded under the [IPEX contract](IPEX.md).
 
 Completed KRAM intake lends private envelope-bound receipt authority only within
 the ready consumer. Disabled, exempt and v1 forwarding cannot confer it; forged,

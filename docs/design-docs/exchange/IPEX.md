@@ -38,8 +38,17 @@ injected managers remain caller-owned. IPEX borrows that manager's store. There 
 route; local registry services are separate. The event ceiling bounds one read/import, not
 runtime memory; native whole-row allocation and shared admission remain phases 4–5.
 
-Presentation-registry grants remain guarded until consolidated v2 intake supplies
-receiver-owned KRAM timestamps. Sender time is never a substitute. The independent
+Disclosed presentation registries require retained, trusted KRAM receiver time.
+After every node's issuer verifies, each unique Issuee/registry declaration must
+independently bind the exact grant SAID through node-local BLIDs. The accepted
+RegistryStore chain is vetted at the inclusive microsecond cutoff; later updates
+cannot replace that history. Explicit child source triples must identify an
+accepted fully witnessed Issuee KEL event containing the full selected TEL seal.
+Absent sources fail; unavailable attached sources/TEL are typed proof dependencies.
+Verified Issuees may satisfy the negotiated grant anchor requirement. Parent
+signatures, source seals and neighboring children cannot authenticate this node.
+Hidden issuer/attribute/aggregate requirements and deeper unfinished graphs remain
+guarded. Sender time is never a substitute. The independent
 wire oracle covers JSON outer exchanges with native ACDC nodes, verifies actual
 unmodified-upstream imports, and exercises real Exchanger decisions. Native-CESR
 outer EXNs with empty prior do not round-trip in the frozen low-level factory
