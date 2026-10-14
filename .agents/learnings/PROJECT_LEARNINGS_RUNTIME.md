@@ -135,6 +135,9 @@ HTTP/HTTPS priority and signed introductions stay unchanged. TCP and RX capacity
 refusals use invocation-local observation; foreign failures preserve identity.
 Raw TCP peer failures still propagate; this adds no new refusal/retry taxonomy.
 Public Poster operations retain caller-owned preparation/retention bounds.
+Runtime outbox retries guard route/signing and cancel/outcome writes, and join
+transport outside those turns. The optional durable outbox's existing live scan,
+row materialization and preparation-copy bounds remain separately unqualified.
 An explicit target cap validates backing and bounds introduction plus forwarded wire
 before their final concatenation; direct wire becomes an independent copy. The
 caller must reserve preparation/copy credit first and retain it through joined send.

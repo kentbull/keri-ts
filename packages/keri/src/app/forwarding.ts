@@ -531,56 +531,82 @@ export class Poster {
    * Retry any pending mailbox-target deliveries using current recipient state.
    *
    * Retry behavior is per mailbox endpoint, not per logical message. A removed
-   * mailbox cancels only that endpoint's target row.
+   * mailbox cancels only that endpoint's target row. Runtime route/signing and
+   * outcome publication use short turns; transport cleanup joins outside the guard.
+   * The existing live outbox iterator/materialized rows retain their caller-owned scan bounds.
    */
-  *processPending(runtime?: AgentRuntime): Operation<void> {
-    for (const pending of this.outboxer.iterPending()) {
-      const hab = this.hby.habs.get(pending.message.sender);
-      if (!hab) {
-        this.outboxer.cancelTarget(
-          pending.said,
-          pending.target.eid,
-          makeNowIso8601(),
-          "sender habitat is unavailable",
-        );
-        continue;
+  processPending(runtime?: AgentRuntime): Operation<void> {
+    if (runtime && runtime.hby !== this.hby) throw new RangeError("Poster retry requires its owning Habery runtime");
+    // deno-lint-ignore no-this-alias -- One retry pass owns transport cleanup before guarded publication.
+    const self = this;
+    return call(function*() {
+      for (const pending of self.outboxer.iterPending()) {
+        const state: { target?: PreparedCesrTarget; failure?: { error: unknown } } = {};
+        const prepare = function*() {
+          const hab = self.hby.habs.get(pending.message.sender);
+          if (!hab) {
+            self.outboxer.cancelTarget(
+              pending.said,
+              pending.target.eid,
+              makeNowIso8601(),
+              "sender habitat is unavailable",
+            );
+            return;
+          }
+          const endpoint = mailboxDeliveryEndpoints(hab, pending.message.recipient)
+            .find((current) => current.eid === pending.target.eid);
+          if (!endpoint) {
+            self.outboxer.cancelTarget(pending.said, pending.target.eid, makeNowIso8601(), "mailbox removed");
+            return;
+          }
+          try {
+            state.target = self.prepareForwardedTarget(
+              hab,
+              pending.message.recipient,
+              pending.message.topic,
+              pending.raw,
+              endpoint,
+            );
+          } catch (error) {
+            state.failure = { error };
+          }
+        };
+        if (runtime) yield* runtime.reactor.settle(undefined, {}, prepare);
+        else yield* prepare();
+        if (!state.target && !state.failure) continue;
+        if (state.target) {
+          try {
+            yield* call(() =>
+              sendPreparedCesrTarget(
+                state.target!,
+                self.services,
+                undefined,
+                undefined,
+                undefined,
+                runtime,
+              )
+            );
+          } catch (error) {
+            state.failure = { error };
+          }
+        }
+        const publish = function*() {
+          try {
+            if (state.failure) throw state.failure.error;
+            self.outboxer.markDelivered(pending.said, pending.target.eid, makeNowIso8601());
+          } catch (error) {
+            self.outboxer.markFailed(
+              pending.said,
+              pending.target.eid,
+              makeNowIso8601(),
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+        };
+        if (runtime) yield* runtime.reactor.settle(undefined, {}, publish);
+        else yield* publish();
       }
-
-      const endpoint = mailboxDeliveryEndpoints(hab, pending.message.recipient)
-        .find((current) => current.eid === pending.target.eid);
-      if (!endpoint) {
-        this.outboxer.cancelTarget(
-          pending.said,
-          pending.target.eid,
-          makeNowIso8601(),
-          "mailbox removed",
-        );
-        continue;
-      }
-
-      try {
-        yield* this.deliverMailboxTarget(
-          hab,
-          pending.message.recipient,
-          pending.message.topic,
-          pending.raw,
-          endpoint,
-          runtime,
-        );
-        this.outboxer.markDelivered(
-          pending.said,
-          pending.target.eid,
-          makeNowIso8601(),
-        );
-      } catch (error) {
-        this.outboxer.markFailed(
-          pending.said,
-          pending.target.eid,
-          makeNowIso8601(),
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    }
+    });
   }
 
   /** Return whether any sender retry work still remains. */

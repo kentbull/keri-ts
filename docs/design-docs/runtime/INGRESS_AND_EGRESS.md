@@ -289,6 +289,10 @@ calls without that borrower drain output only. Runtime/services identity remains
 exact, and transport completion never establishes remote acceptance. Public
 Poster operations retain caller-owned synchronous preparation/retention bounds;
 admitted CueDelivery still prepares under a short turn and sends outside it.
+Runtime outbox retries also guard route/signing/target preparation and
+cancel/failure/delivered writes. Transport cleanup joins outside those turns.
+The optional durable outbox retains its existing live iterator across attempts;
+its row materialization and preparation-copy bounds remain separately unqualified.
 Invocation-local observers report actual TCP/RX capacity refusals so busy retains
 existing work before socket acquisition. Foreign failures and raw peer errors
 propagate with original identity; this adds no transport retry taxonomy.

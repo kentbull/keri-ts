@@ -7,7 +7,7 @@
  * - alias error semantics
  * - shared mailbox storage and remote cursor progression
  */
-import { call, run } from "effection";
+import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createServer } from "node:net";
 import {
@@ -17,7 +17,12 @@ import {
   ResourceLimitError,
   SerderKERI,
 } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+  runAgentRuntime,
+} from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import {
@@ -674,6 +679,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
     await run(function*() {
       const hby = yield* createHabery({
         name: `poster-remote-witness-bytes-${crypto.randomUUID()}`,
+        outboxer: "create",
         temp: true,
         skipConfig: true,
       });
@@ -708,7 +714,11 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           toad: 1,
         });
 
-        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby, {
+          mode: "local",
+          // This scenario drives Poster TCP; mailbox polling has its own HTTP/SSE contract.
+          mailboxPollTransport: { *poll() {} },
+        });
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
             ingestKeriBytes(runtime, msg);
@@ -792,6 +802,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           const receiptKey = dgKey(sender.pre, sender.kever!.said);
           const receipt = remoteWitness.receipt(sender.kever!.serder);
           let connections = 0;
+          let holdClose: { started: PromiseWithResolvers<void>; release: PromiseWithResolvers<void> } | undefined;
           const tcpBodies: Uint8Array[][] = [];
           const tcp = createServer({ allowHalfOpen: true }, (socket) => {
             connections++;
@@ -801,7 +812,12 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             socket.on("data", (chunk) => chunks.push(new Uint8Array(chunk)));
             // A real signed receipt travels independently of the prepared upload's framing.
             socket.write(receipt);
-            socket.once("end", () => socket.end());
+            const held = holdClose;
+            socket.once("end", () => {
+              held?.started.resolve();
+              if (held) void held.release.promise.then(() => socket.end());
+              else socket.end();
+            });
           });
           yield* call(() => new Promise<void>((resolve) => tcp.listen(0, "127.0.0.1", resolve)));
           try {
@@ -878,6 +894,74 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             yield* sendPreparedCesrTarget(tcpTarget, runtime.services);
             assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");
             assertEquals(concatBytes(...tcpBodies[2]), tcpTarget.message);
+            // Drive the actual durable outbox through both deterministic and background composition roots.
+            yield* runtime.reactor.processBytes(recipient.makeEndRole(remoteWitness.pre, EndpointRoles.mailbox, true));
+            const said = crypto.randomUUID(), stamp = new Date().toISOString();
+            hby.obx.queueMessage(said, message, {
+              sender: sender.pre,
+              recipient: recipient.pre,
+              topic: "/receipt",
+              createdAt: stamp,
+            }, [remoteWitness.pre]);
+            let guarded = false, failPreparation = true;
+            const settle = runtime.reactor.settle.bind(runtime.reactor), endorse = sender.endorse;
+            const failed = hby.obx.markFailed.bind(hby.obx), markDelivered = hby.obx.markDelivered.bind(hby.obx);
+            const acknowledged = Promise.withResolvers<void>();
+            runtime.reactor.settle = (frame, options, consume) =>
+              settle(frame, options, function*(envelope, decision) {
+                guarded = true;
+                try {
+                  if (consume) yield* consume(envelope, decision);
+                } finally {
+                  guarded = false;
+                }
+              });
+            sender.endorse = (...args) => {
+              assertEquals(guarded, true, "outbox signing owns a short Reactor turn");
+              if (failPreparation) throw new Error("retry preparation");
+              return endorse.apply(sender, args);
+            };
+            hby.obx.markFailed = (...args) => {
+              assertEquals(guarded, true);
+              failed(...args);
+            };
+            hby.obx.markDelivered = (...args) => {
+              assertEquals(guarded, true);
+              markDelivered(...args);
+              acknowledged.resolve();
+            };
+            try {
+              yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+              assertEquals(hby.obx.pendingCount(), 1, "preparation failure preserves retry state");
+              assertEquals(connections, 3);
+              failPreparation = false;
+              holdClose = { started: Promise.withResolvers<void>(), release: Promise.withResolvers<void>() };
+              const progress = remoteHby.makeHab("outbox-progress");
+              const [frame] = yield* call(() =>
+                parseBytes(concatBytes(...remoteHby.db.clonePreIter(progress.pre)), {
+                  resources: runtime.resources,
+                })
+              );
+              const background = yield* spawn(() => runAgentRuntime(runtime, { hab: sender }));
+              try {
+                yield* call(() => holdClose!.started.promise);
+                assertEquals(hby.obx.pendingCount(), 1, "TCP wait cannot acknowledge the outbox early");
+                yield* runtime.reactor.settle(frame);
+                assertEquals(hby.db.getKever(progress.pre)?.sn, 0, "signed protocol work progresses during TCP wait");
+                holdClose.release.resolve();
+                yield* call(() => acknowledged.promise);
+                assertEquals(hby.obx.pendingCount(), 0);
+              } finally {
+                holdClose.release.resolve();
+                yield* background.halt();
+              }
+              assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+            } finally {
+              runtime.reactor.settle = settle;
+              sender.endorse = endorse;
+              hby.obx.markFailed = failed;
+              hby.obx.markDelivered = markDelivered;
+            }
           } finally {
             yield* call(() =>
               new Promise<void>((resolve, reject) => tcp.close((error) => error ? reject(error) : resolve()))
