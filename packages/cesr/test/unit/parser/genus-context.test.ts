@@ -59,9 +59,11 @@ Deno.test("explicit genus persists across v1 bodies, chunks and following messag
         1,
       ]]);
     }
-    for (let split = 0; split <= wire.length; split++) {
-      assertEquals(await Array.fromAsync(parse(chunks(wire.slice(0, split), wire.slice(split)))), expected);
-    }
+    const edge = cesr(gvc(2)).length;
+    assertEquals(
+      await Array.fromAsync(parse(chunks(wire.slice(0, edge), new Uint8Array(), wire.slice(edge)))),
+      expected,
+    );
     // One-byte production splits every selector and primitive header in both domains.
     assertEquals(await Array.fromAsync(parse(chunks(...Array.from(wire, (byte) => Uint8Array.of(byte))))), expected);
   }

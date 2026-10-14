@@ -9,7 +9,10 @@ their assumptions change. Preserve participant topology and distinct semantic
 assertions. Delete redundant permutations; byte-at-a-time parsing already visits
 each token boundary, so do not reverify signed trees at every two-chunk split.
 Large-input regressions need to exceed the faulty threshold, not repeat
-increasingly large allocations.
+increasingly large allocations. Partition checks use bytewise input plus selected
+coalesced/semantic edges, retaining version/domain/error facts and blocked-source
+assertions. Configurable integration limits may be small when native threshold
+behavior has its own retained regression.
 
 Witness harnesses use temporary copied configs and bind-checked randomized ports.
 Track children before readiness waits and report their output on startup failure.
