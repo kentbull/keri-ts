@@ -68,7 +68,12 @@ See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md
 
 ## Transport
 
-The target finite and streamed messenger entry points share two engines. Parsed
+Incremental CESR I/O is the stack-wide default, including discovery, artifacts
+and CLI callers. Adopt the shared engines/response owners rather than private
+collectors; pass the runtime's exact services/policy. Finite JSON/receipt semantics
+require enforced caps, cancellation and joined cleanup. OOBI/DID completion still
+requires full evidence; processing before EOF does not imply artifact success.
+The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
 HTTP success, verified replies and durable acceptance are different outcomes.
