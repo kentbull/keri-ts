@@ -176,9 +176,11 @@ Deno.test("TCP source pulls independent bounded fragments before EOF and preserv
     assertEquals(first.value, Uint8Array.of(1, 2, 3), "later pulls do not reuse a yielded backing");
     assertEquals(socket.destroyed, false, "receive EOF leaves output with its connection owner");
     assertEquals(socket.listenerCount("readable"), 0);
+    client.pause(); // A connection owner may have paused native input before handing it to the source.
     const response = socketBytes(client, { signal: controller.signal, maxChunkBytes: 3 });
     socket.end(Uint8Array.of(8, 9));
     assertEquals((await response.next()).value, Uint8Array.of(8, 9));
+    assertEquals(client.readableFlowing, false, "resuming native input does not switch to flow/data consumption");
     assertEquals((await response.next()).done, true);
   } finally {
     controller.abort();

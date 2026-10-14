@@ -96,6 +96,8 @@ export function socketBytes(
     socket.on("close", close);
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
+    // A readable listener keeps flow mode off; resume also restarts caller-paused native input.
+    else socket.resume();
   };
   /** Read only available bytes, so a short fragment does not wait for a full chunk or EOF. */
   const pull = async (): Promise<IteratorResult<Uint8Array>> => {
