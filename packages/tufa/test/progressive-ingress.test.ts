@@ -37,6 +37,9 @@ import { acceptedEventReplayMessage } from "../../keri/src/app/habbing.ts";
 import { queryTransportSink } from "../../keri/src/app/query-transport.ts";
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
 import { messagize, serializeMessage } from "../../keri/src/core/protocol-serialization.ts";
+import { incept as inceptRegistry, issue } from "../../keri/src/core/protocol-vdr-eventing.ts";
+import type { Reger } from "../../keri/src/db/reger.ts";
+import { Tevery } from "../../keri/src/vdr/eventing.ts";
 import { createProtocolHandler } from "../src/http/protocol-handler.ts";
 
 /** Bound a protocol-progress assertion so an atomic-parser regression fails instead of hanging. */
@@ -599,6 +602,79 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
         yield* call(() => discardFrame(valid));
       }
     } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("direct HTTP TSN query retains both independently verifiable replies", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = hby.makeHab("issuer"), runtime = yield* createAgentRuntime(hby);
+    const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const requester = receiver.makeHab("requester"), target = yield* createAgentRuntime(receiver);
+    try {
+      const tvy = runtime.vdr.tvy as Tevery, reger = runtime.vdr.reger! as Reger, received = target.vdr.reger! as Reger;
+      const vcp = inceptRegistry(issuer.pre, { cnfg: ["NB"] });
+      const credential = new Diger({ code: "E", raw: Diger.digest(b("HTTP credential"), "E") }).qb64;
+      const iss = issue(credential, vcp.pre!);
+      for (const event of [vcp, iss]) {
+        issuer.interact({ data: [{ i: event.pre, s: event.snh, d: event.said }] });
+        assertEquals(
+          tvy.processEvent({
+            serder: event,
+            seqner: issuer.kever!.serder.sner!,
+            saider: new Diger({ qb64: issuer.kever!.serder.said! }),
+          }).kind,
+          "accept",
+        );
+      }
+      for (const wire of hby.db.clonePreIter(issuer.pre)) yield* target.reactor.processBytes(wire);
+      for (const event of [vcp, iss]) yield* target.reactor.processBytes(reger.cloneTvt(event.pre!, event.said!));
+      const handler = createProtocolHandler(runtime, { serviceHab: issuer, directQueryResponses: true });
+      for (const id of [credential, requester.pre]) {
+        const response = yield* call(() =>
+          promptly(handler(
+            new Request("http://localhost/", {
+              method: "POST",
+              headers: { "content-type": "application/cesr" },
+              body: requester.query(issuer.pre, issuer.pre, { ri: vcp.pre, i: id }, "tsn") as Uint8Array<ArrayBuffer>,
+            }),
+          ))
+        );
+        assertEquals(response.status, 200);
+        const bytes = yield* call(async () => new Uint8Array(await response.arrayBuffer()));
+        assertEquals(
+          runtime.resources.used,
+          { bytes: 0, streams: 0, decryptions: 0 },
+          "Complete response releases source ownership",
+        );
+        const frames = yield* call(() => parseBytes(bytes));
+        try {
+          assertEquals(
+            frames.map((frame) => (frame.body as SerderKERI).route),
+            id === credential
+              ? [`/tsn/registry/${issuer.pre}`, `/tsn/credential/${issuer.pre}`]
+              : [`/tsn/registry/${issuer.pre}`],
+          );
+        } finally {
+          for (const frame of frames) yield* call(() => discardFrame(frame));
+        }
+        if (id === credential) {
+          assertEquals(
+            received.txnsb.current([credential, issuer.pre]),
+            null,
+            "HTTP status does not authenticate either reply",
+          );
+          yield* target.reactor.processBytes(bytes);
+          assertExists(received.txnsb.current([vcp.pre!, issuer.pre]));
+          assertExists(received.txnsb.current([credential, issuer.pre]));
+        }
+      }
+    } finally {
+      yield* target.close();
+      yield* receiver.close(true);
       yield* runtime.close();
       yield* hby.close(true);
     }

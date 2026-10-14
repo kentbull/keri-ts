@@ -8,6 +8,7 @@ import {
   type ResourceReservation,
   Serder,
 } from "cesr-ts";
+import { CapturedKelReplay } from "../db/kel-replay.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck, DeckFullError } from "./deck.ts";
 import { RawRecord } from "./records.ts";
@@ -95,6 +96,13 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
       bytes += value.byteLength;
       return;
     }
+    if (CapturedKelReplay.is(value)) {
+      // Canonical frozen capture metadata is owned here; the runtime-owned Baser is only borrowed.
+      bytes += 3 * 16 + 2 * ("ranges".length + "maxMessageBytes".length) + 8;
+      visit(value.ranges, depth + 1);
+      visit(value.maxMessageBytes, depth + 1);
+      return;
+    }
     const proto = Object.getPrototypeOf(value);
     if (
       proto !== null && proto !== Object.prototype && !Array.isArray(value)
@@ -109,10 +117,18 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
     }
   }
   for (const cue of cues) {
-    // Replay closures need explicit captured-range metadata; inspecting them would open arbitrary work.
+    // Never open a replay to measure it: only frozen KEL captures or finite message arrays are inspectable.
     const kind = Object.getOwnPropertyDescriptor(cue, "kin");
     if (!kind || !Object.hasOwn(kind, "value")) throw new RangeError("Cue metadata accessors are unsupported");
-    if (kind.value === "replay") throw new RangeError("Opaque replay cue retention is not yet admitted");
+    if (kind.value === "replay") {
+      const messages = Object.getOwnPropertyDescriptor(cue, "messages");
+      if (!messages || !Object.hasOwn(messages, "value")) {
+        throw new RangeError("Cue metadata accessors are unsupported");
+      }
+      if (!(CapturedKelReplay.is(messages.value)) && !Array.isArray(messages.value)) {
+        throw new RangeError("Opaque replay cue retention is not admitted");
+      }
+    }
     visit(cue, 0);
   }
   if (!Number.isSafeInteger(bytes)) throw new RangeError("Unsafe cue byte charge");

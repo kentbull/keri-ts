@@ -137,8 +137,14 @@ JavaScript enumeration internals still depend on canonical caller/parsed-data li
 Publication constructs owner metadata before the finite Deck append. It does
 not measure native heap overhead; prepared data must remain immutable through
 final release. One shared batch lease lasts until its last owner; fanout adds
-reference credit, not another payload charge. Opaque replay closures are refused
-until captured-range metadata is explicit; they are never opened for inspection.
+reference credit, not another payload charge. KEL replay uses a frozen
+`CapturedKelReplay`: prefix/from/end tuples, per-message ceiling and a fixed borrowed
+Baser reference. Inspection charges this metadata without reading bodies or opening
+iterators/cursors, and never walks the runtime-owned store. Finite message arrays
+charge their complete backing normally. Opaque/TEL/composed replay closures remain
+refused; arbitrary work is never opened for measurement. Capture-time temporary
+allocations and query source-seal repair still need producer admission; this retained
+owner seam does not activate Runtime or close the full query/delivery boundary.
 
 Kevery now prepares the concrete acceptance/clone/state batch before logging,
 with prospective first-seen ordinal/date and group/witness policy. Logging checks

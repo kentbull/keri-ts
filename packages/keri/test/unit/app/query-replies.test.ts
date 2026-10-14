@@ -1,7 +1,9 @@
 import { assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { ResourceLimitError } from "../../../../cesr/mod.ts";
+import { ResourceLimitError, ResourcePolicy } from "../../../../cesr/mod.ts";
 import { QueryReplies } from "../../../src/app/query-replies.ts";
-import type { AgentCue, ReplayCue } from "../../../src/core/cues.ts";
+import { ReplyStreams } from "../../../src/app/reply-streams.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
+import type { AgentCue, ReplayCue, ReplyCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 
 Deno.test("query reply reservations isolate interleaved results from the background cue deck", () => {
@@ -39,4 +41,55 @@ Deno.test("query reply reservations bound pending requests and release cancellat
   replies.capture(cues);
   assertStrictEquals(cues.pull(), cue);
   next.close();
+});
+
+Deno.test("admitted TSN pairs retain fanout credit until response cleanup", async () => {
+  const resources = new ResourcePolicy(), cues = new CueDeck(resources, 8, 64), replies = new QueryReplies(2);
+  const first = replies.reserve("tsn"), duplicate = replies.reserve("tsn");
+  const registry: ReplyCue = { kin: "reply", querySaid: "tsn", route: "/tsn/registry", data: { i: "registry" } };
+  const credential: ReplyCue = { kin: "reply", querySaid: "tsn", route: "/tsn/credential", data: { i: "credential" } };
+  const background: ReplyCue = { kin: "reply", route: "/background", data: {} };
+  cues.extend([background, registry, credential, credential]);
+  replies.capture(cues);
+  assertEquals([...cues], [background]);
+  assertThrows(() => first.take(), Error, "batch");
+  const batch = first.takeAll()!;
+  assertEquals(batch.cues, [registry, credential]);
+  first.close();
+  duplicate.close();
+  cues.clear();
+  assertEquals(resources.used.bytes > 0, true, "Request closure cannot release transferred response credit");
+  const streams = new ReplyStreams({ maxMessageBytes: 3 }, resources);
+  const response = streams.open([], batch.release);
+  assertEquals(resources.used.bytes > 0, true);
+  await response.cancel();
+  batch.release();
+  streams.close();
+  assertEquals(resources.used.bytes, 0);
+  const next = replies.reserve("tsn");
+  cues.push(registry);
+  replies.capture(cues);
+  const partial = next.takeAll()!;
+  assertEquals(partial.cues, [registry], "A registry-only result is not credential acceptance");
+  partial.release();
+  next.close();
+  assertEquals(resources.used.bytes, 0);
+});
+
+Deno.test("query fanout refusal keeps the original admitted cue for a later capture", () => {
+  const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1, 64), replies = new QueryReplies(2);
+  const first = replies.reserve("tsn"), duplicate = replies.reserve("tsn");
+  const cue: ReplyCue = { kin: "reply", querySaid: "tsn", route: "/tsn/registry", data: {} };
+  cues.push(cue);
+  assertThrows(() => replies.capture(cues), ResourceLimitError);
+  assertEquals(first.takeAll(), undefined);
+  assertEquals(duplicate.takeAll(), undefined);
+  assertEquals([...cues], [cue], "Original owner remains queued when fanout cannot publish");
+  duplicate.close();
+  replies.capture(cues);
+  const batch = first.takeAll()!;
+  assertEquals(batch.cues, [cue]);
+  batch.release();
+  first.close();
+  assertEquals(resources.used.bytes, 0);
 });
