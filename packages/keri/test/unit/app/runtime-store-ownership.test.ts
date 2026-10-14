@@ -26,6 +26,8 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
     try {
       const runtime = yield* createAgentRuntime(hby);
       assertEquals(runtime.reactor.resources, runtime.resources);
+      assertEquals(runtime.services.resources, runtime.resources);
+      assertEquals(runtime.reactor.exchanger.resources, runtime.resources);
       assertEquals(runtime.resources.limits.streams, 2);
       registry = runtime.acdc.rgy!.baser;
       reger = runtime.vdr.reger as Reger;
@@ -60,6 +62,7 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
       const resources = new ResourcePolicy({ streams: 3 });
       const runtime = yield* createAgentRuntime(hby, { acdc: { rgy }, vdr: { reger }, resources });
       assertEquals(runtime.resources, resources);
+      assertEquals(runtime.services.resources, resources);
       assertEquals(runtime.reactor.resources, resources);
       assertEquals(runtime.acdc.rgy, rgy);
       assertEquals(runtime.reactor.acdc.rgy, rgy);

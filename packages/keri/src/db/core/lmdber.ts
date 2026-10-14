@@ -662,9 +662,15 @@ export class LMDBer {
    * Read one owned row only after its byte ceiling admits materialization.
    * Pin 3.5.3 NAPI/compression-off hooks; pre-existing native scratch is separate.
    * Borrow an active writer, otherwise hold one explicit snapshot through both reads.
-   * This ceiling supplies no shared resource reservation or bound on other read APIs.
+   * A synchronous beforeCopy callback may reserve credit after extent admission; it must not mutate rows.
+   * The caller owns that credit's lifetime; this ceiling does not bound other read APIs.
    */
-  getValBounded(db: Database<BinVal, BinKey>, key: Uint8Array, maxBytes: number): Uint8Array | null {
+  getValBounded(
+    db: Database<BinVal, BinKey>,
+    key: Uint8Array,
+    maxBytes: number,
+    beforeCopy?: (bytes: number) => void,
+  ): Uint8Array | null {
     const env = this.requireEnv();
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Invalid LMDB row byte ceiling");
     const native = db as unknown as NativeRowDb;
@@ -687,6 +693,8 @@ export class LMDBer {
       if (size === -30798) return null; // MDB_NOTFOUND
       if (!Number.isSafeInteger(size) || size! < 0) throw new DatabaseOperationError("Invalid LMDB row extent");
       if (size! > maxBytes) throw new ResourceLimitError("Stored LMDB row exceeds byte ceiling");
+      if ((native.env.writeTxn ?? null) !== writer) throw new DatabaseOperationError("LMDB row transaction changed");
+      beforeCopy?.(size!);
       if ((native.env.writeTxn ?? null) !== writer) throw new DatabaseOperationError("LMDB row transaction changed");
       const value = native.getBinary(key, { transaction });
       if (!value || value.length !== size || (native.env.writeTxn ?? null) !== writer) {

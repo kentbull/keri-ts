@@ -56,6 +56,13 @@ material streams through an awaited sink with explicit count and byte limits.
 Source/sink failures retain their original identity; malformed wire uses parser
 error classes. Parsing does not itself authorize or verify a KERI event.
 
+One input owner shares consumed-work counters across every child cursor. It
+yields a host turn after 64 KiB consumed or 4,096 source-pull/consume operations;
+empty producer chunks count as work. A single already admitted operation may
+cross the byte quantum. This fixed local scheduling policy changes no wire
+boundary or admission limit. Cancellation wakes and clears the owner's single
+checkpoint timer, preserving the original failure and joined source cleanup.
+
 ## Genus and protocol versions
 
 Stream genus selects counter and attachment decoding independently of body

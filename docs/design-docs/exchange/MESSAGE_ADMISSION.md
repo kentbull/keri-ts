@@ -20,10 +20,33 @@ or erase existing escrows.
 Queries prefer the last transferable last-establishment group. V2 queries with
 raw indexed signatures fall back to the claimed sender. Missing requester
 material is refused. `logs/ksn/mbx` delegate to Kevery; `tels/tsn` require an
-explicit TEL query processor. The built-in Tevery lacks that processor, so these
-routes report `missingProcessor` unless a caller supplies one. Replies require
-cigars or transferable signature groups; exchanges also permit source couples
-or triples. Processors still verify signatures, dependencies and route semantics.
+explicit TEL query processor. Built-in legacy Tevery serves `tels`; `tsn` remains
+explicitly refused until its producer and receiving processors work. Replies
+require cigars or transferable signature groups; exchanges also permit source
+couples or triples. Reply/exchange processors verify their proofs and dependencies.
+
+TEL replay captures management then optional credential extents from accepted
+`Reger.tels.` without collecting body bytes, releasing each cursor before yielding.
+Every complete message has an 8 MiB default assembly cap including its selector.
+The frozen processor uses default v2 proof counters for both query body versions;
+TypeScript prefixes an explicit v2 genus selector so v1 TEL bodies remain parseable.
+Bodies, proof bytes and ordering are preserved. Missing TELs produce no response.
+Frozen query signature validation is TODO: requester material identifies a
+destination and does not itself authenticate the request. Sender policy and
+optional KRAM remain independent; this is not v2 `RegistryStore` query support.
+Whole-row reads still allocate before their size checks and retain phase 5 ownership.
+
+Internal `prepareTsnQuery` prepares registry then optional credential reply data,
+correlated to the query SAID, without publishing cues or enabling TSN dispatch.
+Unknown registries return unavailable; absent credentials retain the registry
+reply with a typed missing-credential diagnostic. Actual 714 parsed credential
+queries emit the registry reply then fail: `processQuery` passes `vcpre=` to
+`vcState(vci)`. TypeScript calls that actual positional helper instead. Independent
+714 helper observations qualify the credential record, including its issuer KEL
+anchor. State production does not authenticate a query, reply, or nested child;
+TSN receiving still requires BADA, attester trust and accepted TEL correspondence.
+Storage corruption and infrastructure errors propagate. Existing state helpers'
+read costs remain separate from the two-reply output ceiling.
 
 Admission refusals return `MessageDropDecision`. Frozen `xip/pro/bar` processors
 are stubs: they report `referenceStub`, never acceptance. Route-specific decisions

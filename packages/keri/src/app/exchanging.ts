@@ -12,6 +12,9 @@ import {
   framePayload,
   NumberPrimitive,
   Prefixer,
+  ResourceAdmissionError,
+  ResourcePolicy,
+  type ResourceReservation,
   Saider,
   type SealEvent,
   type SealSource,
@@ -41,6 +44,7 @@ import {
   hasNests,
   loadNests,
   type NestBudget,
+  NESTED_COPY_RESERVATION_BYTES,
   publishNests,
   stageNests,
 } from "../db/exchange-nests.ts";
@@ -213,6 +217,8 @@ export class Exchanger {
   private readonly versionedRoutes = new Map<string, Map<number, ExchangeRouteHandler>>();
   /** At most one active admission; the runtime owns bounded waiting and backpressure. */
   private processing = false;
+  /** Borrow the runtime ledger; standalone defaults do not establish a process-wide bound. */
+  readonly resources: ResourcePolicy;
   /** Finite decoded-byte limit, independent of total stream length. */
   private readonly maxEssrBytes: number;
   /** Finite token count, including empty Texters. */
@@ -228,18 +234,21 @@ export class Exchanger {
       cues,
       maxEssrBytes = 8 * 1024 ** 2,
       maxEssrItems = 16384,
+      resources = new ResourcePolicy(),
       now = Date.now,
     }: {
       handlers?: readonly ExchangeRouteHandler[];
       cues?: Deck<AgentCue>;
       maxEssrBytes?: number;
       maxEssrItems?: number;
+      resources?: ResourcePolicy;
       now?: () => number;
     } = {},
   ) {
     for (const limit of [maxEssrBytes, maxEssrItems, 4 * Math.ceil(maxEssrBytes / 3) + 12 * maxEssrItems]) {
       if (!Number.isSafeInteger(limit) || limit < 0) throw new RangeError("Invalid exchange ESSR limit");
     }
+    this.resources = resources;
     this.maxEssrBytes = maxEssrBytes;
     this.maxEssrItems = maxEssrItems;
     this.now = now;
@@ -308,9 +317,18 @@ export class Exchanger {
     let evidenceStarted = false;
     let nestStage: string | undefined;
     let reopenedNests: CesrFrame[] = [];
+    let copyCredit: ResourceReservation | undefined;
     let nests: readonly CesrFrame[] = args.nests ?? [];
     // Resources unwind in reverse order: I/O, payload cleanup, then admission release.
     yield* this.admission();
+    // This owner predates payload cleanup and I/O, so cancellation releases it last.
+    yield* resource(function*(provide: Provide<void>) {
+      try {
+        yield* provide(undefined);
+      } finally {
+        copyCredit?.release();
+      }
+    });
     yield* resource(function*(this: Exchanger, provide: Provide<void>) {
       try {
         yield* provide(undefined);
@@ -430,6 +448,7 @@ export class Exchanger {
     const attachments = normalizeAttachments(args.ptds ?? []);
     let retainedNests = hasNests(this.hby.db, said);
     if (args.nests?.length || retainedNests) {
+      copyCredit = this.reserveNestedCopies();
       // Recover only nested work; ordinary flat exchanges need no file archive.
       yield* abortable((signal) => this.hby.db.openPayloads(signal));
       retainedNests = hasNests(this.hby.db, said);
@@ -452,7 +471,13 @@ export class Exchanger {
     if (retainedNests && !args.nests?.length) {
       // Signature-only retries reopen the durable evidence; fresh parsed children stay hydrated.
       yield* abortable(async (signal) => {
-        reopenedNests = await loadNests(this.hby.db, said, this.nestBudget({ ...args, ...resolved }, essr), signal);
+        reopenedNests = await loadNests(
+          this.hby.db,
+          said,
+          this.nestBudget({ ...args, ...resolved }, essr),
+          signal,
+          this.resources,
+        );
       });
       nests = reopenedNests;
     }
@@ -695,9 +720,13 @@ export class Exchanger {
     ) throw new ValidationError("Invalid stored exchange authentication or evidence.");
     const evidence = { ...verified, pathed: args.ptds.map((group) => group.raw) };
     const nested = hasNests(this.hby.db, said);
-    const groups = nested ? messageAttachmentGroups(evidence, gvrsn) : [];
-    const nests = nested ? await loadNests(this.hby.db, said, this.nestBudget(args, essr, groups), signal) : [];
+    const credit = nested ? this.reserveNestedCopies() : undefined;
+    let nests: CesrFrame[] = [];
     try {
+      const groups = nested ? messageAttachmentGroups(evidence, gvrsn) : [];
+      nests = nested
+        ? await loadNests(this.hby.db, said, this.nestBudget(args, essr, groups), signal, this.resources)
+        : [];
       if (nests.length) {
         // Reuse the stored Serder and hydrated endorsements; the shared encoder builds real leaf groups.
         const parent: CesrFrame = {
@@ -713,8 +742,21 @@ export class Exchanger {
         if (essr) yield* essrChunks(essr, { gvrsn, signal });
       }
     } finally {
-      await discardNests(nests);
+      try {
+        await discardNests(nests);
+      } finally {
+        credit?.release();
+      }
     }
+  }
+
+  /** Admit cooperating nested copies before materializing the first row or serializer. */
+  private reserveNestedCopies(): ResourceReservation {
+    const decision = this.resources.reserve({ bytes: NESTED_COPY_RESERVATION_BYTES });
+    if (decision.kind === "refuse") {
+      throw new ResourceAdmissionError(`Nested storage admission refused: ${decision.reason}`, decision.reason);
+    }
+    return decision.reservation;
   }
 
   /** Return true once the named exchange SAID is durably stored as accepted. */

@@ -14,6 +14,14 @@ Apply the [roadmap review rules](../PARITY_ROADMAP.md), in dependency order:
 3. Atomic file/reference publication and failed duplicate rollback.
 4. Crash recovery of proven task-owned stages and unreferenced files.
 5. Joined cleanup-error handling and durable reopen/retry reconciliation.
+   Include [transport delivery obligations](../runtime/TRANSPORT_PLAN.md): the
+   current optional outbox is mailbox-only and publishes multiple rows without
+   one transaction. Qualify atomic publication, finite admission, partial-target
+   status and reopen before claiming durable transfer. Direct/witness obligations
+   require explicit destination semantics or proven regeneration. A journal added
+   after KEL acceptance alone leaves the crash-before-cue-transfer gap. Resolve
+   that gap by linked durable state or bounded recovery; do not silently enable
+   the optional outbox or claim an in-memory delivery queue survives restart.
 
 Keep each PR within the size target, including regressions. Reuse existing storage
 tests; exercise failure/crash designs with uncommitted probes unless a maintained
@@ -24,10 +32,16 @@ an explicit limitation rather than becoming an after-allocation size assertion.
 
 Nested wire now uses the pinned NAPI size preflight before owned row copies,
 including aggregate 24 MiB credit during comparisons, publication and hydration.
-Other LMDB reads still return whole rows before size checks; mailbox's 4 MiB row
-check and replay's finite event limits do not prove admission before allocation.
-Shared leases must also account for pre-existing scratch and every admitted copy
-before claiming bounded runtime memory.
+Exchanger nested admission/replay additionally holds a conservative shared copy
+allowance through joined cleanup; this covers its cooperating row/serialization
+and cursor phases, with parser frames charging ordinary/ESSR staging separately.
+KRAM snapshot/hash/serialization admission is the next independent unit.
+Broader KEL/reply replay (`clonePreIter`, `replyEndRole`), mailbox rows, parent
+factors and query preparation/retained introductions still require native-row and
+copy audits. Queue/stream credit alone does not prove their pre-read boundary.
+Fixed native scratch (initially 16 MiB), growth through other read APIs and LMDB
+mapped residency remain separate overhead. Shared leases and measured native/string
+coexistence must cover these categories before a runtime-total/RSS claim.
 
 LMDB V1 inspection must use the existing owner or a separate process. The #164
 test repair moved the live CLI host and inspector into separate processes without
