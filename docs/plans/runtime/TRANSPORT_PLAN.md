@@ -16,7 +16,9 @@ The [runtime contract][runtime] distinguishes current behavior from the target.
   Earlier queries now use queue-only owned delivery after their own authorization.
 - Generic HTTP cue preparation transfers to RuntimeDeliveries, owned mailbox
   correlation or pending queries before removal; network waits and scoped fallback
-  cleanup run outside Reactor. Witness cue drain adoption remains separate.
+  cleanup run outside Reactor. Witness drains share admitted wire with queued
+  delivery and consume callbacks outside the guard; source intake collects no
+  aggregate, while finite results are capped caller-owned snapshots.
 - The TCP sender shares a finite/source/frame writer and explicit same-socket
   reply processing (#271). Actual conversation callers remain S8; mailbox/direct
   routing remains the default. The Tufa accepted listener now returns correlated

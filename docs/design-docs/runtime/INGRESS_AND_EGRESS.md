@@ -79,7 +79,14 @@ outside Reactor. Only observed engine-created admission refusals become HTTP
 capacity responses; foreign same-class source/preparation failures propagate.
 Explicit endpoint absence keeps the responder’s existing best-effort no-delivery
 outcome; no-target cleanup follows source transfer without a second interpretation.
-Witness cue consumption and default CueDeck activation remain separate ports.
+Witness source intake also prepares in short guarded turns and consumes callbacks
+outside Reactor. One existing delivery batch keeps the once-interpreted wire until
+queued targets and joined callback cleanup both finish; queued targets own their
+route. Busy preserves input. The source API collects no aggregate. Finite wrappers reserve 8 MiB output
+before copies and return caller-owned snapshots bounded by that local byte ceiling
+and captured cue-count capacity, including copied replay.messages. No lazy owner
+escapes. Parser/callback cleanup joins before output credit releases; late iterator
+and cleanup failures propagate together. Default CueDeck activation remains separate.
 
 The generic HTTP route consumes its request body progressively and appends a
 separately bounded CESR attachment header. Administrative requests still collect
