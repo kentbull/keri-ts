@@ -946,7 +946,11 @@ export class Hab {
     stamp = makeNowIso8601(),
   ): Uint8Array {
     return this.endorse(
-      queryEvent(route, { ...query, i: pre, src }, {
+      queryEvent(route, {
+        ...query,
+        i: (route === "tels" || route === "tsn") && typeof query.i === "string" ? query.i : pre,
+        src,
+      }, {
         pre: this.pre,
         stamp,
       }),
@@ -1426,6 +1430,7 @@ export class Hab {
         case "notice":
         case "noticeBadCloneFN":
         case "keyStateSaved":
+        case "txnStateSaved":
         case "invalid":
         case "psUnescrow":
         case "remoteMemberedSig":

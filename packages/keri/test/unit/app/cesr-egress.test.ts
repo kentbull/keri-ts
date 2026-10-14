@@ -563,7 +563,9 @@ Deno.test("CESR transport headers preserve authorization without replacing frame
 Deno.test("TCP frame output admits before serialization and borrows nested owners through joined cancellation", async () => {
   const frame = await read(b(vectors.rows.find((row) => row.name === "child-genus-selector")!.qb64));
   const child = frame.nests![0], payloadFrame = await read(fixture());
-  child.essr = payloadFrame.essr;
+  const original = payloadFrame.essr!;
+  child.essr = essrPayload(original.wire as OwnedPayload, original.count, original.raw.size, child.gvrsn!);
+  payloadFrame.essr = undefined; // The child now owns the same actual wire under its parsed genus.
   const wire = child.essr!.wire as OwnedPayload, originalOpen = wire.open, originalDiscard = wire.discard;
   const size = wire.size;
   let metadataReads = 0, discards = 0, reads = 0;

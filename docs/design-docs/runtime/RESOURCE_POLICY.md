@@ -117,3 +117,30 @@ returning credit or closing stores. Cleanup failures propagate after all owners
 are attempted. Retained query cues and configured remote workers remain separate
 unfunded owners. This TS admission policy does not change the normative upstream
 7143832813cac6a394ab1faf9be83bb3372be87c mailbox routing contract.
+
+The internal `CueDeck` is an uninstalled producer/consumer foundation. Ordinary
+Deck and Runtime wiring remain unchanged. `prepare(cues)` holds byte/item credit
+before durable effects; publish transfers it to queued owners, while unused or
+failed preparation rolls back. Held items include prepared, queued, active and
+fanout references, so pulling cannot create another free slot. Transfer/requeue
+never releases credit; clearing releases queued owners only. Consumers release
+after consumption and joined cleanup. A failed callback keeps its owner for retry.
+
+The logical charge counts complete ArrayBuffer backing once per batch, including
+views, and walks canonical enumerable Serder/record/primitive metadata without
+encoding it or calling accessors. Strings charge two bytes per code unit, scalar
+values eight bytes, objects 64 bytes, fields 16 bytes plus labels, and references
+128 bytes. Before inspection, temporary credit reserves `128 * maxNodes + 16 * batchCount + 16 KiB` for Set/descriptor work, stack and the batch copy;
+it stays through measurement/copy and returns in finally. The retained batch
+charge remains separate. Inspection visits at most 65,536 values/depth 64 by default;
+JavaScript enumeration internals still depend on canonical caller/parsed-data limits.
+Publication constructs owner metadata before the finite Deck append. It does
+not measure native heap overhead; prepared data must remain immutable through
+final release. One shared batch lease lasts until its last owner; fanout adds
+reference credit, not another payload charge. Opaque replay closures are refused
+until captured-range metadata is explicit; they are never opened for inspection.
+
+Next integrate prospective KEL acceptance/clone/state cues before logging, then
+Revery/OOBI, EXN/KRAM and legacy credential/TEL producers. QueryReplies fanout,
+mailbox correlation, query continuations and delivery consumers must transfer
+owners before Runtime enables this deck. This does not close durable cue recovery.

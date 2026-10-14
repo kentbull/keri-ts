@@ -35,6 +35,9 @@ Do not suppress errors or weaken live-host assertions. Do not run command-local
 mutations against a store still hosted by a stale runtime. Prefer narrow tufa db
 dump selectors. Reacquire named handles after close/reopen.
 
+Optional mailbox outbox publication and terminal pruning commit complete rows
+together. That transaction does not bridge accepted KEL state to initial cue transfer.
+
 ## Payload ownership
 
 PayloadStore uses awaited Deno operations and private stages; finish transfers an

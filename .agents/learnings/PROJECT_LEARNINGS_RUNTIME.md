@@ -43,6 +43,9 @@ cleanup complete. One shared instance is required; separate ledgers do not bound
 a runtime. Reactor reserves stream/cursor/producer credit before source acquisition
 and retains it through joined parser cleanup. AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
+Internal CueDeck preparation holds concrete metadata/backing and item credit;
+ownership transfers through fanout/requeue until final cleanup. Runtime activation
+waits for every producer/consumer port; count checks alone cannot reserve byte credit.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
 Complete-record ingress charges shared bytes before copying; queued and processing

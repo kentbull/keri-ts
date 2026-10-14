@@ -78,7 +78,7 @@ preserving receipt and SSE contracts. Distinguish transport completion from
 verified replies and durable acceptance; do not expose ambiguous `sent`/`idle`
 success. Keep cancellation, cleanup and infrastructure failures visible. This live queue
 does not survive restart: phase 5 owns [durable recovery][storage], including the
-accepted-event-to-cue gap and the optional mailbox-only outbox's atomicity.
+accepted-event-to-cue gap and optional mailbox-only outbox admission/recovery.
 
 **S4–6: progressive receiving.** Add `processWitnessIngressSource` using
 `Reactor.frames/settle`; consume emissions per frame and keep the finite wrapper.
