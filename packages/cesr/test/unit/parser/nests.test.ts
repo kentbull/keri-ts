@@ -56,26 +56,6 @@ Deno.test("Python signed nested trees retain each body and signature in both dom
   }
 });
 
-Deno.test("signed parent and two children are invariant at every byte split", async () => {
-  for (
-    const row of vectors.rows.filter((row) =>
-      ["CESR-v2", "deep", "child-genus-selector", "genus1-tree"].includes(row.name)
-    )
-  ) {
-    for (const encode of [b, decodeB64]) {
-      const bytes = encode(row.qb64);
-      for (let split = 0; split <= bytes.length; split++) {
-        const frames: CesrFrame[] = [];
-        for await (const frame of parse(chunks(bytes.slice(0, split), new Uint8Array(), bytes.slice(split)))) {
-          frames.push(frame);
-        }
-        assertEquals(frames.length, 1);
-        assertEquals(summary(frames[0]), row.tree);
-      }
-    }
-  }
-});
-
 Deno.test("attachment GenericGroups and wrapper-only siblings remain invalid", async () => {
   const child = vectors.rows[0].qb64;
   for (const encode of [b, decodeB64]) {

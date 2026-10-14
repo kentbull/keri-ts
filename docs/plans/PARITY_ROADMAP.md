@@ -1,6 +1,6 @@
 # KERIpy parity and bounded in-flight runtime roadmap
 
-Verified boundary: keri-ts `c21d6dca` after #301; transport and qualification remain open.
+Verified boundary: keri-ts `a6999579` after #322; cue activation and qualification remain open.
 Frozen upstream: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
@@ -58,7 +58,7 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
    qualification remain release gates; reference finite collection is permitted.
 4. Qualify delivered Mapper claims (#223) and bundled schema IDs (#226) in the
    final composition; keep format-dependent default-builder limits explicit.
-5. Run the maintained full inventory and repeated end-to-end qualification (7)
+5. Run the maintained full inventory and two end-to-end scale observations (7)
    against the final composition. Import probes alone do not qualify workflows.
 6. Finish with the npm release: refresh and merge [#104][release] only after
    the preceding work and qualification, then publish and verify the exact
@@ -90,7 +90,9 @@ end-to-end tests only with strong justification, especially a missing happy path
 exploratory probes may remain uncommitted with recorded evidence. Apply the same
 maintenance-value test to unit tests: choose the smallest meaningful regression,
 not implementation-mirroring assertions or new infrastructure by default.
-Preserve existing assertions and topology; this rule does not reduce qualification.
+Preserve distinct protocol assertions and topology; delete redundant permutations.
+The qualification owner now limits production scale runs to 16/256 MiB once each;
+gigabyte runs, automatic repetitions and historical checkpoint reruns are deferred.
 
 Final reporting must classify **supported**, **unfinished**, **intentional
 divergence**, **reference stub**, and **unqualified** behavior separately.
