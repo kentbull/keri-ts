@@ -43,6 +43,10 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    ownership. Legacy credential Verifier admits actual dependency/saved cues before
    body/proof/date/index writes, retaining current families on replay resource refusal.
    Registry/schema membership and every-attempt chain cue distinctions remain exact.
+   EXN pending sender/proof/schema batches precede nested staging and durable evidence,
+   archive and escrow publication; earlier owners survive joined async cleanup and
+   commit checks reject changed membership. Authentication queries and KRAM/IPEX
+   notification ports remain open, along with private verification snapshots.
    Constructors/native copies, crash recovery and capture-time allocations remain
    open. OOBI queueing, staged
    multi-URL fanout and multi-parent completion admit exact batches before

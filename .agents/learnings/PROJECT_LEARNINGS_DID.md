@@ -19,7 +19,10 @@ Numeric, flat/nested weighted and multi-clause thresholds project through
 ConditionalProof2022 without reducing them to a scalar threshold.
 
 Static artifacts and dynamic hosting share the generator; dynamic hosts select
-prefixes explicitly. Universal Resolver path handling accepts encoded DID input
+prefixes explicitly. Dynamic did.json uses the JSON-only artifact entry point,
+preserving local-AID checks, schema pinning and document bytes without opening
+CESR replay. JSON preparation admission and CESR generation/export remain open.
+Universal Resolver path handling accepts encoded DID input
 without decoding method-specific host-port %3A into a raw DID separator.
 
 Designated aliases use ordinary registry-backed credentials and a SAID-checked
