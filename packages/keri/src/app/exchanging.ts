@@ -74,8 +74,8 @@ export interface ExchangeAttachment {
   text: string;
 }
 
-/** Route dependency escrow maps KERIpy MissingChainError to an expected pending decision. */
-export type ExchangeRouteVerification = boolean | { kind: "escrow"; reason: string };
+/** Typed proof/schema dependencies follow authentication; schema is a complete missing resource SAID. */
+export type ExchangeRouteVerification = boolean | { kind: "escrow"; reason: string; schema?: string };
 
 /** Historical coordinates are frozen before escrow; unresolved last groups cannot be persisted. */
 interface ResolvedExchangeFactors {
@@ -223,6 +223,8 @@ export class Exchanger {
   private readonly maxEssrBytes: number;
   /** Finite token count, including empty Texters. */
   private readonly maxEssrItems: number;
+  /** Borrow the runtime clock for escrow deadlines and retries. */
+  private readonly now: () => number;
 
   /** Bind route handlers and explicit per-message resource budgets to one habitat database. */
   constructor(
@@ -233,12 +235,14 @@ export class Exchanger {
       maxEssrBytes = 8 * 1024 ** 2,
       maxEssrItems = 16384,
       resources = new ResourcePolicy(),
+      now = Date.now,
     }: {
       handlers?: readonly ExchangeRouteHandler[];
       cues?: Deck<AgentCue>;
       maxEssrBytes?: number;
       maxEssrItems?: number;
       resources?: ResourcePolicy;
+      now?: () => number;
     } = {},
   ) {
     for (const limit of [maxEssrBytes, maxEssrItems, 4 * Math.ceil(maxEssrBytes / 3) + 12 * maxEssrItems]) {
@@ -247,6 +251,7 @@ export class Exchanger {
     this.resources = resources;
     this.maxEssrBytes = maxEssrBytes;
     this.maxEssrItems = maxEssrItems;
+    this.now = now;
     this.hby = hby;
     this.cues = cues ?? new Deck();
     for (const handler of handlers) {
@@ -350,6 +355,7 @@ export class Exchanger {
       : undefined;
     const senderQuery = authentication.kind === "escrow" ? authentication.query : undefined;
     let needsProof = false;
+    let missingSchema: string | undefined;
     let newEscrow = false;
     const approved = authentication.kind === "verified" ? authentication : undefined;
     const retainedFactors = approved?.retained ?? resolved;
@@ -493,7 +499,11 @@ export class Exchanger {
       if (verified === false) return reject(`Exchange route ${args.serder.route ?? ""} failed handler verification.`);
       if (typeof verified === "object") {
         pending = { ...verified, said };
-        needsProof = true;
+        missingSchema = verified.schema;
+        if (missingSchema !== undefined && new Diger({ qb64: missingSchema }).qb64 !== missingSchema) {
+          throw new ValidationError("Route missing-schema dependency must be a complete SAID.");
+        }
+        needsProof = missingSchema === undefined;
       }
     }
     // An already accepted exchange cannot be downgraded by an incomplete duplicate.
@@ -517,7 +527,9 @@ export class Exchanger {
           ptds: args.ptds ?? [],
         });
       } else {
-        newEscrow = this.escrowPartialSigned(args.serder, retainedFactors, args.ptds ?? []);
+        newEscrow = missingSchema === undefined
+          ? this.escrowPartialSigned(args.serder, retainedFactors, args.ptds ?? [])
+          : this.escrowMissingSchema(args.serder, missingSchema, retainedFactors, args.ptds ?? []);
       }
       this.hby.db.exchangeMeta.pin([said], {
         mailboxAid,
@@ -570,6 +582,7 @@ export class Exchanger {
       if (newEscrow) {
         if (senderQuery) this.cueMissingStates([senderQuery]);
         if (needsProof) this.cues.push({ kin: "proof", said });
+        if (missingSchema) this.cues.push({ kin: "query", q: { r: "schema", said: missingSchema } });
       }
       return pending;
     }
@@ -597,25 +610,53 @@ export class Exchanger {
   /** Retry each bounded escrow inside one structured child scope. */
   private *retryEscrows(): Operation<void> {
     if (this.processing) throw new ValidationError("Exchanger has an active admission.");
+    yield* this.retryEscrowType(false);
+    if (this.hby.db.emse) yield* this.retryEscrowType(true);
+  }
+
+  /** Close each bounded cursor before replay; newly discovered dependencies wait for the next finite pass. */
+  private *retryEscrowType(schema: boolean): Operation<void> {
+    const table = schema ? this.hby.db.emse! : this.hby.db.epse;
     let end: Uint8Array | undefined;
     // Capture a finite key horizon without retaining bodies or holding a cursor across mutations.
-    for (const key of this.hby.db.epse.sdb.getKeys({ reverse: true, limit: 1 })) {
+    for (const key of table.sdb.getKeys({ reverse: true, limit: 1 })) {
       end = b(`${textDecoder.decode(key)}\0`);
     }
     if (!end) return;
     let start: Uint8Array | undefined;
     for (;;) {
-      let said: string | undefined;
-      for (const key of this.hby.db.epse.sdb.getKeys({ start, end, limit: 1 })) {
-        said = textDecoder.decode(key);
+      let physical: string | undefined;
+      for (const key of table.sdb.getKeys({ start, end, limit: 1 })) {
+        physical = textDecoder.decode(key);
       }
-      if (!said) break;
-      // A zero suffix sorts immediately after this ASCII SAID and before the next SAID.
-      start = b(`${said}\0`);
-      const serder = this.hby.db.epse.get([said]);
-      if (!serder) throw new Error("Exchange escrow disappeared during retry.");
-      const dater = this.hby.db.epsd.get([said]);
-      if (!dater || Date.now() - new Date(dater.dts).getTime() > EXCHANGE_ESCROW_TIMEOUT_MS) {
+      if (!physical) break;
+      const keys = physical.split("."), said = keys[0];
+      // Skip every schema branch for this EXN, including dependencies inserted by the replay below.
+      start = b(schema ? `${said}/` : `${physical}\0`);
+      const serder = table.get(keys);
+      if (!serder || serder.said !== said || keys.length !== (schema ? 2 : 1)) {
+        throw new Error("Corrupt exchange escrow key or body.");
+      }
+      if (schema && new Diger({ qb64: keys[1] }).qb64 !== keys[1]) throw new Error("Corrupt schema escrow dependency.");
+      if (this.complete(said)) {
+        yield* call(() => this.dropEscrow(said));
+        continue;
+      }
+      const deadline = this.hby.db.emsd?.get([said]);
+      const absolute = deadline && timestampMicros(deadline.dts);
+      if (deadline && absolute === null) throw new Error("Corrupt missing-schema deadline.");
+      const dater = schema ? deadline : this.hby.db.epsd.get([said]);
+      const date = dater && timestampMicros(dater.dts);
+      if (date === null || date === undefined) {
+        if (schema) throw new Error("Corrupt missing-schema deadline.");
+        yield* call(() => this.dropEscrow(said));
+        continue;
+      }
+      const now = this.nowMicros();
+      if (
+        now > date + (schema ? 0n : BigInt(EXCHANGE_ESCROW_TIMEOUT_MS) * 1000n)
+        || absolute !== null && absolute !== undefined && now > absolute
+      ) {
         yield* call(() => this.dropEscrow(said));
         continue;
       }
@@ -1056,6 +1097,20 @@ export class Exchanger {
     }
 
     if (this.complete(said)) return false;
+    this.storeEscrowEvidence(serder, factors, ptds);
+    this.hby.db.emse?.trim([said]);
+    // Preserve first admission time so repeated retries cannot keep stale wire alive forever.
+    this.hby.db.epsd.put([said], new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601(new Date(this.now()))) }));
+    return this.hby.db.epse.put([said], serder);
+  }
+
+  /** Persist the same independently authenticated evidence for signature and schema dependencies. */
+  private storeEscrowEvidence(
+    serder: SerderKERI,
+    factors: Required<ExchangeFactors>,
+    ptds: readonly PathedMaterialGroup[],
+  ): void {
+    const said = serder.said!;
 
     for (const tsg of factors.tsgs) {
       const quadKey = [said, tsg.pre, tsg.sn.toString(16).padStart(32, "0"), tsg.said] as const;
@@ -1068,18 +1123,52 @@ export class Exchanger {
       if (cigar.verfer) this.hby.db.ecigs.add([said], [cigar.verfer, cigar]);
     }
     for (const seal of factors.sourceSeals) this.hby.db.ests.add([said, seal.i.qb64], [seal.s, seal.d]);
-    // Preserve first admission time so repeated retries cannot keep stale wire alive forever.
-    this.hby.db.epsd.put(
-      [said],
-      new Dater({
-        qb64: encodeDateTimeToDater(makeNowIso8601()),
-      }),
-    );
     this.hby.db.epath.pin(
       [said],
       ptds.map((group) => textDecoder.decode(group.raw)),
     );
-    return this.hby.db.epse.put([said], serder);
+  }
+
+  /** One absolute deadline spans sequential schema dependencies; receiver receipt is not the TMSC opener. */
+  private escrowMissingSchema(
+    serder: SerderKERI,
+    schema: string,
+    factors: Required<ExchangeFactors>,
+    ptds: readonly PathedMaterialGroup[],
+  ): boolean {
+    const { emse, emsd } = this.hby.db, said = serder.said!;
+    if (!emse || !emsd) throw new ValidationError("Missing-schema storage is unavailable on this readonly layout.");
+    if (this.complete(said)) return false;
+    const prior = emsd.get([said]);
+    if (prior && timestampMicros(prior.dts) === null) throw new Error("Corrupt missing-schema deadline.");
+    if (!prior) {
+      const xid = serder.sad!.x;
+      const cache = typeof xid === "string" && xid ? this.hby.db.tmsc.get([serder.pre!, xid, said]) : null;
+      const opener = cache && timestampMicros(cache.xdt);
+      if (cache && (opener === null || opener === undefined || !Number.isSafeInteger(cache.pxl) || cache.pxl! < 0)) {
+        throw new Error("Corrupt missing-schema transaction lifetime.");
+      }
+      const expiry = cache ? opener! + BigInt(cache.pxl!) * 1000n : this.nowMicros() + 20_000_000n;
+      const remainder = (expiry % 1000n + 1000n) % 1000n;
+      const text = makeNowIso8601(new Date(Number((expiry - remainder) / 1000n)))
+        .replace(/\d{6}\+/, ((expiry % 1_000_000n + 1_000_000n) % 1_000_000n).toString().padStart(6, "0") + "+");
+      if (timestampMicros(text) !== expiry) throw new Error("Missing-schema deadline exceeds supported date range.");
+      emsd.put([said], new Dater({ qb64: encodeDateTimeToDater(text) }));
+    }
+    this.storeEscrowEvidence(serder, factors, ptds);
+    this.hby.db.epse.rem([said]);
+    this.hby.db.epsd.rem([said]);
+    const stored = emse.get([said, schema]) === null;
+    emse.trim([said]);
+    emse.put([said, schema], serder);
+    return stored;
+  }
+
+  /** Trusted clock failures remain infrastructure errors rather than expiring remote work. */
+  private nowMicros(): bigint {
+    const now = new Date(this.now()).getTime();
+    if (!Number.isFinite(now)) throw new Error("Invalid exchange receiver clock.");
+    return BigInt(now) * 1000n;
   }
 
   /** Persist protocol evidence inside the admission transaction before route handling. */
@@ -1175,6 +1264,8 @@ export class Exchanger {
   private clearEscrow(said: string, keepEvidence = false): void {
     this.hby.db.epse.rem([said]);
     this.hby.db.epsd.rem([said]);
+    this.hby.db.emse?.trim([said]);
+    this.hby.db.emsd?.rem([said]);
     this.hby.db.esigs.trim([said, ""], { topive: false });
     this.hby.db.ecigs.rem([said]);
     this.hby.db.ests.trim([said, ""], { topive: false });
@@ -1192,13 +1283,15 @@ export class Exchanger {
     if (this.complete(said)) {
       this.hby.db.epse.rem([said]);
       this.hby.db.epsd.rem([said]);
+      this.hby.db.emse?.trim([said]);
+      this.hby.db.emsd?.rem([said]);
       return;
     }
     if (this.hby.db.exchangeMeta.get([said])?.essr) {
       yield* abortable(async (signal) => {
         await (await this.hby.db.openPayloads(signal)).remove(`essr/${said}`, () => this.clearEscrow(said), signal);
       });
-    } else this.clearEscrow(said);
+    } else this.hby.db.env!.transactionSync(() => this.clearEscrow(said));
   }
 }
 

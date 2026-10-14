@@ -111,9 +111,14 @@ Deno.test("exchange escrow reopens owned wire and retains mailbox provenance on 
     const serder = message(sender);
     const incoming = await payload(hby);
     const seen: string[] = [];
+    let missing = true;
+    const schema = new Diger({ raw: Diger.digest(b("pending schema"), "E"), code: "E" }).qb64;
     const exchanger = new Exchanger(hby, {
       handlers: [{
         resource: "/essr/test",
+        verify() {
+          return missing ? { kind: "escrow" as const, reason: "missing schema", schema } : true;
+        },
         handle({ mailboxAid }) {
           seen.push(mailboxAid!);
         },
@@ -128,6 +133,15 @@ Deno.test("exchange escrow reopens owned wire and retains mailbox provenance on 
     const group = signatures(sender, serder)[0];
     // Later signatures can arrive independently; retry must use the stored ESSR owner.
     for (const siger of group.sigers) hby.db.esigs.add([serder.said!, group.pre, group.snh, group.said], siger);
+    await run(() => exchanger.processEscrows());
+    assertExists(hby.db.emse!.get([serder.said!, schema]));
+    assertEquals(hby.db.exns.get([serder.said!]), null);
+    await run(function*() {
+      yield* hby.db.close();
+      yield* hby.db.reopen({ reuse: true });
+    });
+    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw, 6), b("abcxyz"));
+    missing = false;
     await run(() => exchanger.processEscrows());
     assertEquals(seen, [sender.pre]);
     assertEquals(hby.db.epse.get([serder.said!]), null);

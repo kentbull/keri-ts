@@ -315,7 +315,8 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be forged
       assertEquals(handled, []);
       assertEquals(hby.db.exchangeMeta.get([pending.said!])?.receiverTime, receipt);
       assertEquals(hby.db.kready.get([sender.pre, pending.said!]), null);
-      now += 120000;
+      // Retry at the shared clock's exact proof-escrow boundary, preserving the first receipt.
+      now += 10000;
       yield* hby.db.reopen();
       dependency = true;
       yield* runtime.reactor.exchanger.processEscrows();
@@ -342,6 +343,23 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be forged
         )
       );
       assertEquals(hby.db.exchangeMeta.get([fresh.said!]), null);
+      dependency = false;
+      const stale = body("expiry");
+      const [staleFrame] = yield* call(() =>
+        parseBytes(serializeMessage(stale, { tsgs: [group(stale)], gvrsn: Vrsn_2_0 }))
+      );
+      yield* runtime.reactor.settle(staleFrame);
+      const admitted = hby.db.epsd.get([stale.said!])!.dts;
+      now += 5000;
+      yield* runtime.reactor.exchanger.processEvent({ serder: stale, tsgs: [group(stale)] });
+      assertEquals(hby.db.epsd.get([stale.said!])!.dts, admitted, "retransmission cannot restart the proof deadline");
+      now += 5001;
+      dependency = true;
+      yield* runtime.reactor.exchanger.processEscrows();
+      assertEquals(hby.db.epse.get([stale.said!]), null, "strict expiry uses the original shared-clock admission");
+      assertEquals(hby.db.exns.get([stale.said!]), null);
+      assertEquals(hby.db.exchangeMeta.get([stale.said!]), null);
+      assertEquals(handled, [receipt, receipt], "expired proof dependency never invokes handling");
       const competing = body("competing"), winning = makeNowIso8601(new Date(now));
       runtime.reactor.exchanger.routes.set("/receipt", {
         resource: "/receipt",
