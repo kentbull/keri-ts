@@ -1,11 +1,11 @@
 import { ResourceLimitError } from "cesr-ts";
 import { CueDeck, type OwnedCue } from "../core/cue-admission.ts";
-import type { AgentCue, ReplayCue, ReplyCue } from "../core/cues.ts";
+import type { AgentCue, ReceiptCue, ReplayCue, ReplyCue, WitnessCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 
-/** One query's direct reply. Duplicate HTTP requests may share immutable evidence. */
-type DirectReply = ReplayCue | ReplyCue;
-type Slot = { reply?: DirectReply; companion?: ReplyCue; owners: OwnedCue[] };
+/** One request's direct proof/reply. Duplicate requests may share immutable evidence. */
+type DirectReply = ReplayCue | ReplyCue | ReceiptCue | WitnessCue;
+type Slot = { reply?: DirectReply; companion?: DirectReply; owners: OwnedCue[] };
 
 /** Borrow a bounded response batch until joined consumption releases its owners. */
 interface QueryReplyBatch {
@@ -13,13 +13,13 @@ interface QueryReplyBatch {
   release(): void;
 }
 
-/** A bounded request-owned slot; close it when the HTTP request responds or is cancelled. */
+/** A bounded request-owned slot; close it when its HTTP/TCP request completes or is cancelled. */
 export interface QueryReply {
   /** Existing source credit participates in the combined preparation floor. */
   readonly retainedBytes: number;
   /** Compatibility seam for a single ordinary, unadmitted response. */
   take(): DirectReply | undefined;
-  /** Transfer at most the ordered TSN pair and its credit into the response/consumer owner. */
+  /** Transfer at most the receipt/witness or ordered TSN pair and its credit into the response/consumer owner. */
   takeAll(): QueryReplyBatch | undefined;
   /** Immediate atomic destination publication; failures preserve the original slot and credit. */
   admit(accept: (cues: readonly DirectReply[], release: () => void) => undefined): boolean;
@@ -33,13 +33,23 @@ export class QueryReplies {
   private readonly active = new Map<string, Set<Slot>>();
   private count = 0;
 
-  /** Bound waiting HTTP requests independently of their source-parser lifetimes. */
+  /** Bound waiting HTTP/TCP requests independently of their source-parser lifetimes. */
   constructor(private readonly limit: number) {
     if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Reply reservation limit must be positive");
   }
 
   /** Reserve one bounded response; duplicate arrivals never add another retained batch. */
   reserve(said: string): QueryReply {
+    return this.reserveKey(`query:${said}`);
+  }
+
+  /** A connection owns only receipts for its exact event; unrelated runtime cues stay routed normally. */
+  reserveEvent(pre: string, said: string): QueryReply {
+    return this.reserveKey(`event:${pre}:${said}`);
+  }
+
+  /** Reuse the bounded request slot for queries and accepted-event proofs. */
+  private reserveKey(said: string): QueryReply {
     if (this.count >= this.limit) throw new ResourceLimitError("Too many pending query replies");
     const slot: Slot = { reply: undefined, companion: undefined, owners: [] };
     const group = this.active.get(said) ?? new Set<Slot>();
@@ -100,7 +110,7 @@ export class QueryReplies {
     };
   }
 
-  /** Capture only a complementary TSN pair; transfer/fanout credit before publishing slot references. */
+  /** Capture at most a complementary TSN or receipt/witness pair; transfer/fanout credit before publishing slot references. */
   capture(cues: Deck<AgentCue>): void {
     const count = cues.length, queued: OwnedCue[] = [];
     try {
@@ -108,9 +118,11 @@ export class QueryReplies {
         const owner = cues instanceof CueDeck ? cues.takeOwned()! : undefined;
         const cue = owner ? owner.cue : cues.pull()!;
         const group = (cue.kin === "replay" || cue.kin === "reply") && cue.querySaid
-          ? this.active.get(cue.querySaid)
+          ? this.active.get(`query:${cue.querySaid}`)
+          : (cue.kin === "receipt" || cue.kin === "witness")
+          ? this.active.get(`event:${cue.serder.pre}:${cue.serder.said}`)
           : undefined;
-        if (!group || (cue.kin !== "replay" && cue.kin !== "reply")) {
+        if (!group || (cue.kin !== "replay" && cue.kin !== "reply" && cue.kin !== "receipt" && cue.kin !== "witness")) {
           if (owner) queued.push(owner);
           else cues.push(cue);
           continue;
@@ -119,7 +131,7 @@ export class QueryReplies {
           !slot.reply || (
             !slot.companion && slot.reply.kin === "reply" && slot.reply.route === "/tsn/registry"
             && cue.kin === "reply" && cue.route === "/tsn/credential"
-          )
+          ) || (!slot.companion && slot.reply?.kin === "receipt" && cue.kin === "witness")
         );
         const retained: OwnedCue[] = [];
         let ownership: OwnedCue[][] = [];
@@ -137,7 +149,7 @@ export class QueryReplies {
         for (const [j, slot] of targets.entries()) {
           if (owner) slot.owners = ownership[j];
           if (!slot.reply) slot.reply = cue;
-          else slot.companion = cue as ReplyCue;
+          else slot.companion = cue;
         }
         if (owner && !targets.length) owner.release();
       }

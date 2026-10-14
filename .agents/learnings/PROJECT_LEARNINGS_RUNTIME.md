@@ -176,6 +176,10 @@ socket errors outside the readable lifetime. Abort/return joins close; genuine E
 leaves the writable half for explicit connection drain. Never mix flow readers,
 or treat high-water buffering as a hard shared-memory ceiling.
 
+Tufa TCP immediate event proofs and query replies own bounded correlated slots;
+Kevery accept/duplicate decisions gate event output. Signing stays guarded, socket
+writes borrow the connection stream slot outside the guard. Unrelated cues retain
+Respondant routing; deferred query escrow output is still a connection-ownership gap.
 Tufa TCP bounds admitted/closing tasks before source acquisition; Reactor alone
 charges the receive stream. Earlier connection credit outlives joined parser/socket
 cleanup. Intrinsic wire refusal must preserve source/storage provenance, and a
