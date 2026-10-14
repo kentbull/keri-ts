@@ -9,6 +9,7 @@ import {
   Serder,
 } from "cesr-ts";
 import { CapturedKelReplay } from "../db/kel-replay.ts";
+import { CapturedTelReplay } from "../db/tel-replay.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck, DeckFullError } from "./deck.ts";
 import { RawRecord } from "./records.ts";
@@ -103,6 +104,13 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
       visit(value.maxMessageBytes, depth + 1);
       return;
     }
+    if (CapturedTelReplay.is(value)) {
+      // Fixed metadata and one borrowed Reger reference; never inspect the store or open its readers.
+      bytes += 3 * 16 + 2 * ("ranges".length + "settings".length);
+      visit(value.ranges, depth + 1);
+      visit(value.settings, depth + 1);
+      return;
+    }
     const proto = Object.getPrototypeOf(value);
     if (
       proto !== null && proto !== Object.prototype && !Array.isArray(value)
@@ -117,7 +125,7 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
     }
   }
   for (const cue of cues) {
-    // Never open a replay to measure it: only frozen KEL captures or finite message arrays are inspectable.
+    // Never open a replay to measure it: only canonical KEL/TEL captures or finite message arrays are inspectable.
     const kind = Object.getOwnPropertyDescriptor(cue, "kin");
     if (!kind || !Object.hasOwn(kind, "value")) throw new RangeError("Cue metadata accessors are unsupported");
     if (kind.value === "replay") {
@@ -125,7 +133,9 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
       if (!messages || !Object.hasOwn(messages, "value")) {
         throw new RangeError("Cue metadata accessors are unsupported");
       }
-      if (!(CapturedKelReplay.is(messages.value)) && !Array.isArray(messages.value)) {
+      if (
+        !CapturedKelReplay.is(messages.value) && !CapturedTelReplay.is(messages.value) && !Array.isArray(messages.value)
+      ) {
         throw new RangeError("Opaque replay cue retention is not admitted");
       }
     }
