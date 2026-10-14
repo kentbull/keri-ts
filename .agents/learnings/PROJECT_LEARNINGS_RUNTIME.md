@@ -42,6 +42,9 @@ foreign AbortErrors and cleanup failures still propagate after shared credit rel
 Fetch teardown joins pending rejection as well as late response cleanup. Timeout
 null recognizes only its controller's exact reason; foreign same-class AbortErrors
 and I/O failures propagate without repeating an already-reported object.
+Generic and CESR requests share the pending-fetch/response owner; CESR upload and
+diagnostic leaves stay separate. Register HTTP credit before response owners so
+their joined cleanup completes before the credit releases.
 HTTP ingress joins its own halt and closes published reply output on late abort
 outside status mapping. Preserve the mailbox's ordinary idle-timeout outcome.
 Parent cancellation diagnostics still need composed owner qualification.
