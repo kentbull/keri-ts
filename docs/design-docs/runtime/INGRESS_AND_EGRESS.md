@@ -67,13 +67,13 @@ feed buffer or separate synchronous parser remains.
 
 The required transport path is a bounded abortable source, one progressive parser
 per connection/request, complete frames, guarded verification/storage, and owned
-delivery outside the guard. HTTP body intake already uses this parser path; TCP
-currently collects until connection completion. Existing cue consumers can still
+delivery outside the guard. HTTP body intake and Tufa TCP witness intake use the
+progressive parser. Existing cue consumers can still
 await network I/O under the guard. The [transport plan][transport-plan] owns closure;
-these requirements do not describe completed TCP support.
+duplex and composed backpressure remain unqualified.
 
-`socketBytes` is the shared KERI runtime TCP source prerequisite; listener/parser
-integration remains pending. It acquires exclusive binary readable-mode ownership
+`socketBytes` is the shared KERI runtime TCP source used by Tufa witness listeners.
+It acquires exclusive binary readable-mode ownership
 on first pull, returns independent backing allocations of at most 64 KiB by default,
 and permits one pending pull. Do not mix data/flow readers with it. Abort, failure
 and early return destroy and join socket close; genuine receive EOF releases only
@@ -85,6 +85,23 @@ view may pin pool/socket backing larger than a small configured chunk ceiling:
 twice that ceiling does not cover all native backing. The host must separately
 account for fixed pools, readable/native/kernel buffering and qualify its actual
 configuration; this adapter supplies no full native or RSS bound.
+
+Tufa admits paused TCP connections before creating work, with a default cap of
+two admitted/closing connections and a positive shared 2 MiB logical read/copy
+allowance per connection. This allowance is qualification policy, not a hard native
+buffer ceiling. Reactor reserves the sole receive stream/cursor owner before the
+first socket pull; two receives consume two stream permits. Native acceptance is
+capped at `maxConnections + 1`: one transient refusal handle allows reporting in
+Deno, whose native cap does not emit Node's `drop` event. That handle is tracked
+through close and joined on shutdown, with no task/read/queue before refusal;
+native/kernel pre-admission buffering remains separate from the shared ledger.
+Intrinsic wire failures, policy refusals and recognized peer failures close and
+report the connection; cancellation stays distinct. Source/storage/invariant and
+cleanup failures reach the host owner after joined cleanup. Parser-owned source
+return is not peer close. Stop acceptance, join parser/source/socket tasks, then
+join listener close before closing runtime stores. Earlier accepted frames remain
+durable after a later connection failure. Default mailbox/direct routing stays
+unchanged; same-socket reply conversations remain separate work.
 
 The guard protects protocol interpretation, signing, routing snapshots and local
 DB side effects. Network waits and capacity waits belong outside it. Transfer a
@@ -318,9 +335,26 @@ collection ceiling and a conservative 64 MiB copy/decode allowance before reads.
 These logical charges require native/metadata qualification; they are not an RSS
 bound. OOBI replay serving still collects output and remains transport S2 work.
 
-DID verification still collects at most 8 MiB per artifact, including `keri.cesr`;
-transport S2 owns streamed CESR resolution and artifact serving before release.
-DID success still requires complete evidence and hosted-document comparison.
+DID `keri.cesr` resolution enters Reactor progressively using the exact runtime
+HTTP services/policy. A 1 MiB request allowance and parser source admission precede
+fetch; body/parser cleanup joins before returning credit. Independently accepted
+events remain on late failure/cancellation; no DID result or hosted JSON fetch
+precedes genuine CESR EOF and escrow processing. Complete generated-versus-hosted
+document comparison remains required. Hosted JSON retains an 8 MiB collection cap
+and one stream/64 MiB logical copy allowance through decoding, normalization and
+comparison. This is conservative allowance, not a measured native/heap bound:
+accepted alias projection may grow independently of the incoming JSON cap.
+Decoded/projection copy qualification remains phase 4 work. The returned document
+transfers to caller ownership; resolution credit ends after joined cleanup.
+Only default native fetch-header TypeError and non-ok HTTP responses may try the
+existing alternate URL; injected client TypeError, body/parser/storage/admission
+and cancellation failures propagate. HTTP-refusal cleanup failure prevents fallback.
+The shared `streamBytes` reader joins one cancel Promise and always releases its
+lock. A single failure keeps its identity; distinct read/cancel/unlock failures
+propagate together as an AggregateError. Parent cancellation/error reporting
+remains part of composed owner qualification. Existing
+HTTP scheme fallback remains a compatibility policy, not strict TLS qualification.
+Artifact generation/serving still collects histories and remains transport S2 work.
 Finite JSON documents and receipt proofs retain whole-document semantics with
 bounded admission and joined cancellation. Mailbox admin response metadata admits
 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those finite

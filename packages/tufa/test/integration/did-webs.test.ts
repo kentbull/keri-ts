@@ -59,7 +59,7 @@ Deno.test("tufa/dws - static artifacts resolve through the Tufa HTTP artifact ro
 
       const resolved = yield* resolveDidWebs(resolverRuntime, {
         did,
-        insecureHttp: true,
+        // Native HTTPS header failure falls back to this actual local HTTP artifact host.
       });
       assertEquals(resolved.document.id, did);
       assertEquals(

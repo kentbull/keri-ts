@@ -1,8 +1,10 @@
-import { run } from "effection";
+import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy, ShortageError } from "cesr-ts";
+import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import {
   bindDesignatedAliases,
@@ -14,6 +16,7 @@ import {
   listActiveDesignatedAliasCredentials,
   parseDid,
   pinDesignatedAliasesSchema,
+  resolveDidWebs,
 } from "../../../src/did/index.ts";
 
 Deno.test("did/webs - parses DID Webs host, path, AID, and artifact URLs", () => {
@@ -146,6 +149,230 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
   } finally {
     await Deno.remove(headDirPath, { recursive: true }).catch(() => undefined);
   }
+});
+
+Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation without masking failures", async () => {
+  await run(function*() {
+    const issuer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const source = yield* createAgentRuntime(issuer);
+    const resources = new ResourcePolicy();
+    let fetches: string[] = [], mode = "stream", body: ReadableStream<Uint8Array>;
+    const injected = new TypeError("injected client invariant failure");
+    const runtime = yield* createAgentRuntime(target, {
+      services: {
+        resources,
+        http: {
+          // deno-lint-ignore require-await -- Model asynchronous Fetch rejection and response completion.
+          async fetch(url) {
+            fetches.push(url);
+            if (mode === "injected") throw injected;
+            if (mode === "status" && fetches.length === 1) return new Response(null, { status: 503 });
+            if (url.endsWith("did.json")) {
+              assertEquals(resources.used.streams, 1);
+              assertEquals(resources.used.bytes >= 64 * 1024 ** 2, true);
+              if (mode === "mismatch") return new Response(JSON.stringify({ id: did }));
+              if (mode === "limit") {
+                let remaining = 9;
+                return new Response(
+                  new ReadableStream({
+                    pull(current) {
+                      if (remaining--) current.enqueue(new Uint8Array(1024 ** 2));
+                      else current.close();
+                    },
+                  }),
+                );
+              }
+            }
+            return new Response(url.endsWith("did.json") ? Uint8Array.from(artifacts.didJson) : body);
+          },
+        },
+      },
+    });
+    let escrowPasses = 0;
+    const advance = runtime.reactor.processEscrowsOnce.bind(runtime.reactor);
+    runtime.reactor.processEscrowsOnce = function*() {
+      escrowPasses++;
+      yield* advance();
+    };
+    const hab = issuer.makeHab("issuer", undefined, { toad: 0 });
+    const did = `did:webs:example.com:dws:${hab.pre}`;
+    bindDesignatedAliases(source, { alias: "issuer", dids: [did, `did:keri:${hab.pre}`] });
+    const artifacts = generateDidWebsArtifacts(source, { alias: "issuer", did });
+    const first = [...issuer.db.clonePreIter(hab.pre)][0];
+    let controller: ReadableStreamDefaultController<Uint8Array>, canceled = false, finishCleanup = () => {};
+    const cleanup = new Promise<void>((resolve) => finishCleanup = resolve);
+    try {
+      body = new ReadableStream({
+        start(current) {
+          controller = current;
+          current.enqueue(first);
+        },
+      }, { highWaterMark: 0 });
+      let complete = false;
+      const task = yield* spawn(function*() {
+        const result = yield* resolveDidWebs(runtime, { did });
+        complete = true;
+        return result;
+      });
+      for (let i = 0; i < 100 && !target.db.getState(hab.pre); i++) yield* sleep(1);
+      assertExists(target.db.getState(hab.pre), "Independent KEL becomes accepted before artifact EOF");
+      assertEquals([complete, fetches.length, resources.used.streams], [false, 1, 1]);
+      controller!.enqueue(artifacts.keriCesr.slice(first.length));
+      controller!.close();
+      assertEquals((yield* task).document.id, did);
+      assertEquals(escrowPasses, 2, "Preserve both legacy convergence passes after complete intake");
+      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
+      fetches = [];
+      body = new ReadableStream({
+        start(current) {
+          current.enqueue(first);
+        },
+        cancel() {
+          canceled = true;
+          return cleanup;
+        },
+      }, { highWaterMark: 0 });
+      const stopped = yield* spawn(function*() {
+        yield* resolveDidWebs(runtime, { did });
+      });
+      for (let i = 0; i < 100 && !fetches.length; i++) yield* sleep(1);
+      yield* sleep(5);
+      let joined = false;
+      const halt = yield* spawn(function*() {
+        yield* stopped.halt();
+        joined = true;
+      });
+      for (let i = 0; i < 100 && !canceled; i++) yield* sleep(1);
+      assertEquals([canceled, joined, fetches.length, resources.used.streams], [true, false, 1, 1]);
+      finishCleanup();
+      yield* halt;
+      assertEquals(resources.used.bytes, 0);
+      assertExists(target.db.getState(hab.pre));
+
+      fetches = [];
+      const fault = new Error("late artifact read failed");
+      body = new ReadableStream({
+        start(current) {
+          current.enqueue(first);
+          controller = current;
+        },
+      }, { highWaterMark: 0 });
+      const failed = yield* spawn(function*() {
+        try {
+          yield* resolveDidWebs(runtime, { did });
+        } catch (error) {
+          return error;
+        }
+      });
+      for (let i = 0; i < 100 && !fetches.length; i++) yield* sleep(1);
+      controller!.error(fault);
+      assertEquals(yield* failed, fault);
+      assertEquals(fetches.length, 1, "Started body failures cannot fall back to an alternate URL");
+      assertExists(target.db.getState(hab.pre), "Late failure preserves prior accepted state");
+      assertEquals(resources.used.bytes, 0);
+      fetches = [];
+      mode = "stream";
+      body = new ReadableStream({
+        start(current) {
+          current.enqueue(artifacts.keriCesr);
+          current.close();
+        },
+      });
+      const escrows = runtime.reactor.processEscrowsOnce;
+      runtime.reactor.processEscrowsOnce = function*() {
+        throw fault;
+      };
+      try {
+        yield* resolveDidWebs(runtime, { did });
+        throw new Error("Expected escrow infrastructure failure");
+      } catch (error) {
+        assertEquals(error, fault);
+      } finally {
+        runtime.reactor.processEscrowsOnce = escrows;
+      }
+      assertEquals(fetches.length, 1, "Escrow/storage failures cannot become an alternate artifact fetch");
+      assertEquals(resources.used.bytes, 0);
+
+      fetches = [];
+      body = new ReadableStream({
+        start(current) {
+          current.enqueue(first);
+          current.enqueue(Uint8Array.of(123));
+          current.close();
+        },
+      });
+      let truncated: unknown;
+      try {
+        yield* resolveDidWebs(runtime, { did });
+      } catch (error) {
+        truncated = error;
+      }
+      assertEquals(truncated instanceof ShortageError, true);
+      assertEquals(fetches.length, 1, "Truncated EOF cannot finish a cached DID or trigger fallback");
+      assertExists(target.db.getState(hab.pre));
+      assertEquals(resources.used.bytes, 0);
+
+      fetches = [];
+      mode = "injected";
+      try {
+        yield* resolveDidWebs(runtime, { did });
+        throw new Error("Expected injected failure");
+      } catch (error) {
+        assertEquals(error, injected);
+      }
+      assertEquals(fetches.length, 1);
+      const occupied = resources.reserve({ streams: 2 });
+      if (occupied.kind !== "reserve") throw new Error("Expected stream credit");
+      fetches = [];
+      try {
+        yield* resolveDidWebs(runtime, { did });
+      } catch (error) {
+        assertEquals(error instanceof ResourceAdmissionError, true);
+      } finally {
+        occupied.reservation.release();
+      }
+      assertEquals(fetches.length, 0, "Shared parser admission precedes fetch/acquisition");
+
+      fetches = [];
+      mode = "status";
+      body = new ReadableStream({
+        start(current) {
+          current.enqueue(artifacts.keriCesr);
+          current.close();
+        },
+      });
+      assertEquals((yield* resolveDidWebs(runtime, { did })).document.id, did);
+      assertEquals(fetches.slice(0, 2).map((url) => new URL(url).protocol), ["https:", "http:"]);
+      assertEquals(resources.used.bytes, 0);
+      for (const [failure, expected] of [["mismatch", ValidationError], ["limit", ResourceLimitError]] as const) {
+        mode = failure;
+        fetches = [];
+        body = new ReadableStream({
+          start(current) {
+            current.enqueue(artifacts.keriCesr);
+            current.close();
+          },
+        });
+        let rejected: unknown;
+        try {
+          yield* resolveDidWebs(runtime, { did });
+        } catch (error) {
+          rejected = error;
+        }
+        assertEquals(rejected instanceof expected, true);
+        assertEquals(fetches.length, 2, "DID JSON/content failures cannot trigger transport fallback");
+        assertEquals(resources.used.bytes, 0);
+      }
+    } finally {
+      finishCleanup();
+      yield* runtime.close();
+      yield* source.close();
+      yield* target.close(true);
+      yield* issuer.close(true);
+    }
+  });
 });
 
 Deno.test("did/webs - keri.cesr replays controller KEL once and appends DA material", async () => {
