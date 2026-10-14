@@ -15,10 +15,14 @@ interface QueryReplyBatch {
 
 /** A bounded request-owned slot; close it when the HTTP request responds or is cancelled. */
 export interface QueryReply {
+  /** Existing source credit participates in the combined preparation floor. */
+  readonly retainedBytes: number;
   /** Compatibility seam for a single ordinary, unadmitted response. */
   take(): DirectReply | undefined;
   /** Transfer at most the ordered TSN pair and its credit into the response/consumer owner. */
   takeAll(): QueryReplyBatch | undefined;
+  /** Immediate atomic destination publication; failures preserve the original slot and credit. */
+  admit(accept: (cues: readonly DirectReply[], release: () => void) => undefined): boolean;
   /** Release untaken references only; a transferred batch owns its own cleanup. Safe to repeat. */
   close(): void;
 }
@@ -44,6 +48,9 @@ export class QueryReplies {
     this.count++;
     let closed = false;
     return {
+      get retainedBytes() {
+        return slot.owners.reduce((bytes, owner) => bytes + owner.retainedBytes, 0);
+      },
       take() {
         if (slot.companion || slot.owners.length) throw new Error("Paired/admitted replies require batch consumption");
         const reply = slot.reply;
@@ -63,6 +70,23 @@ export class QueryReplies {
             cues.length = 0;
           },
         };
+      },
+      admit(accept) {
+        if (!slot.reply) return false;
+        const cues = slot.companion ? [slot.reply, slot.companion] : [slot.reply];
+        const owners = slot.owners;
+        let published = false;
+        const release = () => {
+          if (!published) throw new Error("Reply batch has not transferred");
+          for (const owner of owners.splice(0)) owner.release();
+          cues.length = 0;
+        };
+        const result: unknown = accept(cues, release);
+        if (result !== undefined) throw new TypeError("Reply acceptance must be synchronous");
+        slot.reply = slot.companion = undefined;
+        slot.owners = [];
+        published = true;
+        return true;
       },
       close: () => {
         if (closed) return;

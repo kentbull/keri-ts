@@ -422,6 +422,17 @@ export class Poster {
     args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference },
   ): RawCesrRoute {
     const recipient = this.resolveRecipient(args.recipient);
+    const route = this.findBytesRoute(hab, { ...args, recipient, recipientIsPrefix: true });
+    if (!route) throw new ValidationError(`No end roles for ${recipient} to send raw CESR payload.`);
+    return route;
+  }
+
+  /** Same policy; parsed-prefix lookup bypasses aliases, absence is explicit, other failures propagate. */
+  findBytesRoute(
+    hab: Hab,
+    args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference; recipientIsPrefix?: boolean },
+  ): RawCesrRoute | null {
+    const recipient = args.recipientIsPrefix ? args.recipient : this.resolveRecipient(args.recipient);
     const topic = args.topic ?? "";
     const delivery = args.delivery ?? "auto";
     const base = { sender: hab.pre, recipient, topic, bodyMode: this.hby.cesrBodyMode };
@@ -445,7 +456,7 @@ export class Poster {
       const witness = firstSortedEndpoint(hab.endsFor(recipient)[Roles.witness]);
       if (witness) return { ...base, kind: "witness", targets: [witness] };
     }
-    throw new ValidationError(`No end roles for ${recipient} to send raw CESR payload.`);
+    return null;
   }
 
   /** Guarded preparation; an explicit finite cap copies direct wire for independently credited retention. */
