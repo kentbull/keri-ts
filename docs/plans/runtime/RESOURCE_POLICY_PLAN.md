@@ -37,9 +37,10 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    finite proof planning. Semantic /ksn admits its actual keyStateSaved child
    before proof/state writes while retaining prepared reply/query ownership.
    Frozen KEL and fixed single/pair TEL ranges are inspectable without opening event readers.
+   KEL query source-seal repair follows concrete output admission on live/retry paths.
    Registry and credential TSN admit exact new dependency queries or txnStateSaved
    children before proof/Broker writes, preserving external escrow and prior proof
-   ownership. Capture-time/query effects,
+   ownership. Capture-time allocations,
    OOBI and other durable producers remain open, followed by
    query/mailbox/delivery ownership transfers. Complete these ports before Runtime
    activation.
