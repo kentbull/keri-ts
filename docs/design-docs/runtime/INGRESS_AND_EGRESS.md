@@ -65,13 +65,17 @@ feed buffer or separate synchronous parser remains.
 
 ## Runtime store ownership
 
-AgentRuntime borrows its Habery and injected registry-evidence/TEL stores.
+AgentRuntime borrows its Habery, injected `acdc.rgy` manager and injected VDR services.
+The default v2 `Regery` owns one `RegBaser`; `vdr.reger/rgy` retain their legacy
+owner and path. IPEX borrows the v2 manager's `RegistryStore`, without another handle.
 Readonly Habery construction creates neither default store. A writable Habery
 without an injected store acquires a default in the current Effection scope;
 explicit ownership flags govern runtime.close(). Scope exit also joins database
 close and removes temporary stores, including failed construction and cancellation.
-Explicit close followed by scope exit is harmless. The registry-evidence factory
-owns acquisition cleanup until it transfers the opened store to its caller.
+Explicit close followed by scope exit is harmless. The v2 manager factory owns
+acquisition cleanup until it transfers the manager, including alias-load failure.
+Reactor retries named registry escrows before IPEX; automatic foreign `rip/bup`
+wire dispatch remains a separate intake responsibility.
 A finite call scope separates acquisition cancellation from the resource provider,
 so joined factory cleanup cannot resume the provider with an untransferred value.
 
