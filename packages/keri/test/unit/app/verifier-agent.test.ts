@@ -246,6 +246,7 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
         { kin: "oobiFailed", url: "https://peer.test/last", reason: "gone" },
       ];
       const cues = new CueDeck(runtime.resources, 4), duplicate = { ...revoked };
+      const otherOwnerBytes = runtime.resources.used.bytes;
       cues.extend([unrelated[0], revoked, unrelated[1], duplicate]);
       const ownedAgent = new VerifierAgent({
         hby: verifierHby,
@@ -281,7 +282,7 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
       cues.checkSpace(2); // Processed and duplicate revocations returned their held item slots.
       assertEquals(runtime.resources.used.bytes, before, "shared batch survives with its unrelated owners");
       cues.clear();
-      assertEquals(runtime.resources.used.bytes, 0);
+      assertEquals(runtime.resources.used.bytes, otherOwnerBytes, "cue cleanup preserves the notification owner");
 
       assertEquals(result.revocationsQueued, 1);
       assertEquals(result.revocationsReady, 1);
@@ -292,6 +293,7 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
       assertExists((requests[1]!.data as Record<string, unknown>).revocationTimestamp);
     } finally {
       yield* runtime.close();
+      assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
       yield* cdb.close(true);
       yield* verifierReger.close(true);
       yield* verifierHby.close(true);
