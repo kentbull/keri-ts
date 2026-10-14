@@ -85,8 +85,8 @@ library and runnable-package artifacts. The key boundary is now explicit:
 
 ## Public Surface Rules
 
-Generated KERI/Tufa npm manifests require Node 18.17 or later: transport cancellation
-uses native `AbortSignal.any`, introduced in [18.17][node-abort-any]. Packed-artifact
+Generated CESR/KERI/Tufa npm manifests require Node 20.3 or later. Transport
+cancellation uses native `AbortSignal.any`, introduced in [20.3][node-abort-any]. Packed-artifact
 checks must exercise the declared minimum without optional global-Web-Crypto flags,
 as well as the ordinary CI runtime. A build or module import alone does not qualify
 host, storage and transport behavior; final workflow qualification remains required.
@@ -125,4 +125,4 @@ host, storage and transport behavior; final workflow qualification remains requi
 3. When CLI or host behavior changes, validate the packed `tufa` artifact, not
    only the source tree
 
-[node-abort-any]: https://nodejs.org/download/release/v18.17.0/docs/api/globals.html#static-method-abortsignalanysignals
+[node-abort-any]: https://nodejs.org/download/release/v20.3.0/docs/api/globals.html#static-method-abortsignalanysignals

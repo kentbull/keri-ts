@@ -111,6 +111,7 @@ jobs:
         id: pack
         env:
           PACKAGE: ${{ inputs.package }}
+          SMOKE_NODE_IMAGE: node:20.3.0-bullseye-slim
         run: |
           case "$PACKAGE" in
             cesr)

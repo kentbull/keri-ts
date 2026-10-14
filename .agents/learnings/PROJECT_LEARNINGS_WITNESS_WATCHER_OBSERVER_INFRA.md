@@ -44,7 +44,9 @@ shell/workflow strings. Keep inline-code:check and export docstring checks hones
 The package graph is tufa → keri-ts → cesr-ts. Derive manifest exports/bin from DNT
 output and assert packed targets. Install all three local tarballs once per runtime
 image (including macOS); run the installed Tufa bin without npx fallback. Source
-tests do not qualify package resolution or Node hosting.
+tests do not qualify package resolution or Node hosting. Require Node >=20.3 in
+all generated manifests; qualify the declared floor and current runtime without
+compatibility flags. Node 18 is a historical target, not a release gate.
 
 Npm publish and GitHub Release creation are separate seams. Reruns skip existing
 exact versions, use the uploaded tarball's dependency metadata, edit existing
