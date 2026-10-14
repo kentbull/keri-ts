@@ -179,6 +179,13 @@ separate policy or detached transport task. Finite document/proof exceptions
 retain their framing but expose an enforced ceiling, admission owner and
 cancellable joined response lifetime. Document the reason at the owning API;
 byte-input convenience alone does not justify buffering an entire history.
+This contract includes preparation and retained results: replay-sized introductions,
+credential dependencies and artifact exports must remain demand-driven before
+entering the engine. Finite JSON/proof preparation and returned copies have their
+own admitted owners; releasing a response reader does not release retained state.
+Every applicable default library, host and CLI path follows this contract, including
+failure, disconnect and shutdown. Size policy, local capacity refusal, transport
+failure and verified application acceptance remain distinct outcomes.
 
 Two engines own transport work: CESR HTTP request/response scopes and an owned
 TCP connection with directional I/O. Small Effection operations/resources expose
