@@ -21,10 +21,12 @@ import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
 import { prepareCueEmission } from "./cue-preparation.ts";
 import { prepareCueRoute } from "./cue-route.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
+import { DirectReplyDelivery } from "./direct-reply-delivery.ts";
 import { attemptPreparedCesrTarget, introduce, type RawCesrRoute } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
+import type { QueryReply } from "./query-replies.ts";
 
 /**
  * Resolve the actual transport URL for one query destination AID.
@@ -83,7 +85,7 @@ const preparationBytes = 3 * requestBytes;
 /** One shared item slot owns either query bytes, a lazy cue cursor or an exact failed packet. */
 type AdmittedDelivery =
   | { kind: "query"; delivery: QueryDelivery; release(): void }
-  | { kind: "cue"; delivery: CueDelivery; release(): void }
+  | { kind: "cue"; delivery: CueDelivery | DirectReplyDelivery; release(): void }
   | { kind: "target"; delivery: OwnedCueTarget; release(): void };
 
 /** Own query/cue delivery on one finite queue; network work executes outside guarded preparation. */
@@ -192,6 +194,23 @@ export class RuntimeDeliveries {
         if (!queued) captured.release();
       }
     }, onAdmissionRefusal);
+  }
+
+  /** Atomically publish one bounded direct-reply batch and its HTTP stream; no network runs here. */
+  openReply(runtime: AgentRuntime, hab: Hab, reply: QueryReply): ReadableStream<Uint8Array> | null {
+    if (runtime.resources !== this.resources) throw new RangeError("Wrong reply resource policy");
+    if (this.closed) throw new Error("Runtime deliveries are closed");
+    if (this.pending.length === this.pending.capacity) {
+      throw new ResourceAdmissionError("Direct reply delivery slots are busy", "busy");
+    }
+    this.pending.checkSpace();
+    return DirectReplyDelivery.prepare(runtime, hab, reply, (delivery, open) => {
+      this.pending.checkSpace();
+      const stream = open();
+      if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
+      else delivery.release();
+      return stream;
+    });
   }
 
   /** A failed independent packet retains the same lease; no target advances if the queue cannot accept it. */

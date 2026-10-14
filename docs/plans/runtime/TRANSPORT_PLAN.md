@@ -11,6 +11,9 @@ The [runtime contract][runtime] distinguishes current behavior from the target.
   peer failure, and joins parser/socket tasks before listener shutdown completes.
 - `processWitnessIngressSource` settles frames progressively; its finite wrapper
   still returns a bounded aggregate of emissions.
+- Final direct HTTP query replies atomically share one interpreted batch between
+  ReplyStreams and queued targets; no network runs during that preparation.
+  Earlier-query and ordinary HTTP/witness cue drains still require adoption.
 - Generic HTTP ingress already parses progressively, but HTTP/witness/runtime
   cue drains can await `Respondant` network delivery under the Reactor guard.
 - The TCP sender shares a finite/source/frame writer and explicit same-socket
@@ -262,9 +265,18 @@ S9 extends existing transport/runtime tests for decisive regressions:
 - Measure first **parsed** child separately from first **verified usable** child.
   Prove an independent GenericGroup child is usable before its enclosing transfer
   finishes. Parent-owned nested children are never independent accepted messages.
+- Close HTTP cancellation provenance: a pending fetch join must not discard late
+  unexpected I/O failures, and null-on-abort must recognize its own cancellation
+  rather than any same-class AbortError. Preserve distinct primary/cleanup errors.
 - Exercise cancellation, disconnect, malformed late children, EOF, processing
   failure and shutdown. Keep already delivered independent children; dispose all
   unclaimed owners and join I/O before releasing runtime/store resources.
+- With the real default two live receive sources (including two TCP receives),
+  queued and directed output must progress or produce explicit bounded admission,
+  refusal or closure. Never wait while holding every permit needed by the reply.
+  Qualify the combined configured pipeline floor separately from temporary busy;
+  individual bounded engines do not prove composed progress. Probe actual default
+  callers before changing stream defaults or credit ownership.
 - Exercise saturation, partial-target failure, genuine versus truncated EOF,
   half-close and absolute drain expiry. Earlier independent frames survive later
   failure. An unwrapped final message may await a following body or real EOF;
