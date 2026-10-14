@@ -21,6 +21,9 @@ owners. Promise adaptation belongs at real edges. Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state.
+Shared transport readers cancel once, join that Promise and always unlock;
+single errors retain identity and distinct read/cleanup failures aggregate.
+Parent cancellation diagnostics still need composed owner qualification.
 
 Owned hydration uses an isolated consume callback with direct joined finalization.
 A bare yielding finalizer can resume cancelled parent work; resource-only teardown
@@ -113,7 +116,9 @@ handler returns. requestFrame/postCesr retain frame owners until consumption end
 
 KEL replay exposes frozen prefix/from/end metadata; cue admission inspects it
 without opening a body/iterator or walking the borrowed Baser. Retained/fanout
-owners keep that credit; capture-time and opaque TEL/composed sources stay separate.
+owners keep that credit. Canonical TEL captures retain at most two frozen ranges
+and wire settings with a borrowed Reger; admission opens no readers/store traversal.
+Capture-time allocation and other opaque source forms stay separate.
 Replay captures first-seen ranges, hydrates one finite event and releases cursors
 before transport suspension. Query credits remain charged through failed delivery;
 bounded passes drain only their initial work. Generic witness and signed-exchange

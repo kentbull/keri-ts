@@ -140,11 +140,19 @@ final release. One shared batch lease lasts until its last owner; fanout adds
 reference credit, not another payload charge. KEL replay uses a frozen
 `CapturedKelReplay`: prefix/from/end tuples, per-message ceiling and a fixed borrowed
 Baser reference. Inspection charges this metadata without reading bodies or opening
-iterators/cursors, and never walks the runtime-owned store. Finite message arrays
-charge their complete backing normally. Opaque/TEL/composed replay closures remain
-refused; arbitrary work is never opened for measurement. Capture-time temporary
+iterators/cursors, and never walks the runtime-owned store. TEL uses canonical
+`CapturedTelReplay`: at most two frozen prefix/end ranges, immutable genus/selector/
+message settings and one fixed borrowed Reger reference. Both capture constructors
+copy validated primitive fields into fresh plain frozen arrays/tuples, excluding
+caller container subclasses and their hidden retention. Same-store/settings pair
+composition preserves management/credential order and duplicates without opening
+readers. Admission charges only that metadata/reference; each consumer closes its
+TEL cursor before cloning/yielding. Prototype spoofs and subclasses remain refused.
+Finite message arrays charge their complete backing normally. Other opaque replay
+closures remain refused; arbitrary work is never opened for measurement. Capture-time temporary
 allocations still need producer admission; this retained
 owner seam does not activate Runtime or close the full query/delivery boundary.
+TEL body/proof-row pre-read allocation admission remains a phase 5 obligation.
 
 Live and retried KEL queries admit their actual output batch before repairing
 delegation source-seal hints. Busy, configured-limit and item refusal leave `aess`
