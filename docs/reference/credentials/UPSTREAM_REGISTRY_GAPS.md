@@ -1,8 +1,8 @@
 # Upstream registry integration boundary
 
-Reviewed 2026-10-13. Frozen parity oracle: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
-Current upstream inspected: [`71438328`][current], three commits ahead. This review
-supplies guidance; it does not silently replace the frozen test oracle.
+Reviewed 2026-10-13 against [`71438328`][current], now the approved parity baseline:
+`7143832813cac6a394ab1faf9be83bb3372be87c`. It is three commits beyond historical
+`927c0cb8794d7c84fc17143c67df64aab9deda6c`; old measurements retain their source labels.
 
 ## Foreign registry intake
 
@@ -38,8 +38,8 @@ policy. Those claims require their own concrete design and evidence.
   doubly anchored `xfr`. Discussion proposals do not authorize invented processing.
 - Current main's [#1713][schema] adds ACDC schema validation and missing-schema
   escrow. Its changes to local `blind`, IPEX and exchange handling are separate
-  from the foreign-intake gap. Qualify this newer behavior separately; existing
-  frozen-oracle results do not prove #1713 parity.
+  from the foreign-intake gap. The S1–S3 ports (#211, #215, #222) implement this delta; final composed
+  qualification must use 714. Historical 927 results do not prove #1713 parity.
 
 ## Completion policy
 

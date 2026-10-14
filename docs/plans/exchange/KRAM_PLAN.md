@@ -42,7 +42,7 @@ remain uncommitted; retain their commands, revisions and results as evidence.
 Existing runtime and HTTP tests should receive the smallest necessary regression.
 
 Inspect frozen `core/kraming.py`, its callers and tests at
-`927c0cb8794d7c84fc17143c67df64aab9deda6c`. Verify actual imported modules for
+`7143832813cac6a394ab1faf9be83bb3372be87c`. Verify actual imported modules for
 oracle runs. Audit missing source references above the database's safe-integer
 range: they must not silently permit signature fallback or lose query precision.
 

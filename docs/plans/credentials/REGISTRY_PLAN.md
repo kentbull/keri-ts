@@ -6,11 +6,11 @@ bounded IPEX chain assembly, presentation cutoffs and explicit runtime ownership
 Keep the delivered v1 VDR stack and existing #168 stores operational. The
 [current contract][contract] owns behavior; this plan owns remaining evidence.
 
-Frozen reference: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+Pinned reference: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 Inspect `acdc/regbasing.py`, `registering.py`, `regeventing.py`, `registraring.py`,
-`ipexing.py` and legacy VDR owners when resolving parity questions. The separately
-pinned `7143832813cac6a394ab1faf9be83bb3372be87c` adds the S1–S3 schema profile;
-it does not replace the frozen commitment/wire oracle.
+`ipexing.py` and legacy VDR owners when resolving parity questions. Its schema
+validation and missing-schema escrow changes are the implemented S1–S3 profile.
+Earlier `927c0cb8` fixture results retain their historical provenance.
 
 ## Implemented ownership
 

@@ -71,7 +71,7 @@ fixed tuples, with small named readers for nested or variable shapes.
 
 Validate real text and binary wire, count units, primitive roles, enclosure
 bounds, and split input. Update the lifecycle contract when behavior changes.
-Generated tables target KERIpy `927c0cb8794d7c84fc17143c67df64aab9deda6c`;
+Generated tables target KERIpy `7143832813cac6a394ab1faf9be83bb3372be87c`;
 [the interop guide](../../../packages/keri/test/README.md) records the live fork
 pin and its exact upstream provenance. Changing either baseline is a coordinated
 protocol task.

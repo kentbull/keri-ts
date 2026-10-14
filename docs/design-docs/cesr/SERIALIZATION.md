@@ -24,7 +24,7 @@ maximum backing-allocation contract.
 Each message's ordinary attachment leaves use one selected genus; enclosed
 children may select their own genus inside their own boundary. The entire output
 tree uses one attachment wire domain.
-KERIpy `main` at `927c0cb8794d7c84fc17143c67df64aab9deda6c` permits a GVC only
+KERIpy `main` at `7143832813cac6a394ab1faf9be83bb3372be87c` permits a GVC only
 at its beginning and rejects nested attachment enclosures or mixed domains.
 Progressive parsing can accept broader scoped input, but forwarding normalizes
 known leaf tuples rather than reproducing interior selectors. Transferable
