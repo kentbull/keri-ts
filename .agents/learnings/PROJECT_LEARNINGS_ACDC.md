@@ -30,7 +30,11 @@ record schemas in structing.ts and counted transport in wrappers.
 
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless escrow.
 Verifier owns cached schemas, registry/schema/chain dependencies and saved indexes;
-direct revoked saves and revoked-chain rejection are distinct. Regery/Registry/
+direct revoked saves and revoked-chain rejection are distinct. Injected CueDeck admits
+actual dependency/saved cues before credential proof, escrow dates or saved indexes.
+Registry/schema cues follow new escrow membership; chain retries always emit. Replay
+resource refusal preserves the current family. Ordinary Deck retains its count guard;
+constructor/native copies and durable cue recovery remain separate gates. Regery/Registry/
 Registrar/Credentialer compose issuer-side operations. Normal outcomes stay typed.
 
 V2 `regeventing.vet/vetBinds` observer verification is read-only; explicit

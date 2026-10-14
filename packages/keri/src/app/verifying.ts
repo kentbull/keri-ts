@@ -9,9 +9,18 @@
  * - ordinary outcomes are explicit decisions instead of exception-only control
  *   flow; durable corruption and unsupported `DI2I` still fail explicitly
  */
-import { Dater, Diger, Ilks, NumberPrimitive, Prefixer, Saider, SerderACDC } from "cesr-ts";
+import {
+  Dater,
+  Diger,
+  Ilks,
+  NumberPrimitive,
+  Prefixer,
+  Saider,
+  SerderACDC,
+} from "cesr-ts";
+import { CueDeck } from "../core/cue-admission.ts";
 import type { AgentCue } from "../core/cues.ts";
-import { Deck, DeckFullError } from "../core/deck.ts";
+import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { VcStateRecordShape } from "../core/records.ts";
 import type { Reger } from "../db/reger.ts";
@@ -109,7 +118,7 @@ export class Verifier {
     seqner: NumberPrimitive;
     saider: Diger;
   }): VerifierDecision {
-    this.cues.checkSpace();
+    if (!(this.cues instanceof CueDeck)) this.cues.checkSpace();
     const creder = args.creder;
     const said = credentialSaid(creder);
     const regk = creder.regid;
@@ -126,32 +135,24 @@ export class Verifier {
 
     const tever = teverFrom(this.tevers.get(regk));
     if (!tever) {
-      if (this.escrowMRE(args)) {
-        this.cues.push({ kin: "telquery", q: { ri: regk, i: said, issr: issuer } });
-      }
+      this.escrowDependency(args, "missingRegistry", { kin: "telquery", q: { ri: regk, i: said, issr: issuer } });
       return { kind: "escrow", reason: "missingRegistry", said };
     }
 
     const state = tever.vcState(said) ?? null;
     if (!state) {
-      if (this.escrowMRE(args)) {
-        this.cues.push({ kin: "telquery", q: { ri: regk, i: said } });
-      }
+      this.escrowDependency(args, "missingRegistry", { kin: "telquery", q: { ri: regk, i: said } });
       return { kind: "escrow", reason: "missingRegistry", said };
     }
 
     if (this.isCredentialStateStale(state)) {
-      if (this.escrowMRE(args)) {
-        this.cues.push({ kin: "telquery", q: { ri: regk, i: said } });
-      }
+      this.escrowDependency(args, "missingRegistry", { kin: "telquery", q: { ri: regk, i: said } });
       return { kind: "escrow", reason: "missingRegistry", said };
     }
 
     const schemer = resolveCachedSchema(this.hby, schema);
     if (!schemer) {
-      if (this.escrowMSE(args)) {
-        this.cues.push({ kin: "query", q: { r: "schema", said: schema } });
-      }
+      this.escrowDependency(args, "missingSchema", { kin: "query", q: { r: "schema", said: schema } });
       return { kind: "escrow", reason: "missingSchema", said };
     }
 
@@ -202,13 +203,11 @@ export class Verifier {
           };
         }
         if (!chainState) {
-          this.escrowMCE(args);
-          this.cues.push({ kin: "proof", said: node.n });
+          this.escrowDependency(args, "missingChain", { kin: "proof", said: node.n });
           return { kind: "escrow", reason: "missingChain", said };
         }
         if (this.isCredentialStateStale(chainState)) {
-          this.escrowMCE(args);
-          this.cues.push({ kin: "query", q: { r: "tels", pre: node.n } });
+          this.escrowDependency(args, "missingChain", { kin: "query", q: { r: "tels", pre: node.n } });
           return { kind: "escrow", reason: "missingChain", said };
         }
         if (chainState.et === Ilks.rev || chainState.et === Ilks.brv) {
@@ -222,9 +221,47 @@ export class Verifier {
       }
     }
 
-    this.saveCredential(args);
-    this.cues.push({ kin: "saved", creder });
+    const cue: VerifierCue = { kin: "saved", creder };
+    const prepared = this.cues instanceof CueDeck ? this.cues.prepare([cue]) : undefined;
+    try {
+      this.saveCredential(args);
+      if (prepared) prepared.publish();
+      else this.cues.push(cue);
+    } finally {
+      prepared?.release();
+    }
     return { kind: "accept", said };
+  }
+
+  /** Admit the actual dependency before credential/proof/date writes in one synchronous turn.
+   * Registry/schema queries follow new membership; chain retries always request their dependency.
+   * Preparation refusal leaves the current escrow family and any prior credential proof unchanged.
+   */
+  private escrowDependency(
+    args: Parameters<Verifier["processCredential"]>[0],
+    reason: VerifierEscrowReason,
+    cue: Exclude<VerifierCue, { kin: "saved" }>,
+  ): void {
+    const table = reason === "missingRegistry"
+      ? this.reger.mre
+      : reason === "missingSchema"
+      ? this.reger.mse
+      : this.reger.mce;
+    const owned = this.cues instanceof CueDeck;
+    const fresh = owned ? table.get([credentialSaid(args.creder)]) === null : false;
+    const prepared = owned && (fresh || reason === "missingChain") ? this.cues.prepare([cue]) : undefined;
+    try {
+      const inserted = reason === "missingRegistry"
+        ? this.escrowMRE(args)
+        : reason === "missingSchema"
+        ? this.escrowMSE(args)
+        : this.escrowMCE(args);
+      if (owned && inserted !== fresh) throw new Error("Credential escrow membership changed during admission");
+      if (prepared) prepared.publish();
+      else if (!owned && (inserted || reason === "missingChain")) this.cues.push(cue);
+    } finally {
+      prepared?.release();
+    }
   }
 
   /** Missing registry escrow. */
@@ -342,14 +379,8 @@ export class Verifier {
         continue;
       }
       const [creder, prefixer, seqner, saider] = this.reger.cloneCred(said);
-      let decision: VerifierDecision;
-      try {
-        decision = this.processCredential({ creder, prefixer, seqner, saider });
-      } catch (error) {
-        if (error instanceof DeckFullError) throw error;
-        db.rem([said]);
-        continue;
-      }
+      // Remote validation outcomes are typed; thrown failures retain their exact identity and escrow owner.
+      const decision = this.processCredential({ creder, prefixer, seqner, saider });
       if (decision.kind === "accept" || decision.kind === "reject") {
         db.rem([said]);
         continue;
