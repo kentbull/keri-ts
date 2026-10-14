@@ -560,6 +560,11 @@ export class Baser {
     return this.lmdber.env;
   }
 
+  /** Admit one physical binary row before its owned copy; native scratch remains separate. */
+  getValBounded(table: Database<BinVal, BinKey>, key: Uint8Array, maxBytes: number): Uint8Array | null {
+    return this.lmdber.getValBounded(table, key, maxBytes);
+  }
+
   /**
    * Reopen the root LMDB environment and bind the KERIpy-style named subdbs.
    *

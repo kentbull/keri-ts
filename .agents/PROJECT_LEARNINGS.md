@@ -28,7 +28,10 @@ Retryable handoff acknowledges after disposal; callback effects remain at least 
 Parsed evidence, wrapper construction, verified acceptance and durable publication
 are separate boundaries. Parent signatures never authenticate nested children.
 Public registry intake borrows issuer KEL state independently of local Hab aliases.
+Accepted legacy bytes remain readable; new intake requires full witnessed tuples.
 Raw evidence stays separate from opt-in strict seal projection.
+Native addon loading alone is not runtime compatibility; qualify large-row paths.
+Pinned nested-row preflight preserves active writers; shared copy admission remains separate.
 
 Normal remote outcomes use typed decisions. Exceptions retain invariant,
 infrastructure and caller-contract failures. Keep protocol compatibility and

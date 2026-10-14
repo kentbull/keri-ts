@@ -3,11 +3,11 @@ import { action, run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { RegBaser } from "../../../src/acdc/regbasing.ts";
 import { openRegistry } from "../../../src/acdc/registering.ts";
+import { createRegery as createAcdcRegery, Regery as AcdcRegery } from "../../../src/acdc/registraring.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { MailboxAdmissionError } from "../../../src/db/mailbox-inbox.ts";
 import { createReger, Reger } from "../../../src/db/reger.ts";
-import { createRegistryEvidenceStore, RegistryEvidenceStore } from "../../../src/db/registry-evidence.ts";
 
 const habitatOptions = { name: "runtime-ownership", temp: true, skipConfig: true, skipSignator: true };
 
@@ -19,7 +19,7 @@ function assertReleased(store: RegBaser | Reger): void {
 }
 
 Deno.test("runtime stores - default owners close explicitly and scope exit is harmless", async () => {
-  let registry!: RegistryEvidenceStore;
+  let registry!: RegBaser;
   let reger!: Reger;
   await run(function*() {
     const hby = yield* createHabery(habitatOptions);
@@ -27,10 +27,17 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
       const runtime = yield* createAgentRuntime(hby);
       assertEquals(runtime.reactor.resources, runtime.resources);
       assertEquals(runtime.resources.limits.streams, 2);
-      registry = runtime.registryEvidence!;
+      registry = runtime.acdc.rgy!.baser;
       reger = runtime.vdr.reger as Reger;
       assertEquals(registry.opened, true);
       assertEquals(reger.opened, true);
+      assertEquals(registry.path === reger.path, false, "v1 and v2 use separate environments");
+      const issuer = hby.makeHab("issuer");
+      const local = runtime.acdc.rgy!.makeRegistry("local", issuer.pre);
+      assertEquals(local.sn, -1n);
+      issuer.interact({ data: [{ i: local.regk!, s: "0", d: local.regk! }] });
+      yield* runtime.reactor.processEscrowsOnce();
+      assertEquals(local.sn, 0n, "runtime advances the real v2 registry manager");
       yield* runtime.close();
       assertReleased(registry);
       assertReleased(reger);
@@ -45,15 +52,17 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
 
 Deno.test("runtime stores - injected stores survive explicit close and scope exit", async () => {
   const hby = await run(() => createHabery(habitatOptions));
-  const registry = await run(() => createRegistryEvidenceStore({ name: "borrowed", temp: true }));
+  const rgy = await run(() => createAcdcRegery({ hby, name: "borrowed", temp: true }));
+  const registry = rgy.baser;
   const reger = await run(() => createReger({ name: "borrowed", temp: true }));
   try {
     await run(function*() {
       const resources = new ResourcePolicy({ streams: 3 });
-      const runtime = yield* createAgentRuntime(hby, { registryEvidence: registry, vdr: { reger }, resources });
+      const runtime = yield* createAgentRuntime(hby, { acdc: { rgy }, vdr: { reger }, resources });
       assertEquals(runtime.resources, resources);
       assertEquals(runtime.reactor.resources, resources);
-      assertEquals(runtime.registryEvidence, registry);
+      assertEquals(runtime.acdc.rgy, rgy);
+      assertEquals(runtime.reactor.acdc.rgy, rgy);
       assertEquals(runtime.vdr.reger, reger);
       yield* runtime.close();
       assertEquals(registry.opened, true);
@@ -63,7 +72,7 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
     assertExists(reger.env);
   } finally {
     await run(function*() {
-      yield* registry.close(true);
+      yield* rgy.close();
       yield* reger.close(true);
       yield* hby.close(true);
     });
@@ -80,7 +89,7 @@ Deno.test("runtime stores - readonly Habery acquires no default store", async ()
       const readonly = yield* createHabery({ ...options, readonly: true });
       try {
         const runtime = yield* createAgentRuntime(readonly);
-        assertEquals(runtime.registryEvidence, null);
+        assertEquals(runtime.acdc.rgy, undefined);
         assertEquals(runtime.vdr.reger, undefined);
         yield* runtime.close();
         assertEquals(readonly.db.opened, true);
@@ -95,11 +104,11 @@ Deno.test("runtime stores - readonly Habery acquires no default store", async ()
 });
 
 Deno.test("runtime stores - construction failure releases acquired default stores", async () => {
-  const registryReopen = RegistryEvidenceStore.prototype.reopen;
+  const registryReopen = RegBaser.prototype.reopen;
   const regerReopen = Reger.prototype.reopen;
-  let registry!: RegistryEvidenceStore;
+  let registry!: RegBaser;
   let reger!: Reger;
-  RegistryEvidenceStore.prototype.reopen = function*(options) {
+  RegBaser.prototype.reopen = function*(options) {
     const opened = yield* registryReopen.call(this, options);
     registry = this;
     return opened;
@@ -121,36 +130,38 @@ Deno.test("runtime stores - construction failure releases acquired default store
     assertReleased(reger);
     assertEquals(hby.db.opened, true);
   } finally {
-    RegistryEvidenceStore.prototype.reopen = registryReopen;
+    RegBaser.prototype.reopen = registryReopen;
     Reger.prototype.reopen = regerReopen;
     await run(() => hby.close(true));
   }
 });
 
-Deno.test("runtime stores - failed acquisition closes a store before it can transfer", async () => {
-  const original = RegistryEvidenceStore.prototype.reopen;
-  const failure = new Error("registry binding failed");
-  let registry!: RegistryEvidenceStore;
-  RegistryEvidenceStore.prototype.reopen = function*(options) {
-    yield* original.call(this, options);
-    registry = this;
+Deno.test("runtime stores - manager construction failure joins its acquired store cleanup", async () => {
+  const original = AcdcRegery.prototype.loadRegistries;
+  const failure = new Error("registry alias loading failed");
+  let registry!: RegBaser;
+  AcdcRegery.prototype.loadRegistries = function() {
+    registry = this.baser;
     throw failure;
   };
+  const hby = await run(() => createHabery(habitatOptions));
   try {
-    const rejected = await assertRejects(() => run(() => createRegistryEvidenceStore({ temp: true })));
-    assertEquals(rejected, failure, "acquisition failure must propagate unchanged");
+    const rejected = await assertRejects(() => run(() => createAgentRuntime(hby)));
+    assertEquals(rejected, failure, "construction failure must propagate unchanged");
     assertReleased(registry);
+    assertEquals(hby.db.opened, true);
   } finally {
-    RegistryEvidenceStore.prototype.reopen = original;
+    AcdcRegery.prototype.loadRegistries = original;
+    await run(() => hby.close(true));
   }
 });
 
 Deno.test("runtime stores - cancellation during acquisition joins unreturned store cleanup", async () => {
-  const original = RegistryEvidenceStore.prototype.reopen;
-  let registry!: RegistryEvidenceStore;
+  const original = RegBaser.prototype.reopen;
+  let registry!: RegBaser;
   let entered!: () => void;
   const opened = new Promise<void>((resolve) => entered = resolve);
-  RegistryEvidenceStore.prototype.reopen = function*(options) {
+  RegBaser.prototype.reopen = function*(options) {
     const result = yield* original.call(this, options);
     registry = this;
     entered();
@@ -166,7 +177,7 @@ Deno.test("runtime stores - cancellation during acquisition joins unreturned sto
     assertReleased(registry);
     assertEquals(hby.db.opened, true);
   } finally {
-    RegistryEvidenceStore.prototype.reopen = original;
+    RegBaser.prototype.reopen = original;
     await task.halt();
     await run(() => hby.close(true));
   }
@@ -174,13 +185,13 @@ Deno.test("runtime stores - cancellation during acquisition joins unreturned sto
 
 Deno.test("runtime stores - cancelling a live runtime closes scope-owned stores", async () => {
   const hby = await run(() => createHabery(habitatOptions));
-  let registry!: RegistryEvidenceStore;
+  let registry!: RegBaser;
   let reger!: Reger;
   let entered!: () => void;
   const ready = new Promise<void>((resolve) => entered = resolve);
   const task = run(function*() {
     const runtime = yield* createAgentRuntime(hby);
-    registry = runtime.registryEvidence!;
+    registry = runtime.acdc.rgy!.baser;
     reger = runtime.vdr.reger as Reger;
     entered();
     yield* action<void>(() => () => {});
