@@ -6,6 +6,9 @@ Use typed Suber/Komer seams and the [DB invariants][db]. Symbol presence does no
 prove row parity; the [DB plan](../../docs/plans/db/DB_PARITY_PLAN.md) retains Partial
 rows until evidence closes them. Record models are FooRecord plus FooRecordShape,
 with recordClass as the durable seam. Protocol/storage CBOR uses CESR's codec.
+Full event-seal discovery scans raw KEL `a` entries and skips other shapes;
+strict Serder seal projection remains opt-in. Accepted digest/opaque data must
+not hide a later fully witnessed tuple anchor.
 
 Use the repository-pinned LMDB release (runtime source currently 3.5.3), V1 data
 format for KERIpy interop, and the actual native rebuild/preflight path. A lockfile
