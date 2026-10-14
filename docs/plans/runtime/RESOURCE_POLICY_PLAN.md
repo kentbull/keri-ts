@@ -34,10 +34,10 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    Runtime. Prospective KEL/clone/state and decision-carried duplicate/escrow
    producers now admit concrete batches before effects when explicitly injected.
    Revery's own query batches likewise precede BADA/proof/escrow writes, using
-   finite proof planning. Frozen KEL replay ranges are inspectable for retained
-   cue admission without opening event readers. Semantic /ksn admits its actual
-   keyStateSaved child before proof/state writes while retaining prepared query
-   ownership. Registry TSN admits exact new dependency queries or txnStateSaved
+   finite proof planning. Semantic /ksn admits its actual keyStateSaved child
+   before proof/state writes while retaining prepared reply/query ownership.
+   Frozen KEL replay ranges are inspectable without opening event readers.
+   Registry TSN admits exact new dependency queries or txnStateSaved
    children before proof/Broker writes, preserving external escrow and prior proof
    ownership. Credential state children, capture-time/query effects, TEL/composed
    sources, OOBI and other durable producers remain open, followed by
