@@ -1,12 +1,13 @@
-import { Dater, ResourceAdmissionError, ResourceLimitError, ResourcePolicy, SerderKERI } from "cesr-ts";
+import { b, Dater, ResourceAdmissionError, ResourceLimitError, ResourcePolicy, SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ReplyStreams } from "../../../src/app/reply-streams.ts";
 import { witnessQueryGet } from "../../../src/app/witnessing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
+import { DatabaseOperationError } from "../../../src/core/errors.ts";
 import { interact } from "../../../src/core/protocol-eventing.ts";
-import { dgKey } from "../../../src/db/core/keys.ts";
+import { dgKey, onKey } from "../../../src/db/core/keys.ts";
 import { CapturedKelReplay } from "../../../src/db/kel-replay.ts";
 
 Deno.test("witness GET captures target FEL or KEL duplicate order without retaining cursors", async () => {
@@ -49,18 +50,27 @@ Deno.test("witness GET captures target FEL or KEL duplicate order without retain
       }
       storeFork("late");
       hab.interact();
-      const table = hby.db.kels, rows = table.getAllItemIter.bind(table);
-      let cursors = 0;
-      table.getAllItemIter = function*(...args) {
-        cursors++;
-        try {
-          yield* rows(...args);
-        } finally {
-          cursors--;
-        }
+      const table = hby.db.kels, nativeRows = table.sdb.getValues;
+      let cursors = 0, visited = 0;
+      table.sdb.getValues = function(...args) {
+        const rows = nativeRows.apply(this, args);
+        return {
+          *[Symbol.iterator]() {
+            cursors++;
+            try {
+              for (const value of rows) {
+                visited++;
+                yield value;
+              }
+            } finally {
+              cursors--;
+            }
+          },
+        } as unknown as ReturnType<typeof nativeRows>;
       };
       try {
         assertEquals([...ordered!].map((bytes) => new SerderKERI({ raw: bytes }).said), [first, fork, second]);
+        assertEquals(visited, 4); // Each duplicate is fetched once, including the excluded late insertion.
         assertEquals([...fel!].map((bytes) => new SerderKERI({ raw: bytes }).said), [initial, first, second, fork]);
         const reader = body!.getReader();
         yield* call(() => reader.read());
@@ -90,8 +100,22 @@ Deno.test("witness GET captures target FEL or KEL duplicate order without retain
         yield* hby.db.close();
         yield* hby.db.reopen();
         assertEquals([...ordered!].map((bytes) => new SerderKERI({ raw: bytes }).said), [first, fork, second]);
+        const changing = ordered![Symbol.iterator]();
+        assertEquals(new SerderKERI({ raw: changing.next().value! }).said, first);
+        hby.db.kels.remOn(hab.pre, 1, first);
+        assertEquals(new SerderKERI({ raw: changing.next().value! }).said, fork);
+        assertEquals(new SerderKERI({ raw: changing.next().value! }).said, second);
+        assertEquals(changing.next().done, true);
+        assertEquals(cursors, 0);
+        const key = onKey(hab.pre, 1), malformed = b("!malformed-proem");
+        hby.db.kels.sdb.putSync(key, malformed);
+        try {
+          assertThrows(() => [...ordered!], DatabaseOperationError, "insertion proem");
+        } finally {
+          hby.db.kels.sdb.removeSync(key, malformed);
+        }
       } finally {
-        table.getAllItemIter = rows;
+        table.sdb.getValues = nativeRows;
         replies.close();
       }
     } finally {

@@ -260,7 +260,8 @@ wiring remain S6 work; this source API alone does not enable that route.
 Witness `GET /query?typ=kel` returns a lazy source through shared ReplyStreams.
 Without `sn`, capture contains only the target's FEL extent, never delegator logs.
 With `sn`, it retains KEL sequence/duplicate order and captures final KEL/FEL
-horizons. Later accepted duplicates at an old sequence are excluded by their
+horizons. Each duplicate is sought by its physical insertion proem, so deleted
+earlier rows do not shift the checkpoint and buckets are not rescanned. Later accepted duplicates at an old sequence are excluded by their
 new FEL ordinals; existing index/proof metadata is consumed at read time, not
 frozen as a proof snapshot. Each cursor closes before finite event hydration/yield.
 The source uses the response's configured message ceiling for native body preflight.
@@ -270,7 +271,8 @@ configured-limit refusal 413; later read failures error the response stream.
 Existing missing-selector/SN 400, unknown-target 200-empty and TEL 501 remain.
 SN reconstruction propagates failures; no-SN uses the existing corrupt-record skip
 path, whose broad proof-reconstruction catch still requires phase 5 qualification.
-Native proof-row/copy admission remains open. Frozen 714 QueryEnd collects bytes;
+Native selected KEL duplicate-row and proof-row/copy pre-allocation admission
+remain open. Frozen 714 QueryEnd collects bytes;
 this lazy path is a qualified TS integration. Its SN path always clones with `fn=0`;
 TS preserves its existing actual FEL ordinal, so SN replay is not claimed byte parity.
 
