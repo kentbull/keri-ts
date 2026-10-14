@@ -13,6 +13,7 @@ import {
 import { Baser } from "../db/basing.ts";
 import { dgKey, snKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import { CueDeck } from "./cue-admission.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import {
@@ -883,54 +884,52 @@ export class Kevery {
    *   post-acceptance cue emission
    */
   applyDecision(decision: KeverDecision): void {
-    // Accepted KEL transitions may emit clone, receipt/notice, witness, and state cues.
-    // Reserve their worst-case count before durable mutation; this path never suspends.
-    this.cues.checkSpace(
-      ("cues" in decision ? decision.cues?.length ?? 0 : 0)
-        + (decision.kind === "accept" ? 4 : decision.kind === "duplicate" ? 1 : 0),
-    );
-    switch (decision.kind) {
-      case "accept": {
-        let kever = this.kevers.get(decision.transition.pre);
-        if (!kever || decision.transition.mode === "create") {
-          kever = Kever.fromTransition(decision.transition, {
-            db: this.db,
-            cues: this.cues,
-          });
-        }
-        const logged = kever.logEvent(decision.transition.log);
-        const transition = this.applyFirstSeenState(
-          decision.transition,
-          logged.fn,
-          logged.dater.dts,
-        );
-        kever.applyTransition(transition);
+    if (decision.kind === "reject") return;
+    if (decision.kind === "accept") {
+      const kever = this.kevers.get(decision.transition.pre);
+      const target = !kever || decision.transition.mode === "create"
+        ? Kever.fromTransition(decision.transition, { db: this.db, cues: this.cues })
+        : kever;
+      const logged = target.prepareLogEvent(decision.transition.log);
+      const transition = this.applyFirstSeenState(decision.transition, logged.fn, logged.dater.dts);
+      const group = !!this.db.getHab(transition.pre)?.mid;
+      const cues = [...logged.cues, ...(decision.cues ?? []), ...this.acceptanceCues(transition, group)];
+      // Hold exact cue objects/backing and slots before accepted-event writes.
+      this.cues.checkSpace(cues.length);
+      const prepared = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+      try {
+        target.logEvent(transition.log, logged);
+        target.applyTransition(transition);
         this.db.pinState(transition.pre, transition.state);
-        this.kevers.set(transition.pre, kever);
+        this.kevers.set(transition.pre, target);
         this.db.udes.rem(dgKey(transition.pre, transition.said));
-        this.emitDecisionCues(decision.cues);
-        this.emitAcceptanceCues(
-          kever,
-          transition.log.serder,
-          transition.log.local,
-        );
-        this.repairAnchoredDelegationSourceSeals(transition.log.serder);
-        break;
-      }
-      case "duplicate": {
-        const kever = this.kevers.get(decision.log?.serder.pre ?? "");
-        if (decision.log && kever) {
-          kever.logEvent(decision.log);
+        if (group) {
+          this.db.prefixes.add(transition.pre);
+          this.db.groups.add(transition.pre);
         }
-        this.emitDecisionCues(decision.cues);
-        break;
+        if (prepared) prepared.publish();
+        else this.emitDecisionCues(cues);
+        this.repairAnchoredDelegationSourceSeals(transition.log.serder);
+      } finally {
+        prepared?.release();
       }
-      case "escrow":
-        this.persistEscrowInstruction(decision.instruction);
-        this.emitDecisionCues(decision.cues);
-        break;
-      case "reject":
-        break;
+      return;
+    }
+
+    const kever = decision.kind === "duplicate" ? this.kevers.get(decision.log?.serder.pre ?? "") : undefined;
+    const logged = decision.kind === "duplicate" && decision.log && kever
+      ? kever.prepareLogEvent(decision.log)
+      : undefined;
+    const cues = [...(logged?.cues ?? []), ...(decision.cues ?? [])];
+    this.cues.checkSpace(cues.length);
+    const prepared = cues.length && this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    try {
+      if (decision.kind === "escrow") this.persistEscrowInstruction(decision.instruction);
+      else if (decision.log && kever && logged) kever.logEvent(decision.log, logged);
+      if (prepared) prepared.publish();
+      else this.emitDecisionCues(cues);
+    } finally {
+      prepared?.release();
     }
   }
 
@@ -1326,38 +1325,15 @@ export class Kevery {
     return acceptReplyDecision();
   }
 
-  /**
-   * Emit post-acceptance cues for one finalized event.
-   *
-   * Ownership rule:
-   * - `Kever` owns validation and accepted-state application
-   * - `Kevery` owns the higher-level cue side effects that follow acceptance
-   */
-  private emitAcceptanceCues(
-    kever: Kever,
-    serder: KeverEventEnvelope["serder"],
-    local: boolean,
-  ): void {
-    const habord = this.db.getHab(kever.pre);
-    if (habord?.mid) {
-      // Group habitats can be learned through remote traffic after reopen.
-      // Keep the live group-prefix indexes synchronized with durable habitat
-      // records before protected-party cue policy runs.
-      this.db.prefixes.add(kever.pre);
-      this.db.groups.add(kever.pre);
-    }
-
-    if (!this.prefixes.has(kever.pre)) {
-      this.cues.push({ kin: "receipt", serder });
-    } else if (!local) {
-      this.cues.push({ kin: "notice", serder });
-    }
-
-    if (local && kever.locallyWitnessed()) {
-      this.cues.push({ kin: "witness", serder });
-    }
-
-    this.cues.push({ kin: "keyStateSaved", ksn: kever.state() });
+  /** Construct post-acceptance policy cues from prospective state without mutating group indexes. */
+  private acceptanceCues(transition: KeverTransition, group: boolean): AgentCue[] {
+    const { pre, state, log: { serder, local } } = transition;
+    const cues: AgentCue[] = [];
+    if (!group && !this.prefixes.has(pre)) cues.push({ kin: "receipt", serder });
+    else if (!local) cues.push({ kin: "notice", serder });
+    if (local && (state.b ?? []).some((wit) => this.db.getHab(wit) !== null)) cues.push({ kin: "witness", serder });
+    cues.push({ kin: "keyStateSaved", ksn: state });
+    return cues;
   }
 
   /** Forward decision-carried cues into the shared runtime cue deck. */
@@ -2749,7 +2725,7 @@ export class Kevery {
     ]);
   }
 
-  /** Apply accepted first-seen/datetime state after event logging fixes those values. */
+  /** Construct accepted first-seen/datetime state from fixed prospective log metadata. */
   private applyFirstSeenState(
     transition: KeverTransition,
     fn: number | null,
