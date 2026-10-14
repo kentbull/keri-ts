@@ -14,15 +14,18 @@ import {
   MemoryPayloadSink,
   parseBytes,
   Prefixer,
+  ResourceLimitError,
   SerderACDC,
   SerderKERI,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import { RegistryStore } from "../../../src/acdc/registering.ts";
 import { type ExchangeDecision, Exchanger } from "../../../src/app/exchanging.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody, prepareIpexExn } from "../../../src/app/ipex-building.ts";
+import { IpexV2Handler } from "../../../src/app/ipex-v2.ts";
 import { type IpexRoute, loadIpexHandlers } from "../../../src/app/ipexing.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
@@ -251,7 +254,8 @@ Deno.test("registry-backed IPEX retries only after observer evidence is verified
     const store = yield* createRegistryEvidenceStore({ name: crypto.randomUUID(), temp: true });
     const sender = hby.makeHab("sender");
     const exchanger = new Exchanger(hby);
-    loadIpexHandlers(hby, exchanger, { registry: store });
+    const registry = new RegistryStore(store);
+    loadIpexHandlers(hby, exchanger, { registry });
     const credential = new SerderACDC({ raw: b(registryFixture.bodies.acdc) });
     const disclosure = BlindState.fromSad(registryFixture.disclosures.issued);
     const attachment = Counter.enclose({
@@ -289,6 +293,49 @@ Deno.test("registry-backed IPEX retries only after observer evidence is verified
         db: hby.db,
       });
       assertEquals(result.kind, "verified");
+      const limited = new IpexV2Handler("/ipex/grant", hby, null, registry, 1);
+      const seqEvent = registry.seqEvent;
+      const reads: number[] = [];
+      try {
+        registry.seqEvent = (regid, sn) => {
+          reads.push(sn);
+          if (sn > 0) throw new Error("limit must precede update reads");
+          return seqEvent.call(registry, regid, sn);
+        };
+        assertThrows(
+          () => limited.verify({ serder: body, nests: [node], attachments: [] }),
+          ResourceLimitError,
+          "event limit",
+        );
+        assertEquals(reads, [0]);
+        const handler = new IpexV2Handler("/ipex/grant", hby, null, registry);
+        registry.seqEvent = (regid, sn) => sn ? null : seqEvent.call(registry, regid, sn);
+        assertThrows(
+          () => handler.verify({ serder: body, nests: [node], attachments: [] }),
+          Error,
+          "missing sequence entry",
+        );
+        registry.seqEvent = (regid, sn) =>
+          sn
+            ? new SerderACDC({ raw: b(registryFixture.bodies["wrong-prior"]) })
+            : seqEvent.call(registry, regid, sn);
+        assertThrows(
+          () => handler.verify({ serder: body, nests: [node], attachments: [] }),
+          Error,
+          "sequence is inconsistent",
+        );
+        registry.seqEvent = () => {
+          throw new Error("registry read unavailable");
+        };
+        assertThrows(
+          () => handler.verify({ serder: body, nests: [node], attachments: [] }),
+          Error,
+          "registry read unavailable",
+        );
+      } finally {
+        registry.seqEvent = seqEvent;
+      }
+      assertThrows(() => new IpexV2Handler("/ipex/grant", hby, null, registry, 0), RangeError);
       yield* store.reopen();
       yield* exchanger.processEscrows();
       assertExists(hby.db.exns.get(body.said!));
