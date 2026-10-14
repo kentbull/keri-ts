@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { GroupSizeError, ResourceLimitError, ShortageError } from "../../../src/core/errors.ts";
 import { Cursor } from "../../../src/parser/cursor.ts";
 
@@ -253,4 +253,54 @@ Deno.test("cursor: empty chunks, zero-size reads, and invalid extents do not fab
   await assertRejects(() => input.read(-1), RangeError);
   await assertRejects(() => input.take(0), RangeError);
   await input.close();
+});
+
+Deno.test("cursor: empty producer work yields to cancellation without retaining timer or input", async () => {
+  const controller = new AbortController();
+  const reason = new Error("empty producer cancelled");
+  let closed = false, pulls = 0;
+  const input = new Cursor(
+    (async function*() {
+      try {
+        while (true) {
+          pulls++;
+          yield new Uint8Array();
+        }
+      } finally {
+        closed = true;
+      }
+    })(),
+    { signal: controller.signal },
+  );
+  const timer = setTimeout(() => controller.abort(reason), 0);
+  try {
+    assertStrictEquals(await timely(assertRejects(() => input.read(1))), reason);
+    await input.close();
+    assertEquals(closed, true);
+    assertEquals(input.retainedBytes, 0);
+    assertEquals(pulls > 0 && pulls <= 4096, true);
+  } finally {
+    clearTimeout(timer);
+    await input.close();
+  }
+});
+
+Deno.test("cursor: consumed-byte checkpoints span child scopes without changing their extent", async () => {
+  const bytes = new Uint8Array(65536).fill(7);
+  const input = new Cursor((async function*() {
+    yield bytes;
+  })());
+  const child = input.scope(bytes.length);
+  let timerRan = false;
+  const timer = setTimeout(() => {
+    timerRan = true;
+  }, 0);
+  try {
+    assertEquals(await child.read(bytes.length), bytes);
+    assertEquals(timerRan, true);
+    assertEquals([child.remaining, input.offset, input.retainedBytes], [0, bytes.length, 0]);
+  } finally {
+    clearTimeout(timer);
+    await input.close();
+  }
 });
