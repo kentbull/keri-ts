@@ -8,6 +8,7 @@ import {
   framePayload,
   type ParseOptions,
   type Payload,
+  ResourceAdmissionError,
 } from "cesr-ts";
 import { toEffectionFrames } from "cesr-ts/effection";
 import { call, each, type Operation, resource, scoped } from "npm:effection@^3.6.0";
@@ -99,9 +100,12 @@ async function errorText(response: Response, limit: number, signal: AbortSignal)
   if (!response.body) return "";
   // Diagnostics are metadata, not a reason to buffer an arbitrary peer response.
   const reader = response.body.getReader();
+  let closing: Promise<void> | undefined;
+  /** Repeated cancel calls do not join the first underlying stream cancellation. */
+  const close = () => closing ??= reader.cancel(signal.reason);
   /** Cancellation wakes a blocked read even for an injected response disconnected from fetch. */
   const cancel = () => {
-    void reader.cancel(signal.reason).catch(() => undefined);
+    void close().catch(() => undefined);
   };
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
@@ -122,7 +126,7 @@ async function errorText(response: Response, limit: number, signal: AbortSignal)
   } finally {
     signal.removeEventListener("abort", cancel);
     try {
-      await reader.cancel();
+      await close();
     } finally {
       reader.releaseLock();
     }
@@ -135,6 +139,14 @@ function byteLimit(value: number, name: string): number {
   return value;
 }
 
+/** Inspect already parsed metadata without qualifying or reading any payload. */
+function ordinaryBytes(root: CesrFrame): number {
+  let size = root.body.raw.length;
+  for (const group of root.attachments) size += group.raw.length;
+  for (const child of root.nests ?? []) size += ordinaryBytes(child);
+  return byteLimit(size, "output metadata bytes");
+}
+
 /**
  * Open one frame response as an Effection resource owned by the caller's scope.
  *
@@ -142,8 +154,18 @@ function byteLimit(value: number, name: string): number {
  * attachments. Scope exit aborts fetch and its body iterator, joins pending I/O,
  * and closes the response. The caller retains ownership of frame.essr.
  */
-export function* requestFrame(url: string, frame: CesrFrame, options: EgressOptions = {}): Operation<Response> {
-  return yield* resource<Response>(function*(provide) {
+export function requestFrame(url: string, frame: CesrFrame, options: EgressOptions = {}): Operation<Response> {
+  return openFrameResponse(url, frame, options, 1);
+}
+
+/** Source-driven output already owns its stream slot; direct frame requests acquire one here. */
+function openFrameResponse(
+  url: string,
+  frame: CesrFrame,
+  options: EgressOptions,
+  streams: 0 | 1,
+): Operation<Response> {
+  return resource<Response>(function*(provide) {
     // One controller owns fetch, payload reads, and the response body until the resource closes.
     const controller = new AbortController();
     // External abort and structured cancellation share the same transport signal.
@@ -155,6 +177,15 @@ export function* requestFrame(url: string, frame: CesrFrame, options: EgressOpti
     // Validate both finite metadata budgets before creating any network or payload reader.
     const headerLimit = byteLimit(options.maxHeaderBytes ?? 64 * 1024, "maxHeaderBytes");
     const errorLimit = byteLimit(options.maxErrorBytes ?? 16 * 1024, "maxErrorBytes");
+    // Retain conservative qualification/header/diagnostic copies plus bounded serializer reader/output backing.
+    const bytes = 8 * ordinaryBytes(frame) + 6 * headerLimit + 4 * errorLimit + 2 * 1024 ** 2;
+    const credit = services.resources.reserve({ streams, bytes });
+    if (credit.kind === "refuse") {
+      throw new ResourceAdmissionError(
+        `HTTP output ${credit.resource} admission refused: ${credit.reason}`,
+        credit.reason,
+      );
+    }
     // Each Promise leaf remains tracked until cancellation has joined its cleanup.
     let preparing: Promise<Uint8Array> | undefined;
     // Upload cleanup is independent of whether fetch has already returned response headers.
@@ -213,30 +244,66 @@ export function* requestFrame(url: string, frame: CesrFrame, options: EgressOpti
         throw new ValidationError(`CESR delivery to ${url} failed with HTTP ${response.status}: ${detail}`);
       }
     } finally {
-      // Abort first so blocked fetch/payload reads can settle before their owners are joined.
-      controller.abort();
-      if (fetching) {
-        yield* call(async () => {
-          // A late successful response still has an owned body that must be closed.
-          const completed = await fetching!.catch(() => undefined);
-          if (completed?.body && !completed.body.locked) await completed.body.cancel().catch(() => undefined);
-        });
+      try {
+        // Abort first so blocked fetch/payload reads can settle before their owners are joined.
+        controller.abort();
+        try {
+          if (fetching) {
+            yield* call(async () => {
+              // A late successful response still has an owned body that must be closed.
+              const completed = await fetching!.catch(() => undefined);
+              if (completed?.body && !completed.body.locked) await completed.body.cancel();
+            });
+          }
+        } finally {
+          if (preparing) yield* call(() => preparing!.then(() => {}, () => {}));
+          if (reading) yield* call(() => reading!.then(() => {}, () => {}));
+          if (body) yield* call(() => body!.close());
+        }
+      } finally {
+        credit.reservation.release();
       }
-      if (preparing) yield* call(() => preparing!.then(() => {}, () => {}));
-      if (reading) yield* call(() => reading!.then(() => {}, () => {}));
-      if (body) yield* call(() => body!.close());
     }
   });
 }
 
-/** Post one complete frame at a time; awaiting delivery is the parser's next output credit. */
+/** Post one complete frame at a time, joining its optional response consumer before advancing input. */
 export function postCesr(
   url: string,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
   options: PostOptions = {},
+  consume?: (response: Response) => Operation<void>,
 ): Operation<void> {
   // Isolate joining cleanup so a halt cannot resume a delegated caller after payload disposal.
   return call(function*() {
+    const services = options.services ?? defaultRuntimeServices;
+    const limits = {
+      ...options.parse,
+      maxChunkBytes: options.parse?.maxChunkBytes ?? 1024 ** 2,
+      maxBufferedBytes: options.parse?.maxBufferedBytes ?? 8 * 1024 ** 2,
+    };
+    for (const limit of [limits.maxChunkBytes, limits.maxBufferedBytes]) {
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Invalid output input limit");
+    }
+    if (limits.maxChunkBytes > limits.maxBufferedBytes) throw new RangeError("Chunk limit exceeds buffer limit");
+    if (limits.resources && limits.resources !== services.resources) {
+      throw new RangeError("Output parser must share its HTTP resource policy");
+    }
+    // Registered before parsing: its stream/cursor/producer credit outlives all parser and source cleanup.
+    yield* resource<void>(function*(provide) {
+      const credit = services.resources.reserve({
+        streams: 1,
+        bytes: limits.maxChunkBytes + limits.maxBufferedBytes,
+      });
+      if (credit.kind === "refuse") {
+        throw new ResourceAdmissionError(`Output source admission refused: ${credit.reason}`, credit.reason);
+      }
+      try {
+        yield* provide();
+      } finally {
+        credit.reservation.release();
+      }
+    });
     // Either caller-facing signal cancels both parsing and the request already consuming a frame.
     const signals = [options.signal, options.parse?.signal].filter((value): value is AbortSignal =>
       value !== undefined
@@ -244,14 +311,16 @@ export function postCesr(
     const signal = signals.length ? AbortSignal.any(signals) : undefined;
     // The adapter owns input cancellation and leaves each delivered ESSR payload with this loop.
     const channel = yield* toEffectionFrames(source, {
-      ...options.parse,
+      ...limits,
+      resources: services.resources,
       signal,
     });
     for (const frame of yield* each(channel.frames)) {
       try {
         // Each request is closed before another frame or request can become resident.
         yield* scoped(function*() {
-          yield* requestFrame(url, frame, { ...options, signal });
+          const response = yield* openFrameResponse(url, frame, { ...options, services, signal }, 0);
+          if (consume) yield* consume(response);
         });
       } finally {
         yield* call(() => discardFrame(frame));

@@ -75,6 +75,26 @@ keeps its credit through delivery, existing explicit retry and joined shutdown.
 Shutdown releases queued requests immediately and the active request after its
 response cleanup joins. A refused producer is never opened.
 
+Runtime HTTP services carry the same policy as their AgentRuntime. Direct frame
+requests reserve one stream before qualification, payload reads or fetch, retaining
+credit until response/upload cleanup joins. Their initial copy allowance is
+`8 * ordinaryWire + 6 * headerLimit + 4 * errorLimit + 2 MiB`: qualification and
+body copies, collected/header string representations, decoded diagnostics and
+the serializer's 1 MiB reader / 64 KiB output contract. These conservative charges
+need production measurement; they do not cover arbitrary injected HTTP clients or
+native fetch buffers. Caller-supplied frames must already satisfy parser admission.
+Standalone requests share the default services policy; separately resolved services
+need an explicitly shared policy to participate in the same deployment boundary.
+`postCesr` reserves its cursor/producer allowance and one outgoing stream before
+acquiring the source. Its parser uses the same policy for ordinary trees and ESSR
+stages. A frame request borrows that stream slot while separately charging output
+copies; direct frame requests acquire their own slot. The optional response
+consumer finishes inside the frame scope before advancing input. Query delivery
+uses this same owner, leaving the second default stream slot for response ingress.
+Configured parser and HTTP policies must agree. Source and payload cleanup join
+before their respective reservations return; callers must still wire the owning
+runtime services into every standalone exchange/witness sender.
+
 Additional hydrated representations, reader copies, storage and object/handle/work
 limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).

@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { b, bytesEqual, ResourceLimitError, t } from "../../../../../cesr/mod.ts";
+import { b, bytesEqual, ResourceAdmissionError, ResourceLimitError, t } from "../../../../../cesr/mod.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../../../../src/core/errors.ts";
 import { openLMDB } from "../../../../src/db/core/lmdber.ts";
 import { pairsAsText, withTempLMDBer } from "./lmdber-test-utils.ts";
@@ -86,10 +86,21 @@ Deno.test("db/core lmdber bounded rows admit before copy and retain read or writ
     try {
       assertThrows(() => lmdber.getValBounded(plain, b("large"), 1024), ResourceLimitError);
       assertEquals([copies, finished], [0, 1], "oversize releases the snapshot without a fallback copy");
+      assertThrows(() =>
+        lmdber.getValBounded(plain, b("large"), large.length, (bytes) => {
+          assertEquals(bytes, large.length);
+          throw new ResourceAdmissionError("copy credit occupied", "busy");
+        }), ResourceAdmissionError);
+      assertEquals([copies, finished], [0, 2], "shared refusal releases the same snapshot before copying");
       lmdber.setVal(plain, b("small"), b("tiny"));
       const owned = lmdber.getValBounded(plain, b("small"), 4)!;
       assertEquals(t(owned), "tiny");
-      assertEquals(lmdber.getValBounded(plain, b("absent"), 0), null);
+      assertEquals(
+        lmdber.getValBounded(plain, b("absent"), 0, () => {
+          throw new Error("missing row needs no credit");
+        }),
+        null,
+      );
       lmdber.setVal(plain, b("empty"), new Uint8Array());
       assertEquals(lmdber.getValBounded(plain, b("empty"), 0), new Uint8Array());
       for (const limit of [-1, NaN, Infinity, 1.5]) {
@@ -124,7 +135,7 @@ Deno.test("db/core lmdber bounded rows admit before copy and retain read or writ
       };
       lmdber.env!.transactionSync(() => {
         lmdber.setVal(plain, b("inside"), b("writer"));
-        assertEquals(t(lmdber.getValBounded(plain, b("inside"), 6)!), "writer");
+        assertEquals(t(lmdber.getValBounded(plain, b("inside"), 6, (bytes) => assertEquals(bytes, 6))!), "writer");
         lmdber.setVal(plain, b("inside"), b("changed"));
         assertEquals(t(lmdber.getValBounded(plain, b("inside"), 7)!), "changed");
       });

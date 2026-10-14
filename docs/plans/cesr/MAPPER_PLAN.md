@@ -1,6 +1,8 @@
 # Mapper commitment and schema qualification
 
-Owner: focused units in the [parity roadmap](../PARITY_ROADMAP.md).
+Owner: final qualification in the [parity roadmap](../PARITY_ROADMAP.md).
+Claim verification (#223) and bundled schema identities (#226) are implemented;
+only composed qualification and the explicit default-builder boundary remain.
 Standalone saidive Mapper now verifies configured top-level claims through the
 same semantic/raw/native binary constructor hook, with independent frozen Aggor
 maps and tampered variants across JSON, CBOR, MGPK and CESR. Wire round-trip

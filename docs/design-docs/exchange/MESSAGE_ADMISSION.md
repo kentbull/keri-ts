@@ -3,7 +3,7 @@
 `dispatchEnvelope` consolidates protocol-v2 `qry/rpy/exn/xip/pro/bar` intake
 before delegating to the existing processors. This corresponds to
 `Kevery.processMsg` with KRAM disabled in unmodified KERIpy
-`927c0cb8794d7c84fc17143c67df64aab9deda6c` (`core/parsing.py` and
+`7143832813cac6a394ab1faf9be83bb3372be87c` (`core/parsing.py` and
 `core/eventing.py`). KRAM is disabled by default and explicitly configurable at runtime.
 
 ## Policy and responsibility

@@ -7,6 +7,8 @@ import {
   essrPayload,
   MemoryPayloadSink,
   parse,
+  ResourceAdmissionError,
+  ResourcePolicy,
   t,
   Texter,
 } from "cesr-ts";
@@ -61,21 +63,52 @@ Deno.test("CESR egress waits for each request and disposes each delivered payloa
   let requests = 0;
   let discarded = 0;
   let closed = false;
-  const transport = services(async (_url, init) => {
-    // Reading a real platform request stream exercises the serializer and fetch body adapter together.
-    const bytes = new Uint8Array(await new Response(init!.body).arrayBuffer());
-    const frame = await read(bytes);
-    try {
-      assertEquals(await collectPayload(frame.essr!.raw, 6), b("abcxyz"));
-    } finally {
-      await frame.essr?.discard();
-    }
-    if (++requests === 1) {
-      opened.resolve();
-      await release.promise;
-    }
-    return new Response(null, { status: 204 });
-  });
+  const resources = new ResourcePolicy({ streams: 1 });
+  const transport = {
+    ...services(async (_url, init) => {
+      // Reading a real platform request stream exercises the serializer and fetch body adapter together.
+      const bytes = new Uint8Array(await new Response(init!.body).arrayBuffer());
+      const frame = await read(bytes);
+      try {
+        assertEquals(await collectPayload(frame.essr!.raw, 6), b("abcxyz"));
+      } finally {
+        await frame.essr?.discard();
+      }
+      if (++requests === 1) {
+        opened.resolve();
+        await release.promise;
+      }
+      return new Response(null, { status: 204 });
+    }),
+    resources,
+  };
+  let acquisitions = 0;
+  const source = (signal: AbortSignal) => {
+    acquisitions++;
+    return chunkBytes(fixture(), { signal });
+  };
+  const occupied = resources.reserve({ streams: 1 });
+  if (occupied.kind !== "reserve") throw new Error("Expected free test capacity");
+  try {
+    await assertRejects(
+      () => run(() => postCesr("https://peer.test/", source, { services: transport })),
+      ResourceAdmissionError,
+      "busy",
+    );
+  } finally {
+    occupied.reservation.release();
+  }
+  await assertRejects(
+    () =>
+      run(() =>
+        postCesr("https://peer.test/", source, {
+          services: { ...transport, resources: new ResourcePolicy({ bytes: 1 }) },
+        })
+      ),
+    ResourceAdmissionError,
+    "limit",
+  );
+  assertEquals([acquisitions, requests], [0, 0], "source admission precedes acquisition and fetch");
   const task = run(function*() {
     yield* postCesr("https://peer.test/", async function*(signal) {
       try {
@@ -121,9 +154,12 @@ Deno.test("CESR egress waits for each request and disposes each delivered payloa
   await opened.promise;
   assertEquals(pulls, 1);
   assertEquals(discarded, 0);
+  assertEquals(resources.used.streams, 1, "source and its request share one outgoing stream slot");
+  assertEquals(resources.used.bytes > 9 * 1024 ** 2, true, "source, parsed tree and output copies coexist");
   release.resolve();
   await task;
   assertEquals([pulls, requests, discarded, closed], [2, 2, 2, true]);
+  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
 });
 
 Deno.test("CESR header egress normalizes binary attachments and bounds the header", async () => {
@@ -170,10 +206,13 @@ for (const bodyMode of ["header", "body"] as const) {
     await frame.essr?.discard();
     let closed = false;
     let continued = false;
+    const resources = new ResourcePolicy({ streams: 1 });
+    let reads = 0, requests = 0;
     const wire: OwnedPayload = {
       size: 8,
       /** Suspend a cooperative payload reader until its transport scope aborts. */
       async *open(signal) {
+        reads++;
         try {
           yield b("4BAB");
           await new Promise<void>((_resolve, reject) => {
@@ -182,6 +221,7 @@ for (const bodyMode of ["header", "body"] as const) {
           });
           yield b("YWJj");
         } finally {
+          assertEquals(resources.used.streams, 1, "reader cleanup still holds HTTP credit");
           closed = true;
         }
       },
@@ -189,22 +229,56 @@ for (const bodyMode of ["header", "body"] as const) {
       discard: () => Promise.resolve(),
     };
     frame.essr = essrPayload(wire, 1, 3, { major: 2, minor: 0 });
+    const transport = {
+      ...services(async (_url, init) => {
+        requests++;
+        // The pending fetch joins its upload read when cancellation aborts the payload source.
+        await new Response(init!.body).arrayBuffer();
+        return new Response(null, { status: 204 });
+      }),
+      resources,
+    };
+    const tooSmall = { ...transport, resources: new ResourcePolicy({ bytes: 1 }) };
+    await assertRejects(
+      () => run(() => requestFrame("https://peer.test/", frame, { bodyMode, services: tooSmall })),
+      ResourceAdmissionError,
+      "limit",
+    );
+    assertEquals([reads, requests], [0, 0], "size refusal precedes payload reads and network acquisition");
     const task = run(function*() {
       yield* requestFrame("https://peer.test/", frame, {
         bodyMode,
-        services: services(async (_url, init) => {
-          // The pending fetch joins its upload read when cancellation aborts the payload source.
-          await new Response(init!.body).arrayBuffer();
-          return new Response(null, { status: 204 });
-        }),
+        services: transport,
       });
       continued = true;
     });
     await blocked.promise;
+    const before = [reads, requests];
+    await assertRejects(
+      () => run(() => requestFrame("https://peer.test/", frame, { bodyMode, services: transport })),
+      ResourceAdmissionError,
+      "busy",
+    );
+    assertEquals([reads, requests], before, "shared contention cannot open another payload or connection");
     await task.halt();
     assertEquals(closed, true);
     assertEquals(continued, false);
+    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     await frame.essr.discard();
+    frame.essr = undefined;
+    await run(() =>
+      requestFrame("https://peer.test/", frame, {
+        bodyMode,
+        services: {
+          ...services(() => {
+            assertEquals(resources.used.streams, 1, "capacity is reusable after joined cleanup");
+            return Promise.resolve(new Response(null, { status: 204 }));
+          }),
+          resources,
+        },
+      })
+    );
+    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   });
 }
 
@@ -238,6 +312,32 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
       assertEquals(cancelled, false);
     });
     assertEquals(cancelled, true);
+    const resources = new ResourcePolicy();
+    await assertRejects(
+      () =>
+        run(() =>
+          requestFrame("https://peer.test/", frame, {
+            services: {
+              ...services(() =>
+                Promise.resolve(
+                  new Response(
+                    new ReadableStream({
+                      /** Unexpected transport cleanup failure propagates after releasing shared ownership. */
+                      cancel() {
+                        throw new Error("response cleanup failed");
+                      },
+                    }),
+                  ),
+                )
+              ),
+              resources,
+            },
+          })
+        ),
+      Error,
+      "response cleanup failed",
+    );
+    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   } finally {
     await frame.essr?.discard();
   }
@@ -276,6 +376,53 @@ Deno.test("CESR failed-response diagnostics cancel a tail beyond the finite budg
       "HTTP 500: bad!",
     );
     assertEquals(cancelled, true);
+    const resources = new ResourcePolicy({ streams: 1 });
+    const reading = Promise.withResolvers<void>(), cancelling = Promise.withResolvers<void>();
+    const cleanup = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    let joined = false, calls = 0;
+    const sending = run(() =>
+      requestFrame("https://peer.test/", frame, {
+        signal: controller.signal,
+        services: {
+          ...services(() =>
+            Promise.resolve(
+              new Response(
+                new ReadableStream({
+                  /** Suspend diagnostics so abort, rather than reaching the prefix cap, starts cancellation. */
+                  pull() {
+                    reading.resolve();
+                  },
+                  /** Credit belongs to this first asynchronous cancellation until it finishes. */
+                  async cancel() {
+                    calls++;
+                    cancelling.resolve();
+                    await cleanup.promise;
+                    assertEquals(resources.used.streams, 1);
+                    joined = true;
+                  },
+                }, { highWaterMark: 0 }),
+                { status: 500 },
+              ),
+            )
+          ),
+          resources,
+        },
+      })
+    );
+    let settled = false;
+    const rejected = assertRejects(() => sending, Error).finally(() => settled = true);
+    try {
+      await reading.promise;
+      controller.abort();
+      await cancelling.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assertEquals([settled, joined, resources.used.streams], [false, false, 1]);
+    } finally {
+      cleanup.resolve();
+      await rejected;
+    }
+    assertEquals([calls, joined, resources.used.streams, resources.used.bytes], [1, true, 0, 0]);
   } finally {
     await frame.essr?.discard();
   }
@@ -317,27 +464,43 @@ Deno.test("halting CESR delivery closes input and never resumes the caller after
   const blocked = Promise.withResolvers<void>();
   let closed = false;
   let continued = false;
+  const resources = new ResourcePolicy({ streams: 1 });
+  const closing = Promise.withResolvers<void>(), cleanup = Promise.withResolvers<void>();
   const task = run(function*() {
     yield* postCesr("https://peer.test/", async function*() {
       try {
         yield fixture();
       } finally {
+        closing.resolve();
+        await cleanup.promise;
+        assertEquals(resources.used.streams, 1, "source cleanup retains its reservation");
         closed = true;
       }
     }, {
-      services: services((_url, init) =>
-        new Promise((_resolve, reject) => {
-          init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
-          blocked.resolve();
-        })
-      ),
+      services: {
+        ...services((_url, init) =>
+          new Promise((_resolve, reject) => {
+            init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
+            blocked.resolve();
+          })
+        ),
+        resources,
+      },
     });
     continued = true;
   });
   await blocked.promise;
-  await task.halt();
+  const halting = Promise.resolve(task.halt());
+  try {
+    await closing.promise;
+    assertEquals([resources.used.streams, closed, continued], [1, false, false]);
+  } finally {
+    cleanup.resolve();
+    await halting;
+  }
   assertEquals(closed, true);
   assertEquals(continued, false);
+  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
 });
 
 Deno.test("CESR parser cancellation also aborts the request consuming its delivered frame", async () => {

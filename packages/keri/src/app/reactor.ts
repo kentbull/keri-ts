@@ -150,7 +150,7 @@ export class Reactor {
     this.revery = new Revery(hby.db, { rtr: this.router, cues: this.cues });
     this.replyRoutes = new BasicReplyRouteHandler(hby.db, this.revery);
     this.replyRoutes.registerReplyRoutes(this.router);
-    const kramer = kram ? new Kramer(hby.db, { config: kram, cues: this.cues, now }) : undefined;
+    const kramer = kram ? new Kramer(hby.db, { config: kram, cues: this.cues, now, resources }) : undefined;
     this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery, messagePolicy, kramer });
     this.kevery.registerReplyRoutes(this.router);
     this.exchanger = new Exchanger(hby, { cues: this.cues, resources, now });

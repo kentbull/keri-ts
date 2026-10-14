@@ -4,6 +4,13 @@ Test bodies cover library, runtime and database behavior. Tufa's package owns it
 public CLI and HTTP host surface. Protocol v1/v2 fixtures and cross-language
 scenarios remain supported; old keri-ts aliases are not a compatibility target.
 
+Current upstream parity targets `7143832813cac6a394ab1faf9be83bb3372be87c`.
+CESR reference generators and live nested/exchange qualifiers select this pin.
+Existing KERI fixture generators remain pinned to their recorded 927 corpora;
+these historical tests complement, rather than replace, current-source qualification.
+The mailbox fork below remains a separate compatibility environment because its
+mailbox extensions are absent from unmodified upstream.
+
 ## Commands and ownership
 
 Run these commands from the repository root after `deno task setup:compat-lmdb`:

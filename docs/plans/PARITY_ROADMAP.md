@@ -1,7 +1,7 @@
 # KERIpy parity and bounded runtime roadmap
 
-Verified boundary: keri-ts `248b3ea7` after [#223][mapper-repair].
-Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+Verified boundary: keri-ts `88c39757` after #234; transport and qualification remain open.
+Frozen upstream: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
 completed PR evidence are summarized in the [delivery report][delivered].
@@ -16,22 +16,22 @@ independently accepted GenericGroup siblings.
 Each linked owner contains the evidence gate and unresolved limitations. Phase
 numbers refer to the seven follow-on phases, not the earlier migration steps.
 
-| Requirement      | Current boundary | Owner                     | Evidence                | Open limit          |
-| ---------------- | ---------------- | ------------------------- | ----------------------- | ------------------- |
-| CESR parsing     | Delivered        | [1–2][cesr]               | [Wire/tree][delivered]  | Accessor audit      |
-| Multisig         | Four routes      | [3d][multisig]            | [#160–161][delivered]   | Native/CLI scope    |
-| IPEX             | Proofs/cutoffs   | [3e][ipex]                | [R11/S1–3][registry]    | Full workflow       |
-| V1/V2 registries | Runtime/observer | [Qualification][registry] | [R1–R12][registry]      | Wire/store matrix   |
-| EXN proofs       | Implemented      | [3e/3f][exchange]         | [#162/165][delivered]   | Full workflow       |
-| v2 intake        | Optional KRAM    | [TEL/TSN][exchange]       | [K1–K10][kram]          | TEL/TSN/stubs       |
-| ESSR outcomes    | Shared admission | [4 integration][essr]     | [Policy][resource]      | Native copies       |
-| Shared budget    | Trees/queues     | [4 stack][resource]       | [Policy][resource]      | Copies/metadata     |
-| Storage/recovery | Nested preflight | [5][storage]              | [#214][native-rows]     | Other rows/recovery |
-| Transport        | Streaming paths  | [6][transport]            | [Required][transport]   | Usable-child proof  |
-| Reference pins   | Imports audited  | [7][qualification]        | [Inventory][pins]       | Actual workflows    |
-| Qualification    | Small corpora    | [7][qualification]        | [Matrix][qualification] | Full runtime        |
-| Mapper SAID      | Claims verified  | [M2][mapper]              | [#223][mapper-repair]   | Bundled schema IDs  |
-| npm release      | Pending          | [#104][release]           | Published artifacts     | Final goal gate     |
+| Requirement       | Current boundary | Owner                     | Evidence                | Open limit            |
+| ----------------- | ---------------- | ------------------------- | ----------------------- | --------------------- |
+| CESR parsing      | Delivered        | [1–2][cesr]               | [Wire/tree][delivered]  | Accessor audit        |
+| Multisig          | Four routes      | [3d][multisig]            | [#160–161][delivered]   | Native/CLI scope      |
+| IPEX              | Proofs/cutoffs   | [3e][ipex]                | [R11/S1–3][registry]    | Full workflow         |
+| V1/V2 registries  | Runtime/observer | [Qualification][registry] | [R1–R12][registry]      | Wire/store matrix     |
+| EXN proofs        | Implemented      | [3e/3f][exchange]         | [#162/165][delivered]   | Full workflow         |
+| v2 intake         | Optional KRAM    | [TEL/TSN][exchange]       | [K1–K10][kram]          | TEL/TSN/stubs         |
+| ESSR outcomes     | Shared admission | [4 integration][essr]     | [Policy][resource]      | Native copies         |
+| Shared budget     | Trees/queues     | [4 stack][resource]       | [Policy][resource]      | Copies/metadata       |
+| Storage/recovery  | Nested preflight | [5][storage]              | [#214][native-rows]     | Other rows/recovery   |
+| Transport         | HTTP progressive | [6/S1–9][transport]       | [Boundary][transport]   | TCP/guard/duplex      |
+| Reference pins    | Imports audited  | [7][qualification]        | [Inventory][pins]       | Actual workflows      |
+| Qualification     | Small corpora    | [7][qualification]        | [Matrix][qualification] | Full runtime          |
+| Mapper/schema IDs | Implemented      | [Qualification][mapper]   | [Claims/IDs][mapper]    | Default-builder scope |
+| npm release       | Pending          | [#104][release]           | Published artifacts     | Final goal gate       |
 
 ## Publication sequence
 
@@ -42,7 +42,14 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
    Keep unfinished consumers guarded; `xip/pro/bar` are reference stubs.
 3. Complete shared admission (4), storage/recovery (5) and production
    backpressure (6) through the active stack below and its remaining owner gates.
-4. Complete bundled schema-ID repair M2 after delivered Mapper claim repair M1.
+   The socket-to-application streamability work is phase 6's S1–9 sequence:
+   bounded cue handoff, network waits outside the guard, progressive TCP intake,
+   supervised connections, streamed output, explicit duplex and composed proof.
+   Finite/source messenger entries share two engines within those units; HTTP
+   preserves its framed POST contract.
+   It is required in the next release, not deferred post-release qualification.
+4. Qualify delivered Mapper claims (#223) and bundled schema IDs (#226) in the
+   final composition; keep format-dependent default-builder limits explicit.
 5. Run the maintained full inventory and repeated end-to-end qualification (7)
    against the final composition. Import probes alone do not qualify workflows.
 6. Finish with the npm release: refresh and merge [#104][release] only after
@@ -90,7 +97,11 @@ hosted extended jobs, whose existing 15-minute cap remains unchanged.
 ## Final release gate
 
 The approved final task is publication of `cesr-ts`, `keri-ts` and `@keri-ts/tufa`
-for downstream diddaemon adoption. Recheck #104's generated versions, dependency
+for downstream diddaemon adoption. Complete transport S1–9 and its shared-budget
+and durable-recovery dependencies before merging #104 or publishing. Prove real
+HTTP/TCP progress through verified acceptance before transfer completion; parser
+tests, finite TCP admission and local write completion cannot satisfy this gate.
+Recheck #104's generated versions, dependency
 ranges, changelogs and exact-head checks after all implementation changes land.
 The current Changesets workflow only maintains versions; npm publication uses
 the existing package tag/dispatch workflows. Release in dependency order and

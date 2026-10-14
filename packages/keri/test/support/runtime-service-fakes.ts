@@ -179,7 +179,7 @@ export function fakeRuntimeServices(
     http?: FakeRuntimeHttpClient;
   } = {},
 ): RuntimeServices {
-  return { clock, http };
+  return { clock, http, resources: new ResourcePolicy() };
 }
 
 /** In-process Tufa runtime host registered under a fake HTTP origin. */
@@ -203,3 +203,4 @@ export class InProcessRuntimeHost {
     http.registerOrigin(this.origin, (request) => app.fetch(request));
   }
 }
+import { ResourcePolicy } from "cesr-ts";

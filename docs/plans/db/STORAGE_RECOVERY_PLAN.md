@@ -14,6 +14,14 @@ Apply the [roadmap review rules](../PARITY_ROADMAP.md), in dependency order:
 3. Atomic file/reference publication and failed duplicate rollback.
 4. Crash recovery of proven task-owned stages and unreferenced files.
 5. Joined cleanup-error handling and durable reopen/retry reconciliation.
+   Include [transport delivery obligations](../runtime/TRANSPORT_PLAN.md): the
+   current optional outbox is mailbox-only and publishes multiple rows without
+   one transaction. Qualify atomic publication, finite admission, partial-target
+   status and reopen before claiming durable transfer. Direct/witness obligations
+   require explicit destination semantics or proven regeneration. A journal added
+   after KEL acceptance alone leaves the crash-before-cue-transfer gap. Resolve
+   that gap by linked durable state or bounded recovery; do not silently enable
+   the optional outbox or claim an in-memory delivery queue survives restart.
 
 Keep each PR within the size target, including regressions. Reuse existing storage
 tests; exercise failure/crash designs with uncommitted probes unless a maintained
@@ -27,7 +35,10 @@ including aggregate 24 MiB credit during comparisons, publication and hydration.
 Exchanger nested admission/replay additionally holds a conservative shared copy
 allowance through joined cleanup; this covers its cooperating row/serialization
 and cursor phases, with parser frames charging ordinary/ESSR staging separately.
-KRAM snapshot/hash/serialization admission is the next independent unit.
+KRAM snapshot/hash/serialization and reopened hydration now share runtime credit.
+Temporary rows/cursors release after parser join; real frame owners retain their
+ordinary/ESSR reservations through scoped consumer disposal. No file owner wrapper
+is introduced, and synchronous publication retains its collected wire credit.
 Broader KEL/reply replay (`clonePreIter`, `replyEndRole`), mailbox rows, parent
 factors and query preparation/retained introductions still require native-row and
 copy audits. Queue/stream credit alone does not prove their pre-read boundary.
