@@ -14,6 +14,7 @@ import {
 } from "cesr-ts";
 import { type FrameChannel, toEffectionFrames } from "cesr-ts/effection";
 import { action, call, each, type Operation, resource } from "npm:effection@^3.6.0";
+import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
@@ -93,6 +94,7 @@ export class Reactor {
   /** Maximum bytes in the complete-record ingress deck. */
   private readonly maxQueuedBytes: number;
   readonly vdr: VdrRuntimeServices;
+  readonly acdc: AcdcRuntimeServices;
 
   constructor(
     hby: Habery,
@@ -100,6 +102,7 @@ export class Reactor {
       cues,
       local = false,
       vdr = {},
+      acdc = {},
       maxSources = 8,
       maxQueuedBytes = 8 * 1024 * 1024,
       maxPendingCues = 1024,
@@ -111,6 +114,7 @@ export class Reactor {
       cues?: Deck<AgentCue>;
       local?: boolean;
       vdr?: VdrRuntimeServices;
+      acdc?: AcdcRuntimeServices;
       /** Reject additional sources and waiting turns when this admission limit is reached. */
       maxSources?: number;
       /** Bound already resident complete records awaiting processOnce(). */
@@ -149,6 +153,7 @@ export class Reactor {
     this.exchanger = new Exchanger(hby, { cues: this.cues });
     this.local = local;
     this.vdr = vdr;
+    this.acdc = acdc;
   }
 
   /** Whether the bounded complete-record queue still has input to process. */
@@ -436,6 +441,7 @@ export class Reactor {
       this.revery.processEscrowReply();
       this.vdr.tvy?.processEscrows?.();
       this.vdr.vry?.processEscrows?.();
+      this.acdc.rgy?.processEscrows();
       yield* this.exchanger.processEscrows();
     } catch (error) {
       // A full cue deck pauses retry work; source escrow rows remain until application succeeds.
@@ -489,4 +495,9 @@ export interface VdrRuntimeServices {
   tvy?: TeveryRuntimeService | null;
   vry?: VerifierRuntimeService | null;
   rgy?: RegeryRuntimeService | null;
+}
+
+/** Borrowed v2 registry manager; automatic foreign rip/bup parser intake remains separate. */
+export interface AcdcRuntimeServices {
+  rgy?: AcdcRegery | null;
 }
