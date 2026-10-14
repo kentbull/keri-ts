@@ -112,7 +112,18 @@ Callback results are void; Reactor returns only its original borrowed input. HTT
 refuses current pending, missing, busy and replay outcomes despite older cues.
 HTTP recovery queries enter the bounded coordinator and drain on ordinary host turns.
 No automatic ESSR decryption or child dispatch is enabled; presentation-registry
-cutoffs remain guarded pending durable trusted receipt propagation.
+cutoff processing remains separately guarded.
+
+Completed KRAM intake lends private envelope-bound receipt authority only within
+the ready consumer. Disabled, exempt and v1 forwarding cannot confer it; forged,
+expired or differently bound capabilities fail as caller misuse. Exchanger retains
+the first qualified `receiverTime` in private exchange metadata with accepted or
+dependency-escrow evidence, supplies it to route verification/handling and reuses
+it on retry/reopen. Signed `dt` and public caller strings cannot replace it. Archive
+publication rechecks the previous receipt under the writer transaction; competing
+changes and corrupt stored timestamps propagate. Frozen 927 IPEX registry cutoff
+selection reads completed TMSC `rdt` and refuses missing/partial receipts; this
+private persistence strengthens retention across pruning without changing wire tables.
 
 ## Ownership and HTTP
 
