@@ -539,3 +539,11 @@ Independent actual-helper observations verified 64 imported 714 modules, group
 order `[0,1]`, v1 `-VBn-FAC` / v2 `-CBn-XBm` tails, one/two-cigar selection and
 missing-authenticator failure. Lazy OOBI selection and finite forwarding collection
 remain subsequent S2 units.
+
+Accepted Tufa TCP sockets use one receive parser and bounded event-prefix/SAID or
+query-SAID response slots. Only accepted/duplicate event decisions authorize
+receipt output. Preparation owns proof and replay hydration credit under the
+Reactor guard; the shared socket writer drains outside it, borrowing that
+connection's stream slot. Receive EOF starts one absolute reply-drain deadline.
+Immediate replies are supported; deferred query escrow replies still need a
+connection-owned pending slot and wakeup before this is complete TCP parity.
