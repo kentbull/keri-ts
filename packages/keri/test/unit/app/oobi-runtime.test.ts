@@ -1,6 +1,6 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertStringIncludes } from "jsr:@std/assert";
-import { Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
+import { Diger, Prefixer, ResourcePolicy, SerderKERI } from "../../../../cesr/mod.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import {
@@ -98,6 +98,7 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
+      resources: new ResourcePolicy({ streams: 2 }),
       skipConfig: true,
     });
     try {

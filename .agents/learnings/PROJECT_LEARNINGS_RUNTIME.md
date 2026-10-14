@@ -78,7 +78,11 @@ Native fetch headers/buffering and pending-row allocation remain separate bounds
 Shared ResourcePolicy credit belongs to an owner until consumption and joined
 cleanup complete. One shared instance is required; separate ledgers do not bound
 a runtime. Reactor reserves stream/cursor/producer credit before source acquisition
-and retains it through joined parser cleanup. AgentRuntime exposes that same policy
+and retains it through joined parser cleanup. The default eight stream slots leave
+headroom for KLI's separate mailbox-role and witness SSE polls; explicitly configured
+two-slot deployments can refuse ingress while both polls are live. Byte/decryption
+ceilings remain 256 MiB/one, and older two-slot measurements keep that label.
+AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
 Default AgentRuntime CueDeck preparation holds concrete metadata/backing and item credit;
 ownership transfers through fanout/requeue until final cleanup. KEL acceptance,

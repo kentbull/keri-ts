@@ -1,4 +1,4 @@
-import { action, type Operation, run, spawn } from "effection";
+import { action, call, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../cesr/mod.ts";
 import {
@@ -1299,6 +1299,38 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
         ).length,
         1,
       );
+      // KLI opens independent mailbox-role and witness polls against the same provider.
+      const pollingHby = yield* createHabery({ name: clientName, headDirPath: clientHeadDirPath, skipConfig: true });
+      const polls: Array<{ abort: AbortController; reader: ReadableStreamDefaultReader<Uint8Array> }> = [];
+      try {
+        assertEquals(runtime.resources.limits.streams, 8);
+        const requester = pollingHby.habByName("alice")!;
+        for (let i = 0; i < 2; i++) {
+          const abort = new AbortController();
+          const request = buildCesrRequest(
+            requester.query(recipientPre, providerPre, { topics: { "/challenge": 0 } }, "mbx"),
+            { destination: providerPre },
+          );
+          const response = yield* fetchOp(url, { method: "POST", ...request, signal: abort.signal });
+          assertEquals(response.status, 200);
+          const reader = response.body!.getReader();
+          polls.push({ abort, reader });
+          assertStringIncludes(textDecoder.decode((yield* call(() => reader.read())).value), "retry:");
+        }
+        assertEquals(runtime.resources.used.streams, 2);
+        assertEquals(yield* postForward(url, authorized), 204, "two live SSE polls leave ingress headroom");
+        assertEquals(mailboxer.getTopicMsgs(mailboxTopicKey(recipientPre, "/challenge")).length, 2);
+      } finally {
+        for (const { abort, reader } of polls) {
+          try {
+            yield* call(() => reader.cancel());
+          } finally {
+            reader.releaseLock();
+            abort.abort();
+          }
+        }
+        yield* pollingHby.close();
+      }
       const readAs = function*(name: string, headDirPath: string, alias: string) {
         const requester = yield* createHabery({ name, headDirPath, skipConfig: true });
         const abort = new AbortController();
@@ -1330,7 +1362,7 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
       const foreign = yield* readAs(senderName, senderHeadDirPath, "sender");
       assertEquals(foreign.length, 0, "an authenticated sender may not read its recipient's private mailbox");
       const owned = yield* readAs(clientName, clientHeadDirPath, "alice");
-      assertEquals(owned.length, 1);
+      assertEquals(owned.length, 2);
       assertEquals(owned[0]!.msg, mailboxer.getTopicMsgs(mailboxTopicKey(recipientPre, "/challenge"))[0]);
       const recipientHby = yield* createHabery({ name: clientName, headDirPath: clientHeadDirPath, skipConfig: true });
       const senderHby = yield* createHabery({ name: senderName, headDirPath: senderHeadDirPath, skipConfig: true });
@@ -1364,6 +1396,7 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
       yield* runtime.close();
+      assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
       yield* providerHby.close();
     }
   });

@@ -112,7 +112,7 @@ admission in streaming paths remains in phases 4/5.
 | Decoded ESSR per owned tree     | 8 MiB; 16,384 Texters       |
 | Ordinary leaves / message nodes | 4,096 / 256 per tree        |
 | Enclosure depth                 | 64                          |
-| Active streams / decryptions    | 2 / 1 per runtime           |
+| Active streams / decryptions    | 8 / 1 per runtime           |
 | Completed output queue          | One charged tree per stream |
 | Runtime byte reservations       | 256 MiB                     |
 | Reservation per 8 MiB decrypt   | Initially 64 MiB            |

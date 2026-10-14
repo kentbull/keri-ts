@@ -108,7 +108,12 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
   const cleanup = new Promise<void>((resolve) => cleaning = resolve),
     gate = new Promise<void>((resolve) => unblock = resolve);
   await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hby = yield* createHabery({
+      name: crypto.randomUUID(),
+      temp: true,
+      skipConfig: true,
+      resources: new ResourcePolicy({ streams: 2 }),
+    });
     const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
     const failure = new ResourceAdmissionError("foreign fetch busy", "busy"),
       preparation = new Error("second reply failure");

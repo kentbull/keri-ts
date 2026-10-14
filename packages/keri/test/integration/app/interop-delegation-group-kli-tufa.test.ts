@@ -559,7 +559,7 @@ async function waitForTufaDelegable(
       }
       return false;
     },
-    { maxTurns: 256 },
+    { maxTurns: 256, timeoutMs: 120_000 },
   );
   if (!event) {
     throw new Error("Expected a Tufa delegable group event.");
@@ -757,13 +757,13 @@ async function createKliDelegatorWithMailbox(
   return await createKliParticipant(ctx, args);
 }
 
-Deno.test("Interop delegation: KLI GroupHab delegated inception reaches Tufa approval escrow through public KLI multisig", async () => {
+Deno.test("Interop delegation: Tufa approval completes a public KLI GroupHab delegated inception", async () => {
   const ctx = await createInteropContext();
   const fixture = await setupKliGroupDelegateToTufaDelegator({
     ctx,
-    base: `group-kli-tufa-escrow-${crypto.randomUUID().slice(0, 8)}`,
-    headDirPath: `${ctx.home}/group-kli-tufa-escrow-head`,
-    aliases: ["gwan", "gwil", "gwes"],
+    base: `group-kli-tufa-complete-${crypto.randomUUID().slice(0, 8)}`,
+    headDirPath: `${ctx.home}/group-kli-tufa-complete-head`,
+    aliases: ["cwan", "cwil", "cwes"],
   });
   const groupAlias = "delegate-group";
   let join: SpawnedChild | null = null;
@@ -795,40 +795,6 @@ Deno.test("Interop delegation: KLI GroupHab delegated inception reaches Tufa app
       ),
       1,
     );
-  } finally {
-    if (join) {
-      await stopChild(join);
-    }
-    if (incept) {
-      await stopChild(incept);
-    }
-    await fixture.close();
-  }
-});
-
-Deno.test("Interop delegation: Tufa approval completes a public KLI GroupHab delegated inception", async () => {
-  const ctx = await createInteropContext();
-  const fixture = await setupKliGroupDelegateToTufaDelegator({
-    ctx,
-    base: `group-kli-tufa-complete-${crypto.randomUUID().slice(0, 8)}`,
-    headDirPath: `${ctx.home}/group-kli-tufa-complete-head`,
-    aliases: ["cwan", "cwil", "cwes"],
-  });
-  const groupAlias = "delegate-group";
-  let join: SpawnedChild | null = null;
-  let incept: SpawnedChild | null = null;
-
-  try {
-    join = spawnKliMultisigJoin(ctx, fixture.member2, groupAlias);
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-    incept = spawnKliMultisigIncept(
-      ctx,
-      fixture.member1,
-      groupAlias,
-      fixture.configFile,
-    );
-
-    const delegable = await waitForTufaDelegable(fixture.delegator);
     await approveTufaDelegableWithTufaCli(ctx, fixture.delegator);
     const groupPre = await waitForKliGroupCompletion({
       member1: fixture.member1,
@@ -854,6 +820,18 @@ Deno.test("Interop delegation: Tufa approval completes a public KLI GroupHab del
     assertEquals(
       await inspectCompatKeverSn(ctx, fixture.member2, groupPre),
       0,
+    );
+  } catch (error) {
+    const diagnostics = await Promise.allSettled([join, incept].map((child) => child ? stopChild(child) : ""));
+    join = null;
+    incept = null;
+    throw new AggregateError(
+      [error, ...diagnostics.flatMap((result) => result.status === "rejected" ? [result.reason] : [])],
+      `KLI group delegation failed.\n${
+        diagnostics.map((result, i) =>
+          `${i === 0 ? "join" : "incept"}: ${result.status === "fulfilled" ? result.value : "cleanup failed"}`
+        ).join("\n")
+      }`,
     );
   } finally {
     if (join) {
