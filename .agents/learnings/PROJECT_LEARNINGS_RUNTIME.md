@@ -143,6 +143,11 @@ The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
 HTTP success, verified replies and durable acceptance are different outcomes.
+Command-local mailbox polling resumes across endpoints and habitats after its one
+absolute turn budget expires; an empty early long poll must not starve a proxy's
+queued replay. The resume position retains only two integer indices, with no peer
+queue/cache or new workers. Habitat/endpoint discovery still borrows existing
+accepted metadata; it does not establish a new bound on accepted-state residency.
 Mailbox SSE polling selects HTTP(S) only, as KERIpy 714 Poller/httpClient does. TCP-only
 remote mailbox roles keep precedence while awaiting HTTP; delivery URL selection
 retains TCP fallback. Witness-only polling also waits for HTTP(S).

@@ -935,6 +935,8 @@ export class MailboxPoller {
   readonly inboxLimits: MailboxInboxLimits;
   private readonly durableAdmission: boolean;
   private readonly localCursors = new Map<string, Record<string, number>>();
+  /** One bounded command-local resume position; endpoint/habitat metadata stays borrowed. */
+  private readonly nextRemotePoll = { target: 0, endpoint: 0 };
 
   constructor(
     hby: Habery,
@@ -1006,21 +1008,30 @@ export class MailboxPoller {
       }
     }
 
-    for (const target of this.remotePollTargets()) {
+    const targets = this.remotePollTargets();
+    if (targets.length === 0) return this.handOff(batches);
+    const firstTarget = this.nextRemotePoll.target % targets.length;
+    const firstEndpoint = this.nextRemotePoll.endpoint;
+    // Wrap to the earlier endpoints of the starting habitat without flattening peer metadata.
+    for (let visited = 0; visited <= targets.length; visited++) {
+      const targetIndex = (firstTarget + visited) % targets.length;
+      const target = targets[targetIndex];
       const remoteEndpoints = mailboxPollEndpoints(this.hby, target.hab);
-      for (const endpoint of remoteEndpoints) {
+      if (remoteEndpoints.length === 0) continue;
+      const resume = firstEndpoint % remoteEndpoints.length;
+      const start = visited === 0 ? resume : 0;
+      const end = visited === targets.length ? resume : remoteEndpoints.length;
+      for (let endpointIndex = start; endpointIndex < end; endpointIndex++) {
         const remainingBudgetMs = deadline - this.services.clock.now();
-        if (remainingBudgetMs <= 0) {
-          return this.handOff(batches);
-        }
-        const batch = yield* this.pollRemoteEndpointOnce(
-          target,
-          endpoint,
-          remainingBudgetMs,
-        );
-        if (batch) {
-          batches.push(batch);
-        }
+        if (remainingBudgetMs <= 0) return this.handOff(batches);
+        // Advance before the joined poll, so an empty, failed or cancelled long poll cannot monopolize the next turn.
+        const nextEndpoint = endpointIndex + 1;
+        this.nextRemotePoll.target = nextEndpoint < remoteEndpoints.length
+          ? targetIndex
+          : (targetIndex + 1) % targets.length;
+        this.nextRemotePoll.endpoint = nextEndpoint < remoteEndpoints.length ? nextEndpoint : 0;
+        const batch = yield* this.pollRemoteEndpointOnce(target, remoteEndpoints[endpointIndex], remainingBudgetMs);
+        if (batch) batches.push(batch);
       }
     }
 
