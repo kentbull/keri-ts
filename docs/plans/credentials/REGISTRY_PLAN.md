@@ -38,8 +38,9 @@ support creation and reopen; a borrowed Registrar stages credential, presentatio
 and vacuous updates from one unambiguous staged frontier. Presentation validates
 target digest syntax only; IPEX still owns grant authentication. Trailing vacuous
 updates require their disclosures when resolving the effective binding.
-Runtime integration remains unfinished. Ordinals above the safe-integer storage
-range are explicitly unsupported pending the storage phase.
+Runtime groups v2 services under `acdc.rgy`, independently of legacy `vdr.rgy`.
+Ordinals above the safe-integer storage range remain unsupported pending the
+storage phase.
 The [import preservation record][import-record] retains the exact original code.
 
 Use `evts/ancs/tels/heads/maes/ooes`; accepted heads use physical `heds.` and

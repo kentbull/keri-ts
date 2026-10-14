@@ -1,5 +1,14 @@
 # KERI DB Architecture and Parity Contract (KERIpy -> keri-ts)
 
+`LMDBer` pins lmdb-js 3.5.3. The compatibility rebuild retains
+`LMDB_DATA_V1=true` and uses the official `ENABLE_V8_FUNCTIONS=false` option. Node-header V8 symbols are
+not portable to Deno: the V8 mapped-buffer path for rows above 16 MiB can terminate
+the process despite successful small reads. Both Node and Deno must load and
+qualify the rebuilt NAPI addon. This changes native call selection, not database
+layout or the addon ABI. Ordinary reads still copy whole rows; fixed shared
+scratch, mapped residency and admission before row allocation remain separate
+[storage work](../../plans/db/STORAGE_RECOVERY_PLAN.md).
+
 ## Purpose
 
 This document is the DB architecture contract for `keri-ts` parity work against
