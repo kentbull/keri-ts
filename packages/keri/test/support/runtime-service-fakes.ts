@@ -174,12 +174,14 @@ export function fakeRuntimeServices(
   {
     clock = new ManualRuntimeClock(),
     http = new FakeRuntimeHttpClient(),
+    resources = new ResourcePolicy(),
   }: {
     clock?: ManualRuntimeClock;
     http?: FakeRuntimeHttpClient;
+    resources?: ResourcePolicy;
   } = {},
 ): RuntimeServices {
-  return { clock, http, resources: new ResourcePolicy() };
+  return { clock, http, resources };
 }
 
 /** In-process Tufa runtime host registered under a fake HTTP origin. */

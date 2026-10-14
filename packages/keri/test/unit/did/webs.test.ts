@@ -153,10 +153,10 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
 
 Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation without masking failures", async () => {
   await run(function*() {
-    const issuer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const source = yield* createAgentRuntime(issuer);
     const resources = new ResourcePolicy();
+    const issuer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, resources });
+    const source = yield* createAgentRuntime(issuer);
     let fetches: string[] = [], mode = "stream", body: ReadableStream<Uint8Array>;
     const injected = new TypeError("injected client invariant failure");
     const runtime = yield* createAgentRuntime(target, {
