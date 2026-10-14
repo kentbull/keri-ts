@@ -1,13 +1,15 @@
-import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
 import { toEffectionFrames } from "../../../effection.ts";
 import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
 import {
   DeserializeError,
   GroupSizeError,
+  ParserError,
   ResourceAdmissionError,
   ResourceLimitError,
   ShortageError,
+  WireParseError,
 } from "../../../src/core/errors.ts";
 import { discardFrame } from "../../../src/core/frame.ts";
 import { collectPayload, MemoryPayloadSink, type PayloadSink } from "../../../src/core/payload.ts";
@@ -90,6 +92,65 @@ function tracking() {
     },
   };
 }
+
+Deno.test("ESSR wire classification excludes custom staging and joined cleanup failures", async () => {
+  const v = vector(2);
+  const essr = v.essr(new Texter({ raw: b("payload"), code: "4B" }).qb64, 1);
+  const external = new ParserError("storage contract failure");
+  for (const phase of ["factory", "write", "finish", "abort", "metadata"] as const) {
+    let aborted = 0;
+    let owned: Awaited<ReturnType<PayloadSink["finish"]>> | undefined;
+    const input = v.selector + v.group(
+      "BodyWithAttachmentGroup",
+      v.body + v.group("AttachmentGroup", v.sig + essr + (phase === "abort" ? "-ZZZ" : "")),
+    );
+    try {
+      const failure = await assertRejects(() =>
+        parse(chunks(b(input)), {
+          classifyWireErrors: true,
+          payloadSink(limit, signal) {
+            if (phase === "factory") throw external;
+            const sink = new MemoryPayloadSink(limit, signal);
+            return {
+              write(bytes) {
+                if (phase === "write") throw external;
+                return sink.write(bytes);
+              },
+              async finish() {
+                if (phase === "finish") throw external;
+                owned = await sink.finish();
+                if (phase === "metadata") {
+                  return {
+                    ...owned,
+                    get size(): number {
+                      throw external;
+                    },
+                  };
+                }
+                return owned;
+              },
+              async abort() {
+                aborted++;
+                await sink.abort();
+                if (phase === "abort") throw external;
+              },
+            };
+          },
+        }).next()
+      );
+      if (phase === "abort") {
+        assert(failure instanceof AggregateError);
+        assert(failure.errors.some((error) => error instanceof WireParseError));
+        assert(failure.errors.includes(external));
+      } else {
+        assert(failure === external, `${phase} must preserve the storage error identity`);
+      }
+      assertEquals(aborted, phase === "factory" ? 0 : 1);
+    } finally {
+      await owned?.discard();
+    }
+  }
+});
 
 Deno.test("ESSR streams mixed Texter lengths in both genera/domains and reopens canonical wire", async () => {
   // All lead counts, an empty item, and a big-code item cross decoding block boundaries.

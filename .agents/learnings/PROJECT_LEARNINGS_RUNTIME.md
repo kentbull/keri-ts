@@ -130,6 +130,14 @@ HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove
 the signal path. Otherwise active responses can force SIGKILL.
 
+OOBI CESR intake streams through Reactor; JSON/schema collection remains finite.
+Keep the queued row through full intake, clear in-flight markers on failure, and
+retain earlier accepted events. Retrieval completion is separate from universal
+message acceptance. The job guard must be an earlier scope resource, not a bare
+finally flag: cancellation can enter parent finally while child cleanup still joins.
+Oobiery borrows Reactor's policy; GET handle credit precedes fetch and parser stream
+credit precedes body reads. Transient saturation uses the existing queued worker.
+
 ## Mailbox
 
 Provider Mailboxer storage is shared runtime state above Habery; recipient tops

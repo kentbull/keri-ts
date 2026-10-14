@@ -7,6 +7,7 @@ import {
   ParserError,
   ResourceLimitError,
   ShortageError,
+  WireParseError,
 } from "../../../src/core/errors.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
@@ -72,6 +73,34 @@ async function promptly<T>(operation: Promise<T>): Promise<T> {
     clearTimeout(timer);
   }
 }
+
+Deno.test("progressive wire classification preserves source, cancellation and policy failure identity", async () => {
+  const wire = encode(vector(2).selector + vector(2).frame.slice(0, -4));
+  const original = await assertRejects(() => collect(parse(chunks(wire))), ParserError);
+  assert(!(original instanceof WireParseError));
+  const classified = await assertRejects(
+    () => collect(parse(chunks(wire), { classifyWireErrors: true })),
+    WireParseError,
+  );
+  assertInstanceOf(classified.cause, original.constructor as typeof ParserError);
+  const external = new ParserError("source contract failure");
+  const source = async function*() {
+    yield await Promise.reject(external);
+  };
+  assert(await assertRejects(() => collect(parse(source(), { classifyWireErrors: true }))) === external);
+  const controller = new AbortController();
+  controller.abort(external);
+  assert(
+    await assertRejects(
+      () => collect(parse(chunks(wire), { classifyWireErrors: true, signal: controller.signal })),
+    ) === external,
+  );
+  const policy = await assertRejects(
+    () => collect(parse(chunks(wire), { classifyWireErrors: true, maxFrameBytes: 1 })),
+    ResourceLimitError,
+  );
+  assert(!(policy instanceof WireParseError));
+});
 
 Deno.test("progressive GenericGroup emits a complete child before receiving its siblings in both genera/domains", async () => {
   for (const major of [1, 2] as const) {

@@ -435,3 +435,207 @@ Deno.test("stream credit is shared before reads and held until cancelled source 
     }
   });
 });
+
+Deno.test("OOBI CESR intake accepts before EOF and retains partial work through joined cancellation or failure", async () => {
+  const scenarios = [
+    ["complete", "application/cesr+json"],
+    ["cancel", "application/json+cesr"],
+    ["failure", "application/cesr"],
+  ] as const;
+  for (const [mode, contentType] of scenarios) {
+    await run(function*() {
+      const source = yield* createHabery({ name: `oobi-source-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+      const target = yield* createHabery({ name: `oobi-target-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+      const resources = new ResourcePolicy();
+      const reactor = new Reactor(target, { resources });
+      const hab = source.makeHab("source");
+      const first = acceptedEventReplayMessage(source, hab.pre, 0).message;
+      hab.interact();
+      const second = acceptedEventReplayMessage(source, hab.pre, 1).message;
+      const accepted = gate(), next = gate(), cancelling = gate(), cleanup = gate();
+      let offset = 0, cancelled = false, requests = 0, finished = false, failure: unknown;
+      let signal: AbortSignal | undefined;
+      const body = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          if (offset < first.length) {
+            controller.enqueue(first.slice(offset, offset + 7));
+            offset += 7;
+            return;
+          }
+          await next.wait;
+          if (cancelled) return;
+          controller.enqueue(mode === "failure" ? Uint8Array.of(255) : second);
+          controller.close();
+        },
+        cancel() {
+          cancelled = true;
+          next.open();
+          cancelling.open();
+          return cleanup.wait;
+        },
+      }, { highWaterMark: 0 });
+      const oobi = new Oobiery(target, reactor, {
+        cues: reactor.cues,
+        services: {
+          ...defaultRuntimeServices,
+          http: {
+            fetch(_url, init) {
+              requests++;
+              signal = init?.signal ?? undefined;
+              return Promise.resolve(
+                new Response(requests === 1 ? body : new Blob([first.slice().buffer, second.slice().buffer]), {
+                  headers: { "Content-Type": contentType },
+                }),
+              );
+            },
+          },
+        },
+      });
+      assertStrictEquals(oobi.services.resources, resources);
+      const processEvent = reactor.kevery.processEvent;
+      reactor.kevery.processEvent = function(envelope) {
+        const decision = processEvent.call(this, envelope);
+        if (decision.kind === "accept" && envelope.serder.sn === 0) accepted.open();
+        return decision;
+      };
+      const url = `http://oobi.test/oobi/${hab.pre}/controller`;
+      oobi.resolve(url);
+      reactor.cues.clear();
+      const worker = yield* spawn(function*() {
+        try {
+          yield* oobi.processOnce();
+        } catch (error) {
+          if (mode !== "failure") throw error;
+          failure = error;
+        } finally {
+          finished = true;
+        }
+      });
+      try {
+        // A regression to whole-response collection must fail promptly rather than hang merge CI.
+        yield* call(() =>
+          new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error("OOBI event was not verified before EOF")), 2000);
+            accepted.wait.then(() => {
+              clearTimeout(timer);
+              resolve();
+            });
+          })
+        );
+        assertEquals(target.db.getState(hab.pre)?.s, "0");
+        assertEquals([finished, target.db.roobi.get(url), target.db.eoobi.get(url)], [false, null, null]);
+        assertEquals(target.db.oobis.get(url)?.state, "queued");
+        assertEquals(target.db.coobi.get(url)?.state, "streaming");
+        assertEquals(reactor.cues.toArray().some((cue) => cue.kin === "oobiResolved"), false);
+        if (mode === "cancel") {
+          let haltFinished = false;
+          const halted = yield* spawn(function*() {
+            yield* worker.halt();
+            haltFinished = true;
+          });
+          yield* call(() => cancelling.wait);
+          assertEquals(resources.used.streams, 1, "The parser stream owner outlives body cleanup");
+          assertEquals(haltFinished, false);
+          yield* oobi.processOnce();
+          assertEquals(requests, 1, "In-flight durable work cannot be fetched twice");
+          cleanup.open();
+          yield* halted;
+        } else {
+          next.open();
+          yield* worker;
+        }
+        assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        assertEquals(signal?.aborted, true);
+        assertEquals(target.db.coobi.get(url), null);
+        if (mode === "complete") {
+          assertEquals(target.db.getState(hab.pre)?.s, "1");
+          assertEquals(target.db.oobis.get(url), null);
+          assertEquals(target.db.roobi.get(url)?.state, "resolved");
+        } else {
+          assertEquals(mode === "failure" ? failure instanceof Error : failure === undefined, true);
+          assertEquals(target.db.getState(hab.pre)?.s, "0", "Earlier independently accepted events survive");
+          assertEquals(target.db.roobi.get(url), null);
+          assertEquals(target.db.oobis.get(url)?.state, "queued");
+          reactor.cues.clear();
+          yield* oobi.processOnce();
+          assertEquals(target.db.getState(hab.pre)?.s, "1");
+          assertEquals(target.db.roobi.get(url)?.state, "resolved");
+          assertEquals(target.db.oobis.get(url), null);
+          assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        }
+      } finally {
+        next.open();
+        cleanup.open();
+        yield* worker.halt();
+        yield* target.close(true);
+        yield* source.close(true);
+      }
+    });
+  }
+});
+
+Deno.test("OOBI refusal precedes fetch or finite document reads and releases response ownership", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `oobi-admission-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      for (const document of [false, true]) {
+        const resources = new ResourcePolicy({ bytes: 2 * 1024 ** 2 });
+        const reactor = new Reactor(hby, { resources });
+        let requests = 0, reads = 0, cancelled = false;
+        const oobi = new Oobiery(hby, reactor, {
+          cues: reactor.cues,
+          services: {
+            ...defaultRuntimeServices,
+            http: {
+              fetch() {
+                requests++;
+                return Promise.resolve(
+                  document
+                    ? new Response(
+                      new ReadableStream<Uint8Array>({
+                        pull() {
+                          reads++;
+                          throw new Error("Inadmissible JSON was read");
+                        },
+                        cancel() {
+                          cancelled = true;
+                        },
+                      }, { highWaterMark: 0 }),
+                      { headers: { "Content-Type": "application/schema+json" } },
+                    )
+                    : new Response(null, { status: 404 }),
+                );
+              },
+            },
+          },
+        });
+        const url = `http://admission.test/oobi?document=${document}`;
+        oobi.resolve(url);
+        reactor.cues.clear();
+        const occupied = document ? undefined : resources.reserve({ bytes: resources.limits.bytes });
+        if (occupied && occupied.kind !== "reserve") throw new Error("Expected occupied byte budget");
+        let refusal: unknown;
+        try {
+          yield* call(() => oobi.processOnce());
+        } catch (error) {
+          refusal = error;
+        }
+        assertEquals(document ? refusal instanceof ResourceAdmissionError : refusal === undefined, true);
+        if (document) assertEquals((refusal as ResourceAdmissionError).reason, "limit");
+        assertEquals([requests, reads, cancelled], document ? [1, 0, true] : [0, 0, false]);
+        assertEquals([hby.db.roobi.get(url), hby.db.coobi.get(url)], [null, null]);
+        assertEquals(hby.db.oobis.get(url)?.state, "queued");
+        if (occupied?.kind === "reserve") {
+          occupied.reservation.release();
+          yield* oobi.processOnce();
+          assertEquals(hby.db.eoobi.get(url)?.state, "http-404");
+          assertEquals(requests, 1);
+        }
+        assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        hby.db.oobis.rem(url);
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
