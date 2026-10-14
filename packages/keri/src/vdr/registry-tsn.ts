@@ -57,26 +57,35 @@ export class RegistryStateReceiver {
       return refuse("Invalid registry transaction-state notice.");
     }
     const regk = record.i!, issuer = record.ii!, sn = Number.parseInt(record.s!, 16);
+    const previous = this.tvy.reger.txnsb.current([regk, aid]);
+    const disposeIncoming = () => {
+      if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(diger);
+    };
+    const reject = (reason: string) => {
+      disposeIncoming();
+      return refuse(reason);
+    };
     const stored = this.tvy.reger.states.get(regk);
     if (stored && !registryRecord(stored.asDict())) throw new Error("Corrupt stored registry state.");
     if (stored && (stored.ii !== issuer || BigInt(`0x${stored.s!}`) > BigInt(sn))) {
-      return refuse("Mismatched issuer or stale registry state.");
+      return reject("Mismatched issuer or stale registry state.");
     }
     const kever = this.tvy.db.getKever(issuer, { refresh: true });
     this.rvy.cues.checkSpace();
     const escrow = (typ: string, query: boolean) => {
-      if (
-        this.tvy.reger.txnsb.escrowStateNotice({
-          typ,
-          pre: regk,
-          aid,
-          serder,
-          diger,
-          dater: new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) }),
-          cigars,
-          tsgs,
-        }) && query
-      ) {
+      const added = this.tvy.reger.txnsb.escrowStateNotice({
+        typ,
+        pre: regk,
+        aid,
+        serder,
+        diger,
+        dater: new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) }),
+        cigars,
+        tsgs,
+      });
+      // Broker now owns the copied pending proof; retain only prior accepted BADA evidence in Baser.
+      disposeIncoming();
+      if (added && query) {
         this.rvy.cues.push({
           kin: "query",
           pre: issuer,
@@ -94,8 +103,7 @@ export class RegistryStateReceiver {
     }
     const trusted = aid === issuer || watchers.has(aid)
       || (!!stored && (stored.c?.includes(TraitDex.NoBackers) ? kever.wits : stored.b ?? []).includes(aid));
-    if (!trusted && stored) return refuse("Untrusted registry state attester.");
-    const previous = this.tvy.reger.txnsb.current([regk, aid]);
+    if (!trusted && stored) return reject("Untrusted registry state attester.");
     if (previous && (!this.tvy.db.sdts.get([previous.qb64]) || !this.tvy.db.rpys.get([previous.qb64]))) {
       throw new Error("Corrupt prior registry reply evidence.");
     }
@@ -111,7 +119,7 @@ export class RegistryStateReceiver {
       externalEscrow: true,
     });
     if (proof.kind !== "accept") {
-      return proof.context?.pending ? escrow("registry-mae", false) : refuse("Unverified registry state attester.");
+      return proof.context?.pending ? escrow("registry-mae", false) : reject("Unverified registry state attester.");
     }
     const accepted = this.tvy.reger.tels.getOn(regk, sn);
     if (!accepted) return escrow("registry-ooo", true);
@@ -121,13 +129,13 @@ export class RegistryStateReceiver {
     if (!event.verify() || event.said !== accepted.qb64 || event.pre !== regk || event.sn !== sn) {
       throw new Error("Corrupt accepted registry TEL body.");
     }
-    if (!trusted || accepted.qb64 !== record.d) return refuse("Registry state does not match accepted TEL.");
+    if (!trusted || accepted.qb64 !== record.d) return reject("Registry state does not match accepted TEL.");
     // Receiver-generated record time is descriptive; configuration and state fields must agree.
     const { dt: _incomingTime, ...incoming } = record.asDict();
     const { dt: _storedTime, ...current } = stored.asDict();
     const fields = ["vn", "i", "s", "d", "ii", "et", "bt", "b", "c"];
     if (fields.some((key) => JSON.stringify(incoming[key]) !== JSON.stringify(current[key]))) {
-      return refuse("Registry state metadata mismatch.");
+      return reject("Registry state metadata mismatch.");
     }
     const dater = new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) });
     this.tvy.reger.txnsb.updateReply(aid, serder, diger, dater);

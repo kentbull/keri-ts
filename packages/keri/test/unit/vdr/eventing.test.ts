@@ -475,6 +475,7 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
       for (
         const malformed of [
           notice({ ...state, i: `${vcp.pre}suffix` }),
+          notice({ ...state, s: "20000000000001" }),
           reply(`/tsn/registry/${issuer.pre}suffix`, state, { pre: issuer.pre }),
         ]
       ) yield* runtime.reactor.processBytes(issuer.endorse(malformed));
@@ -514,7 +515,12 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
         },
         newStamp.replace(/2\+00:00$/, "3+00:00"),
       );
-      yield* runtime.reactor.processBytes(issuer.endorse(wrong));
+      for (const rejected of [wrong, notice({ ...state, c: [] }, newStamp.replace(/2\+00:00$/, "4+00:00"))]) {
+        yield* runtime.reactor.processBytes(issuer.endorse(rejected));
+        assertEquals(hby.db.rpys.get([rejected.said!]), null, "Unaccepted authenticated body has no orphan owner");
+        assertEquals(hby.db.sdts.get([rejected.said!]), null);
+        assertEquals([...hby.db.ssgs.getTopItemIter([rejected.said!], { topive: true })].length, 0);
+      }
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, valid.said);
       assertExists(hby.db.sdts.get([valid.said!]), "Pending/rejected semantic state retains previous BADA metadata");
       assertEquals(runtime.cues.length, 0);
@@ -587,6 +593,8 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
       yield* turn();
       assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 0);
       assertEquals(reger.txnsb.escrowdb.get(["registry-ooo", vcp.pre!, issuer.pre]).length, 1);
+      assertExists(reger.txnsb.serderdb.get([serder.said!]), "Broker retains the pending authenticated body");
+      assertEquals(hby.db.rpys.get([serder.said!]), null, "Pending proof has one external owner");
       assertEquals(queries.at(-1), { ri: vcp.pre, i: "", src: issuer.pre }, "Recovery preserves TEL coordinates");
       yield* runtime.reactor.processBytes(source.cloneTvt(vcp.pre!, vcp.said!));
       yield* turn();

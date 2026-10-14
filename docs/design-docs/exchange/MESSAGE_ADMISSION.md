@@ -74,11 +74,15 @@ partial attester proofs also belong to Broker. This receiver explicitly selects
 Revery's external escrow ownership, so pending proofs never enter legacy `rpes.`
 retry. Default Revery callers retain their existing behavior. Every finite retry
 rechecks trust, proofs and state; expiry retains the original notice timestamp.
-Previous BADA evidence remains until semantic publication succeeds. The saved
+Previous BADA evidence remains until semantic publication succeeds. Pending
+proof copies belong only to Broker; terminal semantic refusal disposes the new
+unaccepted Baser proof without removing accepted or Broker-owned evidence. The saved
 pointer is the outer reply SAID, and `txnStateSaved` reaches the host as a notify
 emission. Recovery uses existing bounded query coordination, retaining exact TEL
 `ri/i/src` fields. Storage/invariant failures propagate. Credential replies and
 TSN query dispatch remain guarded; this is not v2 `RegistryStore` receiving.
+Legacy TEL/TSN ordinals above `Number.MAX_SAFE_INTEGER` are explicitly refused;
+protocol `NumberPrimitive` supports wider values, so this is not all-number parity.
 
 Admission refusals return `MessageDropDecision`. Frozen `xip/pro/bar` processors
 are stubs: they report `referenceStub`, never acceptance. Route-specific decisions
