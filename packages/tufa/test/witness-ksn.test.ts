@@ -1,4 +1,4 @@
-import { SerderKERI } from "cesr-ts";
+import { ResourcePolicy, SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import {
@@ -12,7 +12,13 @@ import { createProtocolHandler } from "../src/http/protocol-handler.ts";
 
 Deno.test("tufa witness KSN requires destination and receipts and independently verifies endorsed state", async () => {
   await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
+    const hby = yield* createHabery({
+      name: crypto.randomUUID(),
+      temp: true,
+      skipConfig: true,
+      skipSignator: true,
+      resources: new ResourcePolicy({ streams: 2 }),
+    });
     const peer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
     const runtime = yield* createAgentRuntime(hby, { mode: "local" });
     let server: Deno.HttpServer<Deno.NetAddr> | undefined;

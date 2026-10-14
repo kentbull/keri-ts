@@ -12,6 +12,7 @@ import {
   parseBytes,
   Prefixer,
   ResourceAdmissionError,
+  ResourcePolicy,
   SealEvent,
   SerderKERI,
   Texter,
@@ -162,7 +163,12 @@ Deno.test("HTTP ingress accepts the first nested child while its sibling remains
 
 Deno.test("HTTP cancellation closes a blocked body and joins its parser task", async () => {
   await run(function*() {
-    const hby = yield* createHabery({ name: `http-cancel-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const hby = yield* createHabery({
+      name: `http-cancel-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+      resources: new ResourcePolicy({ streams: 2 }),
+    });
     const runtime = yield* createAgentRuntime(hby);
     try {
       const occupied = runtime.resources.reserve({ streams: 2 });

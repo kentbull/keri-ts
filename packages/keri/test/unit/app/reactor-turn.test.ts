@@ -274,7 +274,7 @@ Deno.test("queued retry retains its byte lease until a real cue-capacity retry c
     try {
       const sender = source.makeHab("sender");
       const wire = acceptedEventReplayMessage(source, sender.pre, 0).message;
-      const resources = new ResourcePolicy();
+      const resources = new ResourcePolicy({ streams: 2 });
       const reactor = new Reactor(target, { resources, maxSources: 1, maxPendingCues: 4 });
       reactor.ingest(wire);
       const occupied = resources.reserve({ streams: 2 });

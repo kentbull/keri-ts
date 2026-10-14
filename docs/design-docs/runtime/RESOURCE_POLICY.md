@@ -8,8 +8,14 @@ native/mapped residency and total RSS separately from admitted working retention
 
 `cesr-ts` exports a framework-neutral `ResourcePolicy`. Components sharing the
 same instance share byte, active-stream and active-decryption credit. Defaults
-are 256 MiB, two streams and one decryption; zero capacity disables a dimension.
-Configuration and requests use nonnegative safe integers.
+are 256 MiB, eight streams and one decryption; zero capacity disables a dimension.
+Configuration and requests use nonnegative safe integers. The stream ceiling matches the
+existing eight reply-owner slots and permits supported KLI mailbox-role plus
+witness long polls to coexist with ingress and writers. With a configured two-slot
+policy, two live SSE responses correctly cause a third ingress POST to return 503
+before source acquisition; eight slots retain the same 256 MiB byte ceiling.
+Qualification observations made with two slots remain labeled with that measured
+policy; increasing concurrency does not establish a new RSS measurement.
 
 `reserve` checks the whole request before changing any counters. A `limit`
 refusal means the request cannot fit this configuration; `busy` means other
@@ -121,7 +127,7 @@ acquiring the source. Its parser uses the same policy for ordinary trees and ESS
 stages. A frame request borrows that stream slot while separately charging output
 copies; direct frame requests acquire their own slot. The optional response
 consumer finishes inside the frame scope before advancing input. Query delivery
-uses this same owner, leaving the second default stream slot for response ingress.
+uses this same owner, leaving shared stream headroom for response ingress.
 Configured parser and HTTP policies must agree. Source and payload cleanup join
 before their respective reservations return; callers must still wire the owning
 runtime services into every standalone exchange/witness sender.
