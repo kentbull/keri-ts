@@ -43,9 +43,9 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
 6. Parser input checkpoints yield after 64 KiB or 4,096 pull/consume operations,
    including empty producers, with one cancellation-owned timer. Pending
    metadata/handles and bounded escrow scan work remain separately owned.
-   Internal held cue batches/owned references are available but not wired into
-   Runtime. Prospective KEL/clone/state and decision-carried duplicate/escrow
-   producers now admit concrete batches before effects when explicitly injected.
+   Default Runtime scopes held cue batches/owned references under the shared policy.
+   Prospective KEL/clone/state and decision-carried duplicate/escrow
+   producers admit concrete batches before effects in Runtime or an explicit CueDeck.
    Revery's own query batches likewise precede BADA/proof/escrow writes, using
    finite proof planning. Semantic /ksn admits its actual keyStateSaved child
    before proof/state writes while retaining prepared reply/query ownership.
@@ -69,9 +69,8 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    ownership while admitting queued children before proof/queue writes. CESR
    result credit survives joined stream/parser cleanup; HTTP/schema/JSON results
    admit before schema/terminal writes. Other durable producers remain open,
-   followed by
-   query/mailbox/delivery ownership transfers. Complete these ports before Runtime
-   activation.
+   followed by qualification of query/mailbox/delivery ownership transfers. Default
+   runtime queue lifecycle does not fund accepted caches or other storage scans.
 
 S2 OOBI HTTP now consumes lazy Hab messages with shared admission before metadata
 capture and finite per-message preparation. Forwarding introduction convenience

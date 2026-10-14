@@ -9,6 +9,7 @@ import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbi
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Respondant } from "../../../src/app/respondant.ts";
 import { drainWitnessCues, processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
@@ -363,8 +364,15 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
         cleanup.resolve();
         yield* call(() => halt);
         assertEquals(continued, false);
-        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         assertEquals(provider.db.getKever(controller.pre)?.sn, 0, "cancelled input cannot deliver its later event");
+        assertEquals(
+          runtime.cues.toArray().map((cue) =>
+            cue.kin === "keyStateSaved" ? [cue.kin, cue.ksn.i, cue.ksn.d] : [cue.kin]
+          ),
+          [["keyStateSaved", controller.pre, provider.db.getKever(controller.pre)!.said]],
+        );
+        runtime.cues.clear(); // Cancellation preserves the unconsumed state cue's owner until test cleanup.
+        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         const finite = yield* processWitnessIngress(runtime, witness, later, { local: true, deliver: false });
         assertEquals(finite.filter((emission) => emission.cue.kin === "witness").length, 1);
         assertEquals(provider.db.getKever(controller.pre)?.sn, 1);
@@ -442,7 +450,12 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
         const active = yield* createAgentRuntime(hby, { mode: "local" });
         active.cues.push(cue);
         const sink = active.respondant.forHab(sender);
-        const occupied = active.resources.reserve({ bytes: active.resources.limits.bytes });
+        if (!(active.cues instanceof CueDeck)) throw new Error("Expected admitted runtime source");
+        const queuedBytes = active.cues.headRetentionBytes();
+        assertEquals(active.resources.used.bytes, queuedBytes, "only this source's queued owner is live");
+        const occupied = active.resources.reserve({
+          bytes: active.resources.limits.bytes - active.resources.used.bytes,
+        });
         if (occupied.kind !== "reserve") throw new Error("Expected free byte capacity");
         yield* processCuesOnce(active, { hab: sender, sink });
         assertStrictEquals(active.cues.peekHead(), cue, "own byte refusal cannot destructively fall back");
@@ -481,7 +494,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
               foreign,
             );
             assertStrictEquals(active.cues.peekHead(), cue);
-            assertEquals(active.resources.used.bytes, 0, "foreign failure releases unpublished preparation");
+            assertEquals(active.resources.used.bytes, queuedBytes, "foreign failure returns only unpublished credit");
           } finally {
             sender.interpretCue = interpretation;
             active.poster.findBytesRoute = resolve;
@@ -517,6 +530,21 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
           yield* accepting;
           yield* sending;
           yield* active.deliveries.process(active);
+          assertEquals(
+            active.cues.toArray().map((cue) =>
+              cue.kin === "receipt"
+                ? [cue.kin, cue.serder.pre, cue.serder.said]
+                : cue.kin === "keyStateSaved"
+                ? [cue.kin, cue.ksn.i, cue.ksn.d]
+                : [cue.kin]
+            ),
+            [["receipt", controller.pre, controller.kever!.said], [
+              "keyStateSaved",
+              controller.pre,
+              controller.kever!.said,
+            ]],
+          );
+          active.cues.clear(); // Retire verified queued test work without masking any delivery-owner leak.
           assertEquals(active.resources.used.bytes, 0);
         } finally {
           clearTimeout(deadline);

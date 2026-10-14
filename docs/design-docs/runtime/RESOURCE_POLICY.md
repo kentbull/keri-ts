@@ -169,13 +169,18 @@ are attempted. Retained query cues and configured remote workers remain separate
 unfunded owners. This TS admission policy does not change the normative upstream
 7143832813cac6a394ab1faf9be83bb3372be87c mailbox routing contract.
 
-The internal `CueDeck` is an uninstalled producer/consumer foundation. Ordinary
-Deck and Runtime wiring remain unchanged. `prepare(cues)` holds byte/item credit
+Default `AgentRuntime` owns a scoped `CueDeck` borrowing `hby.db.resources`,
+with the existing 1,024-item Reactor ceiling. Standalone ordinary Deck remains
+caller-owned. `prepare(cues)` holds byte/item credit
 before durable effects; publish transfers it to queued owners, while unused or
 failed preparation rolls back. Held items include prepared, queued, active and
 fanout references, so pulling cannot create another free slot. Transfer/requeue
 never releases credit; clearing releases queued owners only. Consumers release
-after consumption and joined cleanup. A failed callback keeps its owner for retry.
+after consumption and joined cleanup. A failed callback keeps its owner for retry. Runtime
+acquires the deck after backing stores and before processors/output consumers;
+reverse scope exit joins consumers, clears queued owners, then closes owned stores.
+Explicit close follows that order and preserves failure aggregation. Callers first
+join request/runtime tasks; injected services and stores retain their own contracts.
 
 The logical charge counts complete ArrayBuffer backing once per batch, including
 views, and walks canonical enumerable Serder/record/primitive metadata without
@@ -202,7 +207,7 @@ TEL cursor before cloning/yielding. Prototype spoofs and subclasses remain refus
 Finite message arrays charge their complete backing normally. Other opaque replay
 closures remain refused; arbitrary work is never opened for measurement. Capture-time temporary
 allocations still need producer admission; this retained
-owner seam does not activate Runtime or close the full query/delivery boundary.
+owner seam retains default-runtime query evidence through joined consumers.
 TEL replay preflights its body row before owned copies and iterates native dupsort
 signatures without collecting their bucket. Its message ceiling is checked before
 retaining each qualified payload; LMDB bounds each duplicate record at 511 bytes.
@@ -220,10 +225,9 @@ the FEL prediction before its first write; caller-held synchronous writer owners
 continues through append. Decision-carried duplicate/escrow cues use the same
 pre-effect admission. Empty duplicate batches acquire no credit. Busy/limit refusal
 leaves the decision unapplied; unexpected post-write faults release unpublished
-preparation but do not roll back durable effects. Ordinary Runtime Deck retains
-its original conservative acceptance/duplicate count guard and retry boundary.
-Exact measured batch admission applies only to injected CueDeck until Runtime
-producer/consumer ownership is fully ported.
+preparation but do not roll back durable effects. Standalone ordinary Deck retains
+its conservative acceptance/duplicate count guard and retry boundary; default
+runtime CueDeck also admits the measured concrete batches.
 
 Revery preflights ordered proof groups and admits its exact missing-signer query
 batch before BADA/proof/escrow effects. Its configurable `maxReplyGroups` defaults

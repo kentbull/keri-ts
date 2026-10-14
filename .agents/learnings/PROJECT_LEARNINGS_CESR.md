@@ -98,7 +98,11 @@ external provenance when intrinsic wire classification is enabled.
   input (an intentional correction to frozen Python's limen bypass). Numeric
   thresholds retain their domain. Configure before admitting work.
 - Accessor parity includes wrapper projections (`sner`, `tholder`, `ntholder`,
-  `bner`, `berfers`), and legacy intive `bt` needs normalization. Remaining accessor
+  `bner`, `berfers`), and legacy intive `bt` needs normalization. `SerderKERI.uuid`
+  reads `u`, falling back to `n` only for v1.0 `vcp`; `nonce` is its alias, as in 714.
+  `sner` reads raw string `s`; `snh` projects its canonical lowercase hex without
+  leading zeros, so source-seal comparisons share the same ordinal domain.
+  Remaining accessor
   audit stays an explicit plan obligation. Standalone saidive Mapper verification
   checks configured top-level claims in the selected format as well as wire
   round trips; makify replaces claims and verify:false explicitly skips checks.

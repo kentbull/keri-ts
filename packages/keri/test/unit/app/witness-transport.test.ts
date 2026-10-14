@@ -602,6 +602,17 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
               assertEquals(received, 2, "peer RX EOF does not end local TX");
             }
           }
+          assertEquals(
+            runtime.cues.toArray().map((cue) =>
+              cue.kin === "receipt"
+                ? [cue.kin, cue.serder.pre, cue.serder.said]
+                : cue.kin === "keyStateSaved"
+                ? [cue.kin, cue.ksn.i, cue.ksn.d]
+                : [cue.kin]
+            ),
+            [["receipt", sender.pre, sender.kever!.said], ["keyStateSaved", sender.pre, sender.kever!.said]],
+          );
+          runtime.cues.clear(); // Queued protocol work owns credit independently of this joined conversation.
           assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         } finally {
           clearTimeout(timer);

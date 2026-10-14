@@ -359,7 +359,7 @@ Deno.test("queued processing holds local and shared capacity through joined canc
   });
 });
 
-Deno.test("runtime explicit close and scope exit release queued ingress ownership", async () => {
+Deno.test("runtime explicit close and scope exit release queued ingress and cue ownership", async () => {
   const resources = new ResourcePolicy();
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, resources });
@@ -367,13 +367,16 @@ Deno.test("runtime explicit close and scope exit release queued ingress ownershi
       yield* call(function*() {
         const runtime = yield* createAgentRuntime(hby, { resources });
         runtime.reactor.ingest(new Uint8Array(4));
+        runtime.cues.push({ kin: "oobiQueued", url: "https://peer.test/" });
+        assertEquals(resources.used.bytes > 4, true);
         yield* runtime.close();
         assertEquals(resources.used.bytes, 0);
       });
       yield* call(function*() {
         const runtime = yield* createAgentRuntime(hby, { resources });
         runtime.reactor.ingest(new Uint8Array(4));
-        assertEquals(resources.used.bytes, 4);
+        runtime.cues.push({ kin: "oobiQueued", url: "https://peer.test/" });
+        assertEquals(resources.used.bytes > 4, true);
       });
       assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     } finally {

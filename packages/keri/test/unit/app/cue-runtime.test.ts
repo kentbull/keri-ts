@@ -7,7 +7,6 @@ import { prepareCueEmission, type PreparedCueEmission } from "../../../src/app/c
 import { prepareCueRoute } from "../../../src/app/cue-route.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { Reactor } from "../../../src/app/reactor.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
@@ -141,85 +140,75 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
         },
       };
 
-      // Exercise the real runtime QueryCoordinator wrapper, with both ordinary and owned input.
-      for (const owned of [false, true]) {
-        const cues = owned ? new CueDeck(runtime.resources, runtime.cues.capacity) : runtime.cues;
-        const active = owned
-          ? { ...runtime, cues, reactor: new Reactor(hby, { cues, resources: runtime.resources }) }
-          : runtime;
-        if (owned) {
-          cues.extend([
-            { kin: "stream", serder: event, pre: hab.pre, src: hab.pre, topics: { logs: 0 } },
-            { kin: "oobiFailed", url: "http://127.0.0.1:9999/oobi/abc/controller", reason: "HTTP 404" },
-          ]);
-        }
-        const head = active.cues.peekHead(), before = active.resources.used.bytes;
-        const occupied = active.resources.reserve({ bytes: active.resources.limits.bytes - before });
-        if (occupied.kind !== "reserve") throw new Error("Expected remaining credit");
-        yield* processRuntimeTurn(active, { sink });
-        assertStrictEquals(active.cues.peekHead(), head, "busy preparation preserves the source head");
-        occupied.reservation.release();
-        if (!owned) {
-          yield* processRuntimeTurn(active, { sink });
-          continue;
-        }
-        const started = Promise.withResolvers<void>(), cleanup = Promise.withResolvers<void>();
-        const release = Promise.withResolvers<void>();
-        let held = 0;
-        const draining = yield* spawn(() =>
-          processRuntimeTurn(active, {
-            sink: {
-              *send(emission) {
-                assertEquals(emission.kind, "transport");
-                held = active.resources.used.bytes;
-                assertEquals(held > before, true);
-                yield* resource<void>(function*(provide) {
-                  try {
-                    yield* provide();
-                  } finally {
-                    cleanup.resolve();
-                    yield* call(() => release.promise);
-                    assertEquals(active.resources.used.bytes, held, "sink cleanup still owns input/output");
-                  }
-                });
-                started.resolve();
-                yield* suspend();
-              },
+      // The real default runtime owns both normal sends and cancellation through QueryCoordinator.
+      const active = runtime;
+      const head = active.cues.peekHead(), before = active.resources.used.bytes;
+      const occupied = active.resources.reserve({ bytes: active.resources.limits.bytes - before });
+      if (occupied.kind !== "reserve") throw new Error("Expected remaining credit");
+      yield* processRuntimeTurn(active, { sink });
+      assertStrictEquals(active.cues.peekHead(), head, "busy preparation preserves the source head");
+      occupied.reservation.release();
+      yield* processRuntimeTurn(active, { sink });
+      active.cues.extend([
+        { kin: "stream", serder: event, pre: hab.pre, src: hab.pre, topics: { logs: 0 } },
+        { kin: "oobiFailed", url: "http://127.0.0.1:9999/oobi/abc/controller", reason: "HTTP 404" },
+      ]);
+      const started = Promise.withResolvers<void>(), cleanup = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let held = 0;
+      const draining = yield* spawn(() =>
+        processRuntimeTurn(active, {
+          sink: {
+            *send(emission) {
+              assertEquals(emission.kind, "transport");
+              held = active.resources.used.bytes;
+              assertEquals(held > before, true);
+              yield* resource<void>(function*(provide) {
+                try {
+                  yield* provide();
+                } finally {
+                  cleanup.resolve();
+                  yield* call(() => release.promise);
+                  assertEquals(active.resources.used.bytes, held, "sink cleanup still owns input/output");
+                }
+              });
+              started.resolve();
+              yield* suspend();
             },
-          })
-        );
-        yield* call(() => started.promise);
-        // No outer host/query guard may serialize this turn behind the suspended sink.
-        yield* active.reactor.settle();
-        const halting = yield* spawn(() => draining.halt());
-        yield* call(() => cleanup.promise);
-        assertEquals(active.resources.used.bytes, held);
-        release.resolve();
-        yield* halting;
-        assertEquals(active.cues.length, 1);
-        assertEquals(active.resources.used.bytes > 0, true, "the remaining cue retains its owner");
-        yield* processRuntimeTurn(active, { sink });
-        assertEquals(active.resources.used.bytes, 0);
-        active.cues.push({ kin: "oobiFailed", url: "http://peer.test/", reason: "gone" });
-        const fault = new ResourceAdmissionError("foreign sink failure", "busy");
-        yield* call(() =>
-          assertRejects(
-            () =>
-              run(() =>
-                processCuesOnce(active, {
-                  sink: {
-                    *send() {
-                      throw fault;
-                    },
+          },
+        })
+      );
+      yield* call(() => started.promise);
+      // No outer host/query guard may serialize this turn behind the suspended sink.
+      yield* active.reactor.settle();
+      const halting = yield* spawn(() => draining.halt());
+      yield* call(() => cleanup.promise);
+      assertEquals(active.resources.used.bytes, held);
+      release.resolve();
+      yield* halting;
+      assertEquals(active.cues.length, 1);
+      assertEquals(active.resources.used.bytes > 0, true, "the remaining cue retains its owner");
+      yield* processRuntimeTurn(active, { sink });
+      assertEquals(active.resources.used.bytes, 0);
+      active.cues.push({ kin: "oobiFailed", url: "http://peer.test/", reason: "gone" });
+      const fault = new ResourceAdmissionError("foreign sink failure", "busy");
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              processCuesOnce(active, {
+                sink: {
+                  *send() {
+                    throw fault;
                   },
-                })
-              ),
-            ResourceAdmissionError,
-            "foreign sink failure",
-          )
-        );
-        assertEquals(active.resources.used.bytes, 0, "failed sink releases its transferred owner");
-      }
+                },
+              })
+            ),
+          ResourceAdmissionError,
+          "foreign sink failure",
+        )
+      );
+      assertEquals(active.resources.used.bytes, 0, "failed sink releases its transferred owner");
     } finally {
       yield* hby.close();
     }
@@ -549,6 +538,10 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
       );
       for (let pass = 0; pass < 4; pass++) yield* runtime.deliveries.process(runtime);
       assertEquals([packets.second.length, packets.third.length], [1, 1], "failed first target does not stop siblings");
+      const original = runtime.cues instanceof CueDeck ? runtime.cues.takeOwned()! : undefined;
+      if (!original) throw new Error("Expected admitted runtime source");
+      assertStrictEquals(original.cue, cue, "the capacity-refused original cue is still present");
+      original.release();
       assertEquals(runtime.resources.used.bytes, 24 * 1024 ** 2, "only independent failed packet credit remains");
       for (const wire of packets.first) assertEquals(wire, packets.first[0], "retries preserve the exact wire");
       injected = true;
@@ -566,7 +559,7 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
       acceptFirst = true;
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });
       assertEquals(runtime.resources.used.bytes, 0);
-      assertStrictEquals(runtime.cues.pull(), cue, "the capacity-refused original cue is still present");
+
       const cleanupFailure = new Error("iterator cleanup failed");
       let returns = 0;
       const messages = [query], iterator = messages[Symbol.iterator].bind(messages);
