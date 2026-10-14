@@ -51,6 +51,8 @@ close/scope exit clears queued leases without releasing active processing early.
 Lazy HTTP replay reserves shared stream/event/chunk credit before opening its
 iterator and returns it only after source cleanup. Busy HTTP admission returns 503;
 configured size refusal remains 413. Neither creates retry scheduling.
+Query producers run only after preparation/request admission. Queued requests retain
+credit through failure/retry; shutdown releases an active head after transport cleanup joins.
 See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md).
 
 ## Transport

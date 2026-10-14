@@ -66,6 +66,15 @@ buffers; the storage source must separately admit its native and hydration copie
 Temporary shared admission refusal maps to HTTP 503; configured size refusal
 remains 413. Neither response creates a retry queue.
 
+Query delivery reserves 24 MiB of preparation credit and 8 MiB of retained request
+credit before invoking its synchronous wire producer. The preparation allowance
+covers bounded query wire, introduction events and their joined buffer; native
+storage reads still need separate admission. Eight local slots include the active
+head. Preparation credit returns on producer completion/failure, while the request
+keeps its credit through delivery, existing explicit retry and joined shutdown.
+Shutdown releases queued requests immediately and the active request after its
+response cleanup joins. A refused producer is never opened.
+
 Additional hydrated representations, reader copies, storage and object/handle/work
 limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).

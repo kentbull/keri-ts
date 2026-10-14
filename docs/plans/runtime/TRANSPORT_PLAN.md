@@ -10,8 +10,8 @@ Use [small stacked PRs](../PARITY_ROADMAP.md) after their resource/storage
 dependencies, preserving the current transport engine:
 
 1. Ingress read credit and bounded handoff through verification/storage.
-2. Lazy HTTP replay now shares stream/event/chunk credit; finish forwarding and
-   outbound request copy admission, then qualify through a slow sink.
+2. Lazy HTTP replay and query preparation/queues share runtime credit; finish
+   forwarding and outbound HTTP copy admission, then qualify through a slow sink.
 3. Cancellation, disconnect and failed-processing ownership cleanup.
 4. Shutdown/EOF/late-malformed-child reconciliation.
 
