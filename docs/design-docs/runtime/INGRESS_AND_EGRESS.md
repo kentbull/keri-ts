@@ -221,6 +221,19 @@ input/credit; successful transfer frees the ordinary Deck slot and retains credi
 until destination consumption and joined cleanup finish. Actual retained-delivery
 adoption and guard-free network waits remain S1–3; this facility adds neither.
 
+RuntimeDeliveries retains query requests, cue cursors and independently copied
+failed packets on the existing eight-item queue. Cue output retains 8 MiB plus
+source credit, route metadata 1 MiB/4096 targets, and each target preparation
+24 MiB until joined delivery or explicit shutdown. Route capture follows admission;
+its metadata bounds do not qualify native/decoded allocation. A bounded pass
+advances one target per cue. Only the observed exact HTTP refusal may transfer
+a failed packet into another admitted slot; otherwise its cursor stays put.
+Other targets then progress while the exact failed wire remains pending.
+Queue retirement reports local owner progress, not durable transfer/acceptance.
+Synchronous cursor-finalization failure propagates after every independent cleanup
+attempt and credit release; the retired owner never repeats transport/cleanup.
+Actual Respondant/HTTP/witness cue adoption remains the next S1–3 unit.
+
 Prepared cue route capture reserves 1 MiB and at most 4096 targets before
 endpoint resolution; its owner clears captured metadata on release. The combined
 configured floor includes live cue/output and temporary interpretation credit.
