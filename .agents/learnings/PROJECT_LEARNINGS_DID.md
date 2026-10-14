@@ -2,6 +2,10 @@
 
 DID Webs resolution ingests keri.cesr, reconstructs the document from KERI/VDR
 state and compares hosted did.json. Hosted JSON alone is not verification.
+Current CESR fetch and artifact generation collect complete histories; transport
+S2 owns streamed intake/output before release. Preserve complete-document DID
+comparison, captured replay/proof ordering and accepted alias cutoffs. Static
+CESR serving/export should stream too; finite DID JSON remains bounded parsing.
 Numeric, flat/nested weighted and multi-clause thresholds project through
 ConditionalProof2022 without reducing them to a scalar threshold.
 

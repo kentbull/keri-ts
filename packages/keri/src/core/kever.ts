@@ -582,6 +582,21 @@ export class Kever {
     });
   }
 
+  /** Fix log metadata and clone cues before any accepted-event writes. */
+  prepareLogEvent(args: KELEventState): { fn: number | null; dater: Dater; cues: AgentCue[] } {
+    const pre = args.serder.pre;
+    if (!pre || !args.serder.said || args.serder.sn === null) {
+      throw new ValidationError("logEvent requires pre, said, and sn.");
+    }
+    const fn = args.first ? this.db.nextFelOrdinal(pre) : null;
+    const dater = args.frc?.dt ?? new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) });
+    const cues: AgentCue[] = [];
+    if (fn !== null && args.frc && fn !== Number(args.frc.f.num)) {
+      cues.push({ kin: "noticeBadCloneFN", serder: args.serder, fn, firner: args.frc.f, dater: args.frc.dt });
+    }
+    return { fn, dater, cues };
+  }
+
   /**
    * Idempotently log one verified accepted event into the durable KEL surface.
    *
@@ -594,10 +609,10 @@ export class Kever {
    * - delegator source seals are only persisted for accepted delegated
    *   non-`ixn` events so provisional or malicious source-seal attachments do
    *   not become accepted state
-   * - first-seen side effects (`fels.`/`fons.` and replay-fn anomaly cues)
-   *   remain isolated behind `first`
+   * - first-seen effects (`fels.`/`fons.`) use prepared metadata; Kevery
+   *   admits and publishes replay-fn anomaly cues outside this write seam
    */
-  logEvent(args: KELEventState): { fn: number | null; dater: Dater } {
+  logEvent(args: KELEventState, prepared: ReturnType<Kever["prepareLogEvent"]>): void {
     const local = args.local ?? false;
     const pre = args.serder.pre;
     const said = args.serder.said;
@@ -607,10 +622,10 @@ export class Kever {
     }
 
     const first = args.first ?? false;
-    const replayDater = args.frc?.dt ?? null;
-    const nowIso8601 = replayDater?.dts ?? makeNowIso8601();
-    const nowDater = replayDater
-      ?? new Dater({ qb64: encodeDateTimeToDater(nowIso8601) });
+    const { fn, dater: nowDater } = prepared;
+    if (fn !== (first ? this.db.nextFelOrdinal(pre) : null)) {
+      throw new Error("Prepared first-seen ordinal changed before logging");
+    }
     const dgkey = dgKey(pre, said);
 
     this.db.dtss.put(dgkey, nowDater);
@@ -646,24 +661,13 @@ export class Kever {
       this.db.esrs.put(dgkey, { local });
     }
 
-    let fn: number | null = null;
     if (first) {
-      fn = this.db.appendFel(pre, said);
-      if (args.frc && fn !== Number(args.frc.f.num)) {
-        this.cues.push({
-          kin: "noticeBadCloneFN",
-          serder: args.serder,
-          fn,
-          firner: args.frc.f,
-          dater: args.frc.dt,
-        });
-      }
+      if (this.db.appendFel(pre, said) !== fn) throw new Error("First-seen append disagrees with preparation");
       this.db.dtss.pin(dgkey, nowDater);
-      this.db.fons.pin(dgkey, encodeHugeOrdinal(fn));
+      this.db.fons.pin(dgkey, encodeHugeOrdinal(fn!));
     }
 
     this.db.kels.add(pre, sn, said);
-    return { fn, dater: nowDater };
   }
 
   /**

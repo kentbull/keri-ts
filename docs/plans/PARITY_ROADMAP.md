@@ -1,6 +1,6 @@
 # KERIpy parity and bounded runtime roadmap
 
-Verified boundary: keri-ts `88c39757` after #234; transport and qualification remain open.
+Verified boundary: keri-ts `41748042` after #246; transport and qualification remain open.
 Frozen upstream: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
@@ -27,7 +27,7 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 | ESSR outcomes     | Shared admission | [4 integration][essr]     | [Policy][resource]      | Native copies         |
 | Shared budget     | Trees/queues     | [4 stack][resource]       | [Policy][resource]      | Copies/metadata       |
 | Storage/recovery  | Nested preflight | [5][storage]              | [#214][native-rows]     | Other rows/recovery   |
-| Transport         | HTTP progressive | [6/S1–9][transport]       | [Boundary][transport]   | TCP/guard/duplex      |
+| Transport         | HTTP/TCP engines | [6/S1–9][transport]       | [Boundary][transport]   | Stack/guard/duplex    |
 | Reference pins    | Imports audited  | [7][qualification]        | [Inventory][pins]       | Actual workflows      |
 | Qualification     | Small corpora    | [7][qualification]        | [Matrix][qualification] | Full runtime          |
 | Mapper/schema IDs | Implemented      | [Qualification][mapper]   | [Claims/IDs][mapper]    | Default-builder scope |
@@ -39,14 +39,17 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
    implemented. Qualify their composed workflows; do not recreate foundations.
    The retired #172 snapshot remains recoverable evidence.
 2. Finish real frozen-reference TEL/TSN processors in small query/reply units.
-   Keep unfinished consumers guarded; `xip/pro/bar` are reference stubs.
+   Registry and credential TSN consumers are implemented; qualify their query composition
+   before enabling TSN queries. `xip/pro/bar` remain reference stubs.
 3. Complete shared admission (4), storage/recovery (5) and production
    backpressure (6) through the active stack below and its remaining owner gates.
    The socket-to-application streamability work is phase 6's S1–9 sequence:
    bounded cue handoff, network waits outside the guard, progressive TCP intake,
    supervised connections, streamed output, explicit duplex and composed proof.
    Finite/source messenger entries share two engines within those units; HTTP
-   preserves its framed POST contract.
+   preserves its framed POST contract. The transport inventory also owns OOBI,
+   witness GET replay, DID CESR artifacts, mailbox, CLI service wiring and bounded
+   JSON exceptions; adoption throughout the stack is part of the same release gate.
    It is required in the next release, not deferred post-release qualification.
 4. Qualify delivered Mapper claims (#223) and bundled schema IDs (#226) in the
    final composition; keep format-dependent default-builder limits explicit.
@@ -97,8 +100,8 @@ hosted extended jobs, whose existing 15-minute cap remains unchanged.
 ## Final release gate
 
 The approved final task is publication of `cesr-ts`, `keri-ts` and `@keri-ts/tufa`
-for downstream diddaemon adoption. Complete transport S1–9 and its shared-budget
-and durable-recovery dependencies before merging #104 or publishing. Prove real
+for downstream diddaemon adoption. Complete transport S1–9, its stack-wide
+adoption inventory and its shared-budget and durable-recovery dependencies before merging #104 or publishing. Prove real
 HTTP/TCP progress through verified acceptance before transfer completion; parser
 tests, finite TCP admission and local write completion cannot satisfy this gate.
 Recheck #104's generated versions, dependency

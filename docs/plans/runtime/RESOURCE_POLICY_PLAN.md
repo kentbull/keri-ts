@@ -31,8 +31,9 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    including empty producers, with one cancellation-owned timer. Pending
    metadata/handles and bounded escrow scan work remain separately owned.
    Internal held cue batches/owned references are available but not wired into
-   Runtime. Port prospective KEL/clone/state producers first, remaining durable
-   producers next, then explicit query/mailbox/delivery ownership transfers.
+   Runtime. Prospective KEL/clone/state and decision-carried duplicate/escrow
+   producers now admit concrete batches before effects when explicitly injected.
+   Port remaining durable producers, then query/mailbox/delivery ownership transfers.
 
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.
 Split further before publication if a complete boundary needs more. Qualification

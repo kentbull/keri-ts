@@ -17,7 +17,7 @@ import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
-import { incept as inceptRegistry, issue, revoke } from "../../../src/core/protocol-vdr-eventing.ts";
+import { backerIssue, incept as inceptRegistry, issue, revoke } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -659,6 +659,224 @@ Deno.test("registry TSN partial proof ownership stays in finite Broker retry", a
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("credential TSN verifies current commitment, independent attester and proof ownership", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = hby.makeHab("issuer"), outsider = hby.makeHab("outsider", undefined, { transferable: false });
+    const runtime = yield* createAgentRuntime(hby);
+    const reger = runtime.vdr.reger! as Reger, tvy = runtime.vdr.tvy! as Tevery;
+    try {
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const credential = makeCredential(issuer.pre), iss = issue(credential.said!, vcp.pre!);
+      assertEquals(tvy.processEvent({ serder: iss, ...anchorTel(issuer, iss) }).kind, "accept");
+      const state = tvy.tevers.get(vcp.pre!)!.vcState(credential.said!)!.asDict();
+      const oldStamp = makeNowIso8601().replace(/0\+00:00$/, "1+00:00"),
+        stamp = oldStamp.replace(/1\+00:00$/, "2+00:00");
+      const notice = (data = state, at = stamp, author = issuer) =>
+        reply(`/tsn/credential/${author.pre}`, data, { pre: author.pre, stamp: at });
+      const valid = notice();
+      yield* runtime.reactor.processBytes(issuer.endorse(valid));
+      assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, valid.said);
+      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      yield* runtime.reactor.processBytes(issuer.endorse(notice(state, oldStamp)));
+      yield* runtime.reactor.processBytes(outsider.endorse(notice()));
+      yield* runtime.reactor.processBytes(outsider.endorse(notice(state, stamp, outsider)));
+      assertEquals(reger.txnsb.current([credential.said!, outsider.pre]), null);
+      assertEquals(runtime.cues.length, 0);
+      for (
+        const data of [
+          { ...state, d: vcp.said },
+          { ...state, s: "20000000000001" },
+          {
+            ...state,
+            a: { ...(state.a as Record<string, unknown>), s: Number((state.a as Record<string, unknown>).s) + 1 },
+          },
+          { ...state, et: "rev" },
+          { ...state, ra: { i: vcp.pre, s: "0", d: vcp.said } },
+        ]
+      ) {
+        const wrong = notice(data, stamp.replace(/2\+00:00$/, "3+00:00"));
+        yield* runtime.reactor.processBytes(issuer.endorse(wrong));
+        assertEquals(hby.db.rpys.get([wrong.said!]), null, "Rejected proof has no orphan Baser owner");
+        assertEquals(hby.db.sdts.get([wrong.said!]), null);
+        assertEquals([...hby.db.ssgs.getTopItemIter([wrong.said!], { topive: true })].length, 0);
+      }
+      assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, valid.said);
+      assertExists(hby.db.sdts.get([valid.said!]), "Accepted BADA proof survives semantic rejection");
+      const other = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: other, ...anchorTel(issuer, other) }).kind, "accept");
+      const crossRegistry = notice({ ...state, ri: other.pre }, stamp.replace(/2\+00:00$/, "4+00:00"));
+      yield* runtime.reactor.processBytes(issuer.endorse(crossRegistry));
+      assertEquals(hby.db.rpys.get([crossRegistry.said!]), null);
+      const habRecord = hby.db.getHab(issuer.pre)!;
+      habRecord.watchers = [outsider.pre];
+      hby.db.habs.pin(issuer.pre, habRecord);
+      const watcher = notice(state, stamp, outsider);
+      yield* runtime.reactor.processBytes(outsider.endorse(watcher));
+      assertEquals(reger.txnsb.current([credential.said!, outsider.pre])?.qb64, watcher.said);
+      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      const rev = revoke(credential.said!, vcp.pre!, iss.said!);
+      assertEquals(tvy.processEvent({ serder: rev, ...anchorTel(issuer, rev) }).kind, "accept");
+      assertEquals(runtime.cues.pull()?.kin, "revoked");
+      const stale = notice(state, stamp.replace(/2\+00:00$/, "5+00:00"));
+      yield* runtime.reactor.processBytes(issuer.endorse(stale));
+      assertEquals(
+        reger.txnsb.current([credential.said!, issuer.pre])?.qb64,
+        valid.said,
+        "Accepted revocation blocks old issuance replay",
+      );
+      assertEquals(hby.db.rpys.get([stale.said!]), null);
+      const revoked = notice(
+        tvy.tevers.get(vcp.pre!)!.vcState(credential.said!)!.asDict(),
+        stamp.replace(/2\+00:00$/, "6+00:00"),
+      );
+      yield* runtime.reactor.processBytes(issuer.endorse(revoked));
+      assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, revoked.said);
+      assertEquals(
+        hby.db.rpys.get([valid.said!]),
+        null,
+        "Replacement releases old accepted proof only after publication",
+      );
+      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      const backed = inceptRegistry(issuer.pre, { baks: [outsider.pre], toad: 1 });
+      assertEquals(
+        tvy.processEvent({ serder: backed, ...anchorTel(issuer, backed), wigers: outsider.sign(backed.raw, true) })
+          .kind,
+        "accept",
+      );
+      const otherCredential =
+        new Diger({ code: "E", raw: Diger.digest(new TextEncoder().encode("backed credential"), "E") }).qb64;
+      const bis = backerIssue(otherCredential, backed.pre!, 0, backed.said!);
+      assertEquals(
+        tvy.processEvent({ serder: bis, ...anchorTel(issuer, bis), wigers: outsider.sign(bis.raw, true) }).kind,
+        "accept",
+      );
+      habRecord.watchers = [];
+      hby.db.habs.pin(issuer.pre, habRecord);
+      const backedNotice = notice(tvy.tevers.get(backed.pre!)!.vcState(otherCredential)!.asDict(), stamp, outsider);
+      yield* runtime.reactor.processBytes(outsider.endorse(backedNotice));
+      assertEquals(
+        reger.txnsb.current([otherCredential, outsider.pre])?.qb64,
+        backedNotice.said,
+        "Accepted backers authenticate independent credential notice",
+      );
+      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      yield* reger.close();
+      let failure: unknown;
+      try {
+        yield* runtime.reactor.processBytes(issuer.endorse(revoked));
+      } catch (error) {
+        failure = error;
+      }
+      assertEquals(failure instanceof Error && failure.message.includes("not open"), true);
+      yield* reger.reopen();
+      yield* runtime.reactor.processBytes(issuer.endorse(revoked));
+      assertEquals(
+        reger.txnsb.current([credential.said!, issuer.pre])?.qb64,
+        revoked.said,
+        "Notice replay survives reopen",
+      );
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("credential TSN missing registry, TEL and partial proofs retry through the runtime", async () => {
+  await run(function*() {
+    const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = sender.makeHab("issuer", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
+    const source = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby), reger = runtime.vdr.reger! as Reger;
+    try {
+      const tvy = new Tevery({ db: sender.db, reger: source });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const credential = makeCredential(issuer.pre), iss = issue(credential.said!, vcp.pre!);
+      assertEquals(tvy.processEvent({ serder: iss, ...anchorTel(issuer, iss) }).kind, "accept");
+      const notice = reply(
+        `/tsn/credential/${issuer.pre}`,
+        tvy.tevers.get(vcp.pre!)!.vcState(credential.said!)!.asDict(),
+        { pre: issuer.pre },
+      );
+      yield* runtime.reactor.processBytes(issuer.endorse(notice));
+      assertEquals(reger.txnsb.escrowdb.get(["credential-mre", credential.said!, issuer.pre]).length, 1);
+      assertEquals(runtime.cues.pull(), {
+        kin: "query",
+        pre: issuer.pre,
+        src: issuer.pre,
+        route: "tels",
+        query: { ri: vcp.pre, i: "" },
+      });
+      for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
+      assertEquals([...runtime.cues].map((cue) => cue.kin), [
+        "receipt",
+        "keyStateSaved",
+        "receipt",
+        "keyStateSaved",
+        "receipt",
+        "keyStateSaved",
+      ]);
+      runtime.cues.clear();
+      yield* runtime.reactor.processBytes(source.cloneTvt(vcp.pre!, vcp.said!));
+      yield* runtime.reactor.processEscrowsOnce();
+      assertEquals(reger.txnsb.escrowdb.get(["credential-mre", credential.said!, issuer.pre]).length, 0);
+      assertEquals(reger.txnsb.escrowdb.get(["credential-ooo", credential.said!, issuer.pre]).length, 1);
+      assertEquals(runtime.cues.pull(), {
+        kin: "query",
+        pre: issuer.pre,
+        src: issuer.pre,
+        route: "tels",
+        query: { ri: vcp.pre, i: credential.said },
+      });
+      assertExists(reger.txnsb.serderdb.get([notice.said!]));
+      assertEquals(hby.db.rpys.get([notice.said!]), null, "Pending proof belongs only to Broker");
+      yield* runtime.reactor.processBytes(source.cloneTvt(iss.pre!, iss.said!));
+      yield* runtime.reactor.processEscrowsOnce();
+      assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, notice.said);
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0);
+      assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      issuer.rotate({ ncount: 2, nsith: "2" });
+      const fresh = reply(`/tsn/credential/${issuer.pre}`, notice.ked!.a as Record<string, unknown>, {
+        pre: issuer.pre,
+      });
+      const est = issuer.kever!.serder, signatures = issuer.sign(fresh.raw, true);
+      const wire = (index: number) =>
+        messagize(fresh, {
+          sigers: [signatures[index]],
+          seal: { i: issuer.kever!.prefixer, s: est.sner!, d: new Diger({ qb64: est.said! }) },
+        });
+      yield* runtime.reactor.processBytes(wire(0));
+      assertEquals(reger.txnsb.escrowdb.get(["credential-mae", credential.said!, issuer.pre]).length, 1);
+      assertEquals(hby.db.rpes.cnt(), 0);
+      for (const bytes of sender.db.clonePreIter(issuer.pre, issuer.kever!.sn)) {
+        yield* runtime.reactor.processBytes(bytes);
+      }
+      yield* runtime.reactor.processEscrowsOnce();
+      assertEquals(
+        reger.txnsb.current([credential.said!, issuer.pre])?.qb64,
+        notice.said,
+        "One signature cannot satisfy threshold two",
+      );
+      assertExists(hby.db.rpys.get([notice.said!]), "Prior accepted proof remains in Baser");
+      assertEquals([...hby.db.ssgs.getTopItemIter([fresh.said!], { topive: true })].length, 0);
+      yield* runtime.reactor.processBytes(wire(1));
+      yield* runtime.reactor.processEscrowsOnce();
+      assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, fresh.said);
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0);
+      assertEquals(hby.db.rpes.cnt(), 0);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+      yield* source.close(true);
+      yield* sender.close(true);
     }
   });
 });

@@ -114,10 +114,18 @@ a separately proven durable obligation or reconstruction path, not just a queue.
 
 ## Messenger responsibilities
 
+Incremental source/sink I/O is the default for CESR network traffic across KERI
+and Tufa. Callers share the runtime's exact services/resource policy, preserve
+borrowed owners and propagate cancellation through joined cleanup. GET retrieval,
+SSE and non-CESR documents preserve their framing; they reuse ownership facilities
+rather than being wrapped in a CESR POST. A finite collector needs a semantic
+reason and enforced admission/cap, not merely a legacy byte-input API.
+The [stack adoption inventory][transport-plan] marks remaining callers explicitly.
+
 Two engines own transport work: CESR HTTP request/response scopes and an owned
 TCP connection with directional I/O. Small Effection operations/resources expose
 finite-message and source inputs. TCP send adapters share one writer; connection-owned
-reply parsing and complete caller integration remain planned in S6, S8–9.
+reply parsing remains planned in S6, S8–9; stack-wide caller adoption remains S1–9.
 
 | KERIpy responsibility | TypeScript entry / shared engine                        |
 | --------------------- | ------------------------------------------------------- |
@@ -277,8 +285,12 @@ ceiling before copying. Director/runtime close joins cancellation before stores.
 
 Finite OOBI and DID verification currently admit at most 8 MiB per fetched
 artifact, including their CESR replay document. Moving those complete verification
-flows to streamed artifacts remains separate work. Mailbox admin response metadata
-admits 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those
+flows to streamed CESR artifacts is required by transport S2 before release.
+DID resolution remains complete-evidence verification, even when intake streams.
+OOBI/DID replay serving and witness GET query output still collect histories;
+these are open adoption gaps. Finite JSON documents and receipt proofs retain
+whole-document semantics with bounded admission and joined cancellation.
+Mailbox admin response metadata admits 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those
 finite collectors use the same owned, cancellable byte reader.
 
 Provider connections and per-request topics now share finite runtime admission.

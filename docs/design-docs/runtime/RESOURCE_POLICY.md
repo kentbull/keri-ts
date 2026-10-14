@@ -140,7 +140,17 @@ final release. One shared batch lease lasts until its last owner; fanout adds
 reference credit, not another payload charge. Opaque replay closures are refused
 until captured-range metadata is explicit; they are never opened for inspection.
 
-Next integrate prospective KEL acceptance/clone/state cues before logging, then
-Revery/OOBI, EXN/KRAM and legacy credential/TEL producers. QueryReplies fanout,
-mailbox correlation, query continuations and delivery consumers must transfer
+Kevery now prepares the concrete acceptance/clone/state batch before logging,
+with prospective first-seen ordinal/date and group/witness policy. Logging checks
+the FEL prediction before its first write; caller-held synchronous writer ownership
+continues through append. Decision-carried duplicate/escrow cues use the same
+pre-effect admission. Empty duplicate batches acquire no credit. Busy/limit refusal
+leaves the decision unapplied; unexpected post-write faults release unpublished
+preparation but do not roll back durable effects. Ordinary Runtime Deck retains
+its original conservative acceptance/duplicate count guard and retry boundary.
+Exact measured batch admission applies only to injected CueDeck until Runtime
+producer/consumer ownership is fully ported.
+
+Next integrate Revery/OOBI, EXN/KRAM and legacy credential/TEL producers.
+QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.

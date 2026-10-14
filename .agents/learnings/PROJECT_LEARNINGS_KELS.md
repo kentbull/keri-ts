@@ -6,6 +6,15 @@
 applies post-acceptance effects. Expected remote outcomes use typed decisions
 under [ADR-0005](../../docs/adr/adr-0005-kel-decision-control-flow.md), not exceptions.
 Local inception/interaction uses the same acceptance path as remote events.
+Kevery builds finalized first-seen/date, clone and acceptance cues before accepted
+writes, and holds concrete CueDeck batches before duplicate/escrow effects too.
+Kever logging checks the prospective FEL tail before writes; synchronous writer
+ownership must persist through append. Group-prefix publication follows admission.
+Busy/limit refusal leaves that decision unapplied; an unexpected infrastructure
+failure after writes is not a durable rollback or cue recovery guarantee.
+Ordinary Runtime Deck keeps its conservative acceptance/duplicate count guard
+until owned producers/consumers are fully ported; changing that boundary changes
+ingress and escrow retry ownership even when the actual cue batch fits.
 
 `states.` is durable key-state authority; `kels.`/`fels.`/`dtss.` retain event
 history. Habery.habs and db.kevers are caches. Query/event routing must use
@@ -42,8 +51,9 @@ Legacy TEL query replay captures management then credential extents, closes curs
 before yielding, and preserves frozen v2 proof counters with an explicit genus
 selector. Requester material identifies the destination; upstream query signature
 validation is TODO. Internal TSN production calls actual `vcState(vci)`, correcting
-714's broken query keyword. Missing credentials retain the registry reply; credential
-receiving and TSN queries remain guarded. Registry receiving verifies BADA/trust/TEL correspondence.
+714's broken query keyword. Missing credentials retain the registry reply;
+credential receiving is implemented while TSN queries remain guarded. Registry
+receiving verifies BADA/trust/TEL correspondence.
 State-record construction proves no acceptance. Complete-message caps do not prove native pre-read admission.
 Revery BADA preserves microseconds. TSN retry must use Broker's typed finite
 family pass; its legacy exception adapter can conceal infrastructure errors.
@@ -53,6 +63,9 @@ Registry TSN trust uses accepted configuration and issuer witnesses, never claim
 notice backers. The semantic receiver owns missing/partial proofs in Broker via
 explicit external Revery escrow; preserve prior BADA evidence until publication.
 TEL recovery must preserve credential `i` separately from the queried issuer.
+Credential TSN admission matches its own current TEL/registry/anchor record; accepted
+revocation cannot be overwritten by a newly signed old issuance notice. Actual 714
+accepts forged anchor metadata and old issuance state, intentional TS refusals.
 
 Canonical transferable receipt output groups proofs by the complete receiptor
 establishment seal (`-F` in v1). Durable vrcs quadruples and legacy decoding remain.

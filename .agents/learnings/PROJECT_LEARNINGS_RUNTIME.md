@@ -44,7 +44,9 @@ a runtime. Reactor reserves stream/cursor/producer credit before source acquisit
 and retains it through joined parser cleanup. AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
 Internal CueDeck preparation holds concrete metadata/backing and item credit;
-ownership transfers through fanout/requeue until final cleanup. Runtime activation
+ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
+clone/state and decision-carried duplicate/escrow cues now prepare before effects
+when CueDeck is explicitly injected. Runtime activation
 waits for every producer/consumer port; count checks alone cannot reserve byte credit.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
@@ -66,7 +68,12 @@ See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md
 
 ## Transport
 
-The target finite and streamed messenger entry points share two engines. Parsed
+Incremental CESR I/O is the stack-wide default, including discovery, artifacts
+and CLI callers. Adopt the shared engines/response owners rather than private
+collectors; pass the runtime's exact services/policy. Finite JSON/receipt semantics
+require enforced caps, cancellation and joined cleanup. OOBI/DID completion still
+requires full evidence; processing before EOF does not imply artifact success.
+The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
 HTTP success, verified replies and durable acceptance are different outcomes.

@@ -1404,6 +1404,17 @@ export class Baser {
     return this.fels.appendOn(pre, said);
   }
 
+  /** Predict the next FEL ordinal while the caller retains synchronous writer ownership. */
+  nextFelOrdinal(pre: string): number {
+    let next = (this.replayEnd(pre) ?? -1) + 1;
+    // Match appendOnVal's compatibility fallback when the native reverse seek misses its tail.
+    if (this.fels.getOn(pre, next) !== null) next = this.fels.cntOnAll(pre);
+    if (!Number.isSafeInteger(next) || next < 0 || this.fels.getOn(pre, next) !== null) {
+      throw new Error("Invalid prospective first-seen ordinal");
+    }
+    return next;
+  }
+
   /** Read one first-seen digest by `(pre, fn)` from `fels.`. */
   getFel(pre: string, fn: number): string | null {
     return this.fels.getOn(pre, fn);

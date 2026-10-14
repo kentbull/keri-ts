@@ -12,14 +12,15 @@ The [runtime contract][runtime] distinguishes current behavior from the target.
 - `processWitnessIngress` accepts finite bytes and retains all emissions.
 - Generic HTTP ingress already parses progressively, but HTTP/witness/runtime
   cue drains can await `Respondant` network delivery under the Reactor guard.
-- The TCP sender accepts finite bytes and ends output; it has no streamed writer
-  or same-socket reply consumer. Existing replies use mailbox/direct routing.
+- The TCP sender shares a finite/source writer (#243), but has no
+  same-socket reply consumer. Existing replies use mailbox/direct routing.
 
 Reuse the active admission stack: HTTP frame/output work (#224–225), finite TCP
 ownership (#230), parser scheduling (#231), and mailbox stream admission.
 Those units are dependencies, not proof of end-to-end socket streamability.
 Generic witness sends and runtime delegation share services; finite TCP credit
-follows joined socket close. Streamed sending remains S7–8.
+follows joined socket close. Writer foundation is delivered; frame/caller
+integration and replies remain S7–8.
 HTTP already shares `requestFrame` (parsed frame) and `postCesr` (byte source);
 its successful-response consumer is optional, so ordinary sends do not prove
 verified protocol replies or durable remote acceptance.
@@ -43,6 +44,68 @@ including per-frame streamed body mode, rather than adopting upstream’s bulk P
 This is part of S1–9: S1–3 owns HTTP callers, response lifetimes and guarded
 preparation; S6–8 owns TCP connection, finite/source output and conversation
 policy. Preserve Poster/Respondant routing and Reactor verification boundaries.
+
+## Stack-wide adoption gate
+
+Incremental, cancellable, demand-driven I/O is the default across KERI and Tufa,
+not an opt-in optimization for selected endpoints. This inventory extends the
+existing S1–9 owners; it creates no parallel transport project. Two CESR transport
+engines remain shared. GET, SSE and JSON retain their own framing while reusing
+source, response, admission and lifecycle facilities.
+
+| Path                    | Current boundary             | Owner / remaining adoption        |
+| ----------------------- | ---------------------------- | --------------------------------- |
+| [Hosts][hosts]          | HTTP streams; TCP collects   | S4–6: supervised socket ingress   |
+| [Delivery][delivery]    | Shared sends; guarded drains | S1–3, S7–8: owned workers/replies |
+| [Queries][queries]      | Lazy POST; GET collects      | S1–3: demand-driven GET replay    |
+| [Mailbox][mailbox-path] | Demand-driven SSE            | S1–3: cue/worker credit and stop  |
+| [OOBI][oobi-path]       | 8 MiB fetch; bundle reply    | S2: incremental CESR fetch/serve  |
+| [DID Webs][did-path]    | Collected fetch/generation   | S2: streamed CESR artifacts       |
+| [Commands][commands]    | Mixed services/lifetimes     | S1–8: shared runtime wiring       |
+| [JSON edges][json-path] | Finite documents/status      | S2: bounded exception audit       |
+
+**Host and delivery adoption.** Audit native Deno and packed Node hosts, generic
+CESR and witness-specific HTTP, receipts, TCP listeners and error paths. Reuse
+connection/source ownership rather than a private collector or detached task.
+Poster/Respondant, witness publication/receipting, delegation, exchange delivery,
+query continuations and replay must use the shared admitted engines. Stream
+introductions and replay-sized inputs; finite events/proofs may use finite adapters.
+Preserve witness-local policy and default mailbox/direct routing. Verify response
+consumers explicitly; status-only sends do not establish verified replies.
+
+**Discovery and artifacts.** Oobiery must feed CESR bodies directly into the
+progressive Reactor, keeping durable queued/in-flight/resolved ownership and marking
+resolution only after complete successful intake. JSON/schema branches remain
+bounded document parsing. Serve OOBI replay and witness GET KEL queries lazily,
+including required role/location proofs, without joining whole histories.
+DID Webs resolution streams `keri.cesr` into accepted KERI/VDR state; success still
+requires complete evidence, escrow resolution and comparison with hosted `did.json`.
+Dynamic artifact output and static file serving pull under response demand;
+generation/export writes bounded pieces rather than assembling a replay array.
+Preserve captured ranges, proof order, delegated evidence and current alias cutoffs.
+HTTPS fallback must distinguish failed acquisition from partial application: do not
+silently restart a consumed artifact or swallow cancellation/infrastructure faults.
+
+**Composition and exceptions.** Audit CLI agent/witness/mailbox, OOBI, DWS/DKR,
+query, multisig, IPEX, delegation and verifier commands through actual library
+callers. Pass the runtime's exact services/policy into nested network operations;
+standalone operations use one owned policy for their invocation. Finite receipts,
+schema/DID JSON, administrative metadata and Sally-style webhook JSON can retain
+whole-document semantics. They still need explicit size/copy/handle admission,
+bounded response/error consumption, abort propagation and joined cleanup. The
+sample webhook's unrestricted `request.json()` and retained presentation map are
+open bounds, not an exemption because it is a demo. Do not force non-CESR data
+through CESR messengers or invent incremental JSON verification.
+
+Publish each adoption slice within the existing S owners, separating OOBI receive,
+OOBI/GET output, DID receive, DID artifact generation/serving and JSON lifecycle
+fixes as needed to meet the review-size target. Preserve finite API convenience
+where justified, with enforced ceilings before avoidable allocation. Every retained
+collector needs a documented semantic reason, limit, owner and actual caller test;
+"currently accepts bytes" is not a reason. Reconcile other `fetch`, socket, file
+and body-reader call sites again before release so this inventory cannot hide a
+new bypass. S9 requires all applicable rows adopted or a qualified bounded
+exception; foundations alone do not close the stack gate.
 
 ## Review units
 
@@ -117,11 +180,11 @@ collectors must declare and enforce their caps.
 | Requirement      | Current evidence           | Owner   | Unresolved gate                |
 | ---------------- | -------------------------- | ------- | ------------------------------ |
 | HTTP progress    | Progressive body intake    | S1–3    | Guard-free network waits       |
-| TCP progress     | Whole-connection intake    | S4–6    | Acceptance before EOF          |
-| Streamed output  | HTTP serializer path       | S7–8    | TCP pressure and duplex        |
+| TCP progress     | Source/writer foundations  | S4–8    | Acceptance before EOF          |
+| Streamed output  | Shared HTTP/TCP writers    | S1–8    | Caller adoption and duplex     |
 | Ownership        | Finite guards/active stack | S1–8    | Shared bounds and joined stop  |
 | Recovery         | Optional mailbox outbox    | Phase 5 | Atomic/recoverable obligations |
-| Production proof | Parser/focused cases       | S9      | Real socket-to-store path      |
+| Production proof | Parser/focused cases       | S9      | All applicable stack paths     |
 
 S9 extends existing transport/runtime tests for decisive regressions:
 
@@ -145,6 +208,10 @@ S9 extends existing transport/runtime tests for decisive regressions:
 - Exercise finite/source parity through actual callers, including parsed-frame
   input without reparsing. Verify HTTP method, destination, authorization, media
   type, response consumption and one-request-per-frame behavior under pressure.
+- Reconcile the stack-wide inventory: OOBI, witness GET replay, DID artifacts,
+  command/service wiring and bounded JSON exceptions. Exercise existing real
+  callers under slow sinks and cancellation; record any remaining collection and
+  its enforced cap. End-to-end document success may still require full evidence.
 - Verify actual serializer output bidirectionally with the declared Python
   environment. Preserve parent signatures, child evidence and local genus scopes.
 
@@ -166,3 +233,11 @@ is not a hard memory ceiling; qualify actual Deno and packed Node paths.
 [storage]: ../db/STORAGE_RECOVERY_PLAN.md
 [gleif]: https://github.com/GLEIF-IT/keripy/blob/a55a712d1dd92121ab659d76ee71942155f6caa9/src/keri/app/directing.py
 [buffering]: https://nodejs.org/api/stream.html#buffering
+[hosts]: ../../../packages/tufa/src/host
+[delivery]: ../../../packages/keri/src/app/forwarding.ts
+[queries]: ../../../packages/keri/src/app/witnessing.ts
+[mailbox-path]: ../../../packages/keri/src/app/forwarding.ts
+[oobi-path]: ../../../packages/keri/src/app/oobiery.ts
+[did-path]: ../../../packages/keri/src/did/webs
+[commands]: ../../../packages/tufa/src/cli
+[json-path]: ../../../packages/keri/src/app/verifier-agent.ts
