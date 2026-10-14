@@ -18,6 +18,7 @@ import { ValidationError } from "../core/errors.ts";
 import { DELEGATE_MAILBOX_TOPIC, REPLAY_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { Schemes } from "../core/schemes.ts";
 import { dgKey } from "../db/core/keys.ts";
+import type { AgentRuntime } from "./agent-runtime.ts";
 import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import { type Poster } from "./forwarding.ts";
 import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
@@ -226,7 +227,7 @@ function approvingEvent(
 
 function preferredWitnessQueryUrl(hab: Hab, witness: string): string | null {
   const urls = hab.fetchUrls(witness);
-  return urls[Schemes.https] ?? urls[Schemes.http] ?? null;
+  return urls[Schemes.https] ?? urls[Schemes.http] ?? urls[Schemes.tcp] ?? null;
 }
 
 export function resolveDelegationCommunicationHab(
@@ -482,8 +483,9 @@ export class Anchorer {
     return false;
   }
 
-  /** Process all delegation escrow families once in KERIpy-compatible order. */
-  *processAllOnce(): Operation<DelegationWorkflowResult[]> {
+  /** Process delegation escrows; an active runtime lends its same-socket TCP reply receiver. */
+  *processAllOnce(runtime?: AgentRuntime): Operation<DelegationWorkflowResult[]> {
+    if (runtime && runtime.hby !== this.hby) throw new RangeError("Anchorer requires its owning runtime");
     const results: DelegationWorkflowResult[] = [];
     for (
       const [keys, serder] of [...this.hby.db.dpwe.getTopItemIter()] as Array<
@@ -500,7 +502,7 @@ export class Anchorer {
       >
     ) {
       results.push(
-        yield* this.processUnanchoredEscrow(escrowContext(keys, serder)),
+        yield* this.processUnanchoredEscrow(escrowContext(keys, serder), runtime),
       );
     }
     for (
@@ -612,6 +614,7 @@ export class Anchorer {
 
   private *processUnanchoredEscrow(
     context: DelegationEscrowContext,
+    runtime?: AgentRuntime,
   ): Operation<DelegationWorkflowResult> {
     const [keys, serder, pre, said] = context;
 
@@ -669,7 +672,7 @@ export class Anchorer {
       };
     }
 
-    yield* this.publishDelegator(serder);
+    yield* this.publishDelegator(serder, runtime);
     this.hby.db.dpub.pin(keys, serder);
     return {
       kind: "advance",
@@ -827,7 +830,7 @@ export class Anchorer {
     return localGroupMember(this.hby, hab.pre) ?? this.communicationHab(serder, hab);
   }
 
-  private *publishDelegator(serder: SerderKERI): Operation<void> {
+  private *publishDelegator(serder: SerderKERI, runtime?: AgentRuntime): Operation<void> {
     const pre = workflowPre(serder);
     const hab = localHabByPre(this.hby, pre, "Delegation witness publication");
     const transportHab = this.publicationTransportHab(serder, hab);
@@ -842,7 +845,7 @@ export class Anchorer {
     // matches the witness-visible material KERIpy sends for delegated approval.
     for (const msg of this.hby.db.cloneDelegation(kever)) {
       for (const witness of kever.wits) {
-        yield* sendWitnessMessage(transportHab, witness, msg, undefined, this.services);
+        yield* sendWitnessMessage(transportHab, witness, msg, undefined, runtime?.services ?? this.services, runtime);
       }
     }
 
@@ -855,7 +858,14 @@ export class Anchorer {
       });
     }
     for (const witness of kever.wits) {
-      yield* sendWitnessMessage(transportHab, witness, approvedEvent, undefined, this.services);
+      yield* sendWitnessMessage(
+        transportHab,
+        witness,
+        approvedEvent,
+        undefined,
+        runtime?.services ?? this.services,
+        runtime,
+      );
     }
   }
 }

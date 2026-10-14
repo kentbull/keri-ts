@@ -246,6 +246,11 @@ index before complementary fanout. Receiptor/catchup borrow an explicitly suppli
 runtime or own one scoped receiver; borrowed cleanup leaves its stores open.
 Generic sendWitnessMessage remains transmit-only without receiver context. Never
 open a second runtime merely to receive replies over an existing runtime's Habery.
+Default Anchorer turns borrow that runtime for witness publication; direct standalone
+turns without receiver context retain transmit-only policy. Witness inquiries prefer
+HTTPS/HTTP, then TCP; RuntimeDeliveries uses the same local reply parser and queue
+owner. Query owner retirement means transport drain; continuations still require
+verified accepted key/TEL state. Guarded preparation must finish before network I/O.
 
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove
@@ -317,3 +322,7 @@ reserve finite queue/copy credit before construction and notice effects; publish
 transfers that credit, collapse/expiry/clear/close release it. The borrowed queue
 view is readonly and entries are immutable snapshots. Runtime/CLI close only their
 created producers; injected notification services share the exact Baser policy.
+
+Runtime output must be acquired after its database owners: Effection tears sibling
+resources down in reverse order. Explicit close alone cannot qualify cancellation
+or constructor-failure cleanup. Keep injected stores borrowed.

@@ -190,22 +190,6 @@ export function* createAgentRuntime(
   ) {
     throw new RangeError("AgentRuntime notification services require its exact Habery and resource policy");
   }
-  const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
-    const streams = new ReplyStreams(options.replyLimits, resources);
-    try {
-      yield* provide(streams);
-    } finally {
-      streams.close();
-    }
-  });
-  const deliveries = yield* resource<RuntimeDeliveries>(function*(provide) {
-    const deliveries = new RuntimeDeliveries(resources);
-    try {
-      yield* provide(deliveries);
-    } finally {
-      yield* deliveries.close();
-    }
-  });
   const mode = options.mode ?? "local";
   const services = resolveRuntimeServices({ ...options.services, resources });
   const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
@@ -260,6 +244,23 @@ export function* createAgentRuntime(
     ownsAcdcRegery = true;
   }
   const acdcRegery = acdc.rgy;
+  // Reverse scope teardown joins borrowed output evidence before its backing stores close.
+  const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
+    const streams = new ReplyStreams(options.replyLimits, resources);
+    try {
+      yield* provide(streams);
+    } finally {
+      streams.close();
+    }
+  });
+  const deliveries = yield* resource<RuntimeDeliveries>(function*(provide) {
+    const deliveries = new RuntimeDeliveries(resources);
+    try {
+      yield* provide(deliveries);
+    } finally {
+      yield* deliveries.close();
+    }
+  });
   const reactor = new Reactor(hby, {
     cues,
     vdr,
@@ -569,7 +570,7 @@ export function* processRuntimeTurn(
   yield* runtime.oobiery.processOnce();
   yield* runtime.authenticator.processOnce();
   yield* runtime.poster.processPending();
-  yield* runtime.delegating.processAllOnce();
+  yield* runtime.delegating.processAllOnce(runtime);
   runtime.signaler?.processOnce();
   if (options.pollMailbox ?? true) {
     yield* processMailboxTurn(runtime, { hab: options.hab });
@@ -577,7 +578,7 @@ export function* processRuntimeTurn(
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending(runtime);
   yield* runtime.reactor.processEscrowsOnce();
-  yield* runtime.delegating.processAllOnce();
+  yield* runtime.delegating.processAllOnce(runtime);
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending(runtime);
   yield* runtime.deliveries.process(runtime);
@@ -780,7 +781,7 @@ export function* runAgentRuntime(
     }),
     yield* spawn(function*() {
       while (true) {
-        yield* runtime.delegating.processAllOnce();
+        yield* runtime.delegating.processAllOnce(runtime);
         yield* runtimeTurn();
       }
     }),
