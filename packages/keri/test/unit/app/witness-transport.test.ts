@@ -498,6 +498,34 @@ Deno.test("TCP output rejects oversized backing, freezes drain deadline and perm
     );
     assertStrictEquals(clockFailure, openingFault);
     assertEquals(services.resources.used, { streams: 0, bytes: 0, decryptions: 0 });
+    const emptyController = new AbortController();
+    let emptyPulls = 0, emptyClosed = false;
+    const emptySource = async function*() {
+      const timer = setTimeout(() => emptyController.abort(openingFault), 0);
+      try {
+        // Finite even without the checkpoint: a regression cannot hang the entire test runner.
+        while (emptyPulls < 65536) {
+          emptyPulls++;
+          yield new Uint8Array();
+        }
+      } finally {
+        clearTimeout(timer);
+        emptyClosed = true;
+      }
+    };
+    const emptyFailure = await assertRejects(() =>
+      run(() =>
+        streamCesrTcp(url, emptySource, {
+          services,
+          signal: emptyController.signal,
+          drainTimeoutMs: 100,
+        })
+      )
+    );
+    assertStrictEquals(emptyFailure, openingFault);
+    assertEquals(emptyPulls > 0 && emptyPulls < 65536, true, "empty pulls allow timer cancellation before exhaustion");
+    assertEquals(emptyClosed, true);
+    assertEquals(services.resources.used, { streams: 0, bytes: 0, decryptions: 0 });
     const reading = Promise.withResolvers<void>(), returning = Promise.withResolvers<void>();
     const cleanup = Promise.withResolvers<void>();
     const task = run(() =>

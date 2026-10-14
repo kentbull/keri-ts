@@ -118,7 +118,7 @@ function writeTcp(
       let iterator: AsyncIterator<Uint8Array> | undefined;
       let pendingRead: Promise<IteratorResult<Uint8Array>> | undefined;
       let pendingWrite: Promise<void> | undefined;
-      let failure: unknown, bytes = 0, finished = false;
+      let failure: unknown, bytes = 0, work = 0, finished = false;
       try {
         timer = services.clock.setTimeout(() => fail(new Error("TCP connect deadline exceeded")), connectTimeout);
         timerActive = true;
@@ -135,6 +135,19 @@ function writeTcp(
         iterator = source[Symbol.asyncIterator]();
         signal.throwIfAborted();
         while (true) {
+          // Empty/immediately resolved producers must not starve socket events or scope cancellation.
+          if (++work === 4096) {
+            work = 0;
+            await interrupted(
+              new Promise<void>((resolve) => {
+                timer = services.clock.setTimeout(resolve, 0);
+                timerActive = true;
+              }),
+              signal,
+            );
+            services.clock.clearTimeout(timer);
+            timerActive = false;
+          }
           pendingRead = Promise.resolve(iterator.next());
           const part = await interrupted(pendingRead, signal);
           pendingRead = undefined;
