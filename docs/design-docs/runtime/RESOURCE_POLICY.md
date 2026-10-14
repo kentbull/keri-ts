@@ -151,6 +151,16 @@ its original conservative acceptance/duplicate count guard and retry boundary.
 Exact measured batch admission applies only to injected CueDeck until Runtime
 producer/consumer ownership is fully ported.
 
-Next integrate Revery/OOBI, EXN/KRAM and legacy credential/TEL producers.
+Revery preflights ordered proof groups and admits its exact missing-signer query
+batch before BADA/proof/escrow effects. Its configurable `maxReplyGroups` defaults
+to 4096, matching the progressive parser group default; this bounds incoming groups
+and staged entries, not verification bytes, prior proof reads or native copies. Virtual staged signature
+pins preserve same-call aggregation, while externalEscrow leaves pending evidence
+with its semantic owner. Resource refusal during RPE replay cannot delete the row.
+Ordinary Deck retains its existing conservative reply count guard.
+
+Semantic /ksn and registry state child publication remain open: Revery query
+admission alone does not reserve their cues before proof or projection writes.
+Next integrate those children, OOBI, EXN/KRAM and legacy credential/TEL producers.
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.
