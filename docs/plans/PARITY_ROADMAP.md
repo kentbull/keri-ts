@@ -23,14 +23,14 @@ without inventing a general durable-delivery guarantee to claim KERIpy parity.
 Each linked owner contains the evidence gate and unresolved limitations. Phase
 numbers refer to the seven follow-on phases, not the earlier migration steps.
 
-| Area          | Implementation                                                                                    | Remaining gate                 |
-| ------------- | ------------------------------------------------------------------------------------------------- | ------------------------------ |
-| Parser/Mapper | [Engine][cesr], [claims/IDs][mapper]                                                              | Final checks/API limits        |
-| Protocol      | [Multisig][multisig], [IPEX][ipex], [registries][registry], [EXN/TEL/TSN][exchange], [KRAM][kram] | Composed workflows             |
-| Runtime       | [ESSR][essr], [shared admission][resource], [transport][transport]                                | Full inventory/packed          |
-| Storage       | [Adopted reads/recovery][storage]                                                                 | Native/caller limits           |
-| Qualification | [Reference pins][pins], [two observations][qualification]                                         | Final composition/one new case |
-| Release       | [Three packages][release]                                                                         | Exact artifacts published      |
+| Area          | Implementation                                                     | Qualification / limit      |
+| ------------- | ------------------------------------------------------------------ | -------------------------- |
+| Parser/Mapper | [Engine][cesr], [claims/IDs][mapper]                               | API limits                 |
+| Protocol      | [Protocol owners][protocol-owners]                                 | Route limits               |
+| Runtime       | [ESSR][essr], [shared admission][resource], [transport][transport] | Installed artifacts        |
+| Storage       | [Adopted reads/recovery][storage]                                  | Caller/native limits       |
+| Qualification | [Reference pins][pins], [two observations][qualification]          | Source closed; packed gate |
+| Release       | [Three packages][release]                                          | Registry artifacts         |
 
 The [closeout report](../reports/parity/RUNTIME_PARITY_2026-10-14.md) distinguishes
 supported, unfinished, intentional differences, reference stubs and unqualified
@@ -154,3 +154,4 @@ do not close the goal on a merged version PR or a successful build alone.
 [pins]: qualification/REFERENCE_ENVIRONMENTS.md
 [mapper]: cesr/MAPPER_PLAN.md
 [upstream-gaps]: ../reference/credentials/UPSTREAM_REGISTRY_GAPS.md
+[protocol-owners]: ../reports/parity/RUNTIME_PARITY_2026-10-14.md#classification
