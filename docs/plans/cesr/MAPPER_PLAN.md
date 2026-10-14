@@ -40,8 +40,7 @@ rewrite as expected behavior. S1 schema override/cached-root evidence validates
 the original resource and does not establish embedded construction parity.
 
 Qualify schema resource encoding separately from the credential body format.
-For `acdcmap(israid="EJt3vzyzwZsSlL-LRyjG3lsJta_gxHjTmdbSYp6foOcx",
-attribute={"d":"","name":"Ada"}, kind=kind)`, the actual 71438328 validator
+For `acdcmap(israid="EJt3vzyzwZsSlL-LRyjG3lsJta_gxHjTmdbSYp6foOcx", attribute={"d":"","name":"Ada"}, kind=kind)`, the actual 71438328 validator
 accepts the generated JSON schema but rejects generated CBOR, MGPK and CESR
 schemas because their format-derived IDs do not bind the JSON resource encoding.
 The 71438328 builder and Mapper source match frozen 927c0cb8 (Git blobs
