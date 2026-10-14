@@ -112,7 +112,7 @@ export class Reactor {
       maxQueuedBytes = 8 * 1024 * 1024,
       maxPendingCues = 1024,
       messagePolicy,
-      resources = new ResourcePolicy(),
+      resources = hby.db.resources,
       kram,
       now,
     }: {

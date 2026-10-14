@@ -1008,6 +1008,26 @@ Deno.test("KRAM handoff freezes ready receipt through reopen, disposal failure a
       caches: { "~": [1000, 10000, 10000, 10000, 10000, 10000, 10000] },
     });
     let handoff = new KramHandoff(hby.db, policy, { now: () => clock });
+    assertStrictEquals(handoff.resources, hby.db.resources);
+    assertThrows(() => new KramHandoff(hby.db, policy, { resources: new ResourcePolicy() }), RangeError);
+    const occupied = hby.db.resources.reserve({ bytes: hby.db.resources.limits.bytes });
+    if (occupied.kind !== "reserve") throw new Error("Expected free copy capacity");
+    try {
+      await assertRejects(
+        () =>
+          run(() =>
+            handoff.intake(incoming, function*() {
+              throw new Error("refused input was consumed");
+            })
+          ),
+        ResourceAdmissionError,
+        "acknowledgement copy",
+      );
+      assertEquals([handoff.busy, hby.db.pmkm.get(key), hby.db.kready.get(key)], [false, null, null]);
+    } finally {
+      occupied.reservation.release();
+    }
+    assertEquals(hby.db.resources.used.bytes, 0);
     const sn = 2n ** 53n + 1n;
     assertEquals(
       await run(() =>
@@ -1191,6 +1211,8 @@ Deno.test("KRAM handoff cancellation holds capacity until serialization and hydr
     let joined = false;
     const stopping = writer.halt().then(() => joined = true);
     await aborted;
+    const retainedCredit = hby.db.resources.used.bytes;
+    assertEquals(retainedCredit >= incoming.serder.raw.byteLength, true);
     assertEquals([handoff.busy, joined, readsClosed, consumed], [true, false, false, false]);
     assertEquals(isKramHandoffActive(hby.db), true);
     assertEquals(
@@ -1202,8 +1224,10 @@ Deno.test("KRAM handoff cancellation holds capacity until serialization and hydr
       { kind: "drop", reason: "busy" },
     );
     assertEquals([hby.db.pmkm.get(key), hby.db.kready.get(key)], [null, null]);
+    assertEquals(hby.db.resources.used.bytes, retainedCredit, "halt retains all copy credit while reads are closing");
     release();
     await stopping;
+    assertEquals(hby.db.resources.used.bytes, 0, "joined source cleanup precedes acknowledgement copy release");
     assertEquals([handoff.busy, readsClosed, consumed], [false, true, false]);
     assertEquals(isKramHandoffActive(hby.db), false);
     assertEquals(await collectPayload(owner.wire, 1024), wire);
