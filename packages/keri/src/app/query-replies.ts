@@ -5,7 +5,7 @@ import type { Deck } from "../core/deck.ts";
 
 /** One request's direct proof/reply. Duplicate requests may share immutable evidence. */
 type DirectReply = ReplayCue | ReplyCue | ReceiptCue | WitnessCue;
-type Slot = { reply?: DirectReply; companion?: DirectReply; owners: OwnedCue[] };
+type Slot = { reply?: DirectReply; companion?: DirectReply; owners: OwnedCue[]; notify?: () => void };
 
 /** Borrow a bounded response batch until joined consumption releases its owners. */
 interface QueryReplyBatch {
@@ -15,6 +15,10 @@ interface QueryReplyBatch {
 
 /** A bounded request-owned slot; close it when its HTTP/TCP request completes or is cancelled. */
 export interface QueryReply {
+  /** Observe this existing slot without queues or retained Promise waiters; one observer at a time. */
+  observeReady(notify: () => void): () => void;
+  /** Whether a captured batch is available for guarded consumption. */
+  readonly ready: boolean;
   /** Existing source credit participates in the combined preparation floor. */
   readonly retainedBytes: number;
   /** Compatibility seam for a single ordinary, unadmitted response. */
@@ -58,6 +62,17 @@ export class QueryReplies {
     this.count++;
     let closed = false;
     return {
+      get ready() {
+        return slot.reply !== undefined;
+      },
+      observeReady(notify) {
+        if (slot.notify) throw new Error("Reply slot already has a readiness observer");
+        slot.notify = notify;
+        if (slot.reply || closed) notify();
+        return () => {
+          if (slot.notify === notify) slot.notify = undefined;
+        };
+      },
       get retainedBytes() {
         return slot.owners.reduce((bytes, owner) => bytes + owner.retainedBytes, 0);
       },
@@ -106,6 +121,8 @@ export class QueryReplies {
         group.delete(slot);
         if (group.size === 0) this.active.delete(said);
         this.count--;
+        slot.notify?.();
+        slot.notify = undefined;
       },
     };
   }
@@ -150,6 +167,7 @@ export class QueryReplies {
           if (owner) slot.owners = ownership[j];
           if (!slot.reply) slot.reply = cue;
           else slot.companion = cue;
+          slot.notify?.();
         }
         if (owner && !targets.length) owner.release();
       }

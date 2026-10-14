@@ -37,7 +37,10 @@ Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prereq
           const kevery = new Kevery(hby.db, {
             messagePolicy: { allowList: new Set(row.allow), denyList: new Set(row.deny) },
           });
-          kevery.processQuery = (query) => record("kel-query", query);
+          kevery.processQuery = (query) => {
+            record("kel-query", query);
+            return { kind: "accept" };
+          };
           const revery = new Revery(hby.db);
           revery.processReply = () => {
             record("reply");

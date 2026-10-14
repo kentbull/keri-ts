@@ -550,5 +550,10 @@ query-SAID response slots. Only accepted/duplicate event decisions authorize
 receipt output. Preparation owns proof and replay hydration credit under the
 Reactor guard; the shared socket writer drains outside it, borrowing that
 connection's stream slot. Receive EOF starts one absolute reply-drain deadline.
-Immediate replies are supported; deferred query escrow replies still need a
-connection-owned pending slot and wakeup before this is complete TCP parity.
+One unresolved logs/ksn query stays in its existing bounded response slot; another
+query on that connection receives a busy refusal. Its one readiness observer can
+wake output while one joined parser pull remains live, with no result queue.
+The host kernel supplies runAgentRuntime's escrow driver; standalone listener
+borrowers must provide that driver for idle-RX query retries. Genuine receive EOF
+keeps TX available for the pending reply under the same absolute deadline.
+Cancellation joins the pull and output before releasing reply or connection credit.
