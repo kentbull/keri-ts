@@ -61,7 +61,7 @@ source, response, admission and lifecycle facilities.
 | [Delivery][delivery]    | Shared sends; guarded drains | S1–3, S7–8: owned workers/replies |
 | [Queries][queries]      | Lazy POST/GET replay         | S1–3: owned delivery and proofs   |
 | [Mailbox][mailbox-path] | Demand-driven SSE            | S1–3: cue/worker credit and stop  |
-| [OOBI][oobi-path]       | Incremental CESR intake      | S2: lazy replay serving           |
+| [OOBI][oobi-path]       | Incremental intake/output    | S2: forwarding caller adoption    |
 | [DID Webs][did-path]    | Streamed intake/static files | S2: lazy generation/export        |
 | [Commands][commands]    | Mixed services/lifetimes     | S1–8: shared runtime wiring       |
 | [JSON edges][json-path] | Finite documents/status      | S2: bounded exception audit       |
@@ -114,6 +114,49 @@ collector needs a documented semantic reason, limit, owner and actual caller tes
 and body-reader call sites again before release so this inventory cannot hide a
 new bypass. S9 requires all applicable rows adopted or a qualified bounded
 exception; foundations alone do not close the stack gate.
+
+### Actual caller closure
+
+Apply these remaining ports within the existing units, in dependency order:
+
+- **S1–3 delivery:** `processCuesOnce`, `Respondant` and `QueryCoordinator`
+  transfer admitted source heads before interpretation/removal. Port generic HTTP
+  and witness request-local drains through `runtime-bridge` and the CLI kernel.
+  Keep correlated direct responses and `deliver=false` receipts explicit.
+  Mailbox endpoint workers also need shared handle credit before spawning;
+  per-event SSE limits alone do not bound aggregate workers.
+- **S2 discovery/output:** OOBI HTTP output uses the lazy source (#281). Port
+  replay-sized forwarding introductions to source delivery; a capped finite
+  convenience method does not qualify the large-history caller.
+- **S2 DID artifacts:** `generateDidWebsCesr`, dynamic CESR hosting and DID export
+  use captured KEL/TEL/alias extents and demand-driven output. JSON-only construction
+  and streamed static files are delivered; whole-history generation and
+  credential-list capture still need replacement/admission.
+- **S2 receipt/catchup and mailbox administration:** thread the exact runtime
+  services/policy into response readers and Receiptor; close database cursors
+  before network suspension. Stream replay-sized mailbox submissions and admit
+  bounded administrative parsing/copies. Keep finite receipts and multipart
+  compatibility where justified, with failure/cancellation provenance intact.
+  Join and propagate outer response cancellation in `httping`/`cesr-http`, and
+  propagate request disconnect through receipt settlement after finite intake.
+- **S2 credential/exchange commands:** replace collected KEL/TEL/dependency and
+  grant wire in presentation, issuance/revocation and IPEX network callers with
+  owned sources. VC file/stdin intake feeds the progressive parser; finite export
+  adapters need enforced ceilings. This ports existing workflows, not new protocol.
+- **S2 JSON exceptions:** admit verifier webhook serialization and replace its
+  whole ready-row snapshot with bounded work. Bound the sample hook's request body
+  and retained presentations, and join host shutdown. Preserve JSON/status policy.
+- **S7–8 conversations:** use shared finite/source engines through actual witness,
+  delegation and command callers; same-socket replies require an explicit policy.
+  Multisig/IPEX delivery inherits this path through Poster/Respondant.
+
+For each inventory row, S9 records the actual default caller/source revision,
+shared policy/owner, framing and completion boundary, and existing-test or retained
+probe evidence. A finite exception also records its semantic reason, configured
+ceiling and refusal-before-read/allocation evidence. Audit all socket/fetch/body
+readers again on the release head, including service injection and host error
+paths; absence from this table does not exempt a caller. An engine test without
+caller adoption leaves the row open. Preserve small PRs and existing test topology.
 
 ## Review units
 

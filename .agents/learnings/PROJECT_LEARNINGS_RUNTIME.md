@@ -90,6 +90,9 @@ and CLI callers. Adopt the shared engines/response owners rather than private
 collectors; pass the runtime's exact services/policy. Finite JSON/receipt semantics
 require enforced caps, cancellation and joined cleanup. OOBI/DID completion still
 requires full evidence; processing before EOF does not imply artifact success.
+Close adoption through default library/host/CLI callers, not only engine tests.
+Every finite exception needs a semantic reason, ceiling, admission owner and
+joined response lifetime; audit newly introduced I/O on the final release head.
 The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
