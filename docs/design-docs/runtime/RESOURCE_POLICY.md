@@ -66,6 +66,27 @@ buffers; the storage source must separately admit its native and hydration copie
 Temporary shared admission refusal maps to HTTP 503; configured size refusal
 remains 413. Neither response creates a retry queue.
 
+Query delivery reserves 24 MiB of preparation credit and 8 MiB of retained request
+credit before invoking its synchronous wire producer. The preparation allowance
+covers bounded query wire, introduction events and their joined buffer; native
+storage reads still need separate admission. Eight local slots include the active
+head. Preparation credit returns on producer completion/failure, while the request
+keeps its credit through delivery, existing explicit retry and joined shutdown.
+Shutdown releases queued requests immediately and the active request after its
+response cleanup joins. A refused producer is never opened.
+
+Runtime HTTP services carry the same policy as their AgentRuntime. Direct frame
+requests reserve one stream before qualification, payload reads or fetch, retaining
+credit until response/upload cleanup joins. Their initial copy allowance is
+`8 * ordinaryWire + 6 * headerLimit + 4 * errorLimit + 2 MiB`: qualification and
+body copies, collected/header string representations, decoded diagnostics and
+the serializer's 1 MiB reader / 64 KiB output contract. These conservative charges
+need production measurement; they do not cover arbitrary injected HTTP clients or
+native fetch buffers. Caller-supplied frames must already satisfy parser admission.
+Standalone requests share the default services policy; separately resolved services
+need an explicitly shared policy to participate in the same deployment boundary.
+Source parsers in `postCesr` and query upload remain a separate integration gate.
+
 Additional hydrated representations, reader copies, storage and object/handle/work
 limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).

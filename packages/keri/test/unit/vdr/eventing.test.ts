@@ -14,13 +14,14 @@ import {
 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
-import { envelopeFromFrame } from "../../../src/app/parsering.ts";
+import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { query } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { incept as inceptRegistry, issue, revoke } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
+import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
 
 const SCHEMA_SAID = "Eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -329,6 +330,109 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
       assertEquals([...responses[0]].length, 2, "Captured response reopens independently of query processing");
     } finally {
       yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("TSN producer prepares ordered independent state replies without enabling runtime intake", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const tvy = new Tevery({ db: hby.db, reger });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      const credential = makeCredential(issuer.pre);
+      const iss = issue(credential.said!, vcp.pre!);
+      const anchors = [anchorTel(issuer, vcp), anchorTel(issuer, iss)];
+      for (const [index, serder] of [vcp, iss].entries()) {
+        assertEquals(tvy.processEvent({ serder, ...anchors[index] }).kind, "accept");
+      }
+      const source = new Prefixer({ qb64: issuer.pre });
+      const request = (ri = vcp.pre!, i = credential.said!, route = "tsn") =>
+        query(route, { ri, i }, { pre: issuer.pre, pvrsn: Vrsn_2_0 });
+      const serder = request();
+      const [frame] = yield* call(() =>
+        parseBytes(messagize(serder, {
+          sigers: issuer.sign(serder.raw, true),
+          seal: { i: source },
+          gvrsn: Vrsn_2_0,
+        }))
+      );
+      try {
+        const result = prepareTsnQuery(queryEnvelopeFromDispatch(envelopeFromFrame(frame)), tvy.tevers);
+        if (result.kind !== "reply") throw new Error("Expected TSN replies");
+        // Actual714 parsed query emits registry then hits vcpre= TypeError; positional vcState proves this record.
+        assertEquals(result.replies.map((reply) => [reply.route, reply.dest, reply.querySaid]), [
+          ["/tsn/registry", issuer.pre, serder.said!],
+          ["/tsn/credential", issuer.pre, serder.said!],
+        ]);
+        const { dt, ...registry } = result.replies[0].data!;
+        assertEquals(typeof dt, "string");
+        assertEquals(registry, {
+          vn: [1, 0],
+          i: vcp.pre,
+          s: "0",
+          d: vcp.said,
+          ii: issuer.pre,
+          et: "vcp",
+          bt: "0",
+          b: [],
+          c: [TraitDex.NoBackers],
+        });
+        assertEquals(result.replies[1]!.data, {
+          vn: [1, 0],
+          i: credential.said,
+          s: "0",
+          d: iss.said,
+          ri: vcp.pre,
+          ra: {},
+          a: { s: Number(anchors[1].seqner.num), d: anchors[1].saider.qb64 },
+          dt: iss.ked!.dt,
+          et: "iss",
+        });
+        result.replies[0].data!.b = ["foreign"];
+        assertEquals(tvy.tevers.get(vcp.pre!)!.baks, [], "Replies are detached record data");
+      } finally {
+        yield* call(() => discardFrame(frame));
+      }
+      const partial = prepareTsnQuery({ serder: request(vcp.pre!, issuer.pre), source }, tvy.tevers);
+      if (partial.kind !== "reply") throw new Error("Expected registry reply");
+      assertEquals([partial.replies.length, partial.missingCredential], [1, issuer.pre]);
+      const registryOnly = prepareTsnQuery({ serder: request(vcp.pre!, ""), source }, tvy.tevers);
+      if (registryOnly.kind !== "reply") throw new Error("Expected registry reply");
+      assertEquals(registryOnly.replies.length, 1);
+      assertEquals(prepareTsnQuery({ serder: request(issuer.pre), source }, tvy.tevers), {
+        kind: "unavailable",
+        registry: issuer.pre,
+      });
+      assertEquals(prepareTsnQuery({ serder: request() }, tvy.tevers), {
+        kind: "drop",
+        reason: "missingAuthentication",
+      });
+      assertEquals(prepareTsnQuery({ serder: request(""), source }, tvy.tevers), {
+        kind: "drop",
+        reason: "invalidQuery",
+      });
+      assertEquals(prepareTsnQuery({ serder: request(vcp.pre!, "", "tels"), source }, tvy.tevers), {
+        kind: "drop",
+        reason: "unsupportedRoute",
+      });
+      const outsider = hby.makeHab("outsider", undefined, { transferable: false });
+      const nontrans = request(vcp.pre!, "");
+      const cigarResult = prepareTsnQuery({ serder: nontrans, cigars: outsider.sign(nontrans.raw, false) }, tvy.tevers);
+      if (cigarResult.kind !== "reply") throw new Error("Expected cigar destination");
+      assertEquals(cigarResult.replies[0].dest, outsider.pre);
+      assertEquals(tvy.cues.length, 0, "Preparing replies publishes nothing");
+      assertEquals(tvy.processQuery({ serder: request(), source }), { kind: "drop", reason: "unsupportedRoute" });
+      yield* reger.close();
+      assertThrows(() => prepareTsnQuery({ serder: request(), source }, tvy.tevers), Error, "not open");
+      yield* reger.reopen();
+      reger.ancs.rem(dgKey(vcp.pre!, vcp.said!));
+      assertThrows(() => prepareTsnQuery({ serder: request(), source }, tvy.tevers), Error, "Missing TEL anchor");
+    } finally {
+      yield* reger.close(true);
       yield* hby.close(true);
     }
   });

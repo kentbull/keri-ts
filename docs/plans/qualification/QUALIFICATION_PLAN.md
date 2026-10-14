@@ -81,6 +81,19 @@ under fixed policy, real backpressure, durable replay and usable independent
 GenericGroup children before transfer completion. No predetermined speedup is
 promised. Earlier parser-only 4 GiB observations do not qualify the full runtime.
 
+The next-release [transport S9 gate](../runtime/TRANSPORT_PLAN.md) uses real TCP
+sockets and HTTP bodies, not a parser-only source substitution. Include signed
+enclosed acceptance before client EOF, fragmented multi-message connections,
+independent GenericGroup usability, concurrent stalled peers, slow reads/writes,
+partial delivery, cancellation, truncated EOF, shutdown and half-close deadline
+expiry. Measure both parsed and verified-usable latency at the application state
+boundary. Verify source pulls, pending bytes/items, credit and open handles plateau;
+report kernel/native buffering separately. Exercise source Deno and packed Node.
+Reuse these cases within representative matrix combinations, not another full
+cross-product. Keep mailbox/default routing and explicit duplex evidence distinct.
+Reopen/retry evidence must identify the durable owner; a live delivery queue or
+local socket drain does not prove recovery or remote acceptance.
+
 ## Final parity report
 
 Classify supported behavior, unfinished processing, intentional divergences,
@@ -92,5 +105,6 @@ affected checks after the final [Mapper repair](../cesr/MAPPER_PLAN.md).
 
 Reference gaps are classified using the [upstream registry review](../../reference/credentials/UPSTREAM_REGISTRY_GAPS.md).
 Qualify our implemented behavior without waiting for absent upstream processing.
-Current main `71438328` adds schema hardening (#1713); assess this delta separately
-from frozen `927c0cb8` evidence and record any unqualified newer behavior.
+The active baseline is `7143832813cac6a394ab1faf9be83bb3372be87c`, including
+schema hardening (#1713). Earlier `927c0cb8` results remain historical evidence;
+run final qualification against 714 and label retained fork/legacy targets separately.
