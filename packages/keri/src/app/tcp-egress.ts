@@ -1,15 +1,24 @@
 /** One owned TCP writer shared by finite values and pull-driven sources. */
 import { type CesrFrame, framePayload, ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
-import { createConnection } from "node:net";
-import { call, type Operation, resource } from "npm:effection@^3.6.0";
+import { createConnection, type Socket } from "node:net";
+import { call, each, type Operation, resource, type Task } from "npm:effection@^3.6.0";
+import type { KeriDispatchEnvelope } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { abortable } from "./abortable.ts";
+import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { cesrOutputMetadataBytes } from "./cesr-output.ts";
+import type { DispatchDecision } from "./parsering.ts";
 import { defaultRuntimeServices, type RuntimeServices, type RuntimeTimer } from "./runtime-services.ts";
+import { socketBytes } from "./socket-source.ts";
+
+// Fixed JS read/cursor bounds; handle allowance remains logical policy, not a native pool/kernel ceiling.
+const RX_CHUNK = 65536, RX_BUFFER = 8 * 1024 ** 2, RX_HANDLE = 2 * 1024 ** 2;
 
 /** Output limits and cancellation shared by all TCP input forms. */
 export interface TcpSendOptions {
+  /** Default mode does not parse replies; explicit conversation options select that lifetime. */
+  replies?: never;
   /** Source backing limit and one admitted transport-copy allowance; default 64 KiB. */
   maxChunkBytes?: number;
   /** Connection acquisition deadline; default 30 seconds. */
@@ -31,8 +40,37 @@ export interface TcpTransmission {
   bytes: number;
 }
 
+/** Explicit same-socket intake; runtime, callback envelopes and source owners remain borrowed. */
+export interface TcpConversationOptions extends Omit<TcpSendOptions, "replies"> {
+  replies: {
+    runtime: AgentRuntime;
+    /** Match upstream TCP reply parsing with local=true by default. */
+    local?: boolean;
+    /** Guarded, non-retaining consumption; never reenter Reactor or implicitly deliver cues here. */
+    consume?: (envelope?: KeriDispatchEnvelope, decision?: DispatchDecision) => Operation<void>;
+  };
+}
+
+/** Both directions drained locally; dispatch attempts do not establish verified replies or remote acceptance. */
+export interface TcpConversation {
+  kind: "conversationDrained";
+  transmission: TcpTransmission;
+  receive: { kind: "eof"; processedFrames: number };
+}
+
+type TcpOptions = TcpSendOptions | TcpConversationOptions;
+type TcpResult = TcpTransmission | TcpConversation;
+
 /** Send one already resident value; its owner remains borrowed until joined completion. */
-export function sendCesrTcp(url: string, bytes: Uint8Array, options: TcpSendOptions = {}): Operation<TcpTransmission> {
+export function sendCesrTcp(
+  url: string,
+  bytes: Uint8Array,
+  options: TcpConversationOptions,
+): Operation<TcpConversation>;
+/** Preserve transmit-only completion unless a reply policy is supplied. */
+export function sendCesrTcp(url: string, bytes: Uint8Array, options?: TcpSendOptions): Operation<TcpTransmission>;
+/** Adapt finite values to the shared connection owner. */
+export function sendCesrTcp(url: string, bytes: Uint8Array, options: TcpOptions = {}): Operation<TcpResult> {
   const cap = Math.min(positive(options.maxChunkBytes ?? 65536, "maxChunkBytes"), Math.max(1, bytes.length));
   return writeTcp(url, (signal) => chunkBytes(bytes, { signal, maxChunkBytes: cap }), {
     ...options,
@@ -49,8 +87,20 @@ export function sendCesrTcp(url: string, bytes: Uint8Array, options: TcpSendOpti
 export function streamCesrTcp(
   url: string,
   source: TcpSourceFactory,
-  options: TcpSendOptions = {},
-): Operation<TcpTransmission> {
+  options: TcpConversationOptions,
+): Operation<TcpConversation>;
+/** Preserve transmit-only streaming unless a reply policy is supplied. */
+export function streamCesrTcp(
+  url: string,
+  source: TcpSourceFactory,
+  options?: TcpSendOptions,
+): Operation<TcpTransmission>;
+/** Adapt source input to the shared connection owner. */
+export function streamCesrTcp(
+  url: string,
+  source: TcpSourceFactory,
+  options: TcpOptions = {},
+): Operation<TcpResult> {
   return writeTcp(url, source, options, 0);
 }
 
@@ -63,8 +113,16 @@ export function streamCesrTcp(
 export function sendCesrTcpFrame(
   url: string,
   frame: CesrFrame,
-  options: TcpSendOptions = {},
-): Operation<TcpTransmission> {
+  options: TcpConversationOptions,
+): Operation<TcpConversation>;
+/** Preserve transmit-only frame serialization unless a reply policy is supplied. */
+export function sendCesrTcpFrame(url: string, frame: CesrFrame, options?: TcpSendOptions): Operation<TcpTransmission>;
+/** Adapt borrowed frame serialization to the shared connection owner. */
+export function sendCesrTcpFrame(
+  url: string,
+  frame: CesrFrame,
+  options: TcpOptions = {},
+): Operation<TcpResult> {
   const cap = positive(options.maxChunkBytes ?? 65536, "maxChunkBytes");
   const metadata = 8 * cesrOutputMetadataBytes(frame) + 2 * 1024 ** 2;
   return writeTcp(
@@ -106,9 +164,9 @@ async function interrupted<T>(pending: Promise<T>, signal: AbortSignal): Promise
 function writeTcp(
   url: string,
   factory: TcpSourceFactory,
-  options: TcpSendOptions,
+  options: TcpOptions,
   retainedBytes: number,
-): Operation<TcpTransmission> {
+): Operation<TcpResult> {
   return call(function*() {
     const parsed = new URL(url), port = Number(parsed.port);
     if (parsed.protocol !== "tcp:" || !Number.isInteger(port) || port < 1 || port > 65535) {
@@ -117,9 +175,21 @@ function writeTcp(
     const cap = positive(options.maxChunkBytes ?? 65536, "maxChunkBytes");
     const connectTimeout = positive(options.connectTimeoutMs ?? 30000, "connectTimeoutMs");
     const drainTimeout = positive(options.drainTimeoutMs ?? 30000, "drainTimeoutMs");
-    const services = options.services ?? defaultRuntimeServices;
+    const replies = options.replies === undefined ? undefined : { ...options.replies };
+    const services = replies?.runtime.services ?? options.services ?? defaultRuntimeServices;
+    if (replies && options.services && options.services !== services) {
+      throw new RangeError("TCP replies require the runtime's exact services");
+    }
+    const outputBytes = retainedBytes + 2 * cap + (replies ? RX_HANDLE : 0);
+    if (!Number.isSafeInteger(outputBytes)) throw new RangeError("TCP output charge exceeds safe integer range");
+    if (
+      replies && (services.resources.limits.streams < 2
+        || services.resources.limits.bytes < outputBytes + RX_CHUNK + RX_BUFFER)
+    ) {
+      throw new ResourceAdmissionError("TCP conversation exceeds configured capacity", "limit");
+    }
     yield* resource<void>(function*(provide) {
-      const admission = services.resources.reserve({ streams: 1, bytes: retainedBytes + 2 * cap });
+      const admission = services.resources.reserve({ streams: 1, bytes: outputBytes });
       if (admission.kind === "refuse") {
         throw new ResourceAdmissionError(`TCP output admission refused: ${admission.reason}`, admission.reason);
       }
@@ -129,9 +199,18 @@ function writeTcp(
         admission.reservation.release();
       }
     });
-    return yield* abortable(async (upstream) => {
+    const receiver = new AbortController();
+    let connectedSocket: Socket | undefined;
+    // Acquiring this channel reserves RX stream/cursor credit but does not invoke its source factory.
+    const channel = replies && (yield* replies.runtime.reactor.frames((signal) => {
+      if (!connectedSocket) throw new Error("TCP receive source acquired before connection");
+      return socketBytes(connectedSocket, { signal, maxChunkBytes: RX_CHUNK });
+    }, { signal: receiver.signal, maxChunkBytes: RX_CHUNK, maxBufferedBytes: RX_BUFFER, classifyWireErrors: true }));
+    return yield* abortable(async (upstream, scope) => {
       const controller = new AbortController(), signal = AbortSignal.any([upstream, controller.signal]);
-      const socket = createConnection({ host: parsed.hostname, port });
+      const socket = createConnection({ host: parsed.hostname, port, allowHalfOpen: !!replies });
+      if (replies) socket.pause();
+      connectedSocket = socket;
       const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
       const fail = (error: unknown) => controller.abort(error);
       socket.on("error", fail);
@@ -144,6 +223,7 @@ function writeTcp(
       let iterator: AsyncIterator<Uint8Array> | undefined;
       let pendingRead: Promise<IteratorResult<Uint8Array>> | undefined;
       let pendingWrite: Promise<void> | undefined;
+      let receiveTask: Task<void> | undefined, receiveEOF = false, processedFrames = 0;
       let failure: unknown, bytes = 0, work = 0, finished = false;
       try {
         timer = services.clock.setTimeout(() => fail(new Error("TCP connect deadline exceeded")), connectTimeout);
@@ -157,6 +237,25 @@ function writeTcp(
         );
         services.clock.clearTimeout(timer);
         timerActive = false;
+        if (channel && replies) {
+          receiveTask = scope.run(function*() {
+            try {
+              yield* call(function*() {
+                for (const frame of yield* each(channel.frames)) {
+                  yield* replies.runtime.reactor.settle(frame, {
+                    local: replies.local ?? true,
+                    escrows: true,
+                  }, replies.consume);
+                  processedFrames++;
+                  yield* each.next();
+                }
+              });
+              receiveEOF = true;
+            } catch (error) {
+              fail(error);
+            }
+          });
+        }
         const source = await factory(signal);
         iterator = source[Symbol.asyncIterator]();
         signal.throwIfAborted();
@@ -207,19 +306,26 @@ function writeTcp(
         await interrupted(pendingWrite, signal);
         pendingWrite = undefined;
         finished = true;
+        if (receiveTask) await interrupted(Promise.resolve(receiveTask), signal);
         // Preserve finite sender policy: peer EOF/close completes the connection; deadline bounds waiting.
         await interrupted(closed, signal);
       } catch (error) {
         failure = error;
       } finally {
         controller.abort();
+        receiver.abort(signal.reason);
         socket.destroy();
+        // Start both directional cleanups before awaiting either one; slow source return cannot delay RX abort.
+        const closingReceive = receiveTask?.halt().then(() => {}, (error) => {
+          failure = failure === undefined ? error : new AggregateError([failure, error], "TCP reply cleanup failed");
+        });
         try {
           await pendingRead?.catch(() => undefined);
           await iterator?.return?.();
         } catch (error) {
           failure = failure === undefined ? error : new AggregateError([failure, error], "TCP source cleanup failed");
         } finally {
+          await closingReceive;
           await pendingWrite?.catch(() => undefined);
           await closed;
           signal.removeEventListener("abort", abort);
@@ -229,7 +335,10 @@ function writeTcp(
       }
       if (failure !== undefined) throw failure;
       if (!finished) throw new Error("TCP closed before output completed");
-      return { kind: "transmitted", bytes };
+      const transmission: TcpTransmission = { kind: "transmitted", bytes };
+      if (!replies) return transmission;
+      if (!receiveEOF) throw new Error("TCP receive did not reach EOF");
+      return { kind: "conversationDrained", transmission, receive: { kind: "eof", processedFrames } };
     }, options.signal);
   });
 }

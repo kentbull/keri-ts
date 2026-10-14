@@ -141,8 +141,8 @@ The [stack adoption inventory][transport-plan] marks remaining callers explicitl
 
 Two engines own transport work: CESR HTTP request/response scopes and an owned
 TCP connection with directional I/O. Small Effection operations/resources expose
-finite-message and source inputs. TCP send adapters share one writer; connection-owned
-reply parsing remains planned in S6, S8–9; stack-wide caller adoption remains S1–9.
+finite-message and source inputs. TCP adapters share one writer with optional owned
+reply parsing; stack-wide caller adoption remains S1–9.
 
 | KERIpy responsibility | TypeScript entry / shared engine                        |
 | --------------------- | ------------------------------------------------------- |
@@ -252,8 +252,8 @@ independent admitted ownership transfer, and lazy input owners cannot escape.
 The finite `processWitnessIngress` wrapper keeps its collected result and chunk cap;
 `/receipts` retains `local: true, deliver: false`. Source cancellation joins parser
 and producer cleanup. Default responder delivery still runs under the guard until
-bounded handoff adoption. Tufa TCP listener supervision and socket-to-application
-wiring remain S6 work; this source API alone does not enable that route.
+bounded handoff adoption. Tufa TCP listeners compose this source with paused,
+bounded connection admission and joined parser/socket shutdown.
 
 ## Witness and exchange output
 
@@ -281,8 +281,27 @@ ordinary metadata counting: TCP reserves eight metadata-size copy allowances plu
 2 MiB for bounded serializer readers/output before constructing the serializer,
 in addition to its two transport chunk allowances. Serializer output is re-chunked
 under the configured backing ceiling. The caller retains its original owners until
-joined completion. This conservative policy is not an RSS bound. Explicit concurrent
-reply parsing and socket-to-application integration remain successors.
+joined completion. This conservative policy is not an RSS bound.
+
+Explicit `replies: { runtime, local?, consume? }` selects conversation mode on all
+three TCP adapters; default options retain transmit-only behavior and routing.
+Use the borrowed runtime's exact services. TX credit, a logical 2 MiB read/handle
+allowance and Reactor's sole RX stream/64 KiB producer/8 MiB cursor credit precede
+connect. Reactor channel acquisition is lazy; the socket source starts after connect.
+These are JS/logical bounds, with native pools/kernel buffering separately qualified.
+One RX parser settles frames concurrently with TX under `allowHalfOpen: true`.
+Genuine RX EOF leaves TX alive. TX EOF starts one absolute drain deadline; reply
+activity cannot refresh it. Failure/cancellation aborts both directions before
+joining either cleanup, with credit and borrowed runtime/frame/payload owners held
+through parser/source/write/socket cleanup. Callback envelopes are non-retaining
+and guarded; do not reenter Reactor or implicitly drain network cues there.
+The `conversationDrained` result means local transmission plus processed RX EOF.
+`processedFrames` counts dispatch attempts, including refusal/escrow/ignored inputs,
+not verified replies or durable remote acceptance. Inspect route decisions and
+accepted state explicitly; KEL dispatch may return no decision. Earlier accepted
+replies survive a later transmit failure. This maps 714's concurrent local TCP
+reply parsing without copying its `sent`/`idle` acceptance ambiguity; guarded
+delivery and actual caller/listener same-socket adoption remain successors.
 Receipt endpoints intentionally return one finite proof: collection admits at
 most 1 MiB, failed-response diagnostics at most 16 KiB, and parsing requires one
 complete frame. Cancellation joins the body reader and releases its lock.
