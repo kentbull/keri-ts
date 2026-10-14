@@ -306,11 +306,10 @@ function* ingest(
                   queryEnvelopeFromDispatch(envelope!),
                 ));
             }
-            if (route.kind === "witnessLocalIngress") {
-              yield* drainWitnessCues(runtime, route.witnessHab, runtime.cues);
-            }
           });
-          if (route.kind !== "witnessLocalIngress") {
+          if (route.kind === "witnessLocalIngress") {
+            yield* drainWitnessCues(runtime, route.witnessHab, runtime.cues, { onAdmissionRefusal });
+          } else {
             yield* drainRuntimeCues(runtime, context.policy.serviceHab, runtime.cues, onAdmissionRefusal);
           }
         });

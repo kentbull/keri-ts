@@ -4,7 +4,7 @@ import type { CueEmission } from "../core/cues.ts";
 import { DeckFullError } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
-import type { Poster } from "./forwarding.ts";
+import type { Poster, RawCesrRoute } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 
@@ -86,6 +86,14 @@ export class Respondant implements CueSink {
       }
       throw error;
     }
+  }
+
+  /** Resolve the existing responder policy for an admitted witness emission without sending or signing again. */
+  routeForEmission(emission: CueEmission, hab?: Hab | null): RawCesrRoute | null {
+    const recipient = recipientForCue(emission.cue), topic = topicForCue(emission.cue);
+    const sender = senderHabForCue(this.hby, emission.cue, hab);
+    if (emission.kind !== "wire" || !recipient || !topic || !sender) return null;
+    return this.poster.findBytesRoute(sender, { recipient, topic });
   }
 
   /** Default cue-sink entry point when no explicit habitat hint is supplied. */

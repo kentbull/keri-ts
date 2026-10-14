@@ -201,7 +201,12 @@ Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB
 preparation, then transfer admitted delivery ownership before network I/O. Never
 wait for queue space under the guard or remove a cue before successful transfer.
-Witness source intake shares the Reactor parser with its finite wrapper; consume
+Witness source intake uses one scoped Reactor parser and borrows prepared emissions
+through joined callback cleanup outside the guard. The existing delivery batch
+holds its queue and callback halves; neither re-signs or releases the other early.
+Finite wrappers pre-admit a local 8 MiB snapshot ceiling and captured cue-count
+limit, copy replay.messages, and return caller-owned arrays after joined input
+cleanup; the source path collects no aggregate. Source intake shares the Reactor parser with its finite wrapper; consume
 emissions individually under the guarded frame lifetime, with independently admitted
 ownership for retained work. Finite receipt delivery suppression stays explicit.
 Genuine receive EOF, transmit failure and remote acceptance are separate facts.
