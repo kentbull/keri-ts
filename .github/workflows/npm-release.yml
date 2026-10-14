@@ -14,6 +14,7 @@ env:
   DENO_DIR: ${{ github.workspace }}/.deno-cache
   DENO_VERSION: "2.8.2"
   NODE_VERSION: "25.9.0"
+  LMDB_DATA_V1: "true"
   DEPS_CACHE_KEY_PREFIX: release-deps-v6
 
 jobs:
@@ -69,6 +70,14 @@ jobs:
       - name: require a release commit from master
         if: github.event_name == 'push'
         run: git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+
+      - name: rebuild LMDB-js for KERI compatibility
+        if: inputs.package != 'cesr'
+        run: |
+          if [[ "${{ steps.setup.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
+            deno task setup:compat-lmdb
+            deno run -A scripts/ci/report-lmdb-runtime.ts
+          fi
 
       - name: run the package-owned release check
         env:
