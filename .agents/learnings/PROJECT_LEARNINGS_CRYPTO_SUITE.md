@@ -29,6 +29,9 @@ Salter and sealed boxes share one initialized sodium backend. Wrapper and raw
 distribution identity both matter for the private wasm32 ABI. The frozen Deno lock
 and generated npm vendor hashes bind the exact distribution; do not rely on an
 upstream semver range or instantiate a second heap as an identity check.
+The npm loader supplies Node 18's native Web Crypto only when its global is absent,
+before evaluating either pinned distribution. Existing globals and browser randomness
+remain authoritative. Record the loader hash separately; wrapper/raw cryptographic bytes stay pinned.
 
 `pwhash.ts` owns password/salt/output allocations and reloads HEAPU8 after growth.
 Zero-before-free applies only to owned ranges. Native temporaries and JS copies

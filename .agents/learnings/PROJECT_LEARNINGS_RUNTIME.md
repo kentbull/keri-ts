@@ -138,6 +138,12 @@ cleanup. End/close deadlines start at source EOF, not the beginning of a large t
 Already admitted TCP frames use the serializer directly; shared HTTP/TCP metadata
 admission precedes qualification, and actual nested payload owners stay borrowed.
 
+Explicit TCP conversations pre-admit one lazy RX Reactor channel and retain its
+runtime/owners through joined directional cleanup. RX EOF cannot end TX; TX EOF
+starts the absolute drain deadline. Concurrent children belong to the abortable
+I/O scope so cancellation reaches both before either cleanup waits. A drained
+connection/dispatch count proves neither verified replies nor remote acceptance.
+
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove
 the signal path. Otherwise active responses can force SIGKILL.
