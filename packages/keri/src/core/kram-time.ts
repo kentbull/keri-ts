@@ -33,7 +33,7 @@ export type KramTimePlan = Omit<KramReplayInspection, "kind"> & {
 };
 
 /** Validate durable cache values without turning corruption into remote refusal. */
-function cacheValues(cache: MsgCacheRecord | TxnMsgCacheRecord): Required<MsgCacheRecordShape> {
+export function kramCacheValues(cache: MsgCacheRecord | TxnMsgCacheRecord): Required<MsgCacheRecordShape> {
   const { mdt, d, ml, pml, xl, pxl } = cache;
   if (
     timestampMicros(mdt) === null || [d, ml, pml, xl, pxl].some((v) => !Number.isSafeInteger(v) || v! < 0)
@@ -65,7 +65,7 @@ export function inspectKramReplay(
   const partial = db.pmkm.get(key) !== null, resumingReady = options.resumingReady ?? false;
   if (resumingReady && (!cache || !partial)) throw new Error("Ready KRAM resumption lacks cache or partial state");
   if (cache) {
-    const values = cacheValues(cache);
+    const values = kramCacheValues(cache);
     if (mdt <= timestampMicros(values.mdt)! && !partial) return { kind: "drop", reason: "replay" };
     if (resumingReady && cache instanceof TxnMsgCacheRecord && !cache.rdt) {
       throw new Error("Ready KRAM transaction lacks receiver time");
@@ -95,7 +95,7 @@ export function evaluateKramTime(
   const { body, cache, xid, mdt } = inspection;
   if (cache && authentication.kind !== "multi" && !inspection.resumingReady) return { kind: "drop", reason: "replay" };
   let values: Required<MsgCacheRecordShape>;
-  if (cache) values = cacheValues(cache);
+  if (cache) values = kramCacheValues(cache);
   else {
     const type = policy.cacheType(body.ilk!, body.route), multi = authentication.kind === "multi";
     const ml = multi ? type.ll : type.sl, pml = multi ? type.pll : type.psl;
@@ -110,7 +110,7 @@ export function evaluateKramTime(
     if (body.ilk === "xip") xdt = body.stamp!;
     else {
       for (const [, previous] of db.tmsc.getTopItemIter([inspection.key[0], xid])) {
-        cacheValues(previous);
+        kramCacheValues(previous);
         xdt = previous.xdt;
         break;
       }

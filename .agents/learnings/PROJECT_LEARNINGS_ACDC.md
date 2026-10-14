@@ -60,6 +60,10 @@ Explicit anchoring validates event membership/prior before storing the couple.
 Queued progression commits one event at a time; later failures do not undo prior acceptance.
 Reopen named v2 registries from the stored rip issuer, not the first available
 Hab. Duplicate aliases share one instance; injected RegBaser ownership stays with its caller.
+Registrar acquires no owners: resolve direct instances, then registry keys, then
+aliases. Presentation checks target SAID syntax only; grant authentication stays
+with IPEX. Empty-target/state vacuous steps need their own disclosures when
+verifying the preceding effective binding. Blinded updates reuse the staged frontier.
 Local blinded updates follow a unique staged frontier across both escrows after an
 accepted head. De-duplicate sightings, reject forks, and never equate staging with acceptance.
 

@@ -124,7 +124,13 @@ one unambiguous staged successor per slot across both escrows, including after
 reopen. Competing successors refuse construction; staged bodies never establish
 acceptance. Bound-state options remain separate from body serialization options.
 The engine chooses the ordinal and refuses caller-supplied blinder overrides.
-Presentation/vacuous operations and runtime installation remain separate gates.
+Registry `present` and `vacate` reuse that frontier and disclosure derivation.
+Presentation validates only the grant target's digest syntax; it authenticates
+neither the grant nor its sender. Empty-target/state vacuous steps preserve the
+preceding binding only when `vetBinds` receives every intervening disclosure.
+`Registrar` delegates creation, issuance, presentation and vacuous updates over
+its borrowed Regery, resolving direct instances, then keys, then local aliases.
+These facades acquire no owners; runtime installation remains a separate gate.
 Frontier traversal still has local store-sized work; shared scan credit is pending.
 Acceptance advances already anchored successors one transaction at a time.
 Explicit `processEscrows` retries both families, pruning invalid prior links;
