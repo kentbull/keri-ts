@@ -4,14 +4,13 @@ import type { AgentRuntime } from "./agent-runtime.ts";
 import type { Hab } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
-/**
- * Host-facing sink for structured cue emissions.
- *
- * The shared runtime interprets cues into `CueEmission`s, then hands those
- * emissions to the active host. This keeps host delivery separate from habitat
- * semantics without reintroducing a root-owned transport queue.
- */
+/** Immediate source-head transfer; busy preserves it, ineligible uses existing interpretation/sink handling. */
+export type CueAdmission = "transferred" | "busy" | "ineligible";
+
+/** Host-facing emissions and optional synchronous transfer of the guarded source head. */
 export interface CueSink {
+  /** Synchronous guarded admission only: no waiting, reentry or destructive fallback on capacity refusal. */
+  admitCue?(runtime: AgentRuntime, interpreter: Hab | null): CueAdmission;
   send(emission: CueEmission): Operation<void>;
 }
 
@@ -43,35 +42,10 @@ function resolveCueHab(
 }
 
 /**
- * Fallback cue-emission generator used when no local habitat can interpret the
- * current cue deck.
- *
- * This keeps command-local resolvers and multi-hab hosts from silently losing
- * cues while still refusing to guess which habitat should sign wire messages.
- */
-function* emitWithoutHab(
-  runtime: AgentRuntime,
-): Generator<CueEmission> {
-  // New cues wait for the next pass even when delivery suspends and permits another producer to run.
-  const count = runtime.cues.length;
-  for (let index = 0; index < count; index++) {
-    const cue = runtime.cues.pull();
-    if (!cue) {
-      continue;
-    }
-    yield {
-      cue,
-      messages: [],
-      kind: cue.kin === "stream" ? "transport" : "notify",
-    };
-  }
-}
-
-/**
  * Drain one bounded cue-processing pass for a shared runtime host.
  *
- * When a habitat is available, cue interpretation stays habitat-owned via
- * `Hab.processCuesIter()`. When no habitat can be resolved, cues are still
+ * Eligible sinks immediately transfer admitted work before source removal.
+ * Ineligible/custom cues keep habitat-owned interpretation and the original refill behavior. When no habitat can be resolved, cues are still
  * surfaced to the host as notify/transport emissions instead of being dropped.
  */
 export function* processCuesOnce(
@@ -86,12 +60,20 @@ export function* processCuesOnce(
 ): Operation<void> {
   yield* runtime.reactor.settle(undefined, {}, function*() {
     const cueHab = resolveCueHab(runtime, hab);
-    const emissions = cueHab
-      ? cueHab.processCuesIter(runtime.cues)
-      : emitWithoutHab(runtime);
-
-    for (const emission of emissions) {
-      yield* sink.send(emission);
+    const count = runtime.cues.length;
+    for (let index = 0; index < count; index++) {
+      const admission = sink.admitCue?.(runtime, cueHab) ?? "ineligible";
+      if (admission === "transferred") continue;
+      if (admission === "busy") break;
+      if (admission !== "ineligible") throw new TypeError("Invalid immediate cue admission");
+      const cue = runtime.cues.pull();
+      if (!cue) break;
+      const emission = cueHab ? cueHab.interpretCue(cue) : {
+        cue,
+        messages: [],
+        kind: cue.kin === "stream" ? "transport" as const : "notify" as const,
+      };
+      if (emission) yield* sink.send(emission);
     }
   });
 }

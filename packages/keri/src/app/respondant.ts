@@ -1,6 +1,9 @@
+import { ResourceAdmissionError } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
-import type { CueSink } from "./cue-runtime.ts";
+import { DeckFullError } from "../core/deck.ts";
+import type { AgentRuntime } from "./agent-runtime.ts";
+import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import type { Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
@@ -46,8 +49,35 @@ export class Respondant implements CueSink {
   /** Bind one default forwarding habitat for long-lived host sinks. */
   forHab(hab?: Hab | null): CueSink {
     return {
+      admitCue: (runtime, interpreter) => this.admitCue(runtime, interpreter, hab),
       send: (emission) => this.sendWithHab(emission, hab),
     };
+  }
+
+  /** Atomically retain eligible source wire; occupied capacity never falls back to destructive sending. */
+  admitCue(runtime: AgentRuntime, interpreter: Hab | null, hint?: Hab | null): CueAdmission {
+    const cue = runtime.cues.peekHead();
+    if (!cue || !interpreter) return "ineligible";
+    const recipient = recipientForCue(cue), topic = topicForCue(cue);
+    const sender = senderHabForCue(this.hby, cue, hint);
+    if (!recipient || !topic || !sender) return "ineligible";
+    if (this.hby !== runtime.hby || this.poster !== runtime.poster) throw new RangeError("Wrong cue runtime");
+    let refusal: ResourceAdmissionError | DeckFullError | undefined;
+    try {
+      const transferred = runtime.deliveries.enqueueCue(
+        interpreter,
+        runtime.cues,
+        () => this.poster.resolveBytesRoute(sender, { recipient, topic }),
+        sender,
+        (error) => refusal = error,
+      );
+      return transferred ? "transferred" : "ineligible";
+    } catch (error) {
+      if (refusal && error === refusal && (refusal instanceof DeckFullError || refusal.reason === "busy")) {
+        return "busy";
+      }
+      throw error;
+    }
   }
 
   /** Default cue-sink entry point when no explicit habitat hint is supplied. */
@@ -74,7 +104,7 @@ export class Respondant implements CueSink {
 
     const recipient = recipientForCue(emission.cue);
     const topic = topicForCue(emission.cue);
-    const senderHab = senderHabForEmission(this.hby, emission, hab);
+    const senderHab = senderHabForCue(this.hby, emission.cue, hab);
     if (!recipient || !topic || !senderHab) {
       return;
     }
@@ -126,12 +156,12 @@ function recipientForCue(
   }
 }
 
-function senderHabForEmission(
+function senderHabForCue(
   hby: Habery,
-  emission: CueEmission,
+  cue: CueEmission["cue"],
   hab?: Hab | null,
 ): Hab | null {
-  const source = cueSourcePrefix(emission.cue);
+  const source = cueSourcePrefix(cue);
   if (source) {
     return hby.habs.get(source) ?? hab ?? soleHab(hby);
   }

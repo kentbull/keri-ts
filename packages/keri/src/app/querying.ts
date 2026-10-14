@@ -3,7 +3,8 @@ import { call, type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission, QueryCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
-import type { CueSink } from "./cue-runtime.ts";
+import type { AgentRuntime } from "./agent-runtime.ts";
+import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
@@ -522,6 +523,14 @@ export class QueryCoordinator implements CueSink {
     if (!pre) return false;
     this.enqueue({ pre, route: cue.route ?? "logs", query: normalizeOutboundQuery(cue), src: cue.src, wits: cue.wits });
     return true;
+  }
+
+  /** Observe a source cue only after the downstream owner has atomically retained eligible delivery. */
+  admitCue(runtime: AgentRuntime, interpreter: Hab | null): CueAdmission {
+    const cue = runtime.cues.peekHead();
+    const admission = this.sink.admitCue?.(runtime, interpreter) ?? "ineligible";
+    if (cue && admission === "transferred") this.observeContinuations(cue);
+    return admission;
   }
 
   /**
