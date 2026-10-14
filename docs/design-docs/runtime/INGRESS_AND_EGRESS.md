@@ -63,6 +63,41 @@ an explicitly bounded 8 MiB value. `Reactor.processBytes` supplies a finite valu
 path; it owns parsing and dispatch through an Effection operation. No shared
 feed buffer or separate synchronous parser remains.
 
+## Socket-to-application boundary (implementation pending)
+
+The required transport path is a bounded abortable source, one progressive parser
+per connection/request, complete frames, guarded verification/storage, and owned
+delivery outside the guard. HTTP body intake already uses this parser path; TCP
+currently collects until connection completion. Existing cue consumers can still
+await network I/O under the guard. The [transport plan][transport-plan] owns closure;
+these requirements do not describe completed TCP support.
+
+The guard protects protocol interpretation, signing, routing snapshots and local
+DB side effects. Network waits and capacity waits belong outside it. Transfer a
+cue only after its bounded delivery owner accepts it; saturation must retain the
+original cue. Replays carry captured extents plus one admitted current message.
+Borrowed frames and KRAM payload owners cannot escape their consuming scope as
+lazy work. HTTP request-local replies retain their existing correlation and owner.
+
+Each connection has a supervised receive/parser task and finite shared credit
+before reads begin. Stream writes await drain before pulling another chunk.
+Shutdown stops admission and joins reads, dispatch and output before sockets and
+stores are released. Stream high-water marks alone do not establish these bounds.
+
+Explicit enclosures, a following body or genuine EOF complete CESR frames;
+temporary lack of input does not. A bare final frame may await more input.
+Independent GenericGroup children can become usable before transfer completion;
+parent-owned children remain evidence until their parent's route accepts them.
+
+Full duplex is an explicit same-socket reply mode, separate from the preserved
+mailbox/direct routing default. Receive EOF does not imply transmit failure.
+Half-open sockets end output after response drain or a fixed absolute deadline
+that activity cannot extend. Local write completion is not remote authentication
+or durability. Failed delivery retains live ownership; restart recovery requires
+a separately proven durable obligation or reconstruction path, not just a queue.
+
+[transport-plan]: ../../plans/runtime/TRANSPORT_PLAN.md
+
 ## Runtime store ownership
 
 AgentRuntime borrows its Habery, injected `acdc.rgy` manager and injected VDR services.

@@ -68,8 +68,11 @@ V2 local blind validates its schema before deriving any commitment. Keep missing
 resource, invalid content, resource limits and infrastructure failures distinct.
 The static 71438328 schema profile is separately qualified; preserve frozen927
 commitments and legacy Schemer behavior. Validation consumes borrowed originals,
-compiles private copies and never fetches references. Embedded bundled-ID builder
-parity remains an existing Mapper correction, independent of override/cache checks.
+compiles private copies and never fetches references. Content-bound shallow JSON
+bare-root schemas retain original bundled URI IDs across credential body formats; compact
+s is their root ID. Serder checks commitments, while S1 checks each resource and
+its profile. Verification never repairs stale explicit schema claims. Frozen
+default/unbound format-specific schema construction remains separately qualified.
 
 Local blinded updates follow a unique staged frontier across both escrows after an
 accepted head. De-duplicate sightings, reject forks, and never equate staging with acceptance.
@@ -104,9 +107,11 @@ The [registry foundation](../../docs/plans/credentials/REGISTRY_PLAN.md) owns
 full v2 services and the recorded upstream intake gap. Preserve legacy VDR and #168 stores;
 storage readability, observer vetting and issuer processing are separate gates.
 
-Standalone Mapper currently accepts a tampered map with a stale claimed d despite
-saidive verify. The [focused repair](../../docs/plans/cesr/MAPPER_PLAN.md) must use
-independent positive/tampered formats and preserve Aggor disclosure semantics.
+Standalone saidive Mapper verifies top-level claims across all input formats.
+Compactor disclosure construction does not flat-rehash compact claims in expanded
+maps; Aggor independently verifies its visible map commitments. The
+[Mapper plan](../../docs/plans/cesr/MAPPER_PLAN.md) retains bundled schema-ID and
+resource-encoding qualification separately from these checks.
 [IPEX](../../docs/plans/exchange/IPEX_PLAN.md) retains presentation/qualification
 gates; do not relist already implemented CLI/verifier workflows as missing.
 Broader dissemination/revocation and DB-row parity claims require their actual

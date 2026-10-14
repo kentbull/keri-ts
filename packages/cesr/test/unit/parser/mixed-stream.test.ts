@@ -1,5 +1,6 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../../src/core/bytes.ts";
+import { discardFrame } from "../../../src/core/frame.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parse } from "../../../src/parser/progressive.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
@@ -142,6 +143,46 @@ Deno.test(
     assertEquals(summary[4].attachments, [`${CtrDexV2.ControllerIdxSigs}:22`]);
   },
 );
+
+Deno.test("annotation work yields a host turn and cancellation joins its source", async () => {
+  const body = encode(v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}"));
+  const wire = concatBytes(new Uint8Array(1024 * 1024).fill(10), body);
+  for (const cancel of [false, true]) {
+    const controller = new AbortController();
+    const reason = new Error("annotation work cancelled");
+    let timerRan = false, closed = false;
+    const parser = parse(
+      (async function*() {
+        try {
+          yield wire;
+        } finally {
+          closed = true;
+        }
+      })(),
+      { signal: controller.signal, maxChunkBytes: wire.length },
+    );
+    const timer = setTimeout(() => {
+      timerRan = true;
+      if (cancel) controller.abort(reason);
+    }, 0);
+    try {
+      if (cancel) {
+        assertStrictEquals(await assertRejects(() => parser.next()), reason);
+        assertEquals(closed, true);
+      } else {
+        const result = await parser.next();
+        assertEquals(result.done, false);
+        assertEquals(result.value!.body.raw, body);
+        assertEquals(timerRan, true, "annotation traversal must let host work run before delivery");
+        await discardFrame(result.value!);
+      }
+    } finally {
+      clearTimeout(timer);
+      await parser.return(undefined);
+    }
+    assertEquals(closed, true);
+  }
+});
 
 Deno.test(
   "interleaved annotation bytes between heterogeneous domains and wrapper styles preserve ordering",
