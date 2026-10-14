@@ -19,6 +19,11 @@ KERI/Tufa operations own lifecycle. Acquire source/frame/runtime resources befor
 work children so cancellation aborts and joins I/O before releasing permits or
 owners. Promise adaptation belongs at real edges. Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
+QueryCoordinator owns pending canonical query/witness metadata on Baser's exact
+policy before normalization/copies. Rotation retains the same owner; sent or
+transferred work releases only after consumption joins. clear() preserves an
+active head; close cancels/joins processing before clearing every pending owner.
+Borrowed Hab references remain accepted-state residency, outside this byte walk.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state. Mailbox query correlation uses its own exact-policy
 CueDeck (64 held slots by default); selected cues retain byte/item credit through

@@ -327,7 +327,14 @@ export function* createAgentRuntime(
   ) {
     mailboxDirector.registerTopic(topic);
   }
-  const querying = new QueryCoordinator(hby);
+  const querying = yield* resource<QueryCoordinator>(function*(provide) {
+    const coordinator = new QueryCoordinator(hby);
+    try {
+      yield* provide(coordinator);
+    } finally {
+      yield* coordinator.close();
+    }
+  });
   const delegating = new Anchorer(hby, { poster, querying, services });
   const oobiery = new Oobiery(hby, reactor, { cues, services });
   oobiery.registerReplyRoutes(reactor.router);
@@ -359,6 +366,9 @@ export function* createAgentRuntime(
       reactor.clearIngress();
       const failures: unknown[] = [];
       const cleanup = [
+        function*() {
+          yield* querying.close();
+        },
         function*() {
           if (ownsSignaler) signaler?.close();
         },
