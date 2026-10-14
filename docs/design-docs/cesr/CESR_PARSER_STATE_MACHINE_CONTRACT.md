@@ -30,7 +30,17 @@ that later transport bytes could repair.
 `parseBytes` collects finite input under `maxInputBytes` (8 MiB by default),
 returns frames, and propagates rejection. On failure it releases every collected
 payload because ownership has not transferred. Successful streaming or finite
-callers own every descendant ESSR payload and use `discardFrame` after consumption.
+callers own each delivered root and use `discardFrame` after consumption, including
+ordinary frames when shared resource admission is enabled. Descendants remain
+borrowed from that root.
+
+With `resources`, each independent tree reserves its `maxFrameBytes` allowance
+before body hydration. Descendants share that reservation. It transfers with the
+root and survives parser exit; failure releases undelivered credit after owner
+cleanup. A generator suspended at yield also retains the tree, so credit is
+released only after consumer disposal and the next `next()`/`return()` call.
+This accounts for ordinary wire allowance, not all hydrated representations,
+ESSR staging, storage copies or JavaScript heap overhead.
 
 Bodies hydrate once through Serder. Ordinary attachment leaves remain admitted
 finite values; attachment wrappers flatten into ordered semantic leaves. Enclosed

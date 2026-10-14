@@ -1,5 +1,13 @@
 import { isCesrDomain, tokenSize, unitBytes } from "../core/domain.ts";
-import { ColdStartError, GroupSizeError, ResourceLimitError, ShortageError } from "../core/errors.ts";
+import {
+  ColdStartError,
+  GroupSizeError,
+  ResourceAdmissionError,
+  ResourceLimitError,
+  ShortageError,
+} from "../core/errors.ts";
+import { retainFrameCredit } from "../core/frame-credit.ts";
+import type { ResourcePolicy, ResourceReservation } from "../core/resource-policy.ts";
 import type { CesrFrame, EssrPayload } from "../core/types.ts";
 import { decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import { smell } from "../serder/smell.ts";
@@ -13,6 +21,8 @@ import { type EssrBudget, essrFactory, type EssrOptions, type EssrWriter } from 
 
 /** Resource limits and cancellation for one progressive stream invocation. */
 export interface ParseOptions extends CursorOptions, EssrOptions {
+  /** Shared ordinary-tree allowance; delivered roots retain credit until discardFrame(). */
+  resources?: ResourcePolicy;
   /** Resident body and ordinary attachment byte limit per owned tree; streamed ESSR is budgeted separately. */
   maxFrameBytes?: number;
   /** Maximum retained ordinary attachment leaves per owned tree; default 4,096. */
@@ -78,6 +88,8 @@ interface PendingFrame {
 
 /** Remaining admission credit shared only by one pending message and its descendants. */
 interface TreeBudget extends EssrBudget {
+  /** One root owns the admission allowance for all parent-owned descendants. */
+  credit?: ResourceReservation;
   /** Ordinary body and attachment wire bytes retained so far. */
   resident: number;
   /** Ordinary attachment groups retained so far, including empty groups. */
@@ -102,6 +114,8 @@ interface ParseContext {
   stages: Set<EssrWriter>;
   /** Finished owners remain parser-owned until every descendant finishes. */
   owners: Set<EssrPayload>;
+  /** Reserved ordinary-tree allowances not yet transferred at public delivery. */
+  credits: Set<ResourceReservation>;
 }
 
 /** Structural attachment scopes are traversed, never retained as giant raw containers. */
@@ -333,6 +347,7 @@ export async function* parse(
   source: AsyncIterable<Uint8Array>,
   options: ParseOptions = {},
 ): AsyncGenerator<CesrFrame> {
+  const resources = options.resources;
   const limit = options.maxFrameBytes ?? 8 * 1024 ** 2;
   if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Frame limit must be a positive safe integer");
   // Empty attachment groups require an object-count cap in addition to the byte cap.
@@ -352,13 +367,23 @@ export async function* parse(
     openEssr: essrFactory(options, options.signal),
     stages: new Set(),
     owners: new Set(),
-    newTree: () => ({
-      resident: 0,
-      groups: 0,
-      nodes: 0,
-      bytes: options.maxEssrBytes ?? 8 * 1024 ** 2,
-      items: options.maxEssrItems ?? 16384,
-    }),
+    credits: new Set(),
+    newTree: () => {
+      const decision = resources?.reserve({ bytes: limit });
+      if (decision?.kind === "refuse") {
+        throw new ResourceAdmissionError(`Tree admission refused: ${decision.reason}`, decision.reason);
+      }
+      const credit = decision?.reservation;
+      if (credit) context.credits.add(credit);
+      return {
+        credit,
+        resident: 0,
+        groups: 0,
+        nodes: 0,
+        bytes: options.maxEssrBytes ?? 8 * 1024 ** 2,
+        items: options.maxEssrItems ?? 16384,
+      };
+    },
   };
   const input = new Cursor(source, options);
   // Preserve the parse failure if releasing another owner also fails.
@@ -368,8 +393,15 @@ export async function* parse(
       // Finishing one descendant does not transfer it before a later finish succeeds.
       await finishTree(pending, context);
       options.signal?.throwIfAborted();
+      const released = pending.tree.credit && retainFrameCredit(pending.frame, pending.tree.credit);
+      if (pending.tree.credit) context.credits.delete(pending.tree.credit);
       deliverTree(pending.frame, context);
-      yield pending.frame;
+      try {
+        yield pending.frame;
+      } finally {
+        // A suspended generator still retains the delivered tree until next()/return().
+        released?.();
+      }
     }
   } catch (error) {
     errors.push(error);
@@ -385,6 +417,7 @@ export async function* parse(
     } catch (error) {
       cleanup.push({ status: "rejected", reason: error });
     }
+    for (const credit of context.credits) credit.release();
     const failures = cleanup.filter((result) => result.status === "rejected");
     if (failures.length) {
       // deno-lint-ignore no-unsafe-finally -- Preserve the original failure alongside every cleanup failure.

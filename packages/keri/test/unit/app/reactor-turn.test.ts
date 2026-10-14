@@ -172,6 +172,7 @@ Deno.test("cue capacity preserves unaccepted KEL and escrow retry ownership", as
       const later = sender.interact();
       const reactor = new Reactor(target, { maxPendingCues: 4 });
       yield* reactor.process((signal) => chunkBytes(later, { signal }));
+      assertEquals(reactor.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
       assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 1);
       reactor.cues.clear();
       reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
@@ -179,6 +180,7 @@ Deno.test("cue capacity preserves unaccepted KEL and escrow retry ownership", as
       yield* call(() =>
         assertRejects(() => run(() => reactor.process((signal) => chunkBytes(initial, { signal }))), DeckFullError)
       );
+      assertEquals(reactor.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
       assertEquals(target.db.getKever(sender.pre), null);
       reactor.cues.clear();
       yield* reactor.process((signal) => chunkBytes(initial, { signal }));
