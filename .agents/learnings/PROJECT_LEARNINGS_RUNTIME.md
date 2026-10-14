@@ -45,6 +45,10 @@ and retains it through joined parser cleanup. AgentRuntime exposes that same pol
 for recipients; shared deployments must inject one policy into all runtimes.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
+Complete-record ingress charges shared bytes before copying; queued and processing
+owners retain local capacity and the lease through retry and joined cancellation.
+clearIngress releases only queued owners and invalidates late retries. Runtime
+close/scope exit clears queued leases without releasing active processing early.
 See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md).
 
 ## Transport

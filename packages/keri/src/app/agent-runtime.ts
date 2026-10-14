@@ -244,6 +244,13 @@ export function* createAgentRuntime(
     kram: options.kram,
     now: () => services.clock.now(),
   });
+  yield* resource<void>(function*(provide) {
+    try {
+      yield* provide();
+    } finally {
+      reactor.clearIngress();
+    }
+  });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);
@@ -315,6 +322,7 @@ export function* createAgentRuntime(
     acdc,
     services,
     *close(): Operation<void> {
+      reactor.clearIngress();
       yield* queryDeliveries.close();
       replyStreams.close();
       mailboxDirector.close();
