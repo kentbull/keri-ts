@@ -32,7 +32,8 @@ claim to shrink that capacity.
 The Deno graph binds both packages through its frozen lock. Generated npm builds use `scripts/npm/vendor-sodium.ts` to
 authenticate the two exact 0.8.4 ESM distribution files and their ISC license by SHA-256, then copy them into the
 generated package. The wrapper's single raw-module import points to that adjacent copy; the private runtime entry points
-to the copied wrapper. This preserves one backend and one heap without relying on the wrapper's upstream `^0.8.0`
+to a private loader, which supplies native `node:crypto` Web Crypto only when Node's global is absent, before importing
+the copied wrapper. Existing Node/browser globals remain untouched. This preserves one backend and one heap without relying on the wrapper's upstream `^0.8.0`
 raw-module dependency. No crypto code is edited. Unexpected hashes or imports fail the build. The generated directory
-includes its license and original/rewritten hash provenance. The external wrapper dependency remains for declarations,
+includes its license and original/rewritten/loader hash provenance. The external wrapper dependency remains for declarations,
 not runtime resolution.

@@ -1,9 +1,10 @@
 import { concatBytes, ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
-import { call, run } from "effection";
+import { call, resource, run, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { once } from "node:events";
 import { createConnection, createServer, type Socket } from "node:net";
-import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { socketBytes } from "../../../src/app/socket-source.ts";
 import { sendCesrTcp, streamCesrTcp } from "../../../src/app/tcp-egress.ts";
@@ -345,6 +346,204 @@ Deno.test("TCP source rejects overlapping pulls, errors and early close; abort a
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
   }
+});
+
+Deno.test("TCP conversation owns concurrent signed replies, directional failure and joined cancellation", async () => {
+  await run(function*() {
+    const receiving = yield* createHabery({ name: `tcp-replies-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const producing = yield* createHabery({ name: `tcp-proof-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const sender = producing.makeHab("sender", undefined, { transferable: true });
+    const timers: number[] = [];
+    const runtime = yield* createAgentRuntime(receiving, {
+      mode: "indirect",
+      services: {
+        clock: {
+          ...defaultRuntimeServices.clock,
+          setTimeout(callback, ms) {
+            timers.push(ms);
+            return setTimeout(callback, ms);
+          },
+        },
+      },
+    });
+    let mode = "drain", expectedSn = 0, received = 0, opened = 0;
+    let peerEOF = Promise.withResolvers<void>();
+    const peers = new Set<Socket>();
+    const server = createServer({ allowHalfOpen: true }, (socket) => {
+      peers.add(socket);
+      socket.on("error", () => {});
+      socket.on("data", (bytes) => received += bytes.length);
+      socket.once("end", () => peerEOF.resolve());
+      const proof = acceptedEventReplayMessage(producing, sender.pre, expectedSn).message;
+      if (mode === "deadline") {
+        const activity = setInterval(() => socket.write(proof), 5);
+        socket.once("close", () => clearInterval(activity));
+        socket.write(proof);
+      } else socket.end(proof);
+      socket.once("close", () => peers.delete(socket));
+    });
+    try {
+      yield* call(() => new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)));
+      const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
+      const options = { replies: { runtime }, connectTimeoutMs: 1000, drainTimeoutMs: 40 };
+      const occupied = runtime.resources.reserve({ streams: 1 });
+      if (occupied.kind !== "reserve") throw new Error("Expected free capacity");
+      try {
+        const source = async function*() {
+          opened++;
+          yield Uint8Array.of(9);
+        };
+        const busy = yield* call(() =>
+          assertRejects(() => run(() => streamCesrTcp(url, source, options)), ResourceAdmissionError)
+        );
+        assertEquals(busy.reason, "busy");
+        const limit = yield* call(() =>
+          assertRejects(() =>
+            run(() =>
+              streamCesrTcp(url, source, {
+                ...options,
+                maxChunkBytes: runtime.resources.limits.bytes,
+              })
+            ), ResourceAdmissionError)
+        );
+        assertEquals(limit.reason, "limit");
+        yield* call(() =>
+          assertRejects(
+            () =>
+              run(() =>
+                streamCesrTcp(url, source, {
+                  ...options,
+                  services: { ...runtime.services },
+                })
+              ),
+            RangeError,
+            "exact services",
+          )
+        );
+        assertEquals(opened, 0);
+        assertEquals(peers.size, 0, "both directional admission checks precede connection/factory acquisition");
+      } finally {
+        occupied.reservation.release();
+      }
+      for (mode of ["drain", "txFault", "cancel", "deadline", "rxFault"]) {
+        peerEOF = Promise.withResolvers<void>();
+        const verified = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+        const txReturning = Promise.withResolvers<void>(), rxReturning = Promise.withResolvers<void>();
+        const txCleanup = Promise.withResolvers<void>(), rxCleanup = Promise.withResolvers<void>();
+        let continued = false, eof = false;
+        const fault = new Error("outgoing source infrastructure failure");
+        const source = async function*(signal: AbortSignal) {
+          try {
+            yield Uint8Array.of(9);
+            await new Promise<void>((resolve, reject) => {
+              release.promise.then(resolve, reject);
+              signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            });
+            if (mode === "txFault") throw fault;
+            yield Uint8Array.of(8);
+            eof = true;
+          } finally {
+            txReturning.resolve();
+            if (mode === "cancel") await txCleanup.promise;
+          }
+        };
+        const task = run(function*() {
+          const result = yield* streamCesrTcp(url, source, {
+            ...options,
+            replies: {
+              runtime,
+              consume: function*() {
+                assertEquals(receiving.db.getKever(sender.pre)?.sn, expectedSn);
+                verified.resolve();
+                if (mode === "rxFault") throw fault;
+                if (mode === "cancel") {
+                  yield* resource<void>(function*(provide) {
+                    try {
+                      yield* provide();
+                    } finally {
+                      rxReturning.resolve();
+                      yield* call(() => rxCleanup.promise);
+                    }
+                  });
+                  yield* suspend();
+                }
+              },
+            },
+          });
+          continued = true;
+          return result;
+        });
+        // Bound every deliberately blocked peer/source fixture without keeping a timer after it resolves.
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const promptly = <T>(pending: Promise<T>) =>
+          Promise.race([
+            pending,
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(() => reject(new Error("Conversation stalled")), 2000);
+            }),
+          ]).finally(() => clearTimeout(timer));
+        try {
+          yield* call(() => promptly(verified.promise));
+          assertEquals(eof, false, "signed reply reaches durable state before outgoing EOF");
+          assertEquals(continued, false);
+          if (mode !== "rxFault") assertEquals(runtime.resources.used.streams, 2);
+          assertEquals(timers.filter((ms) => ms === 40).length, 0, "drain deadline starts at TX EOF");
+          if (mode === "cancel") {
+            let joined = false;
+            const halted = task.halt().then(() => joined = true);
+            yield* call(() => promptly(Promise.all([txReturning.promise, rxReturning.promise])));
+            assertEquals(joined, false);
+            assertEquals(runtime.resources.used.streams, 2, "neither direction releases before both cleanups join");
+            txCleanup.resolve();
+            yield* call(() => Promise.resolve());
+            assertEquals(joined, false);
+            rxCleanup.resolve();
+            yield* call(() => halted);
+            assertEquals(continued, false);
+          } else {
+            release.resolve();
+            if (mode === "txFault" || mode === "rxFault") {
+              assertStrictEquals(yield* call(() => assertRejects(() => Promise.resolve(task))), fault);
+            } else if (mode === "deadline") {
+              yield* call(() => assertRejects(() => Promise.resolve(task), Error, "drain deadline exceeded"));
+              assertEquals(
+                timers.filter((ms) => ms === 40).length,
+                1,
+                "reply activity cannot refresh the half-close deadline",
+              );
+            } else {
+              const result = yield* call(() => Promise.resolve(task));
+              assertEquals(result, {
+                kind: "conversationDrained",
+                transmission: { kind: "transmitted", bytes: 2 },
+                receive: { kind: "eof", processedFrames: 1 },
+              });
+              yield* call(() => promptly(peerEOF.promise));
+              assertEquals(received, 2, "peer RX EOF does not end local TX");
+            }
+          }
+          assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        } finally {
+          clearTimeout(timer);
+          release.resolve();
+          txCleanup.resolve();
+          rxCleanup.resolve();
+          yield* call(() => task.halt());
+        }
+        timers.length = 0;
+        sender.interact();
+        expectedSn++;
+      }
+    } finally {
+      for (const socket of peers) socket.destroy();
+      yield* call(() =>
+        new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+      );
+      yield* runtime.close();
+      yield* producing.close();
+      yield* receiving.close();
+    }
+  });
 });
 
 Deno.test("TCP streamed output stops pulling under socket pressure and joins source cleanup before credit release", async () => {

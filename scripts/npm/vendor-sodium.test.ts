@@ -22,10 +22,11 @@ Deno.test("npm sodium binding copies authenticated distributions and rejects dri
     assertThrows(() => vendorSodium(directory, source), Error, "external sodium");
     Deno.removeSync(directory + "/esm/extra.js");
     vendorSodium(directory, source);
-    assertEquals(Deno.readTextFileSync(entry).includes("./sodium-0.8.4/wrapper.mjs"), true);
+    assertEquals(Deno.readTextFileSync(entry).includes("./sodium-0.8.4/runtime.mjs"), true);
     const path = directory + "/esm/src/sodium-0.8.4/";
     assertEquals(Deno.readFileSync(path + "raw.mjs"), source.raw);
     assertEquals(Deno.readFileSync(path + "LICENSE"), source.license);
+    assertEquals(Deno.readFileSync(path + "runtime.mjs"), Deno.readFileSync(new URL("./sodium-runtime.mjs", import.meta.url)));
     const wrapper = Deno.readTextFileSync(path + "wrapper.mjs");
     assertEquals(wrapper.startsWith('import e from"./raw.mjs";'), true);
     assertEquals(wrapper.includes('from"libsodium-sumo"'), false);
