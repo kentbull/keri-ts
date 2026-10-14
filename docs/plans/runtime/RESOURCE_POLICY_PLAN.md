@@ -38,9 +38,12 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    before proof/state writes while retaining prepared reply/query ownership.
    Frozen KEL replay ranges are inspectable without opening event readers.
    KEL query source-seal repair follows concrete output admission on live/retry paths.
-   Registry/credential children, capture-time allocations, TEL/composed sources,
-   OOBI and other durable producers remain open, followed by query/mailbox/delivery
-   transfers. Complete these ownership ports before Runtime activation.
+   Registry and credential TSN admit exact new dependency queries or txnStateSaved
+   children before proof/Broker writes, preserving external escrow and prior proof
+   ownership. Capture-time allocations and TEL/composed
+   sources, OOBI and other durable producers remain open, followed by
+   query/mailbox/delivery ownership transfers. Complete these ports before Runtime
+   activation.
 
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.
 Split further before publication if a complete boundary needs more. Qualification

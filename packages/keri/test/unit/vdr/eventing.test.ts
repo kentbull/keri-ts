@@ -7,6 +7,8 @@ import {
   NumDex,
   parseBytes,
   Prefixer,
+  ResourceAdmissionError,
+  ResourcePolicy,
   SerderACDC,
   TraitDex,
   Vrsn_1_0,
@@ -15,14 +17,22 @@ import {
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
+import { CueDeck } from "../../../src/core/cue-admission.ts";
+import { DeckFullError } from "../../../src/core/deck.ts";
+import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { backerIssue, incept as inceptRegistry, issue, revoke } from "../../../src/core/protocol-vdr-eventing.ts";
+import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
+import { CredentialStateReceiver } from "../../../src/vdr/credential-tsn.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
+import { RegistryStateReceiver } from "../../../src/vdr/registry-tsn.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
+
+import { expectKind } from "../../private-access.ts";
 
 const SCHEMA_SAID = "Eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -547,6 +557,125 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
   });
 });
 
+Deno.test("registry TSN admits prospective state and dependency cues before proof or Broker effects", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const tvy = new Tevery({ db: hby.db, reger });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const state = tvy.tevers.get(vcp.pre!)!.state().asDict();
+      const est = hby.db.getEvtSerder(issuer.pre, hby.db.kels.getLast(issuer.pre, 0)!)!;
+      const stamp = makeNowIso8601().replace(/0\+00:00$/, "1+00:00");
+      const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1);
+      const rvy = new Revery(hby.db, { cues }), receiver = new RegistryStateReceiver(tvy, rvy);
+      const args = (stamp: string) => {
+        const serder = reply(`/tsn/registry/${issuer.pre}`, state, { pre: issuer.pre, stamp });
+        return {
+          serder,
+          diger: new Diger({ qb64: serder.said! }),
+          route: serder.route!,
+          aid: issuer.pre,
+          cigars: [],
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: issuer.pre }),
+              est.sner!,
+              new Diger({ qb64: est.said! }),
+              issuer.sign(serder.raw, true),
+            ),
+          ],
+        };
+      };
+      const prior = args(stamp), incoming = args(stamp.replace(/1\+00:00$/, "2+00:00"));
+      assertEquals(receiver.processReply(prior).kind, "accept");
+      cues.clear();
+      const unchanged = () => {
+        assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, prior.diger.qb64);
+        assertEquals(hby.db.rpys.get([incoming.diger.qb64]), null);
+        assertEquals(hby.db.sdts.get([incoming.diger.qb64]), null);
+        assertEquals([...hby.db.ssgs.getTopItemIter([incoming.diger.qb64], { topive: true })], []);
+        assertEquals(reger.txnsb.serderdb.get([incoming.diger.qb64]), null);
+        assertEquals(reger.txnsb.daterdb.get([incoming.diger.qb64]), null);
+        assertEquals(reger.txnsb.escrowdb.cnt(), 0);
+        assertExists(hby.db.rpys.get([prior.diger.qb64]));
+        assertEquals(cues.length, 0);
+      };
+      const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertEquals(assertThrows(() => receiver.processReply(incoming), ResourceAdmissionError).reason, "busy");
+      occupied.reservation.release();
+      unchanged();
+      const limitedRvy = new Revery(hby.db, { cues: new CueDeck(new ResourcePolicy({ bytes: 1 })) });
+      assertEquals(
+        assertThrows(() => new RegistryStateReceiver(tvy, limitedRvy).processReply(incoming), ResourceAdmissionError)
+          .reason,
+        "limit",
+      );
+      unchanged();
+      const slot = cues.prepare([{ kin: "proof", said: "occupied" }]);
+      const held = resources.used.bytes;
+      assertThrows(() => receiver.processReply(incoming), DeckFullError);
+      assertEquals(resources.used.bytes, held);
+      slot.release();
+      unchanged();
+      assertEquals(receiver.processReply(incoming).kind, "accept");
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, incoming.diger.qb64);
+      assertEquals(hby.db.rpys.get([prior.diger.qb64]), null);
+      const owner = cues.takeOwned()!;
+      assertEquals(owner.cue.kin, "txnStateSaved");
+      const retained = resources.used.bytes;
+      cues.clear();
+      assertEquals(resources.used.bytes, retained);
+      owner.release();
+      assertEquals(resources.used.bytes, 0);
+
+      const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const pendingReger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+      try {
+        const pendingResources = new ResourcePolicy(), pendingCues = new CueDeck(pendingResources, 1);
+        const pending = new RegistryStateReceiver(
+          new Tevery({ db: target.db, reger: pendingReger }),
+          new Revery(target.db, { cues: pendingCues }),
+        );
+        const full = expectKind(pendingResources.reserve({ bytes: pendingResources.limits.bytes }), "reserve");
+        assertThrows(() => pending.processReply(incoming), ResourceAdmissionError);
+        full.reservation.release();
+        assertEquals(pendingReger.txnsb.escrowdb.cnt(), 0);
+        assertEquals(pendingReger.txnsb.serderdb.get([incoming.diger.qb64]), null);
+        assertEquals(pendingReger.txnsb.daterdb.get([incoming.diger.qb64]), null);
+        assertEquals(expectKind(pending.processReply(incoming), "unverified").context?.escrow, "registry-mae");
+        assertEquals(pendingCues.toArray(), [{
+          kin: "query",
+          pre: issuer.pre,
+          src: issuer.pre,
+          route: "logs",
+          query: { i: issuer.pre },
+        }]);
+        pendingCues.clear();
+        pendingCues.capacity = 0;
+        const blocked = expectKind(pendingResources.reserve({ bytes: pendingResources.limits.bytes }), "reserve");
+        assertEquals(
+          expectKind(pending.processReply(incoming), "unverified").context?.escrow,
+          "registry-mae",
+          "existing bucket membership acquires no second query credit",
+        );
+        blocked.reservation.release();
+        assertEquals(pendingReger.txnsb.escrowdb.cnt(), 1);
+        assertEquals(pendingCues.length, 0);
+        assertEquals(pendingResources.used.bytes, 0);
+      } finally {
+        yield* pendingReger.close(true);
+        yield* target.close(true);
+      }
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("registry TSN missing issuer and TEL retry through the normal runtime turn", async () => {
   await run(function*() {
     const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -588,6 +717,33 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
       yield* turn();
       assertEquals(queries[0].i, issuer.pre);
       for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
+      const resources = new ResourcePolicy();
+      const ownedRvy = new Revery(hby.db, { cues: new CueDeck(resources, 1) });
+      const ownedReceiver = new RegistryStateReceiver(runtime.vdr.tvy! as Tevery, ownedRvy);
+      const est = sender.db.getEvtSerder(issuer.pre, sender.db.kels.getLast(issuer.pre, 0)!)!;
+      const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertThrows(() =>
+        ownedReceiver.processReply({
+          serder,
+          diger: new Diger({ qb64: serder.said! }),
+          route: serder.route!,
+          aid: issuer.pre,
+          cigars: [],
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: issuer.pre }),
+              est.sner!,
+              new Diger({ qb64: est.said! }),
+              issuer.sign(serder.raw, true),
+            ),
+          ],
+        }), ResourceAdmissionError);
+      occupied.reservation.release();
+      assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 1);
+      assertEquals(reger.txnsb.escrowdb.get(["registry-ooo", vcp.pre!, issuer.pre]).length, 0);
+      assertExists(reger.txnsb.serderdb.get([serder.said!]));
+      assertEquals(hby.db.rpys.get([serder.said!]), null, "refused TEL query cannot publish the incoming proof");
+      assertEquals(resources.used.bytes, 0);
       yield* turn();
       assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 0);
       assertEquals(reger.txnsb.escrowdb.get(["registry-ooo", vcp.pre!, issuer.pre]).length, 1);
@@ -681,6 +837,60 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
       yield* runtime.reactor.processBytes(issuer.endorse(valid));
       assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, valid.said);
       assertEquals(runtime.cues.pull()?.kin, "txnStateSaved");
+      const resources = new ResourcePolicy(), ownedCues = new CueDeck(resources, 1);
+      const receiver = new CredentialStateReceiver(tvy, new Revery(hby.db, { cues: ownedCues }));
+      const est = hby.db.getEvtSerder(issuer.pre, hby.db.kels.getLast(issuer.pre, 0)!)!;
+      const args = (serder: ReturnType<typeof reply>) => ({
+        serder,
+        diger: new Diger({ qb64: serder.said! }),
+        route: serder.route!,
+        aid: issuer.pre,
+        cigars: [],
+        tsgs: [
+          new TransIdxSigGroup(
+            new Prefixer({ qb64: issuer.pre }),
+            est.sner!,
+            new Diger({ qb64: est.said! }),
+            issuer.sign(serder.raw, true),
+          ),
+        ],
+      });
+      const incoming = args(notice(state, stamp.replace(/2\+00:00$/, "7+00:00")));
+      const unchanged = () => {
+        assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, valid.said);
+        assertExists(hby.db.rpys.get([valid.said!]));
+        assertEquals(hby.db.rpys.get([incoming.diger.qb64]), null);
+        assertEquals(hby.db.sdts.get([incoming.diger.qb64]), null);
+        assertEquals([...hby.db.ssgs.getTopItemIter([incoming.diger.qb64], { topive: true })], []);
+        assertEquals(reger.txnsb.serderdb.get([incoming.diger.qb64]), null);
+        assertEquals(reger.txnsb.daterdb.get([incoming.diger.qb64]), null);
+        assertEquals(reger.txnsb.escrowdb.cnt(), 0);
+        assertEquals(ownedCues.length, 0);
+      };
+      const busy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertEquals(assertThrows(() => receiver.processReply(incoming), ResourceAdmissionError).reason, "busy");
+      busy.reservation.release();
+      unchanged();
+      const limited = new CredentialStateReceiver(
+        tvy,
+        new Revery(hby.db, { cues: new CueDeck(new ResourcePolicy({ bytes: 1 })) }),
+      );
+      assertEquals(assertThrows(() => limited.processReply(incoming), ResourceAdmissionError).reason, "limit");
+      unchanged();
+      const slot = ownedCues.prepare([{ kin: "proof", said: "occupied" }]);
+      const held = resources.used.bytes;
+      assertThrows(() => receiver.processReply(incoming), DeckFullError);
+      assertEquals(resources.used.bytes, held);
+      slot.release();
+      unchanged();
+      assertEquals(receiver.processReply(args(valid)).kind, "accept");
+      const owner = ownedCues.takeOwned()!;
+      assertEquals(owner.cue.kin, "txnStateSaved");
+      const retained = resources.used.bytes;
+      ownedCues.clear();
+      assertEquals(resources.used.bytes, retained);
+      owner.release();
+      assertEquals(resources.used.bytes, 0);
       yield* runtime.reactor.processBytes(issuer.endorse(notice(state, oldStamp)));
       yield* runtime.reactor.processBytes(outsider.endorse(notice()));
       yield* runtime.reactor.processBytes(outsider.endorse(notice(state, stamp, outsider)));
@@ -804,6 +1014,30 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
         tvy.tevers.get(vcp.pre!)!.vcState(credential.said!)!.asDict(),
         { pre: issuer.pre },
       );
+      const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1);
+      const owned = new CredentialStateReceiver(runtime.vdr.tvy! as Tevery, new Revery(hby.db, { cues }));
+      const first = sender.db.getEvtSerder(issuer.pre, sender.db.kels.getLast(issuer.pre, 0)!)!;
+      const incoming = {
+        serder: notice,
+        diger: new Diger({ qb64: notice.said! }),
+        route: notice.route!,
+        aid: issuer.pre,
+        cigars: [],
+        tsgs: [
+          new TransIdxSigGroup(
+            new Prefixer({ qb64: issuer.pre }),
+            first.sner!,
+            new Diger({ qb64: first.said! }),
+            issuer.sign(notice.raw, true),
+          ),
+        ],
+      };
+      const busy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertThrows(() => owned.processReply(incoming), ResourceAdmissionError);
+      busy.reservation.release();
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0);
+      assertEquals(reger.txnsb.serderdb.get([notice.said!]), null);
+      assertEquals(reger.txnsb.daterdb.get([notice.said!]), null);
       yield* runtime.reactor.processBytes(issuer.endorse(notice));
       assertEquals(reger.txnsb.escrowdb.get(["credential-mre", credential.said!, issuer.pre]).length, 1);
       assertEquals(runtime.cues.pull(), {
@@ -813,6 +1047,14 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
         route: "tels",
         query: { ri: vcp.pre, i: "" },
       });
+      cues.capacity = 0;
+      const duplicateBusy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertEquals(expectKind(owned.processReply(incoming), "unverified").context?.escrow, "credential-mre");
+      duplicateBusy.reservation.release();
+      assertEquals(cues.length, 0);
+      assertEquals(resources.used.bytes, 0);
+      assertEquals(reger.txnsb.escrowdb.cnt(), 1);
+      cues.capacity = 1;
       for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
       assertEquals([...runtime.cues].map((cue) => cue.kin), [
         "receipt",
@@ -824,6 +1066,14 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       ]);
       runtime.cues.clear();
       yield* runtime.reactor.processBytes(source.cloneTvt(vcp.pre!, vcp.said!));
+      const retryBusy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertThrows(() => owned.processReply(incoming), ResourceAdmissionError);
+      retryBusy.reservation.release();
+      assertEquals(reger.txnsb.escrowdb.get(["credential-mre", credential.said!, issuer.pre]).length, 1);
+      assertEquals(reger.txnsb.escrowdb.get(["credential-ooo", credential.said!, issuer.pre]).length, 0);
+      assertExists(reger.txnsb.serderdb.get([notice.said!]));
+      assertEquals(hby.db.rpys.get([notice.said!]), null);
+      assertEquals(resources.used.bytes, 0);
       yield* runtime.reactor.processEscrowsOnce();
       assertEquals(reger.txnsb.escrowdb.get(["credential-mre", credential.said!, issuer.pre]).length, 0);
       assertEquals(reger.txnsb.escrowdb.get(["credential-ooo", credential.said!, issuer.pre]).length, 1);
@@ -851,6 +1101,26 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
           sigers: [signatures[index]],
           seal: { i: issuer.kever!.prefixer, s: est.sner!, d: new Diger({ qb64: est.said! }) },
         });
+      const proofBusy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
+      assertThrows(() =>
+        owned.processReply({
+          serder: fresh,
+          diger: new Diger({ qb64: fresh.said! }),
+          route: fresh.route!,
+          aid: issuer.pre,
+          cigars: [],
+          tsgs: [
+            new TransIdxSigGroup(new Prefixer({ qb64: issuer.pre }), est.sner!, new Diger({ qb64: est.said! }), [
+              signatures[0],
+            ]),
+          ],
+        }), ResourceAdmissionError);
+      proofBusy.reservation.release();
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0);
+      assertEquals(reger.txnsb.serderdb.get([fresh.said!]), null);
+      assertEquals(hby.db.rpys.get([fresh.said!]), null);
+      assertExists(hby.db.rpys.get([notice.said!]));
+      assertEquals(resources.used.bytes, 0);
       yield* runtime.reactor.processBytes(wire(0));
       assertEquals(reger.txnsb.escrowdb.get(["credential-mae", credential.said!, issuer.pre]).length, 1);
       assertEquals(hby.db.rpes.cnt(), 0);
