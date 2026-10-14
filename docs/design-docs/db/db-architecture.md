@@ -3,17 +3,22 @@
 `LMDBer` pins lmdb-js 3.5.3. The compatibility rebuild retains
 `LMDB_DATA_V1=true` and uses the official `ENABLE_V8_FUNCTIONS=false` option. Node-header V8 symbols are
 not portable to Deno: the V8 mapped-buffer path for rows above 16 MiB can terminate
-the process despite successful small reads. Both Node and Deno must load and
-qualify the rebuilt NAPI addon. This changes native call selection, not database
+the process despite successful small reads. Deno must load the rebuilt NAPI addon; native Node may use the pinned official
+V8 build only when its compiled Node major matches the actual runtime. This changes native call selection, not database
 layout or the addon ABI. Ordinary reads still copy whole rows; fixed shared
 scratch, mapped residency and admission before row allocation remain separate
 [storage work](../../plans/db/STORAGE_RECOVERY_PLAN.md).
 
 `LMDBer.getValBounded` (also exposed by Baser) admits one row byte extent before
 owned copies using a per-call prototype; it never changes the shared DB object
-or global read buffer. Its explicit `npm:lmdb@3.5.3` pin, NAPI native metadata
-(`nodeCompiledVersion` must be absent), compression/version modes, hook shapes
-and environment ownership are checked before reading. Two reads share an active
+or global read buffer. Its explicit `npm:lmdb@3.5.3` pin, native metadata,
+compression/version modes, hook shapes and environment ownership are checked
+before reading. A V8 build requires actual Node >=20, matching compiled/runtime
+major and active LMDB V8 acceleration; Deno/Bun and mismatched metadata fail closed.
+The NAPI build has no `nodeCompiledVersion`. V8 preflight may create an LMDB mapped
+view before admission; it does not copy the row's backing bytes. The admitted
+`getBinary` read owns its copy. Mapped residency/view metadata and fixed native
+scratch remain outside the caller's row-copy reservation. Two reads share an active
 writer or one acquired read transaction, released on refusal/failure. Upgrade
 qualification must inspect `read.js#getBinaryFast/_returnLargeBuffer` and native
 `dbi.cpp#doGetByBinary`/`misc.cpp#valToBinaryFast`; generic hook presence alone is
