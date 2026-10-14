@@ -1,6 +1,7 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { each, run } from "npm:effection@^3.6.0";
 import { toEffectionFrames } from "../../../effection.ts";
+import { ParserError } from "../../../src/core/errors.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV2 } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
@@ -133,4 +134,78 @@ Deno.test("Effection adapter joins a cooperative source's asynchronous finally",
   }
   await halt;
   assertEquals(cleaned, true);
+});
+
+Deno.test("Effection frames preserve late foreign source failures and join cleanup on cancellation", async () => {
+  for (const fault of [new Error("late source I/O"), new DOMException("foreign abort", "AbortError")]) {
+    let enter!: () => void, closing!: () => void, finish!: () => void;
+    const ready = new Promise<void>((resolve) => enter = resolve);
+    const cleanup = new Promise<void>((resolve) => closing = resolve),
+      gate = new Promise<void>((resolve) => finish = resolve);
+    let returned = false, continued = false;
+    const task = run(function*() {
+      const channel = yield* toEffectionFrames(async function*(signal) {
+        try {
+          enter();
+          await new Promise<void>((_resolve, reject) =>
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+          );
+        } finally {
+          closing();
+          await gate;
+          returned = true;
+          // deno-lint-ignore no-unsafe-finally -- Exercise a failing source finalizer during cancellation.
+          throw fault;
+        }
+      });
+      const subscription = yield* channel.frames;
+      yield* subscription.next();
+      continued = true;
+    });
+    await ready;
+    let joined = false;
+    const stopped = Promise.resolve(task.halt()).finally(() => joined = true);
+    void stopped.catch(() => {});
+    try {
+      await cleanup;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assertEquals([joined, returned, continued], [false, false, false]);
+    } finally {
+      finish();
+    }
+    assertStrictEquals(await assertRejects(() => stopped), fault);
+    assertEquals([returned, continued], [true, false]);
+    assertStrictEquals(
+      await assertRejects(() =>
+        run(function*() {
+          const channel = yield* toEffectionFrames(async function*() {
+            throw fault;
+          });
+          const subscription = yield* channel.frames;
+          yield* subscription.next();
+        })
+      ),
+      fault,
+      "An already-delivered source failure must not be duplicated by close",
+    );
+  }
+  const cleanup = new Error("source return failure");
+  const failed = await assertRejects(() =>
+    run(function*() {
+      const channel = yield* toEffectionFrames(async function*() {
+        try {
+          yield new Uint8Array(16).fill(0xff);
+        } finally {
+          // deno-lint-ignore no-unsafe-finally -- Preserve distinct decoder and source finalization failures.
+          throw cleanup;
+        }
+      });
+      const subscription = yield* channel.frames;
+      yield* subscription.next();
+    })
+  );
+  assertInstanceOf(failed, AggregateError);
+  assertEquals(failed.errors.length, 2);
+  assertInstanceOf(failed.errors[0], ParserError);
+  assertStrictEquals(failed.errors[1], cleanup);
 });
