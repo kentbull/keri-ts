@@ -186,7 +186,12 @@ Semantic invalidity cannot publish a new unaccepted proof. Unverified replies
 still apply their existing escrow/query effects without a state child. Exceptions
 after writes release unpublished query/child credit and do not imply DB rollback.
 
-Registry/credential state child publication remains open, followed by OOBI,
+Registry TSN holds PreparedReply query ownership and admits its exact new dependency
+query or txnStateSaved child before proof/Broker effects. Exact family membership
+prevents duplicate query credit; insertion must match the synchronous prediction
+before publication. Pending Broker proofs and prior accepted BADA evidence retain
+their existing owners. Semantic rejection never applies the new proof plan.
+Credential state child publication remains open, followed by OOBI,
 EXN/KRAM and legacy credential/TEL producers.
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.

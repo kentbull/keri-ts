@@ -2,9 +2,11 @@ import { isCesrDomain, tokenSize, unitBytes } from "../core/domain.ts";
 import {
   ColdStartError,
   GroupSizeError,
+  ParserError,
   ResourceAdmissionError,
   ResourceLimitError,
   ShortageError,
+  WireParseError,
 } from "../core/errors.ts";
 import { retainFrameCredit } from "../core/frame-credit.ts";
 import type { ResourcePolicy, ResourceReservation } from "../core/resource-policy.ts";
@@ -21,6 +23,8 @@ import { type EssrBudget, essrFactory, type EssrOptions, type EssrWriter } from 
 
 /** Resource limits and cancellation for one progressive stream invocation. */
 export interface ParseOptions extends CursorOptions, EssrOptions {
+  /** Wrap intrinsic wire decoding failures only; source, sink, policy and cleanup errors retain identity. */
+  classifyWireErrors?: boolean;
   /** Shared ordinary-tree and ESSR-stage allowances, retained until root disposal. */
   resources?: ResourcePolicy;
   /** Resident body and ordinary attachment byte limit per owned tree; streamed ESSR is budgeted separately. */
@@ -347,6 +351,40 @@ export async function* parse(
   source: AsyncIterable<Uint8Array>,
   options: ParseOptions = {},
 ): AsyncGenerator<CesrFrame> {
+  // Invocation-local provenance: a caller may throw the very same ParserError class as a decoder.
+  const external = new Set<unknown>();
+  /** Record injected staging failures without changing the returned storage owner. */
+  async function observe<T>(operation: () => T | Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      external.add(error);
+      throw error;
+    }
+  }
+  /** Preserve source factory, iterator and read failures across decoder advancement. */
+  async function* supplied(): AsyncGenerator<Uint8Array> {
+    try {
+      yield* source;
+    } catch (error) {
+      external.add(error);
+      throw error;
+    }
+  }
+  const sinkFactory = options.payloadSink;
+  const decodeOptions = options.classifyWireErrors && sinkFactory
+    ? {
+      ...options,
+      payloadSink: async (limit: number, signal?: AbortSignal) => {
+        const sink = await observe(() => sinkFactory(limit, signal));
+        return {
+          write: (bytes: Uint8Array) => observe(() => sink.write(bytes)),
+          finish: () => sink.finish(),
+          abort: (reason?: unknown) => sink.abort(reason),
+        };
+      },
+    }
+    : options;
   const resources = options.resources;
   const limit = options.maxFrameBytes ?? 8 * 1024 ** 2;
   if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Frame limit must be a positive safe integer");
@@ -366,7 +404,7 @@ export async function* parse(
     limit,
     maxGroups,
     maxNodes,
-    openEssr: essrFactory(options, options.signal),
+    openEssr: essrFactory(decodeOptions, options.signal),
     stages: new Set(),
     owners: new Set(),
     credits: new Set(),
@@ -374,7 +412,13 @@ export async function* parse(
       const reservations: ResourceReservation[] = [];
       const reserve = (bytes: number) => {
         if (!resources || bytes === 0) return;
-        const decision = resources.reserve({ bytes });
+        let decision;
+        try {
+          decision = resources.reserve({ bytes });
+        } catch (error) {
+          external.add(error);
+          throw error;
+        }
         if (decision.kind === "refuse") {
           throw new ResourceAdmissionError(`Tree admission refused: ${decision.reason}`, decision.reason);
         }
@@ -395,11 +439,25 @@ export async function* parse(
       };
     },
   };
-  const input = new Cursor(source, options);
+  const input = new Cursor(options.classifyWireErrors ? supplied() : source, options);
+  /** Classify only decoding; payload finalization and all joined cleanup stay outside this iterator. */
+  async function* decoded(): AsyncGenerator<PendingFrame> {
+    try {
+      yield* frames(input, null, context);
+    } catch (error) {
+      if (
+        options.classifyWireErrors && !options.signal?.aborted && !external.has(error)
+        && error instanceof ParserError && !(error instanceof ResourceLimitError)
+      ) {
+        throw new WireParseError(error);
+      }
+      throw error;
+    }
+  }
   // Preserve the parse failure if releasing another owner also fails.
   const errors: unknown[] = [];
   try {
-    for await (const pending of frames(input, null, context)) {
+    for await (const pending of decoded()) {
       // Finishing one descendant does not transfer it before a later finish succeeds.
       await finishTree(pending, context);
       options.signal?.throwIfAborted();
