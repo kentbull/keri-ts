@@ -240,6 +240,14 @@ wiring remain S6 work; this source API alone does not enable that route.
 
 ## Witness and exchange output
 
+`ReplyStreams.openNonEmpty` reserves the ordinary response owner before priming
+one bounded nonempty event. It returns null only after empty-source cleanup;
+cleanup/acquisition failures propagate. Primed bytes remain inside that same
+owner through transport consumption, cancellation or runtime close, including
+failed stream publication. No external peek wrapper or second stream slot is
+required. Ordinary `open` retains its first-pull behavior. This prerequisite
+does not itself port OOBI producers or qualify their pre-yield allocations.
+
 Witness `GET /query?typ=kel` returns a lazy source through shared ReplyStreams.
 Without `sn`, capture contains only the target's FEL extent, never delegator logs.
 With `sn`, it retains KEL sequence/duplicate order and captures final KEL/FEL
