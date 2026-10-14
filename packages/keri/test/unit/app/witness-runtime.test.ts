@@ -579,6 +579,26 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
           assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         }
         assertEquals(refusals, ["busy", "wire", "peer"]);
+        // Occupied cue slots are temporary capacity refusal, rather than a configured byte limit.
+        const capacity = runtime.cues.capacity;
+        runtime.cues.capacity = 1;
+        runtime.cues.push({ kin: "proof", said: "occupied" });
+        const blocked = createConnection({ port: tcpPort, host: "127.0.0.1" });
+        sockets.push(blocked);
+        blocked.on("error", () => {});
+        const blockedClosed = new Promise<void>((resolve) => blocked.once("close", resolve));
+        blocked.write(message);
+        yield* race([
+          call(() => blockedClosed),
+          (function*() {
+            yield* sleepOp(2000);
+            throw new Error("Cue saturation did not close");
+          })(),
+        ]);
+        assertEquals(refusals.pop(), "busy");
+        assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
+        runtime.cues.clear();
+        runtime.cues.capacity = capacity;
         // Actual signed replay is accepted while the producer deliberately leaves the connection open.
         const active = createConnection({ port: tcpPort, host: "127.0.0.1" });
         sockets.push(active);

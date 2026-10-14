@@ -1,6 +1,6 @@
 import { ResourceLimitError, type ResourceReservation, WireParseError } from "cesr-ts";
 import { action, call, createScope, type Operation, race, resource, useScope } from "effection";
-import { type AgentRuntime, type Hab, processWitnessIngressSource, socketBytes } from "keri-ts/runtime";
+import { type AgentRuntime, DeckFullError, type Hab, processWitnessIngressSource, socketBytes } from "keri-ts/runtime";
 import { createServer, type Socket } from "node:net";
 
 /** Finite host supervision; the runtime owns the sole parser stream reservation. */
@@ -96,6 +96,7 @@ function* processWitnessSocket(
     ]);
   } catch (error) {
     if (error instanceof WireParseError) onRefusal("wire");
+    else if (error instanceof DeckFullError) onRefusal("busy");
     else if (error instanceof ResourceLimitError) {
       onRefusal("reason" in error && error.reason === "busy" ? "busy" : "limit");
     } else if (peers.has(error)) onRefusal("peer");
