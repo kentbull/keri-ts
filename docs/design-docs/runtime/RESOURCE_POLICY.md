@@ -32,6 +32,13 @@ those captured limits; sources must honor the producer backing contract while
 reading. Rejected admission never invokes the source factory and adds no waiter.
 A source that allocates outside this contract is outside the accounted envelope.
 
-Hydrated tree copies, storage, queues and object/handle/work limits remain in the
+Complete-record ingress reserves retained byte credit before copying. Its record
+owns the lease through queued and processing states, including cue-capacity retry.
+Local record/byte limits also include active processing. Clearing ingress releases
+only queued records and invalidates late retries; processing retains credit until
+joined cleanup. Runtime close and scope exit clear queued ownership. Parser backing
+credit is acquired separately, so both charges coexist during processing.
+
+Hydrated tree copies, storage and object/handle/work limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
 Counter totals alone are not an RSS or native/mapped-memory guarantee.

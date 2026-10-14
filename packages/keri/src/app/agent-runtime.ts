@@ -233,6 +233,13 @@ export function* createAgentRuntime(
     ownsRegistryEvidence = true;
   }
   const reactor = new Reactor(hby, { cues, vdr, resources, messagePolicy: options.messagePolicy });
+  yield* resource<void>(function*(provide) {
+    try {
+      yield* provide();
+    } finally {
+      reactor.clearIngress();
+    }
+  });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);
@@ -304,6 +311,7 @@ export function* createAgentRuntime(
     registryEvidence,
     services,
     *close(): Operation<void> {
+      reactor.clearIngress();
       yield* queryDeliveries.close();
       replyStreams.close();
       mailboxDirector.close();
