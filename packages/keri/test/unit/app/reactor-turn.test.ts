@@ -1,6 +1,6 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { ResourceLimitError } from "../../../../cesr/mod.ts";
+import { ResourceLimitError, ResourcePolicy } from "../../../../cesr/mod.ts";
 import { abortable } from "../../../src/app/abortable.ts";
 import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -233,6 +233,61 @@ Deno.test("OOBI notification overload retains durable work until delivery frees 
       assertEquals(hby.db.oobis.get(url), null);
       assertEquals(hby.db.eoobi.get(url)?.state, "http-404");
       assertEquals(reactor.cues.peekHead()?.kin, "oobiFailed");
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("stream credit is shared before reads and held until cancelled source cleanup joins", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `stream-credit-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      const resources = new ResourcePolicy({ streams: 1, bytes: 128 });
+      const first = new Reactor(hby, { resources });
+      const second = new Reactor(hby, { resources });
+      const started = gate();
+      const cleaning = gate();
+      const cleanup = gate();
+      const limits = { maxChunkBytes: 16, maxBufferedBytes: 64 };
+      const task = yield* spawn(() =>
+        first.process(async function*(signal) {
+          try {
+            started.open();
+            await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+            signal.throwIfAborted();
+            yield new Uint8Array();
+          } finally {
+            cleaning.open();
+            await cleanup.wait;
+          }
+        }, limits)
+      );
+      yield* call(() => started.wait);
+      let opened = false;
+      const source = async function*() {
+        opened = true;
+        yield new Uint8Array();
+      };
+      assertEquals(resources.used, { bytes: 80, streams: 1, decryptions: 0 });
+      yield* call(() => assertRejects(() => run(() => second.process(source, limits)), ResourceLimitError, "busy"));
+      yield* call(() => assertRejects(() => run(() => second.process(source)), ResourceLimitError, "limit"));
+      for (const maxBufferedBytes of [0, Infinity, Number.MAX_SAFE_INTEGER]) {
+        yield* call(() =>
+          assertRejects(() => run(() => second.process(source, { ...limits, maxBufferedBytes })), RangeError)
+        );
+      }
+      assertEquals(opened, false);
+      const halted = yield* spawn(() => task.halt());
+      yield* call(() => cleaning.wait);
+      assertEquals(resources.used.streams, 1);
+      yield* call(() => assertRejects(() => run(() => second.process(source, limits)), ResourceLimitError, "busy"));
+      cleanup.open();
+      yield* halted;
+      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+      yield* second.process(source, limits);
+      assertEquals(opened, true);
+      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     } finally {
       yield* hby.close(true);
     }
