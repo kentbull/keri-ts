@@ -326,7 +326,8 @@ export class Reger extends LMDBer {
       if (t(prefix) === pre) end = ordinal;
     }
     if (end === null) return null;
-    if (!Number.isSafeInteger(end) || end < 0) throw new DatabaseOperationError("Corrupt TEL replay ordinal");
+    if (!Number.isFinite(end) || end < 0) throw new DatabaseOperationError("Corrupt TEL replay ordinal");
+    if (!Number.isSafeInteger(end)) throw new ResourceLimitError("TEL replay ordinal exceeds supported range");
     const genus = { major: gvrsn.major, minor: gvrsn.minor };
     const last = end;
     // deno-lint-ignore no-this-alias -- Each reader borrows this store without retaining its read cursor.

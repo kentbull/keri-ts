@@ -1,6 +1,7 @@
 import { action, call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import {
+  b,
   concatBytes,
   Counter,
   CtrDexV1,
@@ -223,6 +224,10 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
         }
       };
       try {
+        const wide = b(`${regk}.${(1n << 53n).toString(16).padStart(32, "0")}`);
+        reger.putVal(reger.tels.sdb, wide, new Diger({ qb64: regk }).qb64b);
+        assertThrows(() => reger.replay(regk), ResourceLimitError, "supported range");
+        reger.delVal(reger.tels.sdb, wide);
         const reader = replay[Symbol.iterator]();
         assertEquals(reader.next().value, expected);
         assertEquals(reading, 0, "Slow consumers and iterator cancellation retain no LMDB cursor");
