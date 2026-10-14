@@ -88,6 +88,8 @@ DID Webs resolution streams `keri.cesr` into accepted KERI/VDR state; success st
 requires complete evidence, escrow resolution and comparison with hosted `did.json`.
 Dynamic artifact output and static file serving pull under response demand;
 generation/export writes bounded pieces rather than assembling a replay array.
+Dynamic did.json uses JSON-only construction; its finite preparation admission
+and the CESR generation/export source remain S2 requirements.
 Preserve captured ranges, proof order, delegated evidence and current alias cutoffs.
 HTTPS fallback must distinguish failed acquisition from partial application: do not
 silently restart a consumed artifact or swallow cancellation/infrastructure faults.
