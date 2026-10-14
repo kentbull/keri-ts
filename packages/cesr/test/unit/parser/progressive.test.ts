@@ -40,9 +40,7 @@ function vector(major: 1 | 2) {
   const group = (name: "GenericGroup" | "BodyWithAttachmentGroup" | "NonNativeBodyGroup", payload: string) =>
     counter(codes[name], payload.length / 4) + payload;
   // Wrapping the KERIpy JSON body permits whole-stream text/binary conversion.
-  const body = major === 1
-    ? group("NonNativeBodyGroup", new Texter({ raw: encode(json), code: "4B" }).qb64)
-    : native;
+  const body = major === 1 ? group("NonNativeBodyGroup", new Texter({ raw: encode(json), code: "4B" }).qb64) : native;
   // Only the v1 signature counter counts items; v2 counts its 88-character payload / 4.
   const sig = counter(codes.ControllerIdxSigs, major === 1 ? 1 : sigerToken().length / 4) + sigerToken();
   return {
@@ -152,7 +150,7 @@ Deno.test("progressive GenericGroup emits a complete child before receiving its 
   }
 });
 
-Deno.test("progressive traversal matches finite successful frames at every text/binary split", async () => {
+Deno.test("progressive traversal matches finite frames with partial edges and single-byte chunks", async () => {
   for (const major of [1, 2] as const) {
     const { selector, group, frame, body, sig } = vector(major);
     const wire = selector + group("GenericGroup", frame + group("GenericGroup", body + sig)) + frame;
@@ -172,13 +170,22 @@ Deno.test("progressive traversal matches finite successful frames at every text/
         assertInstanceOf(tuple[0], Siger);
         assertEquals(tuple[0].qb64, sigerToken());
       }
-      for (let split = 0; split <= input.length; split++) {
+      // Byte-at-a-time below exercises each token boundary; these two partitions
+      // cover resuming a partial opening token and finishing a partial final token.
+      for (const split of [1, input.length - 1]) {
         assertEquals(
           await collect(parse(chunks(input.slice(0, split), new Uint8Array(), input.slice(split)))),
           expected,
         );
       }
-      assertEquals(await collect(toAsyncFrames(chunks(...Array.from(input, (byte) => Uint8Array.of(byte))))), expected);
+      assertEquals(
+        await collect(toAsyncFrames(chunks(
+          new Uint8Array(),
+          ...Array.from(input, (byte) => Uint8Array.of(byte)),
+          new Uint8Array(),
+        ))),
+        expected,
+      );
     }
   }
 });

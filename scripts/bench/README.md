@@ -12,10 +12,11 @@ python3 scripts/bench/run-cesr-benchmark.py --output /tmp/cesr-baseline.jsonl
 ```
 
 Options select aggregate MiB, item/chunk KiB, nesting, genus, binary input,
-repeats, timeout, and RSS limit. The default grid covers 16 MiB through 4 GiB,
-4 KiB through 1 MiB items, and zero/one/three generic enclosures. Aggregates
-above 1 GiB use multiple legal outer enclosures rather than overflowing a big
-counter. Every yielded ESSR item must match its independent SHA-256 oracle.
+repeats, timeout, and RSS limit. Defaults run only two observations: 16/256 MiB,
+1 MiB items, one GenericGroup and one fresh process per volume. The manual hosted
+target uses the same pair. Larger transfers, other dimensions and repeats remain
+explicit options for a concrete investigation, not an automatic release matrix.
+Every yielded ESSR item must match its independent SHA-256 oracle.
 
 The JSONL report contains the exact source revision, corpus manifest and hashes,
 Deno/V8/TypeScript versions, machine metadata, first-frame latency and bytes
@@ -31,12 +32,14 @@ signature verification, network, disk, or consumer qualification. Later phases
 add those paths and compare them separately. Failures and killed processes have
 no throughput result. A fast rejection is never a performance improvement.
 
-Compare five immutable revisions with identical manifests: untouched parser,
-large-input decoding fix, byte cursor, progressive generators, and the complete
-transport/crypto/storage path. Preserve raw runs and variance. Small exhaustive
-split tests belong in ordinary CI. Large benchmarks and endurance tests are
-manual-only qualification: select `essr-qualification` in the **KERI Extended
-Interop** workflow, or use `gh workflow run keri-extended-interop.yml -f target=essr-qualification`. Raw JSONL evidence is uploaded even when a case fails.
+Preserve historical parser checkpoints and raw runs without automatically
+rerunning them. Production transport/crypto/storage observations are a separate
+path in the [qualification plan](../../docs/plans/qualification/QUALIFICATION_PLAN.md).
+Small token-boundary and byte-at-a-time tests belong in ordinary CI; repeated
+signature verification at every possible two-chunk split is unnecessary.
+Large benchmarks and endurance tests are manual-only qualification: the
+maintainer may select `essr-qualification` in **KERI Extended Interop**. Raw JSONL
+evidence is uploaded even when a case fails; both extended job caps stay 15 minutes.
 This job has no PR trigger, is not a dependency of the PR stage gate, and must
 not be configured as a required check for merging to master.
 
