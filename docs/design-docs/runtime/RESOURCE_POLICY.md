@@ -19,7 +19,8 @@ are immutable snapshots, not writable controls.
 
 This ledger is an admission primitive, not an allocation interceptor. Callers
 must charge copies, backing buffers and retained metadata before acquiring them.
-The current standalone API does not yet connect parser trees, ESSR recipients,
-storage, queues or runtime hosts. Their integration and object/handle/work limits
+ESSR recipients require an explicit shared policy and retain their crypto credit
+through joined cleanup. Parser trees, storage, queues and runtime hosts remain
+to be connected. Their integration and object/handle/work limits
 remain in the [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
 Counter totals alone are not an RSS or native/mapped-memory guarantee.

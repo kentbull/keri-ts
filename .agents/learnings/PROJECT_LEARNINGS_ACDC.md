@@ -64,6 +64,13 @@ Registrar acquires no owners: resolve direct instances, then registry keys, then
 aliases. Presentation checks target SAID syntax only; grant authentication stays
 with IPEX. Empty-target/state vacuous steps need their own disclosures when
 verifying the preceding effective binding. Blinded updates reuse the staged frontier.
+V2 local blind validates its schema before deriving any commitment. Keep missing
+resource, invalid content, resource limits and infrastructure failures distinct.
+The static 71438328 schema profile is separately qualified; preserve frozen927
+commitments and legacy Schemer behavior. Validation consumes borrowed originals,
+compiles private copies and never fetches references. Embedded bundled-ID builder
+parity remains an existing Mapper correction, independent of override/cache checks.
+
 Local blinded updates follow a unique staged frontier across both escrows after an
 accepted head. De-duplicate sightings, reject forks, and never equate staging with acceptance.
 

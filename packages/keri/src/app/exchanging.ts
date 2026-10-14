@@ -31,6 +31,7 @@ import {
   verifyExchangeProofs,
 } from "../core/exchange-proofing.ts";
 import { Kever } from "../core/kever.ts";
+import { type KramReceipt, kramReceiptTime } from "../core/kraming.ts";
 import { exchange as exchangeMessage, nestedIpexRoute, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
@@ -44,7 +45,7 @@ import {
   stageNests,
 } from "../db/exchange-nests.ts";
 import type { FilePayload } from "../db/payload-store.ts";
-import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
@@ -52,6 +53,13 @@ import type { Hab, Habery } from "./habbing.ts";
 
 const textDecoder = new TextDecoder();
 const EXCHANGE_ESCROW_TIMEOUT_MS = 10_000;
+
+/** Private persisted receipt corruption is an invariant failure, never a remote refusal. */
+function storedReceiverTime(record: { receiverTime?: string } | null): string | undefined {
+  const time = record?.receiverTime;
+  if (time !== undefined && timestampMicros(time) === null) throw new Error("Corrupt exchange receiver receipt");
+  return time;
+}
 
 /** Delivery mode used when choosing a remote exchange transport endpoint. */
 export type ExchangeTransport = "auto" | "direct" | "indirect";
@@ -118,6 +126,8 @@ export interface ExchangeRouteHandler {
     nests?: readonly CesrFrame[];
     /** Hosted endpoint provenance, distinct from the signed sender. */
     mailboxAid?: string | null;
+    /** Qualified first receiver receipt, retained through dependency retry. */
+    receiverTime?: string;
   }): ExchangeRouteVerification | Operation<ExchangeRouteVerification>;
   /** Consume already durable evidence within the caller's Effection scope. */
   handle(args: {
@@ -131,6 +141,8 @@ export interface ExchangeRouteHandler {
     nests?: readonly CesrFrame[];
     /** Hosted endpoint provenance, distinct from the signed sender. */
     mailboxAid?: string | null;
+    /** Qualified first receiver receipt, retained through dependency retry. */
+    receiverTime?: string;
   }): void | Operation<void>;
 }
 
@@ -158,6 +170,8 @@ export interface ExchangeInput {
   nests?: readonly CesrFrame[];
   /** Hosted endpoint provenance, retained across escrow. */
   mailboxAid?: string | null;
+  /** Private scoped KRAM authority; callers cannot supply a timestamp override. */
+  receipt?: KramReceipt;
 }
 
 /** Result of this attempt; complete(said) separately reports any earlier durable acceptance. */
@@ -323,6 +337,9 @@ export class Exchanger {
     const retainedFactors = approved?.retained ?? resolved;
 
     const previous = this.hby.db.exchangeMeta.get([said]);
+    const priorReceipt = storedReceiverTime(previous);
+    const incomingReceipt = args.receipt ? kramReceiptTime(args.receipt, args.serder) : undefined;
+    const receiverTime = priorReceipt ?? incomingReceipt;
     const retained = yield* abortable((signal) =>
       this.hby.db.getEssr(said, signal, { maxEssrBytes: this.maxEssrBytes, maxEssrItems: this.maxEssrItems })
     );
@@ -441,6 +458,7 @@ export class Exchanger {
         essr,
         nests,
         mailboxAid,
+        receiverTime,
         ...(handler.acceptsSscs && approved.sscs.length ? { sscs: approved.sscs } : {}),
         ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
       });
@@ -461,6 +479,9 @@ export class Exchanger {
     }
     /** Publish ordinary evidence and private provenance in the archive transaction. */
     const commit = () => {
+      if (storedReceiverTime(this.hby.db.exchangeMeta.get([said])) !== priorReceipt) {
+        throw new Error("Exchange receiver receipt changed during admission");
+      }
       if (nestStage) publishNests(this.hby.db, said, nestStage);
       if (!pending && approved) {
         this.clearEscrow(said, true);
@@ -475,6 +496,7 @@ export class Exchanger {
       }
       this.hby.db.exchangeMeta.pin([said], {
         mailboxAid,
+        ...(receiverTime !== undefined ? { receiverTime } : {}),
         ...((existing ?? essr)
           ? {
             essr: {
@@ -534,6 +556,7 @@ export class Exchanger {
           essr: stored ?? undefined,
           nests,
           mailboxAid,
+          receiverTime,
           ...(handler.acceptsSscs && approved?.sscs.length ? { sscs: approved.sscs } : {}),
         })
       );

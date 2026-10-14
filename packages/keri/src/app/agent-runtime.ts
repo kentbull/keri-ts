@@ -1,9 +1,10 @@
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
-import { RegistryStore } from "../acdc/registering.ts";
+import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import type { MessagePolicy } from "../core/eventing.ts";
+import type { KramConfig } from "../core/kraming.ts";
 import {
   CREDENTIAL_MAILBOX_TOPIC,
   DELEGATE_MAILBOX_TOPIC,
@@ -16,8 +17,7 @@ import type { MailboxInboxLimits } from "../db/mailbox-inbox.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { Noter } from "../db/noting.ts";
 import { createReger, Reger } from "../db/reger.ts";
-import { createRegistryEvidenceStore, RegistryEvidenceStore } from "../db/registry-evidence.ts";
-import { Regery } from "../vdr/credentialing.ts";
+import { Regery as VdrRegery } from "../vdr/credentialing.ts";
 import { Tevery } from "../vdr/eventing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
@@ -40,7 +40,7 @@ import { Notifier, openNoterForHabery } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryDeliveries } from "./query-transport.ts";
 import { QueryCoordinator } from "./querying.ts";
-import { Reactor, type VdrRuntimeServices } from "./reactor.ts";
+import { type AcdcRuntimeServices, Reactor, type VdrRuntimeServices } from "./reactor.ts";
 import { type ReplyStreamLimits, ReplyStreams } from "./reply-streams.ts";
 import { Respondant } from "./respondant.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
@@ -97,8 +97,8 @@ export interface AgentRuntime {
   /** Bounded query deliveries drained outside guarded cue handling. */
   queryDeliveries: QueryDeliveries;
   vdr: VdrRuntimeServices;
-  /** Verified v2 observer chains; no automatic rip/bup wire intake is implied. */
-  registryEvidence: RegistryEvidenceStore | null;
+  /** V2 registry services, separately owned from the legacy VDR environment. */
+  acdc: AcdcRuntimeServices;
   services: RuntimeServices;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
   close(): Operation<void>;
@@ -124,10 +124,12 @@ export interface AgentRuntimeOptions {
   /** Raw-byte retention limits; reaching capacity pauses admission without losing cursors. */
   mailboxAdmission?: { mode: "durable"; limits?: Partial<MailboxInboxLimits> };
   vdr?: VdrRuntimeServices;
-  /** Caller-injected stores remain caller-owned. */
-  registryEvidence?: RegistryEvidenceStore;
+  /** An injected v2 manager and its backing store remain caller-owned. */
+  acdc?: AcdcRuntimeServices;
   /** Sender filtering for v2 non-event ingress; denial always wins. */
   messagePolicy?: MessagePolicy;
+  /** Optional KRAM uses the trusted runtime receiver clock. */
+  kram?: KramConfig;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -213,27 +215,35 @@ export function* createAgentRuntime(
     vdr.vry = new Verifier(hby, { reger, cues });
   }
   if (reger && vdr.tvy instanceof Tevery && vdr.vry instanceof Verifier && !vdr.rgy) {
-    vdr.rgy = new Regery(hby, {
+    vdr.rgy = new VdrRegery(hby, {
       reger,
       tvy: vdr.tvy,
       vry: vdr.vry,
       cues,
     });
   }
-  let registryEvidence = options.registryEvidence ?? null;
-  let ownsRegistryEvidence = false;
-  if (registryEvidence === null && !hby.readonly) {
-    registryEvidence = yield* openRegistryEvidenceForHabery(hby);
-    ownsRegistryEvidence = true;
+  const acdc: AcdcRuntimeServices = { ...(options.acdc ?? {}) };
+  let ownsAcdcRegery = false;
+  if (acdc.rgy == null && !hby.readonly) {
+    acdc.rgy = yield* openAcdcRegeryForHabery(hby);
+    ownsAcdcRegery = true;
   }
-  const reactor = new Reactor(hby, { cues, vdr, messagePolicy: options.messagePolicy });
+  const acdcRegery = acdc.rgy;
+  const reactor = new Reactor(hby, {
+    cues,
+    vdr,
+    acdc,
+    messagePolicy: options.messagePolicy,
+    kram: options.kram,
+    now: () => services.clock.now(),
+  });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);
   loadMultisigHandlers(hby, reactor.exchanger, { notifier });
   loadIpexHandlers(hby, reactor.exchanger, {
     notifier,
-    registry: registryEvidence ? new RegistryStore(registryEvidence) : null,
+    registry: acdc.rgy?.store ?? null,
   });
   const mailboxDirector = new MailboxDirector(
     hby,
@@ -294,7 +304,7 @@ export function* createAgentRuntime(
     replyStreams,
     queryDeliveries,
     vdr,
-    registryEvidence,
+    acdc,
     services,
     *close(): Operation<void> {
       yield* queryDeliveries.close();
@@ -306,8 +316,8 @@ export function* createAgentRuntime(
       if (ownsMailboxer && mailboxer?.opened) {
         yield* mailboxer.close();
       }
-      if (ownsRegistryEvidence && registryEvidence?.opened) {
-        yield* registryEvidence.close(hby.temp);
+      if (ownsAcdcRegery && acdcRegery?.store.opened) {
+        yield* acdcRegery.close();
       }
       if (ownsReger && reger?.opened) {
         yield* reger.close(hby.temp);
@@ -316,22 +326,14 @@ export function* createAgentRuntime(
   };
 }
 
-/** Open registry evidence owned by the current Effection scope. */
-function* openRegistryEvidenceForHabery(hby: Habery): Operation<RegistryEvidenceStore> {
-  return yield* resource<RegistryEvidenceStore>(function*(provide) {
-    const store = yield* call(() =>
-      createRegistryEvidenceStore({
-        name: hby.name,
-        base: hby.base,
-        temp: hby.temp,
-        headDirPath: hby.headDirPath,
-        compat: hby.compat,
-      })
-    );
+/** Open v2 registry services owned by the current Effection scope. */
+function* openAcdcRegeryForHabery(hby: Habery): Operation<AcdcRegery> {
+  return yield* resource<AcdcRegery>(function*(provide) {
+    const rgy = yield* call(() => createAcdcRegery({ hby }));
     try {
-      yield* provide(store);
+      yield* provide(rgy);
     } finally {
-      if (store.opened) yield* store.close(hby.temp);
+      yield* rgy.close();
     }
   });
 }

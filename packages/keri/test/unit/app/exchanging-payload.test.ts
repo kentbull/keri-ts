@@ -11,6 +11,7 @@ import {
   parse,
   Prefixer,
   ResourceLimitError,
+  ResourcePolicy,
   type SerderKERI,
   Texter,
   Vrsn_1_0,
@@ -437,7 +438,7 @@ Deno.test("accepted ESSR decrypts, persists, and reopens as a progressive inner 
     await incoming.discard();
     const retained = await hby.db.getEssr(outer.said!);
     const decision = await run(() =>
-      new EssrRecipient(recipient, archive.files, 4096).decrypt(outer.said!, retained!.raw)
+      new EssrRecipient(recipient, archive.files, 4096, new ResourcePolicy()).decrypt(outer.said!, retained!.raw)
     );
     switch (decision.kind) {
       case "accept":

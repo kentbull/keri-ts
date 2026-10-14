@@ -38,8 +38,9 @@ support creation and reopen; a borrowed Registrar stages credential, presentatio
 and vacuous updates from one unambiguous staged frontier. Presentation validates
 target digest syntax only; IPEX still owns grant authentication. Trailing vacuous
 updates require their disclosures when resolving the effective binding.
-Runtime integration remains unfinished. Ordinals above the safe-integer storage
-range are explicitly unsupported pending the storage phase.
+Runtime groups v2 services under `acdc.rgy`, independently of legacy `vdr.rgy`.
+Ordinals above the safe-integer storage range remain unsupported pending the
+storage phase.
 The [import preservation record][import-record] retains the exact original code.
 
 Use `evts/ancs/tels/heads/maes/ooes`; accepted heads use physical `heds.` and
@@ -72,6 +73,22 @@ meaningful verification and relevant contract update.
 | R11a | IPEX-owned bounded accepted-chain assembly through RegistryStore   |
 | R11b | Receiver cutoff and presentation dependency retry/replay           |
 | R12  | Runtime acdc/vdr grouping and scoped service ownership             |
+
+The inspected current-main schema delta is pinned separately to
+`7143832813cac6a394ab1faf9be83bb3372be87c` (#1713); it does not replace the
+`927c0cb8` commitment/wire oracle. Keep these finite units distinct:
+
+| Unit | Current-main schema responsibility                                                 |
+| ---- | ---------------------------------------------------------------------------------- |
+| S1   | Bounded v2 local schema validation before blind derivation/staging                 |
+| S2   | Durable missing-schema EXN escrow, shared deadline and scoped replay               |
+| S3   | Offer/grant node and edge schemas, issuer-first grant order and dependency routing |
+
+S1 uses local verified resources and decoded credential data; legacy Schemer is
+unchanged. S2/S3 remain pending. Qualify the 714 helper separately, retaining all
+927 vectors/labels. Embedded bundled-resource construction also requires the
+[existing Mapper correction](../cesr/MAPPER_PLAN.md); working override/cache
+validation does not qualify that builder path.
 
 Stack dependency-coupled units on their predecessors; merge in dependency order.
 Independent reference/compatibility analysis can proceed in parallel. Keep existing
