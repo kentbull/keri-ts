@@ -1,6 +1,6 @@
 import { call, run, suspend } from "effection";
-import { assertEquals } from "jsr:@std/assert";
-import { fetchResponseHandle, fetchResponseHandleOrNull } from "../../../src/app/httping.ts";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { closeResponseBody, fetchResponseHandle, fetchResponseHandleOrNull } from "../../../src/app/httping.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
 
 /** Keep the production clock while controlling the exact response ownership handoff. */
@@ -105,4 +105,102 @@ Deno.test("HTTP open timeout retains the mailbox null outcome and joins the abor
   });
   assertEquals(result, null);
   assertEquals(aborted, true);
+});
+
+Deno.test("HTTP response cancellation joins body cleanup and propagates its original failure", async () => {
+  const started = Promise.withResolvers<void>(), finished = Promise.withResolvers<void>();
+  const fault = new Error("body cleanup failed");
+  assertStrictEquals(
+    await assertRejects(() =>
+      run(() =>
+        closeResponseBody(
+          new Response(
+            new ReadableStream({
+              cancel() {
+                throw fault;
+              },
+            }),
+          ),
+        )
+      )
+    ),
+    fault,
+  );
+  let calls = 0, exited = false;
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      cancel() {
+        calls++;
+        started.resolve();
+        return finished.promise;
+      },
+    }),
+  );
+  const task = run(function*() {
+    yield* closeResponseBody(response);
+  });
+  await started.promise;
+  const joined = task.halt();
+  void joined.then(() => exited = true, () => exited = true);
+  // Give cancellation one event-loop turn; the controlled cleanup remains unresolved.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEquals(exited, false);
+  finished.reject(fault);
+  assertStrictEquals(await assertRejects(() => joined), fault);
+  assertEquals(calls, 1);
+});
+
+Deno.test("late HTTP response cleanup failure is not hidden during fetch cancellation", async () => {
+  for (const fault of [new Error("late response cleanup failed"), new DOMException("foreign abort", "AbortError")]) {
+    const started = Promise.withResolvers<void>();
+    const task = run(function*() {
+      yield* fetchResponseHandle("https://peer.test/", {}, {
+        services: services((_url, init) =>
+          new Promise<Response>((resolve) => {
+            init!.signal!.addEventListener("abort", () =>
+              resolve(
+                new Response(
+                  new ReadableStream<Uint8Array>({
+                    cancel() {
+                      throw fault;
+                    },
+                  }),
+                ),
+              ), { once: true });
+            started.resolve();
+          })
+        ),
+      });
+    });
+    await started.promise;
+    assertStrictEquals(await assertRejects(() => task.halt()), fault);
+  }
+});
+
+Deno.test("HTTP response teardown recognizes only its controller's exact abort reason", async () => {
+  const started = Promise.withResolvers<void>();
+  let continued = false;
+  const task = run(function*() {
+    yield* fetchResponseHandle("https://peer.test/", {}, {
+      services: services((_url, init) =>
+        new Promise<Response>((resolve) => {
+          init!.signal!.addEventListener("abort", () =>
+            resolve(
+              new Response(
+                new ReadableStream<Uint8Array>({
+                  start(controller) {
+                    controller.error(init!.signal!.reason);
+                  },
+                }),
+              ),
+            ), { once: true });
+          started.resolve();
+        })
+      ),
+    });
+    continued = true;
+  });
+  await started.promise;
+  await task.halt();
+  assertEquals(continued, false);
 });

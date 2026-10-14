@@ -137,8 +137,8 @@ Apply these remaining ports within the existing units, in dependency order:
   before network suspension. Stream replay-sized mailbox submissions and admit
   bounded administrative parsing/copies. Keep finite receipts and multipart
   compatibility where justified, with failure/cancellation provenance intact.
-  Join and propagate outer response cancellation in `httping`/`cesr-http`, and
-  propagate request disconnect through receipt settlement after finite intake.
+  Outer response/request cleanup now joins and propagates failures. Request
+  disconnect still needs to reach receipt settlement after finite intake.
 - **S2 credential/exchange commands:** replace collected KEL/TEL/dependency and
   grant wire in presentation, issuance/revocation and IPEX network callers with
   owned sources. VC file/stdin intake feeds the progressive parser; finite export

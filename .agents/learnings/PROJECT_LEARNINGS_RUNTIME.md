@@ -23,6 +23,11 @@ Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state.
 Shared transport readers cancel once, join that Promise and always unlock;
 single errors retain identity and distinct read/cleanup failures aggregate.
+Response cancellation uses an earlier scope resource: a bare yielding finally
+can join its Promise while losing a late failure during cancellation. Unacquired
+HTTP response/request bodies propagate cleanup failure instead of discarding it.
+Fetch's exact controller abort reason remains cancellation; foreign same-class
+AbortErrors still propagate. Preserve the mailbox's ordinary idle-timeout outcome.
 Parent cancellation diagnostics still need composed owner qualification.
 
 Owned hydration uses an isolated consume callback with direct joined finalization.
