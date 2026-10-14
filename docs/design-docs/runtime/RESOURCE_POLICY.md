@@ -239,9 +239,15 @@ membership is rechecked before commit effects, and insertion must match before
 cue publication. Repeated membership and incomplete accepted duplicates acquire
 no extra cue credit. Ordinary Deck keeps its original query order and absolute
 schema deadline. Refusal preserves existing escrow owners; unexpected post-write
-faults release unused credit without claiming DB rollback. Authentication query
-planning, KRAM/IPEX notification ports, private ESSR verification snapshots and
-native/copy admission remain open.
+faults release unused credit without claiming DB rollback. Exchanger authentication
+queries charge Map/key/query scratch before construction: 16 KiB plus 512 bytes and
+six bytes per prefix character for each canonical missing coordinate. Exact unique
+item capacity is checked before query objects, then one measured batch publishes
+in first-arrival order with per-invocation deduplication. Published query owners
+remain valid across awaited selection and later rejection; empty input owns no
+credit. Ordinary Deck retains its original per-item push path. Earlier resolution/
+verification coordinate arrays, native proof reads, KRAM/IPEX notification ports,
+private ESSR verification snapshots and native/copy admission remain open.
 
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.

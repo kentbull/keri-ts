@@ -987,6 +987,39 @@ export class Exchanger {
 
   /** Match _cueMissingKeyState's coordinate deduplication within this invocation. */
   private cueMissingStates(missing: readonly MissingExchangeState[]): void {
+    if (this.cues instanceof CueDeck) {
+      if (!missing.length) return;
+      // Canonical coordinates contain fixed qualified prefixes and safe ordinals. Account
+      // Map/key/query scratch before constructing it, separately from the retained batch.
+      let bytes = 16384;
+      for (const { pre } of missing) bytes += 512 + 6 * pre.length;
+      const planning = this.resources.reserve({ bytes });
+      if (planning.kind === "refuse") {
+        throw new ResourceAdmissionError("Exchange query planning refused", planning.reason);
+      }
+      let batch: PreparedCueBatch | undefined;
+      try {
+        const unique = new Map<string, MissingExchangeState>();
+        for (const coordinate of missing) {
+          const key = `${coordinate.pre}:${coordinate.sn ?? ""}`;
+          if (!unique.has(key)) unique.set(key, coordinate);
+        }
+        this.cues.checkSpace(unique.size);
+        const cues: AgentCue[] = [];
+        for (const { pre, sn } of unique.values()) {
+          cues.push({ kin: "query", pre, q: { r: "logs", pre, ...(sn === null ? {} : { sn: sn.toString(16) }) } });
+        }
+        batch = this.cues.prepare(cues);
+        batch.publish();
+      } finally {
+        try {
+          batch?.release();
+        } finally {
+          planning.reservation.release();
+        }
+      }
+      return;
+    }
     const seen = new Set<string>();
     for (const { pre, sn } of missing) {
       const key = `${pre}:${sn ?? ""}`;
