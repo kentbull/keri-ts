@@ -121,6 +121,7 @@ function* deferredDirectQueryResponse(
   context: ProtocolRequestContext,
   serder: SerderKERI,
   reply: QueryReply,
+  publish: (response: Response) => void,
 ): Operation<Response | null> {
   const runtime = context.runtime!;
   const expires = Date.now() + DIRECT_QUERY_RESPONSE_WAIT_MS;
@@ -137,6 +138,7 @@ function* deferredDirectQueryResponse(
             status: 200,
             headers: { "Content-Type": "application/cesr" },
           });
+          publish(response);
         }
       }
     });
@@ -153,35 +155,84 @@ export async function handleGenericCesrIngress(
   hosted: HostedRouteResolution,
 ): Promise<Response> {
   if (!isCesrContentType(context.req.headers.get("content-type"))) {
-    await context.req.body?.cancel().catch(() => {});
+    await context.req.body?.cancel();
     return textResponse("Unacceptable content type.", 406);
   }
-  const task = run(() => ingest(context, hosted));
-  /** Disconnect halts the sole task that owns this request source and its dispatches. */
+  let response: Response | undefined, operationFailure: { error: unknown } | undefined;
+  const task = run(function*() {
+    try {
+      response = yield* call(() => ingest(context, hosted, (value) => response = value));
+      return response;
+    } catch (error) {
+      operationFailure = { error };
+      throw error;
+    }
+  });
+  let stopping: Promise<void> | undefined;
+  /** Own one halt and join its cleanup; notification observes but never consumes its failure. */
   const stop = () => {
-    void task.halt();
+    stopping ??= Promise.resolve(task.halt());
+    void stopping.catch(() => {});
   };
   context.req.signal.addEventListener("abort", stop, { once: true });
   if (context.req.signal.aborted) stop();
+  let primary: { error: unknown } | undefined;
+  const cleanup: unknown[] = [];
+  const note = (error: unknown) => {
+    if (!cleanup.includes(error)) cleanup.push(error);
+  };
+  let haltedCleanly = false;
   try {
-    const response = await task;
-    return context.req.signal.aborted ? textResponse("Request cancelled", 408) : response;
+    await task;
   } catch (error) {
-    if (context.req.signal.aborted) return textResponse("Request cancelled", 408);
-    if (error instanceof ResourceAdmissionError && error.reason === "busy") return textResponse(error.message, 503);
-    if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
-    if (error instanceof ParserError || error instanceof ValidationError) return textResponse(error.message, 400);
-    throw error;
+    primary = { error };
   } finally {
     context.req.signal.removeEventListener("abort", stop);
-    await task.halt();
-    // Admission or header failure may precede acquisition of the request body reader.
-    if (context.req.body && !context.req.body.locked) await context.req.body.cancel().catch(() => {});
+    try {
+      await (stopping ?? Promise.resolve(task.halt()));
+      haltedCleanly = true;
+    } catch (error) {
+      note(error);
+    }
+    // Admission may precede reader acquisition; cancellation failure is still this owner's responsibility.
+    if (context.req.body && !context.req.body.locked) {
+      try {
+        await context.req.body.cancel();
+      } catch (error) {
+        if (error !== context.req.signal.reason) note(error);
+      }
+    }
   }
+  const ownCancellation = context.req.signal.aborted && stopping && haltedCleanly
+    && (!operationFailure || operationFailure.error === context.req.signal.reason);
+  if (primary && !ownCancellation) {
+    const error = primary.error;
+    if (!context.req.signal.aborted && !cleanup.length) {
+      if (error instanceof ResourceAdmissionError && error.reason === "busy") return textResponse(error.message, 503);
+      if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
+      if (error instanceof ParserError || error instanceof ValidationError) return textResponse(error.message, 400);
+    }
+    if (!cleanup.includes(error)) cleanup.unshift(error);
+  }
+  // Published output is independent of ingress. A late abort must close it outside status/error mapping.
+  if (response && (context.req.signal.aborted || cleanup.length)) {
+    try {
+      await response.body?.cancel();
+    } catch (error) {
+      note(error);
+    }
+  }
+  if (cleanup.length === 1) throw cleanup[0];
+  if (cleanup.length) throw new AggregateError(cleanup, "HTTP ingress cleanup failed");
+  return context.req.signal.aborted ? textResponse("Request cancelled", 408) : response!;
 }
 
 /** Parse on demand, dispatch each completed child, and retain only the final response query. */
-function* ingest(context: ProtocolRequestContext, hosted: HostedRouteResolution): Operation<Response> {
+function* ingest(
+  context: ProtocolRequestContext,
+  hosted: HostedRouteResolution,
+  publish: (response: Response) => void,
+): Operation<Response> {
   const runtime = context.runtime!;
   let seen = false;
   let query: { serder: SerderKERI; mailbox: boolean; authorized: boolean; reply?: QueryReply } | undefined;
@@ -260,9 +311,13 @@ function* ingest(context: ProtocolRequestContext, hosted: HostedRouteResolution)
     if (!seen) return textResponse("Invalid CESR request", 400);
     if (!query) return jsonNoContentResponse();
     if (!query.authorized) return textResponse("Query requester is not authorized", 403);
-    if (query.mailbox) return querySseResponse(context, query.serder.said ?? null);
+    if (query.mailbox) {
+      const response = querySseResponse(context, query.serder.said ?? null);
+      publish(response);
+      return response;
+    }
     return query.reply
-      ? (yield* deferredDirectQueryResponse(context, query.serder, query.reply)) ?? jsonNoContentResponse()
+      ? (yield* deferredDirectQueryResponse(context, query.serder, query.reply, publish)) ?? jsonNoContentResponse()
       : jsonNoContentResponse();
   } finally {
     query?.reply?.close();

@@ -319,8 +319,10 @@ Other replay sources and capture-time allocations remain separate admission work
 `ReplyStreams` owns up to eight live HTTP replies by default. Each pull copies at
 most 64 KiB from one event; transport cancellation or runtime closure releases
 the iterator and event. The response lifetime is independent of ingress: Deno's
-legacy request signal aborts when its handler returns. No background task or
-whole-replay array is needed for these synchronous database readers.
+legacy request signal aborts when its handler returns. If request cancellation wins
+before response transfer, ingress joins its task then cancels the published body
+outside status mapping; foreign source/fetch/cleanup failures remain failures.
+No background task or whole-replay array is needed for these synchronous database readers.
 
 `QueryCoordinator` caps pending requests and continuations separately. A request
 retains its queue credit until delivery succeeds; failure leaves it available
