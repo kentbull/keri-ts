@@ -137,11 +137,20 @@ Deno.test("Query coordinator turns incomplete query cues into outbound `logs` qu
       });
 
       const emissions: CueRecord[] = [];
+      const query = requester.query;
+      let signatures = 0;
+      requester.query = (...args) => {
+        signatures++;
+        assertEquals(runtime.resources.used.bytes >= 32 * 1024 ** 2, true, "replacement signing owns preparation");
+        return query.apply(requester, args);
+      };
       yield* processRuntimeTurn(runtime, {
         hab: requester,
         sink: captureSink(emissions),
       });
 
+      assertEquals(signatures, 1, "prepared send must not sign or observe the query twice");
+      assertEquals(runtime.resources.used.bytes, 0);
       assertEquals(emissions.length, 1);
       assertEquals(emissions[0]?.kind, "wire");
       assertEquals(emissions[0]?.kin, "query");
@@ -392,11 +401,8 @@ Deno.test("KeyStateNoticer finishes immediately once a saved key state matches l
         hab: requester,
         sink: captureSink(emissions),
       });
-      yield* runtime.querying.send({
-        cue: { kin: "keyStateSaved", ksn: subject.kever!.state() },
-        messages: [],
-        kind: "notify",
-      });
+      runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
+      yield* processRuntimeTurn(runtime, { hab: requester, sink: captureSink(emissions) });
 
       assertEquals(runtime.querying.hasPendingWork(), false);
       assertEquals(

@@ -155,7 +155,12 @@ Admitted cue interpretation is synchronous: destination item admission precedes
 preparation, and atomic acceptance precedes ordinary source removal. Existing
 CueDeck credit transfers/requeues; lazy replay stays unopened. The accepting
 owner releases after joined consumption. This facility alone is not reliable
-handoff or guard-free delivery; port actual owners/callers before activation.
+handoff by itself. Custom runtime cue drains now prepare one input/output owner per
+short turn and await the sink outside the guard; register that owner before sink
+resources so cancellation joins child cleanup before release. Initial pass count
+and eligible immediate transfer/busy semantics stay bounded. QueryCoordinator
+transforms under the same preparation/output check and sends without repeating
+observation/signing. Standalone custom pending queries retain caller-owned bounds.
 Cue route capture reserves a separate 1 MiB/4096-target allowance before endpoint
 resolution. Its independent owner retains metadata until joined delivery cleanup;
 configured floors include the live cue and interpretation credit.
