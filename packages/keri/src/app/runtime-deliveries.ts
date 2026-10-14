@@ -27,6 +27,7 @@ import type { Hab, Habery } from "./habbing.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
 import type { QueryReply } from "./query-replies.ts";
+import { sendCesrTcp } from "./tcp-egress.ts";
 
 /**
  * Resolve the actual transport URL for one query destination AID.
@@ -52,7 +53,7 @@ function resolveQueryDestinationUrl(
 ): string | null {
   if (explicitWitness) {
     const urls = hab.fetchUrls(destination);
-    return urls[Schemes.https] ?? urls[Schemes.http] ?? null;
+    return urls[Schemes.https] ?? urls[Schemes.http] ?? urls[Schemes.tcp] ?? null;
   }
 
   const ends = hab.endsFor(queriedPre);
@@ -250,7 +251,7 @@ export class RuntimeDeliveries {
     if (errors.length) throw new AggregateError(errors, "Runtime delivery cleanup failed");
   }
 
-  /** A bounded pass advances each owner once; cue preparation is guarded, all HTTP waits are outside. */
+  /** A bounded pass advances each owner once; cue preparation is guarded, all network waits are outside. */
   process(runtime: AgentRuntime): Operation<{ retiredOwners: number; pending: boolean }> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
@@ -318,6 +319,14 @@ function* postQueryMessage(
   delivery: QueryDelivery,
   controller: AbortController,
 ): Operation<void> {
+  if (new URL(delivery.url).protocol === "tcp:") {
+    yield* sendCesrTcp(delivery.url, delivery.body, {
+      services: runtime.services,
+      signal: controller.signal,
+      replies: { runtime, local: true },
+    });
+    return;
+  }
   yield* postCesr(
     delivery.url,
     (signal) => chunkBytes(delivery.body, { signal }),
@@ -344,7 +353,7 @@ function* postQueryMessage(
 }
 
 /**
- * Create the cue sink that actually posts outbound `qry` messages.
+ * Create the cue sink that sends outbound `qry` messages through HTTP or TCP.
  *
  * Ownership split:
  * - `QueryCoordinator` decides *that* a query should be emitted and who it

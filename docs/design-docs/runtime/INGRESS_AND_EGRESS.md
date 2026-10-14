@@ -555,3 +555,11 @@ runtime; callers with an active runtime supply it explicitly and retain its stor
 through joined cleanup. Catchup and fanout reuse that receiver. The generic
 sendWitnessMessage helper parses TCP replies only with explicit receiver context;
 its context-free form remains a transmit-only primitive.
+
+Default runtime Anchorer turns explicitly lend their existing runtime to TCP
+witness publication; a standalone turn without receiver context stays transmit-only.
+Witness inquiry routing prefers HTTPS/HTTP before TCP. The existing RuntimeDeliveries
+query owner retains its wire, abort signal and admission through same-socket local
+reply parsing and joined cleanup. Guarded query preparation opens no socket.
+Retiring that owner records transport completion only; query continuations complete
+from Kevery-verified accepted state, never from drain or received frame counts.
