@@ -12,9 +12,13 @@
   independent sibling cannot revoke earlier delivered owners.
 - A shared cursor bounds consumption and input backing. Tree credits cover
   ordinary bytes/leaves, decoded ESSR/items, nodes and depth. No full raw envelope
-  or per-Texter manifest is retained. These are not shared runtime reservations.
+  or per-Texter manifest is retained. Optional shared ordinary-wire and finite ESSR-stage reservations
+  belong to delivered roots, never independently to nested children. They do not
+  account for all hydrated copies or heap overhead.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each
-  owner once. Sink finish transfers ownership; abort cannot revoke that result.
+  owner once, including shared credit on ordinary frames. A suspended generator
+  also retains its output: credit returns after consumer disposal and generator
+  resumption/closure. Sink finish transfers ownership; abort cannot revoke it.
 - `Payload.open(signal)` must cooperate with cancellation. Generator return alone
   cannot interrupt blocked I/O. CESR root has no Effection import; its optional
   adapter owns one subscription, abort and joined cleanup.
@@ -70,7 +74,11 @@
   thresholds retain their domain. Configure before admitting work.
 - Accessor parity includes wrapper projections (`sner`, `tholder`, `ntholder`,
   `bner`, `berfers`), and legacy intive `bt` needs normalization. Remaining accessor
-  audit and Mapper claimed-SAID verification stay explicit plan obligations.
+  audit stays an explicit plan obligation. Standalone saidive Mapper verification
+  checks configured top-level claims in the selected format as well as wire
+  round trips; makify replaces claims and verify:false explicitly skips checks.
+  Compactor retains disclosure wire checks without flat-map claim verification;
+  expanded disclosures are checked by their credential/aggregate owners.
 
 ## Owners and follow-ups
 

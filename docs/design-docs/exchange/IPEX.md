@@ -24,6 +24,15 @@ proofs in its existing escrow, retries from persisted children, and notifies onl
 after acceptance. Replay preserves child proof enclosures. An accepted grant
 is conversation evidence; nested nodes are not independent credential or wallet
 acceptances. Schema resolution uses already cached schemas, without fetching.
+The separately pinned 71438328 profile validates every carried metadata-offer
+node without demanding withheld issuer proofs. Grants verify disclosure, then
+every issuer, own-node schemas, edge semantics/schema pins, and presentation
+obligations in that order. Explicit/inherited edge schemas validate decoded far
+credentials; equal schema IDs never waive constraints. Missing local resources
+use schema EXN escrow; invalid schemas reject, infrastructure/resource failures
+propagate. NOT/DI2I remain unsatisfied in the inspected reference; hidden aggregate
+and deeper-nest guards remain. Schema fetching and full IPEX/resource qualification
+are separate work. Preserve the 927 commitment/wire labels and expectations.
 
 Explicit `RegistryObserver` intake delegates parsed public rip/bup events to the
 normal engine with full witnessed tuple anchors and per-event atomic acceptance.

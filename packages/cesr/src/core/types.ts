@@ -59,7 +59,7 @@ export interface EssrPayload {
   discard(): Promise<void>;
 }
 
-/** One owned message tree: a body, its evidence, and enclosed nested messages. */
+/** One owned message tree; discardFrame releases payloads and any shared resource credit after consumption. */
 export interface CesrFrame {
   body: CesrBody;
   attachments: AttachmentGroup[];

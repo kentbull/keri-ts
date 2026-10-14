@@ -3,6 +3,7 @@ import { b, decodeB64, t } from "../../../src/core/bytes.ts";
 import { ColdStartError, ResourceLimitError, ShortageError } from "../../../src/core/errors.ts";
 import { discardFrame } from "../../../src/core/frame.ts";
 import { collectPayload, MemoryPayloadSink, type PayloadSink } from "../../../src/core/payload.ts";
+import { ResourcePolicy } from "../../../src/core/resource-policy.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { parse, type ParseOptions } from "../../../src/parser/progressive.ts";
@@ -282,11 +283,16 @@ Deno.test("earlier delivered trees survive a malformed later independent tree", 
 });
 
 Deno.test("cancellation while finishing a descendant discards earlier finished owners", async () => {
+  const resources = new ResourcePolicy({ bytes: 4096 + 3 * 48 });
   const controller = new AbortController();
   const sinks = tracking();
   let finishes = 0;
   await assertRejects(() =>
     parseBytes(b(payloadTree()), {
+      resources,
+      maxFrameBytes: 4096,
+      maxEssrBytes: 9,
+      maxEssrItems: 3,
       signal: controller.signal,
       payloadSink(limit, signal) {
         const sink = sinks.factory(limit, signal);
@@ -302,6 +308,7 @@ Deno.test("cancellation while finishing a descendant discards earlier finished o
       },
     }), DOMException);
   assertEquals(sinks.records.map((record) => [record.aborted, record.discarded]), [[0, 1], [0, 1], [0, 1]]);
+  assertEquals(resources.used.bytes, 0);
 });
 
 Deno.test("closed attachments cannot absorb later evidence or a second unwrapped body", async () => {
@@ -335,4 +342,52 @@ Deno.test("ordinary tree bytes count each retained region once and reset between
       2,
     );
   }
+});
+
+Deno.test("shared tree credit follows parent ownership across delivery, failure and disposal", async () => {
+  const row = vectors.rows[0];
+  const resources = new ResourcePolicy({ bytes: 4096 });
+  const options = { resources, maxFrameBytes: 4096 };
+  const parser = parse(chunks(b(groupV2("-A", row.qb64 + row.qb64))), options);
+  const first = (await parser.next()).value!;
+  assertEquals(summary(first), row.tree);
+  assertEquals(resources.used.bytes, 4096, "children share the root allowance");
+  await assertRejects(() => parseBytes(b(row.qb64), options), ResourceLimitError, "busy");
+  // Borrowed children cannot release the enclosing parent's reservation.
+  await discardFrame(first.nests![0]);
+  assertEquals(resources.used.bytes, 4096);
+  await discardFrame(first);
+  await discardFrame(first);
+  assertEquals(resources.used.bytes, 4096, "a suspended generator still retains its delivered root");
+  const second = (await parser.next()).value!;
+  assertEquals(summary(second), row.tree);
+  assertEquals((await parser.next()).done, true);
+  assertEquals(resources.used.bytes, 4096, "parser exit does not dispose a delivered root");
+  await discardFrame(second);
+  await assertRejects(() => parseBytes(b(row.qb64.slice(0, -4)), options), ShortageError);
+  assertEquals(resources.used.bytes, 0);
+  await assertRejects(() => parseBytes(b(row.qb64 + row.qb64), options), ResourceLimitError);
+  assertEquals(resources.used.bytes, 0, "failed collection releases earlier frames");
+
+  const cleanup = Promise.withResolvers<void>();
+  let started = false;
+  const staged = new ResourcePolicy({ bytes: 4096 + 3 * 48 });
+  const [owned] = await parseBytes(b(payloadTree()), {
+    ...options,
+    resources: staged,
+    maxEssrBytes: 9,
+    maxEssrItems: 3,
+  });
+  const discard = owned.nests![0].essr!.discard;
+  owned.nests![0].essr!.discard = async () => {
+    started = true;
+    await cleanup.promise;
+    await discard();
+  };
+  const disposing = discardFrame(owned);
+  assertEquals(started, true);
+  assertEquals(staged.used.bytes, 4096 + 3 * 48, "tree and stage credit outlive descendant cleanup");
+  cleanup.resolve();
+  await disposing;
+  assertEquals(staged.used.bytes, 0);
 });
