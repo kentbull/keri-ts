@@ -636,13 +636,18 @@ function witnessSchemeReplies(
   return replies.length === 0 ? new Uint8Array() : concatBytes(...replies);
 }
 
-/** Post one generic witness message using HTTP or TCP according to known URLs. */
+/**
+ * Send via HTTP first; TCP parses local replies when an owning runtime is supplied.
+ * Without receiver context TCP reports local transmission only. Borrowed runtimes
+ * outlive joined cleanup; receipt orchestration supplies its one receiver explicitly.
+ */
 export function* sendWitnessMessage(
   hab: Hab,
   witness: string,
   bytes: Uint8Array,
   auth?: string,
-  services: RuntimeServices = defaultRuntimeServices,
+  services?: RuntimeServices,
+  runtime?: AgentRuntime,
 ): Operation<void> {
   const url = preferredWitnessTransportUrl(hab, witness);
   if (!url) {
@@ -653,7 +658,13 @@ export function* sendWitnessMessage(
 
   const parsed = new URL(url);
   if (parsed.protocol === "tcp:") {
-    yield* sendCesrTcp(url, bytes, { services });
+    yield* call(function*() {
+      if (runtime) {
+        yield* sendCesrTcp(url, bytes, { services, replies: { runtime, local: true } });
+      } else {
+        yield* sendCesrTcp(url, bytes, { services });
+      }
+    });
     return;
   }
 
@@ -661,7 +672,7 @@ export function* sendWitnessMessage(
     bodyMode: "header",
     destination: witness,
     headers: auth ? { Authorization: auth } : undefined,
-    services,
+    services: services ?? defaultRuntimeServices,
   });
 }
 
@@ -829,16 +840,20 @@ function* getWitnessReceiptEndpoint(
  * Controller-side synchronous witness receipt orchestration.
  *
  * Responsibilities:
- * - publish the current event to each witness `/receipts` endpoint
+ * - publish through HTTP receipt endpoints (generic submission opts into TCP reply intake)
  * - catch up newly added witnesses before receipting
  * - persist returned receipts locally through the shared runtime path
  * - fan witness receipts out to the complementary witnesses
  */
 export class Receiptor {
   readonly hby: Habery;
+  readonly runtime?: AgentRuntime;
 
-  constructor(hby: Habery) {
+  /** Borrow a matching active runtime; standalone attempts own a scoped receiver. */
+  constructor(hby: Habery, { runtime }: { runtime?: AgentRuntime } = {}) {
+    if (runtime && runtime.hby !== hby) throw new RangeError("Receiptor runtime must own the same Habery");
     this.hby = hby;
+    this.runtime = runtime;
   }
 
   /** Submit the latest or specified event to all witnesses and gather receipts. */
@@ -847,10 +862,22 @@ export class Receiptor {
     {
       sn,
       auths = {},
+      allowTcp = false,
     }: {
       sn?: number;
       auths?: WitnessAuthMap;
+      /** Generic WitnessReceiptor permits TCP; explicit receipt endpoints remain HTTP-only. */
+      allowTcp?: boolean;
     } = {},
+  ): Operation<WitnessReceiptRunResult> {
+    return yield* call(() => this.receiptOnce(pre, { sn, auths }, allowTcp));
+  }
+
+  /** One scoped attempt borrows its receiver or joins its owned runtime before returning. */
+  private *receiptOnce(
+    pre: string,
+    { sn, auths }: { sn?: number; auths: WitnessAuthMap },
+    allowTcp: boolean,
   ): Operation<WitnessReceiptRunResult> {
     const hab = this.hby.habs.get(pre) ?? null;
     if (!hab) {
@@ -872,14 +899,13 @@ export class Receiptor {
       return { witnesses: [], statuses: {} };
     }
 
-    if (serder.ilk === Ilks.rot || serder.ilk === Ilks.drt) {
-      for (const witness of serder.adds) {
-        yield* this.catchup(pre, witness);
-      }
-    }
-
-    const runtime = yield* createAgentRuntime(this.hby, { mode: "local" });
+    const runtime = this.runtime ?? (yield* createAgentRuntime(this.hby, { mode: "local" }));
     try {
+      if (serder.ilk === Ilks.rot || serder.ilk === Ilks.drt) {
+        for (const witness of serder.adds) {
+          yield* this.catchup(pre, witness, runtime);
+        }
+      }
       const receiptGroups = new Map<
         string,
         { readonly wigers: readonly Siger[]; readonly cigars: readonly Cigar[] }
@@ -895,8 +921,22 @@ export class Receiptor {
       for (const witness of witnesses) {
         if (kever.delegated) {
           for (const dmsg of this.hby.db.cloneDelegation(kever)) {
-            yield* sendWitnessMessage(hab, witness, dmsg);
+            yield* sendWitnessMessage(hab, witness, dmsg, undefined, runtime.services, runtime);
           }
+        }
+
+        if (allowTcp && !witnessHttpUrl(hab, witness) && witnessTcpUrl(hab, witness)) {
+          yield* sendWitnessMessage(hab, witness, message, undefined, runtime.services, runtime);
+          // Same-socket drain is insufficient: only Kevery-verified, persisted evidence counts.
+          const index = witnesses.indexOf(witness);
+          const wigers = this.hby.db.wigs.get(dgKey(pre, said))
+            .filter((siger) => siger.index === index);
+          if (wigers.length === 0) {
+            throw new ValidationError(`Witness ${witness} did not receipt ${pre}:${eventSn.toString(16)}.`);
+          }
+          receiptGroups.set(witness, { wigers, cigars: [] });
+          statuses[witness] = 200;
+          continue;
         }
 
         // A single receipt attempt owns its response until parsing and collection finish.
@@ -968,12 +1008,12 @@ export class Receiptor {
             },
           ),
         );
-        yield* sendWitnessMessage(hab, witness, concatBytes(...parts));
+        yield* sendWitnessMessage(hab, witness, concatBytes(...parts), undefined, runtime.services, runtime);
       }
 
       return { witnesses, statuses };
     } finally {
-      yield* runtime.close();
+      if (!this.runtime) yield* runtime.close();
     }
   }
 
@@ -1012,12 +1052,12 @@ export class Receiptor {
       return false;
     }
 
-    const runtime = yield* createAgentRuntime(this.hby, { mode: "local" });
+    const runtime = this.runtime ?? (yield* createAgentRuntime(this.hby, { mode: "local" }));
     try {
       yield* settleRuntimeIngress(runtime, [response.body], { local: false });
       return true;
     } finally {
-      yield* runtime.close();
+      if (!this.runtime) yield* runtime.close();
     }
   }
 
@@ -1025,20 +1065,31 @@ export class Receiptor {
   *catchup(
     pre: string,
     witness: string,
+    runtime = this.runtime,
   ): Operation<void> {
+    yield* call(() => this.catchupOnce(pre, witness, runtime));
+  }
+
+  /** Catchup uses the submission receiver when borrowed, otherwise owns one scoped receiver. */
+  private *catchupOnce(pre: string, witness: string, borrowed?: AgentRuntime): Operation<void> {
     const hab = this.hby.habs.get(pre) ?? null;
     if (!hab) {
       throw new ValidationError(`${pre} not a valid local AID.`);
     }
 
-    const kever = hab.kever;
-    if (kever?.delegated) {
-      for (const msg of this.hby.db.cloneDelegation(kever)) {
-        yield* sendWitnessMessage(hab, witness, msg);
+    const runtime = borrowed ?? (yield* createAgentRuntime(this.hby, { mode: "local" }));
+    try {
+      const kever = hab.kever;
+      if (kever?.delegated) {
+        for (const msg of this.hby.db.cloneDelegation(kever)) {
+          yield* sendWitnessMessage(hab, witness, msg, undefined, runtime.services, runtime);
+        }
       }
-    }
-    for (const msg of this.hby.db.clonePreIter(pre)) {
-      yield* sendWitnessMessage(hab, witness, msg);
+      for (const msg of this.hby.db.clonePreIter(pre)) {
+        yield* sendWitnessMessage(hab, witness, msg, undefined, runtime.services, runtime);
+      }
+    } finally {
+      if (!borrowed) yield* runtime.close();
     }
   }
 }
@@ -1046,9 +1097,8 @@ export class Receiptor {
 /**
  * Higher-level full witness submission helper.
  *
- * This keeps the KERIpy mental model visible at the API boundary even though
- * the current TS implementation reuses the synchronous receipt endpoint path
- * internally for receipt gathering.
+ * HTTP uses finite receipt endpoints; TCP uses same-socket local reply intake
+ * and requires the requested witness signature to be persisted before fanout.
  */
 export class WitnessReceiptor {
   readonly receiptor: Receiptor;
@@ -1057,11 +1107,11 @@ export class WitnessReceiptor {
 
   constructor(
     hby: Habery,
-    { force = false }: { force?: boolean } = {},
+    { force = false, runtime }: { force?: boolean; runtime?: AgentRuntime } = {},
   ) {
     this.hby = hby;
     this.force = force;
-    this.receiptor = new Receiptor(hby);
+    this.receiptor = new Receiptor(hby, { runtime });
   }
 
   /** Ensure the current event reaches full witness receipt convergence. */
@@ -1092,7 +1142,7 @@ export class WitnessReceiptor {
       );
       return { witnesses: [...kever.wits], statuses };
     }
-    return yield* this.receiptor.receipt(pre, { sn: eventSn, auths });
+    return yield* this.receiptor.receipt(pre, { sn: eventSn, auths, allowTcp: true });
   }
 }
 

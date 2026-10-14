@@ -8,7 +8,7 @@ import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { socketBytes } from "../../../src/app/socket-source.ts";
 import { sendCesrTcp, streamCesrTcp } from "../../../src/app/tcp-egress.ts";
-import { Receiptor, sendWitnessMessage } from "../../../src/app/witnessing.ts";
+import { Receiptor, sendWitnessMessage, WitnessReceiptor } from "../../../src/app/witnessing.ts";
 
 /** Seed accepted local identifiers and the remote HTTP location used by witness transport. */
 function fixture(hby: Habery, url: string) {
@@ -99,21 +99,27 @@ Deno.test("TCP witness admission owns its socket through cancellation and permit
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Expected TCP test address");
-  const services = { ...defaultRuntimeServices, resources: new ResourcePolicy({ streams: 1 }) };
+  const services = { ...defaultRuntimeServices, resources: new ResourcePolicy({ streams: 2 }) };
   try {
     await run(function*() {
-      const hby = yield* createHabery({ name: `tcp-send-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+      const hby = yield* createHabery({
+        name: `tcp-send-${crypto.randomUUID()}`,
+        temp: true,
+        skipConfig: true,
+        resources: services.resources,
+      });
       try {
         const { witness, controller } = fixture(hby, "http://unused.test");
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url: `tcp://127.0.0.1:${address.port}` });
+        const runtime = yield* createAgentRuntime(hby, { mode: "local", services });
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
         const busy = services.resources.reserve({ streams: 1 });
         if (busy.kind !== "reserve") throw new Error("Expected free test capacity");
         try {
           yield* call(() =>
             assertRejects(
-              () => run(() => sendWitnessMessage(controller, witness.pre, wire, undefined, services)),
+              () => run(() => sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime)),
               ResourceAdmissionError,
               "busy",
             )
@@ -128,30 +134,104 @@ Deno.test("TCP witness admission owns its socket through cancellation and permit
                 sendWitnessMessage(controller, witness.pre, wire, undefined, {
                   ...services,
                   resources: new ResourcePolicy({ bytes: 1 }),
-                })
+                }, runtime)
               ),
-            ResourceAdmissionError,
-            "limit",
+            RangeError,
+            "exact services",
           )
         );
         assertEquals(connections, 0, "refusal precedes socket acquisition");
         const task = run(function*() {
-          yield* sendWitnessMessage(controller, witness.pre, wire, undefined, services);
+          yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime);
           continued = true;
         });
         try {
           yield* call(() => received.promise);
-          assertEquals(services.resources.used.streams, 1);
-          assertEquals(services.resources.used.bytes, wire.buffer.byteLength + 2 * Math.min(65536, wire.byteLength));
+          assertEquals(services.resources.used.streams, 2);
+          assertEquals(services.resources.used.bytes > wire.buffer.byteLength, true);
         } finally {
           yield* call(() => task.halt());
         }
         assertEquals(continued, false);
         assertEquals(services.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         finish = true;
-        yield* sendWitnessMessage(controller, witness.pre, wire, undefined, services);
+        yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime);
         assertEquals(connections, 2);
         assertEquals(services.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+      } finally {
+        yield* hby.close(true);
+      }
+    });
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+Deno.test("TCP-only witness submission requires a verified persisted receipt, not socket drain", async () => {
+  const sockets = new Set<Socket>();
+  let reply: Uint8Array = new Uint8Array();
+  let connections = 0;
+  const server = createServer({ allowHalfOpen: true }, (socket) => {
+    connections++;
+    sockets.add(socket);
+    socket.on("error", () => {});
+    socket.once("close", () => sockets.delete(socket));
+    socket.resume();
+    socket.once("end", () => socket.end(reply));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name: `tcp-receipts-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+      try {
+        const { witness, controller } = fixture(hby, "http://unused.test");
+        hby.db.locs.rem([witness.pre, "http"]);
+        hby.db.locs.pin([witness.pre, "tcp"], { url });
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const submitter = new WitnessReceiptor(hby, { runtime });
+        yield* call(() =>
+          assertRejects(
+            () => run(() => new Receiptor(hby, { runtime }).receipt(controller.pre)),
+            Error,
+            "HTTP(S) receipt endpoint",
+          )
+        );
+        assertEquals(connections, 0, "explicit endpoint receipting retains its HTTP-only contract");
+        const { serder, message } = acceptedEventReplayMessage(hby, controller.pre, 0);
+        const key = [controller.pre, serder.said!] as const;
+        yield* sendWitnessMessage(controller, witness.pre, message, undefined, runtime.services, runtime);
+        assertEquals(hby.db.wigs.get(key).length, 0, "generic drain makes no receipt success claim");
+        yield* call(() => assertRejects(() => run(() => submitter.submit(controller.pre)), Error, "did not receipt"));
+        const outsider = hby.makeHab("outsider", undefined, { transferable: false });
+        reply = outsider.receipt(serder);
+        yield* call(() => assertRejects(() => run(() => submitter.submit(controller.pre)), Error, "did not receipt"));
+        assertEquals(hby.db.wigs.get(key).length, 0, "an unrelated valid signer is not an authorized witness");
+        reply = witness.receipt(serder);
+        // Hab.receipt records its own signature: remove that fixture effect before network intake.
+        hby.db.wigs.rem(key);
+        assertEquals(hby.db.wigs.get(key).length, 0);
+        assertEquals(yield* submitter.submit(controller.pre), {
+          witnesses: [witness.pre],
+          statuses: { [witness.pre]: 200 },
+        });
+        assertEquals(hby.db.wigs.get(key).length, 1);
+        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        const priorConnections = connections;
+        yield* submitter.submit(controller.pre);
+        assertEquals(connections, priorConnections, "verified persistence enables the existing convergence fast path");
+        // A borrowed runtime remains usable after submission; receipt cleanup never closes its stores.
+        yield* runtime.reactor.processEscrowsOnce();
+        yield* runtime.close();
+        controller.interact();
+        const next = acceptedEventReplayMessage(hby, controller.pre, 1).serder;
+        reply = witness.receipt(next);
+        hby.db.wigs.rem([controller.pre, next.said!]);
+        yield* new WitnessReceiptor(hby).submit(controller.pre);
+        assertEquals(hby.db.wigs.get([controller.pre, next.said!]).length, 1);
+        assertEquals(hby.db.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        assertEquals(controller.kever?.sn, 1, "standalone receiver cleanup retains the caller's Habery");
       } finally {
         yield* hby.close(true);
       }

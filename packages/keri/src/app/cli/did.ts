@@ -81,7 +81,7 @@ export function* dwsBindCommand(args: Record<string, unknown>): Operation<void> 
         allowExternalDid: commandArgs.allowExternalDid ?? false,
       });
       if (hab?.pre) {
-        yield* receiptNewWitnessEvents(hby, hab.pre, priorSn);
+        yield* receiptNewWitnessEvents(hby, hab.pre, priorSn, runtime);
       }
       console.log(JSON.stringify(result));
     },
@@ -214,13 +214,14 @@ function* receiptNewWitnessEvents(
   hby: Habery,
   pre: string,
   priorSn: number,
+  runtime: AgentRuntime,
 ): Operation<void> {
   const hab = hby.habs.get(pre);
   const latestSn = hab?.kever?.sn;
   if (!hab?.kever || latestSn === undefined || latestSn <= priorSn || hab.kever.wits.length === 0) {
     return;
   }
-  const receiptor = new WitnessReceiptor(hby);
+  const receiptor = new WitnessReceiptor(hby, { runtime });
   for (let sn = priorSn + 1; sn <= latestSn; sn += 1) {
     yield* receiptor.submit(pre, { sn });
   }

@@ -213,7 +213,7 @@ export function* multisigInceptCommand(
     );
     let delegationPhase: string | null = null;
     if (accepted) {
-      yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs);
+      yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs, runtime);
       delegationPhase = yield* completeDelegationIfNeeded(
         hby,
         runtime,
@@ -271,7 +271,7 @@ export function* multisigJoinCommand(
         throw new ValidationError("No matching multisig notification was available to join.");
       }
       if (local.accepted) {
-        yield* receiptAcceptedEvent(hby, local.group, commandArgs);
+        yield* receiptAcceptedEvent(hby, local.group, commandArgs, runtime);
         if (local.route === MULTISIG_ICP_ROUTE || local.route === MULTISIG_ROT_ROUTE) {
           yield* completeDelegationIfNeeded(hby, runtime, local.group, commandArgs.proxy);
         }
@@ -280,7 +280,7 @@ export function* multisigJoinCommand(
       return;
     }
     if (result.accepted) {
-      yield* receiptAcceptedEvent(hby, result.group, commandArgs);
+      yield* receiptAcceptedEvent(hby, result.group, commandArgs, runtime);
       if (
         result.route === MULTISIG_ICP_ROUTE
         || result.route === MULTISIG_ROT_ROUTE
@@ -350,7 +350,7 @@ export function* multisigInteractCommand(
       }),
     );
     if (accepted) {
-      yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs);
+      yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs, runtime);
     }
     printIdentifier(hby, created.hab.pre);
     console.log(JSON.stringify({
@@ -439,7 +439,7 @@ export function* multisigRotateCommand(
     );
     let delegationPhase: string | null = null;
     if (accepted) {
-      yield* receiptAcceptedEvent(hby, rotated.hab.pre, commandArgs);
+      yield* receiptAcceptedEvent(hby, rotated.hab.pre, commandArgs, runtime);
       delegationPhase = yield* completeDelegationIfNeeded(
         hby,
         runtime,
@@ -671,6 +671,7 @@ function* receiptAcceptedEvent(
   hby: Habery,
   pre: string,
   args: MultisigBaseArgs,
+  runtime: AgentRuntime,
 ): Operation<void> {
   const kever = hby.db.getKever(pre);
   if (!kever || kever.wits.length === 0) {
@@ -685,10 +686,10 @@ function* receiptAcceptedEvent(
     },
   );
   if (args.endpoint) {
-    const receiptor = new Receiptor(hby);
+    const receiptor = new Receiptor(hby, { runtime });
     yield* receiptor.receipt(pre, { sn: kever.sn, auths });
   } else {
-    const witDoer = new WitnessReceiptor(hby);
+    const witDoer = new WitnessReceiptor(hby, { runtime });
     yield* witDoer.submit(pre, { sn: kever.sn, auths });
   }
 }

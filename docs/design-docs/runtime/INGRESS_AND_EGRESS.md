@@ -539,3 +539,14 @@ Independent actual-helper observations verified 64 imported 714 modules, group
 order `[0,1]`, v1 `-VBn-FAC` / v2 `-CBn-XBm` tails, one/two-cigar selection and
 missing-authenticator failure. Lazy OOBI selection and finite forwarding collection
 remain subsequent S2 units.
+
+Generic WitnessReceiptor submission prefers HTTP receipt endpoints, with TCP-only
+fallback through the existing same-socket conversation engine (`local=true`).
+Explicit Receiptor endpoint calls retain their HTTP-only contract.
+TCP EOF/local drain is insufficient: the requested witness's indexed signature
+must already be verified and persisted in the event's wigs before success and
+complementary fanout. Standalone Receiptor/WitnessReceiptor attempts own one scoped
+runtime; callers with an active runtime supply it explicitly and retain its stores
+through joined cleanup. Catchup and fanout reuse that receiver. The generic
+sendWitnessMessage helper parses TCP replies only with explicit receiver context;
+its context-free form remains a transmit-only primitive.
