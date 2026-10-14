@@ -79,6 +79,7 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
     required: ["name"],
     properties: { name: { type: "string", pattern: "^[A-Z]" } },
   });
+  expect(make({ properties: { name: { pattern: "[" } } }), "invalid");
   expect(simple, "valid");
   expect(simple, "invalid", 7);
   assertEquals(validateSchema(credential(simple.said), db), { kind: "missing", said: simple.said });

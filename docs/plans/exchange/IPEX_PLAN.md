@@ -12,7 +12,9 @@ rules and each node's issuer proof independently. Registry evidence precedes
 issuer anchors, then current issuer signatures. Exchanger persists accepted
 parents and dependency escrows; observer registry imports are atomic and retain
 newer heads. Pure body construction and byte-input ownership follow the multisig
-split. V1 pathed workflows remain separate.
+split. IPEX now assembles bounded accepted chains through RegistryStore; missing
+heads are dependencies, while contradictory accepted rows remain corruption.
+V1 pathed workflows remain separate.
 
 Evidence includes the frozen-upstream wire oracle, real two-Habery dependency
 retry/reopen, observer chain import, independent child proofs, and cancellation

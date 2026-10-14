@@ -35,6 +35,8 @@ export type RegistryBlindOptions =
   & Omit<BlindateOptions, "sn">
   & Pick<MakeBoundStateOptions, "raw" | "salt" | "tier" | "bsn" | "bd">
   & { bound?: boolean };
+/** Grant serders and bare SAIDs share syntax checks; presentation construction does not authenticate grants. */
+export type RegistryPresentationTarget = string | { readonly said: string | null };
 /** A disclosure and its staged commitment, neither of which establishes anchored acceptance. */
 export type RegistryBlindResult = readonly [RegistryDisclosure, SerderACDC];
 
@@ -76,6 +78,26 @@ export class RegistryEventer {
     if (schema.kind === "missing") throw new MissingSchemaError(schema.said);
     if (schema.kind === "invalid") throw new FailedSchemaValidationError(schema.reason);
     return this.blindTarget(acdc.said!, state, options);
+  }
+
+  /** Commit a grant SAID without requiring the grant's issuer to control this presentation registry. */
+  present(
+    grant: RegistryPresentationTarget,
+    state = "presented",
+    options: RegistryBlindOptions = {},
+  ): RegistryBlindResult {
+    const target = typeof grant === "string" ? grant : grant.said;
+    try {
+      new Diger({ qb64: target ?? "" });
+    } catch (cause) {
+      throw new ValidationError("Presentation target must be a valid grant SAID.", { cause });
+    }
+    return this.blindTarget(target!, state, options);
+  }
+
+  /** Empty target/state disclose a vacuous step; downstream verification retains the preceding binding. */
+  vacate(options: RegistryBlindOptions = {}): RegistryBlindResult {
+    return this.blindTarget("", "", options);
   }
 
   /** Derive and stage a validated target; presentation/vacuous callers own their target checks. */

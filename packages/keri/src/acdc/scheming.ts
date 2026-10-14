@@ -20,7 +20,6 @@ export class MissingSchemaError extends ValidationError {
 export class FailedSchemaValidationError extends ValidationError {}
 /** Only explicit input/profile refusals are caught; arbitrary failures are not recategorized. */
 class InvalidSchema extends Error {}
-/** Schema data is borrowed until admitted, then compilation uses private copies. */
 type Schema = Record<string, unknown>;
 /** One verified resource owns its reference/anchor scope. */
 interface Resource {
@@ -279,11 +278,16 @@ export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | 
       if (!validator.validateSchema(schema)) throw new InvalidSchema("Invalid Draft 2020-12 schema");
     }
     const copies = roots.map(copy);
-    for (const schema of copies) {
-      if (!validator.validateSchema(schema)) throw new InvalidSchema("Invalid Draft 2020-12 schema");
-    }
     for (const schema of copies) validator.addSchema(schema);
-    const validate = validator.getSchema(uri(root.said));
+    let validate: ReturnType<Validator["getSchema"]>;
+    try {
+      validate = validator.getSchema(uri(root.said));
+    } catch (error) {
+      if (error instanceof SyntaxError && error.message.includes("regular expression")) {
+        return { kind: "invalid", reason: error.message };
+      }
+      throw error;
+    }
     if (!validate) throw new Error("Admitted schema was not registered");
     return validate(acdc.sad) ? { kind: "valid" } : { kind: "invalid", reason: validator.errorsText(validate.errors) };
   } catch (error) {

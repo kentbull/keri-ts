@@ -37,6 +37,11 @@ Haberies get neither, and injected stores remain caller-owned. Factories retain
 cleanup responsibility until returning their opened store. Explicit runtime close
 and scope exit both join cleanup; scope exit after explicit close is harmless.
 
+Shared ResourcePolicy credit belongs to an owner until consumption and joined
+cleanup complete. One shared instance is required; separate ledgers do not bound
+a runtime. Busy and configured-limit refusals do not establish message invalidity.
+See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md).
+
 ## Transport
 
 Direct replies reserve query SAIDs before dispatch; only the final query owns the
