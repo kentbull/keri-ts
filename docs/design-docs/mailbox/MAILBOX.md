@@ -25,6 +25,12 @@ mailboxes and otherwise falls back to direct controller/agent delivery. Enabled
 Outboxer state retains failed sends for retry. This operational selection is
 distinct from the inner message's validity.
 
+Optional Outboxer publication commits payload, message metadata and target rows
+in one transaction. Terminal target state and final message pruning also commit
+together; failure preserves the prior retry obligation. Delivered status records
+transport handoff, not authenticated remote acceptance. Shared pending-byte/item
+admission and recovery before initial cue transfer remain separate requirements.
+
 Remote delivery uses `/fwd`, with q.pre identifying the recipient and q.topic the
 bucket. Legacy v1 carries e.evt plus pathed attachments. V2 binds one parent-owned
 child to signed a.evt and retains its independent evidence. The provider stores
@@ -69,7 +75,7 @@ update, payload storage and private retrieval are separate checks.
 
 One runtime/listener selects hosted identities explicitly. Close response streams
 before listener drain; release LMDB cursors before transport suspension. Existing
-per-record/SSE caps do not cover provider connection count, whole-row pre-allocation
-or aggregate runtime memory. Those remain [resource](../../plans/runtime/RESOURCE_POLICY_PLAN.md),
+configured provider streams preflight native row size before owned copies.
+Other reads and aggregate runtime/mapped memory still require qualification. Those remain [resource](../../plans/runtime/RESOURCE_POLICY_PLAN.md),
 [storage](../../plans/db/STORAGE_RECOVERY_PLAN.md) and
 [transport](../../plans/runtime/TRANSPORT_PLAN.md) obligations.
