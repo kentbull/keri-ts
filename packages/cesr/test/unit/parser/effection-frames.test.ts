@@ -179,8 +179,7 @@ Deno.test("Effection frames preserve late foreign source failures and join clean
       await assertRejects(() =>
         run(function*() {
           const channel = yield* toEffectionFrames(async function*() {
-            // deno-lint-ignore no-unsafe-finally -- Exercise a failing source finalizer during cancellation.
-          throw fault;
+            throw fault;
           });
           const subscription = yield* channel.frames;
           yield* subscription.next();
