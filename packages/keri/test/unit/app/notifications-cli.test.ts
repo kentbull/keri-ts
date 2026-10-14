@@ -48,6 +48,7 @@ Deno.test("notifications CLI list, mark-read, and remove round-trip local notice
           delpre: "EB",
         });
       } finally {
+        notifier.close();
         yield* noter.close();
         yield* hby.close();
       }

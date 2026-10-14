@@ -18,11 +18,18 @@ import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-r
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
-import { DeckFullError } from "../../../src/core/deck.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck, DeckFullError } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
-import { backerIssue, incept as inceptRegistry, issue, revoke } from "../../../src/core/protocol-vdr-eventing.ts";
+import {
+  backerIssue,
+  backerRevoke,
+  incept as inceptRegistry,
+  issue,
+  revoke,
+} from "../../../src/core/protocol-vdr-eventing.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
@@ -203,49 +210,115 @@ Deno.test("vdr/eventing - rejects simple issue against a backer registry", async
   });
 });
 
-Deno.test("vdr/eventing - records issue and revoke credential state", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({
-      name: `tvy-vcstate-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    const reger = yield* createReger({
-      name: `tvy-vcstate-reg-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    try {
-      const hab = hby.makeHab("issuer", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
+for (const backed of [false, true]) {
+  for (const owned of [false, true]) {
+    Deno.test(`vdr/eventing - records ${backed ? "backer" : "simple"} revoke with ${owned ? "owned" : "ordinary"} cues`, async () => {
+      await run(function*() {
+        const hby = yield* createHabery({
+          name: `tvy-vcstate-${crypto.randomUUID()}`,
+          temp: true,
+        });
+        const reger = yield* createReger({
+          name: `tvy-vcstate-reg-${crypto.randomUUID()}`,
+          temp: true,
+        });
+        try {
+          const hab = hby.makeHab("issuer", undefined, {
+            transferable: true,
+            icount: 1,
+            isith: "1",
+            ncount: 1,
+            nsith: "1",
+            toad: 0,
+          });
+          const resources = new ResourcePolicy();
+          const cues = owned ? new CueDeck(resources, 1) : new Deck<AgentCue>();
+          const backer = backed ? hby.makeHab("backer", undefined, { transferable: false }) : undefined;
+          const tvy = new Tevery({ db: hby.db, reger, cues });
+          const vcp = inceptRegistry(
+            hab.pre,
+            backer ? { baks: [backer.pre], toad: 1 } : { cnfg: [TraitDex.NoBackers] },
+          );
+          assertEquals(
+            tvy.processEvent({ serder: vcp, ...anchorTel(hab, vcp), wigers: backer?.sign(vcp.raw, true) }).kind,
+            "accept",
+          );
+
+          const creder = makeCredential(hab.pre);
+          const iss = backed ? backerIssue(creder.said!, vcp.pre!, 0, vcp.said!) : issue(creder.said!, vcp.pre!);
+          assertEquals(
+            tvy.processEvent({ serder: iss, ...anchorTel(hab, iss), wigers: backer?.sign(iss.raw, true) }).kind,
+            "accept",
+          );
+          let state = tvy.tevers.get(vcp.pre!)?.vcState(creder.said!);
+          assertEquals(state?.et, backed ? "bis" : "iss");
+          assertEquals(state?.s, "0");
+
+          const rev = backed
+            ? backerRevoke(creder.said!, vcp.pre!, 0, vcp.said!, iss.said!)
+            : revoke(creder.said!, vcp.pre!, iss.said!);
+          const args = { serder: rev, ...anchorTel(hab, rev), wigers: backer?.sign(rev.raw, true) };
+          const key = dgKey(creder.said!, rev.said!);
+          if (cues instanceof CueDeck) {
+            const occupied = resources.reserve({ bytes: resources.limits.bytes });
+            if (occupied.kind !== "reserve") throw new Error("Expected occupied cue credit");
+            try {
+              assertThrows(() => tvy.processEvent(args), ResourceAdmissionError);
+              assertEquals(reger.tels.getOn(creder.said!, 1), null);
+              assertEquals(reger.tvts.get(key), null);
+              assertEquals(reger.ancs.get(key), null);
+              assertEquals(reger.tets.get([creder.said!, rev.said!]), null);
+              assertEquals(cues.length, 0, "refusal precedes every accepted revocation write");
+            } finally {
+              occupied.reservation.release();
+            }
+            const put = reger.ancs.put;
+            try {
+              for (const fault of [new ResourceAdmissionError("foreign storage failure", "busy"), undefined]) {
+                reger.ancs.put = () => {
+                  throw fault;
+                };
+                let threw = false;
+                try {
+                  tvy.processEvent(args);
+                } catch (error) {
+                  threw = true;
+                  assertEquals(error === fault, true);
+                }
+                assertEquals(threw, true, "publication infrastructure failure retains its exact identity");
+                assertEquals(resources.used.bytes, 0, "failed preparation releases held cue ownership");
+              }
+            } finally {
+              reger.ancs.put = put;
+            }
+          } else {
+            cues.capacity = 0;
+            assertEquals(tvy.processEvent(args).kind, "reject", "ordinary Deck keeps its current decision behavior");
+            assertEquals(reger.tels.getOn(creder.said!, 1), null);
+            cues.capacity = Infinity;
+          }
+          assertEquals(tvy.processEvent(args).kind, "accept");
+          state = tvy.tevers.get(vcp.pre!)?.vcState(creder.said!);
+          assertEquals(state?.et, backed ? "brv" : "rev");
+          assertEquals(state?.s, "1");
+          assertEquals(reger.tels.getOn(creder.said!, 1)?.qb64, rev.said);
+          if (cues instanceof CueDeck) {
+            const owner = cues.takeOwned()!;
+            assertEquals(owner.cue.kin, "revoked");
+            assertEquals(resources.used.bytes > 0, true);
+            cues.clear();
+            assertEquals(resources.used.bytes > 0, true, "transferred owner retains its credit");
+            owner.release();
+            assertEquals(resources.used.bytes, 0);
+          } else assertEquals(tvy.cues.pull()?.kin, "revoked");
+        } finally {
+          yield* reger.close(true);
+          yield* hby.close(true);
+        }
       });
-      const tvy = new Tevery({ db: hby.db, reger });
-      const vcp = inceptRegistry(hab.pre, { cnfg: [TraitDex.NoBackers] });
-      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(hab, vcp) }).kind, "accept");
-
-      const creder = makeCredential(hab.pre);
-      const iss = issue(creder.said!, vcp.pre!);
-      assertEquals(tvy.processEvent({ serder: iss, ...anchorTel(hab, iss) }).kind, "accept");
-      let state = tvy.tevers.get(vcp.pre!)?.vcState(creder.said!);
-      assertEquals(state?.et, "iss");
-      assertEquals(state?.s, "0");
-
-      const rev = revoke(creder.said!, vcp.pre!, iss.said!);
-      assertEquals(tvy.processEvent({ serder: rev, ...anchorTel(hab, rev) }).kind, "accept");
-      state = tvy.tevers.get(vcp.pre!)?.vcState(creder.said!);
-      assertEquals(state?.et, "rev");
-      assertEquals(state?.s, "1");
-      assertEquals(reger.tels.getOn(creder.said!, 1)?.qb64, rev.said);
-      assertEquals(tvy.cues.pull()?.kin, "revoked");
-    } finally {
-      yield* reger.close(true);
-      yield* hby.close(true);
-    }
-  });
-});
+    });
+  }
+}
 
 Deno.test("protocol-vdr-eventing - NoBackers inception rejects configured backers", () => {
   assertThrows(
@@ -300,7 +373,8 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
               reads++;
               throw new Error("Unexpected TEL body read during admission");
             };
-            admitted.push(cue);
+            const producing = new Tevery({ db: hby.db, reger, cues: admitted });
+            producing.processQuery({ serder: request, source: issuer.kever!.prefixer });
             const owner = admitted.takeOwned()!;
             assertEquals(reads, 0);
             assertEquals(resources.used.bytes > 0, true);
@@ -1242,6 +1316,24 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
         "capacity",
       );
       assertEquals(runtime.cues.length, 0, "A pair cannot publish only its first cue on local refusal");
+      const resources = new ResourcePolicy(), admitted = new CueDeck(resources, 2);
+      const producing = new Tevery({ db: sender.db, reger, cues: admitted });
+      const args = { serder: query("tsn", { ri: vcp.pre, i: credential.said }), source: requester.kever!.prefixer };
+      const occupied = resources.reserve({ bytes: resources.limits.bytes });
+      if (occupied.kind !== "reserve") throw new Error("Expected occupied TSN cue credit");
+      try {
+        assertThrows(() => producing.processQuery(args), ResourceAdmissionError);
+        assertEquals(admitted.length, 0, "shared byte refusal cannot publish only the registry cue");
+      } finally {
+        occupied.reservation.release();
+      }
+      producing.processQuery(args);
+      const registryOwner = admitted.takeOwned()!, credentialOwner = admitted.takeOwned()!;
+      assertEquals([registryOwner.cue.kin, credentialOwner.cue.kin], ["reply", "reply"]);
+      registryOwner.release();
+      assertEquals(resources.used.bytes > 0, true);
+      credentialOwner.release();
+      assertEquals(resources.used.bytes, 0);
     } finally {
       yield* target.close();
       yield* receiver.close(true);
