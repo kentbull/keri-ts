@@ -5,6 +5,7 @@ import {
   Ilks,
   type ParseOptions,
   ResourceLimitError,
+  ResourcePolicy,
   SerderKERI,
   Siger,
   Verfer,
@@ -55,6 +56,8 @@ export interface IngressOptions extends ParseOptions {
  */
 export class Reactor {
   readonly hby: Habery;
+  /** Shared host credit; standalone reactors create one explicit local policy by default. */
+  readonly resources: ResourcePolicy;
   readonly cues: Deck<AgentCue>;
   /** Bounded complete-record queue; callers enter only through ingest(). */
   private readonly ingress: Deck<Uint8Array>;
@@ -90,6 +93,7 @@ export class Reactor {
       maxQueuedBytes = 8 * 1024 * 1024,
       maxPendingCues = 1024,
       messagePolicy,
+      resources = new ResourcePolicy(),
     }: {
       cues?: Deck<AgentCue>;
       local?: boolean;
@@ -102,6 +106,8 @@ export class Reactor {
       maxPendingCues?: number;
       /** Runtime-owned v2 non-event sender policy, independent of parser admission. */
       messagePolicy?: MessagePolicy;
+      /** Borrow the host policy so other streams and recipients compete for the same credit. */
+      resources?: ResourcePolicy;
     } = {},
   ) {
     for (const limit of [maxSources, maxQueuedBytes, maxPendingCues]) {
@@ -113,6 +119,7 @@ export class Reactor {
     this.maxQueuedBytes = maxQueuedBytes;
     this.replies = new QueryReplies(maxSources);
     this.hby = hby;
+    this.resources = resources;
     this.cues = cues ?? new Deck();
     this.cues.capacity = Math.min(this.cues.capacity, maxPendingCues);
     this.ingress = new Deck();
@@ -140,18 +147,36 @@ export class Reactor {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     return resource<FrameChannel>(function*(provide) {
+      // Capture policy once; later caller mutations must not exceed the reserved input allowance.
+      const limits = {
+        ...options,
+        maxChunkBytes: options.maxChunkBytes ?? 1024 ** 2,
+        maxBufferedBytes: options.maxBufferedBytes ?? 8 * 1024 ** 2,
+      };
+      for (const limit of [limits.maxChunkBytes, limits.maxBufferedBytes]) {
+        if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Invalid ingress input limit");
+      }
+      if (limits.maxChunkBytes > limits.maxBufferedBytes) throw new RangeError("Chunk limit exceeds buffer limit");
+      // One producer allocation may coexist with the retained cursor queue while next() completes.
+      const inputBytes = limits.maxChunkBytes + limits.maxBufferedBytes;
+      if (!Number.isSafeInteger(inputBytes)) throw new RangeError("Ingress input reservation exceeds safe range");
       // The admission lease predates the parser resource, so parser cleanup completes before release.
       yield* resource<void>(function*(hold) {
         if (self.sources >= self.maxSources) throw new ResourceLimitError("Too many active ingress sources");
+        const credit = self.resources.reserve({ streams: 1, bytes: inputBytes });
+        if (credit.kind === "refuse") {
+          throw new ResourceLimitError(`Ingress ${credit.resource} admission refused: ${credit.reason}`);
+        }
         self.sources++;
         try {
           yield* hold();
         } finally {
           self.sources--;
+          credit.reservation.release();
         }
       });
       const channel = yield* toEffectionFrames(source, {
-        ...options,
+        ...limits,
         // Acquire storage lazily: ordinary frames do not open the payload archive.
         payloadSink: options.payloadSink
           ?? (async (maxBytes, signal) => (await self.hby.db.openPayloads(signal)).files.stage(maxBytes, signal)),

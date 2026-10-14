@@ -1,3 +1,4 @@
+import { ResourcePolicy } from "cesr-ts";
 import { action, run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { RegBaser } from "../../../src/acdc/regbasing.ts";
@@ -24,6 +25,8 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
     const hby = yield* createHabery(habitatOptions);
     try {
       const runtime = yield* createAgentRuntime(hby);
+      assertEquals(runtime.reactor.resources, runtime.resources);
+      assertEquals(runtime.resources.limits.streams, 2);
       registry = runtime.registryEvidence!;
       reger = runtime.vdr.reger as Reger;
       assertEquals(registry.opened, true);
@@ -46,7 +49,10 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
   const reger = await run(() => createReger({ name: "borrowed", temp: true }));
   try {
     await run(function*() {
-      const runtime = yield* createAgentRuntime(hby, { registryEvidence: registry, vdr: { reger } });
+      const resources = new ResourcePolicy({ streams: 3 });
+      const runtime = yield* createAgentRuntime(hby, { registryEvidence: registry, vdr: { reger }, resources });
+      assertEquals(runtime.resources, resources);
+      assertEquals(runtime.reactor.resources, resources);
       assertEquals(runtime.registryEvidence, registry);
       assertEquals(runtime.vdr.reger, reger);
       yield* runtime.close();

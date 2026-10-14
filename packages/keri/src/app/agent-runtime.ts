@@ -1,3 +1,4 @@
+import { ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { RegistryStore } from "../acdc/registering.ts";
 import type { AgentCue } from "../core/cues.ts";
@@ -77,6 +78,8 @@ export type { CueSink };
  */
 export interface AgentRuntime {
   hby: Habery;
+  /** Shared stream, byte and decryption credit; pass this same policy to hosted ESSR recipients. */
+  readonly resources: ResourcePolicy;
   mode: AgentMode;
   mailboxer: Mailboxer | null;
   noter: Noter | null;
@@ -111,6 +114,8 @@ export interface AgentRuntime {
  * local hosting and long-lived hosting stay behaviorally aligned.
  */
 export interface AgentRuntimeOptions {
+  /** Borrow an existing policy when several runtimes belong to one hosting resource boundary. */
+  resources?: ResourcePolicy;
   mode?: AgentMode;
   mailboxer?: Mailboxer;
   noter?: Noter;
@@ -181,6 +186,7 @@ export function* createAgentRuntime(
       yield* deliveries.close();
     }
   });
+  const resources = options.resources ?? new ResourcePolicy();
   const mode = options.mode ?? "local";
   const services = resolveRuntimeServices(options.services);
   const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
@@ -226,7 +232,7 @@ export function* createAgentRuntime(
     registryEvidence = yield* openRegistryEvidenceForHabery(hby);
     ownsRegistryEvidence = true;
   }
-  const reactor = new Reactor(hby, { cues, vdr, messagePolicy: options.messagePolicy });
+  const reactor = new Reactor(hby, { cues, vdr, resources, messagePolicy: options.messagePolicy });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);
@@ -276,6 +282,7 @@ export function* createAgentRuntime(
   const authenticator = new Authenticator(hby, { services });
   return {
     hby,
+    resources,
     mode,
     mailboxer,
     noter,

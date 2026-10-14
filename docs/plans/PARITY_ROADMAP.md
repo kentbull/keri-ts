@@ -1,6 +1,6 @@
 # KERIpy parity and bounded runtime roadmap
 
-Verified boundary: keri-ts `5d439213` after [#185][registry-inception].
+Verified boundary: keri-ts `6ca5575d` after [#202][registry-observer].
 Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
@@ -16,22 +16,22 @@ independently accepted GenericGroup siblings.
 Each linked owner contains the evidence gate and unresolved limitations. Phase
 numbers refer to the seven follow-on phases, not the earlier migration steps.
 
-| Requirement      | Current boundary | Owner                 | Evidence                | Open limit         |
-| ---------------- | ---------------- | --------------------- | ----------------------- | ------------------ |
-| CESR parsing     | Delivered        | [1–2][cesr]           | [Wire/tree][delivered]  | Accessor audit     |
-| Multisig         | Four routes      | [3d][multisig]        | [#160–161][delivered]   | Native/CLI scope   |
-| IPEX             | Nested runtime   | [3e][ipex]            | [#166–168][delivered]   | Presentations      |
-| V1/V2 registries | V2 inception     | [R6–R12][registry]    | [R1–R5][registry]       | Updates/services   |
-| EXN proofs       | Implemented      | [3e/3f][exchange]     | [#162/165][delivered]   | KRAM integration   |
-| v2 intake        | KRAM foundations | [K7–K10][kram]        | [K1–K6b][kram]          | Intake/TEL/stubs   |
-| ESSR outcomes    | Implemented      | [4 integration][essr] | [#163][delivered]       | Local guards       |
-| Shared budget    | Local guards     | [4][resource]         | [Required][resource]    | Pre-allocation     |
-| Storage/recovery | Durable wire     | [5][storage]          | [Required][storage]     | Whole-row reads    |
-| Transport        | Streaming paths  | [6][transport]        | [Required][transport]   | Usable-child proof |
-| Reference pins   | Mixed targets    | [7][qualification]    | [Inventory][pins]       | Actual imports     |
-| Qualification    | Small corpora    | [7][qualification]    | [Matrix][qualification] | Full runtime       |
-| Mapper SAID      | Stale claim gap  | [Final][mapper]       | [Required][mapper]      | Aggor semantics    |
-| npm release      | Pending          | [#104][release]       | Published artifacts     | Final goal gate    |
+| Requirement      | Current boundary | Owner                 | Evidence                | Open limit          |
+| ---------------- | ---------------- | --------------------- | ----------------------- | ------------------- |
+| CESR parsing     | Delivered        | [1–2][cesr]           | [Wire/tree][delivered]  | Accessor audit      |
+| Multisig         | Four routes      | [3d][multisig]        | [#160–161][delivered]   | Native/CLI scope    |
+| IPEX             | Nested runtime   | [3e][ipex]            | [#166–168][delivered]   | Presentations       |
+| V1/V2 registries | Updates/observer | [R10b–R12][registry]  | [R1–R10a][registry]     | Runtime/callers     |
+| EXN proofs       | Implemented      | [3e/3f][exchange]     | [#162/165][delivered]   | KRAM integration    |
+| v2 intake        | KRAM foundations | [K7–K10][kram]        | [K1–K6b][kram]          | Intake/TEL/stubs    |
+| ESSR outcomes    | Shared admission | [4 integration][essr] | [Policy][resource]      | Native copies       |
+| Shared budget    | Streams/crypto   | [4][resource]         | [Policy][resource]      | Trees/queues/copies |
+| Storage/recovery | Durable wire     | [5][storage]          | [Required][storage]     | Whole-row reads     |
+| Transport        | Streaming paths  | [6][transport]        | [Required][transport]   | Usable-child proof  |
+| Reference pins   | Mixed targets    | [7][qualification]    | [Inventory][pins]       | Actual imports      |
+| Qualification    | Small corpora    | [7][qualification]    | [Matrix][qualification] | Full runtime        |
+| Mapper SAID      | Stale claim gap  | [Final][mapper]       | [Required][mapper]      | Aggor semantics     |
+| npm release      | Pending          | [#104][release]       | Published artifacts     | Final goal gate     |
 
 ## Publication sequence
 
@@ -92,7 +92,7 @@ publishing path while preserving the checked artifact and version identity.
 Report exact published versions and release evidence for the downstream chat;
 do not close the goal on a merged version PR or a successful build alone.
 
-[registry-inception]: https://github.com/kentbull/keri-ts/pull/185
+[registry-observer]: https://github.com/kentbull/keri-ts/pull/202
 [release]: https://github.com/kentbull/keri-ts/pull/104
 [kram]: exchange/KRAM_PLAN.md
 [registry]: credentials/REGISTRY_PLAN.md
