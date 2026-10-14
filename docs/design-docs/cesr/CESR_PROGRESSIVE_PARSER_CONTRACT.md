@@ -26,15 +26,28 @@ and the avoidable Serder raw copy. One O(1) byte lexical scan counts containers
 (64), value references and property fields (16 each), scalar tokens (8), and string
 source bytes (2 each, a UTF-16 upper bound). Escapes and duplicate keys deliberately
 overcharge; native JSON syntax/semantics remain authoritative. A root and descendants
-share decoded credit equal to the supplied ResourcePolicy byte capacity, or its
+share JSON/MGPK decoded credit equal to the supplied ResourcePolicy byte capacity, or its
 existing 256 MiB default when unshared. Shared admission also charges 64 bytes of
 fixed scanner workspace and twice the body extent for decode text before scanning;
 these working allowances conservatively survive through root cleanup. Exact stable
-independent backing may be reused only by this admitted JSON path. Standalone
-Serder ownership, bounded version probes, wrapped Matter preparation, binary/native
+independent backing may be reused only by these admitted body paths. Standalone
+Serder ownership, bounded version probes, wrapped Matter preparation, CBOR/native
 hydration, verification/projection copies and stored/cache bodies remain separate
 phase 4/5 boundaries. Resource and unexpected decoder failures retain provenance;
 only intrinsic JSON syntax failure permits wrapped opaque fallback.
+
+Progressive MGPK scans actual MessagePack token extents with O(1) workspace before
+copy/decode. Declared arrays charge 16 bytes per slot; maps charge 48 per pair for
+fields/references, even when members are absent. Containers, scalar/string/binary/
+extension forms and numeric-label upper bounds receive logical charges. Pinned
+`@msgpack/msgpack` 3.1.3 decoder records, pooled states, short UTF-8 work and possible
+copy backing are admitted separately and conservatively held through root cleanup.
+The admitted decoder disables shared key caching and uses a private standard
+codec (timestamp/ExtData), excluding mutable global custom extensions. Codec syntax
+remains authoritative; only locally marked intrinsic failures permit opaque MGPK.
+Preflight-complete unexpected RangeErrors preserve identity. Arbitrary global JS
+mutations/custom extension allocations are outside this private codec boundary.
+This leaves CBOR/native, standalone/storage/cache and native residency gates open.
 
 ESSR Texters stream into an awaited sink, with separate `maxEssrBytes` (8 MiB
 concatenated decoded bytes) and `maxEssrItems` (16,384) defaults per owned tree. `maxTreeNodes` defaults to 256 including the root;

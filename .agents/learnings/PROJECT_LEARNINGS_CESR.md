@@ -14,11 +14,12 @@
   ordinary bytes/leaves, decoded ESSR/items, nodes and depth. No full raw envelope
   or per-Texter manifest is retained. Optional shared ordinary-wire and finite ESSR-stage reservations
   belong to delivered roots, never independently to nested children. They do not
-  account for all hydrated copies or heap overhead. Progressive JSON separately
-  admits lexical logical decoded/work charges before text/JSON decoding, retaining
-  them with root credit; this leaves wrapped Matter, binary/native, standalone
+  account for all hydrated copies or heap overhead. Progressive JSON/MGPK separately
+  admit lexical/token logical decoded/work charges before codec allocation, retaining
+  them with root credit; this leaves wrapped Matter, CBOR/native, standalone
   verification and store/cache allocation boundaries open. Native syntax owns JSON
-  semantics; only locally created syntax refusals permit opaque JSON fallback.
+  semantics; MGPK uses private standard extensions and disables shared key caching.
+  Only locally created intrinsic refusals permit opaque fallback for admitted codecs.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each
   owner once, including shared credit on ordinary frames. A suspended generator
   also retains its output: credit returns after consumer disposal and generator
