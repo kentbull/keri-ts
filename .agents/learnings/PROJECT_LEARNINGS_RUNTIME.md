@@ -75,6 +75,8 @@ empty sources close before returning null and runtime close drops primed bytes.
 OOBI serving captures bounded endpoint/delegation descriptors only after admission,
 closes metadata cursors before hydration, and borrows Hab/store through cleanup.
 Fresh preparation caps are conservative; native metadata/proof allocation remains open.
+Finite forwarding introductions must cap before retaining messages, including
+ordinary wrapper defaults; a lazy source alone does not qualify bulk transport.
 RuntimeDeliveries owns the existing finite query queue; retained cue adoption
 uses this same owner rather than adding a parallel queue. Query producers run
 only after preparation/request admission. Queued requests retain

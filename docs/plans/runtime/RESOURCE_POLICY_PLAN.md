@@ -65,9 +65,10 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    activation.
 
 S2 OOBI HTTP now consumes lazy Hab messages with shared admission before metadata
-capture and finite per-message preparation. Forwarding still needs its finite
-caller port; native metadata/proof allocation and complete-stack qualification
-remain open. Active 714 Hab helpers collect output; TS streaming preserves its
+capture and finite per-message preparation. Forwarding introduction convenience
+callers now use finite collection over captured KEL and lazy endpoint messages.
+Large-history forwarding transport adoption, native metadata/proof allocation and
+complete-stack qualification remain open. Active 714 Hab helpers collect output; TS streaming preserves its
 existing role/source topology and body-driven genus selection.
 
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.
