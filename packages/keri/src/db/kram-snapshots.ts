@@ -1,11 +1,87 @@
 /** Private partial wire snapshots borrow incoming owners and scope every reopened descendant. */
-import { type CesrFrame, collectPayload, framePayload, parse, ResourceLimitError, Vrsn_2_0 } from "cesr-ts";
-import { call, type Operation } from "effection";
+import {
+  type CesrFrame,
+  collectPayload,
+  DigDex,
+  Diger,
+  framePayload,
+  parse,
+  ResourceAdmissionError,
+  ResourceLimitError,
+  type ResourcePolicy,
+  type ResourceReservation,
+  Vrsn_2_0,
+} from "cesr-ts";
+import { call, type Operation, resource } from "effection";
 import { abortable } from "../app/abortable.ts";
 import { KeriDispatchEnvelope } from "../core/dispatch.ts";
 import type { Baser } from "./basing.ts";
 import { chargeNests, discardNests, MAX_NESTED_WIRE_BYTES } from "./exchange-nests.ts";
 import { rehydrateKramFactors } from "./kram-factors.ts";
+
+/** Acquire one finite phase allowance; callers join its last use before release. */
+function reserveCopies(resources: ResourcePolicy, bytes: number): ResourceReservation {
+  const decision = resources.reserve({ bytes });
+  if (decision.kind === "refuse") {
+    throw new ResourceAdmissionError(`KRAM snapshot admission refused: ${decision.reason}`, decision.reason);
+  }
+  return decision.reservation;
+}
+
+/** Private snapshots are a durable invariant; their finite stored ceiling is not ordinary admission refusal. */
+function readSnapshot(db: Baser, key: readonly string[], beforeCopy: (bytes: number) => void): Uint8Array | null {
+  try {
+    return db.kpnd.getBounded(key, MAX_NESTED_WIRE_BYTES, beforeCopy);
+  } catch (error) {
+    if (error instanceof ResourceLimitError && !(error instanceof ResourceAdmissionError)) {
+      throw new Error("Oversized stored KRAM snapshot", { cause: error });
+    }
+    throw error;
+  }
+}
+
+/** Fingerprint bounded private wire in one transaction; no row owner escapes the synchronous digest. */
+export function kramSnapshotIdentity(db: Baser, key: readonly string[], resources: ResourcePolicy): string | null {
+  let credit: ResourceReservation | undefined;
+  try {
+    const wire = readSnapshot(db, key, () => {
+      credit = reserveCopies(resources, 2 * MAX_NESTED_WIRE_BYTES);
+    });
+    return wire ? new Diger({ raw: Diger.digest(wire, DigDex.Blake3_256), code: DigDex.Blake3_256 }).qb64 : null;
+  } finally {
+    credit?.release();
+  }
+}
+
+/** Publish synchronously within wire credit; the callback must not retain wire or return work using it. */
+export function withKramSnapshot<T>(
+  envelope: KeriDispatchEnvelope,
+  resources: ResourcePolicy,
+  publish: (wire: Uint8Array | undefined) => T,
+): Operation<T> {
+  return call(function*() {
+    if (envelope.essr || envelope.nests.length) {
+      validateTree({
+        body: envelope.serder,
+        attachments: [...envelope.attachmentGroups],
+        nests: [...envelope.nests],
+        essr: envelope.essr,
+      });
+    }
+    // Register credit before the leaf: cancellation joins its source before this owner unwinds.
+    yield* resource<void>(function*(provide) {
+      const credit = envelope.essr || envelope.nests.length
+        ? reserveCopies(resources, 2 * MAX_NESTED_WIRE_BYTES)
+        : undefined;
+      try {
+        yield* provide();
+      } finally {
+        credit?.release();
+      }
+    });
+    return publish(yield* snapshotKram(envelope));
+  });
+}
 
 /** Charge parent metadata and decoded ESSR before charging descendants with diminishing credit. */
 function validateTree(frame: CesrFrame): void {

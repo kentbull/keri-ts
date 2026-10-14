@@ -126,7 +126,9 @@ against diminishing 24 MiB aggregate wire credit before its owned backing copies
 The pinned lmdb-js 3.5.3 NAPI hook reads size without growing an insufficient
 native target; supported binary, uncompressed, unversioned rows then copy under
 that same transaction. Active writers are borrowed, while ordinary reads hold
-an explicit snapshot. Unsupported bindings/modes fail closed. Publication still
+an explicit snapshot. A synchronous pre-copy callback can reserve shared credit
+for a found, ceiling-admitted row before its owned copies; the caller releases
+after its last use. Unsupported bindings/modes fail closed. Publication still
 belongs to the caller's transaction, so an over-limit suffix preserves earlier
 public evidence on rollback; loading disposes previously hydrated descendants.
 
@@ -163,3 +165,13 @@ again, matching frozen Python `927c0cb8`. Failed replacement rolls back to the
 previous public rows. Parent `/fwd` verification checks exactly one child's valid
 body and the signed `a.evt` digest; child signature authentication belongs to its
 recipient. No recursive dispatch occurs at the forwarder.
+
+Private snapshot facilities require explicit shared credit. `kramSnapshotIdentity`
+uses `BytesSuber.getBounded` and holds 48 MiB for both owned row copies through its
+synchronous digest, including active writers. Stored wire above 24 MiB is corruption;
+byte contention is ResourceAdmissionError, and infrastructure errors propagate.
+`withKramSnapshot` holds 48 MiB through joined serialization and synchronous storage
+publication. Its callback cannot retain wire or return asynchronous work using it.
+Invalid extent metadata fails as a contract error before admission. Incoming payload
+owners remain borrowed. Runtime hash/serialization and load/hydration migration
+remain the next independent unit; these facilities alone do not close that boundary.
