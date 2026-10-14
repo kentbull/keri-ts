@@ -39,6 +39,7 @@ import {
   TransReceiptQuadruple,
 } from "../core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
+import type { KeverDecision } from "../core/kever-decisions.ts";
 import { type KramReceipt, kramReceipt, type KramRefusal } from "../core/kraming.ts";
 import { nestedIpexRoute, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
@@ -133,7 +134,13 @@ export interface MessageDropDecision {
 }
 
 /** Route-specific results remain distinct from pre-dispatch refusal and unreported outcomes. */
-export type DispatchDecision = ReplyProcessDecision | ExchangeDecision | MessageDropDecision | KramRefusal | void;
+export type DispatchDecision =
+  | KeverDecision
+  | ReplyProcessDecision
+  | ExchangeDecision
+  | MessageDropDecision
+  | KramRefusal
+  | void;
 
 /**
  * Convert one or more already-parsed CESR frames into KERI dispatch envelopes.
@@ -216,31 +223,30 @@ export function* dispatchEnvelope(
     case Ilks.dip:
     case Ilks.rot:
     case Ilks.drt:
-    case Ilks.ixn:
-      {
-        const decision = kevery.processEvent(envelope);
-        if (decision.kind === "accept" || decision.kind === "duplicate") {
-          kevery.processAttachedReceiptCouples({
-            serder,
-            cigars: envelope.cigars,
-            firner: envelope.lastFrc?.f,
-            local: envelope.local,
-          });
-          kevery.processAttachedReceiptQuadruples({
-            serder,
-            trqs: envelope.trqs,
-            firner: envelope.lastFrc?.f,
-            local: envelope.local,
-          });
-          kevery.processAttachedReceiptGroups({
-            serder,
-            tsgs: envelope.tsgs,
-            firner: envelope.lastFrc?.f,
-            local: envelope.local,
-          });
-        }
+    case Ilks.ixn: {
+      const decision = kevery.processEvent(envelope);
+      if (decision.kind === "accept" || decision.kind === "duplicate") {
+        kevery.processAttachedReceiptCouples({
+          serder,
+          cigars: envelope.cigars,
+          firner: envelope.lastFrc?.f,
+          local: envelope.local,
+        });
+        kevery.processAttachedReceiptQuadruples({
+          serder,
+          trqs: envelope.trqs,
+          firner: envelope.lastFrc?.f,
+          local: envelope.local,
+        });
+        kevery.processAttachedReceiptGroups({
+          serder,
+          tsgs: envelope.tsgs,
+          firner: envelope.lastFrc?.f,
+          local: envelope.local,
+        });
       }
-      break;
+      return decision;
+    }
     default:
       break;
   }

@@ -97,7 +97,7 @@ Deno.test("HTTP open timeout retains the mailbox null outcome and joins the abor
         new Promise<Response>((_resolve, reject) => {
           init!.signal!.addEventListener("abort", () => {
             aborted = true;
-            reject(new DOMException("Timed out", "AbortError"));
+            reject(init!.signal!.reason);
           }, { once: true });
         })
       ),
@@ -203,4 +203,57 @@ Deno.test("HTTP response teardown recognizes only its controller's exact abort r
   await started.promise;
   await task.halt();
   assertEquals(continued, false);
+});
+
+Deno.test("HTTP fetch cancellation preserves late I/O and foreign timeout failures once", async () => {
+  for (const fault of [new Error("late fetch I/O"), new DOMException("foreign abort", "AbortError")]) {
+    let started!: () => void, rejectFetch!: () => void;
+    const ready = new Promise<void>((resolve) => started = resolve);
+    const task = run(function*() {
+      yield* fetchResponseHandle("https://peer.test/", {}, {
+        services: services((_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init!.signal!.addEventListener("abort", () => rejectFetch = () => reject(fault), { once: true });
+            started();
+          })
+        ),
+      });
+    });
+    await ready;
+    const stopped = task.halt();
+    let joined = false;
+    const pending = Promise.resolve(stopped).finally(() => joined = true);
+    void pending.catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assertEquals(joined, false, "Cancellation joins the still-pending fetch");
+    rejectFetch();
+    assertStrictEquals(await assertRejects(() => pending), fault);
+    assertStrictEquals(
+      await assertRejects(() =>
+        run(() =>
+          fetchResponseHandleOrNull("https://peer.test/", {}, {
+            timeoutMs: 1,
+            services: services((_url, init) =>
+              new Promise<Response>((_resolve, reject) => {
+                init!.signal!.addEventListener("abort", () => reject(fault), { once: true });
+              })
+            ),
+          })
+        )
+      ),
+      fault,
+      "A foreign same-class timeout failure is not the mailbox null outcome",
+    );
+    assertStrictEquals(
+      await assertRejects(() =>
+        run(() =>
+          fetchResponseHandle("https://peer.test/", {}, {
+            services: services(() => Promise.reject(fault)),
+          })
+        )
+      ),
+      fault,
+      "Ordinary fetch failure is not duplicated by teardown",
+    );
+  }
 });

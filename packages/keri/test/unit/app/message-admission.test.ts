@@ -491,6 +491,7 @@ Deno.test("optional KRAM preserves actual OOBI verification and frozen processor
       for (const row of stubs) {
         const [frame] = yield* call(() => parseBytes(b(row.wire)));
         const disabled = new Reactor(hby, { kram: { enabled: false } });
+        assertEquals(disabled.resources === hby.db.resources, true, "standalone KRAM uses its backing policy");
         yield* disabled.settle(frame, {}, function*(_ready, decision) {
           assertEquals(decision, { kind: "drop", reason: "referenceStub" });
         });
