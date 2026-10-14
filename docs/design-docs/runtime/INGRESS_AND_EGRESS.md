@@ -46,6 +46,11 @@ supplies a sink. Ordinary frames do not open that archive.
 Promise leaves must observe the supplied signal. `abortable` isolates the leaf,
 aborts it, and joins its completion; resources that depend on it must be
 registered before starting that leaf.
+Explicit response-body cancellation registers its cleanup owner before starting
+the cancellation Promise; joined late failures remain visible even during scope
+cancellation. Finite request intake preserves distinct read/header and outer-body
+cleanup failures. Unacquired response cleanup also propagates failure; it cannot
+silently turn failed cleanup into success.
 
 HTTP query replies carry the requesting query SAID. A bounded request reservation
 captures matching replies before background consumption. Duplicate requests
