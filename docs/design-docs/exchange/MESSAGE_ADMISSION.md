@@ -36,6 +36,18 @@ destination and does not itself authenticate the request. Sender policy and
 optional KRAM remain independent; this is not v2 `RegistryStore` query support.
 Whole-row reads still allocate before their size checks and retain phase 5 ownership.
 
+Internal `prepareTsnQuery` prepares registry then optional credential reply data,
+correlated to the query SAID, without publishing cues or enabling TSN dispatch.
+Unknown registries return unavailable; absent credentials retain the registry
+reply with a typed missing-credential diagnostic. Actual 714 parsed credential
+queries emit the registry reply then fail: `processQuery` passes `vcpre=` to
+`vcState(vci)`. TypeScript calls that actual positional helper instead. Independent
+714 helper observations qualify the credential record, including its issuer KEL
+anchor. State production does not authenticate a query, reply, or nested child;
+TSN receiving still requires BADA, attester trust and accepted TEL correspondence.
+Storage corruption and infrastructure errors propagate. Existing state helpers'
+read costs remain separate from the two-reply output ceiling.
+
 Admission refusals return `MessageDropDecision`. Frozen `xip/pro/bar` processors
 are stubs: they report `referenceStub`, never acceptance. Route-specific decisions
 retain their meanings; an absent decision is not evidence of acceptance.

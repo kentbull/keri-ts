@@ -41,8 +41,10 @@ Frozen upstream accepts v1 TEL/ACDC bodies under v2 attachments but rejects v2 v
 Legacy TEL query replay captures management then credential extents, closes cursors
 before yielding, and preserves frozen v2 proof counters with an explicit genus
 selector. Requester material identifies the destination; upstream query signature
-validation is TODO. TSN receiving remains guarded; do not infer it from replay or
-state-record construction. Complete-message caps do not prove native pre-read admission.
+validation is TODO. Internal TSN production calls actual `vcState(vci)`, correcting
+714's broken query keyword. Missing credentials retain the registry reply; TSN
+receiving remains guarded and needs independent BADA/trust/TEL correspondence.
+State-record construction proves no acceptance. Complete-message caps do not prove native pre-read admission.
 
 Canonical transferable receipt output groups proofs by the complete receiptor
 establishment seal (`-F` in v1). Durable vrcs quadruples and legacy decoding remain.
