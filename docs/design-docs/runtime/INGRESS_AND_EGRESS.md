@@ -72,6 +72,20 @@ currently collects until connection completion. Existing cue consumers can still
 await network I/O under the guard. The [transport plan][transport-plan] owns closure;
 these requirements do not describe completed TCP support.
 
+`socketBytes` is the shared KERI runtime TCP source prerequisite; listener/parser
+integration remains pending. It acquires exclusive binary readable-mode ownership
+on first pull, returns independent backing allocations of at most 64 KiB by default,
+and permits one pending pull. Do not mix data/flow readers with it. Abort, failure
+and early return destroy and join socket close; genuine receive EOF releases only
+read ownership, preserving the writable half. The connection owner must handle
+socket errors before acquisition and after EOF, and own output drain/final close.
+Before pulling, admit the connection and two bounded materialized read/copy
+allocations, retaining credit through parser/source cleanup. A native-returned
+view may pin pool/socket backing larger than a small configured chunk ceiling:
+twice that ceiling does not cover all native backing. The host must separately
+account for fixed pools, readable/native/kernel buffering and qualify its actual
+configuration; this adapter supplies no full native or RSS bound.
+
 The guard protects protocol interpretation, signing, routing snapshots and local
 DB side effects. Network waits and capacity waits belong outside it. Transfer a
 cue only after its bounded delivery owner accepts it; saturation must retain the
@@ -140,6 +154,14 @@ Poster/Respondant choose destination and delivery policy; Reactor verifies and
 mutates accepted state. Signing, routing snapshots and local DB preparation stay
 in short guarded turns; independently owned network work and capacity waits do not.
 
+Poster’s `resolveBytesRoute` snapshots sender, recipient, target URLs and body
+mode. Synchronous `prepareBytesTarget` performs local mailbox writes or prepares
+one signed introduction/forwarded request. `sendPreparedCesrTarget` consumes that
+wire through the shared HTTP sender without habitat or DB access. Its bytes stay
+caller-owned through joined cleanup. Existing `sendBytes` composes these steps;
+S1–3 still owns admitted handoff, guard-free runtime callers and delivery outcomes.
+The extraction itself adds no queue or shared allocation guarantee.
+
 Completion records must distinguish local transmission drain, HTTP success,
 verified protocol replies and durable application acceptance. An HTTP status or
 socket drain proves only its own boundary. Consumers report protocol decisions;
@@ -182,9 +204,12 @@ retains its queue credit until delivery succeeds; failure leaves it available
 for retry. Concurrent drains cannot send the same head, and newly appended work
 waits for the next bounded pass.
 
-Replay byte admission runs in `cloneEvtMsg` while evidence is read from storage,
-before retaining each attachment and allocating the final event buffer. The raw
-stored body must still be read as one value before its length can be checked.
+Finite `cloneEvtMsg` body reads use native row-size preflight before owned
+materialization. Evidence fragments are admitted before retaining each attachment
+and allocating the final event buffer. HTTP replay reserves eight event-size
+allowances plus one output chunk before iterator acquisition, covering cooperating
+native/body/decoded/proof/reconstruction copies through source cleanup. This is
+conservative policy requiring final memory qualification, not an exact RSS ceiling.
 Aggregate replay length is not collected or capped; ordinary single-event bytes
 and concurrent HTTP replies remain independently bounded. Other finite callers
 of `cloneEvtMsg` without a limit retain their existing allocation behavior.
@@ -194,6 +219,12 @@ of `cloneEvtMsg` without a limit retain their existing allocation behavior.
 Signed exchanges and generic HTTP witness delivery use the same progressive
 sender as forwarding. Witness authorization is preserved across content-type
 retries; caller headers cannot replace CESR framing or destination metadata.
+Generic witness sends borrow explicit runtime services; runtime delegation passes
+its own services through this seam. Standalone callers may use the shared default.
+TCP reserves one stream, the supplied buffer's backing and one transport copy
+before socket acquisition. The caller owns allocation of that input. Completion,
+failure and cancellation join socket close before returning credit; kernel buffers
+and native residency require separate measurement.
 Receipt endpoints intentionally return one finite proof: collection admits at
 most 1 MiB, failed-response diagnostics at most 16 KiB, and parsing requires one
 complete frame. Cancellation joins the body reader and releases its lock.
@@ -222,8 +253,10 @@ limit; the durable inbox retains its independent capacity and explicit dispositi
 Provider SSE performs no mailbox reads without HTTP demand, releases each LMDB
 iterator before suspension, and copies at most 64 KiB per transport pull from one
 admitted 4 MiB stored message. A blocked consumer cannot accumulate a mailbox
-replay in the platform stream queue. Stored values are still read whole before
-their individual size check.
+replay in the platform stream queue. Provider responses reserve shared message,
+chunk and bounded topic-metadata credit before acquisition, with one stream slot
+across query correlation and nested output. Native row preflight checks the 4 MiB
+ceiling before copying. Director/runtime close joins cancellation before stores.
 
 Finite OOBI and DID verification currently admit at most 8 MiB per fetched
 artifact, including their CESR replay document. Moving those complete verification
@@ -231,7 +264,6 @@ flows to streamed artifacts remains separate work. Mailbox admin response metada
 admits 1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those
 finite collectors use the same owned, cancellable byte reader.
 
-Mailbox-provider connection count and configured endpoint/topic counts do not yet
-share an aggregate runtime reservation. Their cross-source concurrency budget
-belongs to the planned shared resource-policy follow-up, not these per-reader
-and per-event bounds.
+Provider connections and per-request topics now share finite runtime admission.
+Configured remote-worker counts and retained query cues still need their own
+handle/metadata boundary; these leases do not bound accepted configuration/state.

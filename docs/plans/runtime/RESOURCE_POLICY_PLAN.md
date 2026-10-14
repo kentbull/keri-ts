@@ -24,10 +24,15 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    before acquisition; extra hydrated and reader copies remain open.
 4. ESSR recipients borrow the exposed runtime policy; measured native-copy
    qualification remains open.
-5. Storage/hydration copy charges, coordinated with phase 5.
+5. Storage/hydration copy charges, coordinated with phase 5. Mailbox providers
+   reserve one shared stream/copy lease through joined close and preflight native
+   rows; retained query cues and remote-worker handles remain open.
 6. Parser input checkpoints yield after 64 KiB or 4,096 pull/consume operations,
    including empty producers, with one cancellation-owned timer. Pending
    metadata/handles and bounded escrow scan work remain separately owned.
+   Internal held cue batches/owned references are available but not wired into
+   Runtime. Port prospective KEL/clone/state producers first, remaining durable
+   producers next, then explicit query/mailbox/delivery ownership transfers.
 
 Each is a 300–500-line-or-smaller target with focused existing-test extensions.
 Split further before publication if a complete boundary needs more. Qualification

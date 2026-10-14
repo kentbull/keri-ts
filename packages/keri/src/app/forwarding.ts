@@ -45,7 +45,7 @@ import { makeNowIso8601 } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
-import { buildCesrRequest } from "./cesr-http.ts";
+import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandleOrNull } from "./httping.ts";
@@ -77,6 +77,37 @@ export interface ExchangeSendResult {
 export interface RawCesrSendResult {
   deliveries: string[];
   queued: string[];
+}
+
+/** Recipient policy captured during a short guarded preparation turn. */
+export interface RawCesrRoute {
+  readonly sender: string;
+  readonly recipient: string;
+  readonly topic: string;
+  readonly kind: "mailbox" | "local" | "direct" | "witness";
+  readonly targets: readonly { eid: string; url: string }[];
+  readonly bodyMode: CesrBodyMode;
+}
+
+/** Prepared wire borrows its bytes until the transport operation and cleanup finish. */
+export type PreparedCesrTarget =
+  | { readonly kind: "stored" }
+  | {
+    readonly kind: "http";
+    readonly url: string;
+    readonly destination: string;
+    readonly message: Uint8Array;
+    readonly bodyMode: CesrBodyMode;
+  };
+
+/** Deliver prepared HTTP wire without habitat access, signing or local storage work. */
+export function* sendPreparedCesrTarget(
+  target: PreparedCesrTarget,
+  services: RuntimeServices,
+): Operation<void> {
+  if (target.kind === "http") {
+    yield* postCesrMessage(target.url, target.message, target.bodyMode, target.destination, services);
+  }
 }
 
 interface PosterOptions {
@@ -303,123 +334,97 @@ export class Poster {
       delivery?: ExchangeDeliveryPreference;
     },
   ): Operation<RawCesrSendResult> {
-    const recipient = this.resolveRecipient(args.recipient);
-    const topic = args.topic ?? "";
+    const route = this.resolveBytesRoute(hab, args);
     const deliveries: string[] = [];
     const queued: string[] = [];
-    const delivery = args.delivery ?? "auto";
-    const mailboxEndpoints = delivery === "direct" ? [] : mailboxDeliveryEndpoints(hab, recipient);
-
-    if (mailboxEndpoints.length > 0) {
-      if (topic.length === 0) {
-        throw new ValidationError(
-          `Mailbox delivery requires an explicit topic for ${recipient}.`,
-        );
+    const failed = new Map<string, string>();
+    for (let index = 0; index < route.targets.length; index++) {
+      const endpoint = route.targets[index]!;
+      try {
+        const target = this.prepareBytesTarget(hab, route, index, args.message);
+        yield* sendPreparedCesrTarget(target, this.services);
+        deliveries.push(endpoint.url);
+      } catch (error) {
+        if (route.kind !== "mailbox") throw error;
+        failed.set(endpoint.eid, error instanceof Error ? error.message : String(error));
       }
-
-      const failed = new Map<string, string>();
-      for (const endpoint of mailboxEndpoints) {
-        try {
-          yield* this.deliverMailboxTarget(
-            hab,
-            recipient,
-            topic,
-            args.message,
-            endpoint,
-          );
-          deliveries.push(endpoint.url);
-        } catch (error) {
-          failed.set(
-            endpoint.eid,
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      }
-
-      if (failed.size > 0) {
-        if (this.outboxer.enabled) {
-          const said = crypto.randomUUID();
-          this.outboxer.queueMessage(
-            said,
-            args.message,
-            {
-              sender: hab.pre,
-              recipient,
-              topic,
-              createdAt: makeNowIso8601(),
-            },
-            failed.keys(),
-          );
-          const attemptedAt = makeNowIso8601();
-          for (const [eid, error] of failed.entries()) {
-            this.outboxer.markFailed(said, eid, attemptedAt, error);
-            queued.push(`outbox:${eid}`);
-          }
-        } else if (deliveries.length === 0) {
-          throw new ValidationError(
-            `CESR delivery failed for ${recipient}: ${[...failed.values()].join("; ")}`,
-          );
-        }
-      }
-
-      return { deliveries, queued };
     }
 
+    if (failed.size > 0) {
+      if (this.outboxer.enabled) {
+        const said = crypto.randomUUID();
+        this.outboxer.queueMessage(
+          said,
+          args.message,
+          {
+            sender: hab.pre,
+            recipient: route.recipient,
+            topic: route.topic,
+            createdAt: makeNowIso8601(),
+          },
+          failed.keys(),
+        );
+        const attemptedAt = makeNowIso8601();
+        for (const [eid, error] of failed) {
+          this.outboxer.markFailed(said, eid, attemptedAt, error);
+          queued.push(`outbox:${eid}`);
+        }
+      } else if (deliveries.length === 0) {
+        throw new ValidationError(
+          `CESR delivery failed for ${route.recipient}: ${[...failed.values()].join("; ")}`,
+        );
+      }
+    }
+    return { deliveries, queued };
+  }
+
+  /** Snapshot mailbox/direct/witness policy without opening transport or reading message bytes. */
+  resolveBytesRoute(
+    hab: Hab,
+    args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference },
+  ): RawCesrRoute {
+    const recipient = this.resolveRecipient(args.recipient);
+    const topic = args.topic ?? "";
+    const delivery = args.delivery ?? "auto";
+    const base = { sender: hab.pre, recipient, topic, bodyMode: this.hby.cesrBodyMode };
+    const mailboxes = delivery === "direct" ? [] : mailboxDeliveryEndpoints(hab, recipient);
+    if (mailboxes.length > 0) {
+      if (!topic) throw new ValidationError(`Mailbox delivery requires an explicit topic for ${recipient}.`);
+      return { ...base, kind: "mailbox", targets: mailboxes };
+    }
     if (
-      delivery !== "direct"
-      && topic.length > 0
-      && this.mailboxer
-      && this.hby.db.prefixes.has(hab.pre)
+      delivery !== "direct" && topic && this.mailboxer && this.hby.db.prefixes.has(hab.pre)
       && this.hby.db.ends.get([recipient, Roles.mailbox, hab.pre])?.allowed
     ) {
-      this.mailboxer.storeMsg(
-        mailboxTopicKey(recipient, topic),
-        mailboxReplyPayload(hab, recipient, topic, args.message),
-      );
-      deliveries.push(`local-mailbox:${hab.pre}`);
-      return { deliveries, queued };
+      return { ...base, kind: "local", targets: [{ eid: hab.pre, url: `local-mailbox:${hab.pre}` }] };
     }
-
-    const directEndpoints = directDeliveryEndpoints(hab, recipient);
-    if (directEndpoints.length > 0) {
-      for (const endpoint of directEndpoints) {
-        yield* postCesrMessage(
-          endpoint.url,
-          args.message,
-          this.hby.cesrBodyMode,
-          endpoint.eid,
-          this.services,
-        );
-        deliveries.push(endpoint.url);
-      }
-      return { deliveries, queued };
-    }
-
+    const direct = directDeliveryEndpoints(hab, recipient);
+    if (direct.length > 0) return { ...base, kind: "direct", targets: direct };
     if (delivery !== "direct") {
-      if (topic.length === 0) {
-        throw new ValidationError(
-          `Witness fallback delivery requires an explicit topic for ${recipient}.`,
-        );
+      if (!topic) {
+        throw new ValidationError(`Witness fallback delivery requires an explicit topic for ${recipient}.`);
       }
-      const witnessEndpoint = firstSortedEndpoint(
-        hab.endsFor(recipient)[Roles.witness],
-      );
-      if (witnessEndpoint) {
-        yield* this.deliverWitnessTarget(
-          hab,
-          recipient,
-          topic,
-          args.message,
-          witnessEndpoint,
-        );
-        deliveries.push(witnessEndpoint.url);
-        return { deliveries, queued };
-      }
+      const witness = firstSortedEndpoint(hab.endsFor(recipient)[Roles.witness]);
+      if (witness) return { ...base, kind: "witness", targets: [witness] };
     }
+    throw new ValidationError(`No end roles for ${recipient} to send raw CESR payload.`);
+  }
 
-    throw new ValidationError(
-      `No end roles for ${recipient} to send raw CESR payload.`,
-    );
+  /** Prepare one target under the guard; the caller retains borrowed bytes through joined sending. */
+  prepareBytesTarget(
+    hab: Hab,
+    route: RawCesrRoute,
+    index: number,
+    message: Uint8Array,
+  ): PreparedCesrTarget {
+    if (hab.pre !== route.sender) throw new Error("CESR route belongs to another sender");
+    const endpoint = route.targets[index];
+    if (!Number.isSafeInteger(index) || !endpoint) throw new RangeError("Invalid CESR delivery target");
+    if (route.kind !== "direct") {
+      const forwarded = this.prepareForwardedTarget(hab, route.recipient, route.topic, message, endpoint);
+      return forwarded.kind === "stored" ? forwarded : { ...forwarded, bodyMode: route.bodyMode };
+    }
+    return { kind: "http", url: endpoint.url, destination: endpoint.eid, message, bodyMode: route.bodyMode };
   }
 
   /**
@@ -544,26 +549,33 @@ export class Poster {
     message: Uint8Array,
     endpoint: { eid: string; url: string },
   ): Operation<void> {
+    const target = this.prepareForwardedTarget(hab, recipient, topic, message, endpoint);
+    yield* sendPreparedCesrTarget(target, this.services);
+  }
+
+  /** Local mailbox writes and signed introductions finish before any network work starts. */
+  private prepareForwardedTarget(
+    hab: Hab,
+    recipient: string,
+    topic: string,
+    message: Uint8Array,
+    endpoint: { eid: string; url: string },
+  ): PreparedCesrTarget {
     if (this.hby.db.prefixes.has(endpoint.eid)) {
       this.requireMailboxer().storeMsg(
         mailboxTopicKey(recipient, topic),
         mailboxReplyPayload(hab, recipient, topic, message),
       );
-      return;
+      return { kind: "stored" };
     }
-
-    const forwarded = buildForwardedDelivery(hab, {
-      recipient,
-      topic,
-      message,
-    });
-    yield* postCesrMessage(
-      endpoint.url,
-      concatBytes(introduce(hab, endpoint.eid), forwarded),
-      this.hby.cesrBodyMode,
-      endpoint.eid,
-      this.services,
-    );
+    const forwarded = buildForwardedDelivery(hab, { recipient, topic, message });
+    return {
+      kind: "http",
+      url: endpoint.url,
+      destination: endpoint.eid,
+      message: concatBytes(introduce(hab, endpoint.eid), forwarded),
+      bodyMode: this.hby.cesrBodyMode,
+    };
   }
 
   /** Require provider mailbox storage for local mailbox-target delivery. */

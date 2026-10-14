@@ -43,6 +43,9 @@ cleanup complete. One shared instance is required; separate ledgers do not bound
 a runtime. Reactor reserves stream/cursor/producer credit before source acquisition
 and retains it through joined parser cleanup. AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
+Internal CueDeck preparation holds concrete metadata/backing and item credit;
+ownership transfers through fanout/requeue until final cleanup. Runtime activation
+waits for every producer/consumer port; count checks alone cannot reserve byte credit.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
 Complete-record ingress charges shared bytes before copying; queued and processing
@@ -68,6 +71,10 @@ frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
 HTTP success, verified replies and durable acceptance are different outcomes.
 
+Poster route snapshots and synchronous target preparation own habitat/DB work;
+prepared sending owns HTTP only. Keep borrowed wire alive through joined cleanup.
+The extraction alone does not move runtime callers outside their guard or admit copies.
+
 Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB
 preparation, then transfer admitted delivery ownership before network I/O. Never
@@ -76,6 +83,12 @@ Genuine receive EOF, transmit failure and remote acceptance are separate facts.
 Explicit duplex preserves default routing; half-close drain deadlines cannot be
 extended by activity. The [transport plan](../../docs/plans/runtime/TRANSPORT_PLAN.md)
 owns the remaining implementation and release gate.
+
+TCP socketBytes uses one exclusive binary readable-mode owner and one pending pull.
+Its caller admits both read/copy backing allowances before acquisition and owns
+socket errors outside the readable lifetime. Abort/return joins close; genuine EOF
+leaves the writable half for explicit connection drain. Never mix flow readers,
+or treat high-water buffering as a hard shared-memory ceiling.
 
 Direct replies reserve query SAIDs before dispatch; only the final query owns the
 HTTP response. Earlier responses transfer to ordinary delivery. A response scope
@@ -87,6 +100,9 @@ before transport suspension. Query credits remain charged through failed deliver
 bounded passes drain only their initial work. Generic witness and signed-exchange
 HTTP share serializer output; authorization survives content-type retry. Receipt
 responses are intentionally finite proofs.
+Witness delegation passes the runtime's services into generic sends. TCP admission
+precedes socket creation, charges the retained backing as well as its transport
+copy, and settles only after close. Calling destroy is not joined cleanup.
 
 HTTP shutdown closes runtime-owned response/SSE streams before awaiting listener
 drain. Signals must wake the supervisor; task cancellation alone does not prove
@@ -107,6 +123,9 @@ SSE consumes one complete event and awaits its consumer before another read.
 Provider output reads only with HTTP demand. Finite processOnce returns typed
 batches; long-lived pollDo is sink-based. Disconnect/timeout discards unfinished
 events so their cursors can retry. Durable inbox admission has separate dispositions.
+Provider query/nested streams share one runtime lease. Validate cursor metadata
+before copying and use bounded native row reads; join director close before stores.
+Attempt every owner's cleanup and propagate failures after releasing its credit.
 
 ## CLI and follow-ups
 

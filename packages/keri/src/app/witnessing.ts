@@ -14,7 +14,17 @@
  * - concrete listener ownership lives in `tufa`; this module stays on the
  *   protocol/runtime side of that boundary
  */
-import { Cigar, concatBytes, Counter, CtrDexV1, discardFrame, Ilks, type SerderKERI, type Siger } from "cesr-ts";
+import {
+  Cigar,
+  concatBytes,
+  Counter,
+  CtrDexV1,
+  discardFrame,
+  Ilks,
+  ResourceAdmissionError,
+  type SerderKERI,
+  type Siger,
+} from "cesr-ts";
 import { toEffectionFrames } from "cesr-ts/effection";
 import { createConnection } from "node:net";
 import { action, call, each, type Operation, resource, spawn } from "npm:effection@^3.6.0";
@@ -37,6 +47,7 @@ import {
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { envelopeFromFrame } from "./parsering.ts";
+import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 
 const WitnessReceiptPollAttempts = 20;
 const WitnessReceiptPollDelayMs = 100;
@@ -607,6 +618,7 @@ export function* sendWitnessMessage(
   witness: string,
   bytes: Uint8Array,
   auth?: string,
+  services: RuntimeServices = defaultRuntimeServices,
 ): Operation<void> {
   const url = preferredWitnessTransportUrl(hab, witness);
   if (!url) {
@@ -617,7 +629,7 @@ export function* sendWitnessMessage(
 
   const parsed = new URL(url);
   if (parsed.protocol === "tcp:") {
-    yield* sendTcpWitnessMessage(url, bytes);
+    yield* sendTcpWitnessMessage(url, bytes, services);
     return;
   }
 
@@ -625,6 +637,7 @@ export function* sendWitnessMessage(
     bodyMode: "header",
     destination: witness,
     headers: auth ? { Authorization: auth } : undefined,
+    services,
   });
 }
 
@@ -642,6 +655,7 @@ function isKeripyContentTypeRejection(
 function* sendTcpWitnessMessage(
   url: string,
   bytes: Uint8Array,
+  services: RuntimeServices,
 ): Operation<void> {
   const parsed = new URL(url);
   if (parsed.protocol !== "tcp:") {
@@ -654,23 +668,43 @@ function* sendTcpWitnessMessage(
     );
   }
 
-  yield* action<void>((resolve, reject) => {
-    const socket = createConnection({
-      host: parsed.hostname,
-      port,
-    });
-    socket.once("error", reject);
-    socket.once("connect", () => {
-      socket.end(bytes);
-    });
-    socket.once("close", (hadError) => {
-      if (!hadError) {
-        resolve(undefined);
+  yield* call(function*() {
+    // Credit covers retained backing plus a transport copy, not kernel socket memory.
+    yield* resource<void>(function*(provide) {
+      const admission = services.resources.reserve({ streams: 1, bytes: bytes.buffer.byteLength + bytes.byteLength });
+      if (admission.kind === "refuse") {
+        throw new ResourceAdmissionError(`Witness TCP admission refused: ${admission.reason}`, admission.reason);
+      }
+      try {
+        yield* provide();
+      } finally {
+        admission.reservation.release();
       }
     });
-    return () => {
-      socket.destroy();
-    };
+    // Only close settles this leaf: cancellation must join destruction before returning its credit.
+    yield* abortable((signal) =>
+      new Promise<void>((resolve, reject) => {
+        const socket = createConnection({ host: parsed.hostname, port });
+        let failure: Error | undefined;
+        const abort = () => {
+          socket.destroy();
+        };
+        signal.addEventListener("abort", abort, { once: true });
+        socket.once("error", (error) => {
+          failure = error;
+        });
+        socket.once("connect", () => {
+          if (!signal.aborted) socket.end(bytes);
+        });
+        socket.once("close", (hadError) => {
+          signal.removeEventListener("abort", abort);
+          if (signal.aborted) reject(signal.reason);
+          else if (failure) reject(failure);
+          else if (hadError) reject(new Error("Witness TCP closed after an unreported socket failure"));
+          else resolve();
+        });
+      })
+    );
   });
 }
 

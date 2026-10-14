@@ -13,7 +13,13 @@ import { concatBytes, parseBytes, SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
-import { ForwardHandler, introduce, mailboxTopicForRoute, Poster } from "../../../src/app/forwarding.ts";
+import {
+  ForwardHandler,
+  introduce,
+  mailboxTopicForRoute,
+  Poster,
+  sendPreparedCesrTarget,
+} from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import {
@@ -703,6 +709,15 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           const frameCount = introduction.length;
 
           const poster = new Poster(hby);
+          const route = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
+          const prepared = poster.prepareBytesTarget(sender, route, 0, message);
+          assertEquals(prepared.kind, "http");
+          assertEquals(bodies.length, 0);
+          // Prepared transport needs no habitat/DB access; it preserves the original introduction wire.
+          yield* sendPreparedCesrTarget(prepared, runtime.services);
+          assertEquals(concatBytes(...bodies.slice(0, frameCount)), expectedIntro);
+          assertEquals(bodies.length, frameCount + 1);
+          bodies.length = 0;
           const result = yield* poster.sendBytes(sender, {
             recipient: recipient.pre,
             message,
