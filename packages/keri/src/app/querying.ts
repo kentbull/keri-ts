@@ -125,7 +125,7 @@ function normalizeOutboundQuery(cue: QueryCue): Record<string, unknown> {
   }
   delete body.pre;
   delete body.src;
-  delete body.i;
+  if (cue.route !== "tels" && cue.route !== "tsn") delete body.i;
   return body;
 }
 

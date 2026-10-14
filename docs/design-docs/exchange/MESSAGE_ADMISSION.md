@@ -21,7 +21,7 @@ Queries prefer the last transferable last-establishment group. V2 queries with
 raw indexed signatures fall back to the claimed sender. Missing requester
 material is refused. `logs/ksn/mbx` delegate to Kevery; `tels/tsn` require an
 explicit TEL query processor. Built-in legacy Tevery serves `tels`; `tsn` remains
-explicitly refused until its producer and receiving processors work. Replies
+explicitly refused until its producer and both receiving processors work. Replies
 require cigars or transferable signature groups; exchanges also permit source
 couples or triples. Reply/exchange processors verify their proofs and dependencies.
 
@@ -60,6 +60,25 @@ Actual 714 registry replies store a TEL digest as Broker's current pointer, whil
 Revery indexes proof/timestamp metadata by the outer reply SAID: a direct parsed
 probe accepted an older signed reply. Receiving must instead retain the outer
 reply SAID for BADA; state production and TSN dispatch guards remain unchanged.
+
+Built-in Reactor routes `/tsn/registry/{aid}` through independent reply proof,
+strict attester trust, BADA and accepted legacy TEL correspondence. Trust comes
+from accepted registry configuration/backers, issuer KEL witnesses or configured
+watchers. Notice fields cannot confer trust: actual 714's strict handler accepted
+a signed outsider notice that changed a genuine NoBackers registry to `c:[]` and
+`b:[outsider]`. TypeScript rejects this and checks notice metadata against current
+accepted state; receiver-generated record time remains descriptive.
+
+Missing issuer or TEL state uses durable Broker dependency families; missing or
+partial attester proofs also belong to Broker. This receiver explicitly selects
+Revery's external escrow ownership, so pending proofs never enter legacy `rpes.`
+retry. Default Revery callers retain their existing behavior. Every finite retry
+rechecks trust, proofs and state; expiry retains the original notice timestamp.
+Previous BADA evidence remains until semantic publication succeeds. The saved
+pointer is the outer reply SAID, and `txnStateSaved` reaches the host as a notify
+emission. Recovery uses existing bounded query coordination, retaining exact TEL
+`ri/i/src` fields. Storage/invariant failures propagate. Credential replies and
+TSN query dispatch remain guarded; this is not v2 `RegistryStore` receiving.
 
 Admission refusals return `MessageDropDecision`. Frozen `xip/pro/bar` processors
 are stubs: they report `referenceStub`, never acceptance. Route-specific decisions

@@ -403,6 +403,10 @@ export class Revery {
     route: string;
     aid: string;
     osaider?: Diger | null;
+    /** Semantic owners retain the prior evidence until their own publication succeeds. */
+    retainPrevious?: boolean;
+    /** The semantic owner persists/retries pending proofs instead of the legacy RPE adapter. */
+    externalEscrow?: boolean;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
@@ -413,6 +417,12 @@ export class Revery {
     }
     const dater = new Dater({ qb64: encodeDateTimeToDater(daterText) });
     const odater = args.osaider ? this.db.sdts.get([args.osaider.qb64]) : null;
+    let pending = false;
+    const escrow = (material: Parameters<Revery["escrowReply"]>[0]) => {
+      if (!material.sigers.length) return;
+      pending = true;
+      if (!args.externalEscrow) this.escrowReply(material);
+    };
 
     for (const cigar of args.cigars ?? []) {
       const verfer = requireReplyCigarVerfer(cigar);
@@ -432,7 +442,7 @@ export class Revery {
         dater,
         cigar,
       });
-      this.removeReply(args.osaider ?? null);
+      if (!args.retainPrevious) this.removeReply(args.osaider ?? null);
       return acceptReplyDecision();
     }
 
@@ -454,7 +464,7 @@ export class Revery {
 
       const estSaid = this.db.kels.getLast(tsg.pre, Number(tsg.sn));
       if (!estSaid || estSaid !== tsg.said) {
-        this.escrowReply({
+        escrow({
           serder: args.serder,
           saider: args.saider,
           dater,
@@ -470,7 +480,7 @@ export class Revery {
 
       const estEvent = this.db.getEvtSerder(tsg.pre, tsg.said);
       if (!estEvent) {
-        this.escrowReply({
+        escrow({
           serder: args.serder,
           saider: args.saider,
           dater,
@@ -534,11 +544,11 @@ export class Revery {
           diger: tsg.diger,
           sigers: verified,
         });
-        this.removeReply(args.osaider ?? null);
+        if (!args.retainPrevious) this.removeReply(args.osaider ?? null);
         return acceptReplyDecision();
       }
 
-      this.escrowReply({
+      escrow({
         serder: args.serder,
         saider: args.saider,
         dater,
@@ -552,7 +562,7 @@ export class Revery {
 
     return unverifiedReplyDecision(
       `Reply ${args.saider.qb64} at route ${args.route} was not accepted.`,
-      { said: args.saider.qb64, route: args.route, aid: args.aid },
+      { said: args.saider.qb64, route: args.route, aid: args.aid, ...(args.externalEscrow ? { pending } : {}) },
     );
   }
 

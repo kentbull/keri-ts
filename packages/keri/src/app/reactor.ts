@@ -21,6 +21,8 @@ import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "..
 import { Kevery, type MessagePolicy } from "../core/eventing.ts";
 import { type KramConfig, Kramer } from "../core/kraming.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
+import { Tevery } from "../vdr/eventing.ts";
+import { RegistryStateReceiver } from "../vdr/registry-tsn.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
 import type { Habery } from "./habbing.ts";
@@ -95,6 +97,7 @@ export class Reactor {
   private readonly maxQueuedBytes: number;
   readonly vdr: VdrRuntimeServices;
   readonly acdc: AcdcRuntimeServices;
+  private readonly registryStates?: RegistryStateReceiver;
 
   constructor(
     hby: Habery,
@@ -154,6 +157,10 @@ export class Reactor {
     this.local = local;
     this.vdr = vdr;
     this.acdc = acdc;
+    if (vdr.tvy instanceof Tevery) {
+      this.registryStates = new RegistryStateReceiver(vdr.tvy, this.revery);
+      this.router.addRoute("/tsn/registry/{aid}", this.registryStates);
+    }
   }
 
   /** Whether the bounded complete-record queue still has input to process. */
@@ -440,6 +447,7 @@ export class Reactor {
       this.kevery.processEscrows();
       this.revery.processEscrowReply();
       this.vdr.tvy?.processEscrows?.();
+      this.registryStates?.processEscrows();
       this.vdr.vry?.processEscrows?.();
       this.acdc.rgy?.processEscrows();
       yield* this.exchanger.processEscrows();

@@ -12,10 +12,13 @@ sender policy, proof prerequisites, query source/processor routing and explicit
 reference-stub refusals. Evidence: signed frozen-reference delegation fixtures,
 real runtime acceptance/invalid-signature tests, joined owner disposal and HTTP
 refusal/readmission. Built-in legacy `tels` replay and internal TSN production
-are implemented; TSN runtime dispatch and authenticated receiving/escrow processing
-remain unavailable. Production corrects 714's `vcState(vcpre=...)` keyword bug
+are implemented; authenticated registry TSN receiving and typed dependency/proof
+retry are implemented. Credential receiving and TSN query dispatch remain guarded.
+Production corrects 714's `vcState(vcpre=...)` keyword bug
 using independently observed `vcState(vci)` records, without claiming receiving
-workflow qualification.
+workflow qualification. Registry receiving intentionally corrects 714's self-listed
+backer trust and TEL-digest BADA pointer defects using accepted trust and outer
+reply evidence. Compose the credential receiver before enabling TSN queries.
 
 ## Remaining processing boundary
 
