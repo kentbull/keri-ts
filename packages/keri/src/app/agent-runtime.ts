@@ -172,8 +172,9 @@ export function* createAgentRuntime(
   hby: Habery,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
+  const resources = options.resources ?? new ResourcePolicy();
   const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
-    const streams = new ReplyStreams(options.replyLimits);
+    const streams = new ReplyStreams(options.replyLimits, resources);
     try {
       yield* provide(streams);
     } finally {
@@ -188,7 +189,6 @@ export function* createAgentRuntime(
       yield* deliveries.close();
     }
   });
-  const resources = options.resources ?? new ResourcePolicy();
   const mode = options.mode ?? "local";
   const services = resolveRuntimeServices(options.services);
   const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
@@ -324,19 +324,22 @@ export function* createAgentRuntime(
     *close(): Operation<void> {
       reactor.clearIngress();
       yield* queryDeliveries.close();
-      replyStreams.close();
-      mailboxDirector.close();
-      if (ownsNoter && noter?.opened) {
-        yield* noter.close();
-      }
-      if (ownsMailboxer && mailboxer?.opened) {
-        yield* mailboxer.close();
-      }
-      if (ownsAcdcRegery && acdcRegery?.store.opened) {
-        yield* acdcRegery.close();
-      }
-      if (ownsReger && reger?.opened) {
-        yield* reger.close(hby.temp);
+      try {
+        replyStreams.close();
+      } finally {
+        mailboxDirector.close();
+        if (ownsNoter && noter?.opened) {
+          yield* noter.close();
+        }
+        if (ownsMailboxer && mailboxer?.opened) {
+          yield* mailboxer.close();
+        }
+        if (ownsAcdcRegery && acdcRegery?.store.opened) {
+          yield* acdcRegery.close();
+        }
+        if (ownsReger && reger?.opened) {
+          yield* reger.close(hby.temp);
+        }
       }
     },
   };

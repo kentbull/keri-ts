@@ -2,7 +2,8 @@
 
 Owner: roadmap **3f**, reusing proof work from **3e** (#162/165) and nested
 runtime consumers (#159–168). The [proof contract][proof] is implemented;
-sender filtering and non-event routing are implemented; optional KRAM remains incomplete.
+sender filtering, non-event routing and optional KRAM are implemented; composed
+workflow qualification remains incomplete.
 
 ## Current boundary
 
@@ -10,15 +11,24 @@ The [admission contract](../../design-docs/exchange/MESSAGE_ADMISSION.md) owns
 sender policy, proof prerequisites, query source/processor routing and explicit
 reference-stub refusals. Evidence: signed frozen-reference delegation fixtures,
 real runtime acceptance/invalid-signature tests, joined owner disposal and HTTP
-refusal/readmission. Built-in TEL query processing remains unavailable.
+refusal/readmission. Built-in legacy `tels` replay is implemented; `tsn` response
+and authenticated receiving/escrow processing remain unavailable.
 
 ## Remaining processing boundary
 
 The [KRAM units K1–K10](KRAM_PLAN.md) replace the unmerged #172 snapshot with
 reviewable policy, evidence, authentication, replay and runtime changes. Intake
 must precede route processing without replacing Exchanger proof policy.
-3f also owns built-in TEL query processing; the injected dispatch seam alone does
-not qualify `tels/tsn` behavior.
+3f also owns built-in TEL query processing. `tels/tsn` are real legacy
+`vdr/eventing.py` processors at frozen 927 and unchanged in inspected 714, not
+reference stubs. Bounded lazy `tels` replay is a documented TypeScript strengthening
+over eager upstream collection; TSN producers alone cannot qualify the receiving
+workflow. Reuse existing state records and transaction-state Broker ownership.
+
+Inspected 714 emits bare schema-SAID query cues without adding host URL discovery.
+Existing explicit schema data-OOBI retrieval verifies the expected SAID in both
+implementations. That supported OOBI path requires qualification; inventing an
+automatic SAID-to-URL resolver is not an additional completion gate.
 Inspect `core/parsing.py`, `core/eventing.py` and `core/kraming.py` at
 `927c0cb8794d7c84fc17143c67df64aab9deda6c` before editing. Verify the imported
 modules in each evidence run. `processXip`, `processPro` and `processBar` are
