@@ -28,8 +28,8 @@ responsibilities into one vague "VC" layer.
   optional existing `ancs.`/`maes.`/`ooes.` adapters.
 - `acdc/registering.ts` supplies storage-only RegistryStore access, aliases,
   accepted-body cloning, earliest-anchor retention and insertion-ordered escrows.
-- `db/registry-evidence.ts` extends that same RegBaser owner for accepted v2
-  observer chains, separately from Reger.
+- `acdc/observing.ts` supplies explicit public parsed registry intake through
+  the engine; IPEX reads accepted ordinals through RegistryStore.
 - `app/ipex-credentialing.ts` owns KERIpy-shaped grant/admit credential
   artifacts.
 - `app/verifier-agent.ts` owns Sally-like webhook sending and durable ack/retry
@@ -118,6 +118,21 @@ share a transaction, and in-memory maps change only after it commits.
 `createRegery` owns a default backend until transfer, joining cleanup if loading
 fails; injected backends stay caller-owned, including after `close`. Owned close
 is joined and repeat-safe. Opening neither migrates nor rewrites old layouts.
+Local `blind` also applies the separately inspected 71438328 v2 schema profile
+before derivation/staging. Internal `acdc/scheming.validateSchema` returns valid,
+missing SAID, or invalid content; caller-facing missing/failed errors remain
+separate from propagated storage/invariant/resource failures. Static Draft 2020-12
+resources require content-bound IDs and plain semantic versions. Bare/sad/DID/OOBI
+references resolve only from the local cache, including fragments and verified
+bundles; dynamic/recursive keywords are prohibited. Legacy Schemer is unchanged.
+TS refuses ambiguous duplicate anchors as invalid; pinned 714 selects its first
+anchor. This stricter local policy prevents validator-specific ambiguous resolution.
+JSON schema resources are supported; validation consumes decoded ACDC data.
+Local limits are 8 MiB each for credential/schema closure bytes, 128 resources, 4096
+schema values/references and depth 64 before private clone/compile. These are
+operational policy, not a shared runtime CPU/memory or native-row guarantee.
+Override/cache validation does not qualify the [embedded bundle builder](../../plans/cesr/MAPPER_PLAN.md).
+
 Local `blind` checks the parsed credential's SAID, registry and issuer, then derives
 its disclosure and bup together. Its next ordinal follows the accepted head plus
 one unambiguous staged successor per slot across both escrows, including after
@@ -175,8 +190,12 @@ The facade rejects negative/unsafe numeric ordinals before any storage mutation;
 engines retain incoming ordinals as bigint until checked conversion. `cloneTel`
 eagerly collects accepted bodies and provides no shared-budget guarantee; IPEX
 must reserve credit before collecting. The web backend remains unsupported.
-Verified observer import retains its complete-
-chain check and atomic publication. The full registry service remains unfinished.
+The custom whole-chain import API is removed. RegistryObserver validates and
+commits each event through the normal engine; missing anchors/order remain in
+escrow for explicit retry. Previously accepted #168 digest-only evidence remains
+readable without migration, but readability does not authorize fresh intake.
+The historical [import design](../../reference/credentials/VERIFIED_IMPORT_SNAPSHOT.md)
+remains deferred. Automatic parser intake and global freshness are separate work.
 
 ## IPEX
 

@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { b, t } from "../../../../../cesr/mod.ts";
+import { b, bytesEqual, t } from "../../../../../cesr/mod.ts";
 import { DatabaseNotOpenError } from "../../../../src/core/errors.ts";
 import { openLMDB } from "../../../../src/db/core/lmdber.ts";
 import { pairsAsText, withTempLMDBer } from "./lmdber-test-utils.ts";
@@ -26,6 +26,29 @@ Deno.test("db/core lmdber plain - setVal overwrites and getVal handles missing v
     assertEquals(lmdber.setVal(plain, b("report"), b("draft")), true);
     assertEquals(lmdber.setVal(plain, b("report"), b("published")), true);
     assertEquals(t(lmdber.getVal(plain, b("report"))!), "published");
+  });
+});
+
+Deno.test("db/core lmdber plain - rows above the native shared-buffer threshold survive read and reopen", async () => {
+  await run(function*() {
+    const lmdber = yield* openLMDB({ name: `plain-large-${crypto.randomUUID()}`, temp: true });
+    try {
+      let plain = lmdber.openDB("plain.", false);
+      const value = new Uint8Array(16 * 1024 ** 2 + 1);
+      value.fill(0xa5);
+      value[0] = 0xff;
+      value[value.length - 1] = 0xfe;
+      lmdber.setVal(plain, b("large"), value);
+      assertEquals(bytesEqual(lmdber.getVal(plain, b("large"))!, value), true);
+      yield* lmdber.close(false);
+      yield* lmdber.reopen({ reuse: true });
+      plain = lmdber.openDB("plain.", false);
+      assertEquals(bytesEqual(lmdber.getVal(plain, b("large"))!, value), true);
+      lmdber.setVal(plain, b("small"), b("following read"));
+      assertEquals(t(lmdber.getVal(plain, b("small"))!), "following read");
+    } finally {
+      yield* lmdber.close(true);
+    }
   });
 });
 

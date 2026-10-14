@@ -11,14 +11,17 @@ strict Serder seal projection remains opt-in. Accepted digest/opaque data must
 not hide a later fully witnessed tuple anchor.
 
 Use the repository-pinned LMDB release (runtime source currently 3.5.3), V1 data
-format for KERIpy interop, and the actual native rebuild/preflight path. A lockfile
+format for KERIpy interop, and the actual native rebuild/preflight path.
+Rebuild with official `ENABLE_V8_FUNCTIONS=false`: Node-header V8 imports can
+terminate Deno when a large row first reaches the mapped-buffer path.
+Qualify the actual addon under both runtimes, including rows above 16 MiB. A lockfile
 can retain older packages; inspect the imported addon. Map sizing respects explicit
 options, KERI_LMDB_MAP_SIZE/KERI_BASER_MAP_SIZE and stored metadata.
 
 LMDB V1 live inspection needs the existing owner or separate processes. Opening
 the same environment twice in one process can break reader slots, even readonly.
 RegBaser owns the existing public registry evts/tels/heads layout; observer
-chain reads/imports extend that same environment. Readonly old-store opening
+accepted-chain reads and public engine intake share that same environment. Readonly old-store opening
 binds existing tables without migration. RegBaser's absent anchor/escrow adapters
 and RegistryStore's alias mapper are null on old layouts until explicit storage
 writes initialize them; reads cannot migrate a store. Anchor tuples retain bigint

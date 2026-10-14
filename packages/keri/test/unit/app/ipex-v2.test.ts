@@ -1,7 +1,6 @@
 /** Frozen wire decisions exercise parser, issuer authentication, durable acceptance and replay. */
 import {
   b,
-  BlindState,
   type CesrFrame,
   collectPayload,
   concatBytes,
@@ -26,10 +25,10 @@ import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
-import { RegistryStore } from "../../../src/acdc/registering.ts";
+import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { type ExchangeDecision, Exchanger } from "../../../src/app/exchanging.ts";
-import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody, prepareIpexExn } from "../../../src/app/ipex-building.ts";
 import { IpexV2Handler } from "../../../src/app/ipex-v2.ts";
 import { type IpexRoute, loadIpexHandlers } from "../../../src/app/ipexing.ts";
@@ -37,14 +36,12 @@ import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
-import { createRegistryEvidenceStore } from "../../../src/db/registry-evidence.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
-import registryFixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
 
 /** Feed signed public KEL bytes through normal event verification. */
-async function learn(hby: Habery, wire: string): Promise<void> {
-  for (const frame of await parseBytes(b(wire))) {
+async function learn(hby: Habery, wire: string | Uint8Array): Promise<void> {
+  for (const frame of await parseBytes(typeof wire === "string" ? b(wire) : wire)) {
     try {
       await run(() => dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery));
     } finally {
@@ -417,16 +414,20 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
   });
 });
 
-Deno.test("registry-backed IPEX retries only after observer evidence is verified and durably imported", async () => {
+Deno.test("registry-backed IPEX retries only after public observer intake accepts foreign anchored evidence", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const store = yield* createRegistryEvidenceStore({ name: crypto.randomUUID(), temp: true });
+    const store = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = source.makeHab("issuer"), rip = regcept(issuer.pre);
     const sender = hby.makeHab("sender");
     const exchanger = new Exchanger(hby);
     const registry = new RegistryStore(store);
     loadIpexHandlers(hby, exchanger, { registry });
-    const credential = new SerderACDC({ raw: b(registryFixture.bodies.acdc) });
-    const disclosure = BlindState.fromSad(registryFixture.disclosures.issued);
+    const observer = new RegistryObserver(hby.db, registry);
+    const credential = acdcmap(issuer.pre, { regid: rip.said!, attribute: { d: "", name: "Alice" } });
+    const disclosure = makeBlindState({ acdc: credential.said!, state: "issued", sn: 1n, raw: b("0123456789abcdef") });
+    const issued = blindate(rip.said!, rip.said!, disclosure.d.nonce);
     const attachment = Counter.enclose({
       code: "BlindedStateQuadruples",
       version: Vrsn_2_0,
@@ -434,7 +435,8 @@ Deno.test("registry-backed IPEX retries only after observer evidence is verified
     });
     const [node] = yield* call(() => parseBytes(messagize(credential, attachment, { gvrsn: Vrsn_2_0 })));
     try {
-      for (const wire of registryFixture.wires.slice(0, 4)) yield* call(() => learn(hby, wire));
+      yield* call(() => learn(hby, acceptedEventReplayMessage(source, issuer.pre, 0).message));
+      assertEquals(hby.habs.has(issuer.pre), false, "registry issuer remains foreign");
       const body = ipexExnBody(sender.pre, "/ipex/grant", [credential], {
         kind: Kinds.json,
         message: "registry-backed",
@@ -456,12 +458,24 @@ Deno.test("registry-backed IPEX retries only after observer evidence is verified
       yield* hby.db.reopen();
       yield* exchanger.processEscrows();
       assertEquals(hby.db.exns.get(body.said!), null);
-      const result = store.importEvidence({
-        rip: new SerderACDC({ raw: b(registryFixture.bodies.rip) }),
-        updates: [new SerderACDC({ raw: b(registryFixture.bodies.issued) })],
-        db: hby.db,
-      });
-      assertEquals(result.kind, "verified");
+      assertEquals(observer.processEvent(issued).kind, "escrow");
+      assertEquals(observer.processEvent(rip).kind, "escrow");
+      assertEquals([registry.head(rip.said!), registry.seqSaider(rip.said!, 0)], [null, null]);
+      yield* store.close(false);
+      yield* store.reopen({ reuse: true });
+      observer.processEscrows(rip.said!);
+      yield* exchanger.processEscrows();
+      assertEquals(hby.db.exns.get(body.said!), null, "staged registry bodies do not satisfy IPEX");
+      yield* call(() =>
+        learn(
+          hby,
+          issuer.interact({
+            data: [rip, issued].map((event) => ({ i: rip.said!, s: event.sad!.n, d: event.said! })),
+          }),
+        )
+      );
+      observer.processEscrows(rip.said!);
+      assertEquals(registry.head(rip.said!)!.qb64, issued.said);
       const limited = new IpexV2Handler("/ipex/grant", hby, null, registry, 1);
       const seqEvent = registry.seqEvent;
       const reads: number[] = [];
@@ -486,7 +500,7 @@ Deno.test("registry-backed IPEX retries only after observer evidence is verified
         );
         registry.seqEvent = (regid, sn) =>
           sn
-            ? new SerderACDC({ raw: b(registryFixture.bodies["wrong-prior"]) })
+            ? blindate(rip.said!, issued.said!, disclosure.d.nonce)
             : seqEvent.call(registry, regid, sn);
         assertThrows(
           () => handler.verify({ serder: body, nests: [node], attachments: [] }),
@@ -531,6 +545,7 @@ Deno.test("registry-backed IPEX retries only after observer evidence is verified
       assertEquals(hby.db.exns.get(credential.said!), null);
     } finally {
       yield* call(() => discardFrame(node));
+      yield* source.close(true);
       yield* store.close(true);
       yield* hby.close(true);
     }
