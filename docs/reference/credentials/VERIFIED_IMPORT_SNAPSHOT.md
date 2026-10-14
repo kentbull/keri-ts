@@ -1,10 +1,12 @@
 # Verified observer import preservation record
 
-Status: exact historical implementation retained before the approved registry
-refactor. `importEvidence` is still active pending the intake audit; this record
-is not a KERIpy parity claim. If removed, retain this as a deferred
-TypeScript-specific design, with no active implementation claim.
-
+Status: deferred TypeScript-specific design; the active custom import, reader and
+factory are removed. The exact historical code below is preserved, without a
+KERIpy parity or active implementation claim. Explicit public intake now uses
+RegistryObserver with full witnessed tuple anchors and per-event acceptance;
+IPEX assembles accepted chains through RegistryStore. Old accepted digest-only
+prefixes remain byte-readable, but do not prove new intake acceptance.
+See the [upstream integration gap](UPSTREAM_REGISTRY_GAPS.md).
 Source: [58770ad0:packages/keri/src/db/registry-evidence.ts](https://github.com/kentbull/keri-ts/blob/58770ad02b166bfb4c1e551b91ee4f071051f382/packages/keri/src/db/registry-evidence.ts).
 UTF-8 SHA-256: `292219eb69e0f96c11bc420bdf13a69ac7db8586ec07bc73f1542e671ccac04f`.
 The full module below preserves layout, API, defaults and acquisition cleanup;
@@ -37,7 +39,7 @@ Existing assertions to preserve when replacing intake:
 - [Storage test][storage]: missing anchors publish nothing; anchored prefix and
   later complete chain; no downgrade; deduplication; finite limit; close/reopen;
   wrong prior rejection without changing the accepted head.
-- [IPEX test][ipex]: registry dependency escrow survives reopen, valid imported
+- [IPEX test][ipex]: registry dependency escrow survives reopen, accepted observer
   evidence enables retry, and a missing node disclosure still fails independently.
 - [Ownership test][ownership]: borrowed/default/readonly stores, partial
   construction, cancellation and harmless cleanup after explicit close.

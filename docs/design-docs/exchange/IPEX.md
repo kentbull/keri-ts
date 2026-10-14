@@ -25,17 +25,17 @@ after acceptance. Replay preserves child proof enclosures. An accepted grant
 is conversation evidence; nested nodes are not independent credential or wallet
 acceptances. Schema resolution uses already cached schemas, without fetching.
 
-`RegistryEvidenceStore.importEvidence` verifies the merged observer chain before
-an atomic write to frozen RegBaser-compatible `evts.`, `tels.`, and `heds.` tables.
-Importing an older prefix cannot downgrade the head. Missing or invalid evidence
-makes no partial write. IPEX borrows `RegistryStore`, not an issuer's Hab or alias
+Explicit `RegistryObserver` intake delegates parsed public rip/bup events to the
+normal engine with full witnessed tuple anchors and per-event atomic acceptance.
+Missing evidence remains in registry escrow; accepted-prefix replay cannot lower
+the head. Staged bodies never satisfy IPEX's registry dependency. IPEX borrows `RegistryStore`, not an issuer's Hab or alias
 manager, and assembles its own complete accepted chain through `seqEvent` and
 `headEvent`. Its `maxRegistryEvents` limit (default 16,384 including inception)
 is checked before collecting updates. A missing head is a retryable dependency;
 a declared accepted head with missing rows or inconsistent markers is corruption.
-I/O failures propagate. AgentRuntime owns its default store and joins close;
-injected stores remain caller-owned. There is no automatic `rip/bup` parser intake
-route; local registry services are separate. The event ceiling bounds one read/import, not
+I/O failures propagate. AgentRuntime owns its default `acdc.rgy` manager and joins close;
+injected managers remain caller-owned. IPEX borrows that manager's store. There is no automatic `rip/bup` parser intake
+route; local registry services are separate. The event ceiling bounds one accepted-chain read or intake ordinal, not
 runtime memory; native whole-row allocation and shared admission remain phases 4–5.
 
 Presentation-registry grants remain guarded until consolidated v2 intake supplies
