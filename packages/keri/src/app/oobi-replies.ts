@@ -53,11 +53,14 @@ export function oobiReplyMessages(
   const proofLimits = { maxMessageBytes, maxProofRows };
   return {
     [Symbol.iterator]() {
-      if (eids.length > maxDescriptors) throw new ResourceLimitError("OOBI endpoint filter exceeds metadata limit");
+      const count = eids.length;
+      if (!Number.isSafeInteger(count) || count < 0) throw new TypeError("Invalid OOBI endpoint filter length");
+      if (count > maxDescriptors) throw new ResourceLimitError("OOBI endpoint filter exceeds metadata limit");
       const selected: string[] = [];
       let filterBytes = 2 * (cid.length + (role?.length ?? 0) + scheme.length);
       if (filterBytes > maxDescriptorBytes) throw new ResourceLimitError("OOBI selector exceeds metadata byte limit");
-      for (const eid of eids) {
+      for (let index = 0; index < count; index++) {
+        const eid = eids[index];
         if (typeof eid !== "string") throw new TypeError("OOBI endpoint filter must contain strings");
         filterBytes += 2 * eid.length;
         if (filterBytes > maxDescriptorBytes) throw new ResourceLimitError("OOBI endpoint filter exceeds byte limit");

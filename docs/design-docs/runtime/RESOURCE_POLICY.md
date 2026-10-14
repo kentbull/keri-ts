@@ -246,5 +246,17 @@ terminal writes. Busy refusal uses the existing queued worker; configured limits
 and infrastructure failures propagate. The ordinary post-intake guard remains.
 Constructor allocation and native copy admission remain broader phase 4/5
 qualification. EXN/KRAM and legacy TEL producers remain open.
+Exchanger pending sender/proof/schema outcomes prepare only the actual new escrow
+cue batch after independent authentication/route verification, before nested staging,
+new ESSR evidence rows and durable archive/proof/escrow/metadata publication. An earlier
+passive owner survives awaited staging, publication and joined cleanup. Current
+membership is rechecked before commit effects, and insertion must match before
+cue publication. Repeated membership and incomplete accepted duplicates acquire
+no extra cue credit. Ordinary Deck keeps its original query order and absolute
+schema deadline. Refusal preserves existing escrow owners; unexpected post-write
+faults release unused credit without claiming DB rollback. Authentication query
+planning, KRAM/IPEX notification ports, private ESSR verification snapshots and
+native/copy admission remain open.
+
 QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
 owners before Runtime enables this deck. This does not close durable cue recovery.

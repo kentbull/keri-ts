@@ -816,6 +816,11 @@ Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approve
       };
       let selectorReads = 0;
       const selectors = [delegate.pre];
+      Object.defineProperty(selectors, Symbol.iterator, {
+        value: () => {
+          throw new Error("caller selector iterator must not execute");
+        },
+      });
       Object.defineProperty(selectors, 0, {
         get() {
           selectorReads++;

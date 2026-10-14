@@ -1,4 +1,4 @@
-import { action, type Operation, run, spawn } from "effection";
+import { action, call, type Operation, run, spawn } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import {
   bindDesignatedAliases,
@@ -8,6 +8,7 @@ import {
   resolveDidWebs,
 } from "keri-ts/runtime";
 import { startServer } from "../../src/host/http-server.ts";
+import { createProtocolHandler } from "../../src/http/protocol-handler.ts";
 import { reserveTcpPort, waitForServer, waitForTaskHalt } from "../test-helpers.ts";
 
 Deno.test("tufa/dws - static artifacts resolve through the Tufa HTTP artifact route", async () => {
@@ -43,6 +44,24 @@ Deno.test("tufa/dws - static artifacts resolve through the Tufa HTTP artifact ro
         alias: "issuer",
         did,
       });
+      const dynamic = createProtocolHandler(issuerRuntime, {
+        dwsDynamic: true,
+        hostedPrefixes: [hab.pre],
+        dwsDidPath: "dws",
+      });
+      const replay = issuerHby.db.clonePreIter;
+      issuerHby.db.clonePreIter = function*() {
+        throw new Error("JSON artifact must not open CESR replay");
+      };
+      try {
+        const response = yield* call(() => dynamic(new Request(`http://127.0.0.1:${port}/dws/${hab.pre}/did.json`)));
+        assertEquals(response.status, 200);
+        assertEquals(response.headers.get("content-type"), "application/did+json");
+        assertEquals(yield* call(async () => new Uint8Array(await response.arrayBuffer())), artifacts.didJson);
+      } finally {
+        issuerHby.db.clonePreIter = replay;
+        yield* call(() => dynamic.close!());
+      }
       const artifactDir = `${webRoot}/dws/${hab.pre}`;
       Deno.mkdirSync(artifactDir, { recursive: true });
       Deno.writeFileSync(`${artifactDir}/did.json`, artifacts.didJson);
