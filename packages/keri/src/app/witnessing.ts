@@ -306,6 +306,8 @@ function* consumeWitnessCues(
 
 /** Witness-local dispatch and existing responder delivery policy for one ingress source. */
 export interface WitnessIngressOptions {
+  /** Let hosts distinguish intrinsic wire refusals from source, storage and cleanup failures. */
+  classifyWireErrors?: boolean;
   /** Accept with witness-local semantics; default false preserves ordinary ingress policy. */
   local?: boolean;
   /** Deliver through the existing responder; receipts use false to produce their own finite proof. */
@@ -324,10 +326,10 @@ export function* processWitnessIngressSource(
   runtime: AgentRuntime,
   serviceHab: Hab,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
-  { local = false, deliver = true }: WitnessIngressOptions = {},
+  { local = false, deliver = true, classifyWireErrors = false }: WitnessIngressOptions = {},
   consume?: (emission: CueEmission) => Operation<void>,
 ): Operation<void> {
-  yield* runtime.reactor.process(source, { local, escrows: true }, function*() {
+  yield* runtime.reactor.process(source, { local, escrows: true, classifyWireErrors }, function*() {
     yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume);
   });
 }

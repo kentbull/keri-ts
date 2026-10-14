@@ -102,6 +102,12 @@ socket errors outside the readable lifetime. Abort/return joins close; genuine E
 leaves the writable half for explicit connection drain. Never mix flow readers,
 or treat high-water buffering as a hard shared-memory ceiling.
 
+Tufa TCP bounds admitted/closing tasks before source acquisition; Reactor alone
+charges the receive stream. Earlier connection credit outlives joined parser/socket
+cleanup. Intrinsic wire refusal must preserve source/storage provenance, and a
+parser-owned return must not be mistaken for peer failure. Native rejection handles
+and pool/kernel buffering remain explicit finite/qualification boundaries.
+
 Direct replies reserve query SAIDs before dispatch; only the final query owns the
 HTTP response. Earlier responses transfer to ordinary delivery. A response scope
 outlives fetch headers and must not inherit a request signal that aborts when the

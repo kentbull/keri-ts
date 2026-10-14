@@ -186,6 +186,11 @@ collectors must declare and enforce their caps.
 | Recovery         | Optional mailbox outbox    | Phase 5 | Atomic/recoverable obligations |
 | Production proof | Parser/focused cases       | S9      | All applicable stack paths     |
 
+The npm manifest advertises Node >=18. Existing query delivery, TCP writer and
+HTTP host use `Promise.withResolvers`, unavailable at that floor; repair those
+paths and run actual packed floor smoke before release. Node 25 qualification
+does not establish Node 18 support. New listener admission uses ordinary Promises.
+
 S9 extends existing transport/runtime tests for decisive regressions:
 
 - A signed enclosed TCP event reaches verified witness state before client EOF;
