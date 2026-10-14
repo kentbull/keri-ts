@@ -295,6 +295,22 @@ Actual runtime/host callers enter this drain outside an enclosing Reactor turn.
 standalone/custom pending queries retain caller-owned byte bounds. Runtime default
 CueDeck activation remains dependent on the remaining producer/consumer ports.
 
+Prepared Poster targets preserve HTTP/HTTPS priority and select the shared TCP
+engine for TCP-only endpoints, with the same introduction and forwarded bytes.
+Queued cue/failed-target and Poster outbox drains explicitly lend their runtime
+for local same-socket reply intake; standalone prepared targets and public Poster
+calls without that borrower drain output only. Runtime/services identity remains
+exact, and transport completion never establishes remote acceptance. Public
+Poster operations retain caller-owned synchronous preparation/retention bounds;
+admitted CueDelivery still prepares under a short turn and sends outside it.
+Runtime outbox retries also guard route/signing/target preparation and
+cancel/failure/delivered writes. Transport cleanup joins outside those turns.
+The optional durable outbox retains its existing live iterator across attempts;
+its row materialization and preparation-copy bounds remain separately unqualified.
+Invocation-local observers report actual TCP/RX capacity refusals so busy retains
+existing work before socket acquisition. Foreign failures and raw peer errors
+propagate with original identity; this adds no transport retry taxonomy.
+
 RuntimeDeliveries retains query requests, cue cursors and independently copied
 failed packets on the existing eight-item queue. Cue output retains 8 MiB plus
 source credit, route metadata 1 MiB/4096 targets, and each target preparation

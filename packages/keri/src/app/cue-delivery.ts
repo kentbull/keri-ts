@@ -97,7 +97,9 @@ export class CueDelivery {
       if (done) return "done";
       if (busy) return "pending";
     }
-    const outcome = yield* call(() => attemptPreparedCesrTarget(this.prepared!.target, runtime.services, signal));
+    const outcome = yield* call(() =>
+      attemptPreparedCesrTarget(this.prepared!.target, runtime.services, signal, runtime)
+    );
     if (outcome === "busy") return "pending";
     if (outcome === "refused") {
       if (!retainFailed(this.prepared!)) return "pending";

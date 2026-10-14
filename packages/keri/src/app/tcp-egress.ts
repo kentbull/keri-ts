@@ -29,6 +29,8 @@ export interface TcpSendOptions {
   signal?: AbortSignal;
   /** Owning runtime's shared admission and clock. */
   services?: RuntimeServices;
+  /** Invocation-local observation of engine-created capacity refusal; foreign failures remain unclassified. */
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
 }
 
 /** Producer observes abort, yields immutable bounded backing, and joins cleanup on return. */
@@ -293,6 +295,10 @@ function writeTcp(
   retainedBytes: number,
 ): Operation<TcpResult> {
   return call(function*() {
+    const refuse: (error: ResourceAdmissionError) => never = (error) => {
+      options.onAdmissionRefusal?.(error);
+      throw error;
+    };
     const parsed = new URL(url), port = Number(parsed.port);
     if (parsed.protocol !== "tcp:" || !Number.isInteger(port) || port < 1 || port > 65535) {
       throw new ValidationError(`TCP output requires tcp: with a valid port: ${url}`);
@@ -311,12 +317,12 @@ function writeTcp(
       replies && (services.resources.limits.streams < 2
         || services.resources.limits.bytes < outputBytes + RX_CHUNK + RX_BUFFER)
     ) {
-      throw new ResourceAdmissionError("TCP conversation exceeds configured capacity", "limit");
+      refuse(new ResourceAdmissionError("TCP conversation exceeds configured capacity", "limit"));
     }
     yield* resource<void>(function*(provide) {
       const admission = services.resources.reserve({ streams: 1, bytes: outputBytes });
       if (admission.kind === "refuse") {
-        throw new ResourceAdmissionError(`TCP output admission refused: ${admission.reason}`, admission.reason);
+        refuse(new ResourceAdmissionError(`TCP output admission refused: ${admission.reason}`, admission.reason));
       }
       try {
         yield* provide();
@@ -330,7 +336,13 @@ function writeTcp(
     const channel = replies && (yield* replies.runtime.reactor.frames((signal) => {
       if (!connectedSocket) throw new Error("TCP receive source acquired before connection");
       return socketBytes(connectedSocket, { signal, maxChunkBytes: RX_CHUNK });
-    }, { signal: receiver.signal, maxChunkBytes: RX_CHUNK, maxBufferedBytes: RX_BUFFER, classifyWireErrors: true }));
+    }, {
+      signal: receiver.signal,
+      maxChunkBytes: RX_CHUNK,
+      maxBufferedBytes: RX_BUFFER,
+      classifyWireErrors: true,
+      onAdmissionRefusal: options.onAdmissionRefusal,
+    }));
     return yield* abortable(async (upstream, scope) => {
       const controller = new AbortController(), signal = AbortSignal.any([upstream, controller.signal]);
       const socket = createConnection({ host: parsed.hostname, port, allowHalfOpen: !!replies });
