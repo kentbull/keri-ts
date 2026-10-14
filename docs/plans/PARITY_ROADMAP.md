@@ -48,9 +48,11 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
    supervised connections, streamed output, explicit duplex and composed proof.
    Finite/source messenger entries share two engines within those units; HTTP
    preserves its framed POST contract. The transport inventory also owns OOBI,
-   witness GET replay, DID CESR artifacts, mailbox, CLI service wiring and bounded
+   witness GET replay, DID CESR artifact output, mailbox, CLI service wiring and bounded
    JSON exceptions; adoption throughout the stack is part of the same release gate.
    It is required in the next release, not deferred post-release qualification.
+   DID resolution intake streams through Reactor and compares full documents
+   after EOF; native/heap and full workflow qualification remain open.
 4. Qualify delivered Mapper claims (#223) and bundled schema IDs (#226) in the
    final composition; keep format-dependent default-builder limits explicit.
 5. Run the maintained full inventory and repeated end-to-end qualification (7)

@@ -2,8 +2,13 @@
 
 DID Webs resolution ingests keri.cesr, reconstructs the document from KERI/VDR
 state and compares hosted did.json. Hosted JSON alone is not verification.
-Current CESR fetch and artifact generation collect complete histories; transport
-S2 owns streamed intake/output before release. Preserve complete-document DID
+CESR resolution streams through the runtime Reactor with its exact services/policy;
+only genuine EOF followed by escrow processing permits full-document comparison.
+Late failure preserves independently accepted state. Native fetch-header failures
+and HTTP refusals may use the existing URL fallback; injected client, body/parser,
+storage, admission and cancellation failures propagate. Finite hosted JSON retains
+an 8 MiB cap and a joined request/copy lease through comparison. Artifact generation
+still collects histories; transport S2 owns output before release. Preserve
 comparison, captured replay/proof ordering and accepted alias cutoffs. Static
 CESR serving/export should stream too; finite DID JSON remains bounded parsing.
 Numeric, flat/nested weighted and multi-clause thresholds project through
