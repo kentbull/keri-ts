@@ -36,16 +36,16 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    Revery's own query batches likewise precede BADA/proof/escrow writes, using
    finite proof planning. Semantic /ksn admits its actual keyStateSaved child
    before proof/state writes while retaining prepared reply/query ownership.
-   Frozen KEL replay ranges are inspectable without opening event readers.
+   Frozen KEL and fixed single/pair TEL ranges are inspectable without opening event readers.
    Registry and credential TSN admit exact new dependency queries or txnStateSaved
    children before proof/Broker writes, preserving external escrow and prior proof
-   ownership. Capture-time/query effects, TEL/composed
-   sources remain open. OOBI queueing, staged multi-URL fanout and multi-parent
-   completion admit exact batches before queue/terminal/contact effects;
-   introductions hold prepared reply/query ownership while admitting actual
-   queued children before proof/queue writes. CESR result credit survives joined
-   stream/parser cleanup; HTTP/schema/JSON results admit before schema/terminal
-   writes. Other durable producers remain open, followed by
+   ownership. Capture-time/query effects remain open. OOBI queueing, staged
+   multi-URL fanout and multi-parent completion admit exact batches before
+   queue/terminal/contact effects; introductions hold prepared reply/query
+   ownership while admitting queued children before proof/queue writes. CESR
+   result credit survives joined stream/parser cleanup; HTTP/schema/JSON results
+   admit before schema/terminal writes. Other durable producers remain open,
+   followed by
    query/mailbox/delivery ownership transfers. Complete these ports before Runtime
    activation.
 
