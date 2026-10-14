@@ -1,3 +1,4 @@
+import type { ResourcePolicy } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../../core/errors.ts";
 import { createKeeper, Keeper } from "../../../db/keeping.ts";
@@ -7,6 +8,8 @@ import { createHabery, Habery } from "../../habbing.ts";
 
 /** Low-level habery-open knobs shared by CLI startup helpers. */
 interface OpenHaberyOptions {
+  /** Shared deployment policy forwarded before opening the Habery. */
+  resources?: ResourcePolicy;
   compat?: boolean;
   readonly?: boolean;
   skipConfig?: boolean;
@@ -116,6 +119,7 @@ export function* setupHby(
         temp,
         headDirPath,
         compat: options.compat,
+        resources: options.resources,
         readonly: options.readonly,
         cf: options.cf,
         skipConfig: options.skipConfig,
@@ -179,6 +183,7 @@ export function* ensureHby(
     temp,
     headDirPath,
     compat: options.compat,
+    resources: options.resources,
     readonly: options.readonly,
     cf: options.cf,
     skipConfig: options.skipConfig,

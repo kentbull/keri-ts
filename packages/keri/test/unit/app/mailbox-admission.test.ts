@@ -41,7 +41,7 @@ async function testSinkLoss(mode: "once" | "continuous"): Promise<void> {
         body = hab.makeEndRole(pre, Roles.mailbox, true);
         const runtime = yield* createAgentRuntime(hby, {
           mailboxAdmission: { mode: "durable" },
-          services: fakeRuntimeServices({ clock }),
+          services: fakeRuntimeServices({ clock, resources: hby.db.resources }),
           mailboxPollTransport: new FakeMailboxPollTransport([{
             messages: [{ topic: "/reply", idx: 0, msg: body }],
             advanceMs: 1,
@@ -83,7 +83,7 @@ async function testSinkLoss(mode: "once" | "continuous"): Promise<void> {
       try {
         const runtime = yield* createAgentRuntime(hby, {
           mailboxAdmission: { mode: "durable" },
-          services: fakeRuntimeServices({ clock }),
+          services: fakeRuntimeServices({ clock, resources: hby.db.resources }),
           mailboxPollTransport: transport,
         });
         try {
@@ -322,7 +322,7 @@ Deno.test("durable capacity resumes only after protected export and explicit dis
         const transport = new FakeMailboxPollTransport([], clock);
         const runtime = yield* createAgentRuntime(hby, {
           mailboxAdmission: { mode: "durable", limits: { maxRetainedRecords: 1 } },
-          services: fakeRuntimeServices({ clock }),
+          services: fakeRuntimeServices({ clock, resources: hby.db.resources }),
           mailboxPollTransport: transport,
         });
         try {
@@ -372,7 +372,7 @@ Deno.test("durable capacity resumes only after protected export and explicit dis
           yield* runtime.close();
         }
         const legacy = yield* createAgentRuntime(hby, {
-          services: fakeRuntimeServices({ clock }),
+          services: fakeRuntimeServices({ clock, resources: hby.db.resources }),
           mailboxPollTransport: new FakeMailboxPollTransport(
             [{ messages: [{ topic: "/reply", idx: 2, msg: body }] }],
             clock,

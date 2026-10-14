@@ -1,3 +1,4 @@
+import type { ResourcePolicy } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../../core/errors.ts";
 import { type AgentRuntime, type AgentRuntimeOptions, createAgentRuntime } from "../../agent-runtime.ts";
@@ -16,6 +17,8 @@ export interface CommandStoreArgs {
 
 /** Safe existing-habery open options forwarded through CLI context helpers. */
 export interface CommandHaberyOptions {
+  /** Shared deployment policy forwarded before opening the Habery. */
+  resources?: ResourcePolicy;
   compat?: boolean;
   readonly?: boolean;
   skipConfig?: boolean;

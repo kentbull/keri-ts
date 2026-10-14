@@ -1,6 +1,7 @@
 import { ShortageError } from "../core/errors.ts";
 import type { CesrBody } from "../core/types.ts";
 import type { DecodedBodyBudget } from "./body-admission.ts";
+import { admitCbor } from "./cbor-admission.ts";
 import { admitJson } from "./json-admission.ts";
 import { admitMsgpack } from "./msgpack-admission.ts";
 import { reapCesrNativeBody } from "./native.ts";
@@ -60,11 +61,17 @@ export class Serdery {
     const boundaryFailure = bodyBudget && smellage.kind === "MGPK"
       ? admitMsgpack(input.subarray(0, smellage.size), bodyBudget)
       : undefined;
-    const context = boundaryFailure !== undefined
+    const cborBoundaryFailure = bodyBudget && smellage.kind === "CBOR"
+      ? admitCbor(input.subarray(0, smellage.size), bodyBudget)
+      : undefined;
+    const context = cborBoundaryFailure !== undefined
+      ? { onDecodeFailure: bodyBudget?.onDecodeFailure, cborBoundaryFailure }
+      : boundaryFailure !== undefined
       ? { onDecodeFailure: bodyBudget?.onDecodeFailure, msgpackBoundaryFailure: boundaryFailure }
       : bodyBudget;
     // Progressive peek owns exact independent backing; standalone reap still copies.
-    const raw = (smellage.kind === "JSON" || smellage.kind === "MGPK") && bodyBudget && input.length === smellage.size
+    const raw = (smellage.kind === "JSON" || smellage.kind === "MGPK" || smellage.kind === "CBOR") && bodyBudget
+        && input.length === smellage.size
         && input.buffer instanceof ArrayBuffer
         && input.buffer.byteLength === smellage.size && !input.buffer.resizable
       ? input

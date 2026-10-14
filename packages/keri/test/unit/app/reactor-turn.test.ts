@@ -362,7 +362,7 @@ Deno.test("queued processing holds local and shared capacity through joined canc
 Deno.test("runtime explicit close and scope exit release queued ingress ownership", async () => {
   const resources = new ResourcePolicy();
   await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, resources });
     try {
       yield* call(function*() {
         const runtime = yield* createAgentRuntime(hby, { resources });

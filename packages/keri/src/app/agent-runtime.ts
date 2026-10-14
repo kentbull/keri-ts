@@ -1,4 +1,4 @@
-import { ResourcePolicy } from "cesr-ts";
+import type { ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
@@ -114,7 +114,7 @@ export interface AgentRuntime {
  * local hosting and long-lived hosting stay behaviorally aligned.
  */
 export interface AgentRuntimeOptions {
-  /** Borrow an existing policy when several runtimes belong to one hosting resource boundary. */
+  /** Must match the policy installed when opening Habery, including shared deployments. */
   resources?: ResourcePolicy;
   mode?: AgentMode;
   mailboxer?: Mailboxer;
@@ -175,7 +175,13 @@ export function* createAgentRuntime(
   hby: Habery,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
-  const resources = options.resources ?? options.services?.resources ?? new ResourcePolicy();
+  const resources = hby.db.resources;
+  if (
+    (options.resources && options.resources !== resources)
+    || (options.services?.resources && options.services.resources !== resources)
+  ) {
+    throw new RangeError("AgentRuntime requires the Habery Baser resource policy; supply it when opening Habery");
+  }
   const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
     const streams = new ReplyStreams(options.replyLimits, resources);
     try {

@@ -28,6 +28,19 @@ tests; exercise failure/crash designs with uncommitted probes unless a maintaine
 regression has clear value. An unavailable native pre-allocation seam must remain
 an explicit limitation rather than becoming an after-allocation size assertion.
 
+## Accepted-state owner adoption
+
+The shared policy is installed on Baser before reopen and inherited by Habery's
+runtime; borrowed runtime shutdown does not own that policy's store lifetimes.
+Accepted cache charges remain unimplemented. Follow the
+[phase 4 ownership sequence](../runtime/RESOURCE_POLICY_PLAN.md#accepted-state-ownership-closure)
+for prospective accepted generations, native state/event preflight, local pins,
+durable membership and explicit borrower adoption before bounded eviction.
+Cold `states.` decoding and accepted `evts.` hydration both need pre-copy admission.
+A current event's independent owner must not retain its parent input proof tree.
+Raw externally retained references require the explicit borrowing compatibility
+boundary in that plan; Map deletion alone never proves allocation reclamation.
+
 ## Allocation boundary
 
 Nested wire now uses the pinned NAPI size preflight before owned row copies,

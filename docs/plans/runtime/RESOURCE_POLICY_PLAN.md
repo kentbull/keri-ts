@@ -24,10 +24,12 @@ Stack dependent changes under the [roadmap review rules](../PARITY_ROADMAP.md):
    before acquisition; extra hydrated and reader copies remain open.
 4. ESSR recipients borrow the exposed runtime policy; measured native-copy
    qualification remains open.
-5. Progressive JSON/MGPK decoded-body admission precedes codec allocation and
+5. Progressive JSON/MGPK/CBOR decoded-body admission precedes codec allocation and
    avoidable raw copying, sharing cumulative logical credit with the root and its
    descendants through parser/consumer cleanup. MGPK declared array/map capacity
-   and pinned decoder work are admitted before members; CBOR/native bodies, wrapped
+   and pinned decoder work are admitted before members. CBOR-A admits declared/base
+   tokens and bounded standard view/record work; CBOR-B tag expansion/arithmetic and
+   decoder-global retention remain open, alongside native bodies and wrapped
    Matter preparation, standalone verification/projections and store/cache hydration
    remain successor gates. Storage/hydration copy charges coordinate with phase 5. Mailbox providers
    reserve one shared stream/copy lease through joined close and preflight native
@@ -76,6 +78,41 @@ Each is a 300–500-line-or-smaller target with focused existing-test extensions
 Split further before publication if a complete boundary needs more. Qualification
 uses existing scenarios and uncommitted pressure probes rather than a new suite
 by default. These units jointly establish the runtime bound; no partial unit does.
+
+## Accepted-state ownership closure
+
+Baser now fixes its shared policy before reopen, Habery reconstruction and signator
+creation. CLI openers forward an injected policy; AgentRuntime inherits that exact
+instance and refuses mismatches before resource acquisition. Runtime borrows Habery,
+so shutdown cannot release Baser-owned credit. This installation alone charges no
+accepted Kevers and does not establish a cache or native-allocation bound.
+
+Continue within phases 4/5, each unit within the existing review-size target:
+
+1. Introduce independently owned accepted generations and prospective admission
+   before Kever materialization and accepted writes. Copy only the accepted body
+   and state under credit; parser/tree credit remains until its own cleanup, so
+   parent proofs and sibling trees do not become permanent cache owners.
+2. Admit cold/refresh/reload state and event rows before native copies and decoding;
+   charge local/signator/group pins and their metadata before construction.
+3. Separate durable accepted-state membership/iteration from cache residency,
+   including wrong-issuer anchor detection. Preserve normal resident Kever identity
+   while old borrowed generations retain their charges across updates.
+4. Port core, local/group, async runtime and default CLI/DID consumers to explicit
+   scoped borrows or independently admitted copies. Transfer ownership with outputs
+   retained across suspension; release only after joined consumption.
+5. Activate finite foreign-resident eviction only after those ports. Reclaim bodies
+   and entry metadata deterministically when no borrower or local pin remains;
+   refuse admission when live pins/borrows exhaust capacity. Qualify with existing
+   reopen, anchor, group and cancellation tests plus the production pressure probe.
+
+The public borrowing contract requires a coordinated API change: unrestricted
+`getKever`/Map access and raw Serder/array aliases cannot retain validity indefinitely
+while their credit is reclaimed. Bounded callers must retain an explicit owner or
+copy into another admitted owner. Arbitrary externally retained legacy raw aliases
+cannot be included in a deterministic bound. Do not silently release their credit,
+rely on GC/finalizers, or enable eviction before agreeing and adopting this contract.
+This unit does not change those public borrowing APIs.
 
 ## Approved initial deployment defaults
 

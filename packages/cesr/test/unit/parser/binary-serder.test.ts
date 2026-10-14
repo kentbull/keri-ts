@@ -1,8 +1,9 @@
 import { DecodeError, Decoder, encode as encodeMsgpack, ExtData, ExtensionCodec } from "@msgpack/msgpack";
+import { Decoder as CborDecoder } from "cbor-x/decode";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import { decodeHex } from "jsr:@std/encoding/hex";
 import { concatBytes } from "../../../src/core/bytes.ts";
-import { encodeKeriCbor } from "../../../src/core/cbor.ts";
+import { decodeKeriCbor, encodeKeriCbor } from "../../../src/core/cbor.ts";
 import { ResourceAdmissionError, ResourceLimitError } from "../../../src/core/errors.ts";
 import { discardFrame } from "../../../src/core/frame.ts";
 import { ResourcePolicy } from "../../../src/core/resource-policy.ts";
@@ -97,22 +98,28 @@ Deno.test("weighted threshold accessors survive binary serder parsing", async ()
   assertEquals(serder.ntholder?.sith, ["1/2", "1/2"]);
 });
 
-/** Make a finite MGPK body whose last field carries the supplied serialized token. */
-function tokenBody(token: Uint8Array): Uint8Array {
-  const prefix = encodeMsgpack({ v: "KERI10MGPK000000_", a: null }).slice(0, -1);
+/** Make a finite binary body whose last field carries the supplied serialized token. */
+function tokenBody(token: Uint8Array, kind: "MGPK" | "CBOR" = "MGPK"): Uint8Array {
+  const encoder = kind === "MGPK" ? encodeMsgpack : encodeKeriCbor;
+  const prefix = encoder({ v: `KERI10${kind}000000_`, a: null }).slice(0, -1);
   const raw = concatBytes(prefix, token);
   raw.set(new TextEncoder().encode(raw.length.toString(16).padStart(6, "0")), 14);
   return raw;
 }
 
-Deno.test("MGPK declared array/map capacity refuses before native decoding or array allocation", async () => {
+Deno.test("MGPK/CBOR declared array/map capacity refuses before native decoding or array allocation", async () => {
   const count = 4194304;
   const native = Decoder.prototype.decode;
+  const nativeCbor = CborDecoder.prototype.decode;
   const OriginalArray = Array;
   let decoded = 0, allocated = 0;
   Decoder.prototype.decode = function(...args) {
     decoded++;
     return native.apply(this, args);
+  };
+  CborDecoder.prototype.decode = function(...args) {
+    decoded++;
+    return nativeCbor.apply(this, args);
   };
   globalThis.Array = new Proxy(OriginalArray, {
     construct(target, args, newTarget) {
@@ -121,8 +128,24 @@ Deno.test("MGPK declared array/map capacity refuses before native decoding or ar
     },
   });
   try {
-    for (const token of [0xdd, 0xdf]) {
-      const raw = tokenBody(Uint8Array.of(token, 0, 64, 0, 0)); // All declared members are absent.
+    for (
+      const [kind, token] of [
+        ["MGPK", 0xdd],
+        ["MGPK", 0xdf],
+        ["CBOR", 0x9a],
+        ["CBOR", 0xba],
+        ["CBOR", 0x9b],
+        ["CBOR", 0xbb],
+        ["CBOR", 0x5a],
+        ["CBOR", 0x7a],
+      ] as const
+    ) {
+      const declaration = token === 0x9b || token === 0xbb
+        ? [0, 0, 0, 0, 0, 64, 0, 0]
+        : token === 0x5a || token === 0x7a
+        ? [1, 0, 0, 0]
+        : [0, 64, 0, 0];
+      const raw = tokenBody(Uint8Array.of(token, ...declaration), kind); // All declared members are absent.
       const wrapped = new TextEncoder().encode(groupV2("-H", new Texter({ raw, code: "4B" }).qb64));
       for (const input of [raw, wrapped]) {
         const resources = new ResourcePolicy({ bytes: 16 * 1024 ** 2 });
@@ -133,6 +156,7 @@ Deno.test("MGPK declared array/map capacity refuses before native decoding or ar
     assertEquals([decoded, allocated], [0, 0]);
   } finally {
     Decoder.prototype.decode = native;
+    CborDecoder.prototype.decode = nativeCbor;
     globalThis.Array = OriginalArray;
   }
 });
@@ -217,6 +241,91 @@ Deno.test("wrapped MGPK preserves intrinsic opaque fallback and foreign same-cla
         classifyWireErrors: true,
       })
     ) === reservationFailure,
+  );
+  assertEquals(resources.used.bytes, 0);
+});
+
+Deno.test("admitted CBOR preserves pinned 714 bytes/SAIDs, indefinite shapes and standard tags", async () => {
+  for (const row of saidVectors.rows.filter((row) => row.sad.v.includes("CBOR"))) {
+    const raw = decodeHex(row.raw), resources = new ResourcePolicy();
+    const [frame] = await parseBytes(raw, { resources });
+    assertEquals([frame.body.raw.slice(), frame.body.ked, frame.body.said], [raw, row.sad, row.sad.d]);
+    assert(resources.used.bytes > raw.length);
+    await discardFrame(frame);
+    assertEquals(resources.used.bytes, 0);
+  }
+  const rootMap = concatBytes(Uint8Array.of(0xd9, 1, 3), tokenBody(Uint8Array.of(0x80), "CBOR"));
+  rootMap.set(new TextEncoder().encode(rootMap.length.toString(16).padStart(6, "0")), 17);
+  assertEquals((await parseSingle(rootMap)).body.ked, { v: "KERI10CBOR00001b_", a: [] });
+  const indefinite = Uint8Array.of(0x9f, 1, 0xbf, 0x61, 0x6b, 0x82, 2, 3, 0xff, 0xff);
+  assertEquals((await parseSingle(tokenBody(indefinite, "CBOR"))).body.ked?.a, [1, { k: [2, 3] }]);
+  // Binary bytes resembling length declarations are payload; known/unknown tags retain codec shapes.
+  for (
+    const token of [
+      Uint8Array.of(0xd8, 64, 0x45, 0x9a, 255, 255, 255, 255), // Uint8Array
+      Uint8Array.of(0xc1, 0), // Date epoch
+      Uint8Array.of(0xd9, 1, 2, 0x82, 1, 2), // Set
+      Uint8Array.of(0xd9, 1, 3, 0xa1, 0x61, 0x78, 1), // Explicit Map
+      Uint8Array.of(0xd9, 0xd9, 0xf7, 1), // Self-describing CBOR
+      Uint8Array.of(0xd9, 3, 0xe8, 1), // Unknown Tag
+    ]
+  ) {
+    const raw = tokenBody(token, "CBOR");
+    assertEquals((await parseSingle(raw)).body.ked, decodeKeriCbor(raw));
+  }
+});
+
+Deno.test("wrapped CBOR distinguishes known syntax boundaries from foreign decoder/resource failures", async () => {
+  const wrap = (token: Uint8Array) =>
+    new TextEncoder().encode(groupV2("-H", new Texter({ raw: tokenBody(token, "CBOR"), code: "4B" }).qb64));
+  for (const token of [Uint8Array.of(0x81), Uint8Array.of(0x9a, 0), Uint8Array.of(0x5f, 0xff), Uint8Array.of(0x1c)]) {
+    assertEquals((await parseSingle(wrap(token))).body.ked, null);
+  }
+  const native = CborDecoder.prototype.decode;
+  for (const foreign of [new RangeError("caller decoder failed"), new Error("caller decoder failed")]) {
+    CborDecoder.prototype.decode = () => {
+      throw foreign;
+    };
+    try {
+      assert(
+        await assertRejects(() => parseBytes(wrap(Uint8Array.of(0x81)), { classifyWireErrors: true })) === foreign,
+      );
+    } finally {
+      CborDecoder.prototype.decode = native;
+    }
+  }
+  await assertRejects(() =>
+    parseBytes(wrap(Uint8Array.of(0xd8, 29, 0)), {
+      classifyWireErrors: true,
+    }), TypeError); // Unqualified tag failure is not mislabeled malformed wire.
+  const decodeText = TextDecoder.prototype.decode;
+  const input = wrap(encodeKeriCbor("x".repeat(65)));
+  for (const foreign of [new RangeError("caller UTF8 failed"), new Error("caller UTF8 failed")]) {
+    TextDecoder.prototype.decode = () => {
+      throw foreign;
+    };
+    try {
+      assert(await assertRejects(() => parseBytes(input, { classifyWireErrors: true })) === foreign);
+    } finally {
+      TextDecoder.prototype.decode = decodeText;
+    }
+  }
+  const foreign = new ResourceAdmissionError("caller reservation failed", "busy");
+  class FailingPolicy extends ResourcePolicy {
+    override reserve(request: Parameters<ResourcePolicy["reserve"]>[0]) {
+      if (request.bytes !== 1024) throw foreign;
+      return super.reserve(request);
+    }
+  }
+  const resources = new FailingPolicy();
+  assert(
+    await assertRejects(() =>
+      parseBytes(wrap(Uint8Array.of(0x80)), {
+        resources,
+        maxFrameBytes: 1024,
+        classifyWireErrors: true,
+      })
+    ) === foreign,
   );
   assertEquals(resources.used.bytes, 0);
 });

@@ -104,6 +104,11 @@ bounded response/error consumption, abort propagation and joined cleanup. The
 sample webhook's unrestricted `request.json()` and retained presentation map are
 open bounds, not an exemption because it is a demo. Do not force non-CESR data
 through CESR messengers or invent incremental JSON verification.
+WellKnownAuthenticator already uses shared services and joined status-only GET
+response cleanup; shared handle admission remains open. Tufa operator/mailbox-debug
+SSE callers still need the exact runtime services/policy. Local schema and credential
+file inputs need finite preflight bounds before whole-file reads. Keep these in the
+existing Commands/JSON edges S2 audit.
 
 Publish each adoption slice within the existing S owners, separating OOBI receive,
 OOBI/GET output, DID receive, DID artifact generation/serving and JSON lifecycle

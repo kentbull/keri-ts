@@ -14,10 +14,11 @@
   ordinary bytes/leaves, decoded ESSR/items, nodes and depth. No full raw envelope
   or per-Texter manifest is retained. Optional shared ordinary-wire and finite ESSR-stage reservations
   belong to delivered roots, never independently to nested children. They do not
-  account for all hydrated copies or heap overhead. Progressive JSON/MGPK separately
+  account for all hydrated copies or heap overhead. Progressive JSON/MGPK/CBOR separately
   admit lexical/token logical decoded/work charges before codec allocation, retaining
-  them with root credit; this leaves wrapped Matter, CBOR/native, standalone
-  verification and store/cache allocation boundaries open. Native syntax owns JSON
+  them with root credit. CBOR-A covers base tokens/standard views and records; CBOR-B
+  still owns tag expansion/arithmetic and decoder-global retention. Wrapped Matter, native, standalone
+  verification and store/cache allocation boundaries remain open. Native syntax owns JSON
   semantics; MGPK uses private standard extensions and disables shared key caching.
   Only locally created intrinsic refusals permit opaque fallback for admitted codecs.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each

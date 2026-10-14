@@ -9,4 +9,5 @@ export interface DecodedBodyBudget {
 export interface BodyDecodeContext {
   onDecodeFailure?: (error: unknown) => void;
   msgpackBoundaryFailure?: boolean;
+  cborBoundaryFailure?: boolean;
 }

@@ -1,6 +1,6 @@
 import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
 import { b, t } from "../core/bytes.ts";
-import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
+import { cborSyntaxFailure, decodeAdmittedKeriCbor, decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import type { CesrBody, CesrFrame, Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
@@ -188,13 +188,14 @@ function makeThreshold(value: unknown): Tholder | null {
 function normalizeDecodedMap(
   value: unknown,
   kind: "JSON" | "CBOR" | "MGPK" | "CESR",
+  syntaxFailure = (message: string) => new DeserializeError(message),
 ): SadMap {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     if (value instanceof Map) {
       const out: SadMap = {};
       for (const [k, v] of value.entries()) {
         if (typeof k !== "string") {
-          throw new DeserializeError(`${kind} map key must be a string`);
+          throw syntaxFailure(`${kind} map key must be a string`);
         }
         out[k] = v;
       }
@@ -202,7 +203,7 @@ function normalizeDecodedMap(
     }
     return value as SadMap;
   }
-  throw new DeserializeError(`${kind} root must be a map/object`);
+  throw syntaxFailure(`${kind} root must be a map/object`);
 }
 
 /**
@@ -888,7 +889,13 @@ function parseRawToKed(raw: Uint8Array, smellage: Smellage, context?: BodyDecode
         ? decodeAdmittedMsgpack(raw, context.msgpackBoundaryFailure, context.onDecodeFailure)
         : normalizeDecodedMap(decodeMsgpack(raw), kind);
     } else if (kind === "CBOR") {
-      ked = normalizeDecodedMap(decodeKeriCbor(raw), kind);
+      ked = context?.cborBoundaryFailure !== undefined
+        ? normalizeDecodedMap(
+          decodeAdmittedKeriCbor(raw, context.cborBoundaryFailure, context.onDecodeFailure),
+          kind,
+          cborSyntaxFailure,
+        )
+        : normalizeDecodedMap(decodeKeriCbor(raw), kind);
     } else if (kind === "CESR") {
       // Native inhale is delegated to the shared helper layer because CESR
       // bodies are not self-describing through `smell()` the same way
@@ -899,7 +906,10 @@ function parseRawToKed(raw: Uint8Array, smellage: Smellage, context?: BodyDecode
       said = native.said;
     }
   } catch (error) {
-    if (kind === "JSON" || (kind === "MGPK" && context?.msgpackBoundaryFailure !== undefined)) throw error;
+    if (
+      kind === "JSON" || (kind === "MGPK" && context?.msgpackBoundaryFailure !== undefined)
+      || (kind === "CBOR" && context?.cborBoundaryFailure !== undefined)
+    ) throw error;
     if (error instanceof DeserializeError) {
       throw new DeserializeError(
         `Failed to decode ${kind} Serder: ${String(error.message)}`,
