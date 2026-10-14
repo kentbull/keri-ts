@@ -185,7 +185,14 @@ one signed introduction/forwarded request. `sendPreparedCesrTarget` consumes tha
 wire through the shared HTTP sender without habitat or DB access. Its bytes stay
 caller-owned through joined cleanup. Existing `sendBytes` composes these steps;
 S1–3 still owns admitted handoff, guard-free runtime callers and delivery outcomes.
-The extraction itself adds no queue or shared allocation guarantee.
+An explicit finite target cap checks source backing before copying, and limits
+introduction plus forwarded wire before their final concatenation. Direct wire
+then has independent backing; its caller must reserve copy/preparation credit
+first and retain it through joined cleanup. Decoding, signing and native replay
+allocations remain separate qualification boundaries. An invocation-local HTTP
+refusal observer identifies only the actual non-ok response, after bounded
+diagnostic cleanup; injected source/fetch/cleanup errors and aborts propagate.
+The preparation facility adds no queue, automatic retry or runtime handoff.
 Local stored delivery requires completed body/topic publication in one mailbox
 transaction. Repeated body appearances preserve topic order and raw deduplication;
 false publication cannot acknowledge delivery. This strengthens714 storeMsg's
