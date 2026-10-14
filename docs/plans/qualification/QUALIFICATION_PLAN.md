@@ -89,3 +89,8 @@ default policy, measured envelope, every unresolved failure and its dependency.
 Retain explicit historical v1 extensions, native-genus limitations, reference
 `xip/pro/bar` stubs, API narrowing and upstream-versus-fork provenance. Re-run
 affected checks after the final [Mapper repair](../cesr/MAPPER_PLAN.md).
+
+Reference gaps are classified using the [upstream registry review](../../reference/credentials/UPSTREAM_REGISTRY_GAPS.md).
+Qualify our implemented behavior without waiting for absent upstream processing.
+Current main `71438328` adds schema hardening (#1713); assess this delta separately
+from frozen `927c0cb8` evidence and record any unqualified newer behavior.

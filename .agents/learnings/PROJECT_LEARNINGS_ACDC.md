@@ -48,6 +48,12 @@ and escrow cleanup; bind instance state only after the transaction succeeds.
 Stored body presence alone never counts as acceptance or an accepted predecessor.
 Duplicate replay is read-only and cannot move the head backward. Missing anchors
 precede ordering escrow; unsafe numeric storage ordinals require explicit refusal.
+Retry arbitrates anchored siblings as a set, using earliest anchor then digest
+and SAID code-point order; database arrival order must not decide the winner.
+Explicit anchoring validates event membership/prior before storing the couple.
+Queued progression commits one event at a time; later failures do not undo prior acceptance.
+Reopen named v2 registries from the stored rip issuer, not the first available
+Hab. Duplicate aliases share one instance; injected RegBaser ownership stays with its caller.
 
 IPEX conversations, issuer proofs and wallet acceptance remain separate. Follow
 [exchange learnings](PROJECT_LEARNINGS_EXCHANGE.md) for v2 nested routes and
