@@ -80,6 +80,7 @@ Deno.test("runtime stores - failed reply cleanup still joins owned database clos
           try {
             yield Uint8Array.of(1);
           } finally {
+            // deno-lint-ignore no-unsafe-finally -- database owners must close even when replay cleanup fails.
             throw new Error("reply storage close failed");
           }
         },

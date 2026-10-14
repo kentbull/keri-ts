@@ -91,6 +91,7 @@ Deno.test("reply cleanup failures propagate after all reservations and readers c
         yield Uint8Array.of(1);
       } finally {
         closed++;
+        // deno-lint-ignore no-unsafe-finally -- exercise a storage cleanup failure during iterator.return().
         throw new Error("storage reader close failed");
       }
     },
