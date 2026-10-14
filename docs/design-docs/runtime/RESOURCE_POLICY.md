@@ -56,6 +56,25 @@ only queued records and invalidates late retries; processing retains credit unti
 joined cleanup. Runtime close and scope exit clear queued ownership. Parser backing
 credit is acquired separately, so both charges coexist during processing.
 
+Lazy HTTP replies borrow the runtime policy and reserve one stream plus their
+maximum retained event and outgoing chunk before acquiring a replay iterator.
+Credit lasts through source cleanup on EOF, cancellation, failure and runtime
+shutdown. Iterator contract failures release admission; cleanup failures propagate
+after every live reader and the runtime-owned stores have been closed.
+Local reply limits still apply. This accounts for retained replay/output
+buffers; the storage source must separately admit its native and hydration copies.
+Temporary shared admission refusal maps to HTTP 503; configured size refusal
+remains 413. Neither response creates a retry queue.
+
+Query delivery reserves 24 MiB of preparation credit and 8 MiB of retained request
+credit before invoking its synchronous wire producer. The preparation allowance
+covers bounded query wire, introduction events and their joined buffer; native
+storage reads still need separate admission. Eight local slots include the active
+head. Preparation credit returns on producer completion/failure, while the request
+keeps its credit through delivery, existing explicit retry and joined shutdown.
+Shutdown releases queued requests immediately and the active request after its
+response cleanup joins. A refused producer is never opened.
+
 Additional hydrated representations, reader copies, storage and object/handle/work
 limits remain in the
 [resource plan](../../plans/runtime/RESOURCE_POLICY_PLAN.md).

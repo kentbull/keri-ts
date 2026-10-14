@@ -8,6 +8,7 @@ import {
   nestedPayload,
   parse,
   ResourceLimitError,
+  type ResourcePolicy,
   t,
   Vrsn_2_0,
 } from "cesr-ts";
@@ -17,6 +18,9 @@ import type { IoSetSuber } from "./subing.ts";
 
 /** Finite LMDB wire-copy ceiling across one parent; this is not a transfer buffer allowance. */
 export const MAX_NESTED_WIRE_BYTES = 24 * 1024 ** 2;
+
+/** Two owned row copies, qualification and collection, cursor backing and one reader chunk. */
+export const NESTED_COPY_RESERVATION_BYTES = 4 * MAX_NESTED_WIRE_BYTES + 8 * 1024 ** 2 + 65536;
 
 /** Remaining parent-tree credit, shared across every independently stored child row. */
 export interface NestBudget {
@@ -163,6 +167,7 @@ export async function loadNests(
   said: string,
   budget: NestBudget,
   signal?: AbortSignal,
+  resources?: ResourcePolicy,
 ): Promise<CesrFrame[]> {
   const nests: CesrFrame[] = [];
   let ordinal = 0;
@@ -184,7 +189,11 @@ export async function loadNests(
       for await (
         const frame of parse(rowSource(row.wire, signal), {
           signal,
-          maxFrameBytes: Math.max(1, budget.bytes),
+          resources,
+          maxChunkBytes: 65536,
+          maxBufferedBytes: 8 * 1024 ** 2,
+          // One row's admitted ordinary wire cannot exceed its stored extent.
+          maxFrameBytes: Math.max(1, Math.min(budget.bytes, row.wire.length)),
           maxAttachmentGroups: budget.groups,
           maxTreeNodes: budget.nodes,
           maxEssrBytes: budget.essrBytes,

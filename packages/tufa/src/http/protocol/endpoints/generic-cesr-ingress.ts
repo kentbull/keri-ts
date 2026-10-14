@@ -5,7 +5,7 @@
  * the remaining raw CESR traffic and decides whether it belongs to local
  * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
  */
-import { discardFrame, Ilks, ParserError, ResourceLimitError, type SerderKERI } from "cesr-ts";
+import { discardFrame, Ilks, ParserError, ResourceAdmissionError, ResourceLimitError, type SerderKERI } from "cesr-ts";
 import { call, each, type Operation, resource, run } from "effection";
 import {
   type AgentRuntime,
@@ -178,6 +178,7 @@ export async function handleGenericCesrIngress(
     return context.req.signal.aborted ? textResponse("Request cancelled", 408) : response;
   } catch (error) {
     if (context.req.signal.aborted) return textResponse("Request cancelled", 408);
+    if (error instanceof ResourceAdmissionError && error.reason === "busy") return textResponse(error.message, 503);
     if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
     if (error instanceof ParserError || error instanceof ValidationError) return textResponse(error.message, 400);
     throw error;
