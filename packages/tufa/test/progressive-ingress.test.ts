@@ -17,7 +17,7 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run, sleep, spawn, suspend } from "effection";
-import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertInstanceOf, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";
 import {
   createAgentRuntime,
@@ -240,6 +240,31 @@ Deno.test("HTTP cancellation closes a blocked body and joins its parser task", a
       assertEquals((yield* call(() => promptly(response))).status, 408);
       assertEquals(cancelled, true);
       assertEquals(body.locked, false);
+      for (const fault of [new Error("request cleanup I/O"), new DOMException("foreign abort", "AbortError")]) {
+        let begin!: () => void;
+        const ready = new Promise<void>((resolve) => begin = resolve);
+        const source = new ReadableStream<Uint8Array>({
+          pull() {
+            begin();
+          },
+          cancel() {
+            throw fault;
+          },
+        }, { highWaterMark: 0 });
+        const abort = new AbortController();
+        const pending = createProtocolHandler(runtime)(
+          new Request("http://localhost/", {
+            method: "POST",
+            headers: { "content-type": "application/cesr" },
+            body: source,
+            signal: abort.signal,
+          }),
+        );
+        yield* call(() => promptly(ready));
+        abort.abort();
+        assertStrictEquals(yield* call(() => assertRejects(() => pending)), fault);
+        assertEquals([source.locked, runtime.resources.used.bytes], [false, 0]);
+      }
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
@@ -304,6 +329,50 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
         assertEquals(prefixes, [[alice.pre], [bob.pre]][index]);
       }
       assertEquals(background, []);
+      const open = runtime.deliveries.openReply.bind(runtime.deliveries);
+      for (const fault of [undefined, new DOMException("foreign late abort", "AbortError")]) {
+        const abort = new AbortController();
+        let cancelling!: () => void, finish!: () => void;
+        const closing = new Promise<void>((resolve) => cancelling = resolve),
+          gate = new Promise<void>((resolve) => finish = resolve);
+        runtime.deliveries.openReply = (current, hab, slot) => {
+          const response = open(current, hab, slot)!;
+          const original = response.cancel.bind(response);
+          response.cancel = async (reason) => {
+            cancelling();
+            await gate;
+            await original(reason);
+            if (fault) throw fault;
+          };
+          queueMicrotask(() => abort.abort());
+          return response;
+        };
+        const pending = handler(
+          new Request("http://localhost/", {
+            method: "POST",
+            headers: { "content-type": "application/cesr" },
+            body: alice.query(bob.pre, alice.pre, {}, "logs") as Uint8Array<ArrayBuffer>,
+            signal: abort.signal,
+          }),
+        );
+        void pending.catch(() => {});
+        let settled = false;
+        void pending.finally(() => settled = true).catch(() => {});
+        try {
+          yield* call(() => promptly(closing));
+          assertEquals(
+            [settled, runtime.resources.used.streams],
+            [false, 1],
+            "Late abort joins the published response cleanup",
+          );
+        } finally {
+          finish();
+        }
+        if (fault) assertStrictEquals(yield* call(() => assertRejects(() => pending)), fault);
+        else assertEquals((yield* call(() => promptly(pending))).status, 408);
+        assertEquals(runtime.resources.used.bytes, 0);
+      }
+      runtime.deliveries.openReply = open;
       yield* worker.halt();
     } finally {
       yield* runtime.close();

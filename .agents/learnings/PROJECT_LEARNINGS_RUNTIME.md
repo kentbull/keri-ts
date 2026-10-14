@@ -26,8 +26,11 @@ single errors retain identity and distinct read/cleanup failures aggregate.
 Response cancellation uses an earlier scope resource: a bare yielding finally
 can join its Promise while losing a late failure during cancellation. Unacquired
 HTTP response/request bodies propagate cleanup failure instead of discarding it.
-Fetch's exact controller abort reason remains cancellation; foreign same-class
-AbortErrors still propagate. Preserve the mailbox's ordinary idle-timeout outcome.
+Fetch teardown joins pending rejection as well as late response cleanup. Timeout
+null recognizes only its controller's exact reason; foreign same-class AbortErrors
+and I/O failures propagate without repeating an already-reported object.
+HTTP ingress joins its own halt and closes published reply output on late abort
+outside status mapping. Preserve the mailbox's ordinary idle-timeout outcome.
 Parent cancellation diagnostics still need composed owner qualification.
 
 Owned hydration uses an isolated consume callback with direct joined finalization.
