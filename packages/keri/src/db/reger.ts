@@ -298,6 +298,17 @@ export class Reger extends LMDBer {
     return [creder, prefixer, number, diger];
   }
 
+  /** Bound selected credential body and anchor rows before hydration; caller holds decoded/copy credit. */
+  cloneCredBounded(said: string, maxBodyBytes: number): [SerderACDC, Prefixer, NumberPrimitive, Diger] {
+    const creder = this.creds.getBounded([said], maxBodyBytes);
+    if (creder === null) throw new ValidationError(`no credential found with said ${said}`);
+    // One prefix/ordinal/digest tuple is finite local storage policy, not a protocol maximum.
+    const anchor = this.cancs.getBounded([said], 512);
+    if (anchor === null) throw new ValidationError(`no credential anchor found with said ${said}`);
+    if (anchor.length !== 3) throw new DatabaseOperationError("Corrupt credential anchor tuple");
+    return [creder, ...anchor];
+  }
+
   /** Iterate TEL events from ordinal `fn`, honoring the requested attachment genus floor. */
   *clonePreIter(
     pre: KeyPart,
