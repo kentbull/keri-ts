@@ -7,26 +7,59 @@ import { QueryDeliveries } from "../../../src/app/query-transport.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
 Deno.test("query delivery admission retains accepted requests on queue overflow and delivery failure", async () => {
-  const queue = new QueryDeliveries();
+  const resources = new ResourcePolicy();
+  const queue = new QueryDeliveries(resources);
   const request = {
     url: "https://query.test/",
     body: new Uint8Array(),
     bodyMode: "header" as const,
     destination: "aid",
   };
-  for (let index = 0; index < 8; index++) queue.enqueue(request);
-  assertThrows(() => queue.enqueue(request), Error, "Deck capacity");
+  for (let index = 0; index < 8; index++) queue.enqueue(() => request);
+  assertThrows(() => queue.enqueue(() => request), Error, "Deck capacity");
+  assertEquals(resources.used.bytes, 64 * 1024 * 1024);
   assertEquals(queue.hasPending, true);
   await run(() => queue.close());
   assertEquals(queue.hasPending, false);
-  assertThrows(() => queue.enqueue(request), Error, "closed");
+  assertEquals(resources.used.bytes, 0);
+  assertThrows(() => queue.enqueue(() => request), Error, "closed");
 
-  const failed = new QueryDeliveries();
-  failed.enqueue({ ...request, body: new TextEncoder().encode("invalid CESR") });
+  const failed = new QueryDeliveries(resources);
+  failed.enqueue(() => ({ ...request, body: new TextEncoder().encode("invalid CESR") }));
   // Parser rejection retains the exact queued request for explicit retry or shutdown disposal.
   await assertRejects(() => run(() => failed.process({} as AgentRuntime)));
   assertEquals(failed.hasPending, true);
+  assertEquals(resources.used.bytes, 8 * 1024 * 1024, "failed delivery retains retry ownership");
   await run(() => failed.close());
+  assertEquals(resources.used.bytes, 0);
+
+  const shared = new ResourcePolicy({ bytes: 32 * 1024 * 1024 });
+  const first = new QueryDeliveries(shared), second = new QueryDeliveries(shared);
+  first.enqueue(() => request);
+  let prepared = false;
+  const prepare = () => {
+    prepared = true;
+    return request;
+  };
+  assertEquals(assertThrows(() => second.enqueue(prepare), ResourceAdmissionError).reason, "busy");
+  assertEquals(prepared, false, "shared refusal precedes source acquisition or concatenation");
+  assertEquals(shared.used.bytes, 8 * 1024 * 1024);
+  const tooSmall = new QueryDeliveries(new ResourcePolicy({ bytes: shared.limits.bytes - 1 }));
+  assertEquals(assertThrows(() => tooSmall.enqueue(prepare), ResourceAdmissionError).reason, "limit");
+  assertEquals(prepared, false);
+  await run(() => first.close());
+  assertThrows(
+    () =>
+      second.enqueue(() => {
+        throw new Error("wire preparation failed");
+      }),
+    Error,
+    "wire preparation",
+  );
+  assertEquals(shared.used.bytes, 0);
+  second.enqueue(prepare);
+  await run(() => second.close());
+  assertEquals(shared.used.bytes, 0);
 });
 
 Deno.test("runtime query shutdown joins a pending response read before closing stores", async () => {
@@ -50,12 +83,12 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
       services: { http: { fetch: () => Promise.resolve(new Response(body)) } },
     });
     try {
-      runtime.queryDeliveries.enqueue({
+      runtime.queryDeliveries.enqueue(() => ({
         url: "https://query.test/",
         body: hab.query(hab.pre, hab.pre, {}, "logs"),
         bodyMode: "header",
         destination: hab.pre,
-      });
+      }));
       const delivery = yield* spawn(function*() {
         try {
           yield* runtime.queryDeliveries.process(runtime);
@@ -72,10 +105,12 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
       });
       yield* call(() => cleanup.promise);
       assertEquals(closed, false); // Runtime shutdown must join the transport's asynchronous cancel.
+      assertEquals(runtime.resources.used.bytes >= 8 * 1024 * 1024, true, "active request retains credit until joined");
       release.resolve();
       yield* closing;
       yield* delivery;
       assertEquals([closed, continued, body.locked], [true, false, false]);
+      assertEquals(runtime.resources.used.bytes, 0);
     } finally {
       release.resolve();
       yield* runtime.close();
@@ -92,7 +127,8 @@ Deno.test("query shutdown after successful response consumption cannot send the 
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    const queue = new QueryDeliveries();
+    const resources = new ResourcePolicy();
+    const queue = new QueryDeliveries(resources);
     const runtime = {
       services: {
         ...defaultRuntimeServices,
@@ -121,8 +157,8 @@ Deno.test("query shutdown after successful response consumption cannot send the 
       bodyMode: "header" as const,
       destination: hab.pre,
     };
-    queue.enqueue(request);
-    queue.enqueue(request);
+    queue.enqueue(() => request);
+    queue.enqueue(() => request);
     const delivery = yield* spawn(function*() {
       try {
         yield* queue.process(runtime);
@@ -138,6 +174,7 @@ Deno.test("query shutdown after successful response consumption cannot send the 
       yield* closing;
       yield* delivery;
       assertEquals([requests, continued, queue.hasPending], [1, false, false]);
+      assertEquals(resources.used.bytes, 0);
     } finally {
       release.resolve();
       yield* delivery.halt();
@@ -146,3 +183,4 @@ Deno.test("query shutdown after successful response consumption cannot send the 
     }
   });
 });
+import { ResourceAdmissionError, ResourcePolicy } from "cesr-ts";

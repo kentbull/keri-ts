@@ -182,7 +182,7 @@ export function* createAgentRuntime(
     }
   });
   const queryDeliveries = yield* resource<QueryDeliveries>(function*(provide) {
-    const deliveries = new QueryDeliveries();
+    const deliveries = new QueryDeliveries(resources);
     try {
       yield* provide(deliveries);
     } finally {
