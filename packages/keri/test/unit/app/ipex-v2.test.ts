@@ -11,10 +11,13 @@ import {
   framePayload,
   Kinds,
   makeBlindState,
+  type MapperMap,
   MemoryPayloadSink,
+  NumberPrimitive,
   parseBytes,
   Prefixer,
   ResourceLimitError,
+  type SealEvent,
   SerderACDC,
   SerderKERI,
   Vrsn_2_0,
@@ -24,15 +27,19 @@ import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
+import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { type ExchangeDecision, Exchanger } from "../../../src/app/exchanging.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody, prepareIpexExn } from "../../../src/app/ipex-building.ts";
+import { verifyIpexRelations, walkIpexGraph } from "../../../src/app/ipex-graph.ts";
 import { IpexV2Handler } from "../../../src/app/ipex-v2.ts";
 import { type IpexRoute, loadIpexHandlers } from "../../../src/app/ipexing.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
+import { Schemer } from "../../../src/core/scheming.ts";
+import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
 
 /** Feed signed public KEL bytes through normal event verification. */
@@ -255,6 +262,168 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
   });
 });
 
+Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutoff across observer retry", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = hby.makeHab("issuer"), issuee = hby.makeHab("issuee"), sender = hby.makeHab("sender");
+    let now = Math.floor(Date.now() / 1000) * 1000 + 123;
+    const receipt = makeNowIso8601(new Date(now)), earlier = makeNowIso8601(new Date(now - 1000));
+    const runtime = yield* createAgentRuntime(hby, {
+      kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+      services: { clock: { now: () => now, setTimeout, clearTimeout: (timer) => clearTimeout(timer as number) } },
+    });
+    const store = runtime.acdc.rgy!.store, observer = new RegistryObserver(hby.db, store);
+    const anchor = (hab: typeof issuer, event: SerderACDC): SealEvent => {
+      hab.interact({ data: [{ i: event.regid ?? event.said, s: event.sad!.n, d: event.said }] });
+      return { i: new Prefixer({ qb64: hab.pre }), s: hab.kever!.sner, d: new Diger({ qb64: hab.kever!.said }) };
+    };
+    const irip = regcept(issuer.pre, { stamp: earlier }), prip = regcept(issuee.pre, { stamp: earlier });
+    anchor(issuer, irip);
+    anchor(issuee, prip);
+    const credential = acdcmap(issuer.pre, {
+      regid: irip.said,
+      attribute: { d: "", i: issuee.pre, rd: prip.said!, name: "Ada" },
+    });
+    const iblind = makeBlindState({ acdc: credential.said!, state: "issued" });
+    const ibup = blindate(irip.said!, irip.said!, iblind.d.nonce, { stamp: receipt });
+    anchor(issuer, ibup);
+    for (const event of [irip, ibup]) assertEquals(observer.processEvent(event).kind, "accept");
+    const grant = ipexExnBody(sender.pre, "/ipex/grant", [credential], {
+      kind: Kinds.json,
+      message: "presentation",
+      recipient: issuee.pre,
+      xid: credential.said!,
+      date: receipt,
+      anchor: true,
+    });
+    const pblind = makeBlindState({ acdc: grant.said!, state: "presented" });
+    const pbup = blindate(prip.said!, prip.said!, pblind.d.nonce, { stamp: receipt });
+    const source = anchor(issuee, pbup);
+    const node = function*(proofs = [iblind, pblind], sources = [source]) {
+      const groups = proofs.map((proof) =>
+        Counter.enclose({
+          code: "BlindedStateQuadruples",
+          version: Vrsn_2_0,
+          qb64: concatBytes(proof.d.qb64b, proof.u.qb64b, proof.td.qb64b, proof.ts.qb64b),
+        })
+      );
+      groups.push(...messageAttachmentGroups({ sourceSeals: sources }, Vrsn_2_0).map((group) => group.raw));
+      return (yield* call(() => parseBytes(messagize(credential, concatBytes(...groups), { gvrsn: Vrsn_2_0 }))))[0];
+    };
+    const child = yield* node();
+    try {
+      const tsg = new TransIdxSigGroup(
+        new Prefixer({ qb64: sender.pre }),
+        sender.kever!.sner,
+        new Diger({ qb64: sender.kever!.said }),
+        sender.sign(grant.raw, true),
+      );
+      const frame: CesrFrame = {
+        body: grant,
+        attachments: messageAttachmentGroups({ tsgs: [tsg] }, Vrsn_2_0),
+        gvrsn: Vrsn_2_0,
+        nests: [child],
+      };
+      yield* runtime.reactor.process((signal) => framePayload(frame).open(signal));
+      assertExists(hby.db.epse.get([grant.said!]));
+      assertEquals(hby.db.exchangeMeta.get([grant.said!])?.receiverTime, receipt);
+      assertEquals(hby.db.exns.get([grant.said!]), null);
+      now += 1000;
+      yield* store.baser.reopen();
+      yield* hby.db.reopen();
+      for (const event of [prip, pbup]) assertEquals(observer.processEvent(event).kind, "accept");
+      // A newer accepted update must not rewrite the already observed grant cutoff.
+      const vacant = makeBlindState({ sn: 2 });
+      const vacantTime = makeNowIso8601(new Date(now));
+      const vacuous = blindate(prip.said!, pbup.said!, vacant.d.nonce, { sn: 2, stamp: vacantTime });
+      anchor(issuee, vacuous);
+      assertEquals(observer.processEvent(vacuous).kind, "accept");
+      now += 1000;
+      const newer = makeBlindState({ acdc: credential.said!, state: "revoked", sn: 3 });
+      const latest = blindate(prip.said!, vacuous.said!, newer.d.nonce, {
+        sn: 3,
+        stamp: makeNowIso8601(new Date(now)),
+      });
+      anchor(issuee, latest);
+      assertEquals(observer.processEvent(latest).kind, "accept");
+      yield* runtime.reactor.exchanger.processEscrows();
+      assertExists(hby.db.exns.get([grant.said!]));
+      assertEquals(hby.db.exchangeMeta.get([grant.said!])?.receiverTime, receipt);
+      assertEquals(hby.db.exns.get([credential.said!]), null, "parent acceptance never dispatches its child");
+      const handler = new IpexV2Handler("/ipex/grant", hby, null, store);
+      const verify = (nest: CesrFrame = child, cutoff: string | undefined = receipt, body = grant) =>
+        handler.verify({
+          serder: body,
+          nests: [nest],
+          attachments: [],
+          evidence: { tsgs: [], cigars: [], sourceSeals: [] },
+          receiverTime: cutoff,
+        });
+      assertEquals(verify(), true, "Issuee presentation proof alone satisfies permitted ax anchoring");
+      assertEquals(
+        handler.verify({ serder: grant, nests: [child], attachments: [] }),
+        false,
+        "no sender-time fallback",
+      );
+      assertEquals(verify(child, receipt.replace("123000", "122999")), false, "one microsecond before binding");
+      assertEquals(verify(child, makeNowIso8601(new Date(now))), false, "later time cannot use the old disclosure");
+      const continued = yield* node([iblind, pblind, vacant]);
+      try {
+        assertEquals(
+          verify(continued, vacantTime),
+          true,
+          "one authentic vacuous disclosure preserves the preceding binding",
+        );
+      } finally {
+        yield* call(() => discardFrame(continued));
+      }
+      const otherGrant = ipexExnBody(sender.pre, "/ipex/grant", [credential], {
+        kind: Kinds.json,
+        message: "other target",
+        recipient: issuee.pre,
+        xid: credential.said!,
+        date: receipt,
+        anchor: true,
+      });
+      assertEquals(verify(child, receipt, otherGrant), false);
+      for (
+        const sources of [[], [{ ...source, i: new Prefixer({ qb64: issuer.pre }) }], [{
+          ...source,
+          d: new Diger({ qb64: issuer.kever!.said }),
+        }], [{ ...source, s: NumberPrimitive.fromNum(1n) }]]
+      ) {
+        const bad = yield* node([iblind, pblind], sources);
+        try {
+          assertEquals(verify(bad), false);
+        } finally {
+          yield* call(() => discardFrame(bad));
+        }
+      }
+      const noIssuer = yield* node([pblind]);
+      const duplicate = yield* node([iblind, pblind, pblind]);
+      try {
+        assertEquals(verify(noIssuer), false, "parent and Issuee proofs cannot replace the child's issuer proof");
+        assertEquals(verify(duplicate), false, "exactly one disclosure must match each selected BLID");
+      } finally {
+        yield* call(() => discardFrame(noIssuer));
+        yield* call(() => discardFrame(duplicate));
+      }
+      for (const sn of [99n, 9007199254740993n]) {
+        const unavailable = yield* node([iblind, pblind], [{ ...source, s: NumberPrimitive.fromNum(sn) }]);
+        try {
+          assertEquals((verify(unavailable) as { kind: string }).kind, "escrow");
+        } finally {
+          yield* call(() => discardFrame(unavailable));
+        }
+      }
+    } finally {
+      yield* call(() => discardFrame(child));
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("registry-backed IPEX retries only after public observer intake accepts foreign anchored evidence", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -463,4 +632,136 @@ Deno.test("IPEX byte preparation cancels its read and joins payload-owner dispos
     await task.halt();
     MemoryPayloadSink.prototype.finish = original;
   }
+});
+
+Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every edge pin", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = hby.makeHab("issuer"), sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
+    const schema = new Schemer({
+      sed: {
+        $id: "",
+        version: "1.0.0",
+        type: "object",
+        properties: { a: { type: "object", required: ["name"], properties: { name: { type: "string" } } } },
+      },
+    });
+    const exchanger = new Exchanger(hby);
+    loadIpexHandlers(hby, exchanger);
+    const credential = (name: string | number, edge?: NonNullable<Parameters<typeof acdcmap>[1]>["edge"]) =>
+      acdcmap(issuer.pre, { schema: schema.said, attribute: { d: "", name }, ...(edge ? { edge } : {}) });
+    const node = (body: SerderACDC, signed = true): CesrFrame => ({
+      body,
+      attachments: signed
+        ? messageAttachmentGroups({
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: issuer.pre }),
+              issuer.kever!.sner,
+              new Diger({ qb64: issuer.kever!.said }),
+              issuer.sign(body.raw, true),
+            ),
+          ],
+        }, Vrsn_2_0)
+        : [],
+    });
+    const args = (verb: "/ipex/offer" | "/ipex/grant", bodies: SerderACDC[], signed = true) => {
+      const serder = ipexExnBody(sender.pre, verb, bodies, {
+        message: crypto.randomUUID(),
+        recipient: recipient.pre,
+        xid: schema.said,
+        plan: bodies.map((body, i) => [schema.said, i ? "/e/link/_/" : "/", []]),
+      });
+      return {
+        serder,
+        nests: bodies.map((body) => node(body, signed)),
+        tsgs: [
+          new TransIdxSigGroup(
+            new Prefixer({ qb64: sender.pre }),
+            sender.kever!.sner,
+            new Diger({ qb64: sender.kever!.said }),
+            sender.sign(serder.raw, true),
+          ),
+        ],
+      };
+    };
+    try {
+      const valid = credential("Ada"), invalid = credential(7);
+      // Metadata offers intentionally withhold issuer proof; the outer sender cannot waive schema validation.
+      const offer = args("/ipex/offer", [valid], false);
+      assertEquals((yield* exchanger.processEvent(offer)).kind, "escrow");
+      assertExists(hby.db.emse!.get([offer.serder.said!, schema.said]));
+      const unsigned = args("/ipex/grant", [valid], false);
+      assertEquals((yield* exchanger.processEvent(unsigned)).kind, "reject");
+      assertEquals(
+        hby.db.emse!.get([unsigned.serder.said!, schema.said]),
+        null,
+        "issuer proof precedes schema dependency",
+      );
+      const grant = args("/ipex/grant", [valid]);
+      assertEquals((yield* exchanger.processEvent(grant)).kind, "escrow");
+      assertExists(hby.db.emse!.get([grant.serder.said!, schema.said]));
+      hby.db.schema.pin(schema.said, schema);
+      yield* exchanger.processEscrows();
+      assertExists(hby.db.exns.get(offer.serder.said!));
+      assertExists(hby.db.exns.get(grant.serder.said!));
+      for (const verb of ["/ipex/offer", "/ipex/grant"] as const) {
+        const rejected = args(verb, [invalid], verb === "/ipex/grant");
+        assertEquals((yield* exchanger.processEvent(rejected)).kind, "reject");
+        assertEquals(hby.db.exns.get(rejected.serder.said!), null);
+      }
+      // Same-schema pins still evaluate the far credential; equality of IDs proves no payload constraint.
+      const near = (far: SerderACDC, pin: string | MapperMap) =>
+        credential("Near", { d: "", link: { n: far.said, s: pin } });
+      const graph = (far: SerderACDC, pin: string | MapperMap) => {
+        const root = near(far, pin);
+        return walkIpexGraph(root.said!, [node(root), node(far)], true)!;
+      };
+      assertEquals(verifyIpexRelations(graph(valid, schema.said), hby.db), true);
+      assertEquals(verifyIpexRelations(graph(invalid, schema.said), hby.db), false);
+      const alternative = credential("Near", {
+        d: "",
+        o: "OR",
+        bad: { n: valid.said, s: false },
+        good: { n: valid.said },
+      });
+      assertEquals(
+        verifyIpexRelations(walkIpexGraph(alternative.said!, [node(alternative), node(valid)], true)!, hby.db),
+        true,
+      );
+      const edgeSchema = new Schemer({
+        sed: {
+          $id: "",
+          version: "1.0.0",
+          type: "object",
+          properties: { a: { properties: { name: { const: "Ada" } } } },
+        },
+      });
+      const inherited = credential("Near", { d: "", group: { s: edgeSchema.said, link: { n: valid.said } } });
+      const inheritedGraph = walkIpexGraph(inherited.said!, [node(inherited), node(valid)], true)!;
+      assertEquals(verifyIpexRelations(inheritedGraph, hby.db), { kind: "missing", said: edgeSchema.said });
+      const edgeGrant = args("/ipex/grant", [near(valid, edgeSchema.said), valid]);
+      assertEquals((yield* exchanger.processEvent(edgeGrant)).kind, "escrow");
+      assertExists(hby.db.emse!.get([edgeGrant.serder.said!, edgeSchema.said]));
+      hby.db.schema.pin(edgeSchema.said, edgeSchema);
+      yield* exchanger.processEscrows();
+      assertExists(hby.db.exns.get(edgeGrant.serder.said!));
+      assertEquals(verifyIpexRelations(inheritedGraph, hby.db), true);
+      assertEquals(verifyIpexRelations(graph(valid, edgeSchema.sed as MapperMap), hby.db), true);
+      assertEquals(verifyIpexRelations(graph(credential("Other"), edgeSchema.said), hby.db), false);
+      // A real schema read failure propagates; it is never downgraded to missing-schema escrow.
+      const get = hby.db.schema.get.bind(hby.db.schema);
+      hby.db.schema.get = () => {
+        throw new Error("schema storage unavailable");
+      };
+      try {
+        assertThrows(() => verifyIpexRelations(graph(valid, edgeSchema.said), hby.db), Error, "storage unavailable");
+      } finally {
+        hby.db.schema.get = get;
+      }
+      assertEquals(hby.db.exns.get(valid.said!), null, "conversation acceptance does not accept a credential");
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });
