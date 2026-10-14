@@ -39,7 +39,7 @@ async function* chunks(...parts: Uint8Array[]) {
 }
 
 Deno.test("frozen Python counter tables match TS except the explicit v1 protocol extensions", () => {
-  assertEquals(vectors.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
+  assertEquals(vectors.reference, "7143832813cac6a394ab1faf9be83bb3372be87c");
   for (const version of [V1, V2]) {
     const reference = vectors.counterTables[version.major === 1 ? "1" : "2"];
     const names = Object.fromEntries(Object.entries(resolveCtrDex(version)).map(([name, code]) => [code, name]));

@@ -7,7 +7,7 @@ import {
 } from "./table-renderers.ts";
 
 /** Immutable table source; runtime interop pins are independent of this reference. */
-export const KERIPY_TABLE_BASELINE = "927c0cb8794d7c84fc17143c67df64aab9deda6c";
+export const KERIPY_TABLE_BASELINE = "7143832813cac6a394ab1faf9be83bb3372be87c";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
