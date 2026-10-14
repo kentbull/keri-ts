@@ -23,6 +23,7 @@ import { type Poster } from "./forwarding.ts";
 import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
 import type { QueryCoordinator } from "./querying.ts";
+import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { sendWitnessMessage } from "./witnessing.ts";
 
 export const DELEGATE_REQUEST_ROUTE = "/delegate/request";
@@ -370,16 +371,22 @@ export class Anchorer {
   readonly hby: Habery;
   readonly poster: Poster;
   readonly querying: QueryCoordinator;
+  readonly services: RuntimeServices;
   readonly communicationHabPins = new Map<string, string>();
   readonly anchorQueryRetryPasses = new Map<string, number>();
 
   constructor(
     hby: Habery,
-    { poster, querying }: { poster: Poster; querying: QueryCoordinator },
+    { poster, querying, services = defaultRuntimeServices }: {
+      poster: Poster;
+      querying: QueryCoordinator;
+      services?: RuntimeServices;
+    },
   ) {
     this.hby = hby;
     this.poster = poster;
     this.querying = querying;
+    this.services = services;
   }
 
   begin(
@@ -835,7 +842,7 @@ export class Anchorer {
     // matches the witness-visible material KERIpy sends for delegated approval.
     for (const msg of this.hby.db.cloneDelegation(kever)) {
       for (const witness of kever.wits) {
-        yield* sendWitnessMessage(transportHab, witness, msg);
+        yield* sendWitnessMessage(transportHab, witness, msg, undefined, this.services);
       }
     }
 
@@ -848,7 +855,7 @@ export class Anchorer {
       });
     }
     for (const witness of kever.wits) {
-      yield* sendWitnessMessage(transportHab, witness, approvedEvent);
+      yield* sendWitnessMessage(transportHab, witness, approvedEvent, undefined, this.services);
     }
   }
 }

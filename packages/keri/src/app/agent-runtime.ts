@@ -294,7 +294,7 @@ export function* createAgentRuntime(
     mailboxDirector.registerTopic(topic);
   }
   const querying = new QueryCoordinator(hby);
-  const delegating = new Anchorer(hby, { poster, querying });
+  const delegating = new Anchorer(hby, { poster, querying, services });
   const oobiery = new Oobiery(hby, reactor, { cues, services });
   oobiery.registerReplyRoutes(reactor.router);
   const authenticator = new Authenticator(hby, { services });

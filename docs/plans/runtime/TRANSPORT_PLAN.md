@@ -18,6 +18,8 @@ The [runtime contract][runtime] distinguishes current behavior from the target.
 Reuse the active admission stack: HTTP frame/output work (#224–225), finite TCP
 ownership (#230), parser scheduling (#231), and mailbox stream admission.
 Those units are dependencies, not proof of end-to-end socket streamability.
+Generic witness sends and runtime delegation share services; finite TCP credit
+follows joined socket close. Streamed sending remains S7–8.
 HTTP already shares `requestFrame` (parsed frame) and `postCesr` (byte source);
 its successful-response consumer is optional, so ordinary sends do not prove
 verified protocol replies or durable remote acceptance.
