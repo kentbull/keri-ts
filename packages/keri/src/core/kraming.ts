@@ -11,27 +11,6 @@ import { KramHandoff, type KramHandoffRefusal } from "./kram-handoff.ts";
 import { type KramConfig, KramPolicy } from "./kram-policy.ts";
 import { KramPruner, type KramPruneResult } from "./kram-pruning.ts";
 
-declare const receiptBrand: unique symbol;
-/** Private, scoped authority for one ready envelope's receiver-observed receipt. */
-export interface KramReceipt {
-  readonly [receiptBrand]: true;
-}
-const activeReceipts = new WeakMap<KeriDispatchEnvelope, KramReceipt>();
-const receiptTimes = new WeakMap<KramReceipt, { envelope: KeriDispatchEnvelope; said: string; time: string }>();
-
-/** Dispatch may borrow receipt authority only while the ready consumer is active. */
-export function kramReceipt(envelope: KeriDispatchEnvelope): KramReceipt | undefined {
-  return activeReceipts.get(envelope);
-}
-/** Reject forged, expired or differently bound authority as caller misuse. */
-export function kramReceiptTime(receipt: KramReceipt, serder: KeriDispatchEnvelope["serder"]): string {
-  const bound = receiptTimes.get(receipt);
-  if (!bound || bound.envelope.serder !== serder || bound.said !== serder.said) {
-    throw new Error("Invalid scoped KRAM receipt");
-  }
-  return bound.time;
-}
-
 /** Expected pending/refusal outcomes; cancellation, corruption and infrastructure failures throw. */
 export type KramRefusal = KramHandoffRefusal;
 /** Explicit receiver-owned cache and exemption configuration. */
@@ -47,7 +26,7 @@ export class Kramer {
   private readonly now: () => number;
 
   constructor(
-    private readonly db: Baser,
+    db: Baser,
     { config = {}, cues, now = Date.now, resources = db.resources }: {
       config?: KramConfig;
       cues?: CueQueueInput;
@@ -66,24 +45,11 @@ export class Kramer {
   /** Consume ready evidence before joined disposal/acknowledgement; borrowed input remains caller-owned. */
   intake(
     envelope: KeriDispatchEnvelope,
-    consume: (ready: KeriDispatchEnvelope, receiverTime: string) => Operation<void>,
+    consume: (ready: KeriDispatchEnvelope, receiverTime?: string) => Operation<void>,
   ): Operation<void | KramRefusal> {
-    const db = this.db, policy = this.policy;
+    const policy = this.policy;
     return this.handoff.intake(envelope, function*(ready, receiverTime) {
-      // Disabled/exempt forwarding is not completed KRAM acceptance.
-      if (policy.exempts(ready.serder) || db.kready.get([ready.serder.pre!, ready.serder.said!]) !== receiverTime) {
-        yield* consume(ready, receiverTime);
-        return;
-      }
-      const receipt = Object.freeze({}) as KramReceipt;
-      activeReceipts.set(ready, receipt);
-      receiptTimes.set(receipt, { envelope: ready, said: ready.serder.said!, time: receiverTime });
-      try {
-        yield* consume(ready, receiverTime);
-      } finally {
-        activeReceipts.delete(ready);
-        receiptTimes.delete(receipt);
-      }
+      yield* consume(ready, policy.exempts(ready.serder) ? undefined : receiverTime);
     });
   }
 

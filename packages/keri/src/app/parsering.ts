@@ -40,7 +40,7 @@ import {
 } from "../core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
 import type { KeverDecision, QueryProcessDecision } from "../core/kever-decisions.ts";
-import { type KramReceipt, kramReceipt, type KramRefusal } from "../core/kraming.ts";
+import { type KramRefusal } from "../core/kraming.ts";
 import { supportsNestedExchange } from "../core/protocol-exchanging.ts";
 import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
 import type { ExchangeDecision } from "./exchanging.ts";
@@ -65,8 +65,8 @@ export interface ExchangerLike {
     nests?: readonly CesrFrame[];
     /** Hosted endpoint that received this message, independent of its claimed sender. */
     mailboxAid?: string | null;
-    /** Scoped receiver authority; never a timestamp supplied by signed wire. */
-    receipt?: KramReceipt;
+    /** Receiver-observed time supplied by local intake, independent of signed wire. */
+    receiverTime?: string;
   }): Operation<void | ExchangeDecision>;
 }
 
@@ -273,8 +273,8 @@ function* dispatchMessage(
     if (kevery.allowList.size && !kevery.allowList.has(sender)) return { kind: "drop", reason: "senderNotAllowed" };
   }
   let decision: DispatchDecision = undefined;
-  const dispatch = function*(ready: KeriDispatchEnvelope): Operation<void> {
-    decision = yield* dispatchReadyMessage(ready, revery, kevery, exchanger, vdr, mailboxAid);
+  const dispatch = function*(ready: KeriDispatchEnvelope, receiverTime?: string): Operation<void> {
+    decision = yield* dispatchReadyMessage(ready, revery, kevery, exchanger, vdr, mailboxAid, receiverTime);
     if (consume) yield* consume(ready, decision);
   };
   const refusal = kevery.kramer ? yield* kevery.kramer.intake(envelope, dispatch) : yield* dispatch(envelope);
@@ -289,6 +289,7 @@ function* dispatchReadyMessage(
   exchanger: ExchangerLike | undefined,
   vdr: VdrDispatchServices,
   mailboxAid?: string | null,
+  receiverTime?: string,
 ): Operation<DispatchDecision> {
   const serder = envelope.serder;
   switch (serder.ilk) {
@@ -309,7 +310,7 @@ function* dispatchReadyMessage(
         return { kind: "drop", reason: "missingAuthentication" };
       }
       if (!exchanger) return { kind: "drop", reason: "missingProcessor" };
-      return yield* dispatchExchange(envelope, exchanger, mailboxAid);
+      return yield* dispatchExchange(envelope, exchanger, mailboxAid, receiverTime);
     default:
       // processXip/processPro/processBar are pass stubs at the frozen reference.
       return { kind: "drop", reason: "referenceStub" };
@@ -328,6 +329,7 @@ function* dispatchExchange(
   envelope: KeriDispatchEnvelope,
   exchanger: ExchangerLike,
   mailboxAid?: string | null,
+  receiverTime?: string,
 ): Operation<void | ExchangeDecision> {
   return yield* exchanger.processEvent({
     serder: envelope.serder,
@@ -341,7 +343,7 @@ function* dispatchExchange(
     essr: envelope.essr,
     nests: envelope.nests,
     mailboxAid,
-    receipt: kramReceipt(envelope),
+    receiverTime,
   });
 }
 
