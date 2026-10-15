@@ -16,6 +16,7 @@ import { Respondant } from "../../../src/app/respondant.ts";
 import { drainWitnessCues, processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
+import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
@@ -87,7 +88,7 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
     {
       emission: {
         kind: "wire",
-        cue: { kin: "reply", route: "/ksn", src: "EWIT", dest: "EDEST" },
+        cue: { kin: "reply", serder: replyEvent("/ksn", {}), src: "EWIT", dest: "EDEST" },
         messages: [new Uint8Array([3])],
       },
       recipient: "EDEST",
@@ -429,8 +430,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
           kin: "reply" as const,
           src: sender.pre,
           dest: recipient.pre,
-          route: "/loc/scheme",
-          data: { eid: sender.pre, scheme: "http", url: "http://sender.test/" },
+          serder: replyEvent("/loc/scheme", { eid: sender.pre, scheme: "http", url: "http://sender.test/" }),
         };
         runtime.cues.push(cue);
         const interpretation = sender.interpretCue;

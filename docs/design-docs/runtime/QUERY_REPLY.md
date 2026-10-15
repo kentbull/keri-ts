@@ -116,6 +116,25 @@ teach the wrong mental model. Habitat cue interpretation should not guess:
 - KERIpy role: watcher-owned observed-AID reply processing
 - `keri-ts` role: `Kevery.processReplyAddWatched(...)`
 
+## Reply payload contracts
+
+Current KSN production prepares a reply serder. That serder carries the route;
+a second cue-level route or data body is prohibited. Arbitrary already-formed
+reply bodies can use this form without an untyped cue payload slot.
+
+TSN production carries the existing required registry or credential state record
+with its matching /tsn/registry or /tsn/credential route and requester destination.
+It waits for the interpreting Hab to supply the local attester suffix and signing.
+The fresh owned record stays typed through the cue; Hab serializes it only while
+constructing the wire reply. Missing credentials retain the registry-only reply;
+the producer's tuple type preserves registry-before-credential ordering.
+
+Both forms have actual producers. They are disjoint; absent payloads, contradictory
+route/data/serder combinations, mismatched TSN state and missing TSN destinations
+are invalid contracts. A successful serialized response still does not replace
+independent receiver proof/trust/TEL checks. Raw partial registry seals retain
+their existing producer behavior and remain distinct from accepted TSN validation.
+
 ## Incomplete Versus Complete `query` Cues
 
 `keri-ts` intentionally keeps two states under one `QueryCue` contract. Both use

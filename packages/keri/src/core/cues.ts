@@ -62,23 +62,22 @@ export interface ReplayCue extends CueBase {
   dest?: string;
 }
 
-/**
- * Cue requesting that one local reply message be emitted.
- *
- * KERIpy producers sometimes hand back route/data pairs and sometimes a
- * prebuilt reply serder. `keri-ts` keeps both forms so later `/ksn` parity
- * does not need another cue-shape migration.
+/** Reply bodies already prepared by KEL processing, or concrete TSN state awaiting its local attester.
+ * KSN uses its serder's authoritative route; TSN state is serialized only at Hab interpretation.
  */
-export interface ReplyCue extends CueBase {
-  /** Query SAID that requested this response, including deferred escrow results. */
-  querySaid?: string;
-  kin: "reply";
-  route: string;
-  data?: Record<string, unknown>;
-  serder?: SerderKERI;
-  src?: string;
-  dest?: string;
-}
+export type ReplyCue =
+  & {
+    kin: "reply";
+    /** Query SAID that requested this response, including deferred escrow results. */
+    querySaid?: string;
+    src?: string;
+    dest?: string;
+  }
+  & (
+    | { serder: SerderKERI; route?: never; data?: never }
+    | { route: "/tsn/registry"; data: Required<RegStateRecord>; serder?: never; dest: string }
+    | { route: "/tsn/credential"; data: Required<VcStateRecord>; serder?: never; dest: string }
+  );
 
 /** Cue carrying one streaming publication request plus its topic metadata. */
 export interface StreamCue extends CueBase {

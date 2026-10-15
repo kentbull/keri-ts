@@ -14,6 +14,10 @@ escrows, Oobiery owns introductions. Runtime and local Habery.kevery have distin
 cue decks. Query cues and pending requests use one required KERIpy-shaped `q`
 body; do not restore a `query` alias, default-recovery or two copy wrappers.
 TEL recovery cues require registry/credential fields, with issuer only when needed.
+Reply cues separate prebuilt serders from typed registry/credential TSN records.
+Prebuilt routes live only in the serder; TSN state is serialized at Hab interpretation,
+where the local attester suffix is known. Do not restore optional data/default empty
+replies or erase required state fields through a generic route/data helper.
 Incomplete query cues require QueryCoordinator to resolve a local
 habitat and honest remote attester before producing wire. Hab.processCuesIter
 remains the cue-semantics seam. CueSink admission receives the actual source queue,

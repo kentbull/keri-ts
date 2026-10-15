@@ -161,7 +161,6 @@ Deno.test("Kevery.processQuery emits a key-state reply cue for the queried prefi
       if (cue.kin !== "reply") {
         throw new Error("Expected reply cue.");
       }
-      assertEquals(cue.route, "/ksn");
       assertExists(cue.serder);
       assertEquals(cue.serder?.route, `/ksn/${hab.pre}`);
       assertEquals(
@@ -780,7 +779,6 @@ Deno.test("Kevery query-not-found escrows retry once the requested key state arr
       if (cue.kin !== "reply") {
         throw new Error("Expected reply cue.");
       }
-      assertEquals(cue.route, "/ksn");
       assertEquals(cue.serder?.route, `/ksn/${bob.pre}`);
       assertEquals(cue.dest, bob.pre);
     } finally {
@@ -1639,7 +1637,6 @@ Deno.test("Kevery.processQuery escrows `ksn` until the authoritative event is fu
       if (cue.kin !== "reply") {
         throw new Error("Expected reply cue.");
       }
-      assertEquals(cue.route, "/ksn");
       assertEquals(cue.serder?.route, `/ksn/${requester.pre}`);
       assertEquals(cue.dest, requester.pre);
     } finally {

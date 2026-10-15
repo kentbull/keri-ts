@@ -1,5 +1,6 @@
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { Diger, Ilks, NumberPrimitive, Prefixer, SealEvent } from "../../../../cesr/mod.ts";
+import type { ReplyCue } from "../../../src/core/cues.ts";
 import { backerIssue, incept, issue, query, state, vcstate } from "../../../src/core/protocol-vdr-eventing.ts";
 import {
   type CredentialKelAnchor,
@@ -80,6 +81,15 @@ Deno.test("protocol-vdr-eventing state builders return KERIpy-shaped records", (
     d: SAID,
   });
   const qry = query(REGISTRY, VC, { route: "tels" });
+
+  // @ts-expect-error A registry reply cannot carry credential state.
+  void ({ kin: "reply", route: "/tsn/registry", data: vsr, dest: ISSUER } satisfies ReplyCue);
+  // @ts-expect-error A credential reply cannot carry registry state.
+  void ({ kin: "reply", route: "/tsn/credential", data: rsr, dest: ISSUER } satisfies ReplyCue);
+  // @ts-expect-error Prebuilt replies cannot also carry a second route/data representation.
+  void ({ kin: "reply", serder: qry, route: "/tsn/registry", data: rsr, dest: ISSUER } satisfies ReplyCue);
+  // @ts-expect-error A TSN data reply must retain its requester's destination.
+  void ({ kin: "reply", route: "/tsn/registry", data: rsr } satisfies ReplyCue);
 
   assertInstanceOf(rsr, RegStateRecord);
   assertEquals(rsr.i, REGISTRY);

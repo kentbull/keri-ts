@@ -10,6 +10,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 
 Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and transport cues", async () => {
   const name = `cue-runtime-${crypto.randomUUID()}`;
@@ -41,8 +42,7 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
       });
       runtime.cues.push({
         kin: "reply",
-        route: "/loc/scheme",
-        data: { eid: hab.pre, scheme: "http", url: "http://127.0.0.1:7723" },
+        serder: replyEvent("/loc/scheme", { eid: hab.pre, scheme: "http", url: "http://127.0.0.1:7723" }),
       });
       runtime.cues.push({
         kin: "query",
@@ -228,8 +228,7 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
       const hab = hby.makeHab("interpreter");
       const cue: AgentCue = {
         kin: "reply",
-        route: "/loc/scheme",
-        data: { eid: hab.pre, scheme: "http", url: "http://localhost" },
+        serder: replyEvent("/loc/scheme", { eid: hab.pre, scheme: "http", url: "http://localhost" }),
       };
       const resources = new ResourcePolicy();
       const ordinary = new Deck([cue], 1);

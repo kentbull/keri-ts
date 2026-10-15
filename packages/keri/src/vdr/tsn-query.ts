@@ -2,9 +2,12 @@ import type { ReplyCue } from "../core/cues.ts";
 import type { QueryEnvelope } from "../core/eventing.ts";
 import type { Tever } from "./eventing.ts";
 
+type RegistryReply = Extract<ReplyCue, { route: "/tsn/registry" }>;
+type CredentialReply = Extract<ReplyCue, { route: "/tsn/credential" }>;
+
 /** Internal TSN production outcome; missing credentials retain the registry response. */
 export type TsnQueryResult =
-  | { kind: "reply"; replies: readonly [ReplyCue] | readonly [ReplyCue, ReplyCue] }
+  | { kind: "reply"; replies: readonly [RegistryReply] | readonly [RegistryReply, CredentialReply] }
   | { kind: "unavailable" }
   | { kind: "drop"; reason: "unsupportedRoute" | "missingAuthentication" | "invalidQuery" };
 
@@ -30,17 +33,20 @@ export function prepareTsnQuery(
   }
   const tever = tevers.get(query.ri);
   if (!tever) return { kind: "unavailable" };
-  const response = (route: string, data: Record<string, unknown>): ReplyCue => ({
+  const querySaid = serder.said ?? undefined;
+  const registry: RegistryReply = {
     kin: "reply",
-    route,
-    data,
+    route: "/tsn/registry",
+    data: tever.state(),
     dest,
-    querySaid: serder.said ?? undefined,
-  });
-  const registry = response("/tsn/registry", tever.state().asDict());
+    querySaid,
+  };
   if (!query.i) return { kind: "reply", replies: [registry] };
   // 714 processQuery passes nonexistent vcpre=; use the actual vcState(vci) helper.
   const credential = tever.vcState(query.i);
   if (!credential) return { kind: "reply", replies: [registry] };
-  return { kind: "reply", replies: [registry, response("/tsn/credential", credential.asDict())] };
+  return {
+    kind: "reply",
+    replies: [registry, { kin: "reply", route: "/tsn/credential", data: credential, dest, querySaid }],
+  };
 }
