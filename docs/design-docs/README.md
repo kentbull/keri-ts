@@ -26,7 +26,7 @@ acceptance live in [plans](../plans/README.md); dated evidence lives in [reports
   [ingress/egress](runtime/INGRESS_AND_EGRESS.md), [cues](runtime/CUES.md),
   [query/reply](runtime/QUERY_REPLY.md), [witness HTTP](runtime/WITNESS_HTTP.md).
 - [Mailbox](mailbox/MAILBOX.md), [read authorization](mailbox/READ_AUTHORIZATION.md),
-  [durable admission](mailbox/DURABLE_ADMISSION.md).
+  [retired consumer inbox](mailbox/DURABLE_ADMISSION.md).
 - [DB invariants](db/db-architecture.md), [payload storage](db/PAYLOAD_STORAGE.md),
   [deferred provider proposal](db/PROVIDER_PROPOSAL.md).
 

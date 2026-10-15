@@ -10,7 +10,6 @@ import { openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
 import { openNoterForHabery } from "../../../src/app/notifying.ts";
 import { LMDBer } from "../../../src/db/core/lmdber.ts";
 import { PathManager } from "../../../src/db/core/path-manager.ts";
-import { MailboxAdmissionError } from "../../../src/db/mailbox-inbox.ts";
 import { Mailboxer } from "../../../src/db/mailboxing.ts";
 import { Noter } from "../../../src/db/noting.ts";
 import { createReger, Reger } from "../../../src/db/reger.ts";
@@ -247,13 +246,19 @@ Deno.test("runtime stores - construction failure releases acquired default store
   };
   const hby = await run(() => createHabery({ ...habitatOptions, skipSignator: false }));
   try {
-    await assertRejects(() =>
-      run(() =>
-        createAgentRuntime(hby, {
-          enableMailboxStore: true,
-          mailboxAdmission: { mode: "durable", limits: { maxRecordBytes: 0 } },
-        })
-      ), MailboxAdmissionError);
+    await assertRejects(
+      () =>
+        run(() =>
+          createAgentRuntime(hby, {
+            enableMailboxStore: true,
+            get mailboxPollTransport(): never {
+              throw new Error("poll transport setup failed");
+            },
+          })
+        ),
+      Error,
+      "poll transport setup failed",
+    );
     assertReleased(registry);
     assertReleased(reger);
     assertReleased(noter);

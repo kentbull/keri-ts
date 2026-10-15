@@ -529,9 +529,9 @@ hand off each event before requesting the next. Command-local polling uses one
 absolute turn budget and resumes at the next endpoint/habitat after every attempted
 poll, so an empty early long poll cannot starve a later proxy. Its resume position
 retains only integer indices; discovery preserves existing borrowed habitat and
-per-habitat endpoint metadata, without a new flattened peer queue. It retains
-only a finite batch (256 records / 16 MiB by default), with a 4 MiB per-record
-limit; the durable inbox retains its independent capacity and explicit disposition.
+per-habitat endpoint metadata, without a new flattened peer queue. It returns
+ordinary batches collected during the poll window, without record/byte quotas
+or a durable consumer inbox. Continuous sinks finish before cursor advancement.
 The earlier reader owner also observes late read/cancel failures after scope halt
 and always attempts lock release. Only exact owned abort reasons or a failure
 already propagated by this invocation are suppressed; foreign AbortErrors remain

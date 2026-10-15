@@ -61,10 +61,11 @@ must use that same policy; raw Deck injection/pull is no longer supported. SSE o
 HTTP demand. Input awaits each complete event's consumer; unfinished EOF/timeout
 events leave cursor progress retryable. No unsolicited provider push is implied.
 
-Legacy cursor advancement is transport handoff, not durable application completion.
-Opt-in [durable admission](DURABLE_ADMISSION.md) atomically retains inbox bytes with
-cursor advancement and requires explicit application dispositions. Neither mode
-makes parser completion an authenticated business receipt.
+Cursor advancement records transport handoff, not durable application completion.
+Continuous polling waits for the consumer before advancing the cursor or fetching
+the next event. Finite polling returns ordinary message batches and records their
+cursors. There is no consumer inbox, durable replay or acknowledgement API.
+Parser completion is not an authenticated business receipt.
 
 ## Administration and discovery
 

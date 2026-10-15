@@ -15,7 +15,6 @@ export * from "./core/index.ts";
 export * from "./escrowing.ts";
 export * from "./keeping.ts";
 export * from "./koming.ts";
-export * from "./mailbox-inbox.ts";
 export * from "./mailboxing.ts";
 export * from "./noting.ts";
 export { PayloadArchive } from "./payload-archive.ts";
