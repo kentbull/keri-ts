@@ -21,7 +21,14 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
-import { assertEquals, assertExists, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
+import {
+  assertEquals,
+  assertExists,
+  assertInstanceOf,
+  assertNotEquals,
+  assertRejects,
+  assertThrows,
+} from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { groupEndorseReply } from "../../../src/app/endpoint-roleing.ts";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
@@ -855,3 +862,66 @@ Deno.test("multisig byte preparation aborts payload reads and joins disposal bef
     }
   });
 });
+
+for (const route of ["ixn", "vcp"] as const) {
+  Deno.test(`multisig approval rejects a wrapper naming another group (${route})`, async () => {
+    await participants(async (left, right, alice, bob, notifier) => {
+      const mids = [alice.pre, bob.pre];
+      const a = left.makeGroupHab("a", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+      const b = left.makeGroupHab("b", alice, mids, mids, undefined, {
+        isith: "1",
+        nsith: "1",
+        toad: 0,
+        data: [{ purpose: "b" }],
+      });
+      right.makeGroupHab("a", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+      right.makeGroupHab("b", bob, mids, mids, undefined, {
+        isith: "1",
+        nsith: "1",
+        toad: 0,
+        data: [{ purpose: "b" }],
+      });
+      assertNotEquals(a.hab.pre, b.hab.pre);
+      const registry = inceptRegistry(b.hab.pre, { cnfg: ["NB"] });
+      const event = right.interactGroupHab("b", mids, {
+        data: route === "vcp" ? [{ i: registry.pre, s: "0", d: registry.said }] : [],
+      });
+      const [wrapper, attachments] = exchange(`/multisig/${route}`, { gid: a.hab.pre, smids: mids }, {
+        sender: bob.pre,
+        embeds: route === "vcp"
+          ? { vcp: registry.raw, anc: messagize(event.serder, { sigers: event.sigers, gvrsn: Vrsn_1_0 }) }
+          : { ixn: messagize(event.serder, { sigers: event.sigers, gvrsn: Vrsn_1_0 }) },
+      });
+      await run(function*() {
+        const runtime = yield* createAgentRuntime(left, { mode: "local", notifier });
+        try {
+          runtime.poster.sendPreparedExchange = function*(_sender, args) {
+            return { serder: args.serder, deliveries: ["test"], queued: [] };
+          };
+          yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), attachments), {
+            local: true,
+          });
+          assertNotEquals(left.db.getKever(b.hab.pre)?.said, event.serder.said);
+          let prompted = "";
+          const result = yield* waitForOneApproval(left, runtime, {
+            pollTurns: 1,
+            pollBudgetMs: 1,
+            callbacks: {
+              approveProposal: ({ group }) => {
+                prompted = group;
+                return true;
+              },
+              chooseGroupAlias: () => "a",
+              chooseRegistryName: () => "unused",
+            },
+          });
+          assertEquals(prompted, "");
+          assertEquals(result, null);
+          assertNotEquals(left.db.getKever(b.hab.pre)?.said, event.serder.said);
+        } finally {
+          yield* runtime.close();
+        }
+      });
+    });
+  });
+}

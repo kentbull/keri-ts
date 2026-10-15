@@ -512,6 +512,7 @@ function* approveVdrProposal(
   if (!isRecord(embeddedSad) || !anchor) {
     return null;
   }
+  if (anchor.event.pre !== groupPre) return null;
 
   const embeddedSerder = new SerderKERI({ sad: embeddedSad });
   const { event: anchorSerder, attachment, genus } = anchor;
@@ -570,6 +571,8 @@ function kelApproval(hby: Habery, exn: SerderKERI, route: MultisigKelRoute): Kel
       : (typeof payload.gid === "string" ? payload.gid : "") || event.pre || undefined,
     "Group prefix",
   );
+  // Approval must name the same group whose event we will sign.
+  if (group !== event.pre) return null;
   const smids = stringArrayField(payload, "smids");
   return route === MULTISIG_IXN_ROUTE
     ? { route, ...child, group, smids }
