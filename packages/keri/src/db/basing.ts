@@ -1640,65 +1640,45 @@ export class Baser {
    * This is the durable export/replay seam for locally stored events. The
    * event body comes from `evts.`, while the attached foot is reconstructed
    * from the companion stores that hold controller signatures, witness
-   * signatures, source seals, receipts, and first-seen replay metadata. An optional
-   * byte budget preflights the body row before owned materialization and admits
-   * each evidence item before retaining the full message. Unlimited legacy calls
-   * keep their ordinary read path; fixed native scratch is separate overhead.
+   * signatures, source seals, receipts, and first-seen replay metadata.
    */
   cloneEvtMsg(
     pre: string,
     fn: number,
     said: string,
-    maxBytes = Infinity,
     requestedGenus: Versionage = Vrsn_1_0,
   ): Uint8Array {
-    if (maxBytes !== Infinity && (!Number.isSafeInteger(maxBytes) || maxBytes < 1)) {
-      throw new RangeError("Replay byte limit must be a positive safe integer");
-    }
     const dgkey = dgKey(pre, said);
-    // A finite replay ceiling applies at the native row boundary, before owned copies or hydration.
-    const stored = maxBytes === Infinity
-      ? this.getEvt(dgkey)
-      : this.getValBounded(this.evtsRaw, dgkey, maxBytes);
+    const stored = this.getEvt(dgkey);
     if (stored === null) throw new DatabaseOperationError(`Missing event body for ${pre}:${said}`);
-    return this.cloneStoredEvtMsg(pre, fn, said, stored, maxBytes, requestedGenus);
+    return this.cloneStoredEvtMsg(pre, fn, said, stored, requestedGenus);
   }
 
-  /** Reconstruct admitted body bytes without reopening their native row. */
+  /** Reconstruct stored body bytes without reopening their native row. */
   private cloneStoredEvtMsg(
     pre: string,
     fn: number,
     said: string,
     stored: Uint8Array,
-    maxBytes: number,
     requestedGenus: Versionage = Vrsn_1_0,
   ): Uint8Array {
     const dgkey = dgKey(pre, said);
-    if (stored.length > maxBytes) throw new ResourceLimitError("Replay message exceeds byte limit");
     // Preserve SerderSuber's validation so corrupt records retain clonePreIter's skip behavior.
     // SerderKERI recognizes both native CESR and version-string bodies.
     const serder = new SerderKERI({ raw: stored });
     const raw = serder.raw;
     // Preserve body bytes; its declared protocol/genus sets the minimum lawful attachment genus.
     const gvrsn = resolveAttachmentGvrsn(serder, requestedGenus);
-    let size = 0;
-    /** Admit each qualified fragment before retaining it or allocating the complete replay. */
-    const retain = (part: Uint8Array): Uint8Array => {
-      if (part.length > maxBytes - size) throw new ResourceLimitError("Replay message exceeds byte limit");
-      size += part.length;
-      return part;
-    };
-    retain(raw);
     const attachments: Uint8Array[] = [];
-    /** Prefix already admitted payload pieces without a large argument spread or another copy. */
+    /** Prefix payload pieces without a large argument spread or another copy. */
     const group = (name: AttachmentCounterName, count: number, payload: Uint8Array[]) => {
-      attachments.push(retain(attachmentCounterPayloadQb64b(name, count, payload, gvrsn)));
+      attachments.push(attachmentCounterPayloadQb64b(name, count, payload, gvrsn));
       for (const part of payload) attachments.push(part);
     };
-    /** Iterate fixed-size signatures so storage cannot materialize an unbounded evidence array. */
+    /** Read controller and witness signature fragments in stored order. */
     const signatures = (entries: Iterable<Siger>): Uint8Array[] => {
       const parts: Uint8Array[] = [];
-      for (const siger of entries) parts.push(retain(siger.qb64b));
+      for (const siger of entries) parts.push(siger.qb64b);
       return parts;
     };
     /** Legacy v1 seals require Seqner; v2 preserves the stored qualified Number. */
@@ -1715,7 +1695,7 @@ export class Baser {
     const seal = this.aess.get(dgkey);
     if (seal !== null) {
       const [number, diger] = seal;
-      group("SealSourceCouples", 1, [retain(ordinal(number)), retain(diger.qb64b)]);
+      group("SealSourceCouples", 1, [ordinal(number), diger.qb64b]);
     }
 
     // Receipt storage remains per signature; canonical groups share one establishment seal.
@@ -1725,23 +1705,23 @@ export class Baser {
       let receipt = groups.get(key);
       if (!receipt) {
         receipt = {
-          seal: [retain(prefixer.qb64b), retain(ordinal(snu)), retain(diger.qb64b)],
+          seal: [prefixer.qb64b, ordinal(snu), diger.qb64b],
           signatures: [],
         };
         groups.set(key, receipt);
       }
-      receipt.signatures.push(retain(siger.qb64b));
+      receipt.signatures.push(siger.qb64b);
     }
     if (groups.size) {
       const payload: Uint8Array[] = [];
       for (const receipt of groups.values()) {
         for (const part of receipt.seal) payload.push(part);
-        payload.push(retain(attachmentCounterPayloadQb64b(
+        payload.push(attachmentCounterPayloadQb64b(
           "ControllerIdxSigs",
           receipt.signatures.length,
           receipt.signatures,
           gvrsn,
-        )));
+        ));
         for (const part of receipt.signatures) payload.push(part);
       }
       group("TransIdxSigGroups", groups.size, payload);
@@ -1750,7 +1730,7 @@ export class Baser {
     const receipts: Uint8Array[] = [];
     let count = 0;
     for (const [prefixer, cigar] of this.rcts.getIter(dgkey)) {
-      receipts.push(retain(prefixer.qb64b), retain(cigar.qb64b));
+      receipts.push(prefixer.qb64b, cigar.qb64b);
       count++;
     }
     if (count) group("NonTransReceiptCouples", count, receipts);
@@ -1758,14 +1738,14 @@ export class Baser {
     const dater = this.dtss.get(dgkey);
     if (dater === null) throw new DatabaseOperationError(`Missing datetime stamp for ${pre}:${said}`);
     // Huge ordinals remain legal Number primitives in both genera.
-    group("FirstSeenReplayCouples", 1, [retain(encodeHugeOrdinal(fn).qb64b), retain(dater.qb64b)]);
-    const attachmentSize = size - raw.length;
+    group("FirstSeenReplayCouples", 1, [encodeHugeOrdinal(fn).qb64b, dater.qb64b]);
+    const attachmentSize = attachments.reduce((size, part) => size + part.length, 0);
     if (attachmentSize % 4 !== 0) {
       throw new DatabaseOperationError(`Invalid attachment quadlet size for ${pre}:${said}`);
     }
-    const header = retain(attachmentCounterQb64b("AttachmentGroup", attachmentSize / 4, gvrsn));
-    // One admitted final allocation replaces the former attachment copy plus whole-message copy.
-    const message = new Uint8Array(size);
+    const header = attachmentCounterQb64b("AttachmentGroup", attachmentSize / 4, gvrsn);
+    // Allocate the actual wire extent once, after framing lengths are known.
+    const message = new Uint8Array(raw.length + header.length + attachmentSize);
     message.set(raw);
     message.set(header, raw.length);
     let offset = raw.length + header.length;
@@ -1826,14 +1806,8 @@ export class Baser {
   replay(
     pre: string,
     fn = 0,
-    { maxDepth = 32, maxMessageBytes = 8 * 1024 * 1024 }: { maxDepth?: number; maxMessageBytes?: number } = {},
   ): CapturedKelReplay | null {
     if (!Number.isSafeInteger(fn) || fn < 0) throw new RangeError("Replay ordinal must be a non-negative safe integer");
-    for (const limit of [maxDepth, maxMessageBytes]) {
-      if (!Number.isSafeInteger(limit) || limit < 1) {
-        throw new RangeError("Replay limits must be positive safe integers");
-      }
-    }
     // Each range is a small immutable identity/ordinal tuple; no event body is read during capture.
     const ranges: KelReplayRange[] = [];
     const ancestors: string[] = [];
@@ -1841,7 +1815,6 @@ export class Baser {
     let parent = this.getKever(pre)?.delpre;
     while (parent) {
       if (visited.has(parent)) throw new DatabaseOperationError("Cyclic replay delegation chain");
-      if (ancestors.length >= maxDepth) throw new ResourceLimitError("Replay delegation depth exceeds limit");
       visited.add(parent);
       const kever = this.getKever(parent);
       if (!kever) break;
@@ -1855,24 +1828,23 @@ export class Baser {
       if (end !== null && from <= end) ranges.push([current, from, end]);
     }
     if (ranges.length === 0) return null;
-    return new CapturedKelReplay(this, ranges, maxMessageBytes);
+    return new CapturedKelReplay(this, ranges);
   }
 
   /** Capture target-only witness GET replay; explicit sequence queries retain KEL duplicate ordering. */
   witnessReplay(
     pre: string,
     sn: number | null,
-    maxMessageBytes: number,
   ): CapturedKelReplay | CapturedWitnessReplay | null {
-    if (typeof pre !== "string" || !pre || !Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
-      throw new RangeError("Invalid witness replay prefix or ceiling");
+    if (typeof pre !== "string" || !pre) {
+      throw new RangeError("Invalid witness replay prefix");
     }
     if (sn !== null && (!Number.isSafeInteger(sn) || sn < 0)) throw new RangeError("Invalid witness replay sequence");
     const felEnd = this.replayEnd(pre);
     if (felEnd === null) return null;
     if (!Number.isFinite(felEnd) || felEnd < 0) throw new DatabaseOperationError("Corrupt witness FEL horizon");
     if (!Number.isSafeInteger(felEnd)) throw new ResourceLimitError("Unsupported witness replay horizon");
-    if (sn === null) return new CapturedKelReplay(this, [[pre, 0, felEnd]], maxMessageBytes);
+    if (sn === null) return new CapturedKelReplay(this, [[pre, 0, felEnd]]);
     const start = b(`${pre}.${"f".repeat(32)}`);
     for (const entry of this.kels.sdb.getRange({ start, reverse: true, limit: 1 })) {
       const [prefix, end] = splitOnKey(entry.key);
@@ -1880,17 +1852,17 @@ export class Baser {
       if (!Number.isFinite(end) || end < 0) throw new DatabaseOperationError("Corrupt witness KEL horizon");
       if (!Number.isSafeInteger(end)) throw new ResourceLimitError("Unsupported witness KEL horizon");
       if (end < sn) return null;
-      return new CapturedWitnessReplay(this, pre, sn, end, felEnd, maxMessageBytes);
+      return new CapturedWitnessReplay(this, pre, sn, end, felEnd);
     }
     return null;
   }
 
   /** Read one captured range, retaining only a current event and releasing its cursor before each yield. */
-  *replayRange([current, from, end]: KelReplayRange, maxMessageBytes: number): Generator<Uint8Array> {
+  *replayRange([current, from, end]: KelReplayRange): Generator<Uint8Array> {
     if (
       typeof current !== "string" || !current || !Number.isSafeInteger(from) || from < 0
-      || !Number.isSafeInteger(end) || end < from || !Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1
-    ) throw new RangeError("Invalid captured KEL replay range or message limit");
+      || !Number.isSafeInteger(end) || end < from
+    ) throw new RangeError("Invalid captured KEL replay range");
     let next = from;
     while (next <= end) {
       const rows = this.fels.getAllItemIter(current, next);
@@ -1904,15 +1876,13 @@ export class Baser {
       if (!row || row[1] > end) break;
       const [, ordinal, said] = row;
       next = ordinal + 1;
-      // Native admission/I/O failures are outside the corrupt-record reconstruction skip boundary.
-      const stored = this.getValBounded(this.evtsRaw, dgKey(current, said), maxMessageBytes);
+      // Storage I/O failures are outside the corrupt-record reconstruction skip boundary.
+      const stored = this.getEvt(dgKey(current, said));
       if (!stored) continue;
       let message: Uint8Array;
       try {
-        message = this.cloneStoredEvtMsg(current, ordinal, said, stored, maxMessageBytes);
-      } catch (error) {
-        // Resource policy is terminal; only corrupt/incomplete replay records are skipped.
-        if (error instanceof ResourceLimitError) throw error;
+        message = this.cloneStoredEvtMsg(current, ordinal, said, stored);
+      } catch {
         // KERIpy clonePreIter skips individual corrupt/incomplete replay records.
         continue;
       }

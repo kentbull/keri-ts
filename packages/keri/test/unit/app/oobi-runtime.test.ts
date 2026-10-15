@@ -128,9 +128,9 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
       yield* processRuntimeTurn(runtime, { hab });
       const handler = createProtocolHandler(runtime);
       const request = new Request(`${url}/oobi/${pre}/agent/${pre}`);
-      const read = hby.db.getValBounded;
+      const read = hby.db.getEvt;
       let hydrations = 0;
-      hby.db.getValBounded = function(...args) {
+      hby.db.getEvt = function(...args) {
         hydrations++;
         return read.apply(this, args);
       };
@@ -142,7 +142,7 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
         yield* call(() => response.body!.cancel());
         assertEquals(hydrations, 1);
       } finally {
-        hby.db.getValBounded = read;
+        hby.db.getEvt = read;
       }
     } finally {
       yield* hby.close();

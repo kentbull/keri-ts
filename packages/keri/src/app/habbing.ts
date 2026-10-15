@@ -67,7 +67,7 @@ import {
   normalizeSaltQb64,
   saltySigner,
 } from "./keeping.ts";
-import { collectOobiReplies, type OobiReplyLimits, oobiReplyMessages } from "./oobi-replies.ts";
+import { oobiReplyMessages } from "./oobi-replies.ts";
 import { loadStoredReply } from "./stored-replies.ts";
 
 /** Reserved alias for the local signatory habitat record. */
@@ -269,7 +269,7 @@ export function eventReplayMessage(
       `Missing first-seen ordinal for accepted event ${pre}:${said}.`,
     );
   }
-  return hby.db.cloneEvtMsg(pre, fn, said, Infinity, gvrsn);
+  return hby.db.cloneEvtMsg(pre, fn, said, gvrsn);
 }
 
 /**
@@ -1158,14 +1158,13 @@ export class Hab {
     role?: Role | string,
     eids: readonly string[] = [],
     scheme = "",
-    limits: OobiReplyLimits = {},
   ): Iterable<Uint8Array> {
-    return oobiReplyMessages(this, cid, role, eids, scheme, false, limits);
+    return oobiReplyMessages(this, cid, role, eids, scheme, false);
   }
 
-  /** Finite role output admits each message before retaining it; large callers use the lazy source. */
+  /** Collect finite role output; large callers use the lazy source. */
   replyEndRole(cid: string, role?: Role | string, eids: string[] = [], scheme = ""): Uint8Array {
-    return collectOobiReplies(this.replyEndRoleMessages(cid, role, eids, scheme));
+    return concatMessages([...this.replyEndRoleMessages(cid, role, eids, scheme)]);
   }
 
   /** Lazy OOBI output preserves the top-level delegated readiness guard under the consuming owner. */
@@ -1173,14 +1172,13 @@ export class Hab {
     aid: string,
     role?: Role | string,
     eids: readonly string[] = [],
-    limits: OobiReplyLimits = {},
   ): Iterable<Uint8Array> {
-    return oobiReplyMessages(this, aid, role, eids, "", true, limits);
+    return oobiReplyMessages(this, aid, role, eids, "", true);
   }
 
   /** Collect explicitly finite OOBI output; incomplete delegated state still returns empty bytes. */
   replyToOobi(aid: string, role?: Role | string, eids: string[] = []): Uint8Array {
-    return collectOobiReplies(this.replyToOobiMessages(aid, role, eids));
+    return concatMessages([...this.replyToOobiMessages(aid, role, eids)]);
   }
 
   /**

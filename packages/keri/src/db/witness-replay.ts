@@ -15,7 +15,6 @@ export class CapturedWitnessReplay implements Iterable<Uint8Array> {
     readonly from: number,
     readonly end: number,
     readonly felEnd: number,
-    readonly maxMessageBytes: number,
   ) {
     if (
       typeof pre !== "string" || !pre || !Number.isSafeInteger(from) || from < 0 || !Number.isSafeInteger(end)
@@ -23,8 +22,8 @@ export class CapturedWitnessReplay implements Iterable<Uint8Array> {
     ) {
       throw new RangeError("Invalid witness KEL sequence range");
     }
-    if (!Number.isSafeInteger(felEnd) || felEnd < 0 || !Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
-      throw new RangeError("Invalid witness first-seen horizon or message ceiling");
+    if (!Number.isSafeInteger(felEnd) || felEnd < 0) {
+      throw new RangeError("Invalid witness first-seen horizon");
     }
     this.#db = db;
     Object.freeze(this);
@@ -89,7 +88,7 @@ export class CapturedWitnessReplay implements Iterable<Uint8Array> {
       if (!Number.isSafeInteger(fn)) throw new ResourceLimitError("Unsupported witness first-seen ordinal");
       // New accepted duplicates at an old sequence are outside this response's first-seen horizon.
       if (fn > this.felEnd) continue;
-      yield this.#db.cloneEvtMsg(this.pre, fn, said, this.maxMessageBytes);
+      yield this.#db.cloneEvtMsg(this.pre, fn, said);
     }
   }
 }

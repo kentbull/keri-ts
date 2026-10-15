@@ -54,3 +54,9 @@ The [DB parity plan](DB_PARITY_PLAN.md) owns row-level protocol compatibility;
 the [payload contract](../../design-docs/db/PAYLOAD_STORAGE.md) owns real file
 lifetime, subject to the removal boundary. Final interop and installed-package
 qualification remain mandatory.
+
+KEL replay and stored endpoint-reply output no longer carry accounting options.
+Keep immutable replay horizons, cursor closure, delegation-cycle detection,
+qualified ordinal/framing rules and current proof reconstruction. TEL replay,
+nested/ESSR hydration and general bounded-row helpers still require removal;
+do not reintroduce KEL or reply ceilings to coordinate those later cuts.

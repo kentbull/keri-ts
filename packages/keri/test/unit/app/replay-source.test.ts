@@ -1,4 +1,4 @@
-import { b, Dater, ResourceLimitError, SerderKERI } from "cesr-ts";
+import { b, Dater, SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -33,8 +33,8 @@ Deno.test("witness GET captures target FEL or KEL duplicate order without retain
       };
       const fork = storeFork("captured");
       const replies = new ReplyStreams();
-      const read = hby.db.getValBounded;
-      hby.db.getValBounded = () => {
+      const read = hby.db.getEvt;
+      hby.db.getEvt = () => {
         throw new Error("event hydration before HTTP pull");
       };
       let ordered: Iterable<Uint8Array>, fel: Iterable<Uint8Array>, body: ReadableStream<Uint8Array>;
@@ -46,7 +46,7 @@ Deno.test("witness GET captures target FEL or KEL duplicate order without retain
         fel = byFirstSeen.messages;
         body = replies.open(ordered);
       } finally {
-        hby.db.getValBounded = read;
+        hby.db.getEvt = read;
       }
       storeFork("late");
       hab.interact();
@@ -77,16 +77,6 @@ Deno.test("witness GET captures target FEL or KEL duplicate order without retain
         assertEquals(cursors, 0);
         yield* call(() => reader.cancel());
         reader.releaseLock();
-        const native = hby.db.evts.sdb as unknown as { getBinary(key: Uint8Array): Uint8Array | undefined };
-        const binary = native.getBinary;
-        native.getBinary = () => {
-          throw new Error("oversized event was allocated");
-        };
-        try {
-          assertThrows(() => [...hby.db.witnessReplay(hab.pre, 1, 8)!], ResourceLimitError);
-        } finally {
-          native.getBinary = binary;
-        }
         const fault = new Error("native proof read failed"), sigs = hby.db.sigs.getIter;
         hby.db.sigs.getIter = function*() {
           throw fault;
@@ -130,8 +120,8 @@ Deno.test("replay sources reopen their captured extent without including later f
       const hab = hby.makeHab("alice");
       const said = hab.kever!.said;
       // Capture and queue transfer must not open a body reader, iterator or retained Baser graph.
-      const readBody = hby.db.getValBounded;
-      hby.db.getValBounded = () => {
+      const readBody = hby.db.getEvt;
+      hby.db.getEvt = () => {
         throw new Error("capture/queue transfer opened event bytes");
       };
       let replay: CapturedKelReplay | null;
@@ -147,26 +137,14 @@ Deno.test("replay sources reopen their captured extent without including later f
         ]);
         assertThrows(() => (replay!.ranges[0] as unknown as number[])[1] = 1, TypeError);
         assertThrows(() => (replay!.ranges as unknown as string[]).push("late"), TypeError);
-        assertEquals(CapturedKelReplay.is(Object.create(CapturedKelReplay.prototype)), false);
-        // Copying primitive tuples prevents an Array subclass from retaining unrelated caller data.
-        class RetainedRanges extends Array<readonly [string, number, number]> {
-          #body = new Uint8Array(1024 * 1024);
-          /** Demonstrate actual additional caller retention, excluded from the canonical source. */
-          bytes(): number {
-            return this.#body.byteLength;
-          }
-        }
-        const input = new RetainedRanges();
-        input.push([hab.pre, 0, 0]);
-        const normalized = new CapturedKelReplay(hby.db, input, replay.maxMessageBytes);
-        assertEquals(input.bytes(), 1024 * 1024);
+        const input = [[hab.pre, 0, 0] as const];
+        const normalized = new CapturedKelReplay(hby.db, input);
         assertEquals([normalized.ranges === input, normalized.ranges[0] === input[0]], [false, false]);
         assertEquals([Object.getPrototypeOf(normalized.ranges), Object.getPrototypeOf(normalized.ranges[0])], [
           Array.prototype,
           Array.prototype,
         ]);
-        assertThrows(() => new CapturedKelReplay(hby.db, [[hab.pre, 1, 0]], replay!.maxMessageBytes), RangeError);
-        assertThrows(() => new CapturedKelReplay(hby.db, [[hab.pre, 0, 0]], 0), RangeError);
+        assertThrows(() => new CapturedKelReplay(hby.db, [[hab.pre, 1, 0]]), RangeError);
         // Even a borrowed store with opaque additional state is never walked during queue transfer.
         Object.defineProperty(hby.db, "retainedProbe", {
           get() {
@@ -176,7 +154,7 @@ Deno.test("replay sources reopen their captured extent without including later f
         });
         cues.push({ kin: "replay", messages: replay });
       } finally {
-        hby.db.getValBounded = readBody;
+        hby.db.getEvt = readBody;
         delete (hby.db as unknown as Record<string, unknown>).retainedProbe;
       }
       assertExists(replay!);
@@ -191,33 +169,17 @@ Deno.test("replay sources reopen their captured extent without including later f
       assertEquals([...hby.db.replay(hab.pre)!].length, 2);
       assertEquals(hby.db.replay(hab.pre, 2), null);
       const first = [...replay][0];
-      // The counter and every proof byte count toward the exact final allocation budget.
-      assertEquals(hby.db.cloneEvtMsg(hab.pre, 0, said, first.length), first);
-      assertThrows(() => hby.db.cloneEvtMsg(hab.pre, 0, said, first.length - 1), ResourceLimitError);
-      // Refusal occurs at native preflight, before either ordinary or admitted row materialization.
-      const native = hby.db.evts.sdb as unknown as {
-        get(key: Uint8Array): Uint8Array | undefined;
-        getBinary(key: Uint8Array, options?: object): Uint8Array | undefined;
-      };
-      const original = { get: native.get, getBinary: native.getBinary };
-      native.get = native.getBinary = () => {
-        throw new Error("oversized replay body was materialized");
-      };
-      try {
-        assertThrows(() => [...hby.db.replay(hab.pre, 0, { maxMessageBytes: 8 })!], ResourceLimitError);
-      } finally {
-        Object.assign(native, original);
-      }
-      const fault = new Error("native replay read failed");
-      native.getBinary = () => {
+      assertEquals(hby.db.cloneEvtMsg(hab.pre, 0, said), first);
+      const fault = new Error("replay storage read failed"), read = hby.db.getEvt;
+      hby.db.getEvt = () => {
         throw fault;
       };
       try {
-        assertEquals(assertThrows(() => [...replay]), fault, "native failures cannot become empty replay success");
+        assertEquals(assertThrows(() => [...replay]), fault, "storage failures cannot become empty replay success");
       } finally {
-        native.getBinary = original.getBinary;
+        hby.db.getEvt = read;
       }
-      // Corrupt stored events still skip independently; resource-limit failures above must not disappear.
+      // Corrupt stored events still skip independently from storage I/O failures.
       hby.db.setEvt(dgKey(hab.pre, hab.kever!.said), Uint8Array.of(1));
       assertEquals([...hby.db.replay(hab.pre)!].length, 1);
     } finally {

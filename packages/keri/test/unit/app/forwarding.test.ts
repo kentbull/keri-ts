@@ -14,7 +14,6 @@ import {
   concatBytes,
   parseBytes,
   ResourceAdmissionError,
-  ResourceLimitError,
   SerderKERI,
 } from "../../../../cesr/mod.ts";
 import {
@@ -976,10 +975,8 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
           ...hby.db.cloneDelegation(sender.kever!),
           sender.replyEndRole(sender.pre),
         );
-        assertEquals(introduce(sender, remote.pre, expected.length), expected);
-        assertEquals(introduce(sender, remote.pre, expected.length, { maxDescriptorBytes: 8 * 1024 * 1024 }), expected);
+        assertEquals(introduce(sender, remote.pre), expected);
         assertEquals(concatBytes(...introductionMessages(sender, remote.pre)), expected);
-        assertThrows(() => introduce(sender, remote.pre, expected.length - 1), ResourceLimitError);
         const collect = sender.replyEndRole;
         sender.replyEndRole = () => {
           throw new Error("finite endpoint collector must not run");
@@ -988,17 +985,6 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
           assertEquals(introduce(sender, remote.pre), expected);
         } finally {
           sender.replyEndRole = collect;
-        }
-        const replay = hby.db.replay;
-        hby.db.replay = () => {
-          throw new Error("refusal/suppression must precede capture");
-        };
-        try {
-          assertThrows(() => introduce(sender, remote.pre, Infinity), RangeError);
-          assertThrows(() => introduce(sender, remote.pre, -1), RangeError);
-          assertThrows(() => introduce(sender, remote.pre, 1000, { maxMessageBytes: Infinity }), RangeError);
-        } finally {
-          hby.db.replay = replay;
         }
         const intro = (yield* call(() => parseBytes(introduce(sender, remote.pre))))
           .map(({ body }) => body as SerderKERI)
@@ -1032,7 +1018,7 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
           throw new Error("suppressed introduction must not capture");
         };
         try {
-          assertEquals(introduce(sender, remote.pre, 0).length, 0);
+          assertEquals(introduce(sender, remote.pre).length, 0);
         } finally {
           hby.db.replay = capture;
         }
