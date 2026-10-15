@@ -46,6 +46,12 @@ export function registryRecord(data: unknown): RegStateRecord | null {
   }
 }
 
+/** Dependency buckets owned by the registry notice receiver. */
+type RegistryEscrowFamily = "registry-mae" | "registry-ooo";
+
+/** Registry outcomes retain the receiver's exact dependency family. */
+export type RegistryReplyDecision = ReplyProcessDecision<RegistryEscrowFamily>;
+
 /** Registry-only TSN admission; every reply owns its attester proof and accepted TEL correspondence.
  * Accepted configuration supplies trust, correcting 714's self-listed backer flaw.
  * The accepted pointer is the outer reply SAID, correcting 714's TEL-digest BADA bug.
@@ -58,14 +64,13 @@ export class RegistryStateReceiver {
   }
 
   /** Called by Revery's SAID-checked route or typed Broker retry. */
-  processReply({ serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs): ReplyProcessDecision {
-    const refuse = (reason: string, escrow?: string) => unverifiedReplyDecision(reason, { escrow });
+  processReply({ serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs): RegistryReplyDecision {
     const record = registryRecord(serder.ked?.a);
     if (
       !record || !qualifiedPrefix(aid) || timestampMicros(serder.ked?.dt) === null || route !== `/tsn/registry/${aid}`
       || serder.said !== diger.qb64 || !serder.verify()
     ) {
-      return refuse("Invalid registry transaction-state notice.");
+      return unverifiedReplyDecision("Invalid registry transaction-state notice.");
     }
     const regk = record.i!, issuer = record.ii!, sn = Number.parseInt(record.s!, 16);
     const previous = this.tvy.reger.txnsb.current([regk, aid]);
@@ -74,7 +79,7 @@ export class RegistryStateReceiver {
     };
     const reject = (reason: string) => {
       disposeIncoming();
-      return refuse(reason);
+      return unverifiedReplyDecision(reason);
     };
     const stored = this.tvy.reger.states.get(regk);
     if (stored && !registryRecord(stored.asDict())) throw new Error("Corrupt stored registry state.");
@@ -83,7 +88,7 @@ export class RegistryStateReceiver {
     }
     const kever = this.tvy.db.getKever(issuer, { refresh: true });
     this.publisher.preflight(1);
-    const escrow = (typ: string, query: boolean, proof?: PreparedReply) => {
+    const escrow = (typ: RegistryEscrowFamily, query: boolean, proof?: PreparedReply): RegistryReplyDecision => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, regk, aid, diger);
       const cues: AgentCue[] = isNew && query
         ? [{
@@ -113,7 +118,12 @@ export class RegistryStateReceiver {
         disposeIncoming();
         proof?.publishQueries();
         child?.publish();
-        return refuse("Registry state dependency unavailable.", typ);
+        return {
+          kind: "unverified",
+          reason: "dependencyPending",
+          family: typ,
+          message: "Registry state dependency unavailable.",
+        };
       } finally {
         child?.release();
       }
@@ -142,7 +152,7 @@ export class RegistryStateReceiver {
     });
     try {
       if (proof.decision.kind !== "accept") {
-        if (proof.decision.context?.pending) return escrow("registry-mae", false, proof);
+        if (proof.decision.reason === "proofPending") return escrow("registry-mae", false, proof);
         proof.applyProofs();
         proof.publishQueries();
         return reject("Unverified registry state attester.");
@@ -188,8 +198,7 @@ export class RegistryStateReceiver {
       this.tvy.reger.txnsb.retryStateNotices(typ, (args) => {
         const decision = this.processReply(args);
         if (decision.kind === "accept") return acceptEscrow();
-        const next = decision.context?.escrow;
-        if (next === typ) return keepEscrow("recoverableError");
+        if (decision.reason === "dependencyPending" && decision.family === typ) return keepEscrow("recoverableError");
         return dropEscrow("processingError");
       });
     }

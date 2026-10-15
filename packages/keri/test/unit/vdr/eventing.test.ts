@@ -768,7 +768,12 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
         assertEquals(pendingReger.txnsb.escrowdb.cnt(), 0);
         assertEquals(pendingReger.txnsb.serderdb.get([incoming.diger.qb64]), null);
         assertEquals(pendingReger.txnsb.daterdb.get([incoming.diger.qb64]), null);
-        assertEquals(expectKind(pending.processReply(incoming), "unverified").context?.escrow, "registry-mae");
+        assertEquals(pending.processReply(incoming), {
+          kind: "unverified",
+          reason: "dependencyPending",
+          family: "registry-mae",
+          message: "Registry state dependency unavailable.",
+        });
         assertEquals(pendingCues.toArray(), [{
           kin: "query",
           pre: issuer.pre,
@@ -780,8 +785,13 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
         pendingCues.capacity = 0;
         const blocked = expectKind(pendingResources.reserve({ bytes: pendingResources.limits.bytes }), "reserve");
         assertEquals(
-          expectKind(pending.processReply(incoming), "unverified").context?.escrow,
-          "registry-mae",
+          pending.processReply(incoming),
+          {
+            kind: "unverified",
+            reason: "dependencyPending",
+            family: "registry-mae",
+            message: "Registry state dependency unavailable.",
+          },
           "existing bucket membership acquires no second query credit",
         );
         blocked.reservation.release();
@@ -1172,7 +1182,12 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       });
       cues.capacity = 0;
       const duplicateBusy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      assertEquals(expectKind(owned.processReply(incoming), "unverified").context?.escrow, "credential-mre");
+      assertEquals(owned.processReply(incoming), {
+        kind: "unverified",
+        reason: "dependencyPending",
+        family: "credential-mre",
+        message: "Credential state dependency unavailable.",
+      });
       duplicateBusy.reservation.release();
       assertEquals(cues.length, 0);
       assertEquals(resources.used.bytes, 0);

@@ -22,15 +22,28 @@ export interface ReplyAccept {
   kind: "accept";
 }
 
-/** Live reply outcome for one well-formed reply that is not yet accepted. */
+/** Unaccepted proof; proofPending hands recoverable evidence back to the caller. */
 export interface ReplyUnverified {
   kind: "unverified";
+  reason: "notAccepted" | "proofPending";
   message: string;
-  context?: Record<string, unknown>;
 }
 
-/** Typed live reply result used instead of exception-shaped control flow. */
-export type ReplyProcessDecision = ReplyAccept | ReplyUnverified;
+/** Proof verification cannot choose a semantic receiver's dependency family. */
+export type ReplyProofDecision = ReplyAccept | ReplyUnverified;
+
+/**
+ * Route handlers own their closed escrow-family types. The shared dispatcher
+ * transports the family name without importing higher-level receiver policy.
+ */
+export type ReplyProcessDecision<Family extends string = string> =
+  | ReplyProofDecision
+  | {
+    kind: "unverified";
+    reason: "dependencyPending";
+    family: Family;
+    message: string;
+  };
 
 /**
  * Caller-owned reply preparation for one synchronous guarded turn. Do not suspend
@@ -38,7 +51,7 @@ export type ReplyProcessDecision = ReplyAccept | ReplyUnverified;
  * Borrowed proof material remains immutable until application or release.
  */
 export interface PreparedReply {
-  readonly decision: Readonly<ReplyProcessDecision>;
+  readonly decision: Readonly<ReplyProofDecision>;
   /** Apply accepted/escrow proof effects once, after all semantic cue admission succeeds. */
   applyProofs(): void;
   /** Publish admitted queries after proof and semantic publication. */
@@ -49,7 +62,7 @@ export interface PreparedReply {
 
 /** Finite proof writes and concrete query cues discovered without changing BADA or escrow state. */
 interface ReplyAcceptancePlan {
-  decision: ReplyProcessDecision;
+  decision: ReplyProofDecision;
   accepted?: Parameters<Revery["updateReply"]>[0];
   escrows: Array<Parameters<Revery["escrowReply"]>[0]>;
   cues: AgentCue[];
@@ -63,9 +76,26 @@ export function acceptReplyDecision(): ReplyAccept {
 /** Builder for one unverified live reply decision. */
 export function unverifiedReplyDecision(
   message: string,
-  context?: Record<string, unknown>,
 ): ReplyUnverified {
-  return { kind: "unverified", message, context };
+  return { kind: "unverified", reason: "notAccepted", message };
+}
+
+/** Validate a reflective route result before it enters typed reply processing. */
+function isReplyDecision(value: unknown): value is ReplyProcessDecision {
+  if (!value || typeof value !== "object") return false;
+  if (!("kind" in value)) return false;
+  if (value.kind === "accept") return true;
+  if (value.kind !== "unverified" || !("message" in value) || typeof value.message !== "string") return false;
+  if (!("reason" in value)) return false;
+  switch (value.reason) {
+    case "notAccepted":
+    case "proofPending":
+      return true;
+    case "dependencyPending":
+      return "family" in value && typeof value.family === "string";
+    default:
+      return false;
+  }
 }
 
 /** Return true when a reply signer has usable threshold material for its key set. */
@@ -295,20 +325,17 @@ export class Router {
           );
         }
       }
-      const decision = fn.call(candidate.resource, {
+      const decision: unknown = fn.call(candidate.resource, {
         ...args,
         route,
         ...params,
       });
-      if (
-        !decision || typeof decision !== "object"
-        || (decision.kind !== "accept" && decision.kind !== "unverified")
-      ) {
+      if (!isReplyDecision(decision)) {
         throw new ValidationError(
           `Reply route ${route} did not return a valid reply decision.`,
         );
       }
-      return decision as ReplyProcessDecision;
+      return decision;
     }
 
     throw new ValidationError(
@@ -442,7 +469,7 @@ export class Revery {
     externalEscrow?: boolean;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
-  }): ReplyProcessDecision {
+  }): ReplyProofDecision {
     const prepared = this.prepareReply(args);
     try {
       prepared.applyProofs();
@@ -460,7 +487,6 @@ export class Revery {
     let previous = args.retainPrevious ? null : args.osaider ?? null;
     let queries = plan.cues;
     const decision = plan.decision;
-    if (decision.kind === "unverified" && decision.context) Object.freeze(decision.context);
     Object.freeze(decision);
     this.cues.checkSpace(queries.length);
     const batch = queries.length ? this.publisher.prepare(queries) : undefined;
@@ -666,10 +692,11 @@ export class Revery {
     return {
       escrows,
       cues,
-      decision: unverifiedReplyDecision(
-        `Reply ${args.saider.qb64} at route ${args.route} was not accepted.`,
-        { said: args.saider.qb64, route: args.route, aid: args.aid, ...(args.externalEscrow ? { pending } : {}) },
-      ),
+      decision: {
+        kind: "unverified",
+        reason: args.externalEscrow && pending ? "proofPending" : "notAccepted",
+        message: `Reply ${args.saider.qb64} at route ${args.route} was not accepted.`,
+      },
     };
   }
 
@@ -859,7 +886,6 @@ export class Revery {
           context: {
             said: diger.qb64,
             route: serder.route,
-            ...(decision.context ?? {}),
           },
         });
       }
@@ -1000,7 +1026,6 @@ export class BasicReplyRouteHandler {
     if (decision.kind === "unverified") {
       return unverifiedReplyDecision(
         `Unverified end role reply = ${args.serder.said} role = ${role}`,
-        { role, cid, eid, route: args.route },
       );
     }
 
@@ -1068,7 +1093,6 @@ export class BasicReplyRouteHandler {
     if (decision.kind === "unverified") {
       return unverifiedReplyDecision(
         `Unverified loc scheme reply URL=${url} SAID=${args.serder.said}`,
-        { eid, scheme, url, route: args.route },
       );
     }
 

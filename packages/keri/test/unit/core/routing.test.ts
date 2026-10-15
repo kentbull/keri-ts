@@ -14,9 +14,71 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import { DeckFullError } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { Revery, unverifiedReplyDecision } from "../../../src/core/routing.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
+import {
+  type ReplyProcessDecision,
+  type ReplyProofDecision,
+  Revery,
+  Router,
+  unverifiedReplyDecision,
+} from "../../../src/core/routing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
+import type { RegistryReplyDecision } from "../../../src/vdr/registry-tsn.ts";
 import { expectKind, routingTestApi, withPatchedMethod } from "../../private-access.ts";
+
+// Compile-time checks: dependency outcomes require their receiver's family;
+// proof verification alone cannot claim a semantic dependency escrow.
+// @ts-expect-error A dependency outcome must name its escrow family.
+void ({ kind: "unverified", reason: "dependencyPending", message: "waiting" } satisfies RegistryReplyDecision);
+void ({
+  kind: "unverified",
+  reason: "dependencyPending",
+  // @ts-expect-error A registry receiver cannot return a credential escrow family.
+  family: "credential-mae",
+  message: "waiting",
+} satisfies RegistryReplyDecision);
+void ({
+  kind: "unverified",
+  // @ts-expect-error Proof verification cannot choose a semantic receiver's family.
+  reason: "dependencyPending",
+  family: "registry-mae",
+  message: "waiting",
+} satisfies ReplyProofDecision);
+
+Deno.test("Router validates semantic reply outcomes returned by reflective handlers", () => {
+  const serder = new SerderKERI({
+    sad: { t: "rpy", dt: makeNowIso8601(), r: "/decision", a: {} },
+    makify: true,
+  });
+  const diger = new Diger({ qb64: serder.said! });
+  const dispatch = (outcome: unknown) => {
+    const router = new Router();
+    router.addRoute("/decision", { processReply: () => outcome });
+    return router.dispatch({ serder, diger });
+  };
+  for (
+    const invalid of [
+      undefined,
+      { kind: "unverified", message: "no reason" },
+      { kind: "unverified", reason: "dependencyPending", message: "no family" },
+      { kind: "unverified", reason: "dependencyPending", family: 1, message: "invalid family" },
+      { kind: "unverified", reason: "proofPending", message: 1 },
+      { kind: "unverified", reason: "unknown", message: "unknown reason" },
+    ]
+  ) {
+    assertThrows(() => dispatch(invalid), ValidationError, "valid reply decision");
+  }
+  for (
+    const valid of [
+      { kind: "accept" },
+      unverifiedReplyDecision("not accepted"),
+      { kind: "unverified", reason: "proofPending", message: "missing signatures" },
+      { kind: "unverified", reason: "dependencyPending", family: "registry-mae", message: "missing signer" },
+    ] satisfies ReplyProcessDecision[]
+  ) {
+    assertEquals(dispatch(valid), valid);
+  }
+});
 
 function createEscrowedReplyFixture(
   hby: {
@@ -223,9 +285,8 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
       unchanged();
       // External escrow must not virtually aggregate proofs which its semantic owner has not published.
       const pending = expectKind(rvy.acceptReply({ ...args, externalEscrow: true }), "unverified");
-      assertEquals(pending.context?.pending, true);
+      assertEquals(pending.reason, "proofPending");
       assertEquals(Object.isFrozen(pending), true);
-      assertEquals(Object.isFrozen(pending.context), true);
       assertEquals(cues.toArray(), [{ kin: "query", pre: hab.pre, q: { pre: hab.pre } }]);
       cues.clear();
       unchanged();
