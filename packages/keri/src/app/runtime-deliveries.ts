@@ -443,7 +443,9 @@ export function queryTransportSink(
     if (emission.kind !== "wire" || emission.cue.kin !== "query") return;
     const destination = emission.cue.src, queriedPre = emission.cue.pre;
     if (!destination || !queriedPre) return;
-    const url = resolveQueryDestinationUrl(hab, queriedPre, destination, {
+    const signer = emission.cue.signer === undefined ? hab : hby.habs.get(emission.cue.signer);
+    if (!signer) return;
+    const url = resolveQueryDestinationUrl(signer, queriedPre, destination, {
       explicitWitness: emission.cue.wits?.includes(destination) ?? false,
     });
     if (!url) throw new ValidationError(`No endpoint URL found for query destination ${destination}.`);
@@ -467,7 +469,7 @@ export function queryTransportSink(
     if (failed) throw failure;
     if (!message) return;
     if (message.buffer.byteLength > requestBytes) throw new ResourceLimitError("Query request exceeds byte limit");
-    const intro = introduce(hab, destination, requestBytes - message.length);
+    const intro = introduce(signer, destination, requestBytes - message.length);
     if (intro.length + message.length > requestBytes) throw new ResourceLimitError("Query request exceeds byte limit");
     return { url, body: concatBytes(intro, message), bodyMode: hby.cesrBodyMode, destination };
   };

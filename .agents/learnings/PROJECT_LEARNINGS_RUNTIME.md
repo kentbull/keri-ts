@@ -18,8 +18,10 @@ its optional signer names a local AID and src names the remote attester. Continu
 and pending work retain identifiers, not Hab objects. QueryCoordinator resolves an
 explicit signer through its existing Habery; an unavailable selection stays pending
 rather than falling back to the configured/sole Hab. Hab interpretation defers cues
-selected for another signer to correspondence. Anchorer receives only the concrete
-QueryRequest enqueue port, not the consuming coordinator's control surface.
+selected for another signer to correspondence. Query delivery resolves that same
+signer for endpoint lookup and introduction; a transport sink's ambient Hab cannot
+supply the introduction for another selected identity. Anchorer receives only the
+concrete QueryRequest enqueue port, not the consuming coordinator's control surface.
 Hab.query accepts that instruction plus
 its existing mailbox-topic form; raw protocol-eventing.query remains the open codec
 boundary. Do not restore a `query` alias, duplicate body target or arbitrary route/body
@@ -53,7 +55,11 @@ active head; close cancels/joins processing before clearing every pending owner.
 Signer identifiers are ordinary retained metadata in the existing byte walk;
 component-owned configured Hab dependencies never enter queued work.
 Receiving mailbox identity is an explicit per-message argument, never ambient
-mutable request state. Mailbox query correlation uses its own exact-policy
+mutable request state. Without explicit mailbox routes, poll every eligible witness
+mailbox in stable order through the existing per-endpoint workers. A logs reply is stored at the
+witness that answered; querying alternatives while polling one retired witness
+cannot recover it. Explicit mailbox precedence remains separate.
+Mailbox query correlation uses its own exact-policy
 CueDeck (64 held slots by default); selected cues retain byte/item credit through
 joined nested-reader cleanup. Admit the destination before removing a source cue;
 shutdown clears unmatched owners only after active reads close.
