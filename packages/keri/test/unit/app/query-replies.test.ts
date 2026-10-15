@@ -5,7 +5,6 @@ import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { QueryReplies } from "../../../src/app/query-replies.ts";
 import { ReplyStreams } from "../../../src/app/reply-streams.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue, ReplayCue, ReplyCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
@@ -34,7 +33,7 @@ function tsnPair(querySaid: string, dest = "recipient", src?: string): [ReplyCue
 }
 
 Deno.test("query reply reservations isolate interleaved results from the background cue deck", () => {
-  const replies = new QueryReplies(3);
+  const replies = new QueryReplies();
   const first = replies.reserve("query-a");
   const duplicate = replies.reserve("query-a");
   const second = replies.reserve("query-b");
@@ -51,20 +50,19 @@ Deno.test("query reply reservations isolate interleaved results from the backgro
   assertEquals([...cues], [background]);
   assertEquals([first.ready, wakes], [true, 1]);
   unobserve();
-  assertStrictEquals(first.take(), replay);
-  assertStrictEquals(duplicate.take(), replay);
-  assertStrictEquals(second.take(), other);
+  assertStrictEquals(first.takeAll()?.cues[0], replay);
+  assertStrictEquals(duplicate.takeAll()?.cues[0], replay);
+  assertStrictEquals(second.takeAll()?.cues[0], other);
   // Duplicate arrivals occupy one slot and fanout shares the same replay byte reference.
-  assertEquals(first.take(), undefined);
+  assertEquals(first.takeAll()?.cues[0], undefined);
   first.close();
   duplicate.close();
   second.close();
 });
 
-Deno.test("query reply reservations bound pending requests and release cancellation slots", () => {
-  const replies = new QueryReplies(1);
+Deno.test("query reply cancellation returns later results to background delivery", () => {
+  const replies = new QueryReplies();
   const pending = replies.reserve("query-a");
-  assertThrows(() => replies.reserve("query-b"), ResourceLimitError);
   pending.close();
   pending.close();
   const next = replies.reserve("query-b");
@@ -76,54 +74,23 @@ Deno.test("query reply reservations bound pending requests and release cancellat
   next.close();
 });
 
-Deno.test("admitted TSN pairs retain fanout credit until response cleanup", async () => {
-  const resources = new ResourcePolicy(), cues = new CueDeck(resources, 8, 64), replies = new QueryReplies(2);
+Deno.test("TSN pairs share ordinary records across matching requests", () => {
+  const cues = new Deck<AgentCue>(), replies = new QueryReplies();
   const first = replies.reserve("tsn"), duplicate = replies.reserve("tsn");
   const [registry, credential] = tsnPair("tsn");
   const background: ReplyCue = { kin: "reply", serder: replyEvent("/background", {}) };
   cues.extend([background, registry, credential, credential]);
   replies.capture(cues);
   assertEquals([...cues], [background]);
-  assertThrows(() => first.take(), Error, "batch");
-  const batch = first.takeAll()!;
-  assertEquals(batch.cues, [registry, credential]);
+  assertEquals(first.takeAll()?.cues, [registry, credential]);
+  assertEquals(duplicate.takeAll()?.cues, [registry, credential]);
   first.close();
   duplicate.close();
-  cues.clear();
-  assertEquals(resources.used.bytes > 0, true, "Request closure cannot release transferred response credit");
-  const streams = new ReplyStreams({ maxMessageBytes: 3 }, resources);
-  const response = streams.open([], batch.release);
-  assertEquals(resources.used.bytes > 0, true);
-  await response.cancel();
-  batch.release();
-  streams.close();
-  assertEquals(resources.used.bytes, 0);
   const next = replies.reserve("tsn");
   cues.push(registry);
   replies.capture(cues);
-  const partial = next.takeAll()!;
-  assertEquals(partial.cues, [registry], "A registry-only result is not credential acceptance");
-  partial.release();
+  assertEquals(next.takeAll()?.cues, [registry], "A registry-only result is not credential acceptance");
   next.close();
-  assertEquals(resources.used.bytes, 0);
-});
-
-Deno.test("query fanout refusal keeps the original admitted cue for a later capture", () => {
-  const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1, 64), replies = new QueryReplies(2);
-  const first = replies.reserve("tsn"), duplicate = replies.reserve("tsn");
-  const [cue] = tsnPair("tsn");
-  cues.push(cue);
-  assertThrows(() => replies.capture(cues), ResourceLimitError);
-  assertEquals(first.takeAll(), undefined);
-  assertEquals(duplicate.takeAll(), undefined);
-  assertEquals([...cues], [cue], "Original owner remains queued when fanout cannot publish");
-  duplicate.close();
-  replies.capture(cues);
-  const batch = first.takeAll()!;
-  assertEquals(batch.cues, [cue]);
-  batch.release();
-  first.close();
-  assertEquals(resources.used.bytes, 0);
 });
 
 Deno.test("direct reply pairs publish atomically and share exact signed wire through both consumers", async () => {
@@ -171,7 +138,7 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       if (failPrepare && cue.kin === "reply" && cue.route === "/tsn/credential") throw preparation;
       return interpret(cue);
     };
-    const replies = new QueryReplies(1), slot = replies.reserve("tsn"), cues = new CueDeck(runtime.resources, 8, 64);
+    const replies = new QueryReplies(), slot = replies.reserve("tsn"), cues = new Deck<AgentCue>();
     const pair = tsnPair("tsn", recipient.pre, sender.pre);
     try {
       yield* runtime.reactor.processBytes(recipient.makeEndRole(recipient.pre, "controller", true));
@@ -300,7 +267,7 @@ Deno.test("queued replies preserve atomic slots without borrowing an HTTP respon
       if (failPrepare && cue.kin === "reply" && cue.route === "/tsn/credential") throw preparation;
       return interpret(cue);
     };
-    const replies = new QueryReplies(1), slot = replies.reserve("tsn"), cues = new CueDeck(runtime.resources, 8, 64);
+    const replies = new QueryReplies(), slot = replies.reserve("tsn"), cues = new Deck<AgentCue>();
     const pair = tsnPair("tsn", recipient.pre, sender.pre);
     try {
       yield* runtime.reactor.processBytes(recipient.makeEndRole(recipient.pre, "controller", true));
@@ -345,22 +312,6 @@ Deno.test("queued replies preserve atomic slots without borrowing an HTTP respon
       const later = replies.reserve("tsn");
       cues.extend(pair);
       replies.capture(cues);
-      const request = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
-      for (let index = 0; index < 8; index++) {
-        runtime.deliveries.enqueue(() => ({
-          url: "https://peer.test/",
-          body: request,
-          bodyMode: "body",
-          destination: recipient.pre,
-        }));
-      }
-      const before = interpretations;
-      assertEquals(
-        assertThrows(() => runtime.deliveries.enqueueReply(runtime, sender, later), ResourceAdmissionError).reason,
-        "busy",
-      );
-      assertEquals(interpretations, before, "A full queue leaves the original slot uninterpreted");
-      yield* runtime.deliveries.process(runtime);
       assertEquals(runtime.deliveries.enqueueReply(runtime, sender, later), true);
       later.close();
       blocked = true;

@@ -41,21 +41,17 @@ responsibilities into one vague "VC" layer.
   lanes. Do not apply v2 most-compact top-level SAID rules to v1 KERIpy
   registry credentials.
 - TEL decisions should stay typed: accepted, duplicate, escrowed, or rejected.
-  Expected retry paths are not exception control flow. With an injected CueDeck,
-  actual revocation output is prepared before body, anchor, date and ordinal writes;
-  publication retains its credit until consumer cleanup. Actual owned publication
-  failures propagate with their original identity rather than becoming protocol
-  rejection. Ordinary Deck count and decision behavior stay unchanged.
+  Expected retry paths are not exception control flow. Revocation evidence writes
+  precede ordinary cue publication. Infrastructure failures propagate unchanged;
+  cue records have no reservation, credit or capacity lifetime.
 - IPEX is EXN conversation state. It should not own TEL acceptance or wallet
   persistence.
 - Verifier webhooks are not notifier state. `Notifier` gives operator
   visibility; durable verifier work is driven from accepted grants, TEL state,
   saved credential indexes, and verifier cue sidecars.
-- VerifierAgent's guarded revoked-cue scan borrows the runtime deck. With CueDeck,
-  transfer existing owners, preserve unrelated order, release only after durable
-  verifier enqueue or duplicate detection, and requeue failed publication with
-  its original credit. The temporary scan is bounded by the initial deck count;
-  webhook waits remain outside the guard. Ordinary Deck handling is unchanged.
+- VerifierAgent scans only the initial Deck extent, preserves unrelated cue order,
+  and requeues records when durable verifier publication fails. Webhook waits
+  remain outside the guard. Duplicate revocations produce no second webhook.
 
 ## V2 Registry Evidence
 

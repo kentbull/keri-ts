@@ -50,8 +50,9 @@ list AGID. Supplied bound JSON resources and generated default schemas stay dist
 The scale observations used two streams/one decryption. Headroom for simultaneous
 mailbox/SSE polls and independent work is policy, not a protocol maximum; it does
 not supply an eight-concurrency volume result. Producer/consumer ports retain cue/tree/output credit through joined cleanup.
-[#328][activation] installs the merged default CueDeck after stores/before consumers and clears
-queued owners before stores; injected and standalone services stay borrowed.
+Historical [#328][activation] installed cue ownership accounting. The October 15
+cleanup removes that layer: default runtime and mailbox queues now carry ordinary
+Deck records; joined output cleanup still precedes store closure.
 Network waits run outside short guarded preparation; busy preserves the admitted head.
 [#326][sidecars] scopes temporary Noter/Mailboxer cleanup, including failed acquisition.
 

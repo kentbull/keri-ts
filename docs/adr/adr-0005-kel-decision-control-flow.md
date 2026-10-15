@@ -70,7 +70,7 @@ Kevery; the storage seam neither decides validity nor publishes cues.
 Delegation lookup discoveries travel as concrete `sourceSealRepairs` in the
 attachment/event decision. Kever reads existing hints and sees earlier repairs
 within that evaluation, but does not write `aess`. Kevery applies discovered
-repairs in its existing write phase after cue admission; a same-bucket escrow
+repairs in its existing write phase; a same-bucket escrow
 retry may still repair its hint without rewriting the escrow or publishing cues.
 This preserves KERIpy's `fetchDelegatingEvent` recovery behavior while respecting
 the TypeScript decide/apply boundary. No generic effect language or transaction
@@ -83,16 +83,14 @@ keeps the KERIpy mental model while making the control surface explicit in
 TypeScript.
 
 Kevery uses plain EventMetadata for finalized first-seen/log coordinates, clone
-notices and accepted cache state. Its control flow explicitly admits the actual
-cue batch, writes decision data, publishes accepted state and publishes cues.
-Metadata has no write/publish/release methods; finally releases only acquired cue
-capacity. Repair-only rejection needs no fabricated lifecycle object.
+notices and accepted cache state. Its control flow writes decision data, commits, then publishes accepted state
+and ordinary cue records. Metadata has no write/publish/release methods. Repair-only rejection needs no fabricated lifecycle object.
 
 When `processEvent` owns the native writer, one synchronous transaction covers
-decision, concrete cue admission, first-seen preparation and durable effects.
+decision, first-seen preparation and durable effects.
 Live accepted state and cues publish only after that commit succeeds; failed
-writes or commits release unpublished cue ownership. `processEvent` refuses an
-already-active native writer before evaluation or admission: the processing owner
+writes or commits publish no live state or cues. `processEvent` refuses an
+already-active native writer before evaluation: the processing owner
 must observe its own successful commit before publishing. No production caller
 needs nested KEL processing. The unused public `applyDecision` entrypoint is removed;
 pure `decideEvent` remains available for inspection, without a separate application

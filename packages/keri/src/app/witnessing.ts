@@ -1,4 +1,3 @@
-import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
 /**
  * Witness host and controller-side receipting helpers.
@@ -31,7 +30,7 @@ import {
 import { toEffectionFrames } from "cesr-ts/effection";
 import { action, call, each, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
-import { type Deck, DeckFullError } from "../core/deck.ts";
+import { type Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { receipt as receiptEvent, reply as replyEvent } from "../core/protocol-eventing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
@@ -283,7 +282,7 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
 export function* drainWitnessCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
-  cues: CueQueueInput,
+  cues: Deck<AgentCue>,
   {
     deliver = true,
     onAdmissionRefusal,
@@ -306,7 +305,7 @@ function finiteWitnessEmissions(
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): Operation<CueEmission[]> {
   return call(function*() {
-    const maxBytes = cueDeliveryBudget.wireBytes, maxItems = runtime.cues.capacity;
+    const maxBytes = cueDeliveryBudget.wireBytes;
     yield* resource<void>(function*(provide) {
       const admitted = runtime.resources.reserve({ bytes: maxBytes });
       if (admitted.kind === "refuse") {
@@ -323,7 +322,6 @@ function finiteWitnessEmissions(
     const emissions: CueEmission[] = [];
     let size = 0;
     yield* process(function*(emission) {
-      if (emissions.length === maxItems) throw new ResourceLimitError("Finite witness emission count exceeds limit");
       const messages: Uint8Array[] = [];
       const source = emission.messages[Symbol.iterator]();
       let failure: { error: unknown } | undefined;
@@ -365,7 +363,7 @@ function finiteWitnessEmissions(
 function* consumeWitnessCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
-  cues: CueQueueInput,
+  cues: Deck<AgentCue>,
   deliver: boolean,
   consume?: (emission: CueEmission) => Operation<void>,
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
@@ -379,8 +377,8 @@ function* consumeWitnessCues(
   });
   for (let index = 0; index < count; index++) {
     const more = yield* call(function*() {
-      let owner: PreparedCueEmission | undefined, refusal: ResourceAdmissionError | DeckFullError | undefined;
-      const note = (error: ResourceAdmissionError | DeckFullError) => {
+      let owner: PreparedCueEmission | undefined, refusal: ResourceAdmissionError | undefined;
+      const note = (error: ResourceAdmissionError) => {
         refusal = error;
         if (error instanceof ResourceAdmissionError) onAdmissionRefusal?.(error);
       };
@@ -409,7 +407,7 @@ function* consumeWitnessCues(
           if (owner?.emission) runtime.querying.observeCue(owner.emission.cue);
         });
       } catch (error) {
-        if (refusal && error === refusal && (refusal instanceof DeckFullError || refusal.reason === "busy")) {
+        if (refusal && error === refusal && (refusal.reason === "busy")) {
           return false;
         }
         throw error;

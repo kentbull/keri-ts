@@ -3,9 +3,8 @@ import { type Operation } from "effection";
 import {
   type AgentCue,
   type AgentRuntime,
-  type CueQueueInput,
   type CueSink,
-  DeckFullError,
+  type Deck,
   type Hab,
   processCuesOnce,
   queryTransportSink,
@@ -20,7 +19,7 @@ import {
 export function* drainRuntimeCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
-  cues: CueQueueInput,
+  cues: Deck<AgentCue>,
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): Operation<void> {
   if (cues !== runtime.cues) throw new RangeError("HTTP cue drain requires the runtime source deck");
@@ -35,16 +34,11 @@ export function* drainRuntimeCues(
     admitCue: responder.admitCue,
     send: (emission) => runtime.respondant.sendWithHab(emission, hab),
   };
-  let refusal: ResourceAdmissionError | DeckFullError | undefined;
-  const note = (error: ResourceAdmissionError | DeckFullError) => {
-    refusal = error;
-    if (error instanceof ResourceAdmissionError) onAdmissionRefusal?.(error);
-  };
   const sink: CueSink = {
     admitCue: (source, interpreter) => runtime.querying.admitCue(source, interpreter, destination),
     prepareEmission(emission) {
       if (emission.kind === "transport" && emission.cue.kin === "stream") {
-        runtime.mailboxDirector.retainQueryCue(emission.cue, note);
+        runtime.mailboxDirector.retainQueryCue(emission.cue);
       } else if (emission.cue.kin === "query" && emission.kind !== "wire") {
         runtime.querying.enqueueCue(emission.cue);
       }
@@ -60,11 +54,7 @@ export function* drainRuntimeCues(
     },
     send: destination.send,
   };
-  try {
-    yield* processCuesOnce(runtime, { hab, sink, onAdmissionRefusal });
-  } catch (error) {
-    if (!refusal || error !== refusal || !(refusal instanceof DeckFullError || refusal.reason === "busy")) throw error;
-  }
+  yield* processCuesOnce(runtime, { hab, sink, onAdmissionRefusal });
   // Network/capacity checks run after the synchronous guarded transfers.
   yield* runtime.deliveries.process(runtime);
 }

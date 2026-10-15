@@ -12,7 +12,6 @@ import {
   type AgentRuntime,
   chunkBytes,
   Deck,
-  DeckFullError,
   type Hab,
   prepareCueEmission,
   type PreparedCueEmission,
@@ -168,13 +167,6 @@ function* processWitnessSocket(
         type Batch = NonNullable<ReturnType<QueryReply["takeAll"]>>;
         /** Borrow one captured batch until every admitted output and source cleanup joins. */
         function* sendBatch(batch: Batch): Operation<void> {
-          yield* resource<void>(function*(provide) {
-            try {
-              yield* provide();
-            } finally {
-              batch.release();
-            }
-          });
           for (const cue of batch.cues) {
             yield* call(function*() {
               let output: PreparedCueEmission | undefined;
@@ -214,7 +206,11 @@ function* processWitnessSocket(
             }
           });
           const body = frame.body;
-          if (body.ilk === Ilks.qry && pending) throw new DeckFullError("TCP pending query slot is occupied");
+          if (body.ilk === Ilks.qry && pending) {
+            const error = new Error("TCP connection already has an unresolved query");
+            peers.add(error);
+            throw error;
+          }
           const pre = typeof body.ked?.i === "string" ? body.ked.i : undefined;
           let slot = body.ilk === Ilks.qry && body.said
             ? runtime.reactor.replies.reserve(body.said)
@@ -227,7 +223,6 @@ function* processWitnessSocket(
             try {
               yield* provide();
             } finally {
-              batch?.release();
               slot?.close();
             }
           });
@@ -254,13 +249,6 @@ function* processWitnessSocket(
           if (pending?.ready) {
             yield* call(function*() {
               let batch: Batch | undefined;
-              yield* resource<void>(function*(provide) {
-                try {
-                  yield* provide();
-                } finally {
-                  batch?.release();
-                }
-              });
               yield* runtime.reactor.settle(undefined, {}, function*() {
                 batch = pending!.takeAll();
               });
@@ -331,7 +319,6 @@ function* processWitnessSocket(
     ]);
   } catch (error) {
     if (error instanceof WireParseError) onRefusal("wire");
-    else if (error instanceof DeckFullError) onRefusal("busy");
     else if (error instanceof ResourceLimitError) {
       onRefusal("reason" in error && error.reason === "busy" ? "busy" : "limit");
     } else if (peers.has(error)) onRefusal("peer");

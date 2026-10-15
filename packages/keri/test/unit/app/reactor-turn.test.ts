@@ -10,10 +10,8 @@ import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbi
 import { Oobiery } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue, ReplayCue } from "../../../src/core/cues.ts";
-import { DeckFullError } from "../../../src/core/deck.ts";
-import { standaloneCues } from "../../private-access.ts";
+import { Deck } from "../../../src/core/deck.ts";
 
 /** Explicit test gates make turn ordering observable without timing sleeps. */
 function gate(): { wait: Promise<void>; open: () => void } {
@@ -102,31 +100,10 @@ Deno.test("two request reservations survive an interleaved background cue drain"
       yield* background;
       // The actual background consumer runs under the guard and captures both reservations first.
       assertEquals(seen, [ordinary]);
-      assertStrictEquals(first.take(), replayA);
-      assertStrictEquals(second.take(), replayB);
+      assertStrictEquals(first.takeAll()?.cues[0], replayA);
+      assertStrictEquals(second.takeAll()?.cues[0], replayB);
       first.close();
       second.close();
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("a full cue deck pauses escrow work but still permits a draining turn", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: `turn-cue-limit-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    try {
-      const reactor = new Reactor(hby, { maxPendingCues: 1 });
-      reactor.cues.push({ kin: "replay", messages: [new Uint8Array([1])] });
-      // Existing durable work waits for delivery instead of terminating its background worker.
-      yield* reactor.settle(undefined, { escrows: true });
-      assertEquals(reactor.cues.length, 1);
-      // Draining needs no new protocol admission, otherwise a full deck could never recover.
-      yield* reactor.settle(undefined, {}, function*() {
-        assertEquals(standaloneCues(reactor.cues).pull()?.kin, "replay");
-      });
-      yield* reactor.settle(undefined, { escrows: true });
-      assertEquals(reactor.cues.length, 0);
     } finally {
       yield* hby.close(true);
     }
@@ -137,9 +114,9 @@ Deno.test("cue delivery owns one initial batch even when delivery appends more w
   await run(function*() {
     const hby = yield* createHabery({ name: `cue-batch-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
-      const reactor = new Reactor(hby, { maxPendingCues: 1 });
+      const reactor = new Reactor(hby);
       const runtime = { hby, reactor, cues: reactor.cues, resources: reactor.resources } as AgentRuntime;
-      // Exercise both the fallback interpreter and the habitat interpreter with the same bounded sink.
+      // Exercise both the fallback interpreter and the habitat interpreter with the same sink.
       for (const withHab of [false, true]) {
         const hab = withHab ? hby.makeHab("recipient") : undefined;
         reactor.cues.push({ kin: "oobiQueued", url: "https://example.test/first" });
@@ -149,7 +126,7 @@ Deno.test("cue delivery owns one initial batch even when delivery appends more w
           sink: {
             *send() {
               delivered++;
-              // The completed delivery frees one slot; a concurrent producer can refill it immediately.
+              // A producer can append more work during delivery; the current turn keeps its initial extent.
               reactor.cues.push({ kin: "oobiQueued", url: "https://example.test/next" });
               yield* call(() => Promise.resolve());
             },
@@ -165,7 +142,7 @@ Deno.test("cue delivery owns one initial batch even when delivery appends more w
   });
 });
 
-Deno.test("cue capacity preserves unaccepted KEL and escrow retry ownership", async () => {
+Deno.test("queued cues do not prevent KEL acceptance or out-of-order escrow recovery", async () => {
   await run(function*() {
     const source = yield* createHabery({ name: `cue-source-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const target = yield* createHabery({ name: `cue-target-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -173,29 +150,17 @@ Deno.test("cue capacity preserves unaccepted KEL and escrow retry ownership", as
       const sender = source.makeHab("sender");
       const initial = acceptedEventReplayMessage(source, sender.pre, 0).message;
       const later = sender.interact();
-      const reactor = new Reactor(target, { maxPendingCues: 4 });
+      const reactor = new Reactor(target);
       yield* reactor.process((signal) => chunkBytes(later, { signal }));
       assertEquals(reactor.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
       assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 1);
       reactor.cues.clear();
       reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
-      // Even a partly filled deck cannot accept a transition whose complete cue batch may not fit.
-      yield* call(() =>
-        assertRejects(() => run(() => reactor.process((signal) => chunkBytes(initial, { signal }))), DeckFullError)
-      );
-      assertEquals(reactor.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-      assertEquals(target.db.getKever(sender.pre), null);
-      reactor.cues.clear();
       yield* reactor.process((signal) => chunkBytes(initial, { signal }));
-      yield* reactor.processEscrowsOnce();
-      assertEquals(target.db.getKever(sender.pre)!.sn, 0);
-      assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 1);
-      // Draining restores capacity; retry now accepts the interaction and only then removes its row.
-      reactor.cues.clear();
       yield* reactor.processEscrowsOnce();
       assertEquals(target.db.getKever(sender.pre)!.sn, 1);
       assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 0);
-      assertEquals(reactor.cues.length <= 4, true);
+      assertEquals(reactor.cues.peekHead()?.kin, "replay", "existing cues remain ahead of new protocol cues");
     } finally {
       yield* target.close(true);
       yield* source.close(true);
@@ -203,12 +168,11 @@ Deno.test("cue capacity preserves unaccepted KEL and escrow retry ownership", as
   });
 });
 
-Deno.test("OOBI notification overload retains durable work until delivery frees capacity", async () => {
+Deno.test("OOBI result publication preserves cues appended during HTTP fetch", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `cue-oobi-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
-      const reactor = new Reactor(hby, { maxPendingCues: 1 });
-      let fillDuringFetch = true;
+      const reactor = new Reactor(hby);
       const oobi = new Oobiery(hby, reactor, {
         cues: reactor.cues,
         services: {
@@ -216,7 +180,7 @@ Deno.test("OOBI notification overload retains durable work until delivery frees 
           http: {
             fetch() {
               // Model another producer filling the shared queue while this request is suspended in transport.
-              if (fillDuringFetch) reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
+              reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
               return Promise.resolve(new Response(null, { status: 404 }));
             },
           },
@@ -224,20 +188,11 @@ Deno.test("OOBI notification overload retains durable work until delivery frees 
       });
       const url = "http://example.test/oobi";
       reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
-      assertThrows(() => oobi.resolve(url), DeckFullError);
-      assertEquals(hby.db.oobis.get(url), null);
-      reactor.cues.clear();
       oobi.resolve(url);
-      reactor.cues.clear();
-      yield* oobi.processOnce();
-      assertEquals(hby.db.oobis.get(url)?.state, "queued");
-      assertEquals(hby.db.eoobi.get(url), null);
-      reactor.cues.clear();
-      fillDuringFetch = false;
       yield* oobi.processOnce();
       assertEquals(hby.db.oobis.get(url), null);
       assertEquals(hby.db.eoobi.get(url)?.state, "http-404");
-      assertEquals(reactor.cues.peekHead()?.kin, "oobiFailed");
+      assertEquals(reactor.cues.toArray().map((cue) => cue.kin), ["replay", "oobiQueued", "replay", "oobiFailed"]);
     } finally {
       yield* hby.close(true);
     }
@@ -315,7 +270,7 @@ Deno.test("external intake and protocol processing share one source concurrency 
   });
 });
 
-Deno.test("queued retry retains its byte lease until a real cue-capacity retry completes", async () => {
+Deno.test("queued ingress resumes after parser admission without waiting for cue delivery", async () => {
   await run(function*() {
     const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -323,7 +278,7 @@ Deno.test("queued retry retains its byte lease until a real cue-capacity retry c
       const sender = source.makeHab("sender");
       const wire = acceptedEventReplayMessage(source, sender.pre, 0).message;
       const resources = new ResourcePolicy({ streams: 2 });
-      const reactor = new Reactor(target, { resources, maxSources: 1, maxPendingCues: 4 });
+      const reactor = new Reactor(target, { resources, maxSources: 1 });
       reactor.ingest(wire);
       const occupied = resources.reserve({ streams: 2 });
       assertEquals(occupied.kind, "reserve");
@@ -333,12 +288,6 @@ Deno.test("queued retry retains its byte lease until a real cue-capacity retry c
       assertEquals(resources.used.bytes, wire.length);
       occupied.reservation.release();
       reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
-      yield* reactor.processOnce();
-      assertEquals(reactor.hasIngress, true);
-      assertEquals(resources.used.bytes, wire.length);
-      assertThrows(() => reactor.ingest(wire), ResourceLimitError, "queue is full");
-      assertEquals(target.db.getKever(sender.pre), null);
-      reactor.cues.clear();
       yield* reactor.processOnce();
       assertEquals(target.db.getKever(sender.pre)!.sn, 0);
       assertEquals(reactor.hasIngress, false);
@@ -390,9 +339,9 @@ Deno.test("queued processing holds local and shared capacity through joined canc
       reactor.ingest(new Uint8Array(4));
       reactor.processBytes = function*() {
         reactor.clearIngress();
-        throw new DeckFullError("late retry");
+        throw new Error("late processing failure");
       };
-      yield* reactor.processOnce();
+      yield* call(() => assertRejects(() => run(() => reactor.processOnce()), Error, "late processing failure"));
       assertEquals(reactor.hasIngress, false);
       assertEquals(resources.used.bytes, 0);
       reactor.ingest(new Uint8Array(4));
@@ -416,7 +365,7 @@ Deno.test("runtime explicit close and scope exit release queued ingress and cue 
         const runtime = yield* createAgentRuntime(hby, { resources });
         runtime.reactor.ingest(new Uint8Array(4));
         runtime.cues.push({ kin: "oobiQueued", url: "https://peer.test/" });
-        assertEquals(resources.used.bytes > 4, true);
+        assertEquals(resources.used.bytes, 4, "only ingress bytes are accounted; queued cues are ordinary records");
         yield* runtime.close();
         assertEquals(resources.used.bytes, 0);
       });
@@ -424,7 +373,7 @@ Deno.test("runtime explicit close and scope exit release queued ingress and cue 
         const runtime = yield* createAgentRuntime(hby, { resources });
         runtime.reactor.ingest(new Uint8Array(4));
         runtime.cues.push({ kin: "oobiQueued", url: "https://peer.test/" });
-        assertEquals(resources.used.bytes > 4, true);
+        assertEquals(resources.used.bytes, 4, "only ingress bytes are accounted; queued cues are ordinary records");
       });
       assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     } finally {
@@ -498,7 +447,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
     [mode, contentType, false] as const,
     [mode, contentType, true] as const,
   ]);
-  for (const [mode, contentType, owned] of cases) {
+  for (const [mode, contentType, separateCues] of cases) {
     await run(function*() {
       const source = yield* createHabery({
         name: `oobi-source-${crypto.randomUUID()}`,
@@ -512,7 +461,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
       });
       const resources = new ResourcePolicy();
       const reactor = new Reactor(target, { resources });
-      const resultCues = owned ? new CueDeck(resources, 1) : reactor.cues;
+      const resultCues = separateCues ? new Deck<AgentCue>() : reactor.cues;
       const hab = source.makeHab("source");
       const first = acceptedEventReplayMessage(source, hab.pre, 0).message;
       hab.interact();
@@ -593,7 +542,6 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
         assertEquals(target.db.oobis.get(url)?.state, "queued");
         assertEquals(target.db.coobi.get(url)?.state, "streaming");
         assertEquals(resultCues.toArray().some((cue) => cue.kin === "oobiResolved"), false);
-        if (owned) assertThrows(() => resultCues.checkSpace(), DeckFullError);
         if (mode === "cancel") {
           let haltFinished = false;
           const halted = yield* spawn(function*() {
@@ -602,10 +550,6 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           });
           yield* call(() => cancelling.wait);
           assertEquals(resources.used.streams, 1, "The parser stream owner outlives body cleanup");
-          if (owned) {
-            resultCues.clear();
-            assertThrows(() => resultCues.checkSpace(), DeckFullError, "capacity");
-          }
           assertEquals(haltFinished, false);
           yield* oobi.processOnce();
           assertEquals(requests, 1, "In-flight durable work cannot be fetched twice");
@@ -615,15 +559,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           next.open();
           yield* worker;
         }
-        if (owned && mode === "complete") {
-          const result = (resultCues as CueDeck).takeOwned()!;
-          assertEquals(result.cue.kin, "oobiResolved");
-          const held = resources.used.bytes;
-          assertEquals(held > 0, true);
-          resultCues.clear();
-          assertEquals(resources.used, { bytes: held, streams: 0, decryptions: 0 });
-          result.release();
-        }
+        if (separateCues && mode === "complete") assertEquals(resultCues.pull()?.kin, "oobiResolved");
         assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         assertEquals(signal?.aborted, true);
         assertEquals(target.db.coobi.get(url), null);
@@ -641,11 +577,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           assertEquals(target.db.getState(hab.pre)?.s, "1");
           assertEquals(target.db.roobi.get(url)?.state, "resolved");
           assertEquals(target.db.oobis.get(url), null);
-          if (owned) {
-            const result = (resultCues as CueDeck).takeOwned()!;
-            assertEquals(result.cue.kin, "oobiResolved");
-            result.release();
-          }
+          if (separateCues) assertEquals(resultCues.pull()?.kin, "oobiResolved");
           assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         }
       } finally {
@@ -719,63 +651,6 @@ Deno.test("OOBI refusal precedes fetch or finite document reads and releases res
         }
         assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         hby.db.oobis.rem(url);
-      }
-      for (const mode of ["bytes", "items"] as const) {
-        const resources = new ResourcePolicy();
-        const reactor = new Reactor(hby, { resources }), cues = new CueDeck(resources, 1);
-        let requests = 0, reads = 0, cancelled = false;
-        let held: ReturnType<ResourcePolicy["reserve"]> | undefined;
-        const oobi = new Oobiery(hby, reactor, {
-          cues,
-          services: {
-            ...defaultRuntimeServices,
-            http: {
-              fetch() {
-                requests++;
-                if (requests === 1 && mode === "bytes") {
-                  held = resources.reserve({ bytes: resources.limits.bytes - resources.used.bytes });
-                }
-                return Promise.resolve(
-                  new Response(
-                    requests === 1
-                      ? new ReadableStream<Uint8Array>({
-                        pull() {
-                          reads++;
-                          throw new Error("Unadmitted CESR response was read");
-                        },
-                        cancel() {
-                          cancelled = true;
-                        },
-                      }, { highWaterMark: 0 })
-                      : null,
-                    { headers: { "Content-Type": "application/cesr" } },
-                  ),
-                );
-              },
-            },
-          },
-        });
-        const url = `http://admission.test/oobi?cue=${mode}`;
-        oobi.resolve(url);
-        const queuedRecord = hby.db.oobis.get(url)!;
-        cues.clear();
-        const slot = mode === "items" ? cues.prepare([{ kin: "proof", said: "occupied" }]) : undefined;
-        yield* oobi.processOnce();
-        assertEquals([requests, reads, cancelled], [1, 0, true]);
-        assertEquals([hby.db.coobi.get(url), hby.db.roobi.get(url), hby.db.eoobi.get(url)], [null, null, null]);
-        assertEquals(hby.db.oobis.get(url), queuedRecord, "Unadmitted attempt metadata never replaces queued work");
-        assertEquals(cues.length, 0);
-        if (held?.kind === "reserve") held.reservation.release();
-        slot?.release();
-        assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-        yield* oobi.processOnce();
-        assertEquals(requests, 2);
-        assertEquals(hby.db.oobis.get(url), null);
-        assertEquals(hby.db.roobi.get(url)?.state, "resolved");
-        const result = cues.takeOwned()!;
-        assertEquals(result.cue.kin, "oobiResolved");
-        result.release();
-        assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
       }
     } finally {
       yield* hby.close(true);

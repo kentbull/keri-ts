@@ -6,11 +6,9 @@ import {
   type ResourceReservation,
 } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { CueEmission } from "../core/cues.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import { DeckFullError } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Roles } from "../core/roles.ts";
 import { Schemes } from "../core/schemes.ts";
@@ -29,11 +27,11 @@ import { flattenRoleUrls } from "./mailboxing.ts";
 import type { QueryReply } from "./query-replies.ts";
 import { converseCesrTcp } from "./tcp-conversation.ts";
 
-/** One local query queue attempt; only its own item/byte capacity refusal becomes a value. */
+/** One local query queue attempt; only its own byte capacity refusal becomes a value. */
 type QueryDeliveryAdmission =
   | { kind: "queued" }
   | { kind: "ineligible" }
-  | { kind: "refuse"; error: ResourceAdmissionError | DeckFullError };
+  | { kind: "refuse"; error: ResourceAdmissionError };
 
 /**
  * Resolve the actual transport URL for one query destination AID.
@@ -117,7 +115,7 @@ function releaseDelivery(entry: AdmittedDelivery): void {
 /** Own query/cue delivery on one finite queue; network work executes outside guarded preparation. */
 export class RuntimeDeliveries {
   /** Eight owner items including the active head; each kind retains its own admitted bytes. */
-  private readonly pending = new Deck<AdmittedDelivery>(undefined, 8);
+  private readonly pending = new Deck<AdmittedDelivery>();
   /** Command-local and background drains cannot deliver the same head concurrently. */
   private draining = false;
   /** Active delivery cancellation and its joined completion belong to runtime shutdown. */
@@ -133,17 +131,9 @@ export class RuntimeDeliveries {
   /** Admit prepared wire capacity; input records stay borrowed under their existing source ownership. */
   enqueue(
     prepare: () => QueryDelivery | undefined,
-    sourceRetainedBytes = 0,
   ): QueryDeliveryAdmission {
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    if (this.pending.capacity < 1) throw new ResourceLimitError("Batch exceeds deck capacity");
-    if (this.pending.length === this.pending.capacity) {
-      return { kind: "refuse", error: new DeckFullError("Deck capacity exceeded") };
-    }
-    if (!Number.isSafeInteger(sourceRetainedBytes) || sourceRetainedBytes < 0) {
-      throw new RangeError("Invalid query source retention");
-    }
-    const floor = requestBytes + routeBytes + preparationBytes + sourceRetainedBytes;
+    const floor = requestBytes + routeBytes + preparationBytes;
     if (floor > this.resources.limits.bytes) {
       return {
         kind: "refuse",
@@ -181,18 +171,14 @@ export class RuntimeDeliveries {
     }
   }
 
-  /** Guarded item preflight precedes interpretation; route resolution borrows admitted output synchronously. */
+  /** Guarded interpretation and route resolution borrow prepared output synchronously. */
   enqueueCue(
     hab: Hab,
-    cues: CueQueueInput,
+    cues: Deck<AgentCue>,
     route: (emission: CueEmission) => RawCesrRoute,
     sender = hab,
   ): CuePreparationResult {
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    if (this.pending.capacity < 1) throw new ResourceLimitError("Batch exceeds deck capacity");
-    if (this.pending.length === this.pending.capacity) {
-      return { kind: "refuse", error: new DeckFullError("Deck capacity exceeded") };
-    }
     let unrouted: PreparedCueEmission | undefined;
     const transferred = admitCueEmission(hab, cues, this.resources, (owner) => {
       if (!owner.emission || owner.emission.kind !== "wire") throw new RangeError("Cue delivery requires wire");
@@ -215,21 +201,15 @@ export class RuntimeDeliveries {
     runtime: AgentRuntime,
     hab: Hab,
     resolve: (emission: CueEmission) => RawCesrRoute | null,
-    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
+    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): PreparedCueEmission | undefined {
     if (runtime.resources !== this.resources) throw new RangeError("Wrong witness resource policy");
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    try {
-      this.pending.checkSpace();
-    } catch (error) {
-      if (error instanceof DeckFullError) onAdmissionRefusal?.(error);
-      throw error;
-    }
     let borrow: PreparedCueEmission | undefined;
     DirectReplyDelivery.prepareCue(runtime, hab, runtime.cues, resolve, (delivery, prepared) => {
       const emission = prepared.emission;
       if (emission?.kind === "transport" && emission.cue.kin === "stream") {
-        runtime.mailboxDirector.retainQueryCue(emission.cue, onAdmissionRefusal);
+        runtime.mailboxDirector.retainQueryCue(emission.cue);
       } else if (emission?.cue.kin === "query" && emission.kind !== "wire") {
         runtime.querying.enqueueCue(emission.cue);
       }
@@ -240,7 +220,7 @@ export class RuntimeDeliveries {
     return borrow;
   }
 
-  /** Atomically publish one bounded direct-reply batch and its HTTP stream; no network runs here. */
+  /** Atomically publish one direct-reply batch and its HTTP stream; no network runs here. */
   openReply(
     runtime: AgentRuntime,
     hab: Hab,
@@ -249,14 +229,7 @@ export class RuntimeDeliveries {
   ): ReadableStream<Uint8Array> | null {
     if (runtime.resources !== this.resources) throw new RangeError("Wrong reply resource policy");
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    if (this.pending.length === this.pending.capacity) {
-      const refusal = new ResourceAdmissionError("Direct reply delivery slots are busy", "busy");
-      onAdmissionRefusal?.(refusal);
-      throw refusal;
-    }
-    this.pending.checkSpace();
     return DirectReplyDelivery.prepare(runtime, hab, reply, (delivery, open) => {
-      this.pending.checkSpace();
       const stream = open();
       if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
       else delivery.release();
@@ -273,14 +246,7 @@ export class RuntimeDeliveries {
   ): boolean {
     if (runtime.resources !== this.resources) throw new RangeError("Wrong reply resource policy");
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    if (this.pending.length === this.pending.capacity) {
-      const refusal = new ResourceAdmissionError("Queued reply delivery slots are busy", "busy");
-      onAdmissionRefusal?.(refusal);
-      throw refusal;
-    }
-    this.pending.checkSpace();
     return DirectReplyDelivery.prepareQueued(runtime, hab, reply, (delivery) => {
-      this.pending.checkSpace();
       if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
       else delivery.release();
     }, onAdmissionRefusal);
@@ -289,12 +255,6 @@ export class RuntimeDeliveries {
   /** A failed packet remains an ordinary record; no target advances if the queue cannot accept it. */
   private retainFailed(target: PreparedCesrTarget): boolean {
     if (this.closed) return false;
-    try {
-      this.pending.checkSpace();
-    } catch (error) {
-      if (error instanceof DeckFullError) return false;
-      throw error;
-    }
     this.pending.push({ kind: "target", delivery: target });
     return true;
   }
@@ -506,21 +466,14 @@ export function queryTransportSink(
       });
       if (admission === "transferred") {
         if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
-        if (source instanceof Deck) source.pull();
-        else source.takeOwned()!.release();
+        source.pull();
       }
       return admission;
     },
     admitQuery(cue, prepare): CueAdmission {
-      const reader = runtime.cues;
-      const source = !(reader instanceof Deck) && reader.peekHead() === cue ? reader : undefined;
-      if (source && source.resourcePolicy !== runtime.resources) throw new RangeError("Wrong query source policy");
-      const result = runtime.deliveries.enqueue(
-        () => prepareDelivery(prepare()),
-        source?.headRetentionBytes(),
-      );
+      const result = runtime.deliveries.enqueue(() => prepareDelivery(prepare()));
       if (result.kind === "refuse") {
-        if (result.error instanceof DeckFullError || result.error.reason === "busy") return "busy";
+        if (result.error.reason === "busy") return "busy";
         throw result.error;
       }
       return result.kind === "queued" ? "transferred" : "ineligible";

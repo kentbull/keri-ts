@@ -92,26 +92,11 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
 
       const event = hby.db.getEvtSerder(sender.pre, sender.kever!.serder.said!)!;
       const stream = { kin: "stream" as const, serder: event, pre: sender.pre, src: sender.pre, topics: { logs: 0 } };
-      runtime.mailboxDirector.queryCues.capacity = 1;
       runtime.mailboxDirector.retainQueryCue(stream);
-      const correlationBytes = runtime.resources.used.bytes;
       runtime.cues.push(stream);
-      const before = runtime.resources.used.bytes;
-      const sourceBytes = before - correlationBytes;
-      assertEquals(sourceBytes > 0, true, "the runtime source retains independent queued cue credit");
-      yield* drainRuntimeCues(runtime, sender, runtime.cues);
-      assertStrictEquals(runtime.cues.peekHead(), stream, "correlation busy preserves the original head");
-      assertEquals(runtime.resources.used.bytes, before, "busy transfer releases neither independent owner");
-      runtime.mailboxDirector.queryCues.clear();
-      assertEquals(runtime.resources.used.bytes, sourceBytes, "correlation clear preserves the queued source owner");
       yield* drainRuntimeCues(runtime, sender, runtime.cues);
       assertEquals(runtime.cues.empty, true);
-      assertEquals(runtime.mailboxDirector.queryCues.length, 1);
-      assertEquals(
-        runtime.resources.used.bytes,
-        correlationBytes,
-        "successful transfer retains only correlation credit",
-      );
+      assertEquals(runtime.mailboxDirector.queryCues.toArray(), [stream, stream]);
     } finally {
       finish();
       yield* runtime.close();

@@ -13,8 +13,6 @@ import {
 import { Baser } from "../db/basing.ts";
 import { dgKey, snKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
-import type { PreparedCueBatch } from "./cue-admission.ts";
-import type { CueQueueInput } from "./cue-publishing.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import {
@@ -193,7 +191,7 @@ export class Kevery {
   static readonly TimeoutQNF = 300_000;
 
   readonly db: Baser;
-  readonly cues: CueQueueInput;
+  readonly cues: Deck<AgentCue>;
   readonly lax: boolean;
   readonly local: boolean;
   readonly rvy?: Revery;
@@ -213,7 +211,7 @@ export class Kevery {
       messagePolicy = {},
       kramer,
     }: {
-      cues?: CueQueueInput;
+      cues?: Deck<AgentCue>;
       lax?: boolean;
       local?: boolean;
       rvy?: Revery;
@@ -268,7 +266,7 @@ export class Kevery {
     return this.settleEventDecision(envelope);
   }
 
-  /** Commit event effects and any replay bucket change before publishing admitted state/cues. */
+  /** Commit event effects and any replay bucket change before publishing live state and cues. */
   private settleEventDecision(envelope: KeverEventEnvelope): KeverDecision;
   private settleEventDecision(read: () => KeverEventEnvelope | null, escrow: EventEscrowEntry): KeverDecision | null;
   private settleEventDecision(
@@ -280,36 +278,29 @@ export class Kevery {
       throw new Error("Kevery must own the KEL transaction; process events outside caller-owned writers");
     }
     let metadata: EventMetadata | undefined;
-    let batch: PreparedCueBatch | undefined;
-    try {
-      const write = () => {
-        // Replay hydration may repair an existing delegation source hint; it belongs to this writer too.
-        const envelope = typeof input === "function" ? input() : input;
-        if (!envelope) {
-          if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
-          return null;
-        }
-        const decision = this.decideEvent(envelope);
-        // A still-pending replay keeps its existing row and emits no additional cues.
-        if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) {
-          this.writeSourceSealRepairs(decision);
-          return decision;
-        }
-        metadata = this.eventMetadata(decision);
-        this.cues.checkSpace(metadata.cues.length);
-        batch = metadata.cues.length && !(this.cues instanceof Deck) ? this.cues.prepare(metadata.cues) : undefined;
-        this.writeEventDecision(decision, metadata);
+
+    const write = () => {
+      // Replay hydration may repair an existing delegation source hint; it belongs to this writer too.
+      const envelope = typeof input === "function" ? input() : input;
+      if (!envelope) {
         if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
+        return null;
+      }
+      const decision = this.decideEvent(envelope);
+      // A still-pending replay keeps its existing row and emits no additional cues.
+      if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) {
+        this.writeSourceSealRepairs(decision);
         return decision;
-      };
-      const decision = env.transactionSync(write);
-      this.publishEventState(metadata?.accepted);
-      if (batch) batch.publish();
-      else if (metadata?.cues.length) this.cues.extend(metadata.cues);
+      }
+      metadata = this.eventMetadata(decision);
+      this.writeEventDecision(decision, metadata);
+      if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
       return decision;
-    } finally {
-      batch?.release();
-    }
+    };
+    const decision = env.transactionSync(write);
+    this.publishEventState(metadata?.accepted);
+    if (metadata?.cues.length) this.cues.extend(metadata.cues);
+    return decision;
   }
 
   /**
@@ -358,7 +349,6 @@ export class Kevery {
    *   query-not-found escrow
    */
   private decideQuery(envelope: QueryEnvelope): QueryProcessDecision {
-    this.cues.checkSpace();
     const route = envelope.serder.route;
     const query = envelope.serder.ked?.q as Record<string, unknown> | undefined;
     const pre = typeof query?.i === "string" ? query.i : null;
@@ -935,13 +925,6 @@ export class Kevery {
 
   /** Describe finalized log coordinates, clone notices and accepted state without executable effects. */
   private eventMetadata(decision: KeverDecision): EventMetadata {
-    // Preserve the standalone Deck refusal boundary independently of admitted-queue credit.
-    if (this.cues instanceof Deck) {
-      this.cues.checkSpace(
-        ("cues" in decision ? decision.cues?.length ?? 0 : 0)
-          + (decision.kind === "accept" ? 4 : decision.kind === "duplicate" ? 1 : 0),
-      );
-    }
     if (decision.kind === "reject") return { cues: [] };
     if (decision.kind === "accept") {
       const kever = this.kevers.get(decision.transition.pre);
@@ -971,7 +954,7 @@ export class Kevery {
     };
   }
 
-  /** Persist the decision and its concrete log metadata after cue admission. */
+  /** Persist the decision and its concrete log metadata before publication. */
   private writeEventDecision(decision: KeverDecision, metadata: EventMetadata): void {
     this.writeSourceSealRepairs(decision);
     if (metadata.log) {
@@ -1296,45 +1279,30 @@ export class Kevery {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
-    this.rvy.cues.checkSpace(reply.cues.length);
-    const queries = reply.cues.length && !(this.rvy.cues instanceof Deck)
-      ? this.rvy.cues.prepare(reply.cues)
-      : undefined;
-    try {
-      if (reply.kind === "unverified") {
-        this.rvy.writeReply(reply);
-        if (queries) queries.publish();
-        else if (reply.cues.length) this.rvy.cues.extend(reply.cues);
-        return unverifiedReplyDecision(
-          `Unverified key state notice reply ${args.serder.said ?? "<unknown>"}.`,
-        );
-      }
 
-      const ldig = this.db.kels.getLast(pre, sn);
-      if (ldig && ldig !== said) {
-        throw new ValidationError(
-          `Mismatch key state at sn=${sn} with accepted event log for ${pre}.`,
-        );
-      }
-      const saider = new Diger({ qb64: said });
-      const dater = new Dater({ qb64: encodeDateTimeToDater(dt) });
-      const cues: AgentCue[] = [{ kin: "keyStateSaved", ksn }];
-      this.cues.checkSpace();
-      const child = this.cues instanceof Deck ? undefined : this.cues.prepare(cues);
-      try {
-        this.rvy.writeReply(reply);
-        this.updateKeyState(args.aid, ksn, saider, dater);
-        if (queries) queries.publish();
-        else if (reply.cues.length) this.rvy.cues.extend(reply.cues);
-        if (child) child.publish();
-        else this.cues.extend(cues);
-        return acceptReplyDecision();
-      } finally {
-        child?.release();
-      }
-    } finally {
-      queries?.release();
+    if (reply.kind === "unverified") {
+      this.rvy.writeReply(reply);
+      if (reply.cues.length) this.rvy.cues.extend(reply.cues);
+      return unverifiedReplyDecision(
+        `Unverified key state notice reply ${args.serder.said ?? "<unknown>"}.`,
+      );
     }
+
+    const ldig = this.db.kels.getLast(pre, sn);
+    if (ldig && ldig !== said) {
+      throw new ValidationError(
+        `Mismatch key state at sn=${sn} with accepted event log for ${pre}.`,
+      );
+    }
+    const saider = new Diger({ qb64: said });
+    const dater = new Dater({ qb64: encodeDateTimeToDater(dt) });
+    const cues: AgentCue[] = [{ kin: "keyStateSaved", ksn }];
+
+    this.rvy.writeReply(reply);
+    this.updateKeyState(args.aid, ksn, saider, dater);
+    if (reply.cues.length) this.rvy.cues.extend(reply.cues);
+    this.cues.extend(cues);
+    return acceptReplyDecision();
   }
 
   /**
@@ -1439,21 +1407,14 @@ export class Kevery {
     return cues;
   }
 
-  /** Admit concrete query output before repairing replay source seals or publishing its cues. */
+  /** Repair replay source seals before publishing query output. */
   private publishQueryCues(serder: SerderKERI, cues: readonly AgentCue[] = []): void {
-    this.cues.checkSpace(cues.length);
-    const batch = cues.length && !(this.cues instanceof Deck) ? this.cues.prepare(cues) : undefined;
-    try {
-      if (serder.route === "logs") {
-        const query = serder.ked?.q as Record<string, unknown> | undefined;
-        const kever = typeof query?.i === "string" ? this.db.getKever(query.i) : undefined;
-        if (kever) this.repairReplaySourceSeal(kever);
-      }
-      if (batch) batch.publish();
-      else if (cues.length) this.cues.extend(cues);
-    } finally {
-      batch?.release();
+    if (serder.route === "logs") {
+      const query = serder.ked?.q as Record<string, unknown> | undefined;
+      const kever = typeof query?.i === "string" ? this.db.getKever(query.i) : undefined;
+      if (kever) this.repairReplaySourceSeal(kever);
     }
+    if (cues.length) this.cues.extend(cues);
   }
 
   /**

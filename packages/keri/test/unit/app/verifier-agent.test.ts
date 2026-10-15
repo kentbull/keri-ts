@@ -6,7 +6,6 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
 import { VerifierAgent } from "../../../src/app/verifier-agent.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
@@ -256,16 +255,10 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
         { kin: "oobiQueued", url: "https://peer.test/first" },
         { kin: "oobiFailed", url: "https://peer.test/last", reason: "gone" },
       ];
-      if (!(runtime.cues instanceof CueDeck)) throw new Error("Expected admitted runtime cues");
-      const cues = runtime.cues, duplicate = { ...revoked }, originals = [];
-      while (!cues.empty) originals.push(cues.takeOwned()!);
-      try {
-        cues.extend([unrelated[0], revoked, unrelated[1], duplicate]);
-      } finally {
-        for (const owner of originals) owner.release();
-      }
-      const otherOwnerBytes = runtime.resources.used.bytes - cues.headRetentionBytes();
-      const before = runtime.resources.used.bytes, pin = cdb.rev.pin;
+      const cues = runtime.cues, duplicate = { ...revoked };
+      cues.clear();
+      cues.extend([unrelated[0], revoked, unrelated[1], duplicate]);
+      const pin = cdb.rev.pin;
       for (const failure of [new Error("revocation storage fault"), undefined]) {
         cdb.rev.pin = () => {
           throw failure;
@@ -281,16 +274,12 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
         }
         assertEquals(caught, true, "storage failure must preserve its exact identity");
         assertEquals(cues.toArray(), [unrelated[0], revoked, unrelated[1], duplicate]);
-        assertEquals(runtime.resources.used.bytes, before, "failure requeues original credit without reacquisition");
         assertEquals(cdb.rev.get([fixture.creder.said!]), null);
         assertEquals(requests.length, 1, "failed publication must not send a webhook");
       }
       const result = yield* agent.processOnce();
       assertEquals(cues.toArray(), unrelated, "unrelated cues preserve order after duplicate consumption");
-      cues.checkSpace(2); // Processed and duplicate revocations returned their held item slots.
-      assertEquals(runtime.resources.used.bytes, before, "shared batch survives with its unrelated owners");
       cues.clear();
-      assertEquals(runtime.resources.used.bytes, otherOwnerBytes, "cue cleanup preserves the notification owner");
 
       assertEquals(result.revocationsQueued, 1);
       assertEquals(result.revocationsReady, 1);

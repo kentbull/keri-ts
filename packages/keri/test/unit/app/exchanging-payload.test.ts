@@ -11,7 +11,6 @@ import {
   NumberPrimitive,
   parse,
   Prefixer,
-  ResourceAdmissionError,
   ResourceLimitError,
   ResourcePolicy,
   type SerderKERI,
@@ -25,8 +24,8 @@ import { join } from "jsr:@std/path";
 import { EssrRecipient } from "../../../src/app/essr.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
-import { DeckFullError } from "../../../src/core/deck.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -575,108 +574,55 @@ Deno.test("payload recovery removes interrupted ESSR rows and retains KERIpy exc
   });
 });
 
-Deno.test("EXN pending cues admit before new proof, escrow, archive or metadata ownership", async () => {
+Deno.test("EXN pending cues follow persisted escrow transitions without duplicate publication", async () => {
   await scenario(async (hby, sender) => {
-    const schema = new Diger({ raw: Diger.digest(b("admitted schema"), "E"), code: "E" }).qb64;
+    const schema = new Diger({ raw: Diger.digest(b("pending schema"), "E"), code: "E" }).qb64;
     for (const outcome of ["sender", "proof", "schema"] as const) {
-      for (const refusal of ["bytes", "items", "byteLimit", "itemLimit"] as const) {
-        const raw = `${outcome}-${refusal}`, incoming = await payload(hby, [raw]);
-        const serder = message(sender, raw), said = serder.said!;
-        const resources = new ResourcePolicy(refusal === "byteLimit" ? { bytes: 1024 } : {});
-        const cues = new CueDeck(resources, refusal === "itemLimit" ? 0 : 1);
-        const exchanger = new Exchanger(hby, {
-          resources,
-          cues,
-          handlers: [{
-            resource: "/essr/test",
-            verify() {
-              return { kind: "escrow", reason: "dependency", ...(outcome === "schema" ? { schema } : {}) };
-            },
-            handle() {
-              throw new Error("Pending exchange cannot dispatch");
-            },
-          }],
-        });
-        const groups = signatures(sender, serder);
-        if (outcome === "sender") {
-          groups[0] = new TransIdxSigGroup(
-            groups[0].prefixer,
-            NumberPrimitive.fromNum(99n),
-            groups[0].diger,
-            groups[0].sigers,
-          );
-        }
-        const input = { serder, tsgs: groups, essr: incoming, mailboxAid: sender.pre };
-        const pressure = refusal === "bytes" ? resources.reserve({ bytes: resources.limits.bytes }) : undefined;
-        if (pressure && pressure.kind !== "reserve") throw new Error("Expected occupied byte credit");
-        if (refusal === "items") cues.push({ kin: "proof", said: "occupied" });
-        const held = resources.used.bytes;
-        const objects = names(join(hby.db.path!, "payloads", "objects")).sort();
-        const error = await assertRejects(
-          () => run(() => exchanger.processEvent(input)),
-          refusal === "items" ? DeckFullError : refusal === "itemLimit" ? ResourceLimitError : ResourceAdmissionError,
+      const incoming = await payload(hby, [outcome]);
+      const serder = message(sender, outcome), said = serder.said!;
+      const cues = new Deck<AgentCue>();
+      const exchanger = new Exchanger(hby, {
+        cues,
+        handlers: [{
+          resource: "/essr/test",
+          verify() {
+            return { kind: "escrow", reason: "dependency", ...(outcome === "schema" ? { schema } : {}) };
+          },
+          handle() {
+            throw new Error("Pending exchange cannot dispatch");
+          },
+        }],
+      });
+      const groups = signatures(sender, serder);
+      if (outcome === "sender") {
+        groups[0] = new TransIdxSigGroup(
+          groups[0].prefixer,
+          NumberPrimitive.fromNum(99n),
+          groups[0].diger,
+          groups[0].sigers,
         );
-        if (error instanceof ResourceAdmissionError) {
-          assertEquals(error.reason, refusal === "byteLimit" ? "limit" : "busy");
-        }
-        assertEquals(resources.used.bytes, held);
-        assertEquals(hby.db.exns.get([said]), null);
-        assertEquals(hby.db.epse.get([said]), null);
-        assertEquals(hby.db.emse!.get([said, schema]), null);
-        assertEquals(hby.db.epsd.get([said]), null);
-        assertEquals(hby.db.emsd!.get([said]), null);
-        assertEquals([...hby.db.esigs.getTopItemIter([said, ""])], []);
-        assertEquals([...hby.db.essrs.getIter([said])], []);
-        assertEquals(hby.db.exchangeMeta.get([said]), null);
-        assertEquals(names(join(hby.db.path!, "payloads", "objects")).sort(), objects);
-        if (pressure?.kind === "reserve") pressure.reservation.release();
-        cues.takeOwned()?.release();
-        if (refusal === "byteLimit" || refusal === "itemLimit") {
-          await incoming.discard();
-          continue;
-        }
-        assertEquals((await run(() => exchanger.processEvent(input))).kind, "escrow");
-        const owner = cues.takeOwned()!;
-        assertEquals(owner.cue.kin, outcome === "proof" ? "proof" : "query");
-        if (owner.cue.kin === "query") {
-          assertEquals(
-            owner.cue.q,
-            outcome === "schema" ? { r: "schema", said: schema } : { s: "63" },
-          );
-        }
-        assertEquals(resources.used.bytes > 0, true);
-        owner.release();
-        assertEquals(resources.used.bytes, 0);
-        const date = (outcome === "schema" ? hby.db.emsd! : hby.db.epsd).get([said])!.dts;
-        cues.capacity = 0;
-        assertEquals((await run(() => exchanger.processEvent(input))).kind, "escrow");
-        assertEquals(cues.length, 0);
-        assertEquals(resources.used.bytes, 0);
-        assertEquals((outcome === "schema" ? hby.db.emsd! : hby.db.epsd).get([said])!.dts, date);
-        assertExists(hby.db.exchangeMeta.get([said])?.essr);
-        if (outcome === "schema") {
-          cues.capacity = 1;
-          exchanger.routes.get("/essr/test")!.verify = () => ({ kind: "escrow", reason: "proof unavailable" });
-          const occupied = resources.reserve({ bytes: resources.limits.bytes });
-          if (occupied.kind !== "reserve") throw new Error("Expected occupied byte credit");
-          assertEquals(
-            (await assertRejects(() => run(() => exchanger.processEvent(input)), ResourceAdmissionError)).reason,
-            "busy",
-          );
-          assertExists(hby.db.emse!.get([said, schema]));
-          assertEquals(hby.db.epse.get([said]), null);
-          assertEquals(hby.db.emsd!.get([said])!.dts, date);
-          occupied.reservation.release();
-          assertEquals((await run(() => exchanger.processEvent(input))).kind, "escrow");
-          const proof = cues.takeOwned()!;
-          assertEquals(proof.cue, { kin: "proof", said });
-          proof.release();
-          assertEquals(resources.used.bytes, 0);
-          assertEquals(hby.db.emse!.get([said, schema]), null);
-          assertEquals(hby.db.emsd!.get([said])!.dts, date);
-        }
-        await incoming.discard();
       }
+      const input = { serder, tsgs: groups, essr: incoming, mailboxAid: sender.pre };
+      assertEquals((await run(() => exchanger.processEvent(input))).kind, "escrow");
+      const cue = cues.pull()!;
+      assertEquals(cue.kin, outcome === "proof" ? "proof" : "query");
+      if (cue.kin === "query") {
+        assertEquals(cue.q, outcome === "schema" ? { r: "schema", said: schema } : { s: "63" });
+      }
+      const date = (outcome === "schema" ? hby.db.emsd! : hby.db.epsd).get([said])!.dts;
+      assertEquals((await run(() => exchanger.processEvent(input))).kind, "escrow");
+      assertEquals(cues.length, 0);
+      assertEquals((outcome === "schema" ? hby.db.emsd! : hby.db.epsd).get([said])!.dts, date);
+      assertExists(hby.db.exchangeMeta.get([said])?.essr);
+      if (outcome === "schema") {
+        exchanger.routes.get("/essr/test")!.verify = () => ({ kind: "escrow", reason: "proof unavailable" });
+        assertEquals((await run(() => exchanger.processEvent(input))).kind, "escrow");
+        assertEquals(cues.pull(), { kin: "proof", said });
+        assertEquals(hby.db.emse!.get([said, schema]), null);
+        assertExists(hby.db.epse.get([said]));
+        assertEquals(hby.db.emsd!.get([said])!.dts, date);
+      }
+      await incoming.discard();
     }
   });
 });

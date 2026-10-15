@@ -89,7 +89,7 @@ export {
 } from "../app/witnessing.ts";
 export * from "../core/attachment-countering.ts";
 export * from "../core/cues.ts";
-export { Deck, DeckFullError } from "../core/deck.ts";
+export { Deck } from "../core/deck.ts";
 export * from "../core/errors.ts";
 export * from "../core/eventing.ts";
 export * from "../core/kever.ts";
@@ -119,5 +119,3 @@ export * from "../acdc/observing.ts";
 export * from "../acdc/regeventing.ts";
 
 export { type KramConfig, Kramer, type KramRefusal } from "../core/kraming.ts";
-
-export type { CueQueue, CueQueueInput } from "../core/cue-publishing.ts";

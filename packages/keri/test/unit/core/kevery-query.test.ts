@@ -5,15 +5,13 @@ import {
   Diger,
   NumberPrimitive,
   Prefixer,
-  ResourceAdmissionError,
-  ResourcePolicy,
   SerderKERI,
   type Siger,
 } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
-import { DeckFullError } from "../../../src/core/deck.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { type KeverEventEnvelope, Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
@@ -22,7 +20,6 @@ import { Roles } from "../../../src/core/roles.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
-import { standaloneCues } from "../../private-access.ts";
 import { eventingTestApi, expectKind, withPatchedMethod } from "../../private-access.ts";
 
 function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
@@ -68,9 +65,9 @@ function pullCueOfKin(
   kvy: Kevery,
   kin: "reply" | "replay" | "invalid" | "stream",
 ) {
-  let cue = standaloneCues(kvy.cues).pull();
+  let cue = kvy.cues.pull();
   while (cue && cue.kin !== kin) {
-    cue = standaloneCues(kvy.cues).pull();
+    cue = kvy.cues.pull();
   }
   return cue;
 }
@@ -155,7 +152,7 @@ Deno.test("Kevery.processQuery emits a key-state reply cue for the queried prefi
       const serder = makeQuerySerder("ksn", { i: hab.pre, src: hab.pre });
       kvy.processQuery(signedQueryEnvelope(hab, serder));
 
-      const cue = standaloneCues(kvy.cues).pull();
+      const cue = kvy.cues.pull();
       assertExists(cue);
       assertEquals(cue.kin, "reply");
       if (cue.kin !== "reply") {
@@ -193,7 +190,7 @@ Deno.test("Kevery.processQuery drops malformed queries that omit `q.src` even wh
       const kvy = new Kevery(hby.db);
       const serder = makeQuerySerder("ksn", { i: hab.pre });
       kvy.processQuery(signedQueryEnvelope(hab, serder));
-      assertEquals(standaloneCues(kvy.cues).pull(), undefined);
+      assertEquals(kvy.cues.pull(), undefined);
       assertEquals(hby.db.qnfs.cnt(), 0);
     } finally {
       yield* hby.close(true);
@@ -221,7 +218,7 @@ Deno.test("Kevery.processQuery emits `invalid` only for unsupported routes witho
       const serder = makeQuerySerder("bogus", { i: hab.pre, src: hab.pre });
       kvy.processQuery(signedQueryEnvelope(hab, serder));
 
-      const cue = standaloneCues(kvy.cues).pull();
+      const cue = kvy.cues.pull();
       assertExists(cue);
       assertEquals(cue.kin, "invalid");
       if (cue.kin !== "invalid") {
@@ -278,16 +275,15 @@ Deno.test("Kevery reply routing persists `/ksn` key-state notices through `knas.
   });
 });
 
-Deno.test("KSN publication admits reply and state owners before writes on shared or distinct decks", async () => {
+Deno.test("KSN publication preserves reply and state cue order on shared or distinct decks", async () => {
   for (const shared of [false, true]) {
     await run(function*() {
       const hby = yield* createHabery({ name: `ksn-owners-${crypto.randomUUID()}`, temp: true });
       try {
         const hab = hby.makeHab("alice");
         const kever = hab.kever!;
-        const resources = new ResourcePolicy();
-        const queries = new CueDeck(resources, shared ? 2 : 1);
-        const states = shared ? queries : new CueDeck(resources, 1);
+        const queries = new Deck<AgentCue>();
+        const states = shared ? queries : new Deck<AgentCue>();
         const rvy = new Revery(hby.db, { cues: queries });
         const kvy = new Kevery(hby.db, { rvy, cues: states });
         kvy.registerReplyRoutes(rvy.rtr);
@@ -312,33 +308,6 @@ Deno.test("KSN publication admits reply and state owners before writes on shared
           assertEquals(hby.db.kdts.get([kever.said]), null);
           assertEquals(queries.length, 0);
         };
-        // Known proof produces no query reservation: shared byte refusal is specifically the child admission.
-        const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-        assertEquals(
-          assertThrows(() => rvy.processReply({ serder, tsgs: [known] }), ResourceAdmissionError).reason,
-          "busy",
-        );
-        occupied.reservation.release();
-        unchanged();
-        const limitedResources = new ResourcePolicy({ bytes: 1 });
-        const limitedQueries = new CueDeck(limitedResources);
-        const limitedStates = shared ? limitedQueries : new CueDeck(limitedResources);
-        const limitedRvy = new Revery(hby.db, { cues: limitedQueries });
-        new Kevery(hby.db, { rvy: limitedRvy, cues: limitedStates }).registerReplyRoutes(limitedRvy.rtr);
-        assertEquals(
-          assertThrows(() => limitedRvy.processReply({ serder, tsgs: [known] }), ResourceAdmissionError).reason,
-          "limit",
-        );
-        unchanged();
-        // A successfully held query must roll back when its semantic child cannot acquire a slot.
-        const slot = shared ? undefined : states.prepare([{ kin: "proof", said: "occupied child" }]);
-        const held = resources.used.bytes;
-        if (shared) queries.capacity = 1;
-        assertThrows(() => rvy.processReply({ serder, tsgs: [missing, known] }), DeckFullError);
-        assertEquals(resources.used.bytes, held);
-        slot?.release();
-        if (shared) queries.capacity = 2;
-        unchanged();
         const invalid = makeReplySerder(route, { ...kever.state().asDict(), d: serder.said });
         assertThrows(
           () =>
@@ -348,7 +317,6 @@ Deno.test("KSN publication admits reply and state owners before writes on shared
         );
         assertEquals(hby.db.rpys.get([invalid.said!]), null, "semantic refusal cannot publish an unaccepted proof");
         assertEquals(hby.db.sdts.get([invalid.said!]), null);
-        assertEquals(resources.used.bytes, 0);
         unchanged();
         assertEquals(rvy.processReply({ serder, tsgs: [missing, known] }).kind, "accept");
         assertExists(hby.db.rpys.get(key));
@@ -356,21 +324,10 @@ Deno.test("KSN publication admits reply and state owners before writes on shared
         assertEquals(hby.db.knas.get([hab.pre, hab.pre])?.qb64, kever.said);
         assertEquals(queries.toArray().map((cue) => cue.kin), shared ? ["query", "keyStateSaved"] : ["query"]);
         if (!shared) assertEquals(states.toArray().map((cue) => cue.kin), ["keyStateSaved"]);
-        const queryOwner = queries.takeOwned()!;
-        const stateOwner = states.takeOwned()!;
-        const bytes = resources.used.bytes;
-        queries.clear();
-        states.clear();
-        assertEquals(resources.used.bytes, bytes, "active owners survive queued cleanup");
-        queryOwner.release();
-        assertEquals(resources.used.bytes > 0, true, "state ownership survives query consumption");
-        assertEquals(stateOwner.cue.kin, "keyStateSaved");
-        stateOwner.release();
-        assertEquals(resources.used.bytes, 0);
-        // Unverified replies still publish their admitted query/escrow without trying to reserve a state child.
+        assertEquals(queries.pull()?.kin, "query");
+        assertEquals(states.pull()?.kin, "keyStateSaved");
+        // Unverified replies publish a query and escrow, without a state cue.
         const pending = makeReplySerder(route, kever.state().asDict(), "2026-10-13T00:00:00.000001+00:00");
-        if (shared) queries.capacity = 1;
-        else states.capacity = 0;
         assertEquals(
           rvy.processReply({ serder: pending, tsgs: [group(pending, NumberPrimitive.fromNum(2n))] }).kind,
           "unverified",
@@ -379,8 +336,6 @@ Deno.test("KSN publication admits reply and state owners before writes on shared
         assertEquals(queries.toArray().map((cue) => cue.kin), ["query"]);
         assertEquals(hby.db.ksns.get([kever.said]), kever.state());
         queries.clear();
-        if (shared) queries.capacity = 2;
-        else states.capacity = 1;
         const failed = makeReplySerder(route, kever.state().asDict(), "2026-10-13T00:00:00.000002+00:00");
         withPatchedMethod(hby.db.ksns, "pin", () => {
           throw new Error("state publication failed");
@@ -392,7 +347,7 @@ Deno.test("KSN publication admits reply and state owners before writes on shared
             "state publication failed",
           );
         });
-        assertEquals([queries.length, states.length, resources.used.bytes], [0, 0, 0]);
+        assertEquals([queries.length, states.length], [0, 0]);
         assertExists(hby.db.rpys.get([failed.said!]), "infrastructure failure is not durable rollback");
       } finally {
         yield* hby.close(true);
@@ -769,9 +724,9 @@ Deno.test("Kevery query-not-found escrows retry once the requested key state arr
       }));
       kvy.processQueryNotFound();
 
-      let cue = standaloneCues(kvy.cues).pull();
+      let cue = kvy.cues.pull();
       while (cue && cue.kin !== "reply") {
-        cue = standaloneCues(kvy.cues).pull();
+        cue = kvy.cues.pull();
       }
       assertExists(cue);
       assertEquals(remote.db.qnfs.cnt(), 0);
@@ -986,9 +941,9 @@ Deno.test("Reactor query ingress preserves transferable requester signatures thr
       }));
       reactor.kevery.processQueryNotFound();
 
-      let cue = standaloneCues(reactor.kevery.cues).pull();
+      let cue = reactor.kevery.cues.pull();
       while (cue && cue.kin !== "reply") {
-        cue = standaloneCues(reactor.kevery.cues).pull();
+        cue = reactor.kevery.cues.pull();
       }
       assertExists(cue);
       assertEquals(remote.db.qnfs.cnt(), 0);
@@ -1511,33 +1466,15 @@ Deno.test("Kevery logs replay for delegated identifiers includes the delegator c
       delegator.interact({ data: [eventSeal(delegateKever.serder)] });
       const sourceKey = dgKey(delegate.pre, delegateKever.said);
       hby.db.aess.rem(sourceKey);
-      const resources = new ResourcePolicy();
-      const owned = new CueDeck(resources, 1);
-      const admitted = new Kevery(hby.db, { cues: owned });
+      const cues = new Deck<AgentCue>();
+      const receiver = new Kevery(hby.db, { cues });
       const query = makeQuerySerder("logs", { i: delegate.pre, src: delegate.pre });
       const envelope = signedQueryEnvelope(delegate, query);
-      const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      assertEquals(assertThrows(() => admitted.processQuery(envelope), ResourceAdmissionError).reason, "busy");
-      assertEquals(hby.db.aess.get(sourceKey), null);
-      assertEquals(owned.length, 0);
-      occupied.reservation.release();
-      const slot = owned.prepare([{ kin: "proof", said: "occupied" }]);
-      assertThrows(() => admitted.processQuery(envelope), DeckFullError);
-      assertEquals(hby.db.aess.get(sourceKey), null);
-      slot.release();
-      const limited = new CueDeck(new ResourcePolicy({ bytes: 1 }));
-      assertEquals(
-        assertThrows(() => new Kevery(hby.db, { cues: limited }).processQuery(envelope), ResourceAdmissionError).reason,
-        "limit",
-      );
-      assertEquals(hby.db.aess.get(sourceKey), null);
-      admitted.processQuery(envelope);
+      receiver.processQuery(envelope);
       assertExists(hby.db.aess.get(sourceKey));
-      const output = owned.takeOwned();
+      const output = cues.pull();
       assertExists(output);
-      assertEquals(output.cue.kin, "replay");
-      output.release();
-      assertEquals(resources.used.bytes, 0);
+      assertEquals(output.kin, "replay");
 
       const kvy = new Kevery(hby.db);
       const serder = makeQuerySerder("logs", {

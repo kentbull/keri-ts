@@ -1,4 +1,3 @@
-import type { CueQueueInput } from "../core/cue-publishing.ts";
 /**
  * Transaction event log state processing.
  *
@@ -23,9 +22,8 @@ import {
   Verfer,
   Vrsn_2_0,
 } from "cesr-ts";
-import type { PreparedCueBatch } from "../core/cue-admission.ts";
 import type { AgentCue } from "../core/cues.ts";
-import { Deck, DeckFullError } from "../core/deck.ts";
+import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { QueryEnvelope } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
@@ -106,7 +104,7 @@ export interface TeveryOptions {
   db: Baser;
   local?: boolean;
   lax?: boolean;
-  cues?: CueQueueInput;
+  cues?: Deck<AgentCue>;
 }
 
 export interface TeverOptions extends TeveryOptions {
@@ -272,7 +270,7 @@ export class Tever {
   readonly db: Baser;
   readonly reger: Reger;
   readonly local: boolean;
-  readonly cues: CueQueueInput;
+  readonly cues: Deck<AgentCue>;
 
   version: { major: number; minor: number };
   pre!: string;
@@ -417,9 +415,9 @@ export class Tever {
     return count === 0 ? null : count - 1;
   }
 
-  /** Apply TEL input; the internal recorder preserves owned-cue publication failures through router catches. */
-  update(args: TelProcessEventArgs, recordCueFailure?: (error: unknown) => void): TelProcessDecision {
-    let cueFailure: { error: unknown } | undefined;
+  /** Apply TEL input; the internal recorder preserves publication failures through router catches. */
+  update(args: TelProcessEventArgs, recordPublicationFailure?: (error: unknown) => void): TelProcessDecision {
+    let publicationFailure: { error: unknown } | undefined;
     try {
       const serder = args.serder;
       const ilk = telIlk(serder);
@@ -435,17 +433,15 @@ export class Tever {
           serder,
           sn,
           args,
-          !(this.cues instanceof Deck)
-            ? (error) => {
-              cueFailure = { error };
-              recordCueFailure?.(error);
-            }
-            : undefined,
+          (error) => {
+            publicationFailure = { error };
+            recordPublicationFailure?.(error);
+          },
         );
       }
       return reject(`Unsupported TEL ilk=${ilk}.`, serder, this.regk);
     } catch (error) {
-      if (cueFailure && cueFailure.error === error) throw error;
+      if (publicationFailure && publicationFailure.error === error) throw error;
       return reject(error instanceof Error ? error.message : String(error), args.serder, this.regk);
     }
   }
@@ -638,7 +634,7 @@ export class Tever {
     serder: SerderKERI,
     sn: number,
     args: TelProcessEventArgs,
-    recordCueFailure?: (error: unknown) => void,
+    recordPublicationFailure?: (error: unknown) => void,
   ): TelProcessDecision {
     const vci = okPre(serder);
     const prior = digestForTel(this.reger, vci, sn - 1);
@@ -660,7 +656,7 @@ export class Tever {
         this.escrowALEvent(serder, args.seqner ?? null, args.saider ?? null);
         return escrow("anchorless", "Missing KEL anchor for TEL revoke.", serder, this.regk);
       }
-      this.logRevoked(serder, sn, args, undefined, recordCueFailure);
+      this.logRevoked(serder, sn, args, undefined, recordPublicationFailure);
       return accept(serder, this.regk);
     }
 
@@ -682,39 +678,31 @@ export class Tever {
     if (checked.kind !== "accept") {
       return checked.decision;
     }
-    this.logRevoked(serder, sn, args, checked.bigers, recordCueFailure);
+    this.logRevoked(serder, sn, args, checked.bigers, recordPublicationFailure);
     return accept(serder, this.regk);
   }
 
-  /** Admit the actual revocation cue before accepted TEL writes; publication follows the existing log boundary. */
+  /** Persist accepted TEL evidence before publishing the revocation cue. */
   private logRevoked(
     serder: SerderKERI,
     sn: number,
     args: TelProcessEventArgs,
     bigers?: readonly Siger[],
-    recordCueFailure?: (error: unknown) => void,
+    recordPublicationFailure?: (error: unknown) => void,
   ): void {
-    let prepared: PreparedCueBatch | undefined;
     try {
-      try {
-        const cue: AgentCue = { kin: "revoked", serder };
-        prepared = this.cues instanceof Deck ? undefined : this.cues.prepare([cue]);
-        if (!prepared) this.cues.checkSpace();
-        this.logEvent({
-          pre: okPre(serder),
-          sn,
-          serder,
-          seqner: args.seqner ?? null,
-          saider: args.saider ?? null,
-          bigers,
-        });
-        if (prepared) prepared.publish();
-        else this.cues.push(cue);
-      } finally {
-        prepared?.release();
-      }
+      const cue: AgentCue = { kin: "revoked", serder };
+      this.logEvent({
+        pre: okPre(serder),
+        sn,
+        serder,
+        seqner: args.seqner ?? null,
+        saider: args.saider ?? null,
+        bigers,
+      });
+      this.cues.push(cue);
     } catch (error) {
-      recordCueFailure?.(error);
+      recordPublicationFailure?.(error);
       throw error;
     }
   }
@@ -913,7 +901,7 @@ export class Tevery {
   readonly reger: Reger;
   readonly local: boolean;
   readonly lax: boolean;
-  readonly cues: CueQueueInput;
+  readonly cues: Deck<AgentCue>;
 
   constructor(options: TeveryOptions) {
     this.db = options.db;
@@ -953,7 +941,7 @@ export class Tevery {
   }
 
   processEvent(args: TelProcessEventArgs): TelProcessDecision {
-    let cueFailure: { error: unknown } | undefined;
+    let publicationFailure: { error: unknown } | undefined;
     try {
       const serder = args.serder;
       const ilk = telIlk(serder);
@@ -1005,14 +993,14 @@ export class Tevery {
       }
 
       const decision = tever.update(args, (error) => {
-        cueFailure = { error };
+        publicationFailure = { error };
       });
       if (decision.kind === "accept" && ilk === Ilks.vrt) {
         this.cacheTever(regk, tever);
       }
       return decision;
     } catch (error) {
-      if (error instanceof DeckFullError || (cueFailure && cueFailure.error === error)) throw error;
+      if (publicationFailure && publicationFailure.error === error) throw error;
       return reject(error instanceof Error ? error.message : String(error), args.serder);
     }
   }

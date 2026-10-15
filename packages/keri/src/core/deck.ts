@@ -1,8 +1,3 @@
-import { ResourceLimitError } from "cesr-ts";
-
-/** Hard queue backpressure, distinct from invalid protocol data or other byte limits. */
-export class DeckFullError extends ResourceLimitError {}
-
 /**
  * Double-ended queue with KERIpy-like naming.
  *
@@ -17,34 +12,9 @@ export class DeckFullError extends ResourceLimitError {}
  */
 export class Deck<T> implements Iterable<T> {
   #items: T[] = [];
-  /** Maximum retained references; ordinary local decks remain unbounded unless configured. */
-  #capacity = Infinity;
-
-  /** Create a queue with optional initial contents and a hard reference limit. */
-  constructor(initial?: Iterable<T>, capacity = Infinity) {
-    this.capacity = capacity;
+  /** Create a queue with optional initial contents. */
+  constructor(initial?: Iterable<T>) {
     if (initial) this.extend(initial);
-  }
-
-  /** Current hard reference limit, including every append/prepend/extend caller. */
-  get capacity(): number {
-    return this.#capacity;
-  }
-
-  /** Tighten a shared deck before admitting producers; existing entries are never discarded. */
-  set capacity(value: number) {
-    if (value !== Infinity && (!Number.isSafeInteger(value) || value < 0)) {
-      throw new RangeError("Invalid deck capacity");
-    }
-    if (this.length > value) throw new DeckFullError("Existing deck exceeds capacity");
-    this.#capacity = value;
-  }
-
-  /** Preflight synchronous side effects whose resulting cues must fit without losing accepted work. */
-  checkSpace(count = 1): void {
-    if (!Number.isSafeInteger(count) || count < 0) throw new RangeError("Invalid deck admission count");
-    if (count > this.#capacity) throw new ResourceLimitError("Batch exceeds deck capacity");
-    if (count > this.#capacity - this.length) throw new DeckFullError("Deck capacity exceeded");
   }
 
   /** Number of queued items. */
@@ -59,7 +29,6 @@ export class Deck<T> implements Iterable<T> {
 
   /** Append one item to the tail. */
   append(item: T): number {
-    this.checkSpace();
     this.#items.push(item);
     return this.#items.length;
   }
@@ -71,7 +40,6 @@ export class Deck<T> implements Iterable<T> {
 
   /** Prepend one item to the head. */
   prepend(item: T): number {
-    this.checkSpace();
     this.#items.unshift(item);
     return this.#items.length;
   }
@@ -90,11 +58,9 @@ export class Deck<T> implements Iterable<T> {
   extend(items: Iterable<T>): number {
     const pending: T[] = [];
     for (const item of items) {
-      this.checkSpace(pending.length + 1);
       pending.push(item);
     }
-    // Validate the whole finite batch first: overflow or a failing iterator must leave the deck intact.
-    this.checkSpace(pending.length);
+    // Collect first so a failing iterator leaves the queue intact.
     for (const item of pending) this.#items.push(item);
     return this.#items.length;
   }

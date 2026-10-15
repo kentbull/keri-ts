@@ -6,9 +6,6 @@ import {
   Dater,
   Diger,
   NumberPrimitive,
-  ResourceAdmissionError,
-  ResourceLimitError,
-  ResourcePolicy,
   SealSource,
   SerderKERI,
   Siger,
@@ -18,8 +15,8 @@ import {
 import { createHabery } from "../../../src/app/habbing.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
-import { Deck, DeckFullError } from "../../../src/core/deck.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { receipt as makeReceiptSerder } from "../../../src/core/protocol-eventing.ts";
@@ -479,7 +476,7 @@ Deno.test("Kevery.processEvent returns accept for an in-order local ixn", async 
   });
 });
 
-Deno.test("Kevery admits prospective clone/state cues before accepted writes and leaves duplicate logging cue-free", async () => {
+Deno.test("Kevery publishes clone/state cues after commit and leaves duplicate logging cue-free", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `kel-cue-admit-${crypto.randomUUID()}`, temp: true });
     try {
@@ -501,8 +498,7 @@ Deno.test("Kevery admits prospective clone/state cues before accepted writes and
         dt: new Dater({ qb64: "1AAG2026-10-13T12c00c00d000000p00c00" }),
       };
       const envelope = { serder, sigers: [sigers[0]], wigers: [], frcs: [frc], sscs: [], ssts: [], local: true };
-      const resources = new ResourcePolicy();
-      const cues = new CueDeck(resources, 3);
+      const cues = new Deck<AgentCue>();
       const kvy = new Kevery(hby.db, { cues, local: true });
       const decision = expectKind(kvy.decideEvent(envelope), "accept");
       const key = dgKey(hab.pre, serder.said!);
@@ -520,28 +516,12 @@ Deno.test("Kevery admits prospective clone/state cues before accepted writes and
         assertEquals(hby.db.states.get(hab.pre), priorState);
         assertEquals(cues.length, 0);
       };
-      const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      assertEquals(assertThrows(() => kvy.processEvent(envelope), ResourceAdmissionError).reason, "busy");
-      unchanged();
-      occupied.reservation.release();
-      const limited = new Kevery(hby.db, { cues: new CueDeck(new ResourcePolicy({ bytes: 1 })) });
-      assertEquals(assertThrows(() => limited.processEvent(envelope), ResourceAdmissionError).reason, "limit");
-      unchanged();
-      cues.capacity = 2;
-      assertThrows(() => kvy.processEvent(envelope), ResourceLimitError);
-      unchanged();
-      cues.capacity = 3;
-      const slot = cues.prepare([{ kin: "proof", said: "occupied" }]);
-      assertThrows(() => kvy.processEvent(envelope), DeckFullError);
-      unchanged();
-      slot.release();
       const outerFailure = new Error("outer writer aborted");
       assertEquals(
         assertThrows(() =>
           hby.db.env!.transactionSync(() => {
             assertThrows(() => kvy.processEvent(envelope), Error, "must own the KEL transaction");
             unchanged();
-            assertEquals(resources.used.bytes, 0, "nested refusal precedes cue admission");
             throw outerFailure;
           })
         ),
@@ -574,13 +554,11 @@ Deno.test("Kevery admits prospective clone/state cues before accepted writes and
           if (native.writeTxn !== writer) return commit(); // Existing nested writes commit their child transactions.
           assertEquals(kever.state(), priorState, "live state waits for the owning commit");
           assertEquals(hby.db.kevers.get(hab.pre), kever);
-          assertEquals(cues.length, 0, "admitted cues are unpublished before commit");
-          assert(resources.used.bytes > 0, "cue ownership survives until the owning commit");
+          assertEquals(cues.length, 0, "cues are unpublished before commit");
           native.abortTxn();
           throw failure;
         }, () => assertEquals(assertThrows(() => kvy.processEvent(envelope)), failure)));
       unchanged();
-      assertEquals(resources.used.bytes, 0, "failed commit releases unpublished cue ownership");
       expectKind(kvy.processEvent(envelope), "accept");
       const batch = cues.toArray();
       assertEquals(batch.map((cue) => cue.kin), ["noticeBadCloneFN", "witness", "keyStateSaved"]);
@@ -599,30 +577,14 @@ Deno.test("Kevery admits prospective clone/state cues before accepted writes and
       assertEquals([stateCue.ksn.f, stateCue.ksn.dt], ["1", frc.dt.dts]);
       assertEquals(hby.db.dtss.get(key)?.dts, frc.dt.dts);
       assertEquals(hby.db.sigs.get(key).map((s) => s.qb64), [sigers[0].qb64]);
-      const retained = resources.used.bytes;
-      let separately = 0;
-      const probeResources = new ResourcePolicy();
-      const probe = new CueDeck(probeResources);
-      for (const cue of batch) {
-        const prepared = probe.prepare([cue]);
-        separately += probeResources.used.bytes;
-        prepared.release();
-      }
-      assertEquals(retained < separately, true, "clone and witness share one Serder/backing charge");
-      const owner = cues.takeOwned()!;
       cues.clear();
-      assertEquals(resources.used.bytes, retained, "active owner keeps batch credit");
-      owner.release();
-      assertEquals(resources.used.bytes, 0);
       const duplicate = expectKind(kvy.decideEvent({ ...envelope, sigers: [sigers[1]] }), "duplicate");
       assertEquals(duplicate.duplicate, "lateAttachments");
-      const busy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
       kvy.processEvent({ ...envelope, sigers: [sigers[1]] });
-      busy.reservation.release();
       assertEquals(hby.db.sigs.get(key).map((s) => s.qb64).sort(), sigers.map((s) => s.qb64).sort());
       assertEquals(hby.db.getFel(hab.pre, 2), null);
       assertEquals(cues.length, 0);
-      // A publication infrastructure fault releases preparation but is not durable rollback.
+      // A publication infrastructure fault is not durable rollback.
       const next = new SerderKERI({ sad: { t: "ixn", i: hab.pre, s: "2", p: serder.said, a: [] }, makify: true });
       const nextEnvelope = { ...envelope, serder: next, sigers: hab.sign(next.raw, true), frcs: [] };
       const extend = Deck.prototype.extend;
@@ -634,14 +596,14 @@ Deno.test("Kevery admits prospective clone/state cues before accepted writes and
       } finally {
         Deck.prototype.extend = extend;
       }
-      assertEquals([cues.length, resources.used.bytes], [0, 0]);
+      assertEquals(cues.length, 0);
     } finally {
       yield* hby.close(true);
     }
   });
 });
 
-Deno.test("Kevery reserves escrow query cues before persisting partial-witness material", async () => {
+Deno.test("Kevery publishes escrow queries after persisting partial-witness material", async () => {
   await run(function*() {
     const source = yield* createHabery({ name: `kel-cue-escrow-source-${crypto.randomUUID()}`, temp: true });
     const remote = yield* createHabery({ name: `kel-cue-escrow-remote-${crypto.randomUUID()}`, temp: true });
@@ -649,8 +611,7 @@ Deno.test("Kevery reserves escrow query cues before persisting partial-witness m
       const wit = source.makeHab("witness", undefined, { transferable: false, ncount: 0 });
       const hab = source.makeHab("alice", undefined, { wits: [wit.pre], toad: 1 });
       const serder = hab.kever!.serder;
-      const resources = new ResourcePolicy();
-      const cues = new CueDeck(resources, 1);
+      const cues = new Deck<AgentCue>();
       const kvy = new Kevery(remote.db, { cues });
       const envelope = {
         serder,
@@ -663,9 +624,6 @@ Deno.test("Kevery reserves escrow query cues before persisting partial-witness m
       };
       const decision = expectKind(kvy.decideEvent(envelope), "escrow");
       assertEquals(decision.reason, "partialWigs");
-      const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      assertEquals(assertThrows(() => kvy.processEvent(envelope), ResourceAdmissionError).reason, "busy");
-      occupied.reservation.release();
       const key = dgKey(hab.pre, serder.said!);
       assertEquals(remote.db.evts.get(key), null);
       assertEquals(remote.db.dtss.get(key), null);
@@ -678,9 +636,7 @@ Deno.test("Kevery reserves escrow query cues before persisting partial-witness m
       assertEquals(remote.db.pwes.getOn(hab.pre, 0), [serder.said]);
       assertEquals(remote.db.evts.get(key)?.said, serder.said);
       assertEquals(cues.toArray().map((cue) => cue.kin), ["query"]);
-      assertEquals(resources.used.bytes > 0, true);
       cues.clear();
-      assertEquals(resources.used.bytes, 0);
     } finally {
       yield* remote.close(true);
       yield* source.close(true);
@@ -2741,8 +2697,7 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
         makify: true,
       });
       const sigers = hab.sign(serder.raw, true);
-      const resources = new ResourcePolicy();
-      const cues = new CueDeck(resources);
+      const cues = new Deck<AgentCue>();
       const kvy = new Kevery(hby.db, { local: true, cues });
       const priorState = kever.state();
       const key = dgKey(hab.pre, serder.said!);
@@ -2767,7 +2722,6 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
       }, () => kvy.processEscrowPartialSigs());
       assertEquals(hby.db.pses.getOn(hab.pre, 1), [serder.said]);
       assertEquals(cues.length, 0);
-      assertEquals(resources.used.bytes, 0);
       hby.db.sigs.put(key, [sigers[1]]);
 
       const accepted = kvy.decideEvent({
@@ -2797,7 +2751,6 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
           if (native.writeTxn !== writer) return commit();
           assertEquals(kever.state(), priorState);
           assertEquals(cues.length, 0, "promotion cues wait for the owning commit");
-          assert(resources.used.bytes > 0);
           assertEquals(hby.db.pses.getOn(hab.pre, 1), [], "bucket removal shares the event writer");
           native.abortTxn();
           throw failure;
@@ -2808,14 +2761,12 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
       assertEquals(hby.db.getFel(hab.pre, 1), null);
       assertEquals(hby.db.fons.get(key), null);
       assertEquals(cues.length, 0);
-      assertEquals(resources.used.bytes, 0);
       kvy.processEscrowPartialSigs();
       assertEquals(hby.db.getKever(hab.pre)?.sn, 1);
       assertEquals(hby.db.getFel(hab.pre, 1), serder.said);
       assertEquals(hby.db.pses.getOn(hab.pre, 1), []);
       assertEquals(cues.toArray().map((cue) => cue.kin), ["keyStateSaved"]);
       cues.clear();
-      assertEquals(resources.used.bytes, 0);
     } finally {
       yield* hby.close(true);
     }
@@ -3261,12 +3212,6 @@ Deno.test("Kevery accepts superseding delegated recovery when the newer delegati
         );
       }
       remote.db.aess.rem(originalKey);
-      const capacity = kvy.cues.capacity;
-      kvy.cues.capacity = kvy.cues.length;
-      assertThrows(() => kvy.processEvent(envelope), DeckFullError);
-      assertEquals(remote.db.aess.get(originalKey), null, "cue refusal leaves delegation hints untouched");
-      assertEquals(remote.db.getKever(delegate.pre)?.said, drt1.said);
-      kvy.cues.capacity = capacity;
       const failure = new Error("delegated state write failed");
       const written = remote.db.pinState.bind(remote.db);
       withPatchedMethod(remote.db, "pinState", (pre, state) => {

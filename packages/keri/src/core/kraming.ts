@@ -1,4 +1,3 @@
-import type { CueQueueInput } from "./cue-publishing.ts";
 /** Optional receiver-owned KRAM intake composed from policy, atomic staging and pruning. */
 import type { Baser } from "../db/basing.ts";
 import { makeNowIso8601, timestampMicros } from "../time/mod.ts";
@@ -19,7 +18,7 @@ export type { KramConfig } from "./kram-policy.ts";
 /** Optional receiver intake returns ordinary decisions without owning parser input. */
 export class Kramer {
   /** Shared runtime cues, or the standalone caller's drainable receiver-state notifications. */
-  readonly cues: CueQueueInput;
+  readonly cues: Deck<AgentCue>;
   private readonly policy: KramPolicy;
   private readonly pruner: KramPruner;
   private readonly now: () => number;
@@ -28,7 +27,7 @@ export class Kramer {
     private readonly db: Baser,
     { config = {}, cues = new Deck<AgentCue>(), now = Date.now }: {
       config?: KramConfig;
-      cues?: CueQueueInput;
+      cues?: Deck<AgentCue>;
       now?: () => number;
     } = {},
   ) {

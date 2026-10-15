@@ -86,7 +86,7 @@ route. Busy preserves input. The source API collects no aggregate. Finite wrappe
 before copies and return caller-owned snapshots bounded by that local byte ceiling
 and captured cue-count capacity, including copied replay.messages. No lazy owner
 escapes. Parser/callback cleanup joins before output credit releases; late iterator
-and cleanup failures propagate together. Default CueDeck activation remains separate.
+and cleanup failures propagate together. Cue queues carry ordinary records.
 
 The generic HTTP route consumes its request body progressively and appends a
 separately bounded CESR attachment header. Administrative requests still collect
@@ -383,9 +383,8 @@ most 32 delegators by default, and releases each LMDB cursor before yielding an
 event. Its default 8 MiB event limit is admission policy, not a KERI wire limit.
 Later accepted events do not extend a captured replay; stored proofs are read
 when that replay is consumed. Its frozen `CapturedKelReplay` exposes only captured
-ranges and the message ceiling for cue admission; the Baser stays borrowed and
-must remain open. Taking/fanning out the cue retains its metadata credit until
-final consumption and joined cleanup. Inspection never opens the event iterator.
+ranges and the message ceiling; the Baser stays borrowed and must remain open.
+Queue transfer and fanout carry ordinary references, opening no event iterator.
 Other replay sources and capture-time allocations remain separate admission work.
 
 `ReplyStreams` owns up to eight live HTTP replies by default. Each pull copies at
@@ -671,7 +670,7 @@ state. Runtime/CLI close their created producers and leave injected signalers op
 
 Runtime output resources are acquired after their backing registry stores so
 reverse scope teardown joins delivery cancellation and closes lazy replies before
-store cleanup. The scoped default CueDeck follows backing stores and precedes
-processors/output consumers, clearing queued owners after joined outputs.
+store cleanup. The default Deck carries ordinary records and is cleared after
+joined outputs, before owned stores close.
 Explicit-close callers first join request/runtime tasks; close keeps that ordering
 and failure aggregation, and injected stores remain borrowed.

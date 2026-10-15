@@ -1,4 +1,3 @@
-import type { CueQueueInput } from "../core/cue-publishing.ts";
 /**
  * Sally-like verifier agent pipeline.
  *
@@ -13,8 +12,6 @@ import type { CueQueueInput } from "../core/cue-publishing.ts";
  */
 import { Dater, Ilks, Prefixer, SerderACDC, type Versionage, Vrsn_1_0 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
-import type { OwnedCue } from "../core/cue-admission.ts";
-import type { CueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CredentialRevokedCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -65,7 +62,7 @@ export interface VerifierAgentOptions {
   reger: Reger;
   cdb: VerifierCueBaser;
   reactor: Reactor;
-  cues: CueQueueInput;
+  cues: Deck<AgentCue>;
   services: RuntimeServices;
   hook: string;
   /** Attachment genus of grant children, independent of legacy EXN framing. */
@@ -81,7 +78,7 @@ export class VerifierAgent {
   readonly reger: Reger;
   readonly cdb: VerifierCueBaser;
   readonly reactor: Reactor;
-  readonly cues: CueQueueInput;
+  readonly cues: Deck<AgentCue>;
   readonly services: RuntimeServices;
   readonly hook: string;
   readonly gvrsn: Versionage;
@@ -157,44 +154,25 @@ export class VerifierAgent {
   }
 
   private processRevokedCues(): number {
-    const source = this.cues;
-    if (!(source instanceof Deck)) return this.processOwnedRevokedCues(source);
     const retained: AgentCue[] = [];
-    let queued = 0;
-    while (source.length) {
-      const cue = source.pull();
-      if (!cue) continue;
-      if (cue.kin !== "revoked") retained.push(cue);
-      else queued += this.queueRevocation(cue);
-    }
-    if (retained.length) source.extend(retained);
-    return queued;
-  }
-
-  /** Guarded finite scan: preserve unrelated owners and failed publication without reacquiring credit. */
-  private processOwnedRevokedCues(cues: CueReader): number {
-    const retained: OwnedCue[] = [];
-    const count = cues.length;
+    const count = this.cues.length;
     let queued = 0;
     try {
       for (let index = 0; index < count; index++) {
-        const owner = cues.takeOwned();
-        if (!owner) break;
-        const cue = owner.cue;
-        if (cue.kin !== "revoked") {
-          retained.push(owner);
-          continue;
+        const cue = this.cues.pull();
+        if (!cue) break;
+        if (cue.kin !== "revoked") retained.push(cue);
+        else {
+          try {
+            queued += this.queueRevocation(cue);
+          } catch (error) {
+            retained.push(cue);
+            throw error;
+          }
         }
-        try {
-          queued += this.queueRevocation(cue);
-        } catch (error) {
-          retained.push(owner);
-          throw error;
-        }
-        owner.release();
       }
     } finally {
-      for (const owner of retained.reverse()) cues.requeue(owner);
+      for (const cue of retained.reverse()) this.cues.prepend(cue);
     }
     return queued;
   }

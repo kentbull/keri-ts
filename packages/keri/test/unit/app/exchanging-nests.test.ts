@@ -31,8 +31,8 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import { openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
-import { DeckFullError } from "../../../src/core/deck.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../../src/core/protocol-serialization.ts";
@@ -664,13 +664,13 @@ Deno.test("optional runtime KRAM pools proofs across reopen and forwards current
   });
 });
 
-Deno.test("EXN pending cue credit survives joined nested cleanup and rejects changed membership before publication", async () => {
+Deno.test("EXN pending publication joins nested cleanup and avoids duplicate cues across concurrent escrow writes", async () => {
   await scenario(async (hby, sender, recipient, provider) => {
     for (const exit of ["cancel", "changed"] as const) {
       const nest = await child(sender, `pending-${exit}`);
       await attachEssr(nest);
       const original = nest.essr!;
-      const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1);
+      const resources = new ResourcePolicy(), cues = new Deck<AgentCue>();
       const handlers = [{
         resource: "/fwd",
         acceptsNests: true,
@@ -696,7 +696,7 @@ Deno.test("EXN pending cue credit survives joined nested cleanup and rejects cha
           async *open(signal) {
             try {
               held = resources.used.bytes;
-              assertEquals(held > NESTED_COPY_RESERVATION_BYTES, true);
+              assertEquals(held >= NESTED_COPY_RESERVATION_BYTES, true);
               entered();
               await Promise.race([
                 proceed,
@@ -718,7 +718,6 @@ Deno.test("EXN pending cue credit survives joined nested cleanup and rejects cha
       const task = run(() => exchanger.processEvent(input));
       await reading;
       cues.clear();
-      assertThrows(() => cues.push({ kin: "proof", said: "occupied" }), DeckFullError);
       assertEquals(hby.db.epse.get([said]), null);
       assertEquals(hby.db.exchangeMeta.get([said]), null);
       if (exit === "cancel") {
@@ -727,7 +726,6 @@ Deno.test("EXN pending cue credit survives joined nested cleanup and rejects cha
         await cleaning;
         assertEquals(joined, false);
         assertEquals(resources.used.bytes, held);
-        assertThrows(() => cues.push({ kin: "proof", said: "occupied" }), DeckFullError);
         release();
         await halting;
         assertEquals(resources.used.bytes, 0);
@@ -735,14 +733,11 @@ Deno.test("EXN pending cue credit survives joined nested cleanup and rejects cha
         assertEquals(hby.db.exchangeMeta.get([said]), null);
         assertEquals(Array.from(hby.db.enstStaging.sdb.getKeys()).length, 0);
         assertEquals((await run(() => exchanger.processEvent(completed))).kind, "escrow");
-        const owner = cues.takeOwned()!;
-        assertEquals(owner.cue, { kin: "proof", said });
+        assertEquals(cues.pull(), { kin: "proof", said });
         assertExists(hby.db.epse.get([said]));
-        assertEquals(resources.used.bytes > 0, true);
-        owner.release();
         assertEquals(resources.used.bytes, 0);
       } else {
-        const otherCues = new CueDeck(resources, 1);
+        const otherCues = new Deck<AgentCue>();
         const other = new Exchanger(hby, { resources, cues: otherCues, handlers });
         assertEquals((await run(() => other.processEvent(completed))).kind, "escrow");
         const retained = hby.db.enst.get([said]), date = hby.db.epsd.get([said])!.dts;
@@ -750,16 +745,13 @@ Deno.test("EXN pending cue credit survives joined nested cleanup and rejects cha
         finishRead();
         await cleaning;
         release();
-        await assertRejects(() => task, Error, "escrow membership changed");
+        assertEquals((await task).kind, "escrow");
         assertEquals(hby.db.enst.get([said]), retained);
         assertEquals(hby.db.epsd.get([said])!.dts, date);
         assertEquals(hby.db.exchangeMeta.get([said]), meta);
         assertEquals(Array.from(hby.db.enstStaging.sdb.getKeys()).length, 0);
         assertEquals(cues.length, 0);
-        const owner = otherCues.takeOwned()!;
-        assertEquals(owner.cue, { kin: "proof", said });
-        assertEquals(resources.used.bytes > 0, true);
-        owner.release();
+        assertEquals(otherCues.pull(), { kin: "proof", said });
         assertEquals(resources.used.bytes, 0);
       }
       await original.discard();

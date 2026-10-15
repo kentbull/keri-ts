@@ -14,7 +14,6 @@ import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbi
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Respondant } from "../../../src/app/respondant.ts";
 import { drainWitnessCues, processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
 import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -396,7 +395,7 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
   });
 });
 
-Deno.test("runtime Respondant admission keeps saturated cues and progresses signed ingress during paused HTTP delivery", async () => {
+Deno.test("runtime Respondant preserves cues on preparation failure and progresses signed ingress during paused HTTP delivery", async () => {
   let arrived!: () => void, release!: () => void;
   const receiving = new Promise<void>((resolve) => arrived = resolve);
   const gate = new Promise<void>((resolve) => release = resolve);
@@ -432,32 +431,11 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
           dest: recipient.pre,
           serder: replyEvent("/loc/scheme", { eid: sender.pre, scheme: "http", url: "http://sender.test/" }),
         };
-        runtime.cues.push(cue);
         const interpretation = sender.interpretCue;
-        let interpreted = 0;
-        sender.interpretCue = (input) => {
-          interpreted++;
-          return interpretation.call(sender, input);
-        };
-        const queued = {
-          url: "https://query.test/",
-          body: new Uint8Array(),
-          bodyMode: "header" as const,
-          destination: sender.pre,
-        };
-        for (let index = 0; index < 8; index++) runtime.deliveries.enqueue(() => queued);
-        runtime.querying.configure({ hab: sender, sink: respondantCueSink(runtime, sender) });
-        yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
-        assertStrictEquals(runtime.cues.peekHead(), cue);
-        assertEquals([interpreted, runtime.deliveries.hasPending], [0, true]);
-        // Dispose only this saturated fixture's query owners, then use a fresh owned runtime for actual delivery.
-        yield* runtime.close();
-        const active = yield* createAgentRuntime(hby, { mode: "local" });
+        const active = runtime;
         active.cues.push(cue);
         const sink = respondantCueSink(active, sender);
-        if (!(active.cues instanceof CueDeck)) throw new Error("Expected admitted runtime source");
-        const queuedBytes = active.cues.headRetentionBytes();
-        assertEquals(active.resources.used.bytes, queuedBytes, "only this source's queued owner is live");
+        assertEquals(active.resources.used.bytes, 0, "queued records carry no byte credit");
         const occupied = active.resources.reserve({
           bytes: active.resources.limits.bytes - active.resources.used.bytes,
         });
@@ -488,7 +466,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
               foreign,
             );
             assertStrictEquals(active.cues.peekHead(), cue);
-            assertEquals(active.resources.used.bytes, queuedBytes, "foreign failure returns only unpublished credit");
+            assertEquals(active.resources.used.bytes, 0, "failed preparation releases its output credit");
           } finally {
             sender.interpretCue = interpretation;
             active.poster.findBytesRoute = resolve;

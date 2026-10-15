@@ -1,8 +1,8 @@
 import { ResourceAdmissionError } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import type { CueQueueInput } from "../core/cue-publishing.ts";
+import type { AgentCue } from "../core/cues.ts";
 import type { CueEmission, QueryCue } from "../core/cues.ts";
-import { DeckFullError } from "../core/deck.ts";
+import type { Deck } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { admitCueEmission, type CuePreparationResult, type PreparedCueEmission } from "./cue-preparation.ts";
 import type { Hab } from "./habbing.ts";
@@ -14,7 +14,7 @@ export type CueAdmission = "transferred" | "busy" | "ineligible";
 /** Host-facing emissions and optional synchronous transfer of the guarded source head. */
 export interface CueSink {
   /** Synchronous guarded admission only: no waiting, reentry or destructive fallback on capacity refusal. */
-  admitCue?(source: CueQueueInput, interpreter: Hab | null): CueAdmission;
+  admitCue?(source: Deck<AgentCue>, interpreter: Hab | null): CueAdmission;
   /** Admit source retention and one finite query before invoking its synchronous signing/route preparation. */
   admitQuery?(cue: QueryCue, prepare: () => CueEmission | null): CueAdmission;
   /** Synchronous local transformation under admitted interpretation/output credit and the Reactor guard. */
@@ -112,7 +112,7 @@ export function processCuesOnce(
         if (result.preparation.kind === "refuse") {
           const error = result.preparation.error;
           if (error instanceof ResourceAdmissionError) onAdmissionRefusal?.(error);
-          if (error instanceof DeckFullError || error.reason === "busy") return false;
+          if (error.reason === "busy") return false;
           throw error;
         }
         if (result.admission === "busy") return false;
