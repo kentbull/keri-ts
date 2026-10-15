@@ -182,16 +182,27 @@ Deno.test("multisig approval honors signed child genus for KEL, replies and regi
       const runtime = yield* createAgentRuntime(left, { mode: "local", notifier });
       try {
         runtime.poster.sendPreparedExchange = function*(_sender, args) {
+          if (args.serder.route === "/multisig/icp") {
+            assertEquals(args.serder.ked!.a, {
+              gid: local.hab.pre,
+              smids: mids,
+              rmids: mids,
+              cgvrsn: [2, 0],
+              i: bob.pre,
+            });
+          }
           return { serder: args.serder, deliveries: ["test"], queued: [] };
         };
-        const [peer, paths] = yield* multisigInceptExn(
-          bob,
-          mids,
-          mids,
-          messagize(remote.serder, { sigers: remote.sigers, gvrsn: Vrsn_2_0 }),
-          undefined,
-          { pvrsn: Vrsn_1_0, childGvrsn: Vrsn_2_0 },
-        );
+        const [peer, paths] = exchange("/multisig/icp", {
+          gid: local.hab.pre,
+          smids: mids,
+          rmids: mids,
+          cgvrsn: [2, 0],
+          unrecognized: "peer-only",
+        }, {
+          sender: bob.pre,
+          embeds: { icp: messagize(remote.serder, { sigers: remote.sigers, gvrsn: Vrsn_2_0 }) },
+        });
         yield* runtime.reactor.processBytes(concatBytes(bob.endorse(peer, { pipelined: false }), paths), {
           local: true,
         });
