@@ -15,7 +15,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { createNoter, type Noter, type NoterOptions, Notice, type NoticeAttrs } from "../db/noting.ts";
 import type { Habery } from "./habbing.ts";
-import { type PreparedSignal, Signaler } from "./signaling.ts";
+import { Signaler } from "./signaling.ts";
 
 export function notice<T extends NoticeAttrs = NoticeAttrs>(
   attrs: T,
@@ -88,10 +88,7 @@ export class Notifier {
     this.hby = hby;
     this.noter = noter;
     this.ownsSignaler = signaler === undefined;
-    this.signaler = signaler ?? new Signaler({ resources: hby.db.resources });
-    if (this.signaler.resources !== hby.db.resources) {
-      throw new RangeError("Notifier requires its Habery resource policy");
-    }
+    this.signaler = signaler ?? new Signaler();
   }
 
   /** Add one unread signed notice and emit a transient add signal. */
@@ -99,14 +96,9 @@ export class Notifier {
     const signator = this.requireSignator();
     const note = notice(attrs);
     const cigar = signator.sign(note.raw);
-    const prepared = this.prepareSignal("add", note);
-    try {
-      if (!this.noter.add(note, cigar)) return false;
-      prepared.publish();
-      return true;
-    } finally {
-      prepared.release();
-    }
+    if (!this.noter.add(note, cigar)) return false;
+    this.publishSignal("add", note);
+    return true;
   }
 
   /** Close only a signal producer created here; the Noter and injected signalers remain borrowed. */
@@ -139,32 +131,22 @@ export class Notifier {
     const signator = this.requireSignator();
     note.read = true;
     const cigar = signator.sign(note.raw);
-    const prepared = this.prepareSignal("mar", note);
-    try {
-      if (!this.noter.update(note, cigar)) return false;
-      prepared.publish();
-      return true;
-    } finally {
-      prepared.release();
-    }
+    if (!this.noter.update(note, cigar)) return false;
+    this.publishSignal("mar", note);
+    return true;
   }
 
   /** Remove one verified notice and emit a transient remove signal. */
   remove(rid: string): boolean {
     const [note] = this.requireNoticePair(rid);
-    const prepared = this.prepareSignal("rem", note);
-    try {
-      if (!this.noter.removeNotice(rid)) return false;
-      prepared.publish();
-      return true;
-    } finally {
-      prepared.release();
-    }
+    if (!this.noter.removeNotice(rid)) return false;
+    this.publishSignal("rem", note);
+    return true;
   }
 
-  private prepareSignal(action: "add" | "mar" | "rem", note: Notice): PreparedSignal {
-    return this.signaler.prepare(
-      () => ({ action, dt: new Date().toISOString(), note: note.asDict() }),
+  private publishSignal(action: "add" | "mar" | "rem", note: Notice): void {
+    this.signaler.push(
+      { action, dt: new Date().toISOString(), note: note.asDict() },
       "/notification",
       { ckey: "/notification" },
     );
