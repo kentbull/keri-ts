@@ -1,6 +1,6 @@
 import { type SealEvent } from "cesr-ts";
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
-import { type CueQueueInput, cueReader } from "../core/cue-publishing.ts";
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { AgentCue, CueEmission, QueryCue, QueryInstruction, QueryRequest } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
@@ -483,7 +483,8 @@ export class QueryCoordinator implements CueSink {
       });
       if (admission === "transferred") {
         if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
-        const original = cueReader(source).takeOwned()!;
+        const original = source instanceof Deck ? undefined : source.takeOwned()!;
+        if (source instanceof Deck) source.pull();
         try {
           this.observeCue(cue);
         } finally {

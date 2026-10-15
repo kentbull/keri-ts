@@ -14,9 +14,9 @@ import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { Dater, Ilks, Prefixer, SerderACDC, type Versionage, Vrsn_1_0 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import type { OwnedCue } from "../core/cue-admission.ts";
-import { cuePublisher, type CueReader, cueReader } from "../core/cue-publishing.ts";
+import { cuePublisher, type CueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CredentialRevokedCue } from "../core/cues.ts";
-import type { Deck } from "../core/deck.ts";
+import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { VcStateRecordShape } from "../core/records.ts";
 import type { Reger } from "../db/reger.ts";
@@ -157,15 +157,13 @@ export class VerifierAgent {
   }
 
   private processRevokedCues(): number {
-    const source = cueReader(this.cues);
-    if (source.resourcePolicy) return this.processOwnedRevokedCues(source);
+    const source = this.cues;
+    if (!(source instanceof Deck)) return this.processOwnedRevokedCues(source);
     const retained: AgentCue[] = [];
     let queued = 0;
     while (source.length) {
-      const owner = source.takeOwned();
-      if (!owner) continue;
-      const cue = owner.cue;
-      owner.release();
+      const cue = source.pull();
+      if (!cue) continue;
       if (cue.kin !== "revoked") retained.push(cue);
       else queued += this.queueRevocation(cue);
     }
