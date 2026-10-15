@@ -1,5 +1,5 @@
 import type { ResourcePolicy } from "cesr-ts";
-import { CueDeck, type PreparedCueBatch } from "./cue-admission.ts";
+import { CueDeck, OwnedCue, type PreparedCueBatch } from "./cue-admission.ts";
 import type { AgentCue } from "./cues.ts";
 import type { Deck } from "./deck.ts";
 
@@ -33,6 +33,43 @@ export function cuePublisher(queue: Deck<AgentCue>): CuePublisher {
         },
         release() {},
       };
+    },
+  };
+}
+
+/** Consumers transfer cue handles without depending on the producer or general deque mutation API. */
+export interface CueReader {
+  /** Existing source credit, absent for a standalone caller-owned queue. */
+  readonly resourcePolicy: ResourcePolicy | undefined;
+  /** Borrow the next cue without changing its queue or ownership. */
+  peekHead(): AgentCue | undefined;
+  /** Retained source credit available to downstream combined admission. */
+  headRetentionBytes(): number;
+  /** Remove one reference while retaining any existing credit until release. */
+  takeOwned(): OwnedCue | undefined;
+  /** Restore unconsumed work without a new admission. */
+  requeue(owner: OwnedCue): void;
+}
+
+/** A standalone caller-owned cue has no queue byte credit; this handle controls only its borrowed reference. */
+function borrowedCue(cue: AgentCue): OwnedCue {
+  return new OwnedCue(cue, () => {}, () => borrowedCue(cue), 0);
+}
+
+/** Adapt the existing source; owned queues transfer existing credit and plain queues retain caller-owned accounting. */
+export function cueReader(queue: Deck<AgentCue>): CueReader {
+  if (queue instanceof CueDeck) return queue;
+  return {
+    resourcePolicy: undefined,
+    peekHead: () => queue.peekHead(),
+    headRetentionBytes: () => 0,
+    takeOwned() {
+      const cue = queue.pull();
+      return cue ? borrowedCue(cue) : undefined;
+    },
+    requeue(owner) {
+      queue.prepend(owner.cue);
+      owner.release();
     },
   };
 }
