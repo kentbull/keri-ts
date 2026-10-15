@@ -22,6 +22,7 @@ import {
 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
+import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
 import {
   loadMultisigHandlers,
@@ -36,6 +37,7 @@ import {
   prepareMultisigEventExn,
 } from "../../../src/app/grouping.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { publishProposal } from "../../../src/app/multisig-workflows.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
@@ -106,6 +108,54 @@ async function participants(
     }
   });
 }
+
+Deno.test("multisig publication records its actual local proposal before delivery and accepts a later peer proof", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, { mode: "local", notifier });
+      try {
+        let delivered: SerderKERI | undefined;
+        // Only transmission is substituted; preparation, signing, intake and replay use real owners.
+        runtime.poster.sendPreparedExchange = function*(sender, args) {
+          assertEquals(sender, alice);
+          assertEquals(args.recipient, bob.pre);
+          assertEquals(left.db.exns.get([args.serder.said!])?.raw, args.serder.raw);
+          assertEquals(runtime.reactor.exchanger.complete(args.serder.said!), true);
+          const embedded = (args.serder.ked!.e as { d: string }).d;
+          assertEquals(left.db.maids.get([embedded]).map((p) => p.qb64), [alice.pre]);
+          delivered = args.serder;
+          return { serder: args.serder, deliveries: ["test-transmission"], queued: [] };
+        };
+        const deliveries = yield* publishProposal(runtime, alice, mids, "/multisig/icp", "icp", {
+          gid: local.hab.pre,
+          smids: mids,
+          rmids: mids,
+        }, messagize(local.serder, { sigers: local.sigers, gvrsn: Vrsn_1_0 }));
+        assertEquals(deliveries, ["test-transmission"]);
+        assertExists(delivered);
+        assertEquals(left.db.getKever(local.hab.pre), null);
+        assertEquals(notifier.list().length, 0);
+        const [peer, paths] = yield* multisigInceptExn(
+          bob,
+          mids,
+          mids,
+          messagize(remote.serder, { sigers: remote.sigers, gvrsn: Vrsn_1_0 }),
+        );
+        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(peer, { pipelined: false }), paths), {
+          local: true,
+        });
+        yield* runtime.reactor.processEscrowsOnce();
+        assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
+        assertEquals(notifier.list().length, 0);
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
 
 for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
   for (const remoteFirst of [false, true]) {
