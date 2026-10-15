@@ -1,4 +1,4 @@
-import { concatBytes, discardFrame, SerderKERI, type Versionage } from "cesr-ts";
+import { concatBytes, Counter, discardFrame, SerderKERI, type Versionage } from "cesr-ts";
 import { toEffectionFrames } from "cesr-ts/effection";
 import { call, each, type Operation } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
@@ -160,14 +160,17 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     });
     const group = isLocalGroupHab(hby, hab);
     if (group) {
-      const partialGrant = groupIpexPartial(hby, hab, grant.grant, undefined, grant.attachments);
-      yield* runtime.reactor.processBytes(partialGrant, { local: true });
+      const genus = grant.grant.gvrsn ?? ipexArgs.gvrsn ?? grant.grant.pvrsn;
+      const partialGrant = groupIpexPartial(hby, hab, grant.grant, grant.attachments, genus);
+      yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), partialGrant), { local: true });
       yield* runtime.reactor.processEscrowsOnce();
 
       const deliveries = yield* publishGroupIpexProposal(
         runtime,
         hab,
         partialGrant,
+        undefined,
+        genus,
       );
       const complete = ipexArgs.approvalTimeoutSeconds > 0
         ? yield* waitForMultisigIpexCompletion(hby, runtime, hab, grant.grant.said!, ipexArgs.approvalTimeoutSeconds)
@@ -362,7 +365,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
       return;
     }
 
-    const approval = yield* approveMultisigIpex(hby, runtime, exn, embedded, {
+    const approval = yield* approveMultisigIpex(hby, runtime, exn, {
       publish: true,
       delivery: ipexArgs.delivery,
       gvrsn: ipexArgs.gvrsn,
