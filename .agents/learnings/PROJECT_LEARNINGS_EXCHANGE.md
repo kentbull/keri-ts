@@ -186,6 +186,12 @@ hidden declarations and unfinished graphs remain guarded.
 [IPEX](../../docs/design-docs/exchange/IPEX.md),
 [storage](../../docs/design-docs/db/PAYLOAD_STORAGE.md).
 
+Group IPEX approval derives its child, stored proof and genus from the wrapper.
+Partial signing receives proof bytes directly; it does not look them up through
+a wrapper ID. Prefix parser input with the resolved genus, serialize local
+signatures in that genus, and publish its signed replay hint. CLI group grants
+use the same genus for credential attachments, partial signatures and intake.
+
 Reply approval publishes only its group identity through the event builder. VDR
 publication correlates registry/issuance routes with their required named children
 and known gid/usage fields. Derive the signed genus hint from the local anchor,
