@@ -26,7 +26,7 @@ import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 
 Deno.test("multisig builders produce KERIpy route payload and embed shapes", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `multisig-builders-${crypto.randomUUID()}`,
       temp: true,
@@ -94,7 +94,7 @@ Deno.test("multisig builders produce KERIpy route payload and embed shapes", asy
 });
 
 Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote submitters", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `multisig-mux-${crypto.randomUUID()}`,
       temp: true,
@@ -156,7 +156,7 @@ Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote s
 });
 
 Deno.test("Multiplexor rejects nonlocal group participation proposals", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `multisig-reject-${crypto.randomUUID()}`,
       temp: true,
@@ -209,8 +209,42 @@ Deno.test("Multiplexor rejects nonlocal group participation proposals", async ()
   });
 });
 
+Deno.test("Multiplexor preserves join, rotation and family membership rules at the wire boundary", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const member = hby.makeHab("member");
+      const child = hby.db.getEvtSerder(member.pre, member.kever!.said)!;
+      const mux = new Multiplexor(hby);
+      // Malformed list entries are filtered as before; they do not change local membership.
+      for (
+        const [route, attrs, accepted] of [
+          ["/multisig/icp", { smids: [7, member.pre] }, true],
+          ["/multisig/icp", { smids: "not-a-list", rmids: [member.pre] }, true],
+          ["/multisig/icp", { smids: [7], rmids: {} }, false],
+          ["/multisig/rot", { gid: member.pre }, true],
+          ["/multisig/rot", { gid: "unhosted-group", rmids: [member.pre] }, true],
+          ["/multisig/rot", { gid: "", smids: [member.pre] }, false],
+          ["/multisig/rot", { gid: "unhosted-group", smids: [7] }, false],
+          ["/multisig/iss", { gid: member.pre }, true],
+          ["/multisig/iss", { gid: 7, smids: [member.pre] }, false],
+          ["/multisig/iss", { gid: "unhosted-group", smids: [member.pre] }, false],
+          // Membership is intentionally family-wide; handler registration selects actual routes.
+          ["/multisig/future", { gid: member.pre }, true],
+          ["/unrelated/route", { gid: member.pre }, false],
+        ] as const
+      ) {
+        const [proposal] = exchangeMessage(route, attrs, { sender: member.pre, embeds: { icp: child.raw } });
+        assertEquals(mux.verify(proposal), accepted, `${route}: ${JSON.stringify(attrs)}`);
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("Exchanger lead elects the signer with the lowest group signature index", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `multisig-lead-${crypto.randomUUID()}`,
       temp: true,

@@ -71,8 +71,12 @@ The four multisig event builders carry one MultisigEventProposal with correlated
 icp/rot/ixn/rpy attributes through byte preparation and synchronous body building.
 Inception derives gid from its child; callers supply member lists, not another gid
 or child commitment. Do not reconstruct typed input from an erased serialized SAD.
-Other multisig/TEL/business routes retain their separate builders; inbound
-membership and generic EXN/embedded-SAD boundaries still need their own audit.
+Other multisig/TEL/business routes retain their separate builders. Inbound
+membership decodes unknown attributes into join, rotate or participate requests
+before consulting local habitats. Preserve optional-list filtering, rotation's
+known-group shortcut and KERIpy's family-wide membership rule; handler registration
+selects supported routes. Generic EXN/embedded-SAD and approval boundaries still
+need their own audit.
 For a v1 wrapper around a legacy body with a different explicit attachment genus,
 derive signed a.cgvrsn from childGvrsn. Omit it when the body declares its genus or
 the versions agree. Canonical 714 icp/rot/ixn/rpy vectors compare complete unsigned
