@@ -79,13 +79,20 @@ export function* proposeGroupEndpointRole(
   yield* runtime.reactor.processEscrowsOnce();
 
   const [exn, attachments] = yield* multisigRpyExn(groupHab, member, localRpy);
-  const deliveries = yield* publishEndpointRoleProposal(
-    runtime,
-    member,
-    groupSigningMembers(runtime.hby, groupHab.pre),
-    { gid: groupHab.pre },
-    { rpy: localRpy },
-  );
+  const deliveries: string[] = [];
+  for (const recipient of uniqueMembers(groupSigningMembers(runtime.hby, groupHab.pre))) {
+    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
+      continue;
+    }
+    const result = yield* runtime.poster.sendExchange(member, {
+      recipient,
+      route: MULTISIG_RPY_ROUTE,
+      payload: { gid: groupHab.pre },
+      embeds: { rpy: localRpy },
+      topic: MULTISIG_TOPIC,
+    });
+    deliveries.push(...result.deliveries, ...result.queued);
+  }
 
   return {
     route: MULTISIG_RPY_ROUTE,
@@ -118,30 +125,6 @@ export function groupEndorseReply(
     seal: { i: kever.prefixer, s: seqner, d: new Diger({ qb64: estSaid }) },
     pipelined: true,
   });
-}
-
-function* publishEndpointRoleProposal(
-  runtime: AgentRuntime,
-  member: Hab,
-  recipients: readonly string[],
-  payload: Record<string, unknown>,
-  embeds: Record<string, Uint8Array>,
-): Operation<string[]> {
-  const deliveries: string[] = [];
-  for (const recipient of uniqueMembers(recipients)) {
-    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
-      continue;
-    }
-    const result = yield* runtime.poster.sendExchange(member, {
-      recipient,
-      route: MULTISIG_RPY_ROUTE,
-      payload,
-      embeds,
-      topic: MULTISIG_TOPIC,
-    });
-    deliveries.push(...result.deliveries, ...result.queued);
-  }
-  return deliveries;
 }
 
 /**

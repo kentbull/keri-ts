@@ -711,14 +711,16 @@ function requireVerifier(runtime: AgentRuntime): Verifier {
 }
 
 function rpyAttrs(serder: SerderKERI): { cid: string; role: string; eid: string } {
-  const attrs = serder.ked?.a as Record<string, unknown> | undefined;
-  const cid = typeof attrs?.cid === "string" ? attrs.cid : "";
-  const role = typeof attrs?.role === "string" ? attrs.role : "";
-  const eid = typeof attrs?.eid === "string" ? attrs.eid : "";
-  if (!cid || !role || !eid) {
+  const attrs: unknown = serder.ked?.a;
+  if (
+    !attrs || typeof attrs !== "object"
+    || !("cid" in attrs) || typeof attrs.cid !== "string" || !attrs.cid
+    || !("role" in attrs) || typeof attrs.role !== "string" || !attrs.role
+    || !("eid" in attrs) || typeof attrs.eid !== "string" || !attrs.eid
+  ) {
     throw new ValidationError("Multisig reply is missing cid, role, or eid.");
   }
-  return { cid, role, eid };
+  return { cid: attrs.cid, role: attrs.role, eid: attrs.eid };
 }
 
 function groupHabByAliasOrPrefix(hby: Habery, group: string): Hab | null {
