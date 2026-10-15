@@ -509,6 +509,14 @@ function* approveVdrProposal(
   if (anchor.event.pre !== groupPre) return null;
 
   const embeddedSerder = new SerderKERI({ sad: embeddedSad });
+  // Required children must be decoded before approval can sign or accept the anchor.
+  const acdcSad = embed?.acdc;
+  const proposal = route === MULTISIG_VCP_ROUTE
+    ? { route }
+    : isRecord(acdcSad)
+    ? { route, credential: new SerderACDC({ sad: acdcSad }) }
+    : null;
+  if (!proposal) return null;
   const { event: anchorSerder, attachment, genus } = anchor;
   const embeddedSaid = embeddedSerder.said ?? "";
   if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid || "<unknown>" })) {
@@ -525,15 +533,11 @@ function* approveVdrProposal(
 
   let accepted = false;
   let embeds: Record<string, Uint8Array>;
-  if (route === MULTISIG_VCP_ROUTE) {
+  if (proposal.route === MULTISIG_VCP_ROUTE) {
     accepted = approveRegistryIncept(runtime, groupHab, embeddedSerder, anchorSerder, options);
     embeds = { vcp: embeddedSerder.raw, anc: localAnchor };
   } else {
-    const acdcSad = embed?.acdc;
-    if (!isRecord(acdcSad)) {
-      return null;
-    }
-    const creder = new SerderACDC({ sad: acdcSad });
+    const creder = proposal.credential;
     accepted = approveCredentialIssue(runtime, hby, creder, embeddedSerder, anchorSerder);
     const seal = telCredentialSeal(embeddedSerder);
     embeds = {
