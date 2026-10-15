@@ -24,6 +24,12 @@ const CHALLENGE_CONSONANTS = [
 const CHALLENGE_VOWELS = ["a", "e", "i", "o"] as const;
 const BITS_PER_WORD = 12;
 
+/** Built-in challenge route; the EXN sender is the authenticated responder. */
+export const CHALLENGE_RESPONSE_ROUTE = "/challenge/response";
+
+/** Known challenge content; EXN recipient projection is separate wire metadata. */
+export type ChallengeResponsePayload = { words: string[] };
+
 /** Output mode supported by `challenge generate`. */
 export type ChallengeOutput = "json" | "string" | "words";
 
@@ -53,7 +59,7 @@ export function loadChallengeHandlers(
  * responses rather than only one caller's currently expected phrase.
  */
 export class ChallengeHandler implements ExchangeRouteHandler {
-  static readonly resource = "/challenge/response";
+  static readonly resource = CHALLENGE_RESPONSE_ROUTE;
   readonly resource = ChallengeHandler.resource;
   readonly db: Baser;
 
@@ -65,8 +71,7 @@ export class ChallengeHandler implements ExchangeRouteHandler {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
   }): boolean {
-    const payload = args.serder.ked?.a as Record<string, unknown> | undefined;
-    return challengeWordsFromPayload(payload) !== null
+    return challengeWordsFromPayload(args.serder.ked?.a) !== null
       && args.attachments.length === 0;
   }
 
@@ -93,9 +98,7 @@ export function findVerifiedChallengeResponse(
     if (!exn) {
       continue;
     }
-    const words = challengeWordsFromPayload(
-      exn.ked?.a as Record<string, unknown> | undefined,
-    );
+    const words = challengeWordsFromPayload(exn.ked?.a);
     if (words && challengeWordsEqual(words, expected)) {
       return exn;
     }
@@ -119,10 +122,8 @@ export function markChallengeVerified(
 export function parseChallengeWords(input: string): string[] {
   const trimmed = input.trim();
   if (trimmed.startsWith("[")) {
-    const parsed = JSON.parse(trimmed);
-    if (
-      !Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")
-    ) {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (!isChallengeWords(parsed)) {
       throw new Error("Challenge words JSON must be an array of strings.");
     }
     return parsed.map((item) => item.trim()).filter((item) => item.length > 0);
@@ -188,12 +189,14 @@ function challengeWordsEqual(
     && actual.every((word, index) => word === expected[index]);
 }
 
-function challengeWordsFromPayload(
-  payload: Record<string, unknown> | undefined,
-): string[] | null {
-  const words = payload?.words;
-  if (!Array.isArray(words) || words.some((item) => typeof item !== "string")) {
-    return null;
-  }
-  return words;
+/** Narrow decoded EXN attributes before the handler or verifier reads known challenge content. */
+function challengeWordsFromPayload(payload: unknown): ChallengeResponsePayload["words"] | null {
+  if (!payload || typeof payload !== "object" || !("words" in payload)) return null;
+  const words = payload.words;
+  return isChallengeWords(words) ? words : null;
+}
+
+/** CLI JSON and decoded response content share the same word-list contract. */
+function isChallengeWords(value: unknown): value is ChallengeResponsePayload["words"] {
+  return Array.isArray(value) && value.every((word: unknown) => typeof word === "string");
 }

@@ -21,12 +21,9 @@ import {
   type CueSink,
   processRuntimeTurn,
   processRuntimeUntil,
+  respondantCueSink,
 } from "../agent-runtime.ts";
-import {
-  groupSigningMembers,
-  isLocalGroupHab,
-  localGroupMember,
-} from "../endpoint-roleing.ts";
+import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../endpoint-roleing.ts";
 import { MULTISIG_IXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { queryTransportSink } from "../runtime-deliveries.ts";
@@ -153,10 +150,10 @@ function delegateWitnessLogsQuery(
       pre: serder.pre,
       src: witness,
       route: "logs",
-      query,
+      q: query,
       wits: [witness],
     },
-    messages: [hab.query(serder.pre, witness, query, "logs")],
+    messages: [hab.query(serder.pre, witness, { route: "logs", q: query })],
   };
 }
 
@@ -213,9 +210,10 @@ function delegateConfirmSink(
   hab: Hab,
 ): CueSink {
   const querySink = queryTransportSink(runtime, hby, hab);
+  const responder = respondantCueSink(runtime, hab);
   return {
     admitQuery: querySink.admitQuery,
-    admitCue: (current, interpreter) => runtime.respondant.admitCue(current, interpreter, hab),
+    admitCue: responder.admitCue,
     *send(emission: CueEmission): Operation<void> {
       if (emission.kind === "wire" && emission.cue.kin === "query") {
         yield* querySink.send(emission);
@@ -385,7 +383,7 @@ export function* performDelegationApproval(
       const querier = runtime.querying.watchSeqNo(
         serder.pre!,
         serder.sn ?? 0,
-        { hab },
+        { signer: hab.pre },
       );
       // No delegate witness exists to query. Process the local delegable
       // after the delegator has anchored approval; the delegate still

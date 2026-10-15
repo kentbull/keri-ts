@@ -30,7 +30,7 @@ import type { Hab, Habery } from "./habbing.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
 import type { QueryReply } from "./query-replies.ts";
-import { sendCesrTcp } from "./tcp-egress.ts";
+import { converseCesrTcp } from "./tcp-conversation.ts";
 
 /**
  * Resolve the actual transport URL for one query destination AID.
@@ -228,7 +228,7 @@ export class RuntimeDeliveries {
       if (emission?.kind === "transport" && emission.cue.kin === "stream") {
         runtime.mailboxDirector.retainQueryCue(emission.cue, onAdmissionRefusal);
       } else if (emission?.cue.kin === "query" && emission.kind !== "wire") {
-        runtime.querying.enqueueCue(emission.cue, onAdmissionRefusal);
+        runtime.querying.enqueueCue(emission.cue);
       }
       if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
       else delivery.release();
@@ -389,10 +389,10 @@ function* postQueryMessage(
   controller: AbortController,
 ): Operation<void> {
   if (new URL(delivery.url).protocol === "tcp:") {
-    yield* sendCesrTcp(delivery.url, delivery.body, {
+    yield* converseCesrTcp(delivery.url, delivery.body, {
       services: runtime.services,
       signal: controller.signal,
-      replies: { runtime, local: true },
+      replies: { services: runtime.services, intake: runtime.intake, reactor: runtime.reactor, local: true },
     });
     return;
   }
@@ -443,7 +443,9 @@ export function queryTransportSink(
     if (emission.kind !== "wire" || emission.cue.kin !== "query") return;
     const destination = emission.cue.src, queriedPre = emission.cue.pre;
     if (!destination || !queriedPre) return;
-    const url = resolveQueryDestinationUrl(hab, queriedPre, destination, {
+    const signer = emission.cue.signer === undefined ? hab : hby.habs.get(emission.cue.signer);
+    if (!signer) return;
+    const url = resolveQueryDestinationUrl(signer, queriedPre, destination, {
       explicitWitness: emission.cue.wits?.includes(destination) ?? false,
     });
     if (!url) throw new ValidationError(`No endpoint URL found for query destination ${destination}.`);
@@ -467,22 +469,22 @@ export function queryTransportSink(
     if (failed) throw failure;
     if (!message) return;
     if (message.buffer.byteLength > requestBytes) throw new ResourceLimitError("Query request exceeds byte limit");
-    const intro = introduce(hab, destination, requestBytes - message.length);
+    const intro = introduce(signer, destination, requestBytes - message.length);
     if (intro.length + message.length > requestBytes) throw new ResourceLimitError("Query request exceeds byte limit");
     return { url, body: concatBytes(intro, message), bodyMode: hby.cesrBodyMode, destination };
   };
   const sink: CueSink = {
-    admitCue(current, interpreter) {
-      if (current !== runtime) throw new RangeError("Query sink requires its owning runtime");
-      const cue = current.cues.peekHead();
+    admitCue(source, interpreter) {
+      if (source !== runtime.cues) throw new RangeError("Query sink requires its composed source queue");
+      const cue = source.peekHead();
       if (cue?.kin !== "query" || !interpreter) return "ineligible";
       const admission = sink.admitQuery!(cue, () => {
         const emission = interpreter.interpretCue(cue);
         return emission?.kind === "wire" ? emission : null;
       });
       if (admission === "transferred") {
-        if (current.cues.peekHead() !== cue) throw new Error("Query source changed during admission");
-        cueReader(current.cues).takeOwned()!.release();
+        if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
+        cueReader(source).takeOwned()!.release();
       }
       return admission;
     },

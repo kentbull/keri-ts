@@ -425,6 +425,26 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
           >)["i"],
           sender.pre,
         );
+
+        // A workflow can retain the actual proposal while delivery borrows its exact signed bytes.
+        const [prepared, paths] = exchangeMessage(DELEGATE_REQUEST_ROUTE, { delpre: recipient.pre }, {
+          sender: sender.pre,
+          recipient: recipient.pre,
+          embeds: { evt },
+        });
+        const message = concatBytes(sender.endorse(prepared, { pipelined: false }), paths);
+        const sent = yield* poster.sendPreparedExchange(sender, {
+          recipient: recipient.pre,
+          serder: prepared,
+          message,
+          topic: DELEGATE_MAILBOX_TOPIC,
+        });
+        assertStrictEquals(sent.serder, prepared);
+        const preparedDelivery = runtime.mailboxer?.getTopicMsgs(
+          mailboxTopicKey(recipient.pre, DELEGATE_MAILBOX_TOPIC),
+        ) ?? [];
+        assertEquals(preparedDelivery.length, 2);
+        assertEquals(preparedDelivery[1], message);
       } finally {
         yield* runtime.close();
       }
@@ -734,8 +754,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           const message = sender.query(
             recipient.pre,
             sender.pre,
-            { s: "0" },
-            "logs",
+            { route: "logs", q: { s: "0" } },
           );
           const expectedIntro = introduce(sender, remoteWitness.pre);
           const introduction = yield* call(() => parseBytes(expectedIntro));
@@ -1311,8 +1330,7 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
         const forwarded = sender.query(
           recipient.pre,
           sender.pre,
-          { s: "0" },
-          "logs",
+          { route: "logs", q: { s: "0" } },
         );
         const wrapped = makeEmbeddedExchangeMessage("/fwd", {}, {
           sender: sender.pre,
