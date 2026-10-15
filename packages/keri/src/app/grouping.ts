@@ -121,6 +121,12 @@ type MultisigInspection =
     reason: string;
   };
 
+/** Membership policy consumes the decoded request, never arbitrary exchange attributes. */
+type MultisigMembership =
+  | { kind: "join"; members: string[] }
+  | { kind: "rotate"; group: string; members: string[] }
+  | { kind: "participate"; group: string };
+
 export interface MultisigHandlerOptions {
   mux?: Multiplexor;
   notifier?: Notifier | null;
@@ -559,7 +565,8 @@ export class Multiplexor {
       embeddedSaid = signed;
     }
 
-    const membership = this.verifyMembership(route, payload);
+    const request = multisigMembership(route, ked.a);
+    const membership = request.kind === "reject" ? request.reason : this.verifyMembership(request);
     if (membership) {
       return { ok: false, said, reason: membership };
     }
@@ -589,37 +596,19 @@ export class Multiplexor {
     return exns;
   }
 
-  private verifyMembership(route: string, payload: Record<string, unknown>): string | null {
-    if (route === MULTISIG_ICP_ROUTE) {
-      const mids = routeMembers(payload);
-      return mids.some((mid) => this.isLocalHab(mid))
+  /** Apply local habitat membership to an already decoded request. */
+  private verifyMembership(request: MultisigMembership): string | null {
+    if (request.kind === "participate") {
+      return this.isLocalHab(request.group)
         ? null
-        : `Invalid request to join group; no local member in mids=${mids.join(",")}.`;
+        : `Invalid request to participate in group; not a local member of gid=${request.group}.`;
     }
-
-    if (route === MULTISIG_ROT_ROUTE) {
-      const gid = stringField(payload, "gid");
-      if (!gid) {
-        return "Missing multisig group identifier.";
-      }
-      if (this.isLocalHab(gid)) {
-        return null;
-      }
-      const mids = routeMembers(payload);
-      return mids.some((mid) => this.isLocalHab(mid))
-        ? null
-        : `Invalid request to join group; no local member in mids=${mids.join(",")}.`;
+    if (request.kind === "rotate" && this.isLocalHab(request.group)) {
+      return null;
     }
-
-    if (route.startsWith("/multisig/")) {
-      const gid = stringField(payload, "gid");
-      if (!gid) {
-        return "Missing multisig group identifier.";
-      }
-      return this.isLocalHab(gid) ? null : `Invalid request to participate in group; not a local member of gid=${gid}.`;
-    }
-
-    return `Invalid route ${route} for multisig exchange.`;
+    return request.members.some((member) => this.isLocalHab(member))
+      ? null
+      : `Invalid request to join group; no local member in mids=${request.members.join(",")}.`;
   }
 
   private isLocalHab(pre: string): boolean {
@@ -701,21 +690,29 @@ function payloadSection(ked: Record<string, unknown>): Record<string, unknown> {
   return isRecord(ked.a) ? ked.a : {};
 }
 
-function routeMembers(payload: Record<string, unknown>): string[] {
-  return [
-    ...stringArrayField(payload, "smids"),
-    ...stringArrayField(payload, "rmids"),
-  ];
+/** Decode only membership fields; handler registration owns supported route selection. */
+function multisigMembership(route: string, value: unknown): MultisigMembership | { kind: "reject"; reason: string } {
+  const attrs = isRecord(value) ? value : {};
+  if (route === MULTISIG_ICP_ROUTE) {
+    return { kind: "join", members: memberPrefixes(attrs.smids, attrs.rmids) };
+  }
+  // KERIpy also applies group membership to the whole /multisig/* family.
+  if (!route.startsWith("/multisig/")) {
+    return { kind: "reject", reason: `Invalid route ${route} for multisig exchange.` };
+  }
+  if (typeof attrs.gid !== "string" || !attrs.gid) {
+    return { kind: "reject", reason: "Missing multisig group identifier." };
+  }
+  return route === MULTISIG_ROT_ROUTE
+    ? { kind: "rotate", group: attrs.gid, members: memberPrefixes(attrs.smids, attrs.rmids) }
+    : { kind: "participate", group: attrs.gid };
 }
 
-function stringArrayField(record: Record<string, unknown>, field: string): string[] {
-  const value = record[field];
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function stringField(record: Record<string, unknown>, field: string): string {
-  const value = record[field];
-  return typeof value === "string" ? value : "";
+/** Preserve the existing optional-list and non-string filtering at the wire boundary. */
+function memberPrefixes(smids: unknown, rmids: unknown): string[] {
+  const strings = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return [...strings(smids), ...strings(rmids)];
 }
 
 function groupPrefix(group: string | Hab): string {
