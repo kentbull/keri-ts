@@ -41,7 +41,6 @@ decision-returning helpers such as:
 `Kevery` owns orchestration:
 
 - `Kevery.decideEvent(...)`
-- `Kevery.applyDecision(...)`
 - `Kevery.processEvent(...)`
 
 `Kevery.processEvent(...)` now returns a `KeverDecision` instead of `void`.
@@ -92,11 +91,13 @@ capacity. Repair-only rejection needs no fabricated lifecycle object.
 When `processEvent` owns the native writer, one synchronous transaction covers
 decision, concrete cue admission, first-seen preparation and durable effects.
 Live accepted state and cues publish only after that commit succeeds; failed
-writes or commits release unpublished cue ownership. The remaining explicit
-`applyDecision` and already-active-writer paths currently publish synchronously
-without owning the outer commit. This is a known ordering gap, not an atomicity
-guarantee; transaction ownership must be resolved in the dedicated follow-up. An in-process Reactor guard alone does
-not serialize another process writing the same LMDB environment.
+writes or commits release unpublished cue ownership. `processEvent` refuses an
+already-active native writer before evaluation or admission: the processing owner
+must observe its own successful commit before publishing. No production caller
+needs nested KEL processing. The unused public `applyDecision` entrypoint is removed;
+pure `decideEvent` remains available for inspection, without a separate application
+API that can apply stale decisions outside the owning writer. An in-process Reactor
+guard alone does not serialize another process writing the same LMDB environment.
 Event escrow replay uses this same owning writer: promotion or bucket movement
 and original-row removal commit before publication. A retry remaining in its
 current bucket leaves the existing row untouched and emits no additional cues.

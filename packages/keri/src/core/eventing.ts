@@ -263,7 +263,8 @@ export class Kevery {
    * The returned decision is the normal typed outcome for remote processing.
    * The owning native writer covers decision, admission and durable effects;
    * accepted live state and cues publish only after that commit returns.
-   * An already active writer remains caller-owned, including its publication boundary.
+   * Caller-owned native writers are refused before evaluation or effects: this
+   * processor must own the commit that precedes live state/cue publication.
    * Exceptions are reserved for invariant/corruption cases during application.
    */
   processEvent(envelope: KeverEventEnvelope): KeverDecision {
@@ -278,6 +279,9 @@ export class Kevery {
     escrow?: EventEscrowEntry,
   ): KeverDecision | null {
     const env = this.db.env!;
+    if ((env as unknown as { env: { writeTxn?: unknown } }).env.writeTxn) {
+      throw new Error("Kevery must own the KEL transaction; process events outside caller-owned writers");
+    }
     let metadata: EventMetadata | undefined;
     let batch: PreparedCueBatch | undefined;
     try {
@@ -301,10 +305,7 @@ export class Kevery {
         if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
         return decision;
       };
-      // Nested callers retain their existing caller-owned commit/publication contract.
-      const decision = (env as unknown as { env: { writeTxn?: unknown } }).env.writeTxn
-        ? write()
-        : env.transactionSync(write);
+      const decision = env.transactionSync(write);
       this.publishEventState(metadata?.accepted);
       batch?.publish();
       return decision;
@@ -936,28 +937,6 @@ export class Kevery {
     }
 
     return kever.evaluateUpdate(init);
-  }
-
-  /**
-   * Apply one previously decided outcome to the durable DB/runtime state.
-   *
-   * Ownership rule:
-   * - `Kever` decides acceptance/rejection criteria
-   * - `Kevery` owns durable mutation, escrow routing, duplicate logging, and
-   *   post-acceptance cue emission
-   * - explicit decide/apply callers own synchronous writer and commit/publication ordering
-   */
-  applyDecision(decision: KeverDecision): void {
-    const metadata = this.eventMetadata(decision);
-    this.cues.checkSpace(metadata.cues.length);
-    const batch = metadata.cues.length ? this.publisher.prepare(metadata.cues) : undefined;
-    try {
-      this.writeEventDecision(decision, metadata);
-      this.publishEventState(metadata.accepted);
-      batch?.publish();
-    } finally {
-      batch?.release();
-    }
   }
 
   /** Describe finalized log coordinates, clone notices and accepted state without executable effects. */
