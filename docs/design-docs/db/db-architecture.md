@@ -5,24 +5,15 @@
 not portable to Deno: the V8 mapped-buffer path for rows above 16 MiB can terminate
 the process despite successful small reads. Deno must load the rebuilt NAPI addon; native Node may use the pinned official
 V8 build only when its compiled Node major matches the actual runtime. This changes native call selection, not database
-layout or the addon ABI. Ordinary reads still copy whole rows; fixed shared
-scratch, mapped residency and admission before row allocation remain separate
-[storage work](../../plans/db/STORAGE_RECOVERY_PLAN.md).
+layout or the addon ABI. Ordinary reads copy whole rows into caller-owned bytes,
+including active writer reads; callers must keep their database owner open.
 
-`LMDBer.getValBounded` (also exposed by Baser) admits one row byte extent before
-owned copies using a per-call prototype; it never changes the shared DB object
-or global read buffer. Its explicit `npm:lmdb@3.5.3` pin, native metadata,
-compression/version modes, hook shapes and environment ownership are checked
-before reading. A V8 build requires actual Node >=20, matching compiled/runtime
-major and active LMDB V8 acceleration; Deno/Bun and mismatched metadata fail closed.
-The NAPI build has no `nodeCompiledVersion`. V8 preflight may create an LMDB mapped
-view before admission; it does not copy the row's backing bytes. The admitted
-`getBinary` read owns its copy. Mapped residency/view metadata and fixed native
-scratch remain outside the caller's row-copy reservation. Two reads share an active
-writer or one acquired read transaction, released on refusal/failure. Upgrade
-qualification must inspect `read.js#getBinaryFast/_returnLargeBuffer` and native
-`dbi.cpp#doGetByBinary`/`misc.cpp#valToBinaryFast`; generic hook presence alone is
-not proof for a future package. Existing unbounded read APIs remain unchanged.
+Native row extent billing, getValBounded/getBounded/beforeCopy and prototype hook
+probes are removed. Read through the ordinary typed store or LMDBer.getVal path;
+there is no second size-probe transaction or per-row resource contract. Preserve
+actual buffer validity and current-runtime/data-format qualification. The large-row
+regression still reads above 16 MiB across reopen, verifies owned bytes survive
+replacement/later reads, and exercises reads inside an active writer.
 
 ## Purpose
 

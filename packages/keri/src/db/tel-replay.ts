@@ -9,26 +9,19 @@ export type TelReplayRange = readonly [pre: string, end: number];
 export interface TelReplaySettings {
   gvrsn: Readonly<Versionage>;
   genusify: boolean;
-  maxMessageBytes: number;
 }
 
-/** A fixed single/pair TEL source; inspection never opens iterators or traverses its borrowed store. */
+/** A captured TEL source; readers borrow the store without retaining event bytes. */
 export class CapturedTelReplay implements Iterable<Uint8Array> {
   readonly ranges: readonly TelReplayRange[];
   readonly settings: Readonly<TelReplaySettings>;
   #db: Reger;
 
-  /** Copy at most two range tuples and wire settings; caller keeps the store alive through consumption. */
+  /** Copy range tuples and wire settings; caller keeps the store alive through consumption. */
   constructor(db: Reger, ranges: readonly TelReplayRange[], settings: TelReplaySettings) {
     const count = ranges.length;
-    if (!Number.isSafeInteger(count) || count < 1 || count > 2) {
-      throw new RangeError("TEL replay requires one range or a fixed pair");
-    }
-    const { gvrsn, genusify, maxMessageBytes } = settings;
+    const { gvrsn, genusify } = settings;
     const major = gvrsn.major, minor = gvrsn.minor;
-    if (!Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
-      throw new RangeError("TEL replay message limit must be a positive safe integer");
-    }
     if (
       !Number.isSafeInteger(major) || major < 0 || !Number.isSafeInteger(minor) || minor < 0
       || typeof genusify !== "boolean"
@@ -45,32 +38,8 @@ export class CapturedTelReplay implements Iterable<Uint8Array> {
       owned.push(Object.freeze([pre, end] as const));
     }
     this.ranges = Object.freeze(owned);
-    this.settings = Object.freeze({ gvrsn: Object.freeze({ major, minor }), genusify, maxMessageBytes });
+    this.settings = Object.freeze({ gvrsn: Object.freeze({ major, minor }), genusify });
     Object.freeze(this);
-  }
-
-  /** Require this private brand and exact prototype; subclass/opaque sources cannot hide retention. */
-  static is(value: unknown): value is CapturedTelReplay {
-    return typeof value === "object" && value !== null && #db in value
-      && Object.getPrototypeOf(value) === CapturedTelReplay.prototype;
-  }
-
-  /** Compose only fixed metadata in management/credential order, preserving null and duplicate ranges. */
-  static pair(first: CapturedTelReplay | null, second: CapturedTelReplay | null): CapturedTelReplay | null {
-    if ((first === null || CapturedTelReplay.is(first)) && (second === null || CapturedTelReplay.is(second))) {
-      if (first === null) return second;
-      if (second === null) return first;
-      const left = first.settings, right = second.settings;
-      if (
-        first.#db !== second.#db || left.maxMessageBytes !== right.maxMessageBytes
-        || left.genusify !== right.genusify || left.gvrsn.major !== right.gvrsn.major
-        || left.gvrsn.minor !== right.gvrsn.minor
-      ) {
-        throw new RangeError("TEL replay pair requires the same borrowed store and wire settings");
-      }
-      return new CapturedTelReplay(first.#db, [...first.ranges, ...second.ranges], left);
-    }
-    throw new RangeError("TEL replay pair requires canonical captures");
   }
 
   /** Open readers only during consumption; each closes its cursor before cloning/yielding an event. */

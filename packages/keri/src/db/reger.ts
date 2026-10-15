@@ -312,15 +312,11 @@ export class Reger extends LMDBer {
   /** Capture one TEL extent without body reads; each reader releases its cursor before yielding. */
   replay(
     pre: string,
-    { gvrsn = Vrsn_1_0, genusify = false, maxMessageBytes = 8 * 1024 * 1024 }: {
+    { gvrsn = Vrsn_1_0, genusify = false }: {
       gvrsn?: Versionage;
       genusify?: boolean;
-      maxMessageBytes?: number;
     } = {},
   ): CapturedTelReplay | null {
-    if (!Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
-      throw new RangeError("TEL replay message limit must be a positive safe integer");
-    }
     let end: number | null = null;
     for (const entry of this.tels.sdb.getRange({ start: b(`${pre}.${"f".repeat(32)}`), reverse: true, limit: 1 })) {
       const [prefix, ordinal] = splitOnKey(entry.key);
@@ -329,18 +325,18 @@ export class Reger extends LMDBer {
     if (end === null) return null;
     if (!Number.isFinite(end) || end < 0) throw new DatabaseOperationError("Corrupt TEL replay ordinal");
     if (!Number.isSafeInteger(end)) throw new ResourceLimitError("TEL replay ordinal exceeds supported range");
-    return new CapturedTelReplay(this, [[pre, end]], { gvrsn, genusify, maxMessageBytes });
+    return new CapturedTelReplay(this, [[pre, end]], { gvrsn, genusify });
   }
 
   /** Consume one captured horizon without retaining a cursor or event queue across a yield. */
   *replayRange(
     [pre, last]: TelReplayRange,
-    { gvrsn, genusify, maxMessageBytes }: TelReplaySettings,
+    { gvrsn, genusify }: TelReplaySettings,
   ): Generator<Uint8Array> {
     if (
-      !pre || !Number.isSafeInteger(last) || last < 0 || !Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1
+      !pre || !Number.isSafeInteger(last) || last < 0
     ) {
-      throw new RangeError("Invalid captured TEL range or message limit");
+      throw new RangeError("Invalid captured TEL range");
     }
     let next = 0;
     while (next <= last) {
@@ -357,7 +353,7 @@ export class Reger extends LMDBer {
         throw new DatabaseOperationError("Corrupt TEL replay sequence");
       }
       next = ordinal + 1;
-      yield this.cloneTvt(pre, diger, gvrsn, maxMessageBytes, genusify);
+      yield this.cloneTvt(pre, diger, gvrsn, genusify);
     }
   }
 
@@ -376,32 +372,24 @@ export class Reger extends LMDBer {
     return this.cloneTvt(pre, diger, gvrsn);
   }
 
-  /** Preflight one TEL body and cap incremental proofs, preserving its minimum/requested genus. */
+  /** Clone one TEL body and its stored proofs, preserving its minimum/requested genus. */
   cloneTvt(
     pre: KeyPart,
     dig: string | Uint8Array | Diger | Saider,
     gvrsn: Versionage = Vrsn_1_0,
-    maxMessageBytes = 8 * 1024 * 1024,
     genusify = false,
   ): Uint8Array {
-    if (!Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
-      throw new RangeError("TEL replay message limit must be a positive safe integer");
-    }
     const preText = keyText(pre);
     const digText = digestText(dig);
     const dgkey = dgKey(preText, digText);
-    const raw = this.tvts.getBounded(dgkey, maxMessageBytes);
+    const raw = this.tvts.get(dgkey);
     if (raw === null) {
       throw new ValidationError(`Missing event for dig=${digText}.`);
     }
 
     // Native dupsort yields one fixed signature record at a time, without collecting its bucket.
     const tibPayload: Uint8Array[] = [];
-    let remaining = maxMessageBytes - raw.length;
     for (const tib of this.tibs.getIter([preText, digText])) {
-      const size = tib.qb64.length;
-      if (size > remaining) throw new ResourceLimitError("TEL proofs exceed replay message limit");
-      remaining -= size;
       tibPayload.push(tib.qb64b);
     }
     const couple = this.ancs.get(dgkey);
@@ -410,9 +398,6 @@ export class Reger extends LMDBer {
     gvrsn = resolveAttachmentGvrsn(new SerderKERI({ raw }), gvrsn);
     const selector = genusify ? Counter.makeGVC(gvrsn) : new Uint8Array();
     if (tibPayload.length === 0 && couple === null) {
-      if (raw.length + selector.length > maxMessageBytes) {
-        throw new ResourceLimitError("TEL selector exceeds message limit");
-      }
       return concatBytes(selector, raw);
     }
     const attachments: Uint8Array[] = [];
@@ -440,9 +425,6 @@ export class Reger extends LMDBer {
 
     const attachmentBytes = attachments.reduce((total, item) => total + item.length, 0);
     const counter = attachmentCounterQb64b("AttachmentGroup", attachmentBytes / 4, gvrsn);
-    if (selector.length + raw.length + counter.length + attachmentBytes > maxMessageBytes) {
-      throw new ResourceLimitError("TEL proofs exceed replay message limit");
-    }
     const atc = new Uint8Array(attachmentBytes);
     let offset = 0;
     for (const part of attachments) {

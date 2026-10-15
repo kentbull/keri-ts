@@ -164,17 +164,13 @@ export class Mailboxer extends LMDBer {
    *
    * This is the storage primitive used by mailbox SSE streaming so the caller
    * can preserve both payload bytes and the ordered mailbox event id.
-   * An optional ceiling uses native preflight; omitted ceilings preserve whole-row reads.
    */
   *cloneTopicIter(
     topic: MailboxKeys,
     fn = 0,
-    maxMessageBytes?: number,
   ): Generator<[number, string, Uint8Array]> {
     for (const [keys, on, dig] of this.tpcs.getAllItemIter(topic, fn)) {
-      const msg = maxMessageBytes === undefined
-        ? this.msgs.get(dig.qb64)
-        : this.getValBounded(this.msgs.sdb, new TextEncoder().encode(dig.qb64), maxMessageBytes);
+      const msg = this.msgs.get(dig.qb64);
       if (!msg) {
         continue;
       }

@@ -210,13 +210,11 @@ export class MailboxDirector {
     pre: string,
     topic: string,
     from = 0,
-    maxMessageBytes?: number,
   ): Generator<{ idx: number; msg: Uint8Array }> {
     for (
       const [idx, , msg] of this.requireMailboxer().cloneTopicIter(
         mailboxTopicKey(pre, topic),
         from,
-        maxMessageBytes,
       )
     ) {
       yield { idx, msg };
@@ -331,7 +329,7 @@ export class MailboxDirector {
             }
             for (const [topic, start] of Object.entries(cursors)) {
               // Take one stored item, then release the LMDB iterator before suspending on HTTP demand.
-              const items = this.topicIter(pre, topic, start, this.limits.maxMessageBytes);
+              const items = this.topicIter(pre, topic, start);
               let item: { idx: number; msg: Uint8Array } | undefined;
               try {
                 item = items.next().value;

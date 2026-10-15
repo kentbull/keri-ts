@@ -1,4 +1,4 @@
-import { Diger, MtrDex, ResourceLimitError } from "cesr-ts";
+import { Diger, MtrDex } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -6,25 +6,6 @@ import { DatabaseNotOpenError } from "../../../src/core/errors.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";
 import { createMailboxer, Mailboxer } from "../../../src/db/mailboxing.ts";
-
-Deno.test("db/mailboxing - admitted stream reads reject an oversized native row before copying", async () => {
-  await run(function*() {
-    const mailboxer = yield* createMailboxer({ name: `bounded-mailbox-${crypto.randomUUID()}`, temp: true });
-    // The ceiling is configurable; large native target preflight is covered by lmdber-plain.
-    const bytes = new Uint8Array(65).fill(7);
-    try {
-      mailboxer.storeMsg("aid/reply", bytes);
-      assertThrows(
-        () => Array.from(mailboxer.cloneTopicIter("aid/reply", 0, 64)),
-        ResourceLimitError,
-        "byte ceiling",
-      );
-      assertEquals(Array.from(mailboxer.cloneTopicIter("aid/reply"))[0][2], bytes);
-    } finally {
-      yield* mailboxer.close(true);
-    }
-  });
-});
 
 Deno.test("db/mailboxing - body and ordered topic publication commit together across failure and reopen", async () => {
   await run(function*() {
