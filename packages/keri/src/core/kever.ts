@@ -15,9 +15,7 @@ import {
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
-import type { CueQueueInput } from "./cue-publishing.ts";
 import type { AgentCue } from "./cues.ts";
-import { Deck } from "./deck.ts";
 import { DispatchOrdinal } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import type {
@@ -119,7 +117,6 @@ export interface LastEstLoc {
 /** Shared constructor options for live or reloaded `Kever` instances. */
 interface KeverBaseInit {
   db: Baser;
-  cues?: CueQueueInput;
   local?: boolean;
   check?: boolean;
 }
@@ -185,10 +182,11 @@ interface DelegatingEventLookup {
  *   instead of using exceptions as regular control flow
  * - exceptions remain for invariant failures, corrupt durable state, and misuse
  *   of accepted-state-only helpers
+ * - decisions describe follow-up cues; this state machine neither owns a queue
+ *   nor admits, publishes, or retires runtime work
  */
 export class Kever {
   readonly db: Baser;
-  readonly cues: CueQueueInput;
 
   version!: readonly [number, number];
   prefixer!: Prefixer;
@@ -218,14 +216,13 @@ export class Kever {
    * and accepted-transition materialization do not have to fight over one
    * constructor policy.
    */
-  private constructor(db: Baser, cues?: CueQueueInput) {
+  private constructor(db: Baser) {
     this.db = db;
-    this.cues = cues ?? new Deck();
   }
 
   /** Rebuild one live `Kever` from durable key-state content. */
   static fromState(init: KeverStateInit): Kever {
-    const kever = new Kever(init.db, init.cues);
+    const kever = new Kever(init.db);
     kever.reload(init.state);
     return kever;
   }
@@ -238,9 +235,9 @@ export class Kever {
    */
   static fromTransition(
     transition: KeverTransition,
-    { db, cues }: { db: Baser; cues?: CueQueueInput },
+    { db }: { db: Baser },
   ): Kever {
-    const kever = new Kever(db, cues);
+    const kever = new Kever(db);
     kever.loadState(transition.state, transition.log.serder);
     return kever;
   }
@@ -422,12 +419,10 @@ export class Kever {
       state: provisionalState,
       log: eventState,
     };
-    const runtime = { db: init.db, cues: init.cues };
-
     // Attachment validation needs a live kever-shaped view of the provisional
     // state because local/remote witness and delegation rules are defined in
     // terms of accepted-state helpers, not raw inception fields.
-    const scratch = Kever.fromTransition(icpTransition, runtime);
+    const scratch = Kever.fromTransition(icpTransition, { db: init.db });
 
     // This is the TypeScript equivalent of KERIpy's controller-signature,
     // witness-receipt, and delegation-validation pass, expressed as a typed

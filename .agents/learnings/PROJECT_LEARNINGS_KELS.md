@@ -3,7 +3,9 @@
 ## Accepted state and decisions
 
 `Kever` decides validity; `Kevery` routes, persists escrows, handles duplicates and
-applies post-acceptance effects. Expected remote outcomes use typed decisions
+applies post-acceptance effects. Kever has no queue dependency: decision-carried
+cue descriptions are data, and processing/publication stays with Kevery.
+Expected remote outcomes use typed decisions
 under [ADR-0005](../../docs/adr/adr-0005-kel-decision-control-flow.md), not exceptions.
 Local inception/interaction uses the same acceptance path as remote events.
 Kevery builds finalized first-seen/date, clone and acceptance cues before accepted

@@ -64,7 +64,10 @@ decision-returning helpers such as:
 - duplicate late-attachment logging
 - post-acceptance cue emission
 
-This keeps the KERIpy mental model while making the control surface explicit in
+Kever's constructors and evaluation input have no cue-queue dependency. Any
+follow-up cue descriptions are returned in decisions or log preparation; the
+processing orchestrator controls acceptance, persistence and publication. This
+keeps the KERIpy mental model while making the control surface explicit in
 TypeScript.
 
 When `processEvent` owns the native writer, one synchronous transaction covers

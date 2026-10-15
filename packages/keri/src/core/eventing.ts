@@ -956,7 +956,7 @@ export class Kevery {
     if (decision.kind === "accept") {
       const kever = this.kevers.get(decision.transition.pre);
       const target = !kever || decision.transition.mode === "create"
-        ? Kever.fromTransition(decision.transition, { db: this.db, cues: this.cues })
+        ? Kever.fromTransition(decision.transition, { db: this.db })
         : kever;
       const logged = target.prepareLogEvent(decision.transition.log);
       const transition = this.applyFirstSeenState(decision.transition, logged.fn, logged.dater.dts);
@@ -2576,7 +2576,6 @@ export class Kevery {
   ): KeverEventInit {
     return {
       db: this.db,
-      cues: this.cues,
       serder: envelope.serder,
       sigers: [...envelope.sigers],
       wigers: [...envelope.wigers],
