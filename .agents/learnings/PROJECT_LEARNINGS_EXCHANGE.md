@@ -88,6 +88,11 @@ adds no boundary. Decoded endpoint-reply attributes narrow unknown cid/role/eid
 before acceptance lookup. These local cuts do not close the generic approval
 payload or child-genus contracts.
 
+KEL approval decodes its named child, group and member lists before local member
+selection, joining or signing. Interaction does not carry rotation members.
+Existing raw attribute re-publication remains at the wire boundary pending its
+own producer-contract cut; it must not become an input to approval policy again.
+
 Pure multisig/IPEX body builders take parsed Serders synchronously. Byte convenience
 operations own cancellable parseBytes, finite nested-wire collection and finally
 disposal. Serializer views borrow frame owners through consumption. Parent signatures
