@@ -3,7 +3,7 @@ name: PR Stage Gate
 on:
   pull_request:
     branches: [master]
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize]
 
 permissions:
   contents: read

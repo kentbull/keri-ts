@@ -51,7 +51,9 @@ During the cleanup goal, select full mode about every 12 implementation PRs
 The selector reads the current PR description through the API on every run.
 After editing only the block, rerun the workflow with `gh run rerun RUN_ID` or
 GitHub's Re-run all jobs button. Ordinary description edits do not trigger or
-cancel tests. Source pushes still trigger fresh checks. A rerun whose PR head
+cancel tests. Source pushes still trigger fresh checks. Marking a draft ready does
+not rerun an unchanged head; explicitly rerun when its scope or validation needs
+to change. A rerun whose PR head
 has moved is refused; use the current source run. See GitHub's
 [rerun behavior](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs).
 The selection job records the exact head and resolved scope in its summary.
