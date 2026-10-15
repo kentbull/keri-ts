@@ -54,7 +54,9 @@ V2 multisig supports icp/rot/ixn/rpy commitments and local membership. Child-SAI
 approval precedes ordinary KEL/reply processing. Local-first approval borrows parsed
 frames; remote-first approval reopens evidence. V1 approval replays stored pathed
 child proofs through the same KEL/reply owners in either arrival order, including
-after database reopen. Decode signed cgvrsn before parsing; explicit child genus
+after database reopen. Replay decodes generic protocol bodies: issuance contains
+an ACDC child as well as KERI TEL/anchor children. Keep the KEL/reply approval
+reader KERI-specific and share only proof/genus resolution. Decode signed cgvrsn before parsing; explicit child genus
 wins, and a hint applies only to a child with attachments. Parent signatures never
 supply missing child proofs. CLI proposal/join remains v1. Shared proposal
 publication registers its actual signed wire through intake before transmission,

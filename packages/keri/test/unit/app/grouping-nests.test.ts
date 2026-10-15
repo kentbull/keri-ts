@@ -11,6 +11,7 @@ import {
   framePayload,
   MemoryPayloadSink,
   nestedPayload,
+  NumberPrimitive,
   type OwnedPayload,
   parseBytes,
   Prefixer,
@@ -53,7 +54,9 @@ import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
 import { incept as inceptRegistry, issue as issueCredential } from "../../../src/core/protocol-vdr-eventing.ts";
+import { Schemer } from "../../../src/core/scheming.ts";
 import { Reger } from "../../../src/db/reger.ts";
+import { credential, serializeCredential } from "../../../src/vdr/credentialing.ts";
 import framing714 from "../../fixtures/multisig-framing-714.json" with { type: "json" };
 
 // @ts-expect-error KEL publication cannot accept a reply proposal.
@@ -173,7 +176,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
   });
 });
 
-Deno.test("multisig approval honors signed child genus for KEL, replies and registry anchors", async () => {
+Deno.test("multisig approval honors signed child genus through KEL, replies, registry and credential issuance", async () => {
   await participants(async (left, right, alice, bob, notifier) => {
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
@@ -272,6 +275,49 @@ Deno.test("multisig approval honors signed child genus for KEL, replies and regi
         assertEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
         assertInstanceOf(runtime.vdr.reger, Reger);
         assertEquals(runtime.vdr.reger.tels.getOn(registry.pre!, 0)?.qb64, registry.said);
+        yield* call(() => learn(right, local.hab));
+        const schemer = new Schemer({ sed: { $id: "", type: "object" } });
+        left.db.schema.pin(schemer.said, schemer);
+        const creder = credential({
+          issuer: local.hab.pre,
+          registry: registry.pre!,
+          schema: schemer.said,
+          recipient: bob.pre,
+          data: { role: "holder" },
+        });
+        const issuance = issueCredential(creder.said!, registry.pre!);
+        const issueAnchor = right.interactGroupHab("group", mids, {
+          data: [{ i: issuance.pre, s: "0", d: issuance.said }],
+        });
+        const [issWrapper, issPaths] = exchange("/multisig/iss", { gid: local.hab.pre, cgvrsn: [2, 0] }, {
+          sender: bob.pre,
+          embeds: {
+            acdc: serializeCredential(
+              creder,
+              new Prefixer({ qb64: issuance.pre! }),
+              NumberPrimitive.fromNum(0n),
+              new Diger({ qb64: issuance.said! }),
+              Vrsn_2_0,
+            ),
+            iss: issuance.raw,
+            anc: messagize(issueAnchor.serder, { sigers: issueAnchor.sigers, gvrsn: Vrsn_2_0 }),
+          },
+        });
+        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(issWrapper, { pipelined: false }), issPaths), {
+          local: true,
+        });
+        const issueResult = yield* waitForOneApproval(left, runtime, {
+          pollTurns: 1,
+          pollBudgetMs: 1,
+          callbacks: {
+            approveProposal: () => true,
+            chooseGroupAlias: () => "group",
+            chooseRegistryName: () => "registry",
+          },
+        });
+        assertEquals(issueResult?.accepted, true);
+        assertEquals(runtime.vdr.reger.tels.getOn(creder.said!, 0)?.qb64, issuance.said);
+        assertExists(runtime.vdr.reger.saved.get([creder.said!]));
       } finally {
         yield* runtime.close();
       }
