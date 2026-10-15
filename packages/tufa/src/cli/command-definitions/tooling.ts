@@ -69,7 +69,7 @@ function registerDbCmds(program: Command, dispatch: CommandDispatch): void {
       .description("Dump database contents")
       .argument(
         "[target]",
-        "Dump target like baser, baser.locs, mailboxer.tpcs, or outboxer.tgts",
+        "Dump target like baser, baser.locs, mailboxer.tpcs, or noter.notes",
         "baser.evts",
       )
       .requiredOption("-n, --name <name>", "Database name")

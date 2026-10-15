@@ -77,11 +77,6 @@ function registerInitCmd(program: Command, dispatch: CommandDispatch): void {
         "Qualified base64 private-signing key (seed) for the aeid from which the private decryption key may be derived",
       )
       .option(
-        "--outboxer",
-        "Enable the tufa-local durable outbox sidecar for this keystore",
-        false,
-      )
-      .option(
         "--cesr-body-mode <mode>",
         "CESR HTTP transport mode: header (default) or body",
         "header",
@@ -101,7 +96,6 @@ function registerInitCmd(program: Command, dispatch: CommandDispatch): void {
       nopasscode: options.nopasscode || false,
       aeid: options.aeid,
       seed: options.seed,
-      outboxer: options.outboxer || false,
       cesrBodyMode: options.cesrBodyMode,
     }),
   );
@@ -429,7 +423,6 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
         "Directory override for database and keystore root (default fallback: ~/.tufa)",
       )
       .option("-P, --passcode <passcode>", "Encryption passcode for keystore")
-      .option("--outboxer", "Enable the tufa-local durable outbox sidecar", false)
       .option(
         "--cesr-body-mode <mode>",
         "CESR HTTP transport mode: header (default) or body",
@@ -464,7 +457,6 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
         compat: options.compat || false,
         headDirPath: options.headDir,
         passcode: options.passcode,
-        outboxer: options.outboxer || false,
         cesrBodyMode: options.cesrBodyMode,
         schema: options.schema || [],
         schemaDir: options.schemaDir || [],

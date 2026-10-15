@@ -59,7 +59,6 @@ export function registerChallengeCmds(
       )
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
-      .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
       .option(
         "--cesr-body-mode <mode>",
         "CESR HTTP transport mode: header (default) or body",
@@ -82,7 +81,6 @@ export function registerChallengeCmds(
         transport: options.transport,
         base: options.base,
         compat: options.compat || false,
-        outboxer: options.outboxer || false,
         cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
@@ -126,7 +124,6 @@ export function registerChallengeCmds(
       )
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
-      .option("--outboxer", "Enable the tufa-local durable outbox sidecar", false)
       .option(
         "--cesr-body-mode <mode>",
         "CESR HTTP transport mode: header (default) or body",
@@ -151,7 +148,6 @@ export function registerChallengeCmds(
         timeout: options.timeout,
         base: options.base,
         compat: options.compat || false,
-        outboxer: options.outboxer || false,
         cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,

@@ -55,7 +55,6 @@ interface MailboxBaseArgs {
   passcode?: string;
   alias?: string;
   compat?: boolean;
-  outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
 }
 
@@ -231,7 +230,6 @@ export function* mailboxUpdateCommand(
  * This command is intended for operator debugging:
  * - local authorized mailbox view
  * - local `tops.` cursor rows
- * - optional Tufa-only outbox backlog
  * - remote mailbox SSE output
  */
 export function* mailboxDebugCommand(
@@ -274,15 +272,6 @@ function renderMailboxDebugReport(
     }
   } else {
     lines.push("No local index");
-  }
-
-  lines.push("", "Outbox Pending");
-  if (!report.outboxEnabled) {
-    lines.push("Outboxer disabled");
-  } else {
-    for (const pending of report.outboxPending) {
-      lines.push(`${pending.topic} ${pending.eid} attempts=${pending.attempts}`);
-    }
   }
 
   if (report.messages) {
@@ -411,10 +400,6 @@ function* completeMailboxAdmin(
       "Mailbox removal was not accepted into local state.",
     );
   }
-
-  if (!allow) {
-    hby.obx.cancelMailbox(mailboxAid, makeNowIso8601());
-  }
 }
 
 /** Normalize mailbox CLI shared storage/runtime open arguments. */
@@ -426,7 +411,6 @@ function parseMailboxBaseArgs(args: Record<string, unknown>): MailboxBaseArgs {
     passcode: args.passcode as string | undefined,
     alias: args.alias as string | undefined,
     compat: args.compat as boolean | undefined,
-    outboxer: args.outboxer as boolean | undefined,
     cesrBodyMode: normalizeCesrBodyMode(
       args.cesrBodyMode as string | undefined,
     ),
@@ -534,7 +518,6 @@ function mailboxOpenOptions(args: MailboxBaseArgs): CommandHaberyOptions {
     readonly: false,
     skipConfig: false,
     skipSignator: false,
-    outboxer: args.outboxer ?? false,
     cesrBodyMode: args.cesrBodyMode,
   };
 }

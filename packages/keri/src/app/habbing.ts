@@ -55,7 +55,6 @@ import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { createKeeper, Keeper, PreSit } from "../db/keeping.ts";
-import { createOutboxer, DisabledOutboxer, type OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE } from "./cesr-http.ts";
 import { Configer, createConfiger } from "./configing.ts";
@@ -93,7 +92,6 @@ export interface HaberyArgs {
   salt?: string;
   algo?: Algos;
   tier?: Tier;
-  outboxer?: "disabled" | "open" | "create";
   cesrBodyMode?: CesrBodyMode;
 }
 
@@ -1422,7 +1420,6 @@ export class Habery {
   readonly readonly: boolean;
   readonly db: Baser;
   readonly ks: Keeper;
-  readonly obx: OutboxerLike;
   readonly cesrBodyMode: CesrBodyMode;
   readonly mgr: Manager;
   readonly cf?: Configer;
@@ -1443,7 +1440,6 @@ export class Habery {
     readonly: boolean,
     db: Baser,
     ks: Keeper,
-    obx: OutboxerLike,
     cesrBodyMode: CesrBodyMode,
     mgr: Manager,
     cf?: Configer,
@@ -1457,7 +1453,6 @@ export class Habery {
     this.readonly = readonly;
     this.db = db;
     this.ks = ks;
-    this.obx = obx;
     this.cesrBodyMode = cesrBodyMode;
     this.mgr = mgr;
     this.cf = cf;
@@ -2131,7 +2126,6 @@ export class Habery {
   *close(clear = false): Operation<void> {
     yield* this.db.close(clear);
     yield* this.ks.close(clear);
-    yield* this.obx.close(clear);
     if (this.cf) {
       yield* this.cf.close(clear && this.temp);
     }
@@ -2174,13 +2168,11 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     aeid,
     salt,
     algo,
-    outboxer = "disabled",
     cesrBodyMode = DEFAULT_CESR_BODY_MODE,
   } = args;
 
   let db: Baser | undefined;
   let ks: Keeper | undefined;
-  let obx: OutboxerLike | undefined;
   let cf: Configer | undefined;
   let delivered = false;
   try {
@@ -2203,21 +2195,6 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
       reopen: true,
       readonly,
     });
-    if (compat && outboxer !== "disabled") {
-      throw new ValidationError(
-        "Outboxer is a tufa-only sidecar and is unavailable in compat mode.",
-      );
-    }
-    obx = outboxer === "disabled" ? new DisabledOutboxer() : (yield* createOutboxer({
-      name,
-      base,
-      temp,
-      headDirPath,
-      compat,
-      reopen: true,
-      readonly,
-      mustExist: outboxer === "open",
-    }));
 
     cf = providedCf
       ?? (skipConfig ? undefined : (yield* createConfiger({
@@ -2257,7 +2234,6 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
       readonly,
       db,
       ks,
-      obx,
       cesrBodyMode,
       mgr,
       cf,
@@ -2272,13 +2248,9 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
         if (cf && cf !== providedCf) yield* cf.close();
       } finally {
         try {
-          if (obx) yield* obx.close();
+          if (ks) yield* ks.close();
         } finally {
-          try {
-            if (ks) yield* ks.close();
-          } finally {
-            if (db) yield* db.close();
-          }
+          if (db) yield* db.close();
         }
       }
     }

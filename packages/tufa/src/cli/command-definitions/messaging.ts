@@ -91,7 +91,6 @@ function registerExnSendSubCmd(
         base: options.base,
         compat: options.compat || false,
         cesrBodyMode: options.cesrBodyMode,
-        outboxer: options.outboxer || false,
         headDirPath: options.headDir,
         passcode: options.passcode,
       }),

@@ -38,7 +38,6 @@ interface OobiRequestArgs {
   recipient?: string;
   url?: string;
   compat?: boolean;
-  outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
 }
 
@@ -240,7 +239,6 @@ export function* oobiRequestCommand(
     recipient: args.recipient as string | undefined,
     url: args.url as string | undefined,
     compat: args.compat as boolean | undefined,
-    outboxer: args.outboxer as boolean | undefined,
     cesrBodyMode: normalizeCesrBodyMode(
       args.cesrBodyMode as string | undefined,
     ),
@@ -274,7 +272,6 @@ export function* oobiRequestCommand(
       readonly: false,
       skipConfig: false,
       skipSignator: false,
-      outboxer: commandArgs.outboxer ?? false,
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
     function*({ hby, hab }) {

@@ -26,12 +26,6 @@ export interface ConfiguredMailboxRow {
   url: string;
 }
 
-export interface OutboxPendingRow {
-  topic: string;
-  eid: string;
-  attempts: number;
-}
-
 export interface MailboxSseRow {
   idx: number;
   topic: string;
@@ -41,8 +35,6 @@ export interface MailboxSseRow {
 export interface MailboxDebugReport {
   configuredMailboxes: ConfiguredMailboxRow[];
   localTopics: Record<string, number> | null;
-  outboxEnabled: boolean;
-  outboxPending: OutboxPendingRow[];
   messages: MailboxSseRow[] | null;
 }
 
@@ -55,7 +47,6 @@ export function* collectMailboxDebugReport(
   const configuredMailboxes = collectConfiguredMailboxes(hby, hab);
   const witrec = hby.db.tops.get([hab.pre, witness]);
   const localTopics = witrec ? { ...witrec.topics } : null;
-  const outboxPending = collectOutboxPending(hby, witness);
   const endpointUrl = preferredUrl(fetchEndpointUrls(hby, witness));
   let messages: MailboxSseRow[] | null = null;
 
@@ -83,8 +74,6 @@ export function* collectMailboxDebugReport(
   return {
     configuredMailboxes,
     localTopics,
-    outboxEnabled: hby.obx.enabled,
-    outboxPending,
     messages,
   };
 }
@@ -118,27 +107,6 @@ export function collectConfiguredMailboxes(
 /** Normalize CLI topic input into the stored mailbox topic form. */
 export function normalizeMailboxTopic(topic: string): string {
   return topic.startsWith("/") ? topic : `/${topic}`;
-}
-
-function collectOutboxPending(
-  hby: Habery,
-  witness: string,
-): OutboxPendingRow[] {
-  if (!hby.obx.enabled) {
-    return [];
-  }
-  const rows: OutboxPendingRow[] = [];
-  for (const pending of hby.obx.iterPending()) {
-    if (pending.target.eid !== witness) {
-      continue;
-    }
-    rows.push({
-      topic: pending.message.topic,
-      eid: pending.target.eid,
-      attempts: pending.target.attempts ?? 0,
-    });
-  }
-  return rows;
 }
 
 function* fetchMailboxDebug(

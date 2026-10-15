@@ -255,6 +255,8 @@ HTTP/HTTPS priority and signed introductions stay unchanged. TCP and RX capacity
 refusals use invocation-local observation; foreign failures preserve identity.
 Raw TCP peer failures still propagate; this adds no new refusal/retry taxonomy.
 Public Poster operations retain caller-owned preparation/retention bounds.
+Habery owns no outbox sidecar; CLI startup and mailbox debug expose no outbox
+option, store selector or backlog. Keeper globals do not enable sender retries.
 Poster no longer owns an outbox, queues failures or retries durable targets.
 Mailbox sends attempt all targets and throw on any failure, reporting completed
 URLs in the diagnostic. Successful results contain only actual local transport

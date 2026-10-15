@@ -16,7 +16,6 @@ interface ExnSendArgs {
   topic?: string;
   data?: string[];
   compat?: boolean;
-  outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
 }
 
@@ -43,7 +42,6 @@ export function* exchangeSendCommand(
     topic: args.topic as string | undefined,
     data: normalizeDataArgs(args.data),
     compat: args.compat as boolean | undefined,
-    outboxer: args.outboxer as boolean | undefined,
     cesrBodyMode: normalizeCesrBodyMode(
       args.cesrBodyMode as string | undefined,
     ),
@@ -73,7 +71,6 @@ export function* exchangeSendCommand(
       readonly: false,
       skipConfig: false,
       skipSignator: false,
-      outboxer: commandArgs.outboxer ?? false,
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
     function*({ hby, hab }) {

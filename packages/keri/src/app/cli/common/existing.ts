@@ -1,6 +1,5 @@
 import type { ResourcePolicy } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { ValidationError } from "../../../core/errors.ts";
 import { createKeeper, Keeper } from "../../../db/keeping.ts";
 import { type CesrBodyMode, cesrBodyModeFromGlobal, normalizeCesrBodyMode } from "../../cesr-http.ts";
 import type { Configer } from "../../configing.ts";
@@ -15,7 +14,6 @@ interface OpenHaberyOptions {
   skipConfig?: boolean;
   skipSignator?: boolean;
   cf?: Configer;
-  outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
 }
 
@@ -87,22 +85,12 @@ export function* setupHby(
     readonly: true,
   });
   const aeid = ks.getGbls("aeid");
-  const outboxerEnabled = ks.getGbls("outboxer") === "1";
   const storedCesrBodyMode = cesrBodyModeFromGlobal(ks.getGbls("cesrBodyMode"));
   yield* ks.close();
   if (aeid === null) {
     throw new Error("Keystore must already exist, exiting");
   }
-  if (options.outboxer && options.compat) {
-    throw new ValidationError(
-      "Outboxer is a tufa-only sidecar and is unavailable in compat mode.",
-    );
-  }
-  if (options.outboxer && !outboxerEnabled) {
-    throw new ValidationError(
-      "Outboxer is not enabled for this keystore. Re-run `tufa init --outboxer` to create it.",
-    );
-  }
+
   const cesrBodyMode = normalizeCesrBodyMode(
     options.cesrBodyMode,
     storedCesrBodyMode,
@@ -125,7 +113,6 @@ export function* setupHby(
         skipConfig: options.skipConfig,
         skipSignator: options.skipSignator,
         bran: passcode?.replaceAll("-", ""),
-        outboxer: options.outboxer ? "open" : "disabled",
         cesrBodyMode,
       });
     } catch (error) {
@@ -157,12 +144,6 @@ export function* ensureHby(
   headDirPath?: string,
   options: OpenHaberyOptions = {},
 ): Operation<EnsuredHabery> {
-  if (options.outboxer && options.compat) {
-    throw new ValidationError(
-      "Outboxer is a tufa-only sidecar and is unavailable in compat mode.",
-    );
-  }
-
   const exists = yield* keeperExists(
     name,
     base,
@@ -189,12 +170,9 @@ export function* ensureHby(
     skipConfig: options.skipConfig,
     skipSignator: options.skipSignator,
     bran: bran?.replaceAll("-", ""),
-    outboxer: options.outboxer ? "create" : "disabled",
     cesrBodyMode: normalizeCesrBodyMode(options.cesrBodyMode),
   });
-  if (options.outboxer) {
-    hby.ks.pinGbls("outboxer", "1");
-  }
+
   hby.ks.pinGbls("cesrBodyMode", normalizeCesrBodyMode(options.cesrBodyMode));
   return { hby, created: true };
 }

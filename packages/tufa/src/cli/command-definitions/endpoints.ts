@@ -184,11 +184,6 @@ function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
       )
       .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
       .option(
-        "--outboxer",
-        "Enable the tufa-local durable outbox sidecar for this send",
-        false,
-      )
-      .option(
         "--cesr-body-mode <mode>",
         "CESR HTTP transport mode: header (default) or body",
         "header",
@@ -207,7 +202,6 @@ function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
         compat: options.compat || false,
         headDirPath: options.headDir,
         passcode: options.passcode,
-        outboxer: options.outboxer || false,
         cesrBodyMode: options.cesrBodyMode,
       }),
     },

@@ -32,7 +32,6 @@ interface ChallengeRespondArgs {
   words?: string;
   transport?: string;
   compat?: boolean;
-  outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
 }
 
@@ -48,7 +47,6 @@ interface ChallengeVerifyArgs {
   out?: string;
   timeout?: number;
   compat?: boolean;
-  outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
   pollDelayMs?: number;
 }
@@ -81,7 +79,6 @@ export function* challengeRespondCommand(
     words: args.words as string | undefined,
     transport: args.transport as string | undefined,
     compat: args.compat as boolean | undefined,
-    outboxer: args.outboxer as boolean | undefined,
     cesrBodyMode: normalizeCesrBodyMode(
       args.cesrBodyMode as string | undefined,
     ),
@@ -114,7 +111,6 @@ export function* challengeRespondCommand(
       readonly: false,
       skipConfig: false,
       skipSignator: false,
-      outboxer: commandArgs.outboxer ?? false,
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
     function*({ hby, hab }) {
@@ -148,7 +144,6 @@ export function* challengeVerifyCommand(
     out: args.out as string | undefined,
     timeout: args.timeout ? Number(args.timeout) : 10,
     compat: args.compat as boolean | undefined,
-    outboxer: args.outboxer as boolean | undefined,
     cesrBodyMode: normalizeCesrBodyMode(
       args.cesrBodyMode as string | undefined,
     ),
@@ -182,7 +177,6 @@ export function* challengeVerifyCommand(
       readonly: false,
       skipConfig: false,
       skipSignator: true,
-      outboxer: commandArgs.outboxer ?? false,
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
     function*({ hby, runtime }) {

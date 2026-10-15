@@ -235,7 +235,6 @@ function registerAidCmd(program: Command, dispatch: CommandDispatch): void {
       )
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
-      .option("--outboxer", "Enable the tufa-local durable outbox sidecar", false)
       .option(
         "--head-dir <dir>",
         "Directory override for database and keystore root (default fallback: ~/.tufa)",

@@ -5,7 +5,6 @@
  * domain that actually owns the state in question:
  * - `baser` for protocol truth such as `ends` and `tops`
  * - `mailboxer` for provider-side stored inbox traffic
- * - `outboxer` for the optional Tufa-only sender retry sidecar
  */
 import { type Operation } from "npm:effection@^3.6.0";
 import { displayStr } from "../../core/bytes.ts";
@@ -15,10 +14,9 @@ import { Baser, type BaserOptions, createBaser } from "../../db/basing.ts";
 import { createKeeper, Keeper, type KeeperOptions } from "../../db/keeping.ts";
 import { createMailboxer, Mailboxer, type MailboxerOptions } from "../../db/mailboxing.ts";
 import { createNoter, Noter, type NoterOptions } from "../../db/noting.ts";
-import { createOutboxer, Outboxer, type OutboxerOptions } from "../../db/outboxing.ts";
 
-type DomainName = "baser" | "keeper" | "mailboxer" | "noter" | "outboxer";
-type DumpDomain = Baser | Keeper | Mailboxer | Noter | Outboxer;
+type DomainName = "baser" | "keeper" | "mailboxer" | "noter";
+type DumpDomain = Baser | Keeper | Mailboxer | Noter;
 
 type DumpArgs = {
   name?: string;
@@ -50,8 +48,7 @@ type DomainFactoryOptions =
   | BaserOptions
   | KeeperOptions
   | MailboxerOptions
-  | NoterOptions
-  | OutboxerOptions;
+  | NoterOptions;
 
 type DomainFactory = {
   open: (options: DomainFactoryOptions) => Operation<DumpDomain>;
@@ -69,9 +66,6 @@ const DOMAIN_FACTORIES: Record<DomainName, DomainFactory> = {
   },
   noter: {
     open: (options) => createNoter(options as NoterOptions),
-  },
-  outboxer: {
-    open: (options) => createOutboxer(options as OutboxerOptions),
   },
 };
 
@@ -95,10 +89,9 @@ function parseTarget(rawTarget: string | undefined): {
     && domainRaw !== "keeper"
     && domainRaw !== "mailboxer"
     && domainRaw !== "noter"
-    && domainRaw !== "outboxer"
   ) {
     throw new ValidationError(
-      `Unknown dump domain "${domainRaw}". Expected one of: baser, keeper, mailboxer, noter, outboxer.`,
+      `Unknown dump domain "${domainRaw}". Expected one of: baser, keeper, mailboxer, noter.`,
     );
   }
   return {
@@ -364,7 +357,6 @@ function resolveLimit(rawLimit: number | undefined): number {
  * - `baser.ends`
  * - `mailboxer`
  * - `mailboxer.tpcs`
- * - `outboxer.tgts`
  */
 export function* dumpDatabase(args: Record<string, unknown>): Operation<void> {
   const name = args.name as string | undefined;
