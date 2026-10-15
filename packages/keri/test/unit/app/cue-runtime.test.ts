@@ -4,7 +4,6 @@ import { assertEquals, assertObjectMatch, assertRejects, assertStrictEquals, ass
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { admitCueEmission, prepareCueEmission, type PreparedCueEmission } from "../../../src/app/cue-preparation.ts";
-import { prepareCueRoute } from "../../../src/app/cue-route.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
@@ -300,22 +299,6 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
       assertEquals(plainDeck.empty, true);
       plainOwner!.release();
       assertEquals(plainPolicy.used.bytes, 0);
-      const floorPolicy = new ResourcePolicy({ bytes: 33 * 1024 ** 2 }), floorDeck = new Deck<AgentCue>([cue]);
-      let selected = 0;
-      assertStrictEquals(
-        assertThrows(() =>
-          prepareCueEmission(hab, floorDeck, floorPolicy, (owner) => {
-            prepareCueRoute(floorPolicy, owner, () => {
-              selected++;
-              throw fault;
-            });
-            return undefined;
-          })
-        ),
-        fault,
-      );
-      assertEquals([selected, floorPolicy.used.bytes], [1, 0]);
-      assertStrictEquals(floorDeck.peekHead(), cue);
       for (const deck of [ordinary, new CueDeck(resources, 1)]) {
         if (deck instanceof CueDeck) {
           deck.push(cue);
@@ -356,59 +339,6 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
         assertEquals(deck.length, 0);
         assertEquals(owner.emission?.kind, expected.kind);
         assertEquals(resources.used.bytes >= 8 * 1024 ** 2, true);
-        const baseline = resources.used.bytes;
-        let captures = 0;
-        const resolve = () => {
-          captures++;
-          return {
-            sender: hab.pre,
-            recipient: hab.pre,
-            topic: "/reply",
-            kind: "direct" as const,
-            bodyMode: "header" as const,
-            targets: [{ eid: hab.pre, url: "https://peer.test/" }],
-          };
-        };
-        assertThrows(() => prepareCueRoute(new ResourcePolicy(), owner, resolve), RangeError, "exact policy");
-        const blocked = resources.reserve({ bytes: resources.limits.bytes - baseline });
-        if (blocked.kind !== "reserve") throw new Error("Expected remaining credit");
-        assertEquals(
-          assertThrows(() => prepareCueRoute(resources, owner, resolve), ResourceAdmissionError).reason,
-          "busy",
-        );
-        assertEquals(captures, 0, "refusal precedes endpoint acquisition");
-        blocked.reservation.release();
-        assertStrictEquals(
-          assertThrows(() =>
-            prepareCueRoute(resources, owner, () => {
-              throw fault;
-            })
-          ),
-          fault,
-        );
-        assertThrows(
-          () =>
-            prepareCueRoute(
-              resources,
-              owner,
-              () => ({
-                ...resolve(),
-                targets: Array.from({ length: 4097 }, () => ({ eid: hab.pre, url: "https://peer.test/" })),
-              }),
-            ),
-          ResourceLimitError,
-        );
-        assertThrows(
-          () => prepareCueRoute(resources, owner, () => ({ ...resolve(), topic: "x".repeat(1024 ** 2) })),
-          ResourceLimitError,
-        );
-        assertEquals(resources.used.bytes, baseline);
-        const captured = prepareCueRoute(resources, owner, resolve);
-        assertEquals([captured.route.targets.length, resources.used.bytes - baseline], [1, 1024 ** 2]);
-        captured.release();
-        captured.release();
-        assertEquals(resources.used.bytes, baseline);
-        assertThrows(() => captured.route, Error, "released");
         if (!(deck instanceof CueDeck)) {
           deck.push(cue);
           deck.pull();
@@ -476,6 +406,56 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
       assertEquals(oversized.length, 1);
       assertEquals(resources.used.bytes, 0);
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("cue delivery accepts ordinary routes and preserves source on resolution failure", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("sender");
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const cue: AgentCue = { kin: "query", pre: hab.pre, src: hab.pre, route: "logs", q: {} };
+    const cues = new Deck([cue]);
+    const failure = new Error("endpoint lookup failed");
+    try {
+      assertStrictEquals(
+        assertThrows(() =>
+          runtime.deliveries.enqueueCue(hab, cues, () => {
+            throw failure;
+          })
+        ),
+        failure,
+      );
+      assertStrictEquals(cues.peekHead(), cue);
+      assertEquals(runtime.deliveries.hasPending, false);
+      const route = {
+        sender: hab.pre,
+        recipient: hab.pre,
+        topic: "/reply",
+        kind: "direct" as const,
+        bodyMode: "header" as const,
+        targets: [],
+      };
+      assertEquals(runtime.deliveries.enqueueCue(hab, cues, () => route), { kind: "prepared" });
+      assertEquals([cues.empty, runtime.deliveries.hasPending], [true, false]);
+      cues.push(cue);
+      let resolutions = 0;
+      assertEquals(
+        runtime.deliveries.enqueueCue(hab, cues, () => {
+          resolutions++;
+          return {
+            ...route,
+            topic: "x".repeat(1024 ** 2),
+            targets: Array.from({ length: 4097 }, () => ({ eid: hab.pre, url: "https://peer.test/" })),
+          };
+        }),
+        { kind: "prepared" },
+      );
+      assertEquals([resolutions, cues.empty, runtime.deliveries.hasPending], [1, true, true]);
+    } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });
@@ -673,7 +653,7 @@ Deno.test("cue delivery releases its guarded turn but retains owners until HTTP 
         yield* runtime.deliveries.close();
         closed = true;
       });
-      assertEquals([guarded, closed, runtime.resources.used.bytes >= 33 * 1024 ** 2], [true, false, true]);
+      assertEquals([guarded, closed, runtime.resources.used.bytes > 0], [true, false, true]);
       release();
       yield* closing;
       yield* delivery;

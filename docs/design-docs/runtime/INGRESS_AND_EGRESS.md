@@ -330,9 +330,8 @@ propagate with original identity; this adds no transport retry taxonomy.
 
 RuntimeDeliveries retains query requests, cue cursors and independently copied
 failed packets on the existing eight-item queue. Cue output retains 8 MiB plus
-source credit, route metadata 1 MiB/4096 targets, and each target preparation
-24 MiB until joined delivery or explicit shutdown. Route capture follows admission;
-its metadata bounds do not qualify native/decoded allocation. A bounded pass
+source credit, and each target preparation 24 MiB until joined delivery or
+explicit shutdown. Cue route metadata is an ordinary record without quotas. A bounded pass
 advances one target per cue. Only the observed exact HTTP refusal may transfer
 a failed packet into another admitted slot; otherwise its cursor stays put.
 Other targets then progress while the exact failed wire remains pending.
@@ -341,11 +340,11 @@ Synchronous cursor-finalization failure propagates after every independent clean
 attempt and credit release; the retired owner never repeats transport/cleanup.
 Actual Respondant/HTTP/witness cue adoption remains the next S1–3 unit.
 
-Prepared cue route capture reserves 1 MiB and at most 4096 targets before
-endpoint resolution; its owner clears captured metadata on release. The combined
-configured floor includes live cue/output and temporary interpretation credit.
-Resolution failures release unpublished route credit. This is logical metadata
-admission; native/decoded endpoint rows still require separate qualification.
+Cue routing resolves once and passes the ordinary RawCesrRoute to delivery.
+Resolution failures propagate before source removal. An empty route retires the
+cue without sending; a populated route preserves target order. The delivery
+cursor owns actual iterator cleanup, with no route reservation or release API.
+The other accounting described above remains scheduled for removal.
 
 Completion records must distinguish local transmission drain, HTTP success,
 verified protocol replies and durable application acceptance. An HTTP status or

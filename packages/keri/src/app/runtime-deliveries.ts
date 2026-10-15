@@ -20,7 +20,6 @@ import { postCesr } from "./cesr-egress.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
 import { CueDelivery, type CueTargetPreparation, type OwnedCueTarget } from "./cue-delivery.ts";
 import { admitCueEmission, type CuePreparationResult, type PreparedCueEmission } from "./cue-preparation.ts";
-import { admitCueRoute, type PreparedCueRoute } from "./cue-route.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import { DirectReplyDelivery } from "./direct-reply-delivery.ts";
 import { attemptPreparedCesrTarget, introduce, type RawCesrRoute } from "./forwarding.ts";
@@ -91,7 +90,7 @@ const { wireBytes: requestBytes, routeBytes, preparationBytes } = cueDeliveryBud
 /** One shared item slot owns either query bytes, a lazy cue cursor or an exact failed packet. */
 type AdmittedDelivery =
   | { kind: "query"; delivery: QueryDelivery; credit: ResourceReservation }
-  | { kind: "cue"; delivery: CueDelivery; source: PreparedCueEmission; route: PreparedCueRoute }
+  | { kind: "cue"; delivery: CueDelivery; source: PreparedCueEmission }
   | { kind: "reply"; delivery: DirectReplyDelivery }
   | { kind: "target"; delivery: OwnedCueTarget };
 
@@ -101,7 +100,7 @@ function releaseDelivery(entry: AdmittedDelivery): void {
     entry.credit.release();
   } else if (entry.kind === "cue") {
     const errors: unknown[] = [];
-    for (const owner of [entry.delivery, entry.source, entry.route]) {
+    for (const owner of [entry.delivery, entry.source]) {
       try {
         owner.release();
       } catch (error) {
@@ -197,24 +196,15 @@ export class RuntimeDeliveries {
     let unrouted: PreparedCueEmission | undefined;
     const transferred = admitCueEmission(hab, cues, this.resources, (owner) => {
       if (!owner.emission || owner.emission.kind !== "wire") throw new RangeError("Cue delivery requires wire");
-      const admission = admitCueRoute(this.resources, owner, () => route(owner.emission!));
-      if (admission.kind === "refuse") return admission;
-      const captured = admission.route;
-      if (!captured.route.targets.length) {
+      const captured = route(owner.emission);
+      if (!captured.targets.length) {
         // Responder routing is best-effort when no endpoint exists; retire only after source publication.
         unrouted = owner;
-        captured.release();
         return undefined;
       }
-      let queued = false;
-      try {
-        const delivery = new CueDelivery(owner.emission, sender, captured.route);
-        this.pending.push({ kind: "cue", delivery, source: owner, route: captured });
-        queued = true;
-        return undefined;
-      } finally {
-        if (!queued) captured.release();
-      }
+      const delivery = new CueDelivery(owner.emission, sender, captured);
+      this.pending.push({ kind: "cue", delivery, source: owner });
+      return undefined;
     });
     unrouted?.release();
     return transferred;
