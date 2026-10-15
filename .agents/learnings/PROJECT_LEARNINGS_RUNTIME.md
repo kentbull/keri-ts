@@ -105,7 +105,7 @@ Default AgentRuntime CueDeck preparation holds concrete metadata/backing and ite
 ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
 clone/state and decision-carried duplicate/escrow cues now prepare before effects
 in the default runtime or an explicitly supplied CueDeck. Revery's own missing-signer query batches
-also prepare before BADA/proof/escrow effects. /ksn holds PreparedReply ownership
+also prepare before BADA/proof/escrow effects. /ksn holds its concrete query batch
 and admits its concrete keyStateSaved child before proof/state writes on shared
 or distinct decks. Registry and credential TSN hold the same preparation while admitting its
 actual new dependency query or txnStateSaved child before proof/Broker effects.
@@ -331,9 +331,10 @@ credit precedes body reads. Transient saturation uses the existing queued worker
 OOBI queueing and multi-URL fanout stage all child records and admit exact ordered
 cue batches before queue/moobi writes; validate every URL before mutation. Admit
 parent resolved/failed cues before terminal/contact effects. Preserve ordinary
-Deck guards. Introductions hold PreparedReply and admit actual queued children
+Deck guards. Introductions hold concrete query batches and admit actual queued children
 before BADA/proof/queue effects; unverified replies retain existing escrow/query
-publication without a child. Keep the one-shot plan in a single synchronous turn.
+publication without a child. Keep plain reply evaluation and explicit writes in
+one synchronous owner turn; finally releases actual unpublished cue batches.
 Attempt queue metadata stays staged until result admission; current queue retry
 uses row presence, not attempt-date TTL. Finite results preserve the original row
 until terminal publication. CESR result credit is an earlier scope resource held

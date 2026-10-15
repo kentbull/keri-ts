@@ -1288,7 +1288,7 @@ export class Kevery {
     if (osaider?.qb64 === args.diger.qb64) {
       osaider = null;
     }
-    const reply = this.rvy.prepareReply({
+    const reply = this.rvy.decideReply({
       serder: args.serder,
       saider: args.diger,
       route: args.route,
@@ -1297,10 +1297,12 @@ export class Kevery {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
+    this.rvy.cues.checkSpace(reply.cues.length);
+    const queries = reply.cues.length ? cuePublisher(this.rvy.cues).prepare(reply.cues) : undefined;
     try {
-      if (reply.decision.kind === "unverified") {
-        reply.applyProofs();
-        reply.publishQueries();
+      if (reply.kind === "unverified") {
+        this.rvy.writeReply(reply);
+        queries?.publish();
         return unverifiedReplyDecision(
           `Unverified key state notice reply ${args.serder.said ?? "<unknown>"}.`,
         );
@@ -1318,16 +1320,16 @@ export class Kevery {
       this.cues.checkSpace();
       const child = this.publisher.prepare(cues);
       try {
-        reply.applyProofs();
+        this.rvy.writeReply(reply);
         this.updateKeyState(args.aid, ksn, saider, dater);
-        reply.publishQueries();
+        queries?.publish();
         child.publish();
         return acceptReplyDecision();
       } finally {
         child?.release();
       }
     } finally {
-      reply.release();
+      queries?.release();
     }
   }
 

@@ -96,18 +96,21 @@ Escrow replay decisions carry kind/reason and optional diagnostic text only.
 Keep useful failure/identity detail in messages; retry/purge policy uses typed
 reasons, never diagnostic fields or parsed messages.
 Resource refusals propagate through RPE replay without deleting its durable row.
-KSN publication holds caller-owned PreparedReply query credit while admitting the
+KSN publication holds its concrete query batch while admitting the
 actual keyStateSaved child on Kevery's deck, including distinct local decks.
 Validate semantic correspondence before applying new proofs. Unverified replies
-still apply their existing escrow/query effects. Preparation is one-shot within
-one synchronous guarded turn; suspension permits stale BADA decisions. TSN retry must use Broker's typed finite
+still apply their existing escrow/query effects. Revery.decideReply returns plain
+ReplyPlan data with required accepted proof and complete signature alternatives.
+Callers hold actual query batches, invoke Revery.writeReply explicitly and release
+unpublished batches in finally. Keep evaluation and writes in one synchronous
+owner turn; suspension permits stale BADA decisions. TSN retry must use Broker's typed finite
 family pass; its legacy exception adapter can conceal infrastructure errors.
 Persist the outer reply SAID for BADA, not the contained TEL digest: actual 714's
 registry handler confuses these domains and accepts older signed notices.
 Registry TSN trust uses accepted configuration and issuer witnesses, never claimed
 notice backers. The semantic receiver owns missing/partial proofs in Broker via
 explicit external Revery escrow; preserve prior BADA evidence until publication.
-Hold PreparedReply query ownership and the actual dependency/state child before
+Hold concrete query batches and the actual dependency/state child before
 proof/Broker effects. Test exact family membership without bulk copies and check
 the insertion invariant before publishing. Semantic rejected plans remain unapplied.
 TEL recovery must preserve credential `i` separately from the queried issuer.
@@ -116,7 +119,7 @@ routes. HTTP pair capture and success do not replace independent receiver proofs
 Credential TSN admission matches its own current TEL/registry/anchor record; accepted
 revocation cannot be overwritten by a newly signed old issuance notice. Actual 714
 accepts forged anchor metadata and old issuance state, intentional TS refusals.
-Credential receiving holds PreparedReply and admits actual dependency/state cues
+Credential receiving holds query batches and admits actual dependency/state cues
 before proof/Broker effects, using the same exact family membership invariant.
 Busy refusal must preserve dependency indexes and prior accepted proof.
 

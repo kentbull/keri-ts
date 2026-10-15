@@ -1,11 +1,12 @@
 import { Dater, Diger, Prefixer, SerderKERI, TraitDex } from "cesr-ts";
+import type { PreparedCueBatch } from "../core/cue-admission.ts";
 import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
 import { RegStateRecord } from "../core/records.ts";
 import {
   acceptReplyDecision,
-  type PreparedReply,
+  type ReplyPlan,
   type ReplyProcessDecision,
   Revery,
   unverifiedReplyDecision,
@@ -88,7 +89,8 @@ export class RegistryStateReceiver {
     }
     const kever = this.tvy.db.getKever(issuer, { refresh: true });
     this.publisher.preflight(1);
-    const escrow = (typ: RegistryEscrowFamily, query: boolean, proof?: PreparedReply): RegistryReplyDecision => {
+    let queries: PreparedCueBatch | undefined;
+    const escrow = (typ: RegistryEscrowFamily, query: boolean, proof?: ReplyPlan): RegistryReplyDecision => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, regk, aid, diger);
       const cues: AgentCue[] = isNew && query
         ? [{
@@ -102,7 +104,7 @@ export class RegistryStateReceiver {
       this.rvy.cues.checkSpace(cues.length);
       const child = cues.length ? this.publisher.prepare(cues) : undefined;
       try {
-        proof?.applyProofs();
+        if (proof) this.rvy.writeReply(proof);
         const added = this.tvy.reger.txnsb.escrowStateNotice({
           typ,
           pre: regk,
@@ -116,7 +118,7 @@ export class RegistryStateReceiver {
         if (added !== isNew) throw new Error("Registry escrow membership changed before publication");
         // Broker now owns copied pending proof; retain prior accepted BADA evidence in Baser.
         disposeIncoming();
-        proof?.publishQueries();
+        queries?.publish();
         child?.publish();
         return {
           kind: "unverified",
@@ -139,7 +141,7 @@ export class RegistryStateReceiver {
     if (previous && (!this.tvy.db.sdts.get([previous.qb64]) || !this.tvy.db.rpys.get([previous.qb64]))) {
       throw new Error("Corrupt prior registry reply evidence.");
     }
-    const proof = this.rvy.prepareReply({
+    const proof = this.rvy.decideReply({
       serder,
       saider: diger,
       route,
@@ -150,11 +152,13 @@ export class RegistryStateReceiver {
       retainPrevious: true,
       externalEscrow: true,
     });
+    this.rvy.cues.checkSpace(proof.cues.length);
+    queries = proof.cues.length ? this.publisher.prepare(proof.cues) : undefined;
     try {
-      if (proof.decision.kind !== "accept") {
-        if (proof.decision.reason === "proofPending") return escrow("registry-mae", false, proof);
-        proof.applyProofs();
-        proof.publishQueries();
+      if (proof.kind !== "accept") {
+        if (proof.reason === "proofPending") return escrow("registry-mae", false, proof);
+        this.rvy.writeReply(proof);
+        queries?.publish();
         return reject("Unverified registry state attester.");
       }
       const accepted = this.tvy.reger.tels.getOn(regk, sn);
@@ -178,17 +182,17 @@ export class RegistryStateReceiver {
       this.rvy.cues.checkSpace(cues.length);
       const child = this.publisher.prepare(cues);
       try {
-        proof.applyProofs();
+        this.rvy.writeReply(proof);
         this.tvy.reger.txnsb.updateReply(aid, serder, diger, dater);
         if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
-        proof.publishQueries();
+        queries?.publish();
         child?.publish();
         return acceptReplyDecision();
       } finally {
         child?.release();
       }
     } finally {
-      proof.release();
+      queries?.release();
     }
   }
 
