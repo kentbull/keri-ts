@@ -22,6 +22,7 @@ import { Roles } from "../../../src/core/roles.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
+import { standaloneCues } from "../../private-access.ts";
 import { eventingTestApi, expectKind, withPatchedMethod } from "../../private-access.ts";
 
 function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
@@ -67,9 +68,9 @@ function pullCueOfKin(
   kvy: Kevery,
   kin: "reply" | "replay" | "invalid" | "stream",
 ) {
-  let cue = kvy.cues.pull();
+  let cue = standaloneCues(kvy.cues).pull();
   while (cue && cue.kin !== kin) {
-    cue = kvy.cues.pull();
+    cue = standaloneCues(kvy.cues).pull();
   }
   return cue;
 }
@@ -154,7 +155,7 @@ Deno.test("Kevery.processQuery emits a key-state reply cue for the queried prefi
       const serder = makeQuerySerder("ksn", { i: hab.pre, src: hab.pre });
       kvy.processQuery(signedQueryEnvelope(hab, serder));
 
-      const cue = kvy.cues.pull();
+      const cue = standaloneCues(kvy.cues).pull();
       assertExists(cue);
       assertEquals(cue.kin, "reply");
       if (cue.kin !== "reply") {
@@ -193,7 +194,7 @@ Deno.test("Kevery.processQuery drops malformed queries that omit `q.src` even wh
       const kvy = new Kevery(hby.db);
       const serder = makeQuerySerder("ksn", { i: hab.pre });
       kvy.processQuery(signedQueryEnvelope(hab, serder));
-      assertEquals(kvy.cues.pull(), undefined);
+      assertEquals(standaloneCues(kvy.cues).pull(), undefined);
       assertEquals(hby.db.qnfs.cnt(), 0);
     } finally {
       yield* hby.close(true);
@@ -221,7 +222,7 @@ Deno.test("Kevery.processQuery emits `invalid` only for unsupported routes witho
       const serder = makeQuerySerder("bogus", { i: hab.pre, src: hab.pre });
       kvy.processQuery(signedQueryEnvelope(hab, serder));
 
-      const cue = kvy.cues.pull();
+      const cue = standaloneCues(kvy.cues).pull();
       assertExists(cue);
       assertEquals(cue.kin, "invalid");
       if (cue.kin !== "invalid") {
@@ -769,9 +770,9 @@ Deno.test("Kevery query-not-found escrows retry once the requested key state arr
       }));
       kvy.processQueryNotFound();
 
-      let cue = kvy.cues.pull();
+      let cue = standaloneCues(kvy.cues).pull();
       while (cue && cue.kin !== "reply") {
-        cue = kvy.cues.pull();
+        cue = standaloneCues(kvy.cues).pull();
       }
       assertExists(cue);
       assertEquals(remote.db.qnfs.cnt(), 0);
@@ -987,9 +988,9 @@ Deno.test("Reactor query ingress preserves transferable requester signatures thr
       }));
       reactor.kevery.processQueryNotFound();
 
-      let cue = reactor.kevery.cues.pull();
+      let cue = standaloneCues(reactor.kevery.cues).pull();
       while (cue && cue.kin !== "reply") {
-        cue = reactor.kevery.cues.pull();
+        cue = standaloneCues(reactor.kevery.cues).pull();
       }
       assertExists(cue);
       assertEquals(remote.db.qnfs.cnt(), 0);

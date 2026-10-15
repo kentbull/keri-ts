@@ -1,6 +1,7 @@
 import { Cigar, Dater, Diger, Prefixer, ResourceLimitError, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
+import type { CueQueueInput } from "./cue-publishing.ts";
 import { type CuePublisher, cuePublisher } from "./cue-publishing.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
@@ -339,7 +340,7 @@ export class Revery {
 
   readonly db: Baser;
   readonly rtr: Router;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   private readonly publisher: CuePublisher;
   readonly lax: boolean;
   readonly local: boolean;
@@ -362,7 +363,7 @@ export class Revery {
       maxReplyGroups = 4096,
     }: {
       rtr?: Router;
-      cues?: Deck<AgentCue>;
+      cues?: CueQueueInput;
       lax?: boolean;
       local?: boolean;
       /** Incoming proof-group limit; bounds staged entries and matches the parser group default. */

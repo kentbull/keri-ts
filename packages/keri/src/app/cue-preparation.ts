@@ -1,3 +1,4 @@
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 /** Synchronous admitted cue interpretation; destination owners provide retention and joined delivery. */
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type ResourceReservation } from "cesr-ts";
 import { type OwnedCue, reserveCueBytes } from "../core/cue-admission.ts";
@@ -30,7 +31,7 @@ export interface PreparedCueEmission {
  */
 export function prepareCueEmission(
   hab: Hab | null,
-  cues: Deck<AgentCue>,
+  cues: CueQueueInput,
   resources: ResourcePolicy,
   accept: (owner: PreparedCueEmission) => undefined,
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,

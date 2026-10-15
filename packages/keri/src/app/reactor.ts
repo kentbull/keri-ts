@@ -15,6 +15,7 @@ import {
 import { type FrameChannel, toEffectionFrames } from "cesr-ts/effection";
 import { action, call, each, type Operation, resource } from "npm:effection@^3.6.0";
 import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
@@ -71,7 +72,7 @@ export class Reactor {
   readonly hby: Habery;
   /** Shared host credit; omitted policy borrows the Habery Baser's existing ledger. */
   readonly resources: ResourcePolicy;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   /** Bounded complete-record queue; callers enter only through ingest(). */
   private readonly ingress: Deck<IngressRecord>;
   readonly router: Router;
@@ -116,7 +117,7 @@ export class Reactor {
       kram,
       now,
     }: {
-      cues?: Deck<AgentCue>;
+      cues?: CueQueueInput;
       local?: boolean;
       vdr?: VdrRuntimeServices;
       acdc?: AcdcRuntimeServices;

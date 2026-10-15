@@ -1,3 +1,4 @@
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 /**
  * Registry-backed credential issuance orchestration.
  *
@@ -52,7 +53,7 @@ export interface RegeryOptions {
   reger: Reger;
   tvy?: Tevery;
   vry?: Verifier;
-  cues?: Deck<AgentCue>;
+  cues?: CueQueueInput;
 }
 
 export interface RegistryOptions {
@@ -60,7 +61,7 @@ export interface RegistryOptions {
   hab: Hab;
   reger: Reger;
   tvy: Tevery;
-  cues?: Deck<AgentCue>;
+  cues?: CueQueueInput;
   regk?: string;
   noBackers?: boolean;
   estOnly?: boolean;
@@ -93,7 +94,7 @@ export interface CredentialBuildOptions {
 export interface CredentialerOptions {
   reger: Reger;
   vry: Verifier;
-  cues?: Deck<AgentCue>;
+  cues?: CueQueueInput;
 }
 
 export interface CredentialIssueResult {
@@ -305,7 +306,7 @@ export class Regery {
   readonly reger: Reger;
   readonly tvy: Tevery;
   readonly vry: Verifier;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   readonly registries = new Map<string, Registry>();
 
   constructor(hby: Habery, options: RegeryOptions) {
@@ -374,7 +375,7 @@ export class Registry {
   readonly hab: Hab;
   readonly reger: Reger;
   readonly tvy: Tevery;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   regk: string | null;
   noBackers: boolean;
   estOnly: boolean;
@@ -534,7 +535,7 @@ export class Credentialer {
   readonly hby: Habery;
   readonly reger: Reger;
   readonly vry: Verifier;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
 
   constructor(hby: Habery, options: CredentialerOptions) {
     this.hby = hby;

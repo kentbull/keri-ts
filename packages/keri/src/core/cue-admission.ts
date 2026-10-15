@@ -10,6 +10,7 @@ import {
 } from "cesr-ts";
 import { CapturedKelReplay } from "../db/kel-replay.ts";
 import { CapturedTelReplay } from "../db/tel-replay.ts";
+import type { CueQueue } from "./cue-publishing.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck, DeckFullError } from "./deck.ts";
 import { RawRecord } from "./records.ts";
@@ -193,21 +194,21 @@ export function reserveCueBytes(
 }
 
 /**
- * AgentCue-only admission on the existing Deck. Held items include preparation,
+ * AgentCue admission with one queue of owned handles. Held items include preparation,
  * queued cues and transferred/fanout handles. Pulling never returns their credit.
  * Payloads must remain immutable until final release; this is logical retention
  * accounting, not a native heap/RSS measurement or durable delivery journal.
  */
-export class CueDeck extends Deck<AgentCue> {
+export class CueDeck implements CueQueue {
   private held = 0;
-  private publishing = false;
-  private owners = new Map<AgentCue, OwnedCue[]>();
+  private readonly owners = new Deck<OwnedCue>();
+  private itemCapacity: number;
   constructor(
     private readonly resources: ResourcePolicy,
     capacity = 1024,
     private readonly maxNodes = 65536,
   ) {
-    super(undefined, capacity);
+    this.itemCapacity = capacity;
     if (!Number.isSafeInteger(capacity) || capacity < 0 || !Number.isSafeInteger(maxNodes) || maxNodes < 1) {
       throw new RangeError("Invalid cue admission limits");
     }
@@ -218,19 +219,37 @@ export class CueDeck extends Deck<AgentCue> {
   }
   /** Batch credit cannot return while this queued head has a live owner; inspect without opening its evidence. */
   headRetentionBytes(): number {
-    const cue = this.peekHead();
-    return cue ? this.owners.get(cue)![0].retainedBytes : 0;
+    return this.owners.peekHead()?.retainedBytes ?? 0;
   }
-  override get capacity(): number {
-    return super.capacity;
+  get capacity(): number {
+    return this.itemCapacity;
   }
-  override set capacity(value: number) {
-    if (!Number.isSafeInteger(value) || value < (this.held ?? 0)) throw new RangeError("Invalid held cue capacity");
-    super.capacity = value;
+  set capacity(value: number) {
+    if (!Number.isSafeInteger(value) || value < this.held) throw new RangeError("Invalid held cue capacity");
+    this.itemCapacity = value;
   }
-  override checkSpace(count = 1, onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void): void {
+  get length(): number {
+    return this.owners.length;
+  }
+  get empty(): boolean {
+    return this.owners.empty;
+  }
+  peekHead(): AgentCue | undefined {
+    return this.owners.peekHead()?.cue;
+  }
+  peekTail(): AgentCue | undefined {
+    return this.owners.peekTail()?.cue;
+  }
+  toArray(): AgentCue[] {
+    return [...this];
+  }
+  *[Symbol.iterator](): Iterator<AgentCue> {
+    for (const owner of this.owners) yield owner.cue;
+  }
+  /** Actual batch preparation owns item admission; no conservative producer estimate is needed. */
+  preflight(_count: number): void {}
+  checkSpace(count = 1, onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void): void {
     if (!Number.isSafeInteger(count) || count < 0) throw new RangeError("Invalid cue admission count");
-    if (this.publishing) return;
     if (count > this.capacity) throw new ResourceLimitError("Cue batch exceeds item capacity");
     if (count > this.capacity - this.held) {
       const refusal = new DeckFullError("Cue item capacity is occupied");
@@ -293,29 +312,21 @@ export class CueDeck extends Deck<AgentCue> {
       publish: () => {
         if (state !== "prepared") throw new Error("Cue preparation is no longer publishable");
         try {
-          const owners = new Map(this.owners);
-          for (const cue of values) {
-            owners.set(cue, [...(owners.get(cue) ?? []), makeOwner(cue)]);
-          }
-          this.publishing = true;
-          super.extend(values);
-          this.owners = owners;
+          this.owners.extend(values.map((cue) => makeOwner(cue)));
           state = "published";
           values.length = 0;
         } catch (error) {
           release();
           throw error;
-        } finally {
-          this.publishing = false;
         }
       },
     };
   }
-  override append(cue: AgentCue): number {
+  append(cue: AgentCue): number {
     this.prepare([cue]).publish();
     return this.length;
   }
-  override extend(cues: Iterable<AgentCue>): number {
+  extend(cues: Iterable<AgentCue>): number {
     const values: AgentCue[] = [];
     for (const cue of cues) {
       this.checkSpace(values.length + 1);
@@ -324,44 +335,23 @@ export class CueDeck extends Deck<AgentCue> {
     if (values.length) this.prepare(values).publish();
     return this.length;
   }
-  override prepend(_cue: AgentCue): number {
-    throw new Error("Requeue the existing owned cue; do not create a second admission");
-  }
-  override pull(): AgentCue | undefined {
-    throw new Error("Admitted cues require takeOwned ownership transfer");
-  }
-  override pop(): AgentCue | undefined {
-    throw new Error("Admitted cues require takeOwned ownership transfer");
+  push(cue: AgentCue): number {
+    return this.append(cue);
   }
   /** Transfer one queued owner; it still occupies item/byte credit until released. */
   takeOwned(): OwnedCue | undefined {
-    const cue = super.pull();
-    if (!cue) return;
-    const owners = this.owners.get(cue)!;
-    const owner = owners.shift()!;
-    if (!owners.length) this.owners.delete(cue);
-    return owner;
+    return this.owners.pull();
   }
   /** Return failed/untransferred work to the head without releasing/reacquiring its credit. */
   requeue(owner: OwnedCue): void {
-    const cue = owner.cue;
     if (ownerDecks.get(owner) !== this) throw new Error("Cue belongs to another admission deck");
     owner.transfer((next) => {
-      const owners = new Map(this.owners);
-      owners.set(cue, [next, ...(owners.get(cue) ?? [])]);
-      try {
-        this.publishing = true;
-        super.prepend(cue);
-        this.owners = owners;
-      } finally {
-        this.publishing = false;
-      }
+      this.owners.prepend(next);
     });
   }
   /** Discard queued work only; active transferred owners retain their credit. */
-  override clear(): void {
-    for (const owners of this.owners.values()) for (const owner of owners) owner.release();
+  clear(): void {
+    for (const owner of this.owners) owner.release();
     this.owners.clear();
-    super.clear();
   }
 }

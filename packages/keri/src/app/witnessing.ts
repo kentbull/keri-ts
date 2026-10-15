@@ -1,3 +1,4 @@
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 /**
  * Witness host and controller-side receipting helpers.
  *
@@ -280,7 +281,7 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
 export function* drainWitnessCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
-  cues: Deck<AgentCue>,
+  cues: CueQueueInput,
   {
     deliver = true,
     onAdmissionRefusal,
@@ -362,7 +363,7 @@ function finiteWitnessEmissions(
 function* consumeWitnessCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
-  cues: Deck<AgentCue>,
+  cues: CueQueueInput,
   deliver: boolean,
   consume?: (emission: CueEmission) => Operation<void>,
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,

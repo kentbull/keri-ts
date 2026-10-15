@@ -1,5 +1,6 @@
 import { ResourceLimitError } from "cesr-ts";
 import type { OwnedCue } from "../core/cue-admission.ts";
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { cuePublisher, cueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, ReceiptCue, ReplayCue, ReplyCue, WitnessCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
@@ -129,7 +130,7 @@ export class QueryReplies {
   }
 
   /** Capture at most a complementary TSN or receipt/witness pair; transfer/fanout credit before publishing slot references. */
-  capture(cues: Deck<AgentCue>): void {
+  capture(cues: CueQueueInput): void {
     const source = cueReader(cues), publisher = cuePublisher(cues);
     const count = source.length, queued: OwnedCue[] = [];
     try {

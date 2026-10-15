@@ -94,6 +94,9 @@ Protocol producers borrow CuePublisher; its optional retention policy distinguis
 held runtime credit from caller-owned standalone queues without concrete queue checks.
 CueReader exposes only borrowing, transfer, and requeue; interpreting a plain
 queue still admits its input separately and removes it only after acceptance.
+CueDeck composes one Deck<OwnedCue>; it has no raw-cue mirror or destructive unowned removal API.
+Producers use CuePublisher and consumers CueReader, independent of the concrete owned queue.
+Standalone caller-owned Decks are adapted at those boundaries without a ledger or mirror.
 Default AgentRuntime CueDeck preparation holds concrete metadata/backing and item credit;
 ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
 clone/state and decision-carried duplicate/escrow cues now prepare before effects

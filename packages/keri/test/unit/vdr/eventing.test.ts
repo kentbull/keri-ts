@@ -39,6 +39,7 @@ import { CredentialStateReceiver } from "../../../src/vdr/credential-tsn.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 import { RegistryStateReceiver } from "../../../src/vdr/registry-tsn.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
+import { standaloneCues } from "../../private-access.ts";
 import { expectKind } from "../../private-access.ts";
 
 /** Assert borrowed data while its actual default-runtime owner is live, then return its credit. */
@@ -320,7 +321,7 @@ for (const backed of [false, true]) {
             assertEquals(resources.used.bytes > 0, true, "transferred owner retains its credit");
             owner.release();
             assertEquals(resources.used.bytes, 0);
-          } else assertEquals(tvy.cues.pull()?.kin, "revoked");
+          } else assertEquals(standaloneCues(tvy.cues).pull()?.kin, "revoked");
         } finally {
           yield* reger.close(true);
           yield* hby.close(true);
@@ -653,7 +654,11 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
       assertExists(hby.db.sdts.get([valid.said!]), "Pending/rejected semantic state retains previous BADA metadata");
       assertEquals(runtime.cues.length, 0);
       tvy.processQuery({ serder: query("tsn", { ri: vcp.pre, i: "" }), source: issuer.kever!.prefixer });
-      assertEquals(tvy.cues.pull()?.kin, "reply", "Direct borrowed processor calls retain their supplied cue owner");
+      assertEquals(
+        standaloneCues(tvy.cues).pull()?.kin,
+        "reply",
+        "Direct borrowed processor calls retain their supplied cue owner",
+      );
       yield* reger.close();
       let failure: unknown;
       try {

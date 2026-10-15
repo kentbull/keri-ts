@@ -1,3 +1,4 @@
+import { standaloneCues } from "../../private-access.ts";
 /** Real forwarding admission, durable child evidence, and ownership at failure/replay boundaries. */
 import {
   b,
@@ -1044,7 +1045,7 @@ Deno.test("KRAM handoff freezes ready receipt through reopen, disposal failure a
       ),
       { kind: "missing", sender: sender.pre, sn },
     );
-    assertEquals(handoff.cues.pull(), {
+    assertEquals(standaloneCues(handoff.cues).pull(), {
       kin: "query",
       pre: sender.pre,
       q: { r: "logs", pre: sender.pre, sn: sn.toString(16) },

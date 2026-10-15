@@ -1,3 +1,4 @@
+import type { CueQueueInput } from "./cue-publishing.ts";
 /** Optional receiver-owned KRAM intake composed from qualified policy, handoff and pruning. */
 import type { ResourcePolicy } from "cesr-ts";
 import type { Operation } from "effection";
@@ -39,7 +40,7 @@ export type { KramConfig } from "./kram-policy.ts";
 /** Complete optional intake; void callbacks consume/adopt evidence before the owning scope ends. */
 export class Kramer {
   /** Shared runtime cues, or the standalone caller's drainable receiver-state notifications. */
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   private readonly policy: KramPolicy;
   private readonly handoff: KramHandoff;
   private readonly pruner: KramPruner;
@@ -49,7 +50,7 @@ export class Kramer {
     private readonly db: Baser,
     { config = {}, cues, now = Date.now, resources = db.resources }: {
       config?: KramConfig;
-      cues?: Deck<AgentCue>;
+      cues?: CueQueueInput;
       now?: () => number;
       resources?: ResourcePolicy;
     } = {},

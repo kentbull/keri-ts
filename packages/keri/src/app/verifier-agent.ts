@@ -1,3 +1,4 @@
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 /**
  * Sally-like verifier agent pipeline.
  *
@@ -64,7 +65,7 @@ export interface VerifierAgentOptions {
   reger: Reger;
   cdb: VerifierCueBaser;
   reactor: Reactor;
-  cues: Deck<AgentCue>;
+  cues: CueQueueInput;
   services: RuntimeServices;
   hook: string;
   timeoutMs?: number;
@@ -78,7 +79,7 @@ export class VerifierAgent {
   readonly reger: Reger;
   readonly cdb: VerifierCueBaser;
   readonly reactor: Reactor;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   readonly services: RuntimeServices;
   readonly hook: string;
   readonly timeoutMs: number;

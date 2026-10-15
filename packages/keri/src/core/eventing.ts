@@ -13,6 +13,7 @@ import {
 import { Baser } from "../db/basing.ts";
 import { dgKey, snKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import type { CueQueueInput } from "./cue-publishing.ts";
 import { type CuePublisher, cuePublisher } from "./cue-publishing.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
@@ -188,7 +189,7 @@ export class Kevery {
   static readonly TimeoutQNF = 300_000;
 
   readonly db: Baser;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   private readonly publisher: CuePublisher;
   readonly lax: boolean;
   readonly local: boolean;
@@ -209,7 +210,7 @@ export class Kevery {
       messagePolicy = {},
       kramer,
     }: {
-      cues?: Deck<AgentCue>;
+      cues?: CueQueueInput;
       lax?: boolean;
       local?: boolean;
       rvy?: Revery;

@@ -1,7 +1,7 @@
 import type { ResourcePolicy } from "cesr-ts";
-import { CueDeck, OwnedCue, type PreparedCueBatch } from "./cue-admission.ts";
+import { OwnedCue, type PreparedCueBatch } from "./cue-admission.ts";
 import type { AgentCue } from "./cues.ts";
-import type { Deck } from "./deck.ts";
+import { Deck } from "./deck.ts";
 
 /** Producers prepare publication before effects without depending on queue consumption or concrete ownership. */
 export interface CuePublisher {
@@ -13,15 +13,25 @@ export interface CuePublisher {
   prepare(cues: readonly AgentCue[]): PreparedCueBatch;
 }
 
-/** Adapt the existing queue once per producer; the composition migration removes concrete dispatch in slice 08. */
-export function cuePublisher(queue: Deck<AgentCue>): CuePublisher {
-  if (queue instanceof CueDeck) {
-    return {
-      resourcePolicy: queue.resourcePolicy,
-      preflight() {},
-      prepare: (cues) => queue.prepare(cues),
-    };
-  }
+/** Legal queue operations shared by standalone and admitted cue sources; removal transfers ownership. */
+export interface CueQueue extends CuePublisher, CueReader, Iterable<AgentCue> {
+  capacity: number;
+  readonly empty: boolean;
+  checkSpace(count?: number): void;
+  append(cue: AgentCue): number;
+  push(cue: AgentCue): number;
+  extend(cues: Iterable<AgentCue>): number;
+  clear(): void;
+  peekTail(): AgentCue | undefined;
+  toArray(): AgentCue[];
+}
+
+/** Standalone processors may still borrow a plain caller-owned queue. */
+export type CueQueueInput = Deck<AgentCue> | CueQueue;
+
+/** Normalize the publication boundary without inspecting an owned queue's implementation. */
+export function cuePublisher(queue: CueQueueInput): CuePublisher {
+  if (!(queue instanceof Deck)) return queue;
   return {
     resourcePolicy: undefined,
     preflight: (count) => queue.checkSpace(count),
@@ -59,8 +69,8 @@ function borrowedCue(cue: AgentCue): OwnedCue {
 }
 
 /** Adapt the existing source; owned queues transfer existing credit and plain queues retain caller-owned accounting. */
-export function cueReader(queue: Deck<AgentCue>): CueReader {
-  if (queue instanceof CueDeck) return queue;
+export function cueReader(queue: CueQueueInput): CueReader {
+  if (!(queue instanceof Deck)) return queue;
   return {
     get length() {
       return queue.length;

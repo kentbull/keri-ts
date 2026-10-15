@@ -7,6 +7,7 @@ import {
 } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { reserveCueBytes } from "../core/cue-admission.ts";
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { cueReader } from "../core/cue-publishing.ts";
 import type { CueEmission, QueryCue } from "../core/cues.ts";
 import type { AgentCue } from "../core/cues.ts";
@@ -171,7 +172,7 @@ export class RuntimeDeliveries {
   /** Guarded item preflight precedes interpretation; route resolution borrows admitted output synchronously. */
   enqueueCue(
     hab: Hab,
-    cues: Deck<AgentCue>,
+    cues: CueQueueInput,
     route: (emission: CueEmission) => RawCesrRoute,
     sender = hab,
     onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
