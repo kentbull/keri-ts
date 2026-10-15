@@ -116,8 +116,6 @@ export function* sendPreparedCesrTarget(
   target: PreparedCesrTarget,
   services: RuntimeServices,
   signal?: AbortSignal,
-  onHttpRefusal?: (error: CesrHttpRefusal) => void,
-  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   receiver?: TcpReplyReceiver,
 ): Operation<void> {
   if (target.kind === "tcp") {
@@ -125,10 +123,9 @@ export function* sendPreparedCesrTarget(
       yield* converseCesrTcp(target.url, target.message, {
         services,
         signal,
-        onAdmissionRefusal,
         replies: { services: receiver.services, intake: receiver.intake, reactor: receiver.reactor, local: true },
       });
-    } else yield* sendCesrTcp(target.url, target.message, { services, signal, onAdmissionRefusal });
+    } else yield* sendCesrTcp(target.url, target.message, { services, signal });
   } else if (target.kind === "http") {
     yield* postCesrMessage(
       target.url,
@@ -137,8 +134,6 @@ export function* sendPreparedCesrTarget(
       target.destination,
       services,
       signal,
-      onHttpRefusal,
-      onAdmissionRefusal,
     );
   }
 }
@@ -393,8 +388,6 @@ export class Poster {
           remoteCesrTarget(endpoint, message, this.hby.cesrBodyMode),
           this.services,
           undefined,
-          undefined,
-          undefined,
           receiver,
         );
         deliveries.push(endpoint.url);
@@ -450,7 +443,7 @@ export class Poster {
       const endpoint = route.targets[index]!;
       try {
         const target = this.prepareBytesTarget(hab, route, index, args.message);
-        yield* sendPreparedCesrTarget(target, this.services, undefined, undefined, undefined, runtime);
+        yield* sendPreparedCesrTarget(target, this.services, undefined, runtime);
         deliveries.push(endpoint.url);
       } catch (error) {
         if (route.kind !== "mailbox") throw error;
@@ -654,8 +647,6 @@ export class Poster {
                 state.target!,
                 self.services,
                 undefined,
-                undefined,
-                undefined,
                 runtime,
               )
             );
@@ -755,7 +746,7 @@ export class Poster {
     receiver?: TcpReplyReceiver,
   ): Operation<void> {
     const target = this.prepareForwardedTarget(hab, recipient, topic, message, endpoint);
-    yield* sendPreparedCesrTarget(target, this.services, undefined, undefined, undefined, receiver);
+    yield* sendPreparedCesrTarget(target, this.services, undefined, receiver);
   }
 
   /** Local mailbox writes and signed introductions finish before any network work starts. */
@@ -1804,16 +1795,12 @@ export function* postCesrMessage(
   destination?: string,
   services: RuntimeServices = defaultRuntimeServices,
   signal?: AbortSignal,
-  onHttpRefusal?: (error: CesrHttpRefusal) => void,
-  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): Operation<void> {
   yield* postCesr(url, (signal) => chunkBytes(body, { signal }), {
     bodyMode,
     destination,
     services,
     signal,
-    onHttpRefusal,
-    onAdmissionRefusal,
   });
 }
 

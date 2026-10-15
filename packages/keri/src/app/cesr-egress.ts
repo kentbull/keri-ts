@@ -33,7 +33,7 @@ export class CesrHttpRefusal extends ValidationError {
 }
 
 /** Expected local admission or remote HTTP refusal; infrastructure and cleanup failures still throw. */
-export type CesrPostResult = { kind: "complete" } | { kind: "refuse"; error: ResourceAdmissionError | CesrHttpRefusal };
+type CesrPostResult = { kind: "complete" } | { kind: "refuse"; error: ResourceAdmissionError | CesrHttpRefusal };
 type FrameResponse = { kind: "response"; response: Response } | Extract<CesrPostResult, { kind: "refuse" }>;
 
 /** Transport choices and finite HTTP metadata limits for an admitted CESR frame. */
@@ -48,10 +48,6 @@ export interface EgressOptions {
   maxHeaderBytes?: number;
   /** Failed responses retain at most this many diagnostic bytes; default 16 KiB. */
   maxErrorBytes?: number;
-  /** Observe only this invocation's actual non-ok response; unexpected/cleanup failures still propagate. */
-  onHttpRefusal?: (error: CesrHttpRefusal) => void;
-  /** Observe only actual source/tree/HTTP reservation refusals; injected failures stay distinct. */
-  onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
   /** Upstream cancellation joins the same request lifetime as Effection cancellation. */
   signal?: AbortSignal;
   /** Injectable HTTP service for the owning runtime. */
@@ -197,7 +193,6 @@ function openFrameResponse(
         `HTTP output ${credit.resource} admission refused: ${credit.reason}`,
         credit.reason,
       );
-      options.onAdmissionRefusal?.(refusal);
       yield* provide({ kind: "refuse", error: refusal });
       return;
     }
@@ -267,7 +262,6 @@ function openFrameResponse(
           `CESR delivery to ${url} failed with HTTP ${response.status}: ${detail}`,
           response.status,
         );
-        options.onHttpRefusal?.(refusal);
         yield* provide({ kind: "refuse", error: refusal });
         return;
       }
@@ -350,7 +344,6 @@ export function attemptPostCesr(
             `Output source admission refused: ${sourceCredit.reason}`,
             sourceCredit.reason,
           );
-          options.onAdmissionRefusal?.(error);
           return { kind: "refuse", error };
         }
         // Either caller-facing signal cancels both parsing and the request already consuming a frame.
@@ -365,7 +358,6 @@ export function attemptPostCesr(
           signal,
           onAdmissionRefusal(error) {
             options.parse?.onAdmissionRefusal?.(error);
-            options.onAdmissionRefusal?.(error);
             parserRefusal = error;
           },
         });

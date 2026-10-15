@@ -103,7 +103,6 @@ function conversation(
                 maxBufferedBytes: read.maxBufferedBytes,
                 classifyWireErrors: true,
                 onAdmissionRefusal(error) {
-                  output.onAdmissionRefusal?.(error);
                   parserRefusal = error;
                 },
               });

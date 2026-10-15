@@ -79,6 +79,8 @@ strict source/frame APIs keep their throwing contract. HTTP owns its parser refu
 bridge; TCP's application conversation owns parser admission while byte egress
 returns only its own capacity refusals. Prepared delivery does not observe exception
 identities. Strict and attempt APIs share the same connection and cleanup owners.
+Transport refusal observers are removed. Attempt helpers stay internal to their
+modules; the runtime package exposes supported strict sender/conversation APIs.
 Fetch teardown joins pending rejection as well as late response cleanup. Timeout
 null recognizes only its controller's exact reason; foreign same-class AbortErrors
 and I/O failures propagate without repeating an already-reported object.
@@ -248,10 +250,9 @@ Schema/credential notices stay notify-only, even when a hint happens to name a k
 KEL. Producers use canonical s rather than sn; do not restore fallback logs routing,
 redundant r/dig hints or a normalization pass. Request-local HTTP/witness ownership
 remains unfinished.
-Actual HTTP and source/tree/output admission refusal observation is invocation-local;
-source/fetch/sink/cleanup and external observer failures retain original identity.
-Prepared target attempts return local complete/refused/busy only after joined
-cleanup, matching observed engine-created errors rather than foreign classes.
+Prepared HTTP/TCP target attempts return local complete/refused/busy only after
+joined cleanup, consuming the sender's own capacity/HTTP results. Source, fetch,
+sink and cleanup failures propagate unchanged, including foreign same-class errors.
 Cue preparation/item refusal follows the same exact invocation rule; foreign
 interpretation, route, reserve and observer failures propagate. This does not
 admit all decoded/native preparation copies.

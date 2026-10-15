@@ -32,8 +32,6 @@ export interface TcpSendOptions {
   signal?: AbortSignal;
   /** Owning runtime's shared admission and clock. */
   services?: RuntimeServices;
-  /** Invocation-local observation of engine-created capacity refusal; foreign failures remain unclassified. */
-  onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
 }
 
 /** Producer observes abort, yields immutable bounded backing, and joins cleanup on return. */
@@ -296,7 +294,6 @@ function attemptWriteTcp(
 ): Operation<TcpAttempt> {
   return call(function*(): Operation<TcpAttempt> {
     const refuse = (error: ResourceAdmissionError): Extract<TcpAttempt, { kind: "refuse" }> => {
-      options.onAdmissionRefusal?.(error);
       return { kind: "refuse", error };
     };
     const parsed = new URL(url), port = Number(parsed.port);

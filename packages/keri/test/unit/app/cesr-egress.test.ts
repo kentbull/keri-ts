@@ -20,7 +20,7 @@ import { call, run } from "npm:effection@^3.6.0";
 import { KERIPY_V1_JSON_ICP_BODY as json } from "../../../../cesr/test/fixtures/external-vectors.ts";
 import vectors from "../../../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
 import { chunkBytes } from "../../../src/app/byte-source.ts";
-import { CesrHttpRefusal, postCesr, requestFrame } from "../../../src/app/cesr-egress.ts";
+import { attemptPostCesr, CesrHttpRefusal, postCesr, requestFrame } from "../../../src/app/cesr-egress.ts";
 import { CESR_ATTACHMENT_HEADER } from "../../../src/app/cesr-http.ts";
 import { attemptPreparedCesrTarget } from "../../../src/app/forwarding.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
@@ -794,12 +794,11 @@ Deno.test("TCP frame output admits before serialization and borrows nested owner
   assertEquals(discards, 1, "only the caller disposes its actual child owner");
 });
 
-Deno.test("transport refusal observation excludes identical typed errors from source, fetch and cleanup", async () => {
+Deno.test("transport attempt excludes identical typed errors from source, fetch and cleanup", async () => {
   for (
     const failure of [new CesrHttpRefusal("external failure", 503), new ResourceAdmissionError("foreign busy", "busy")]
   ) {
     for (const origin of ["source", "fetch", "cleanup", "peer"] as const) {
-      let observed: CesrHttpRefusal | ResourceAdmissionError | undefined;
       const transport = services(async (_url, init) => {
         await new Response(init!.body).arrayBuffer();
         if (origin === "fetch") throw failure;
@@ -818,26 +817,21 @@ Deno.test("transport refusal observation excludes identical typed errors from so
         }
         return new Response("peer refusal", { status: 503 });
       });
-      const error = await assertRejects(() =>
-        run(function*() {
-          yield* postCesr("https://peer.test/", async function*() {
+      const send = () =>
+        run(() =>
+          attemptPostCesr("https://peer.test/", async function*() {
             if (origin === "source") throw failure;
             yield fixture();
-          }, {
-            bodyMode: "body",
-            services: transport,
-            onHttpRefusal: (refusal) => observed = refusal,
-            onAdmissionRefusal: (refusal) => observed = refusal,
-          });
-        })
-      );
+          }, { bodyMode: "body", services: transport })
+        );
       if (origin === "peer") {
-        assertStrictEquals(error, observed);
-        if (!(observed instanceof CesrHttpRefusal)) throw new Error("Expected observed peer refusal");
-        assertEquals(observed.status, 503);
+        const result = await send();
+        if (result.kind !== "refuse" || !(result.error instanceof CesrHttpRefusal)) {
+          throw new Error("Expected peer refusal result");
+        }
+        assertEquals(result.error.status, 503);
       } else {
-        assertStrictEquals(error, failure);
-        assertEquals(observed, undefined);
+        assertStrictEquals(await assertRejects(send), failure);
       }
       assertEquals([transport.resources.used.bytes, transport.resources.used.streams], [0, 0]);
     }

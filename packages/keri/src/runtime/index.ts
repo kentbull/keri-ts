@@ -10,7 +10,7 @@ export * from "../acdc/index.ts";
 export * from "../app/agent-runtime.ts";
 export * from "../app/authenticating.ts";
 export * from "../app/byte-source.ts";
-export * from "../app/cesr-egress.ts";
+export { CesrHttpRefusal, type EgressOptions, postCesr, type PostOptions, requestFrame } from "../app/cesr-egress.ts";
 export * from "../app/cesr-http.ts";
 export * from "../app/challenging.ts";
 export * from "../app/configing.ts";
@@ -47,8 +47,24 @@ export * from "../app/runtime-turn.ts";
 export * from "../app/schema-resolving.ts";
 export * from "../app/signaling.ts";
 export * from "../app/socket-source.ts";
-export * from "../app/tcp-conversation.ts";
-export * from "../app/tcp-egress.ts";
+export {
+  converseCesrTcp,
+  streamCesrTcpConversation,
+  type TcpConversation,
+  type TcpConversationOptions,
+  type TcpReplyReceiver,
+} from "../app/tcp-conversation.ts";
+export {
+  sendCesrTcp,
+  sendCesrTcpFrame,
+  streamCesrTcp,
+  type TcpRead,
+  type TcpSendOptions,
+  type TcpSocketWriteOptions,
+  type TcpSourceFactory,
+  type TcpTransmission,
+  writeCesrTcpSocket,
+} from "../app/tcp-egress.ts";
 export * from "../app/verifier-agent.ts";
 export * from "../app/verifying.ts";
 export { BUILD_METADATA, DISPLAY_VERSION, PACKAGE_VERSION } from "../app/version.ts";
