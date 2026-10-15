@@ -39,6 +39,13 @@ Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 
 ## Route ownership
 
+Challenge responses share one word-list contract between CLI production, decoded
+EXN validation and verifier lookup. Read decoded attributes as unknown; narrow
+words before domain use instead of asserting an open record. CLI JSON uses the
+same word-list predicate while retaining its own trim/filter behavior. The
+verified EXN sender identifies the responder; payload i is only existing wire
+projection and cannot select the reps/chas identity.
+
 V2 forwarding binds exactly one child to signed `a.evt`. The recipient authenticates
 its signatures. Children survive bounded enst storage, retry and replay; verified
 duplicates replace child evidence atomically and rerun the handler.
