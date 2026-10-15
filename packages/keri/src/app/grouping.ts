@@ -19,6 +19,7 @@ import {
   Prefixer,
   ResourceLimitError,
   Saider,
+  Serder,
   SerderKERI,
   type Versionage,
   Vrsn_1_0,
@@ -515,9 +516,10 @@ export class Multiplexor {
   private *processLegacyApproved(wrapper: SerderKERI): Operation<void> {
     const embeds = embeddedSection(wrapper.ked!);
     for (const label of Object.keys(embeds ?? {})) {
-      const child = multisigChild(this.hby, wrapper, label);
-      if (!child) continue;
-      const { event, attachment, genus } = child;
+      const sad = embeds?.[label];
+      if (!isRecord(sad)) continue;
+      const event = new Serder({ sad });
+      const { attachment, genus } = multisigChildEvidence(this.hby, wrapper, label, event);
       const channel = yield* toEffectionFrames(async function*(signal) {
         for (const bytes of [Counter.makeGVC(genus), event.raw, attachment]) {
           yield* chunkBytes(bytes, { signal });
@@ -666,9 +668,19 @@ export function multisigChild(hby: Habery, wrapper: SerderKERI, label: string): 
   const sad = embeddedSection(wrapper.ked ?? {})?.[label];
   if (!isRecord(sad)) return null;
   const event = new SerderKERI({ sad });
+  return { event, ...multisigChildEvidence(hby, wrapper, label, event) };
+}
+
+/** Resolve the stored proof and signed genus independently of the child protocol. */
+function multisigChildEvidence(
+  hby: Habery,
+  wrapper: SerderKERI,
+  label: string,
+  child: Serder,
+): { attachment: Uint8Array; genus: Versionage } {
   const attachment = multisigPathedAttachment(hby, wrapper.said!, label);
   const hint = attachment.length ? childGenusHint(wrapper.ked?.a) : undefined;
-  return { event, attachment, genus: event.gvrsn ?? hint ?? event.pvrsn };
+  return { attachment, genus: child.gvrsn ?? hint ?? child.pvrsn };
 }
 
 /** Extract raw attachment bytes for one label from a stored multisig wrapper. */
