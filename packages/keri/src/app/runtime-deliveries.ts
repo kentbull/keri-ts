@@ -21,8 +21,8 @@ import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
 import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
-import { prepareCueEmission, type PreparedCueEmission } from "./cue-preparation.ts";
-import { prepareCueRoute } from "./cue-route.ts";
+import { admitCueEmission, type CuePreparationRefusal, type PreparedCueEmission } from "./cue-preparation.ts";
+import { admitCueRoute } from "./cue-route.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import { DirectReplyDelivery } from "./direct-reply-delivery.ts";
 import { attemptPreparedCesrTarget, introduce, type RawCesrRoute } from "./forwarding.ts";
@@ -176,19 +176,18 @@ export class RuntimeDeliveries {
     cues: CueQueueInput,
     route: (emission: CueEmission) => RawCesrRoute,
     sender = hab,
-    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
-  ): boolean {
+  ): boolean | CuePreparationRefusal {
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    try {
-      this.pending.checkSpace();
-    } catch (error) {
-      if (error instanceof DeckFullError) onAdmissionRefusal?.(error);
-      throw error;
+    if (this.pending.capacity < 1) throw new ResourceLimitError("Batch exceeds deck capacity");
+    if (this.pending.length === this.pending.capacity) {
+      return { kind: "refuse", error: new DeckFullError("Deck capacity exceeded") };
     }
     let unrouted: PreparedCueEmission | undefined;
-    const transferred = prepareCueEmission(hab, cues, this.resources, (owner) => {
+    const transferred = admitCueEmission(hab, cues, this.resources, (owner) => {
       if (!owner.emission || owner.emission.kind !== "wire") throw new RangeError("Cue delivery requires wire");
-      const captured = prepareCueRoute(this.resources, owner, () => route(owner.emission!), onAdmissionRefusal);
+      const admission = admitCueRoute(this.resources, owner, () => route(owner.emission!));
+      if (admission.kind === "refuse") return admission;
+      const captured = admission.route;
       if (!captured.route.targets.length) {
         // Responder routing is best-effort when no endpoint exists; retire only after source publication.
         unrouted = owner;
@@ -204,7 +203,7 @@ export class RuntimeDeliveries {
       } finally {
         if (!queued) captured.release();
       }
-    }, onAdmissionRefusal);
+    });
     unrouted?.release();
     return transferred;
   }

@@ -459,23 +459,12 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
         if (occupied.kind !== "reserve") throw new Error("Expected free byte capacity");
         yield* processCuesOnce(active, { hab: sender, sink });
         assertStrictEquals(active.cues.peekHead(), cue, "own byte refusal cannot destructively fall back");
-        const observerFailure = new Error("cue refusal observer failed");
-        assertStrictEquals(
-          assertThrows(() =>
-            active.deliveries.enqueueCue(
-              sender,
-              active.cues,
-              () => {
-                throw new Error("Unadmitted route resolution");
-              },
-              sender,
-              () => {
-                throw observerFailure;
-              },
-            )
-          ),
-          observerFailure,
-        );
+        const refusal = active.deliveries.enqueueCue(sender, active.cues, () => {
+          throw new Error("Unadmitted route resolution");
+        }, sender);
+        if (typeof refusal === "boolean") throw new Error("Expected occupied byte capacity");
+        if (!(refusal.error instanceof ResourceAdmissionError)) throw new Error("Expected byte refusal");
+        assertEquals(refusal.error.reason, "busy");
         assertStrictEquals(active.cues.peekHead(), cue);
         occupied.reservation.release();
         const foreign = new ResourceAdmissionError("foreign cue preparation busy", "busy");

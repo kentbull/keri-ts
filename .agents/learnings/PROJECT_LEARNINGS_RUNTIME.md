@@ -103,6 +103,10 @@ Cue byte admission returns only its own expected capacity refusal; strict protoc
 producers keep reserveCueBytes, while runtime queues consume admitCueBytes directly.
 Pending query metadata admission returns queued/ineligible/refuse before copying;
 its queue has no refusal observer or disabled inherited methods.
+Cue interpretation and route capture expose their own expected refusal directly;
+the accepting callback may refuse without publishing. Either refusal or a foreign
+throw restores source ownership and releases all unpublished preparation credit.
+Respondant and fallback cue drains consume these outcomes without exception observers.
 Query delivery enqueue likewise returns queued/ineligible/refuse; the query sink
 maps its own busy result directly and never observes exception identities. Foreign
 preparation/service/cleanup failures still throw, preserving the original head.

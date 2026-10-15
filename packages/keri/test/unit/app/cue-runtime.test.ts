@@ -1,9 +1,9 @@
 import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
 import { call, resource, run, spawn, suspend } from "effection";
-import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertObjectMatch, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
-import { prepareCueEmission, type PreparedCueEmission } from "../../../src/app/cue-preparation.ts";
+import { admitCueEmission, prepareCueEmission, type PreparedCueEmission } from "../../../src/app/cue-preparation.ts";
 import { prepareCueRoute } from "../../../src/app/cue-route.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -254,11 +254,9 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
         return interpret.call(hab, input);
       };
       try {
-        const busy = assertThrows(
-          () => prepareCueEmission(hab, ordinary, resources, () => undefined),
-          ResourceAdmissionError,
-        );
-        assertEquals(busy.reason, "busy");
+        const busy = admitCueEmission(hab, ordinary, resources, () => undefined);
+        if (typeof busy === "boolean") throw new Error("Expected byte capacity refusal");
+        assertObjectMatch(busy, { kind: "refuse", error: { reason: "busy" } });
         const limit = assertThrows(
           () => prepareCueEmission(hab, ordinary, new ResourcePolicy({ bytes: 1 }), () => undefined),
           ResourceAdmissionError,
@@ -335,6 +333,10 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
         );
         assertStrictEquals(deck.peekHead(), cue);
         assertEquals(resources.used.bytes, retained, "failed transfer preserves source credit");
+        const refusal = { kind: "refuse" as const, error: new ResourceAdmissionError("destination busy", "busy") };
+        assertStrictEquals(admitCueEmission(hab, deck, resources, () => refusal), refusal);
+        assertStrictEquals(deck.peekHead(), cue);
+        assertEquals(resources.used.bytes, retained, "expected refusal restores source ownership too");
         let owner!: PreparedCueEmission;
         prepareCueEmission(hab, deck, resources, (prepared) => {
           owner = prepared;
@@ -515,7 +517,9 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
         }));
       }
       runtime.cues.push(cue);
-      assertThrows(() => runtime.deliveries.enqueueCue(sender, runtime.cues, route), Error, "Deck capacity");
+      const full = runtime.deliveries.enqueueCue(sender, runtime.cues, route);
+      if (typeof full === "boolean") throw new Error("Expected occupied delivery queue");
+      assertObjectMatch(full, { kind: "refuse", error: { message: "Deck capacity exceeded" } });
       assertEquals([runtime.cues.length, routes], [1, 1], "item refusal precedes interpretation/route acquisition");
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),

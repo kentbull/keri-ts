@@ -1,4 +1,3 @@
-import { ResourceAdmissionError } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
 import { DeckFullError } from "../core/deck.ts";
@@ -62,30 +61,25 @@ export class Respondant implements CueSink {
     const sender = senderHabForCue(this.hby, cue, hint);
     if (!recipient || !topic || !sender) return "ineligible";
     if (this.hby !== runtime.hby || this.poster !== runtime.poster) throw new RangeError("Wrong cue runtime");
-    let refusal: ResourceAdmissionError | DeckFullError | undefined;
-    try {
-      const transferred = runtime.deliveries.enqueueCue(
-        interpreter,
-        runtime.cues,
-        () =>
-          this.poster.findBytesRoute(sender, { recipient, topic }) ?? {
-            sender: sender.pre,
-            recipient,
-            topic,
-            bodyMode: this.hby.cesrBodyMode,
-            kind: "direct",
-            targets: [],
-          },
-        sender,
-        (error) => refusal = error,
-      );
-      return transferred ? "transferred" : "ineligible";
-    } catch (error) {
-      if (refusal && error === refusal && (refusal instanceof DeckFullError || refusal.reason === "busy")) {
-        return "busy";
-      }
-      throw error;
+    const transferred = runtime.deliveries.enqueueCue(
+      interpreter,
+      runtime.cues,
+      () =>
+        this.poster.findBytesRoute(sender, { recipient, topic }) ?? {
+          sender: sender.pre,
+          recipient,
+          topic,
+          bodyMode: this.hby.cesrBodyMode,
+          kind: "direct",
+          targets: [],
+        },
+      sender,
+    );
+    if (typeof transferred !== "boolean") {
+      if (transferred.error instanceof DeckFullError || transferred.error.reason === "busy") return "busy";
+      throw transferred.error;
     }
+    return transferred ? "transferred" : "ineligible";
   }
 
   /** Resolve the existing responder policy for an admitted witness emission without sending or signing again. */
