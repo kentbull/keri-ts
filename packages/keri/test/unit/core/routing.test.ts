@@ -16,6 +16,7 @@ import { DeckFullError } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import {
+  type ReplyPlan,
   type ReplyProcessDecision,
   type ReplyProofDecision,
   Revery,
@@ -25,6 +26,9 @@ import {
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
 import type { RegistryReplyDecision } from "../../../src/vdr/registry-tsn.ts";
 import { expectKind, routingTestApi, withPatchedMethod } from "../../private-access.ts";
+
+// @ts-expect-error An accepted proof plan requires verified material and its prior-reply policy.
+void ({ kind: "accept", escrows: [], cues: [] } satisfies ReplyPlan);
 
 // Compile-time checks: dependency outcomes require their receiver's family;
 // proof verification alone cannot claim a semantic dependency escrow.
@@ -286,7 +290,6 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
       // External escrow must not virtually aggregate proofs which its semantic owner has not published.
       const pending = expectKind(rvy.acceptReply({ ...args, externalEscrow: true }), "unverified");
       assertEquals(pending.reason, "proofPending");
-      assertEquals(Object.isFrozen(pending), true);
       assertEquals(cues.toArray(), [{ kin: "query", pre: hab.pre, q: { pre: hab.pre } }]);
       cues.clear();
       unchanged();
@@ -330,23 +333,19 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
       assertEquals(hby.db.rpys.get([saider.qb64]), null, "default BADA supersession removes previous proof");
       assertEquals([cues.length, resources.used.bytes], [0, 0], "cue-free acceptance needs no cue credit");
       const preparedBody = body("2026-10-13T00:00:00.000004+00:00");
-      const prepared = rvy.prepareReply({
+      const plan = rvy.decideReply({
         serder: preparedBody,
         saider: new Diger({ qb64: preparedBody.said! }),
         route: args.route,
         aid: hab.pre,
         tsgs: [group(preparedBody, [0, 1])],
       });
-      assertEquals(Object.isFrozen(prepared.decision), true);
-      assertThrows(() => prepared.publishQueries(), Error, "successful proof application");
-      assertEquals(hby.db.rpys.get([preparedBody.said!]), null);
-      prepared.applyProofs();
-      assertThrows(() => prepared.applyProofs(), Error, "no longer applicable");
-      prepared.publishQueries();
-      assertThrows(() => prepared.publishQueries(), Error, "successful proof application");
-      prepared.release();
-      prepared.release();
-      assertThrows(() => prepared.applyProofs(), Error, "no longer applicable");
+      const accepted = expectKind(plan, "accept");
+      assertEquals(accepted.accepted.kind, "transferable");
+      assertEquals([plan.cues.length, plan.escrows.length], [0, 0]);
+      assertEquals(hby.db.rpys.get([preparedBody.said!]), null, "evaluation does not persist proof");
+      rvy.writeReply(plan);
+      assertEquals(hby.db.rpys.get([preparedBody.said!])?.said, preparedBody.said);
     } finally {
       yield* hby.close(true);
     }

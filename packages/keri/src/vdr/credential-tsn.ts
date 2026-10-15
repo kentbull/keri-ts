@@ -1,11 +1,12 @@
 import { Dater, Diger, SerderKERI, TraitDex } from "cesr-ts";
+import type { PreparedCueBatch } from "../core/cue-admission.ts";
 import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
 import { VcStateRecord } from "../core/records.ts";
 import {
   acceptReplyDecision,
-  type PreparedReply,
+  type ReplyPlan,
   type ReplyProcessDecision,
   Revery,
   unverifiedReplyDecision,
@@ -84,7 +85,8 @@ export class CredentialStateReceiver {
     if (stored && !registryRecord(stored.asDict())) throw new Error("Corrupt stored registry state.");
     const issuer = stored?.ii ?? aid;
     this.publisher.preflight(1);
-    const escrow = (typ: CredentialEscrowFamily, query: boolean, proof?: PreparedReply): CredentialReplyDecision => {
+    let queries: PreparedCueBatch | undefined;
+    const escrow = (typ: CredentialEscrowFamily, query: boolean, proof?: ReplyPlan): CredentialReplyDecision => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, vci, aid, diger);
       const cues: AgentCue[] = isNew && query
         ? [{
@@ -98,7 +100,7 @@ export class CredentialStateReceiver {
       this.rvy.cues.checkSpace(cues.length);
       const child = cues.length ? this.publisher.prepare(cues) : undefined;
       try {
-        proof?.applyProofs();
+        if (proof) this.rvy.writeReply(proof);
         const added = this.tvy.reger.txnsb.escrowStateNotice({
           typ,
           pre: vci,
@@ -111,7 +113,7 @@ export class CredentialStateReceiver {
         });
         if (added !== isNew) throw new Error("Credential escrow membership changed before publication");
         disposeIncoming();
-        proof?.publishQueries();
+        queries?.publish();
         child?.publish();
         return {
           kind: "unverified",
@@ -145,7 +147,7 @@ export class CredentialStateReceiver {
     if (previous && (!this.tvy.db.sdts.get([previous.qb64]) || !this.tvy.db.rpys.get([previous.qb64]))) {
       throw new Error("Corrupt prior credential reply evidence.");
     }
-    const proof = this.rvy.prepareReply({
+    const proof = this.rvy.decideReply({
       serder,
       saider: diger,
       route,
@@ -156,11 +158,13 @@ export class CredentialStateReceiver {
       retainPrevious: true,
       externalEscrow: true,
     });
+    this.rvy.cues.checkSpace(proof.cues.length);
+    queries = proof.cues.length ? this.publisher.prepare(proof.cues) : undefined;
     try {
-      if (proof.decision.kind !== "accept") {
-        if (proof.decision.reason === "proofPending") return escrow("credential-mae", false, proof);
-        proof.applyProofs();
-        proof.publishQueries();
+      if (proof.kind !== "accept") {
+        if (proof.reason === "proofPending") return escrow("credential-mae", false, proof);
+        this.rvy.writeReply(proof);
+        queries?.publish();
         return reject("Unverified credential state attester.");
       }
       const accepted = this.tvy.reger.tels.getOn(vci, sn);
@@ -183,7 +187,7 @@ export class CredentialStateReceiver {
       this.rvy.cues.checkSpace(cues.length);
       const child = this.publisher.prepare(cues);
       try {
-        proof.applyProofs();
+        this.rvy.writeReply(proof);
         this.tvy.reger.txnsb.updateReply(
           aid,
           serder,
@@ -191,14 +195,14 @@ export class CredentialStateReceiver {
           new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) }),
         );
         if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
-        proof.publishQueries();
+        queries?.publish();
         child?.publish();
         return acceptReplyDecision();
       } finally {
         child?.release();
       }
     } finally {
-      proof.release();
+      queries?.release();
     }
   }
 

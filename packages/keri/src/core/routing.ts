@@ -3,7 +3,7 @@ import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
 import type { CueQueueInput } from "./cue-publishing.ts";
 import { type CuePublisher, cuePublisher } from "./cue-publishing.ts";
-import type { AgentCue } from "./cues.ts";
+import type { QueryCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
@@ -45,28 +45,38 @@ export type ReplyProcessDecision<Family extends string = string> =
     message: string;
   };
 
-/**
- * Caller-owned reply preparation for one synchronous guarded turn. Do not suspend
- * between preparation and application: the evaluated BADA state must stay current.
- * Borrowed proof material remains immutable until application or release.
- */
-export interface PreparedReply {
-  readonly decision: Readonly<ReplyProofDecision>;
-  /** Apply accepted/escrow proof effects once, after all semantic cue admission succeeds. */
-  applyProofs(): void;
-  /** Publish admitted queries after proof and semantic publication. */
-  publishQueries(): void;
-  /** Release unpublished query credit and borrowed proof references; idempotent after publication. */
-  release(): void;
-}
+/** Verified reply material has either one cigar or a complete transferable signer group. */
+export type ReplyProof =
+  & {
+    serder: SerderKERI;
+    saider: Diger;
+    dater: Dater;
+  }
+  & (
+    | { kind: "nontransferable"; cigar: Cigar }
+    | {
+      kind: "transferable";
+      prefixer: Prefixer;
+      seqner: DispatchOrdinal;
+      diger: Diger;
+      sigers: Siger[];
+    }
+  );
 
-/** Finite proof writes and concrete query cues discovered without changing BADA or escrow state. */
-interface ReplyAcceptancePlan {
-  decision: ReplyProofDecision;
-  accepted?: Parameters<Revery["updateReply"]>[0];
-  escrows: Array<Parameters<Revery["escrowReply"]>[0]>;
-  cues: AgentCue[];
-}
+/**
+ * Plain proof effects and queries discovered without writes or cue ownership.
+ * Consume in the same synchronous owner turn; do not suspend or mutate borrowed
+ * proof material between evaluation and persistence.
+ */
+export type ReplyPlan =
+  & {
+    escrows: ReadonlyArray<Parameters<Revery["escrowReply"]>[0]>;
+    cues: readonly QueryCue[];
+  }
+  & (
+    | (ReplyAccept & { accepted: ReplyProof; previous: Diger | null })
+    | ReplyUnverified
+  );
 
 /** Builder for one accepted live reply decision. */
 export function acceptReplyDecision(): ReplyAccept {
@@ -470,68 +480,36 @@ export class Revery {
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): ReplyProofDecision {
-    const prepared = this.prepareReply(args);
+    const plan = this.decideReply(args);
+    this.cues.checkSpace(plan.cues.length);
+    const queries = plan.cues.length ? this.publisher.prepare(plan.cues) : undefined;
     try {
-      prepared.applyProofs();
-      prepared.publishQueries();
-      return prepared.decision;
+      this.writeReply(plan);
+      queries?.publish();
+      if (plan.kind === "accept") return acceptReplyDecision();
+      return { kind: plan.kind, reason: plan.reason, message: plan.message };
     } finally {
-      prepared.release();
+      queries?.release();
     }
   }
 
-  /** Hold prospective query ownership while the semantic caller admits its own publication. */
-  prepareReply(args: Parameters<Revery["acceptReply"]>[0]): PreparedReply {
-    this.publisher.preflight((args.tsgs?.length ?? 0) + 1);
-    let plan: ReplyAcceptancePlan | undefined = this.evaluateReply(args);
-    let previous = args.retainPrevious ? null : args.osaider ?? null;
-    let queries = plan.cues;
-    const decision = plan.decision;
-    Object.freeze(decision);
-    this.cues.checkSpace(queries.length);
-    const batch = queries.length ? this.publisher.prepare(queries) : undefined;
-    let phase: "prepared" | "applying" | "applied" | "published" | "released" = "prepared";
-    return Object.freeze({
-      decision,
-      applyProofs: () => {
-        const proofs = plan;
-        if (phase !== "prepared" || !proofs) throw new Error("Reply preparation is no longer applicable");
-        phase = "applying";
-        try {
-          for (const escrow of proofs.escrows) this.escrowReply(escrow);
-          if (proofs.accepted) {
-            this.updateReply(proofs.accepted);
-            this.removeReply(previous);
-          }
-          phase = "applied";
-        } finally {
-          plan = undefined;
-          previous = null;
-        }
-      },
-      publishQueries: () => {
-        if (phase !== "applied") throw new Error("Reply queries require successful proof application");
-        batch?.publish();
-        phase = "published";
-        queries = [];
-      },
-      release: () => {
-        batch?.release();
-        plan = undefined;
-        previous = null;
-        queries = [];
-        phase = "released";
-      },
-    });
+  /** Persist a plain plan after the caller has admitted all prospective cues. */
+  writeReply(plan: ReplyPlan): void {
+    for (const escrow of plan.escrows) this.escrowReply(escrow);
+    if (plan.kind === "accept") {
+      this.updateReply(plan.accepted);
+      this.removeReply(plan.previous);
+    }
   }
 
   /** Evaluate ordered proof groups with a virtual escrow view before any durable reply effects. */
-  private evaluateReply(args: Parameters<Revery["acceptReply"]>[0]): ReplyAcceptancePlan {
+  decideReply(args: Parameters<Revery["acceptReply"]>[0]): ReplyPlan {
+    this.publisher.preflight((args.tsgs?.length ?? 0) + 1);
     if ((args.tsgs?.length ?? 0) > this.maxReplyGroups || (args.cigars?.length ?? 0) > this.maxReplyGroups) {
       throw new ResourceLimitError("Reply proof groups exceed configured work limit");
     }
-    const escrows: ReplyAcceptancePlan["escrows"] = [];
-    const cues: AgentCue[] = [];
+    const escrows: Array<Parameters<Revery["escrowReply"]>[0]> = [];
+    const cues: QueryCue[] = [];
     // Same-call groups see the last staged pin exactly as they previously saw the durable write.
     const staged = new Map<string, Parameters<Revery["escrowReply"]>[0]>();
     const groupKey = (pre: string, snh: string, said: string) => `${pre}.${snh}.${said}`;
@@ -564,10 +542,11 @@ export class Revery {
       }
 
       return {
-        decision: acceptReplyDecision(),
+        kind: "accept",
+        previous: args.retainPrevious ? null : args.osaider ?? null,
         escrows,
         cues,
-        accepted: { serder: args.serder, saider: args.saider, dater, cigar },
+        accepted: { kind: "nontransferable", serder: args.serder, saider: args.saider, dater, cigar },
       };
     }
 
@@ -662,10 +641,12 @@ export class Revery {
 
       if (tholder.satisfy([...seen])) {
         return {
-          decision: acceptReplyDecision(),
+          kind: "accept",
+          previous: args.retainPrevious ? null : args.osaider ?? null,
           escrows,
           cues,
           accepted: {
+            kind: "transferable",
             serder: args.serder,
             saider: args.saider,
             dater,
@@ -692,11 +673,9 @@ export class Revery {
     return {
       escrows,
       cues,
-      decision: {
-        kind: "unverified",
-        reason: args.externalEscrow && pending ? "proofPending" : "notAccepted",
-        message: `Reply ${args.saider.qb64} at route ${args.route} was not accepted.`,
-      },
+      kind: "unverified",
+      reason: args.externalEscrow && pending ? "proofPending" : "notAccepted",
+      message: `Reply ${args.saider.qb64} at route ${args.route} was not accepted.`,
     };
   }
 
@@ -709,28 +688,16 @@ export class Revery {
    * - `scgs.` for stored verfer+cigar tuples
    * - `ssgs.` for transferable signature groups
    */
-  updateReply(args: {
-    serder: SerderKERI;
-    saider: Diger;
-    dater: Dater;
-    cigar?: Cigar;
-    prefixer?: Prefixer;
-    seqner?: DispatchOrdinal;
-    diger?: Diger;
-    sigers?: Siger[];
-  }): void {
+  updateReply(args: ReplyProof): void {
     const said = args.saider.qb64;
     this.db.sdts.pin([said], args.dater);
     this.db.rpys.pin([said], args.serder);
-    if (args.cigar) {
+    if (args.kind === "nontransferable") {
       this.db.scgs.pin([said], [[
         requireReplyCigarVerfer(args.cigar),
         args.cigar,
       ]]);
-    }
-    if (
-      args.prefixer && args.seqner !== undefined && args.diger && args.sigers
-    ) {
+    } else {
       this.db.ssgs.pin(
         [
           said,
