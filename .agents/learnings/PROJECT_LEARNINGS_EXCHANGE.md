@@ -59,8 +59,9 @@ wins, and a hint applies only to a child with attachments. Parent signatures nev
 supply missing child proofs. CLI proposal/join remains v1. Shared proposal
 publication registers its actual signed wire through intake before transmission,
 so later peer proofs can replay without another approval prompt. Endpoint-role
-initiation still has a separate publication path to reconcile. Preserve first-notice
-behavior or retries can republish approval unnecessarily.
+initiation likewise records each recipient-specific wrapper before delivery and
+returns those actual proposal identities. Preserve first-notice behavior or retries
+can republish approval unnecessarily.
 
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
 proof; metadata offers withhold issuer proofs but still validate carried schemas.
@@ -95,9 +96,11 @@ VDR anchor approval uses the same decoded proof/genus for local signatures and
 combined intake; the registry regression verifies both accepted KEL anchor and
 TEL state. Other VDR/credential input contracts and live issuance qualification
 remain separate work.
-Endpoint-role proposal publication constructs its one known gid/rpy envelope at
-the workflow owner; a one-caller helper accepting arbitrary payload/embed maps
-adds no boundary. Decoded endpoint-reply attributes narrow unknown cid/role/eid
+Endpoint-role publication prepares its known gid/rpy envelope at the workflow
+owner. Keep recipient-specific SAIDs: the existing outbox stores one recipient
+per message SAID, so sharing a wrapper can overwrite retry routing. Report explicit
+recipient/SAID pairs, not a separate unsent wrapper or its attachment size. A
+one-caller helper accepting arbitrary payload/embed maps adds no boundary. Decoded endpoint-reply attributes narrow unknown cid/role/eid
 before acceptance lookup. These local cuts do not close the generic approval
 payload or child-genus contracts.
 

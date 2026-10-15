@@ -10,7 +10,6 @@ import {
 import { MULTISIG_RPY_ROUTE } from "../../../src/app/grouping.ts";
 import type { Hab, Habery } from "../../../src/app/habbing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { Roles } from "../../../src/core/roles.ts";
 
 function makeTransferableHab(hby: Habery, name: string): Hab {
@@ -28,6 +27,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
   await run(function*() {
     const hby = yield* createHabery({
       name: `endpoint-role-propose-${crypto.randomUUID()}`,
+      outboxer: "create",
       temp: true,
       skipConfig: true,
     });
@@ -35,23 +35,42 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
     try {
       const member = makeTransferableHab(hby, "member");
       const remote = makeTransferableHab(hby, "remote");
-      const { hab: group } = hby.makeGroupHab("group", member, [member.pre, remote.pre], undefined, undefined, {
-        isith: "1",
-        nsith: "1",
-        toad: 0,
-      });
+      const other = makeTransferableHab(hby, "other");
+      const { hab: group } = hby.makeGroupHab(
+        "group",
+        member,
+        [member.pre, remote.pre, other.pre],
+        undefined,
+        undefined,
+        {
+          isith: "1",
+          nsith: "1",
+          toad: 0,
+        },
+      );
       hby.habs.delete(remote.pre);
+      hby.habs.delete(other.pre);
 
+      const sent: { recipient: string; said: string }[] = [];
       let sends = 0;
-      runtime.poster.sendExchange = function*(sender, args) {
+      runtime.poster.sendPreparedExchange = function*(sender, args) {
         assertEquals(sender, member);
-        assertEquals(args.recipient, remote.pre);
-        assertEquals(args.route, MULTISIG_RPY_ROUTE);
-        assertEquals(args.payload, { gid: group.pre });
-        assertExists(args.embeds?.rpy);
+        assertEquals(args.recipient, [remote.pre, other.pre][sends]);
+        assertEquals(args.serder.route, MULTISIG_RPY_ROUTE);
+        assertEquals(args.serder.ked?.a, { gid: group.pre, i: args.recipient });
+        assertExists(args.serder.ked?.e);
+        assertEquals(runtime.reactor.exchanger.complete(args.serder.said!), true);
+        assertEquals(hby.db.exns.get([args.serder.said!])?.raw, args.serder.raw);
+        sent.push({ recipient: args.recipient, said: args.serder.said! });
+        // Shared mailbox failure must retain separate recipient routing in the real outbox.
+        runtime.poster.outboxer.queueMessage(args.serder.said!, args.message, {
+          sender: member.pre,
+          recipient: args.recipient,
+          topic: args.topic,
+          createdAt: new Date().toISOString(),
+        }, ["shared-mailbox"]);
         sends++;
-        const [serder] = exchange(args.route, args.payload, { sender: sender.pre });
-        return { serder, deliveries: ["stub-delivery"], queued: [] };
+        return { serder: args.serder, deliveries: [], queued: ["outbox:shared-mailbox"] };
       };
 
       const result = yield* proposeGroupEndpointRole(runtime, group, {
@@ -63,8 +82,14 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       assertEquals(isLocalGroupHab(hby, group), true);
       assertEquals(result.route, MULTISIG_RPY_ROUTE);
       assertEquals(result.group, group.pre);
-      assertEquals(result.deliveries, ["stub-delivery"]);
-      assertEquals(sends, 1);
+      assertEquals(result.proposals, sent);
+      assertEquals(new Set(sent.map((proposal) => proposal.said)).size, 2);
+      assertEquals(result.deliveries, ["outbox:shared-mailbox", "outbox:shared-mailbox"]);
+      assertEquals(sends, 2);
+      assertEquals(
+        [...runtime.poster.outboxer.iterPending()].map((item) => item.message.recipient).sort(),
+        [remote.pre, other.pre].sort(),
+      );
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
