@@ -35,8 +35,11 @@ function credentialRecord(data: unknown): VcStateRecord | null {
     || !row.a || typeof row.a !== "object" || Array.isArray(row.a)
     || !row.ra || typeof row.ra !== "object" || Array.isArray(row.ra)
   ) return null;
-  const a = row.a as Record<string, unknown>, ra = row.ra as Record<string, unknown>;
-  if (Object.keys(a).length !== 2 || !Number.isSafeInteger(a.s) || Number(a.s) < 0) return null;
+  const a = row.a, ra = row.ra as Record<string, unknown>;
+  if (
+    Object.keys(a).length !== 2 || !("s" in a) || typeof a.s !== "number"
+    || !Number.isSafeInteger(a.s) || a.s < 0 || !("d" in a)
+  ) return null;
   if (Object.keys(ra).length && (Object.keys(ra).length !== 3 || !qualifiedPrefix(ra.i) || !ordinal(ra.s))) return null;
   try {
     for (const digest of [row.i, row.d, a.d, ...(Object.keys(ra).length ? [ra.d] : [])]) {
@@ -181,7 +184,7 @@ export class CredentialStateReceiver {
       const fields = ["vn", "i", "s", "d", "ri", "dt", "et"] as const;
       if (
         accepted.qb64 !== record.d || fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(current[key]))
-        || ["s", "d"].some((key) => record.a![key] !== current.a![key])
+        || (["s", "d"] as const).some((key) => record.a![key] !== current.a![key])
         || ["i", "s", "d"].some((key) => record.ra![key] !== current.ra![key])
       ) return reject("Credential state does not match current accepted TEL and anchors.");
       const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];

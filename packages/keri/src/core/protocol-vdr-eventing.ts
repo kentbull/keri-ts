@@ -20,7 +20,13 @@ import {
 import { makeNowIso8601 } from "../time/mod.ts";
 import { ValidationError } from "./errors.ts";
 import { query as coreQuery } from "./protocol-eventing.ts";
-import { RegStateRecord, type RegStateRecordShape, VcStateRecord, type VcStateRecordShape } from "./records.ts";
+import {
+  type CredentialKelAnchor,
+  RegStateRecord,
+  type RegStateRecordShape,
+  VcStateRecord,
+  type VcStateRecordShape,
+} from "./records.ts";
 
 function resolveVersion(version?: Versionage): Versionage {
   return version ?? Vrsn_1_0;
@@ -411,7 +417,7 @@ export function vcstate(
   sn: number,
   ri: string,
   eilk: string,
-  anchor: Record<string, unknown>,
+  anchor: CredentialKelAnchor,
   {
     ra,
     dts,
