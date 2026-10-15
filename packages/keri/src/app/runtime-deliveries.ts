@@ -15,9 +15,8 @@ import { Schemes } from "../core/schemes.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
-import { cueDeliveryBudget } from "./cue-budget.ts";
 import { CueDelivery, type CueTargetPreparation } from "./cue-delivery.ts";
-import { admitCueEmission, type CuePreparationResult, type PreparedCueEmission } from "./cue-preparation.ts";
+import { prepareCueEmission } from "./cue-preparation.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import { DirectReplyDelivery } from "./direct-reply-delivery.ts";
 import { attemptPreparedCesrTarget, introduce, type PreparedCesrTarget, type RawCesrRoute } from "./forwarding.ts";
@@ -83,12 +82,13 @@ interface QueryDelivery {
   destination: string;
 }
 
-const { wireBytes: requestBytes, routeBytes, preparationBytes } = cueDeliveryBudget;
+// Query-request accounting remains a separate removal cut.
+const requestBytes = 8 * 1024 ** 2, routeBytes = 1024 ** 2, preparationBytes = 24 * 1024 ** 2;
 
 /** One shared item slot owns either query bytes, a lazy cue cursor or an exact failed packet. */
 type AdmittedDelivery =
   | { kind: "query"; delivery: QueryDelivery; credit: ResourceReservation }
-  | { kind: "cue"; delivery: CueDelivery; source: PreparedCueEmission }
+  | { kind: "cue"; delivery: CueDelivery }
   | { kind: "reply"; delivery: DirectReplyDelivery }
   | { kind: "target"; delivery: PreparedCesrTarget };
 
@@ -97,16 +97,7 @@ function releaseDelivery(entry: AdmittedDelivery): void {
   if (entry.kind === "query") {
     entry.credit.release();
   } else if (entry.kind === "cue") {
-    const errors: unknown[] = [];
-    for (const owner of [entry.delivery, entry.source]) {
-      try {
-        owner.release();
-      } catch (error) {
-        if (!errors.includes(error)) errors.push(error);
-      }
-    }
-    if (errors.length === 1) throw errors[0];
-    if (errors.length) throw new AggregateError(errors, "Cue delivery cleanup failed");
+    entry.delivery.release();
   } else if (entry.kind === "reply") {
     entry.delivery.release();
   }
@@ -114,7 +105,7 @@ function releaseDelivery(entry: AdmittedDelivery): void {
 
 /** Own query/cue delivery on one finite queue; network work executes outside guarded preparation. */
 export class RuntimeDeliveries {
-  /** Eight owner items including the active head; each kind retains its own admitted bytes. */
+  /** Pending concrete deliveries; each active transport manages its actual I/O. */
   private readonly pending = new Deck<AdmittedDelivery>();
   /** Command-local and background drains cannot deliver the same head concurrently. */
   private draining = false;
@@ -177,23 +168,17 @@ export class RuntimeDeliveries {
     cues: Deck<AgentCue>,
     route: (emission: CueEmission) => RawCesrRoute,
     sender = hab,
-  ): CuePreparationResult {
+  ): { kind: "prepared" } | { kind: "empty" } {
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    let unrouted: PreparedCueEmission | undefined;
-    const transferred = admitCueEmission(hab, cues, this.resources, (owner) => {
-      if (!owner.emission || owner.emission.kind !== "wire") throw new RangeError("Cue delivery requires wire");
-      const captured = route(owner.emission);
-      if (!captured.targets.length) {
-        // Responder routing is best-effort when no endpoint exists; retire only after source publication.
-        unrouted = owner;
-        return undefined;
+    const prepared = prepareCueEmission(hab, cues, (emission) => {
+      if (emission?.kind !== "wire") throw new RangeError("Cue delivery requires wire");
+      const captured = route(emission);
+      if (captured.targets.length) {
+        this.pending.push({ kind: "cue", delivery: new CueDelivery(emission, sender, captured) });
       }
-      const delivery = new CueDelivery(owner.emission, sender, captured);
-      this.pending.push({ kind: "cue", delivery, source: owner });
       return undefined;
     });
-    unrouted?.release();
-    return transferred;
+    return { kind: prepared ? "prepared" : "empty" };
   }
 
   /** Guarded witness transfer; the callback borrow and queued targets share one prepared wire lifetime. */
@@ -201,13 +186,11 @@ export class RuntimeDeliveries {
     runtime: AgentRuntime,
     hab: Hab,
     resolve: (emission: CueEmission) => RawCesrRoute | null,
-    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
-  ): PreparedCueEmission | undefined {
-    if (runtime.resources !== this.resources) throw new RangeError("Wrong witness resource policy");
+  ): CueEmission | undefined {
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    let borrow: PreparedCueEmission | undefined;
+    let borrow: CueEmission | undefined;
     DirectReplyDelivery.prepareCue(runtime, hab, runtime.cues, resolve, (delivery, prepared) => {
-      const emission = prepared.emission;
+      const emission = prepared;
       if (emission?.kind === "transport" && emission.cue.kin === "stream") {
         runtime.mailboxDirector.retainQueryCue(emission.cue);
       } else if (emission?.cue.kin === "query" && emission.kind !== "wire") {
@@ -216,7 +199,7 @@ export class RuntimeDeliveries {
       if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
       else delivery.release();
       borrow = prepared;
-    }, onAdmissionRefusal);
+    });
     return borrow;
   }
 
@@ -242,14 +225,12 @@ export class RuntimeDeliveries {
     runtime: AgentRuntime,
     hab: Hab,
     reply: QueryReply,
-    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): boolean {
-    if (runtime.resources !== this.resources) throw new RangeError("Wrong reply resource policy");
     if (this.closed) throw new Error("Runtime deliveries are closed");
     return DirectReplyDelivery.prepareQueued(runtime, hab, reply, (delivery) => {
       if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
       else delivery.release();
-    }, onAdmissionRefusal);
+    });
   }
 
   /** A failed packet remains an ordinary record; no target advances if the queue cannot accept it. */

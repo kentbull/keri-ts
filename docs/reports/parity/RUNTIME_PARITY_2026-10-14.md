@@ -49,7 +49,8 @@ list AGID. Supplied bound JSON resources and generated default schemas stay dist
 256 MiB byte budget and eight streams/one decryption after [#336][headroom].
 The scale observations used two streams/one decryption. Headroom for simultaneous
 mailbox/SSE polls and independent work is policy, not a protocol maximum; it does
-not supply an eight-concurrency volume result. Producer/consumer ports retain cue/tree/output credit through joined cleanup.
+not supply an eight-concurrency volume result. The later October 15 cleanup removes cue/output credit; actual reader and
+iterator cleanup still joins cancellation. Parser/tree accounting remains pending.
 Historical [#328][activation] installed cue ownership accounting. The October 15
 cleanup removes that layer: default runtime and mailbox queues now carry ordinary
 Deck records; joined output cleanup still precedes store closure.

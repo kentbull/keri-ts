@@ -11,10 +11,8 @@ import { action, call, createScope, type Operation, race, resource, useScope } f
 import {
   type AgentRuntime,
   chunkBytes,
-  Deck,
+  type CueEmission,
   type Hab,
-  prepareCueEmission,
-  type PreparedCueEmission,
   processCuesOnce,
   type QueryReply,
   respondantCueSink,
@@ -165,31 +163,16 @@ function* processWitnessSocket(
           }
         });
         type Batch = NonNullable<ReturnType<QueryReply["takeAll"]>>;
-        /** Borrow one captured batch until every admitted output and source cleanup joins. */
+        /** Interpret captured replies under the guard and write them through the existing socket. */
         function* sendBatch(batch: Batch): Operation<void> {
           for (const cue of batch.cues) {
             yield* call(function*() {
-              let output: PreparedCueEmission | undefined;
-              yield* resource<void>(function*(provide) {
-                const hydration = runtime.resources.reserve({ bytes: runtime.replyStreams.preparationByteFloor });
-                if (hydration.kind === "refuse") {
-                  throw new ResourceAdmissionError("TCP reply preparation refused", hydration.reason);
-                }
-                try {
-                  yield* provide();
-                } finally {
-                  output?.release();
-                  hydration.reservation.release();
-                }
-              });
+              let output: CueEmission | undefined;
               yield* runtime.reactor.settle(undefined, {}, function*() {
-                prepareCueEmission(serviceHab, new Deck([cue]), runtime.resources, (owner) => {
-                  output = owner;
-                  return undefined;
-                });
+                output = serviceHab.interpretCue(cue);
               });
               yield* writeCesrTcpSocket(socket, async function*(signal) {
-                for (const message of output!.emission!.messages) {
+                for (const message of output!.messages) {
                   yield* chunkBytes(message, { signal, maxChunkBytes: 65536 });
                 }
               }, { services: runtime.services });

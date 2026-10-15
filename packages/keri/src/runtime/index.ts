@@ -109,7 +109,7 @@ export * from "../time/mod.ts";
 export * from "../vdr/credentialing.ts";
 export * from "../vdr/eventing.ts";
 
-export { prepareCueEmission, type PreparedCueEmission } from "../app/cue-preparation.ts";
+export { prepareCueEmission } from "../app/cue-preparation.ts";
 
 export { type QueryReply } from "../app/query-replies.ts";
 

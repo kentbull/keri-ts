@@ -73,10 +73,6 @@ export function respondantCueSink(runtime: AgentRuntime, hab?: Hab | null): CueS
           },
         sender,
       );
-      if (transferred.kind === "refuse") {
-        if (transferred.error.reason === "busy") return "busy";
-        throw transferred.error;
-      }
       return transferred.kind === "prepared" ? "transferred" : "ineligible";
     },
     send: (emission) => runtime.respondant.sendWithHab(emission, hab),

@@ -1,4 +1,3 @@
-import { ResourceAdmissionError } from "cesr-ts";
 import { type Operation } from "effection";
 import {
   type AgentCue,
@@ -20,7 +19,6 @@ export function* drainRuntimeCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
   cues: Deck<AgentCue>,
-  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): Operation<void> {
   if (cues !== runtime.cues) throw new RangeError("HTTP cue drain requires the runtime source deck");
   const habitats = runtime.hby.habs.values();
@@ -54,7 +52,7 @@ export function* drainRuntimeCues(
     },
     send: destination.send,
   };
-  yield* processCuesOnce(runtime, { hab, sink, onAdmissionRefusal });
+  yield* processCuesOnce(runtime, { hab, sink });
   // Network/capacity checks run after the synchronous guarded transfers.
   yield* runtime.deliveries.process(runtime);
 }

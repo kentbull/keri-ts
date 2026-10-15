@@ -326,23 +326,6 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
         })
       );
       const handler = createProtocolHandler(runtime, { serviceHab: alice, directQueryResponses: true });
-      const occupied = Array.from({ length: 8 }, (_, i) => runtime.reactor.replies.reserve(`occupied-${i}`));
-      try {
-        const refused = yield* call(() =>
-          handler(
-            new Request("http://localhost/", {
-              method: "POST",
-              headers: { "content-type": "application/cesr" },
-              body: alice.query(bob.pre, alice.pre, { route: "logs", q: {} }) as Uint8Array<ArrayBuffer>,
-            }),
-          )
-        );
-        assertEquals(refused.status, 413);
-        yield* call(() => refused.body?.cancel());
-        assertEquals(runtime.resources.used.bytes, 0, "pre-dispatch refusal releases ordinary frame ownership");
-      } finally {
-        for (const slot of occupied) slot.close();
-      }
       // Both requests share protocol state and the cue worker, but each reserves its query SAID before dispatch.
       const requests = [alice, bob].map((hab) =>
         handler(

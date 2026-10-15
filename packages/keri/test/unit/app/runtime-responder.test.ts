@@ -1,4 +1,4 @@
-import { ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
+import { ResourceAdmissionError } from "cesr-ts";
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import {
@@ -239,6 +239,7 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
           interpretations++;
           return witnessWire = receipt(...args);
         };
+        runtime.cues.push({ kin: "proof", said: "ignored by habitat interpretation" });
         runtime.cues.push({ kin: "witness", serder: hby.db.getEvtSerder(recipient.pre, recipient.kever!.said)! });
         const emissions = yield* processWitnessIngress(
           runtime,
@@ -268,15 +269,9 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
           });
         runtime.cues.push({ kin: "replay", messages });
         const failed = yield* call(() =>
-          assertRejects(
-            () => run(() => drainWitnessCues(runtime, witness, runtime.cues, { deliver: false })),
-            AggregateError,
-          )
+          assertRejects(() => run(() => drainWitnessCues(runtime, witness, runtime.cues, { deliver: false })))
         );
-        assertEquals(failed.errors[0] instanceof ResourceLimitError, true);
-        assertEquals(failed.errors[0].message, "Finite witness output exceeds byte limit");
-        assertStrictEquals(failed.errors[1], cleanupFailure);
-        assertEquals(runtime.resources.used.bytes, 0, "late aggregate refusal publishes no partial result or credit");
+        assertStrictEquals(failed, cleanupFailure, "actual iterator cleanup failure retains its identity");
       } finally {
         yield* runtime.close();
       }
@@ -436,20 +431,6 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
         active.cues.push(cue);
         const sink = respondantCueSink(active, sender);
         assertEquals(active.resources.used.bytes, 0, "queued records carry no byte credit");
-        const occupied = active.resources.reserve({
-          bytes: active.resources.limits.bytes - active.resources.used.bytes,
-        });
-        if (occupied.kind !== "reserve") throw new Error("Expected free byte capacity");
-        yield* processCuesOnce(active, { hab: sender, sink });
-        assertStrictEquals(active.cues.peekHead(), cue, "own byte refusal cannot destructively fall back");
-        const refusal = active.deliveries.enqueueCue(sender, active.cues, () => {
-          throw new Error("Unadmitted route resolution");
-        }, sender);
-        if (refusal.kind !== "refuse") throw new Error("Expected occupied byte capacity");
-        if (!(refusal.error instanceof ResourceAdmissionError)) throw new Error("Expected byte refusal");
-        assertEquals(refusal.error.reason, "busy");
-        assertStrictEquals(active.cues.peekHead(), cue);
-        occupied.reservation.release();
         const foreign = new ResourceAdmissionError("foreign cue preparation busy", "busy");
         const resolve = active.poster.findBytesRoute;
         for (const phase of ["interpret", "route"]) {
@@ -466,7 +447,7 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
               foreign,
             );
             assertStrictEquals(active.cues.peekHead(), cue);
-            assertEquals(active.resources.used.bytes, 0, "failed preparation releases its output credit");
+            assertEquals(active.resources.used.bytes, 0, "failed preparation leaves no queued output");
           } finally {
             sender.interpretCue = interpretation;
             active.poster.findBytesRoute = resolve;

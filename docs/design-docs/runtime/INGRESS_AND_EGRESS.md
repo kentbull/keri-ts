@@ -79,14 +79,14 @@ outside Reactor. Only observed engine-created admission refusals become HTTP
 capacity responses; foreign same-class source/preparation failures propagate.
 Explicit endpoint absence keeps the responder’s existing best-effort no-delivery
 outcome; no-target cleanup follows source transfer without a second interpretation.
-Witness source intake also prepares in short guarded turns and consumes callbacks
-outside Reactor. One existing delivery batch keeps the once-interpreted wire until
-queued targets and joined callback cleanup both finish; queued targets own their
-route. Busy preserves input. The source API collects no aggregate. Finite wrappers reserve 8 MiB output
-before copies and return caller-owned snapshots bounded by that local byte ceiling
-and captured cue-count capacity, including copied replay.messages. No lazy owner
-escapes. Parser/callback cleanup joins before output credit releases; late iterator
-and cleanup failures propagate together. Cue queues carry ordinary records.
+Witness source intake prepares emission records in short guarded turns and runs
+callbacks outside Reactor. Queued delivery and HTTP/witness callbacks use the same
+once-interpreted messages with independent actual iterator/reader cleanup. Cue
+interpretation has no output byte reservation, preparation floor or release handle.
+A record with no emission is still consumed; later records in the initial pass
+continue. Finite wrappers copy messages into caller-owned arrays and close each
+source iterator before returning; streaming callbacks collect no aggregate.
+Iterator and cleanup failures retain identity or aggregate when distinct.
 
 The generic HTTP route consumes its request body progressively and appends a
 separately bounded CESR attachment header. Administrative requests still collect
