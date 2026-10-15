@@ -2,7 +2,7 @@ import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
 /** Synchronous admitted cue interpretation; destination owners provide retention and joined delivery. */
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type ResourceReservation } from "cesr-ts";
-import { admitCueBytes, type CueByteReservation, type OwnedCue } from "../core/cue-admission.ts";
+import type { OwnedCue } from "../core/cue-admission.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck, type DeckFullError } from "../core/deck.ts";
 import type { Hab } from "./habbing.ts";
@@ -49,7 +49,8 @@ export function prepareCueEmission(
  * transformation runs within preparation credit and the final finite output check.
  * Failed preparation leaves the original cue/credit
  * available for retry. Replay metadata stays borrowed and unopened, never collected.
- * This is logical copy/retention allowance, not a decoded/capture/native allocation bound.
+ * Plain cue records stay borrowed without recursive metadata charges. Output credit
+ * is a logical allowance, not a decoded/capture/native allocation bound.
  */
 export function admitCueEmission(
   hab: Hab | null,
@@ -71,26 +72,11 @@ export function admitCueEmission(
       error: new ResourceAdmissionError("Cue interpretation exceeds shared byte capacity", "limit"),
     };
   }
-  let input: CueByteReservation | undefined;
   let output: ResourceReservation | undefined;
   let preparation: ResourceReservation | undefined, original: OwnedCue | undefined;
-  let inputBytes = heldInput;
   let published = false, live = true;
   let emission: CueEmission | undefined;
   try {
-    if (!owned) {
-      const admission = admitCueBytes(resources, [cue]);
-      if (admission.kind === "refuse") return admission;
-      input = admission.reservation;
-      inputBytes = input.bytes;
-      // Synchronous inspection has no yield; classify this operation's own combined floor before contention.
-      if (inputBytes + wireBytes + preparationBytes > resources.limits.bytes) {
-        return {
-          kind: "refuse",
-          error: new ResourceAdmissionError("Cue retention and interpretation exceed shared capacity", "limit"),
-        };
-      }
-    }
     const retained = resources.reserve({ bytes: wireBytes });
     if (retained.kind === "refuse") {
       return { kind: "refuse", error: new ResourceAdmissionError("Cue output admission refused", retained.reason) };
@@ -125,7 +111,7 @@ export function admitCueEmission(
       if (size > wireBytes) throw new ResourceLimitError("Cue output exceeds finite interpretation limit");
     }
     const owner: PreparedCueEmission = {
-      retainedBytes: inputBytes + wireBytes,
+      retainedBytes: heldInput + wireBytes,
       resourcePolicy: resources,
       get emission() {
         if (!live) throw new Error("Cue emission owner is released");
@@ -137,7 +123,6 @@ export function admitCueEmission(
         live = false;
         emission = undefined;
         original?.release();
-        input?.release();
         output!.release();
       },
     };
@@ -158,7 +143,6 @@ export function admitCueEmission(
       try {
         if (original) owned!.requeue(original);
       } finally {
-        input?.release();
         output?.release();
       }
     }

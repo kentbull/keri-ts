@@ -2,7 +2,6 @@ import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
 /** One interpreted reply batch owned by delivery and a borrowed HTTP/witness consumer until both close. */
 import { ResourceAdmissionError, type ResourcePolicy } from "cesr-ts";
-import { reserveCueBytes } from "../core/cue-admission.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
@@ -122,18 +121,18 @@ export class DirectReplyDelivery {
     try {
       reply.admit((cues, release) => {
         batch.releaseInput = release;
-        const input = reserveCueBytes(runtime.resources, cues, undefined, onAdmissionRefusal, {
-          additionalBytes: reply.retainedBytes + responseBytes
-            + cues.length * cueDeliveryBudget.preparationFloorBytes,
-          maxBytes: cueDeliveryBudget.wireBytes,
-        });
+        const preparationBytes = responseBytes + cues.length * cueDeliveryBudget.preparationFloorBytes;
+        if (reply.retainedBytes + preparationBytes > runtime.resources.limits.bytes) {
+          const refusal = new ResourceAdmissionError("Direct reply preparation exceeds shared byte capacity", "limit");
+          onAdmissionRefusal?.(refusal);
+          throw refusal;
+        }
         let response: ReturnType<AgentRuntime["replyStreams"]["prepare"]> | undefined;
         try {
           // One synchronous combined preflight guarantees all internal acquisitions before signing.
           const combined = runtime.resources.reserve({
             streams: publish ? 1 : 0,
-            bytes: responseBytes + cues.length * cueDeliveryBudget.preparationFloorBytes
-              + 2 * input.bytes,
+            bytes: preparationBytes,
           });
           if (combined.kind === "refuse") {
             const refusal = new ResourceAdmissionError("Direct reply preparation refused", combined.reason);
@@ -189,7 +188,6 @@ export class DirectReplyDelivery {
           prepare(0);
         } finally {
           response?.release();
-          input.release();
         }
         return undefined;
       });

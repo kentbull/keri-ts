@@ -261,11 +261,6 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
           ResourceAdmissionError,
         );
         assertEquals(limit.reason, "limit");
-        const combined = assertThrows(
-          () => prepareCueEmission(hab, ordinary, new ResourcePolicy({ bytes: 32 * 1024 ** 2 }), () => undefined),
-          ResourceAdmissionError,
-        );
-        assertEquals(combined.reason, "limit");
         const sourcePolicy = new ResourcePolicy({ bytes: 40 * 1024 ** 2 });
         const source = new CueDeck(sourcePolicy, 1);
         source.push({ kin: "replay", messages: [new Uint8Array(9 * 1024 ** 2)] });
@@ -292,17 +287,34 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
         })), ResourceLimitError);
       assertStrictEquals(ordinary.peekHead(), cue);
       assertEquals(resources.used.bytes, 0, "transformed output remains subject to finite wire admission");
+      const plainPolicy = new ResourcePolicy({ bytes: 32 * 1024 ** 2 });
+      const plainDeck = new Deck<AgentCue>([cue]);
+      let plainOwner: PreparedCueEmission | undefined;
+      assertEquals(
+        prepareCueEmission(hab, plainDeck, plainPolicy, (owner) => {
+          plainOwner = owner;
+        }),
+        true,
+        "borrowed input needs no additional metadata credit",
+      );
+      assertEquals(plainDeck.empty, true);
+      plainOwner!.release();
+      assertEquals(plainPolicy.used.bytes, 0);
       const floorPolicy = new ResourcePolicy({ bytes: 33 * 1024 ** 2 }), floorDeck = new Deck<AgentCue>([cue]);
       let selected = 0;
-      const floorError = assertThrows(() =>
-        prepareCueEmission(hab, floorDeck, floorPolicy, (owner) => {
-          prepareCueRoute(floorPolicy, owner, () => {
-            selected++;
-            throw fault;
-          });
-          return undefined;
-        }), ResourceAdmissionError);
-      assertEquals([floorError.reason, selected, floorPolicy.used.bytes], ["limit", 0, 0]);
+      assertStrictEquals(
+        assertThrows(() =>
+          prepareCueEmission(hab, floorDeck, floorPolicy, (owner) => {
+            prepareCueRoute(floorPolicy, owner, () => {
+              selected++;
+              throw fault;
+            });
+            return undefined;
+          })
+        ),
+        fault,
+      );
+      assertEquals([selected, floorPolicy.used.bytes], [1, 0]);
       assertStrictEquals(floorDeck.peekHead(), cue);
       for (const deck of [ordinary, new CueDeck(resources, 1)]) {
         if (deck instanceof CueDeck) {

@@ -72,6 +72,9 @@ Query delivery borrows its input record without recursively estimating or reserv
 its metadata again. Existing held source credit still participates in the combined
 capacity check to distinguish impossible work from temporary contention. The
 prepared wire ceiling is checked after construction; it is not an input-allocation bound.
+Cue interpretation and direct replies likewise borrow plain input records without
+recursive metadata charges. Admitted source owners still survive fanout and joined
+cleanup; combined preparation includes their existing credit, never a duplicate estimate.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state. Without explicit mailbox routes, poll every eligible witness
 mailbox in stable order through the existing per-endpoint workers. A logs reply is stored at the
@@ -157,7 +160,7 @@ Runtime delivery admission returns queued/ineligible/refuse before wire preparat
 its query sink consumes that result directly. QueryCoordinator retains plain Deck
 records without restoring removed metadata reservations or queue caps.
 CueReader exposes only borrowing, transfer, and requeue; interpreting a plain
-queue still admits its input separately and removes it only after acceptance.
+queue borrows its input record and removes it only after acceptance.
 CueDeck composes one Deck<OwnedCue>; it has no raw-cue mirror or destructive unowned removal API.
 CueReader describes actual admitted ownership only. Standalone caller-owned Decks
 are read and written directly, without synthetic owners or publication adapters.

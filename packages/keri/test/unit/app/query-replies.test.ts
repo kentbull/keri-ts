@@ -319,7 +319,13 @@ Deno.test("queued replies preserve atomic slots without borrowing an HTTP respon
       assertStrictEquals(assertThrows(() => runtime.deliveries.enqueueReply(runtime, sender, slot)), preparation);
       assertEquals([runtime.deliveries.hasPending, runtime.resources.used.bytes], [false, retained]);
       failPrepare = false;
-      assertEquals(runtime.deliveries.enqueueReply(runtime, sender, slot), true);
+      const occupied = runtime.resources.reserve({ bytes: runtime.resources.limits.bytes - retained - 66 * 1024 ** 2 });
+      if (occupied.kind !== "reserve") throw new Error("Expected available reply preparation capacity");
+      try {
+        assertEquals(runtime.deliveries.enqueueReply(runtime, sender, slot), true);
+      } finally {
+        occupied.reservation.release();
+      }
       assertEquals([slot.takeAll(), runtime.resources.used.streams], [undefined, 2]);
       receives.reservation.release();
       slot.close();
