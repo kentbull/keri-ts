@@ -486,7 +486,7 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
         },
       },
     });
-    const cue = { kin: "query" as const, pre: sender.pre, src: sender.pre, route: "logs", q: {} };
+    const cue = { kin: "query" as const, pre: sender.pre, src: sender.pre, route: "logs" as const, q: {} };
     const route = () => {
       routes++;
       return {
@@ -504,7 +504,7 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
     try {
       runtime.cues.push(cue);
       assertEquals(runtime.deliveries.enqueueCue(sender, runtime.cues, route), true);
-      const query = sender.query(sender.pre, sender.pre, {}, "logs");
+      const query = sender.query(sender.pre, sender.pre, { route: "logs" as const, q: {} });
       for (let index = 0; index < 7; index++) {
         runtime.deliveries.enqueue(() => ({
           url: "https://query.test/",
@@ -624,7 +624,7 @@ Deno.test("cue delivery releases its guarded turn but retains owners until HTTP 
         },
       },
     });
-    runtime.cues.push({ kin: "query", pre: hab.pre, src: hab.pre, route: "logs", q: {} });
+    runtime.cues.push({ kin: "query", pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} });
     runtime.deliveries.enqueueCue(hab, runtime.cues, () => ({
       sender: hab.pre,
       recipient: hab.pre,

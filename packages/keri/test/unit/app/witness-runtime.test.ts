@@ -720,7 +720,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
           1,
           "TX borrows its connection permit while both RX slots are occupied",
         );
-        active.write(controller.query(controller.pre, witness.pre, { sn: "0" }, "logs"));
+        active.write(controller.query(controller.pre, witness.pre, { route: "logs", q: { s: "0" } }));
         for (let attempt = 0; attempt < 200 && replayed !== 3; attempt++) yield* sleepOp(10);
         assertEquals(replayed, 3, "correlated query replay drains on its existing socket before EOF");
         assertEquals(foreignReplay, false, "shared cues from another request cannot leak to this socket");
@@ -742,7 +742,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         driver = yield* spawn(() =>
           runAgentRuntime(runtime, { hab: witness, sink: respondantCueSink(runtime, witness) })
         );
-        active.write(controller.query(controller.pre, witness.pre, { s: "3" }, "logs"));
+        active.write(controller.query(controller.pre, witness.pre, { route: "logs", q: { s: "3" } }));
         for (let attempt = 0; attempt < 200 && providerHby.db.qnfs.cnt() !== 1; attempt++) yield* sleepOp(10);
         assertEquals(providerHby.db.qnfs.cnt(), 1, "missing sequence is the actual KERIpy query-not-found escrow");
         controller.interact();
@@ -769,7 +769,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         reset.on("error", () => {});
         reset.resume();
         yield* call(() => once(reset, "connect"));
-        reset.end(controller.query(controller.pre, witness.pre, { s: "99" }, "logs"));
+        reset.end(controller.query(controller.pre, witness.pre, { route: "logs", q: { s: "99" } }));
         for (let attempt = 0; attempt < 200 && drains.length !== priorDrains + 2; attempt++) yield* sleepOp(10);
         assertEquals(drains.length, priorDrains + 2, "the pending reply outlives real receive EOF");
         reset.resetAndDestroy();
@@ -781,7 +781,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         expires.resume();
         yield* call(() => once(expires, "connect"));
         const expired = new Promise<void>((resolve) => expires.once("close", resolve));
-        expires.end(controller.query(controller.pre, witness.pre, { s: "100" }, "logs"));
+        expires.end(controller.query(controller.pre, witness.pre, { route: "logs", q: { s: "100" } }));
         yield* race([
           call(() => expired),
           (function*() {
@@ -797,8 +797,8 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         busy.resume();
         yield* call(() => once(busy, "connect"));
         const busyClosed = new Promise<void>((resolve) => busy.once("close", resolve));
-        busy.write(controller.query(controller.pre, witness.pre, { s: "101" }, "logs"));
-        busy.write(controller.query(controller.pre, witness.pre, { s: "102" }, "logs"));
+        busy.write(controller.query(controller.pre, witness.pre, { route: "logs", q: { s: "101" } }));
+        busy.write(controller.query(controller.pre, witness.pre, { route: "logs", q: { s: "102" } }));
         yield* race([
           call(() => busyClosed),
           (function*() {

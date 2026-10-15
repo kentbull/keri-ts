@@ -31,7 +31,7 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
     try {
       hby.db.locs.pin([recipient.pre, "http"], { url: "https://recipient.test/" });
       hby.db.ends.pin([recipient.pre, Roles.controller, recipient.pre], { allowed: true });
-      const wire = sender.query(sender.pre, sender.pre, {}, "logs");
+      const wire = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
       const cue = { kin: "replay" as const, src: sender.pre, dest: recipient.pre, messages: [wire] };
       runtime.cues.push(cue);
       const draining = run(() => drainRuntimeCues(runtime, sender, runtime.cues));
@@ -39,7 +39,7 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       assertEquals(runtime.cues.empty, true);
       assertEquals(runtime.resources.used.bytes > 0, true);
       yield* runtime.reactor.settle(undefined, {}, function*() {
-        runtime.cues.push({ kin: "query", pre: "unresolved", q: {} });
+        runtime.cues.push({ kin: "query", pre: "unresolved", route: "logs", q: {} });
       });
       assertEquals(runtime.cues.length, 1, "another guarded turn progresses during network wait");
       failure = new ResourceAdmissionError("foreign fetch busy", "busy");

@@ -139,19 +139,28 @@ their existing producer behavior and remain distinct from accepted TSN validatio
 
 `keri-ts` intentionally keeps two states under one `QueryCue` contract. Both use
 one required `q` body, as KERIpy does; there is no `query` alias or precedence rule.
+Routed work requires `pre` and a concrete `route`: logs accepts sequence/FEL/anchor
+filters, ksn accepts sequence/FEL filters, and tels/tsn require registry and credential
+identifiers. The target appears once in the envelope. Hab.query accepts the same
+instruction, or the existing mbx topic-cursor form. The raw query constructor remains
+an open codec boundary for extension routes and malformed-input vectors.
+
 Continuation-owned pending requests use the same field. Copy the top level at the
 existing ownership boundaries before normalization or signing; preserve nested
 immutable borrows and joined retry/cancellation lifetimes.
 
 TEL recovery notifications carry concrete `q.ri` and `q.i` fields, with `q.issr`
 when the registry itself is unknown. This does not add a transport consumer for
-TEL/schema notifications. Route-specific query variants remain part of the
-ADR-0013 migration.
+TEL/schema notifications. Schema and credential-recovery `query` notices retain
+their concrete KERIpy-shaped q.r hints; they are separate from routed work.
+Notices remain notify-only even if a hint happens to name a known KEL. They must
+not fall through to a logs request. Producers use canonical s filters directly;
+there is no sn/anchor alias normalization or redundant r/dig wire hint.
 
 Incomplete cue:
 
 - usually produced by `Revery` or `Kevery`
-- carries its body in `q`; `pre`, `route`, and `wits` may still be unresolved
+- carries a concrete route/body and target; `wits` may still be unresolved
 - does not yet know the honest `src`
 - does not yet know whether runtime can honestly choose a local habitat
 

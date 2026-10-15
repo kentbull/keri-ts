@@ -19,7 +19,14 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run, sleep, spawn, suspend } from "effection";
-import { assertEquals, assertExists, assertInstanceOf, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertExists,
+  assertInstanceOf,
+  assertRejects,
+  assertStrictEquals,
+} from "jsr:@std/assert";
 import { join } from "jsr:@std/path";
 import {
   createAgentRuntime,
@@ -326,7 +333,7 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
             new Request("http://localhost/", {
               method: "POST",
               headers: { "content-type": "application/cesr" },
-              body: alice.query(bob.pre, alice.pre, {}, "logs") as Uint8Array<ArrayBuffer>,
+              body: alice.query(bob.pre, alice.pre, { route: "logs", q: {} }) as Uint8Array<ArrayBuffer>,
             }),
           )
         );
@@ -342,7 +349,7 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
           new Request("http://localhost/", {
             method: "POST",
             headers: { "content-type": "application/cesr" },
-            body: alice.query(hab.pre, alice.pre, {}, "logs") as Uint8Array<ArrayBuffer>,
+            body: alice.query(hab.pre, alice.pre, { route: "logs", q: {} }) as Uint8Array<ArrayBuffer>,
           }),
         )
       );
@@ -379,7 +386,7 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
           new Request("http://localhost/", {
             method: "POST",
             headers: { "content-type": "application/cesr" },
-            body: alice.query(bob.pre, alice.pre, {}, "logs") as Uint8Array<ArrayBuffer>,
+            body: alice.query(bob.pre, alice.pre, { route: "logs", q: {} }) as Uint8Array<ArrayBuffer>,
             signal: abort.signal,
           }),
         );
@@ -420,8 +427,14 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       yield* runtime.reactor.processBytes(alice.makeEndRole(alice.pre, "mailbox", true));
       const handler = createProtocolHandler(runtime, { serviceHab: alice, directQueryResponses: true });
       const requests = [
-        concatBytes(alice.query(alice.pre, alice.pre, {}, "logs"), acceptedEventReplayMessage(hby, bob.pre, 0).message),
-        concatBytes(alice.query(bob.pre, alice.pre, {}, "logs"), alice.query(alice.pre, alice.pre, {}, "logs")),
+        concatBytes(
+          alice.query(alice.pre, alice.pre, { route: "logs", q: {} }),
+          acceptedEventReplayMessage(hby, bob.pre, 0).message,
+        ),
+        concatBytes(
+          alice.query(bob.pre, alice.pre, { route: "logs", q: {} }),
+          alice.query(alice.pre, alice.pre, { route: "logs", q: {} }),
+        ),
       ];
       const replies: Response[] = [];
       for (const body of requests) {
@@ -684,8 +697,10 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
         const missing = yield* call(() => post(0, [source]));
         assertEquals(missing.status, 403, "an older authorized cue cannot override missing source state");
         yield* call(() => missing.text());
+        const pending = runtime.querying.pending.peekHead();
+        assert(pending?.route === "logs");
         assertEquals(
-          runtime.querying.pending.peekHead()?.q.s,
+          pending.q.s,
           "63",
           "HTTP preserves the exact missing-state query",
         );
@@ -764,7 +779,9 @@ Deno.test("direct HTTP TSN query retains both independently verifiable replies",
             new Request("http://localhost/", {
               method: "POST",
               headers: { "content-type": "application/cesr" },
-              body: requester.query(issuer.pre, issuer.pre, { ri: vcp.pre, i: id }, "tsn") as Uint8Array<ArrayBuffer>,
+              body: requester.query(issuer.pre, issuer.pre, { route: "tsn", q: { ri: vcp.pre!, i: id } }) as Uint8Array<
+                ArrayBuffer
+              >,
             }),
           ))
         );

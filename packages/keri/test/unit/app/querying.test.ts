@@ -17,16 +17,34 @@ import {
 } from "../../../src/app/agent-runtime.ts";
 import { queryCommand } from "../../../src/app/cli/query.ts";
 import { type CueSink } from "../../../src/app/cue-runtime.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { type AnchorQuerier, QueryCoordinator } from "../../../src/app/querying.ts";
 import { reserveCueBytes } from "../../../src/core/cue-admission.ts";
-import type { QueryCue, TelQueryCue } from "../../../src/core/cues.ts";
+import type { QueryCue, QueryInstruction, TelQueryCue } from "../../../src/core/cues.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { type KeverEventEnvelope } from "../../../src/core/eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 
 // @ts-expect-error There is one query body; the legacy alias cannot coexist with q.
-void ({ kin: "query", q: {}, query: {} } satisfies QueryCue);
+void ({ kin: "query", pre: "aid", route: "logs", q: {}, query: {} } satisfies QueryCue);
+// @ts-expect-error Routed work must identify its target.
+void ({ kin: "query", route: "logs", q: {} } satisfies QueryCue);
+// @ts-expect-error Local query work must select a route.
+void ({ kin: "query", pre: "aid", q: {} } satisfies QueryCue);
+// @ts-expect-error TEL queries require the registry as well as the credential.
+void ({ route: "tels", q: { i: "credential" } } satisfies QueryInstruction);
+// @ts-expect-error KEL queries cannot carry a TEL registry body.
+void ({ route: "logs", q: { ri: "registry", i: "credential" } } satisfies QueryInstruction);
+// @ts-expect-error KSN queries do not accept an anchor filter.
+void ({ route: "ksn", q: { a: { i: "aid", s: "0", d: "digest" } } } satisfies QueryInstruction);
+// @ts-expect-error A recovery notice has no outbound attester yet.
+void ({ kin: "query", src: "aid", q: { r: "schema", said: "schema" } } satisfies QueryCue);
+// @ts-expect-error Mailbox signing requires its topic cursors.
+void ({ route: "mbx", q: {} } satisfies Parameters<Hab["query"]>[2]);
+// @ts-expect-error Recovery sequences use the canonical wire filter s.
+void ({ route: "logs", q: { sn: "1" } } satisfies QueryInstruction);
+// @ts-expect-error The route is authoritative; there is no redundant body route.
+void ({ route: "logs", q: { r: "logs" } } satisfies QueryInstruction);
 // @ts-expect-error TEL recovery must identify its registry and credential.
 void ({ kin: "telquery", q: { i: "credential" } } satisfies TelQueryCue);
 // @ts-expect-error Anchor queries require the event digest, not an optional payload bag.
@@ -155,7 +173,8 @@ Deno.test("Query coordinator turns incomplete query cues into outbound `logs` qu
       runtime.cues.push({
         kin: "query",
         pre: subject.pre,
-        q: { pre: subject.pre },
+        route: "logs",
+        q: {},
       });
 
       const emissions: CueRecord[] = [];
@@ -191,6 +210,30 @@ Deno.test("Query coordinator turns incomplete query cues into outbound `logs` qu
         undefined,
       );
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Query coordinator keeps schema and credential notices notify-only even when their hint names a known KEL", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const requester = hby.makeHab("requester"), subject = hby.makeHab("subject");
+    seedControllerEndpoint(hby, subject.pre);
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    try {
+      runtime.cues.push({ kin: "query", q: { r: "tels", pre: subject.pre } });
+      runtime.cues.push({ kin: "query", q: { r: "schema", said: subject.pre } });
+      const emissions: CueRecord[] = [];
+      yield* processRuntimeTurn(runtime, { hab: requester, sink: captureSink(emissions) });
+      assertEquals(emissions, [
+        { kind: "notify", kin: "query", serder: null },
+        { kind: "notify", kin: "query", serder: null },
+      ]);
+      assertEquals(runtime.querying.pending.length, 0);
+      assertEquals(runtime.resources.used.bytes, 0);
+    } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });
@@ -233,7 +276,8 @@ Deno.test("Query coordinator keeps incomplete queries notify-only when no honest
       runtime.cues.push({
         kin: "query",
         pre: subject.pre,
-        q: { pre: subject.pre },
+        route: "logs",
+        q: {},
       });
 
       const emissions: CueRecord[] = [];
@@ -281,7 +325,8 @@ Deno.test("Query coordinator keeps incomplete queries notify-only when the targe
       runtime.cues.push({
         kin: "query",
         pre: subject.pre,
-        q: { pre: subject.pre },
+        route: "logs",
+        q: {},
       });
 
       const emissions: CueRecord[] = [];
@@ -337,7 +382,8 @@ Deno.test("Query coordinator emits mailbox-delivered queries when only a mailbox
       runtime.cues.push({
         kin: "query",
         pre: subject.pre,
-        q: { pre: subject.pre },
+        route: "logs",
+        q: {},
       });
 
       const emissions: CueRecord[] = [];
@@ -673,13 +719,13 @@ Deno.test("query queues keep failed deliveries and defer newly appended work to 
       const hab = hby.makeHab("alice");
       seedControllerEndpoint(hby, hab.pre);
       const coordinator = new QueryCoordinator(hby, { hab, maxPending: 3, maxContinuations: 1 });
-      const request = { pre: hab.pre, src: hab.pre, route: "logs", q: {} };
+      const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
       coordinator.enqueue(request);
       coordinator.enqueue(request);
       coordinator.enqueue(request);
       assertThrows(() => coordinator.enqueue(request), ResourceLimitError);
       assertEquals(
-        coordinator.enqueueCue({ kin: "query", q: {} }),
+        coordinator.enqueueCue({ kin: "query", q: { r: "schema", said: "unresolved" } }),
         false,
         "Ineligible metadata never claims pending admission",
       );
@@ -736,7 +782,7 @@ Deno.test("query cancellation preserves its in-flight queue credit and permits t
       seedControllerEndpoint(hby, hab.pre);
       const entered = Promise.withResolvers<void>();
       const coordinator = new QueryCoordinator(hby, { hab, maxPending: 1 });
-      const request = { pre: hab.pre, src: hab.pre, route: "logs", q: {} };
+      const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
       coordinator.configure({
         hab,
         sink: {
@@ -783,7 +829,7 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       const hab = hby.makeHab("alice");
       seedControllerEndpoint(hby, hab.pre);
       const runtime = yield* createAgentRuntime(hby), coordinator = runtime.querying;
-      const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, route: "logs", q: {} };
+      const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
       assertThrows(() => reserveCueBytes(hby.db.resources, [cue], 64, undefined, { copies: 0 }), RangeError);
       const finite = new ResourcePolicy({ bytes: 25000 });
       let floor: unknown;

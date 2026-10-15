@@ -12,7 +12,11 @@ config and accepted endpoints are absent.
 Kever decides, Kevery routes KEL/KEL-derived replies, Revery owns BADA/reply
 escrows, Oobiery owns introductions. Runtime and local Habery.kevery have distinct
 cue decks. Query cues and pending requests use one required KERIpy-shaped `q`
-body; do not restore a `query` alias, default-recovery or two copy wrappers.
+body. Routed requests correlate logs/ksn/tels/tsn with their concrete filters and
+keep one required target in the envelope. Hab.query accepts that instruction plus
+its existing mailbox-topic form; raw protocol-eventing.query remains the open codec
+boundary. Do not restore a `query` alias, duplicate body target or arbitrary route/body
+bag. Schema/credential notices retain their separate KERIpy-shaped hint records.
 TEL recovery cues require registry/credential fields, with issuer only when needed.
 Reply cues separate prebuilt serders from typed registry/credential TSN records.
 Prebuilt routes live only in the serder; TSN state is serialized at Hab interpretation,
@@ -219,8 +223,11 @@ Anchor continuations ask each eligible attester once and retain the next index
 across pending-queue refusal; a retired first witness cannot strand recovery.
 Ordinary queries retain first-choice behavior. Completion uses accepted seal state.
 CLI query uses the existing concurrent runner and joins it before state display/close;
-serial mailbox polls must not consume the query window before other workers progress. Generic
-query-body contracts and request-local HTTP/witness ownership remain unfinished.
+serial mailbox polls must not consume the query window before other workers progress.
+Schema/credential notices stay notify-only, even when a hint happens to name a known
+KEL. Producers use canonical s rather than sn; do not restore fallback logs routing,
+redundant r/dig hints or a normalization pass. Request-local HTTP/witness ownership
+remains unfinished.
 Actual HTTP and source/tree/output admission refusal observation is invocation-local;
 source/fetch/sink/cleanup and external observer failures retain original identity.
 Prepared target attempts return local complete/refused/busy only after joined

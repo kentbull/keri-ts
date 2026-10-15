@@ -1661,7 +1661,7 @@ function* fetchMailboxMessages(
   services: RuntimeServices,
   consume: (message: MailboxSseMessage) => Operation<boolean | void>,
 ): Operation<void> {
-  const query = hab.query(targetPre, src, { topics }, "mbx");
+  const query = hab.query(targetPre, src, { route: "mbx", q: { topics } });
   const handle = yield* fetchMailboxQueryResponse(
     url,
     query,

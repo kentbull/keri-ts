@@ -1221,11 +1221,11 @@ export class Kever {
             ...remoteMemberedCues,
             {
               kin: "query",
+              route: "logs",
               q: {
-                pre: input.serder.pre ?? undefined,
-                sn: input.serder.snh ?? undefined,
+                s: input.serder.snh ?? undefined,
               },
-              pre: input.serder.pre ?? undefined,
+              pre,
             },
           ],
         );
@@ -1366,8 +1366,9 @@ export class Kever {
         `Missing delegator KEL for ${delpre} while validating ${input.serder.said ?? "<unknown>"}.`,
         [{
           kin: "query",
-          q: { pre: delpre ?? undefined },
-          pre: delpre ?? undefined,
+          route: "logs",
+          q: {},
+          pre: delpre,
         }],
       );
     }
@@ -1395,16 +1396,11 @@ export class Kever {
         `No delegation seal found for ${input.serder.said ?? "<unknown>"}.`,
         [{
           kin: "query",
+          route: "logs",
           q: {
-            pre: delpre ?? undefined,
-            sn: input.sourceSeal
-              ? ordinalHex(sourceSealOrdinal(input.sourceSeal))
-              : undefined,
-            dig: input.sourceSeal
-              ? sourceSealDigest(input.sourceSeal).qb64
-              : undefined,
+            s: input.sourceSeal ? ordinalHex(sourceSealOrdinal(input.sourceSeal)) : undefined,
           },
-          pre: delpre ?? undefined,
+          pre: delpre,
         }],
       );
     }
@@ -1456,8 +1452,9 @@ export class Kever {
         `No original delegation seal found for accepted recovery target ${originalDelegatedEvent.said ?? "<unknown>"}.`,
         [{
           kin: "query",
-          q: { pre: delpre ?? undefined },
-          pre: delpre ?? undefined,
+          route: "logs",
+          q: {},
+          pre: delpre,
         }],
       );
     }
@@ -1607,8 +1604,9 @@ export class Kever {
           `No delegating recovery chain found for ${candidate.said ?? "<unknown>"} under ${currentDelpre}.`,
           [{
             kin: "query",
-            q: { pre: currentDelpre ?? undefined },
-            pre: currentDelpre ?? undefined,
+            route: "logs",
+            q: {},
+            pre: currentDelpre,
           }],
         );
       }
@@ -1629,8 +1627,9 @@ export class Kever {
           `No original delegating recovery chain found for ${original.said ?? "<unknown>"} under ${currentDelpre}.`,
           [{
             kin: "query",
-            q: { pre: currentDelpre ?? undefined },
-            pre: currentDelpre ?? undefined,
+            route: "logs",
+            q: {},
+            pre: currentDelpre,
           }],
         );
       }

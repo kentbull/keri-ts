@@ -967,7 +967,7 @@ Deno.test("Reactor query ingress preserves transferable requester signatures thr
         nsith: "1",
         toad: 0,
       });
-      const query = bob.query(alice.pre, bob.pre, {}, "ksn");
+      const query = bob.query(alice.pre, bob.pre, { route: "ksn", q: {} });
       const reactor = new Reactor(remote);
 
       reactor.ingest(query);
