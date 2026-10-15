@@ -1,4 +1,4 @@
-import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy } from "cesr-ts";
+import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type SealEvent } from "cesr-ts";
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
 import { reserveCueBytes } from "../core/cue-admission.ts";
 import { type CueQueueInput, cueReader } from "../core/cue-publishing.ts";
@@ -230,12 +230,6 @@ function encodeHexOrdinal(num: number): string {
   return Math.max(0, num).toString(16);
 }
 
-/** Pick the deterministic first sorted candidate from a role endpoint set. */
-function firstSorted(values: Iterable<string>): string | null {
-  const sorted = [...values].sort();
-  return sorted[0] ?? null;
-}
-
 /**
  * KERIpy-style noticer that starts with a `ksn` query and upgrades to a
  * `logs` query when the remote key state is ahead of local accepted state.
@@ -456,19 +450,20 @@ export class SeqNoQuerier implements QueryContinuation {
  */
 export class AnchorQuerier implements QueryContinuation {
   readonly pre: string;
-  readonly anchor: Record<string, unknown>;
+  readonly anchor: ReturnType<typeof SealEvent.toSad>;
   readonly hab?: Hab;
   readonly wits?: string[];
   done = false;
-  private queried = false;
+  private queued = 0;
+  private attesters?: string[];
 
   constructor(
     pre: string,
-    anchor: Record<string, unknown>,
+    anchor: AnchorQuerier["anchor"],
     { hab, wits }: { hab?: Hab; wits?: string[] } = {},
   ) {
     this.pre = pre;
-    this.anchor = { ...anchor };
+    this.anchor = { i: anchor.i, s: anchor.s, d: anchor.d };
     this.hab = hab;
     this.wits = wits ? [...wits] : undefined;
   }
@@ -478,24 +473,24 @@ export class AnchorQuerier implements QueryContinuation {
   }
 
   tick(coordinator: QueryCoordinator): void {
-    if (this.done) {
+    if (this.done) return;
+    if (coordinator.hby.db.fetchLastSealingEventByEventSeal(this.pre, this.anchor)) {
+      this.done = true;
       return;
     }
-    if (!this.queried) {
+    this.attesters ??= coordinator.attestersFor(this.pre, { hab: this.hab, wits: this.wits });
+    // A retired witness may never learn the seal. Ask each known candidate once;
+    // preserve the next index when the existing queue refuses a later candidate.
+    // With no current endpoints, retain the ordinary deferred-resolution request.
+    for (; this.queued < Math.max(1, this.attesters.length); this.queued++) {
       coordinator.enqueue({
         pre: this.pre,
         route: "logs",
         q: { fn: "0", s: "0", a: { ...this.anchor } },
         hab: this.hab,
+        src: this.attesters[this.queued],
         wits: this.wits,
       });
-      this.queried = true;
-    }
-
-    if (
-      coordinator.hby.db.fetchLastSealingEventByEventSeal(this.pre, this.anchor)
-    ) {
-      this.done = true;
     }
   }
 }
@@ -584,7 +579,7 @@ export class QueryCoordinator implements CueSink {
   /** Register one persistent logs-until-anchor continuation. */
   watchAnchor(
     pre: string,
-    anchor: Record<string, unknown>,
+    anchor: AnchorQuerier["anchor"],
     options: { hab?: Hab; wits?: string[] } = {},
   ): AnchorQuerier {
     this.admitContinuation();
@@ -882,7 +877,7 @@ export class QueryCoordinator implements CueSink {
     }
 
     const src = request.src
-      ?? this.resolveAttester(hab, request.pre, request.wits);
+      ?? this.attestersFor(request.pre, { hab, wits: request.wits })[0];
     if (!src) {
       return null;
     }
@@ -902,30 +897,27 @@ export class QueryCoordinator implements CueSink {
     };
   }
 
-  private resolveAttester(
-    hab: Hab,
+  /** Return eligible attester IDs in role priority; explicit witness overrides retain caller order. */
+  attestersFor(
     pre: string,
-    wits?: string[],
-  ): string | null {
+    { hab, wits }: { hab?: Hab; wits?: string[] } = {},
+  ): string[] {
     if (wits && wits.length > 0) {
       // Explicit watcher/witness overrides outrank endpoint-role lookup.
-      return wits[0] ?? null;
+      return [...wits];
     }
+    const signer = this.configuredHab(hab);
+    if (!signer) return [];
 
-    const ends = hab.endsFor(pre);
+    const ends = signer.endsFor(pre);
     for (const role of QUERY_ROLE_PRIORITY) {
       const roleEnds = ends[role];
       if (!roleEnds) {
         continue;
       }
-      // Pick the first sorted endpoint deterministically instead of randomly.
-      // This is a deliberate `keri-ts` divergence from KERIpy's more variable
-      // witness/controller selection because deterministic choice makes
-      // interop tests and maintainer reasoning much easier.
-      const eid = firstSorted(Object.keys(roleEnds));
-      if (eid) {
-        return eid;
-      }
+      // Keep stable candidate order; ordinary requests still select the first ID.
+      const eids = Object.keys(roleEnds).sort();
+      if (eids.length > 0) return eids;
     }
 
     if (
@@ -934,9 +926,9 @@ export class QueryCoordinator implements CueSink {
     ) {
       // Mailbox-only topologies still query the controller AID itself; the
       // mailbox role affects delivery transport, not the attester identity.
-      return pre;
+      return [pre];
     }
 
-    return null;
+    return [];
   }
 }
