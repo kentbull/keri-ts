@@ -7,7 +7,11 @@ applies post-acceptance effects. Kever has no queue dependency: decision-carried
 cue descriptions are data, and processing/publication stays with Kevery.
 Baser prepares and writes accepted-event row/FEL metadata; Kevery turns clone
 order anomalies into cues and owns admission/commit/publication sequencing.
-Kever neither writes the event log nor prepares queue work.
+Kever neither writes the event log nor prepares queue work. Delegation hint
+repairs/removals are decision data; Kevery writes them after cue admission in the
+same transaction as acceptance/escrow. Same-bucket retry keeps its existing row
+while applying discovered repairs. Within one validation, later lookups see
+pending repairs without durable publication.
 Expected remote outcomes use typed decisions
 under [ADR-0005](../../docs/adr/adr-0005-kel-decision-control-flow.md), not exceptions.
 Local inception/interaction uses the same acceptance path as remote events.

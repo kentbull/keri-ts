@@ -22,6 +22,7 @@ import type {
   AttachmentDecision,
   AttachmentEscrow,
   AttachmentReject,
+  DelegationSourceRepair,
   EscrowKind,
   KELEventState,
   KeverDecision,
@@ -469,6 +470,7 @@ export class Kever {
         },
       },
       cues: attachments.attachments.cues,
+      ...(attachments.sourceSealRepairs ? { sourceSealRepairs: attachments.sourceSealRepairs } : {}),
     };
   }
 
@@ -519,7 +521,9 @@ export class Kever {
   static validateAttachments(
     input: AttachmentValidationInput & { kever: Kever },
   ): AttachmentDecision {
-    return input.kever.validateAttachmentsInternal(input);
+    const repairs: DelegationSourceRepair[] = [];
+    const decision = input.kever.validateAttachmentsInternal(input, repairs);
+    return repairs.length ? { ...decision, sourceSealRepairs: repairs } : decision;
   }
 
   /**
@@ -644,25 +648,27 @@ export class Kever {
    *
    * This is the TypeScript equivalent of KERIpy's
    * `fetchDelegatingEvent(... original=...)`. When an accepted delegated event
-   * is rediscovered via the KEL walk, the `.aess` hint is repaired so later
-   * recursive delegation-recovery checks can start from durable source-seal
-   * state instead of re-walking the KEL every time.
+   * is rediscovered via the KEL walk, return its `.aess` repair in the decision.
+   * Kevery persists repairs after queue admission under the processing writer;
+   * later lookups within this validation see the pending repair immediately.
    */
-  fetchDelegatingEvent(
+  private fetchDelegatingEvent(
     delpre: string,
     serder: SerderKERI,
     {
       sourceSeal,
       original = false,
       eager = false,
+      repairs,
     }: {
       sourceSeal?: DelegationSourceSeal | null;
       original?: boolean;
       eager?: boolean;
-    } = {},
+      repairs: DelegationSourceRepair[];
+    },
   ): DelegatingEventLookup | null {
     if (original) {
-      const stored = this.acceptedSourceSealForEvent(serder);
+      const stored = this.acceptedSourceSealForEvent(serder, repairs);
       if (stored) {
         const exact = this.lookupAcceptedDelegatingEvent(
           delpre,
@@ -672,7 +678,7 @@ export class Kever {
         if (exact) {
           return exact;
         }
-        this.dropAcceptedSourceSeal(serder);
+        this.dropAcceptedSourceSeal(serder, repairs);
       }
       if (!eager) {
         return null;
@@ -681,7 +687,7 @@ export class Kever {
         original: true,
       });
       if (found) {
-        this.repairAcceptedSourceSeal(serder, found);
+        this.repairAcceptedSourceSeal(serder, found, repairs);
       }
       return found;
     }
@@ -697,7 +703,7 @@ export class Kever {
       }
     }
 
-    const stored = this.acceptedSourceSealForEvent(serder);
+    const stored = this.acceptedSourceSealForEvent(serder, repairs);
     if (stored) {
       const authoritative = this.lookupAuthoritativeDelegatingEvent(
         delpre,
@@ -705,7 +711,7 @@ export class Kever {
         serder,
       );
       if (authoritative) {
-        this.repairAcceptedSourceSeal(serder, authoritative);
+        this.repairAcceptedSourceSeal(serder, authoritative, repairs);
         return authoritative;
       }
     }
@@ -718,7 +724,7 @@ export class Kever {
       original: false,
     });
     if (found) {
-      this.repairAcceptedSourceSeal(serder, found);
+      this.repairAcceptedSourceSeal(serder, found, repairs);
     }
     return found;
   }
@@ -870,7 +876,8 @@ export class Kever {
       );
     }
 
-    const attachments = this.validateAttachmentsInternal({
+    const attachments = Kever.validateAttachments({
+      kever: this,
       serder,
       sigers: init.sigers,
       wigers: init.wigers ?? [],
@@ -938,6 +945,7 @@ export class Kever {
         },
       },
       cues: attachments.attachments.cues,
+      ...(attachments.sourceSealRepairs ? { sourceSealRepairs: attachments.sourceSealRepairs } : {}),
     };
   }
 
@@ -981,7 +989,8 @@ export class Kever {
       );
     }
 
-    const attachments = this.validateAttachmentsInternal({
+    const attachments = Kever.validateAttachments({
+      kever: this,
       serder,
       sigers: init.sigers,
       wigers: init.wigers ?? [],
@@ -1044,6 +1053,7 @@ export class Kever {
         },
       },
       cues: attachments.attachments.cues,
+      ...(attachments.sourceSealRepairs ? { sourceSealRepairs: attachments.sourceSealRepairs } : {}),
     };
   }
 
@@ -1066,6 +1076,7 @@ export class Kever {
    */
   private validateAttachmentsInternal(
     input: AttachmentValidationInput,
+    repairs: DelegationSourceRepair[],
   ): AttachmentDecision {
     const remoteMemberedCues: AgentCue[] = [];
     const verfers = [...input.verfers];
@@ -1228,7 +1239,7 @@ export class Kever {
       ...input,
       delpre,
       sourceSeal: input.sourceSeal ?? null,
-    });
+    }, repairs);
     if (delegation.kind !== "verified") {
       if (remoteMemberedCues.length > 0 && delegation.kind === "escrow") {
         delegation.cues = [...(delegation.cues ?? []), ...remoteMemberedCues];
@@ -1278,6 +1289,7 @@ export class Kever {
       delpre: string | null;
       sourceSeal: DelegationSourceSeal | null;
     },
+    repairs: DelegationSourceRepair[],
   ): AttachmentDecision {
     const delpre = input.delpre;
     // Non-delegated events short-circuit here so the caller can keep one
@@ -1374,6 +1386,7 @@ export class Kever {
       sourceSeal: input.sourceSeal,
       original: false,
       eager: input.eager ?? false,
+      repairs,
     });
     if (!delegatingEvent) {
       return this.makeAttachmentEscrowDecision(
@@ -1433,6 +1446,7 @@ export class Kever {
       {
         original: true,
         eager: input.eager ?? false,
+        repairs,
       },
     );
     if (!originalDelegatingEvent) {
@@ -1455,7 +1469,7 @@ export class Kever {
       candidateDelegation: delegatingEvent,
       originalEvent: originalDelegatedEvent,
       originalDelegation: originalDelegatingEvent,
-    });
+    }, repairs);
     if (recoveryDecision) {
       return recoveryDecision;
     }
@@ -1498,6 +1512,7 @@ export class Kever {
       originalEvent: SerderKERI;
       originalDelegation: DelegatingEventLookup;
     },
+    repairs: DelegationSourceRepair[],
   ): AttachmentDecision | null {
     let currentDelpre = delpre;
     let candidate = candidateEvent;
@@ -1582,6 +1597,7 @@ export class Kever {
         {
           original: false,
           eager: input.eager ?? false,
+          repairs,
         },
       );
       if (!nextCandidateBoss) {
@@ -1603,6 +1619,7 @@ export class Kever {
         {
           original: true,
           eager: input.eager ?? false,
+          repairs,
         },
       );
       if (!nextOriginalBoss) {
@@ -1634,12 +1651,16 @@ export class Kever {
   /** Read the stored accepted source-seal hint for one already accepted event. */
   private acceptedSourceSealForEvent(
     serder: SerderKERI,
+    repairs: readonly DelegationSourceRepair[],
   ): SealSource | null {
     const pre = serder.pre;
     const said = serder.said;
     if (!pre || !said) {
       return null;
     }
+    // Later lookups in this decision see earlier repairs without publishing them.
+    const pending = repairs.findLast((repair) => repair.pre === pre && repair.said === said);
+    if (pending) return pending.sourceSeal;
     const seal = this.db.aess.get(dgKey(pre, said));
     if (!seal) {
       return null;
@@ -1647,20 +1668,21 @@ export class Kever {
     return SealSource.fromTuple(seal);
   }
 
-  /** Remove one broken accepted source-seal hint so a later eager pass can repair it. */
-  private dropAcceptedSourceSeal(serder: SerderKERI): void {
+  /** Describe removal of one broken hint so a later eager pass can repair it. */
+  private dropAcceptedSourceSeal(serder: SerderKERI, repairs: DelegationSourceRepair[]): void {
     const pre = serder.pre;
     const said = serder.said;
     if (!pre || !said) {
       return;
     }
-    this.db.aess.rem(dgKey(pre, said));
+    repairs.push({ pre, said, sourceSeal: null });
   }
 
-  /** Repair `.aess` for accepted delegated events after re-discovering the real boss. */
+  /** Describe an accepted event hint repair after rediscovering the authorizing event. */
   private repairAcceptedSourceSeal(
     serder: SerderKERI,
     lookup: DelegatingEventLookup,
+    repairs: DelegationSourceRepair[],
   ): void {
     const pre = serder.pre;
     const said = serder.said;
@@ -1668,10 +1690,14 @@ export class Kever {
     if (!dgkey || !this.db.fons.get(dgkey)) {
       return;
     }
-    this.db.aess.pin(dgkey, [
-      normalizeOrdinal(sourceSealOrdinal(lookup.sourceSeal)),
-      sourceSealDigest(lookup.sourceSeal),
-    ]);
+    repairs.push({
+      pre: pre!,
+      said: said!,
+      sourceSeal: SealSource.fromTuple([
+        normalizeOrdinal(sourceSealOrdinal(lookup.sourceSeal)),
+        sourceSealDigest(lookup.sourceSeal),
+      ]),
+    });
   }
 
   /** Resolve one stored source seal to the exact accepted delegating event it names. */
@@ -2069,27 +2095,8 @@ export class Kever {
   }
 
   /** Build one typed duplicate/escrow decision from an attachment decision. */
-  private static fromAttachmentDecision(
-    decision: AttachmentDecision,
-  ): KeverEscrow | KeverReject {
-    if (decision.kind === "reject") {
-      return {
-        kind: "reject",
-        code: decision.code,
-        message: decision.message,
-        context: decision.context,
-      };
-    }
-    if (decision.kind === "escrow") {
-      return {
-        kind: "escrow",
-        reason: decision.reason,
-        message: decision.message,
-        instruction: decision.instruction,
-        cues: decision.cues,
-        context: decision.context,
-      };
-    }
+  private static fromAttachmentDecision(decision: AttachmentDecision): KeverDecision {
+    if (decision.kind !== "verified") return decision;
     return {
       kind: "reject",
       code: "unsupported",

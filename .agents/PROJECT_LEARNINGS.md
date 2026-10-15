@@ -26,7 +26,9 @@ Effection adapter. KERI/Tufa own cancellable operations and joined cleanup.
 Consume-scoped hydration joins disposal and propagates cleanup failures before returning.
 Retryable handoff acknowledges after disposal; callback effects remain at least once.
 Parsed evidence, wrapper construction, verified acceptance and durable publication
-are separate boundaries. Parent signatures never authenticate nested children.
+are separate boundaries. Validation returns delegation-hint repairs as data;
+the processing owner persists them after queue admission, never during lookup.
+Parent signatures never authenticate nested children.
 Public registry intake borrows issuer KEL state independently of local Hab aliases.
 Accepted legacy bytes remain readable; new intake requires full witnessed tuples.
 Raw evidence stays separate from opt-in strict seal projection.

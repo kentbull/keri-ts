@@ -104,11 +104,18 @@ export interface AttachmentReject {
   context?: Record<string, unknown>;
 }
 
+/** Repair of one accepted delegation hint discovered during validation, applied by Kevery. */
+export interface DelegationSourceRepair {
+  pre: string;
+  said: string;
+  /** Null removes a broken hint; otherwise retain the discovered authorizing event. */
+  sourceSeal: SealSource | null;
+}
+
 /** Result of attachment validation prior to full event-state acceptance. */
-export type AttachmentDecision =
-  | AttachmentVerified
-  | AttachmentEscrow
-  | AttachmentReject;
+export type AttachmentDecision = (AttachmentVerified | AttachmentEscrow | AttachmentReject) & {
+  sourceSealRepairs?: readonly DelegationSourceRepair[];
+};
 
 /** Top-level kever decision variant for accepted transitions. */
 export interface KeverAccept {
@@ -144,11 +151,9 @@ export interface KeverReject {
 }
 
 /** Top-level typed outcome returned by `Kevery.processEvent()`. */
-export type KeverDecision =
-  | KeverAccept
-  | KeverDuplicate
-  | KeverEscrow
-  | KeverReject;
+export type KeverDecision = (KeverAccept | KeverDuplicate | KeverEscrow | KeverReject) & {
+  sourceSealRepairs?: readonly DelegationSourceRepair[];
+};
 
 /**
  * Recoverable escrow-processing reasons that keep one escrow row in place for a
