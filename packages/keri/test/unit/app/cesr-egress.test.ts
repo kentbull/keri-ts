@@ -60,6 +60,80 @@ function services(fetch: RuntimeServices["http"]["fetch"]): RuntimeServices {
   return { ...defaultRuntimeServices, http: { fetch } };
 }
 
+Deno.test("CESR cancellation preserves a late foreign fetch failure through joined credit release", async () => {
+  for (const failure of [new Error("late fetch I/O"), new DOMException("foreign abort", "AbortError")]) {
+    const frame = await read(fixture());
+    const ready = Promise.withResolvers<void>();
+    const resources = new ResourcePolicy({ streams: 1 });
+    let rejectFetch!: () => void;
+    const task = run(function*() {
+      yield* requestFrame("https://peer.test/", frame, {
+        services: {
+          ...services((_url, init) =>
+            new Promise<Response>((_resolve, reject) => {
+              init!.signal!.addEventListener("abort", () => rejectFetch = () => reject(failure), { once: true });
+              ready.resolve();
+            })
+          ),
+          resources,
+        },
+      });
+    });
+    try {
+      await ready.promise;
+      const stopped = Promise.resolve(task.halt());
+      void stopped.catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assertEquals(resources.used.streams, 1, "pending fetch still owns HTTP credit");
+      rejectFetch();
+      assertStrictEquals(await assertRejects(() => stopped), failure);
+      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+    } finally {
+      rejectFetch?.();
+      await task.halt().catch(() => {});
+      await discardFrame(frame);
+    }
+  }
+});
+
+Deno.test("CESR cancellation preserves late diagnostic cleanup failure", async () => {
+  const frame = await read(fixture());
+  const reading = Promise.withResolvers<void>();
+  const cleanup = Promise.withResolvers<void>();
+  const failure = new Error("diagnostic cleanup failed");
+  const resources = new ResourcePolicy({ streams: 1 });
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      pull() {
+        reading.resolve();
+      },
+      cancel() {
+        return cleanup.promise;
+      },
+    }, { highWaterMark: 0 }),
+    { status: 400 },
+  );
+  const task = run(() =>
+    requestFrame("https://peer.test/", frame, {
+      services: { ...services(() => Promise.resolve(response)), resources },
+    })
+  );
+  try {
+    await reading.promise;
+    const stopped = Promise.resolve(task.halt());
+    void stopped.catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assertEquals(resources.used.streams, 1);
+    cleanup.reject(failure);
+    assertStrictEquals(await assertRejects(() => stopped), failure);
+    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+  } finally {
+    cleanup.resolve();
+    await task.halt().catch(() => {});
+    await discardFrame(frame);
+  }
+});
+
 Deno.test("CESR egress waits for each request and disposes each delivered payload", async () => {
   // The first HTTP request controls whether the second parser output may be requested.
   const opened = Promise.withResolvers<void>();

@@ -21,6 +21,7 @@ import {
   KERIPY_CESR_JSON_CONTENT_TYPE,
 } from "./cesr-http.ts";
 import { cesrOutputMetadataBytes } from "./cesr-output.ts";
+import { ownHttpResponse } from "./httping.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 
 /** Positive remote HTTP refusal, distinct from source, transport, storage and cleanup failure. */
@@ -192,16 +193,23 @@ function openFrameResponse(
       options.onAdmissionRefusal?.(refusal);
       throw refusal;
     }
+    // Register credit before response owners so cancellation joins their last use before release.
+    yield* resource<void>(function*(provide) {
+      try {
+        yield* provide();
+      } finally {
+        credit.reservation.release();
+      }
+    });
     // Each Promise leaf remains tracked until cancellation has joined its cleanup.
     let preparing: Promise<Uint8Array> | undefined;
     // Upload cleanup is independent of whether fetch has already returned response headers.
     let body: RequestBody | undefined;
     // The most recent response belongs to this resource until provide() completes.
     let response: Response | undefined;
-    // Aborting fetch is followed by joining it, including a concurrently completed response.
-    let fetching: Promise<Response> | undefined;
     // Diagnostic reads are separate Promise leaves and must also finish before scope exit.
     let reading: Promise<string> | undefined;
+    let deliveredFailure: { error: unknown } | undefined;
     try {
       signal.throwIfAborted();
       // Detached attachments are always legal text, even if the admitted frame was binary.
@@ -233,8 +241,8 @@ function openFrameResponse(
           body: body?.stream ?? frame.body.raw.slice().buffer as ArrayBuffer,
           ...(body ? { duplex: "half" as const } : {}),
         };
-        fetching = services.http.fetch(url, init);
-        response = yield* call(() => fetching!);
+        const owner = yield* ownHttpResponse(() => services.http.fetch(url, init), controller);
+        response = yield* owner.response();
         if (response.ok) {
           yield* provide(response);
           return;
@@ -254,32 +262,27 @@ function openFrameResponse(
         options.onHttpRefusal?.(refusal);
         throw refusal;
       }
+    } catch (error) {
+      deliveredFailure = { error };
+      throw error;
     } finally {
-      try {
-        // Abort first so blocked fetch/payload reads can settle before their owners are joined.
-        controller.abort();
+      // Shared response owners join fetches; this owner separately joins preparation, diagnostics, and upload.
+      controller.abort();
+      const join = async (pending: Promise<unknown> | undefined): Promise<void> => {
         try {
-          if (fetching) {
-            yield* call(async () => {
-              // A late successful response still has an owned body that must be closed.
-              const completed = await fetching!.catch(() => undefined);
-              if (completed?.body && !completed.body.locked) {
-                try {
-                  await completed.body.cancel();
-                } catch (error) {
-                  // Native fetch may error an unread body with this exact intentional teardown reason.
-                  if (error !== controller.signal.reason) throw error;
-                }
-              }
-            });
-          }
+          await pending;
+        } catch (error) {
+          if (error !== controller.signal.reason && error !== deliveredFailure?.error) throw error;
+        }
+      };
+      try {
+        if (preparing) yield* call(() => join(preparing));
+      } finally {
+        try {
+          if (reading) yield* call(() => join(reading));
         } finally {
-          if (preparing) yield* call(() => preparing!.then(() => {}, () => {}));
-          if (reading) yield* call(() => reading!.then(() => {}, () => {}));
           if (body) yield* call(() => body!.close());
         }
-      } finally {
-        credit.reservation.release();
       }
     }
   });
