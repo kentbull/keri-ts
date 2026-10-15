@@ -59,6 +59,22 @@ export const MULTISIG_ROUTES = [
 
 export type MultisigRoute = typeof MULTISIG_ROUTES[number];
 
+/** Event proposal input; each supported route requires its own attributes. Child commitments are derived. */
+export type MultisigEventProposal =
+  | {
+    route: typeof MULTISIG_ICP_ROUTE;
+    attrs: { smids: readonly string[]; rmids: readonly string[]; delegator?: string };
+  }
+  | {
+    route: typeof MULTISIG_ROT_ROUTE;
+    attrs: { gid: string; smids: readonly string[]; rmids: readonly string[] };
+  }
+  | {
+    route: typeof MULTISIG_IXN_ROUTE;
+    attrs: { gid: string; smids: readonly string[] };
+  }
+  | { route: typeof MULTISIG_RPY_ROUTE; attrs: { gid: string } };
+
 interface RawMessage {
   readonly raw: Uint8Array;
 }
@@ -119,15 +135,19 @@ export function* multisigInceptExn(
   delegator?: string | null,
   options: MultisigBuilderOptions = {},
 ): Operation<MultisigMessage> {
-  const attrs: Record<string, unknown> = {
-    smids: [...smids],
-    rmids: [...(rmids ?? smids)],
-  };
-  if (delegator) {
-    attrs.delegator = delegator;
-  }
-
-  return yield* prepareMultisigEventExn(member.pre, MULTISIG_ICP_ROUTE, attrs, rawMessage(icp), options);
+  return yield* prepareMultisigEventExn(
+    member.pre,
+    {
+      route: MULTISIG_ICP_ROUTE,
+      attrs: {
+        smids: [...smids],
+        rmids: [...(rmids ?? smids)],
+        ...(delegator ? { delegator } : {}),
+      },
+    },
+    rawMessage(icp),
+    options,
+  );
 }
 
 /** Coordinate one proposed group rotation event. */
@@ -141,11 +161,13 @@ export function* multisigRotateExn(
 ): Operation<MultisigMessage> {
   return yield* prepareMultisigEventExn(
     member.pre,
-    MULTISIG_ROT_ROUTE,
     {
-      gid: groupPrefix(group),
-      smids: [...smids],
-      rmids: [...rmids],
+      route: MULTISIG_ROT_ROUTE,
+      attrs: {
+        gid: groupPrefix(group),
+        smids: [...smids],
+        rmids: [...rmids],
+      },
     },
     rawMessage(rot),
     options,
@@ -162,10 +184,12 @@ export function* multisigInteractExn(
 ): Operation<MultisigMessage> {
   return yield* prepareMultisigEventExn(
     member.pre,
-    MULTISIG_IXN_ROUTE,
     {
-      gid: groupPrefix(group),
-      smids: [...aids],
+      route: MULTISIG_IXN_ROUTE,
+      attrs: {
+        gid: groupPrefix(group),
+        smids: [...aids],
+      },
     },
     rawMessage(ixn),
     options,
@@ -244,9 +268,11 @@ export function* multisigRpyExn(
 ): Operation<MultisigMessage> {
   return yield* prepareMultisigEventExn(
     member.pre,
-    MULTISIG_RPY_ROUTE,
     {
-      gid: groupPrefix(group),
+      route: MULTISIG_RPY_ROUTE,
+      attrs: {
+        gid: groupPrefix(group),
+      },
     },
     rawMessage(rpy),
     options,
@@ -276,11 +302,11 @@ export function multisigExn(
  */
 export function multisigExnBody(
   sender: string,
-  route: MultisigRoute,
+  proposal: MultisigEventProposal,
   child: SerderKERI,
-  attrs: Record<string, unknown>,
   options: Omit<MultisigBuilderOptions, "childGvrsn"> = {},
 ): SerderKERI {
+  const { route, attrs } = proposal;
   const pvrsn = options.pvrsn ?? options.version ?? Vrsn_2_0;
   if (pvrsn.major !== 2) throw new Error("Nested multisig bodies require protocol v2.");
   if (!child.said || !nestedMultisigIlks(route)?.includes(child.ilk ?? "")) {
@@ -302,11 +328,13 @@ export function multisigExnBody(
  */
 export function* prepareMultisigEventExn(
   sender: string,
-  route: MultisigRoute,
-  attrs: Record<string, unknown>,
+  proposal: MultisigEventProposal,
   wire: Uint8Array,
   options: MultisigBuilderOptions = {},
 ): Operation<MultisigMessage> {
+  // Keep the route selection stable through parser suspension; attribute values remain immutable borrows.
+  const captured = { ...proposal };
+  const { route, attrs } = captured;
   const version = options.pvrsn ?? options.version ?? Vrsn_1_0;
   const field = route.slice(route.lastIndexOf("/") + 1);
   if (version.major === 1) {
@@ -329,7 +357,7 @@ export function* prepareMultisigEventExn(
       if (frames.length !== 1 || !(child.body instanceof SerderKERI) || child.nests?.length) {
         throw new Error("Multisig proposal requires one supported direct child.");
       }
-      const serder = multisigExnBody(sender, route, child.body, attrs, options);
+      const serder = multisigExnBody(sender, captured, child.body, options);
       return [serder, await collectPayload(nestedPayload(child, Vrsn_2_0), 8 * 1024 ** 2, signal)] as const;
     } catch (error) {
       errors.push(error);

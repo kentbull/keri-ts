@@ -49,3 +49,15 @@ JSON/CBOR/MGPK acceptance/storage/replay evidence is recorded in the
 [multisig plan](../../plans/exchange/MULTISIG_PLAN.md). The
 [proof contract](EXCHANGE_PROOFS.md) and [storage contract](../db/PAYLOAD_STORAGE.md)
 govern authentication and durability; full runtime qualification remains open.
+
+## Event proposal input contract
+
+The icp/rot/ixn/rpy builders share MultisigEventProposal through byte preparation
+and synchronous body construction. Each route has its actual attributes: inception
+requires signing/rotation members and derives gid from the child; rotation carries
+gid and both lists; interaction carries gid and signing members; reply carries gid.
+The child supplies its commitment. No open metadata slot or second child identity
+is accepted. Attribute values remain immutable borrows through byte preparation;
+the route selection is captured before parser suspension. Existing v1/v2 bytes,
+child-kind checks and frame disposal remain separate from this input contract.
+Other route builders and inbound membership/codec contracts are separate concerns.
