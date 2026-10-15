@@ -24,7 +24,6 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import type { PreparedCueBatch } from "../core/cue-admission.ts";
-import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -274,7 +273,6 @@ export class Tever {
   readonly reger: Reger;
   readonly local: boolean;
   readonly cues: CueQueueInput;
-  private readonly publisher: CuePublisher;
 
   version: { major: number; minor: number };
   pre!: string;
@@ -295,7 +293,6 @@ export class Tever {
     this.reger = options.reger;
     this.local = options.local ?? false;
     this.cues = options.cues ?? new Deck<AgentCue>();
-    this.publisher = cuePublisher(this.cues);
 
     if (options.rsr) {
       this.version = { major: 1, minor: 0 };
@@ -438,7 +435,7 @@ export class Tever {
           serder,
           sn,
           args,
-          this.publisher.resourcePolicy
+          !(this.cues instanceof Deck)
             ? (error) => {
               cueFailure = { error };
               recordCueFailure?.(error);
@@ -701,7 +698,7 @@ export class Tever {
     try {
       try {
         const cue: AgentCue = { kin: "revoked", serder };
-        prepared = this.publisher.resourcePolicy ? this.publisher.prepare([cue]) : undefined;
+        prepared = this.cues instanceof Deck ? undefined : this.cues.prepare([cue]);
         if (!prepared) this.cues.checkSpace();
         this.logEvent({
           pre: okPre(serder),

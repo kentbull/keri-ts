@@ -145,8 +145,8 @@ two-slot deployments can refuse ingress while both polls are live. Byte/decrypti
 ceilings remain 256 MiB/one, and older two-slot measurements keep that label.
 AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
-Protocol producers borrow CuePublisher; its optional retention policy distinguishes
-held runtime credit from caller-owned standalone queues without concrete queue checks.
+Protocol producers use their queues directly: plain Decks carry records; admitted
+queues reserve actual retention before effects and publish after the owning writes.
 Cue byte admission returns only its own expected capacity refusal; strict protocol
 producers keep reserveCueBytes, while runtime queues consume admitCueBytes directly.
 Runtime delivery admission returns queued/ineligible/refuse before wire preparation;
@@ -155,8 +155,8 @@ records without restoring removed metadata reservations or queue caps.
 CueReader exposes only borrowing, transfer, and requeue; interpreting a plain
 queue still admits its input separately and removes it only after acceptance.
 CueDeck composes one Deck<OwnedCue>; it has no raw-cue mirror or destructive unowned removal API.
-Producers use CuePublisher and consumers CueReader, independent of the concrete owned queue.
-Standalone caller-owned Decks are adapted at those boundaries without a ledger or mirror.
+CueReader describes actual admitted ownership only. Standalone caller-owned Decks
+are read and written directly, without synthetic owners or publication adapters.
 Default AgentRuntime CueDeck preparation holds concrete metadata/backing and item credit;
 ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
 clone/state and decision-carried duplicate/escrow cues now prepare before effects

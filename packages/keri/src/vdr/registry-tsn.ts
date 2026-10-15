@@ -1,7 +1,7 @@
 import { Dater, Diger, Prefixer, SerderKERI, TraitDex } from "cesr-ts";
 import type { PreparedCueBatch } from "../core/cue-admission.ts";
-import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
+import { Deck } from "../core/deck.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
 import { RegStateRecord } from "../core/records.ts";
 import {
@@ -80,10 +80,7 @@ export type RegistryReplyDecision = ReplyProcessDecision<RegistryEscrowFamily>;
  * Credential and registry notices require independent reply authentication.
  */
 export class RegistryStateReceiver {
-  private readonly publisher: CuePublisher;
-  constructor(private readonly tvy: Tevery, private readonly rvy: Revery) {
-    this.publisher = cuePublisher(rvy.cues);
-  }
+  constructor(private readonly tvy: Tevery, private readonly rvy: Revery) {}
 
   /** Called by Revery's SAID-checked route or typed Broker retry. */
   processReply({ serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs): RegistryReplyDecision {
@@ -112,8 +109,9 @@ export class RegistryStateReceiver {
       return reject("Mismatched issuer or stale registry state.");
     }
     const kever = this.tvy.db.getKever(issuer, { refresh: true });
-    this.publisher.preflight(1);
+    if (this.rvy.cues instanceof Deck) this.rvy.cues.checkSpace(1);
     let queries: PreparedCueBatch | undefined;
+    let queryCues: readonly AgentCue[] = [];
     const escrow = (typ: RegistryEscrowFamily, query: boolean, proof?: ReplyPlan): RegistryReplyDecision => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, regk, aid, diger);
       const cues: AgentCue[] = !isNew || !query
@@ -122,7 +120,7 @@ export class RegistryStateReceiver {
         ? [{ kin: "query", pre: issuer, src: aid, route: "logs", q: {} }]
         : [{ kin: "query", pre: issuer, src: aid, route: "tels", q: { ri: regk, i: "" } }];
       this.rvy.cues.checkSpace(cues.length);
-      const child = cues.length ? this.publisher.prepare(cues) : undefined;
+      const child = cues.length && !(this.rvy.cues instanceof Deck) ? this.rvy.cues.prepare(cues) : undefined;
       try {
         if (proof) this.rvy.writeReply(proof);
         const added = this.tvy.reger.txnsb.escrowStateNotice({
@@ -138,8 +136,10 @@ export class RegistryStateReceiver {
         if (added !== isNew) throw new Error("Registry escrow membership changed before publication");
         // Broker now owns copied pending proof; retain prior accepted BADA evidence in Baser.
         disposeIncoming();
-        queries?.publish();
-        child?.publish();
+        if (queries) queries.publish();
+        else if (queryCues.length) this.rvy.cues.extend(queryCues);
+        if (child) child.publish();
+        else if (cues.length) this.rvy.cues.extend(cues);
         return {
           kind: "unverified",
           reason: "dependencyPending",
@@ -173,12 +173,14 @@ export class RegistryStateReceiver {
       externalEscrow: true,
     });
     this.rvy.cues.checkSpace(proof.cues.length);
-    queries = proof.cues.length ? this.publisher.prepare(proof.cues) : undefined;
+    queryCues = proof.cues;
+    queries = queryCues.length && !(this.rvy.cues instanceof Deck) ? this.rvy.cues.prepare(queryCues) : undefined;
     try {
       if (proof.kind !== "accept") {
         if (proof.reason === "proofPending") return escrow("registry-mae", false, proof);
         this.rvy.writeReply(proof);
-        queries?.publish();
+        if (queries) queries.publish();
+        else if (queryCues.length) this.rvy.cues.extend(queryCues);
         return reject("Unverified registry state attester.");
       }
       const accepted = this.tvy.reger.tels.getOn(regk, sn);
@@ -198,13 +200,15 @@ export class RegistryStateReceiver {
       const dater = new Dater({ qb64: encodeDateTimeToDater(stamp) });
       const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
       this.rvy.cues.checkSpace(cues.length);
-      const child = this.publisher.prepare(cues);
+      const child = this.rvy.cues instanceof Deck ? undefined : this.rvy.cues.prepare(cues);
       try {
         this.rvy.writeReply(proof);
         this.tvy.reger.txnsb.updateReply(aid, serder, diger, dater);
         if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
-        queries?.publish();
-        child?.publish();
+        if (queries) queries.publish();
+        else if (queryCues.length) this.rvy.cues.extend(queryCues);
+        if (child) child.publish();
+        else if (cues.length) this.rvy.cues.extend(cues);
         return acceptReplyDecision();
       } finally {
         child?.release();

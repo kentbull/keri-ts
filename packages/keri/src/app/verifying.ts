@@ -19,7 +19,6 @@ import {
   Saider,
   SerderACDC,
 } from "cesr-ts";
-import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -76,7 +75,6 @@ export class Verifier {
   readonly hby: Habery;
   readonly reger: Reger;
   readonly cues: CueQueueInput;
-  private readonly publisher: CuePublisher;
   readonly credentialExpiryMs: number;
   readonly missingRegistryTimeoutMs: number;
   readonly missingIssuerTimeoutMs: number;
@@ -85,7 +83,6 @@ export class Verifier {
     this.hby = hby;
     this.reger = options.reger;
     this.cues = options.cues ?? new Deck<AgentCue>();
-    this.publisher = cuePublisher(this.cues);
     this.credentialExpiryMs = options.credentialExpiryMs ?? Verifier.DefaultCredentialExpiryMs;
     this.missingRegistryTimeoutMs = options.missingRegistryTimeoutMs ?? Verifier.DefaultMissingRegistryTimeoutMs;
     this.missingIssuerTimeoutMs = options.missingIssuerTimeoutMs ?? Verifier.DefaultMissingIssuerTimeoutMs;
@@ -121,7 +118,7 @@ export class Verifier {
     seqner: NumberPrimitive;
     saider: Diger;
   }): VerifierDecision {
-    this.publisher.preflight(1);
+    if (this.cues instanceof Deck) this.cues.checkSpace(1);
     const creder = args.creder;
     const said = credentialSaid(creder);
     const regk = creder.regid;
@@ -225,10 +222,12 @@ export class Verifier {
     }
 
     const cue: VerifierCue = { kin: "saved", creder };
-    const prepared = this.publisher.prepare([cue]);
+    this.cues.checkSpace();
+    const prepared = this.cues instanceof Deck ? undefined : this.cues.prepare([cue]);
     try {
       this.saveCredential(args);
-      prepared.publish();
+      if (prepared) prepared.publish();
+      else this.cues.push(cue);
     } finally {
       prepared?.release();
     }
@@ -249,9 +248,9 @@ export class Verifier {
       : reason === "missingSchema"
       ? this.reger.mse
       : this.reger.mce;
-    const owned = this.publisher.resourcePolicy;
+    const owned = this.cues instanceof Deck ? undefined : this.cues;
     const fresh = owned ? table.get([credentialSaid(args.creder)]) === null : false;
-    const prepared = owned && (fresh || reason === "missingChain") ? this.publisher.prepare([cue]) : undefined;
+    const prepared = owned && (fresh || reason === "missingChain") ? owned.prepare([cue]) : undefined;
     try {
       const inserted = reason === "missingRegistry"
         ? this.escrowMRE(args)
