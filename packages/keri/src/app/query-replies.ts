@@ -1,5 +1,6 @@
 import { ResourceLimitError } from "cesr-ts";
-import { CueDeck, type OwnedCue } from "../core/cue-admission.ts";
+import type { OwnedCue } from "../core/cue-admission.ts";
+import { cuePublisher, cueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, ReceiptCue, ReplayCue, ReplyCue, WitnessCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 
@@ -129,11 +130,14 @@ export class QueryReplies {
 
   /** Capture at most a complementary TSN or receipt/witness pair; transfer/fanout credit before publishing slot references. */
   capture(cues: Deck<AgentCue>): void {
-    const count = cues.length, queued: OwnedCue[] = [];
+    const source = cueReader(cues), publisher = cuePublisher(cues);
+    const count = source.length, queued: OwnedCue[] = [];
     try {
       for (let i = 0; i < count; i++) {
-        const owner = cues instanceof CueDeck ? cues.takeOwned()! : undefined;
-        const cue = owner ? owner.cue : cues.pull()!;
+        const handle = source.takeOwned()!;
+        const cue = handle.cue;
+        const owner = source.resourcePolicy ? handle : undefined;
+        if (!owner) handle.release();
         const group = (cue.kin === "replay" || cue.kin === "reply") && cue.querySaid
           ? this.active.get(`query:${cue.querySaid}`)
           : (cue.kin === "receipt" || cue.kin === "witness")
@@ -141,7 +145,7 @@ export class QueryReplies {
           : undefined;
         if (!group || (cue.kin !== "replay" && cue.kin !== "reply" && cue.kin !== "receipt" && cue.kin !== "witness")) {
           if (owner) queued.push(owner);
-          else cues.push(cue);
+          else publisher.prepare([cue]).publish();
           continue;
         }
         const targets = [...group].filter((slot) =>
@@ -172,7 +176,7 @@ export class QueryReplies {
         if (owner && !targets.length) owner.release();
       }
     } finally {
-      if (cues instanceof CueDeck) for (const owner of queued.reverse()) cues.requeue(owner);
+      for (const owner of queued.reverse()) source.requeue(owner);
     }
   }
 }

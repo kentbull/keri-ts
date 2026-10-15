@@ -12,7 +12,8 @@
  */
 import { Dater, Ilks, Prefixer, SerderACDC } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
-import { CueDeck, type OwnedCue } from "../core/cue-admission.ts";
+import type { OwnedCue } from "../core/cue-admission.ts";
+import { cuePublisher, type CueReader, cueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CredentialRevokedCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -151,21 +152,24 @@ export class VerifierAgent {
   }
 
   private processRevokedCues(): number {
-    if (this.cues instanceof CueDeck) return this.processOwnedRevokedCues(this.cues);
+    const source = cueReader(this.cues);
+    if (source.resourcePolicy) return this.processOwnedRevokedCues(source);
     const retained: AgentCue[] = [];
     let queued = 0;
-    while (!this.cues.empty) {
-      const cue = this.cues.pull();
-      if (!cue) continue;
+    while (source.length) {
+      const owner = source.takeOwned();
+      if (!owner) continue;
+      const cue = owner.cue;
+      owner.release();
       if (cue.kin !== "revoked") retained.push(cue);
       else queued += this.queueRevocation(cue);
     }
-    this.cues.extend(retained);
+    if (retained.length) cuePublisher(this.cues).prepare(retained).publish();
     return queued;
   }
 
   /** Guarded finite scan: preserve unrelated owners and failed publication without reacquiring credit. */
-  private processOwnedRevokedCues(cues: CueDeck): number {
+  private processOwnedRevokedCues(cues: CueReader): number {
     const retained: OwnedCue[] = [];
     const count = cues.length;
     let queued = 0;
