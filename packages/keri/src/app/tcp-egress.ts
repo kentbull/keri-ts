@@ -333,7 +333,7 @@ function writeTcp(
     const receiver = new AbortController();
     let connectedSocket: Socket | undefined;
     // Acquiring this channel reserves RX stream/cursor credit but does not invoke its source factory.
-    const channel = replies && (yield* replies.runtime.reactor.frames((signal) => {
+    const channel = replies && (yield* replies.runtime.intake.frames((signal) => {
       if (!connectedSocket) throw new Error("TCP receive source acquired before connection");
       return socketBytes(connectedSocket, { signal, maxChunkBytes: RX_CHUNK });
     }, {

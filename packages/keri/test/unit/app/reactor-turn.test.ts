@@ -1,10 +1,11 @@
-import { call, run, spawn } from "effection";
+import { call, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "../../../../cesr/mod.ts";
 import { abortable } from "../../../src/app/abortable.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
+import { FrameIntake } from "../../../src/app/frame-intake.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { Oobiery } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
@@ -264,6 +265,52 @@ Deno.test("queued ingress reserves shared bytes before copying and releases allo
       assertEquals(second.hasIngress, false);
     } finally {
       yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("external intake and protocol processing share one source concurrency owner", async () => {
+  await run(function*() {
+    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const resources = new ResourcePolicy();
+    const intake = new FrameIntake(resources, undefined, 1);
+    const reactor = new Reactor(target, { resources, intake });
+    const sender = source.makeHab("sender");
+    const wire = acceptedEventReplayMessage(source, sender.pre, 0).message;
+    const acquired = gate();
+    let opened = 0;
+    const occupied = yield* spawn(function*() {
+      yield* intake.frames(async function*() {
+        opened++;
+        yield wire;
+      });
+      acquired.open();
+      yield* suspend();
+    });
+    try {
+      yield* call(() => acquired.wait);
+      assertEquals(opened, 0, "admitted parser channels remain demand driven");
+      const failure = yield* call(() =>
+        assertRejects(() =>
+          run(() =>
+            reactor.process(async function*() {
+              opened++;
+              yield wire;
+            })
+          ), ResourceAdmissionError)
+      );
+      assertEquals(failure.reason, "busy");
+      assertEquals(opened, 0, "shared source refusal precedes either source factory");
+      assertEquals(target.db.getKever(sender.pre), null);
+      yield* occupied.halt();
+      yield* reactor.process((signal) => chunkBytes(wire, { signal }));
+      assertEquals(target.db.getKever(sender.pre)?.sn, 0);
+      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+    } finally {
+      yield* occupied.halt();
+      yield* target.close(true);
+      yield* source.close(true);
     }
   });
 });
