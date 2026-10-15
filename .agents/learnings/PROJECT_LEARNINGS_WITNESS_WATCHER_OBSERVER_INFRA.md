@@ -34,7 +34,11 @@ command-specific lazy imports separately. macOS PATH and shared helpers select
 one explicit fork checkout; DID Webs retains a separate dependency environment
 in the [reference inventory](../../docs/plans/qualification/REFERENCE_ENVIRONMENTS.md).
 
-LMDB V1 needs its own native rebuild/preflight and cache boundary. On macOS,
+LMDB V1 needs its own native rebuild/preflight and cache boundary. PR merge-ref
+caches are invisible to later PRs: the master cache-warming workflow publishes
+both existing dependency variants for reuse across branches. Native caches include
+OS image, architecture, runtime versions, dependency locks and build/preflight sources;
+a warm hit still proves the loaded addon uses NAPI and writes data-v1. On macOS,
 provision libsodium independently of cached venvs; expose the resolved Homebrew
 dylib without overwriting a conflict, verify actual loading and keep KLI import
 assertions. /bin/bash scrubs DYLD variables, so GITHUB_ENV alone is insufficient.
