@@ -212,8 +212,11 @@ it does not claim KERIpy is a pure actor system or has universal bounded admissi
 ## Adoption and acceptance
 
 Refactor to the principle first, then change behavior in a cohesive follow-up.
-Use narrow reviewable cuts, ordinarily 300–500 additions and independently
-300–500 deletions or fewer. These are guidelines, not quotas.
+Use cohesive reviewable cuts. During deletion/refactoring, 1,000–3,000 changed
+lines per PR are permitted when they complete a mechanism removal and avoid
+temporary interfaces or repeated caller edits. Smaller cuts remain appropriate
+at real ownership boundaries. Count tests and docs, and give reviewers a reading
+order for cross-file changes. These are allowances, not quotas.
 
 Reconcile existing cleanup rounds with this policy. In each affected real flow,
 identify ownership, record contracts, completion, cancellation, and recovery;

@@ -7,12 +7,11 @@ import {
   Prefixer,
   ResourceAdmissionError,
   ResourceLimitError,
-  ResourcePolicy,
   SerderKERI,
 } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
-import { DeckFullError } from "../../../src/core/deck.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { Roles } from "../../../src/core/roles.ts";
@@ -56,8 +55,7 @@ for (const route of ["/end/role", "/loc/scheme"] as const) {
     Deno.test(`endpoint reply replacement is atomic: ${route}, transferable=${transferable}`, async () => {
       await run(function*() {
         const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true });
-        const resources = new ResourcePolicy();
-        const cues = new CueDeck(resources, 4);
+        const cues = new Deck<AgentCue>();
         try {
           const hab = hby.makeHab("endpoint", undefined, { transferable, toad: 0 });
           const rvy = new Revery(hby.db, { cues });
@@ -113,7 +111,7 @@ for (const route of ["/end/role", "/loc/scheme"] as const) {
             assertEquals([...hby.db.ssgs.getTopItemIter([incoming.said!], { topive: true })], []);
             assertEquals(hby.db.scgs.get([incoming.said!]), []);
             assertEquals(hby.db.rpes.get([route]), []);
-            assertEquals([cues.length, resources.used.bytes], [0, 0]);
+            assertEquals(cues.length, 0);
           };
           const failure = new Error("projection write failed");
           const refuse = () => {
@@ -139,7 +137,6 @@ for (const route of ["/end/role", "/loc/scheme"] as const) {
           assertEquals(hby.db.rpys.get([incoming.said!])?.said, incoming.said);
           assertEquals(cues.toArray().map((cue) => cue.kin), transferable ? ["query"] : []);
           cues.clear();
-          assertEquals(resources.used.bytes, 0);
         } finally {
           cues.clear();
           yield* hby.close(true);
@@ -317,14 +314,13 @@ Deno.test("Revery.acceptReply aggregates weighted reply signatures until the thr
   });
 });
 
-Deno.test("Revery holds the exact query batch before ordered proof effects and preserves external ownership", async () => {
+Deno.test("Revery publishes ordered proof effects and preserves external escrow ownership", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `revery-cue-admission-${crypto.randomUUID()}`, temp: true });
     try {
       const hab = hby.makeHab("weighted", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2", toad: 0 });
       const kever = hab.kever!;
-      const resources = new ResourcePolicy();
-      const cues = new CueDeck(resources, 1);
+      const cues = new Deck<AgentCue>();
       const rvy = new Revery(hby.db, { cues });
       const body = (dt: string) =>
         new SerderKERI({ sad: { t: "rpy", dt, r: "/admission", a: { aid: hab.pre } }, makify: true });
@@ -365,22 +361,6 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
         assertExists(hby.db.rpys.get([priorSaid.qb64]));
         assertEquals(cues.length, 0);
       };
-      const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      assertEquals(assertThrows(() => rvy.acceptReply(args), ResourceAdmissionError).reason, "busy");
-      occupied.reservation.release();
-      unchanged();
-      assertEquals(
-        assertThrows(
-          () => new Revery(hby.db, { cues: new CueDeck(new ResourcePolicy({ bytes: 1 })) }).acceptReply(args),
-          ResourceAdmissionError,
-        ).reason,
-        "limit",
-      );
-      unchanged();
-      const slot = cues.prepare([{ kin: "proof", said: "active" }]);
-      assertThrows(() => rvy.acceptReply(args), DeckFullError);
-      slot.release();
-      unchanged();
       assertThrows(
         () => new Revery(hby.db, { cues, maxReplyGroups: 2 }).acceptReply(args),
         ResourceLimitError,
@@ -398,7 +378,6 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
       }, () => {
         assertThrows(() => rvy.acceptReply(args), Error, "proof publication failed");
       });
-      assertEquals(resources.used.bytes, 0);
       unchanged();
       assertEquals(rvy.acceptReply({ ...args, retainPrevious: true }).kind, "accept");
       assertExists(hby.db.rpys.get([priorSaid.qb64]));
@@ -409,15 +388,8 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
         "staged signatures aggregate in input order",
       );
       assertEquals(cues.length, 1, "three proof groups need only one actual query slot");
-      const owner = cues.takeOwned()!;
-      const retained = resources.used.bytes;
-      cues.clear();
-      assertEquals(resources.used.bytes, retained);
-      owner.release();
-      assertEquals(resources.used.bytes, 0);
+      assertEquals(cues.pull()?.kin, "query");
       const latest = body("2026-10-13T00:00:00.000003+00:00");
-      cues.capacity = 0;
-      const allBytes = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
       assertEquals(
         rvy.acceptReply({
           serder: latest,
@@ -429,9 +401,8 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
         }).kind,
         "accept",
       );
-      allBytes.reservation.release();
       assertEquals(hby.db.rpys.get([saider.qb64]), null, "default BADA supersession removes previous proof");
-      assertEquals([cues.length, resources.used.bytes], [0, 0], "cue-free acceptance needs no cue credit");
+      assertEquals(cues.length, 0, "complete proof needs no query cue");
       const preparedBody = body("2026-10-13T00:00:00.000004+00:00");
       const plan = rvy.decideReply({
         serder: preparedBody,

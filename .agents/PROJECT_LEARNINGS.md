@@ -31,6 +31,9 @@ socket constraint supported by production evidence may remain. No no-op policies
 renamed ledgers or dormant hooks. Preserve real protocol state and resource cleanup;
 old keri-ts API/data compatibility is not required. Add no migration readers,
 upgrade machinery or new-to-old version tests.
+Cue queues and reply correlations now carry ordinary Deck records. Publish after
+owning writes/commit; preserve real iterator, reader and payload cleanup. Do not
+restore queue credit, capacity, inspection or synthetic retain/release handles.
 Use concrete semantic records, narrow validated input, and locally justified
 open boundaries. Diagnostic metadata must not drive domain control flow.
 
@@ -66,7 +69,10 @@ where KERIpy supports it; native backpressure and real cleanup remain independen
 KERIpy parity comes first; optional additions are proposals, not implementation gates.
 Selective inter-component streaming may reuse existing engines for a concrete
 benefit after parity priorities; it does not restore a stack-wide mandate.
-PRs target 300–500 added or removed lines or fewer, including verification.
+During deletion/refactoring, PRs may contain 1,000–3,000 changed lines when that
+completes one cohesive mechanism removal. Count verification and docs; avoid
+artificial slices that require temporary accounting interfaces or repeated caller
+edits. Smaller cuts remain appropriate at real ownership boundaries.
 Reuse tests; new maintained integration/end-to-end coverage needs strong
 justification. Exploratory probes may remain uncommitted. Choose narrow unit
 regressions with durable value, not new test scaffolding by default.

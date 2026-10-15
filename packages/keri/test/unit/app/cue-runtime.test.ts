@@ -7,7 +7,6 @@ import { CueDelivery } from "../../../src/app/cue-delivery.ts";
 import { admitCueEmission, prepareCueEmission, type PreparedCueEmission } from "../../../src/app/cue-preparation.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
@@ -187,7 +186,7 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
       release.resolve();
       yield* halting;
       assertEquals(active.cues.length, 1);
-      assertEquals(active.resources.used.bytes > 0, true, "the remaining cue retains its owner");
+      assertEquals(active.resources.used.bytes, 0, "the remaining queued record holds no output credit");
       yield* processRuntimeTurn(active, { sink });
       assertEquals(active.resources.used.bytes, 0);
       active.cues.push({ kin: "oobiFailed", url: "http://peer.test/", reason: "gone" });
@@ -231,7 +230,7 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
         serder: replyEvent("/loc/scheme", { eid: hab.pre, scheme: "http", url: "http://localhost" }),
       };
       const resources = new ResourcePolicy();
-      const ordinary = new Deck([cue], 1);
+      const ordinary = new Deck([cue]);
       const expected = hab.interpretCue(cue)!;
       const fault = new Error("destination admission failed");
       assertStrictEquals(
@@ -261,19 +260,6 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
           ResourceAdmissionError,
         );
         assertEquals(limit.reason, "limit");
-        const sourcePolicy = new ResourcePolicy({ bytes: 40 * 1024 ** 2 });
-        const source = new CueDeck(sourcePolicy, 1);
-        source.push({ kin: "replay", messages: [new Uint8Array(9 * 1024 ** 2)] });
-        const sourceBytes = sourcePolicy.used.bytes;
-        const ownedFloor = assertThrows(
-          () => prepareCueEmission(hab, source, sourcePolicy, () => undefined),
-          ResourceAdmissionError,
-        );
-        assertEquals(ownedFloor.reason, "limit");
-        assertEquals(source.length, 1);
-        assertEquals(sourcePolicy.used.bytes, sourceBytes);
-        source.clear();
-        assertEquals(sourcePolicy.used.bytes, 0);
         assertEquals(calls, 0);
         assertStrictEquals(ordinary.peekHead(), cue);
       } finally {
@@ -300,15 +286,8 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
       assertEquals(plainDeck.empty, true);
       plainOwner!.release();
       assertEquals(plainPolicy.used.bytes, 0);
-      for (const deck of [ordinary, new CueDeck(resources, 1)]) {
-        if (deck instanceof CueDeck) {
-          deck.push(cue);
-          assertThrows(
-            () => prepareCueEmission(hab, deck, new ResourcePolicy(), () => undefined),
-            RangeError,
-            "exact policy",
-          );
-        }
+      {
+        const deck = ordinary;
         const retained = resources.used.bytes;
         const currentInterpretation = hab.interpretCue;
         hab.interpretCue = () => {
@@ -340,10 +319,8 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
         assertEquals(deck.length, 0);
         assertEquals(owner.emission?.kind, expected.kind);
         assertEquals(resources.used.bytes >= 8 * 1024 ** 2, true);
-        if (!(deck instanceof CueDeck)) {
-          deck.push(cue);
-          deck.pull();
-        }
+        deck.push(cue);
+        deck.pull();
         const ready = Promise.withResolvers<void>(),
           returning = Promise.withResolvers<void>(),
           release = Promise.withResolvers<void>();
@@ -549,7 +526,7 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
       runtime.cues.push(cue);
       assertEquals(runtime.deliveries.enqueueCue(sender, runtime.cues, route), { kind: "prepared" });
       const query = sender.query(sender.pre, sender.pre, { route: "logs" as const, q: {} });
-      for (let index = 0; index < 7; index++) {
+      for (let index = 0; index < 9; index++) {
         runtime.deliveries.enqueue(() => ({
           url: "https://query.test/",
           body: query,
@@ -557,11 +534,6 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
           destination: sender.pre,
         }));
       }
-      runtime.cues.push(cue);
-      const full = runtime.deliveries.enqueueCue(sender, runtime.cues, route);
-      if (full.kind !== "refuse") throw new Error("Expected occupied delivery queue");
-      assertObjectMatch(full, { kind: "refuse", error: { message: "Deck capacity exceeded" } });
-      assertEquals([runtime.cues.length, routes], [1, 1], "item refusal precedes interpretation/route acquisition");
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
         failed,
@@ -576,18 +548,14 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
       assertEquals(runtime.resources.used.bytes, retained, "foreign busy retains the prepared cue owner");
       assertEquals(preparationTurns, previousTurns, "an exact packet retry cannot recapture protocol reply cues");
       injected = false;
-      assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 7, pending: true });
+      assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 9, pending: true });
       assertEquals(
         packets.query.length,
-        7,
-        "the full eight-slot queue retains first-target failure and drains queries",
+        9,
+        "more than eight queued deliveries retain first-target failure and drain queries",
       );
       for (let pass = 0; pass < 4; pass++) yield* runtime.deliveries.process(runtime);
       assertEquals([packets.second.length, packets.third.length], [1, 1], "failed first target does not stop siblings");
-      const original = runtime.cues instanceof CueDeck ? runtime.cues.takeOwned()! : undefined;
-      if (!original) throw new Error("Expected admitted runtime source");
-      assertStrictEquals(original.cue, cue, "the capacity-refused original cue is still present");
-      original.release();
       for (const wire of packets.first) assertEquals(wire, packets.first[0], "retries preserve the exact wire");
       injected = true;
       assertStrictEquals(

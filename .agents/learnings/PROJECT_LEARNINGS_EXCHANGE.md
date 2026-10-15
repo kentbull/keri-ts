@@ -22,16 +22,12 @@ saved signatures. Parent evidence never authenticates a child.
 
 Strict missing extras query/reject without creating escrow. Missing sender source
 state escrows only for opted-in routes; MissingSignatureError counterparts preserve
-existing escrow. Signature/dependency query cues follow new escrow insertion. Injected CueDeck holds
-its exact new sender/proof/schema batch before nested staging and durable evidence,
-archive or metadata publication. The passive owner predates I/O/cleanup and survives
-joined cancellation. Recheck membership before commit effects; changed async plans
-fail without replacing another writer's escrow. Ordinary Deck keeps its cue order.
-Authentication queries admit per-invocation ordered coordinate batches after charging
-Map/key/query scratch and checking unique item capacity before query construction.
-Published queries outlive later verification or rejection. Earlier resolution/proof
-arrays and native reads remain open, as do KRAM and IPEX notification producers;
-private ESSR verification snapshots and native/copy admission remain open.
+existing escrow. Signature/dependency cues follow actual new escrow insertion.
+Ordinary Decks carry records without reservation, inspection or retained-byte credit.
+Authentication queries deduplicate coordinates in input order; already published
+queries remain available after later verification or rejection. Nested staging
+and joined payload cleanup remain real resource lifetimes. Determine whether to
+publish a pending cue from the escrow write result, not a pre-I/O membership plan.
 An incomplete duplicate remains pending without replacing accepted rows or rerunning
 handling; `complete(said)` reports durable acceptance, not the current attempt.
 Canonical 32-digit signature ordinals prevent Number/Seqner retry duplicates.

@@ -50,11 +50,9 @@ root; do not inject a delivery-worker bundle into Respondant. CueDelivery owns
 its lazy cursor and exact pending target, exposes synchronous preparation and
 retirement, and does not discover runtime services or execute transport. The
 delivery queue applies joined transport outcomes and owns failed-packet transfer. Cursor/packet
-cleanup borrows emission and route data; the queue retains actual source/route
-owners, and reply batches retain shared emission ownership. No fake no-op owner
-is needed. Plain Deck readers pull ordinary cue references directly; admitted
-sources transfer real OwnedCue handles. Do not normalize borrowed references
-into no-op cleanup/retain handles. Reply routes retire with queued delivery even when an HTTP borrower
+cleanup borrows emission and route data. All cue queues and correlated reply
+batches carry ordinary records. Only actual output/iterator resources need cleanup;
+do not wrap cue references in retain/release handles. Reply routes retire with queued delivery even when an HTTP borrower
 keeps emission bytes alive. Preparation returns
 prepared/empty/refuse records, and the composition root consumes delivery refusals
 directly. A refused destination restores source ownership; foreign preparation
@@ -91,10 +89,9 @@ mutable request state. Without explicit mailbox routes, poll every eligible witn
 mailbox in stable order through the existing per-endpoint workers. A logs reply is stored at the
 witness that answered; querying alternatives while polling one retired witness
 cannot recover it. Explicit mailbox precedence remains separate.
-Mailbox query correlation uses its own exact-policy
-CueDeck (64 held slots by default); selected cues retain byte/item credit through
-joined nested-reader cleanup. Admit the destination before removing a source cue;
-shutdown clears unmatched owners only after active reads close.
+Mailbox query correlation uses an ordinary Deck, preserving unmatched order.
+Selecting a match removes the record; nested readers retain their own real cleanup.
+Shutdown joins active reads before clearing unmatched correlations.
 Shared transport readers cancel once, join that Promise and always unlock;
 single errors retain identity and distinct read/cleanup failures aggregate.
 SSE's earlier reader owner re-observes its pending read/cancel Promises after
@@ -163,33 +160,15 @@ two-slot deployments can refuse ingress while both polls are live. Byte/decrypti
 ceilings remain 256 MiB/one, and older two-slot measurements keep that label.
 AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
-Protocol producers use their queues directly: plain Decks carry records; admitted
-queues reserve actual retention before effects and publish after the owning writes.
-CueDeck owns its remaining metadata inspection and retention admission directly;
-there is no generic cue-byte reservation/result API or configurable copy allowance.
-This existing accounting policy remains under audit, not justified by its tests.
-Runtime delivery admission returns queued/ineligible/refuse before wire preparation;
-its query sink consumes that result directly. QueryCoordinator retains plain Deck
-records without restoring removed metadata reservations or queue caps.
-CueReader exposes only borrowing, transfer, and requeue; interpreting a plain
-queue borrows its input record and removes it only after acceptance.
-CueDeck composes one Deck<OwnedCue>; it has no raw-cue mirror or destructive unowned removal API.
-CueReader describes actual admitted ownership only. Standalone caller-owned Decks
-are read and written directly, without synthetic owners or publication adapters.
-Default AgentRuntime CueDeck preparation holds concrete metadata/backing and item credit;
-ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
-clone/state and decision-carried duplicate/escrow cues now prepare before effects
-in the default runtime or an explicitly supplied CueDeck. Revery's own missing-signer query batches
-also prepare before BADA/proof/escrow effects. /ksn holds its concrete query batch
-and admits its concrete keyStateSaved child before proof/state writes on shared
-or distinct decks. Registry and credential TSN hold the same preparation while admitting its
-actual new dependency query or txnStateSaved child before proof/Broker effects.
-Exact family membership prevents duplicate query credit while Broker retains
-registry/attester/TEL dependency migration. OOBI typed cue producers also admit
-actual batches before effects. Runtime scopes the deck after backing stores and before
-consumers; shutdown joins outputs, clears queued owners, then closes owned stores.
-Explicit-close callers first join their request/runtime tasks; transferred owners
-retain credit through their own joined cleanup. Count checks remain finite item policy.
+Protocol producers and consumers share ordinary Deck records. KEL/Revery/KSN,
+registry/credential TSN, EXN, verifier and OOBI publish cues after the owning
+writes. KEL live state and cues wait for native commit. Broker membership controls
+duplicate queries and dependency migration. No cue inspection, capacity, policy
+identity, prepared-batch or reference-owner layer remains. QueryReplies correlates
+ordinary batches; readiness callbacks preserve paired replies and cancellation
+returns uncaptured records to the background flow. Runtime shutdown joins output
+cleanup, clears records, then closes owned stores. Runtime delivery query/output
+accounting still awaits removal and is not a pattern for new components.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
 Complete-record ingress charges shared bytes before copying; queued and processing
@@ -296,11 +275,10 @@ interpretation, route, reserve and observer failures propagate. This does not
 admit all decoded/native preparation copies.
 Cue interpretation and finite witness snapshots still share
 cueDeliveryBudget: 8 MiB wire, 24 MiB preparation; query routes still use 1 MiB. Direct reply combined
-floors derive from it; cue admission returns its charge instead of ledger-delta inspection.
-Admitted cue interpretation is synchronous: destination item admission precedes
-preparation, and atomic acceptance precedes ordinary source removal. Existing
-CueDeck credit transfers/requeues; lazy replay stays unopened. The accepting
-owner releases after joined consumption. This facility alone is not reliable
+floors derive from it; this remaining output accounting is scheduled for removal.
+Cue interpretation is synchronous: successful destination preparation precedes
+ordinary source removal. Lazy replay stays unopened until consumption. Output
+resources release after joined consumption. This facility alone is not reliable
 handoff by itself. Custom runtime cue drains now prepare one input/output owner per
 short turn and await the sink outside the guard; register that owner before sink
 resources so cancellation joins child cleanup before release. Initial pass count
@@ -369,11 +347,10 @@ A response scope
 outlives fetch headers and must not inherit a request signal that aborts when the
 handler returns. requestFrame/postCesr retain frame owners until consumption ends.
 
-KEL replay exposes frozen prefix/from/end metadata; cue admission inspects it
-without opening a body/iterator or walking the borrowed Baser. Retained/fanout
-owners keep that credit. Canonical TEL captures retain at most two frozen ranges
-and wire settings with a borrowed Reger; admission opens no readers/store traversal.
-Capture-time allocation and other opaque source forms stay separate.
+KEL replay exposes frozen prefix/from/end metadata with a borrowed Baser; TEL
+captures at most two frozen ranges and wire settings with a borrowed Reger.
+Queue transfer does not open readers or traverse stores. Captures carry no cue
+credit. The backing stores must remain open while replay is consumed.
 Replay captures first-seen ranges, hydrates one finite event and releases cursors
 before transport suspension. Query credits remain charged through failed delivery;
 bounded passes drain only their initial work. Generic witness and signed-exchange

@@ -6,9 +6,6 @@ import {
   NumberPrimitive,
   parseBytes,
   Prefixer,
-  ResourceAdmissionError,
-  ResourceLimitError,
-  ResourcePolicy,
   type SealEvent,
   type SerderKERI,
   Siger,
@@ -20,9 +17,8 @@ import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { Exchanger, type ExchangeRouteHandler } from "../../../src/app/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
-import { Deck, DeckFullError } from "../../../src/core/deck.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup, TransLastIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { serializeMessage } from "../../../src/core/protocol-serialization.ts";
@@ -606,132 +602,78 @@ Deno.test("EXN sender query cues follow new escrow rows and incomplete duplicate
   });
 });
 
-Deno.test("EXN authentication queries admit one ordered coordinate batch before verification or escrow effects", async () => {
+Deno.test("EXN authentication queries preserve coordinate order through verification and escrow effects", async () => {
   await parties(async (hby, alice, bob) => {
     const other = hby.makeHab("other");
     for (const factor of ["last", "source", "supplemental"] as const) {
-      for (const refusal of ["bytes", "inspection", "items", "byteLimit", "itemLimit"] as const) {
-        const serder = exchange("/proof", { factor, refusal }, { sender: alice.pre, pvrsn: Vrsn_2_0 })[0];
-        const sender = endorse(alice, serder), extra = endorse(bob, serder), said = serder.said!;
-        const groups = [100n, 99n, 100n].map((sn) =>
-          new TransIdxSigGroup(extra.prefixer, NumberPrimitive.fromNum(sn), extra.diger, extra.sigers)
-        );
-        const prefix = factor === "source" ? alice.pre : bob.pre;
-        const queries: AgentCue[] = factor === "last"
-          ? [other.pre, bob.pre].map((pre) => ({ kin: "query", pre, route: "logs", q: {} }))
-          : [100n, 99n].map((sn) => ({
-            kin: "query",
-            pre: prefix,
-            route: "logs",
-            q: { s: sn.toString(16) },
-          }));
-        const input = {
-          serder,
-          tsgs: [sender, ...(factor === "supplemental" ? groups : [])],
-          sourceSeals: factor === "source"
-            ? [100n, 99n, 100n].map((sn) => ({ i: sender.prefixer, s: NumberPrimitive.fromNum(sn), d: sender.diger }))
-            : [],
-          unresolvedLast: factor === "last"
-            ? [new Prefixer({ qb64: other.pre }), extra.prefixer, new Prefixer({ qb64: other.pre }), extra.prefixer]
-            : [],
-        };
-        if (refusal === "inspection") await run(() => new Exchanger(hby).processEvent({ serder }));
-        const prior = hby.db.epse.get([said]), date = hby.db.epsd.get([said]), meta = hby.db.exchangeMeta.get([said]);
-        const resources = new ResourcePolicy(refusal === "byteLimit" ? { bytes: 1024 } : {});
-        const cues = new CueDeck(resources, refusal === "itemLimit" ? 1 : 2);
-        let entered!: () => void, release!: () => void, selected = 0, handled = 0;
-        const selecting = new Promise<void>((resolve) => entered = resolve);
-        const gate = new Promise<void>((resolve) => release = resolve);
-        const exchanger = new Exchanger(hby, {
-          resources,
-          cues,
-          handlers: [{
-            resource: "/proof",
-            acceptsSscs: true,
-            acceptsMissingEvidence: factor === "last",
-            verifyEvidence({ factors }) {
-              if (factor !== "last") throw new Error("Strict missing proofs cannot select");
-              selected++;
-              return call(async () => {
-                entered();
-                await gate;
-                return factors;
-              });
-            },
-            handle() {
-              handled++;
-            },
-          }],
-        });
-        const pressure = refusal === "bytes" || refusal === "inspection"
-          ? resources.reserve({ bytes: resources.limits.bytes - (refusal === "inspection" ? 20_000 : 0) })
-          : undefined;
-        if (pressure && pressure.kind !== "reserve") throw new Error("Expected byte pressure");
-        if (refusal === "items") cues.push({ kin: "proof", said: "occupied" });
-        const held = resources.used.bytes;
-        const error = await assertRejects(
-          () => run(() => exchanger.processEvent(input)),
-          refusal === "items" ? DeckFullError : refusal === "itemLimit" ? ResourceLimitError : ResourceAdmissionError,
-        );
-        if (error instanceof ResourceAdmissionError) {
-          assertEquals(error.reason, refusal === "byteLimit" ? "limit" : "busy");
-        }
-        assertEquals(resources.used.bytes, held);
-        assertEquals(cues.toArray().some((cue) => cue.kin === "query"), false);
-        assertEquals([selected, handled], [0, 0]);
+      const serder = exchange("/proof", { factor }, { sender: alice.pre, pvrsn: Vrsn_2_0 })[0];
+      const sender = endorse(alice, serder), extra = endorse(bob, serder), said = serder.said!;
+      const groups = [100n, 99n, 100n].map((sn) =>
+        new TransIdxSigGroup(extra.prefixer, NumberPrimitive.fromNum(sn), extra.diger, extra.sigers)
+      );
+      const prefix = factor === "source" ? alice.pre : bob.pre;
+      const queries: AgentCue[] = factor === "last"
+        ? [other.pre, bob.pre].map((pre) => ({ kin: "query", pre, route: "logs", q: {} }))
+        : [100n, 99n].map((sn) => ({
+          kin: "query",
+          pre: prefix,
+          route: "logs",
+          q: { s: sn.toString(16) },
+        }));
+      const input = {
+        serder,
+        tsgs: [sender, ...(factor === "supplemental" ? groups : [])],
+        sourceSeals: factor === "source"
+          ? [100n, 99n, 100n].map((sn) => ({ i: sender.prefixer, s: NumberPrimitive.fromNum(sn), d: sender.diger }))
+          : [],
+        unresolvedLast: factor === "last"
+          ? [new Prefixer({ qb64: other.pre }), extra.prefixer, new Prefixer({ qb64: other.pre }), extra.prefixer]
+          : [],
+      };
+      const cues = new Deck<AgentCue>();
+      let entered!: () => void, release!: () => void, selected = 0, handled = 0;
+      const selecting = new Promise<void>((resolve) => entered = resolve);
+      const gate = new Promise<void>((resolve) => release = resolve);
+      const exchanger = new Exchanger(hby, {
+        cues,
+        handlers: [{
+          resource: "/proof",
+          acceptsSscs: true,
+          acceptsMissingEvidence: factor === "last",
+          verifyEvidence({ factors }) {
+            if (factor !== "last") throw new Error("Strict missing proofs cannot select");
+            selected++;
+            return call(async () => {
+              entered();
+              await gate;
+              return factors;
+            });
+          },
+          handle() {
+            handled++;
+          },
+        }],
+      });
+      const task = run(() => exchanger.processEvent(input));
+      if (factor === "last") {
+        await selecting;
+        assertEquals([selected, handled], [1, 0]);
         assertEquals(hby.db.exns.get([said]), null);
-        assertEquals(hby.db.epse.get([said]), prior);
-        assertEquals(hby.db.epsd.get([said]), date);
-        assertEquals(hby.db.exchangeMeta.get([said]), meta);
-        assertEquals([...hby.db.esigs.getTopItemIter([said, ""])], []);
-        assertEquals([...hby.db.ests.getTopItemIter([said, ""])], []);
-        if (pressure?.kind === "reserve") pressure.reservation.release();
-        cues.takeOwned()?.release();
-        assertEquals(resources.used.bytes, 0);
-        if (refusal === "byteLimit" || refusal === "itemLimit") continue;
-        const task = run(() => exchanger.processEvent(input));
-        if (factor === "last") {
-          await selecting;
-          assertEquals([selected, handled], [1, 0]);
-          assertEquals(hby.db.exns.get([said]), null);
-        }
-        if (factor !== "last") await task;
-        const first = cues.takeOwned()!, second = cues.takeOwned()!;
-        assertEquals([first.cue, second.cue], queries);
-        assertEquals(cues.length, 0);
-        assertEquals(resources.used.bytes > 0, true);
-        first.release();
-        assertEquals(resources.used.bytes > 0, true);
-        release();
-        assertEquals((await task).kind, factor === "last" ? "accept" : factor === "source" ? "escrow" : "reject");
-        assertEquals(resources.used.bytes > 0, true, "Published queries outlive subsequent decisions");
-        second.release();
-        assertEquals(resources.used.bytes, 0);
-        assertEquals(handled, factor === "last" ? 1 : 0);
-        if (factor === "last") assertEquals([...hby.db.esigs.getTopItemIter([said, ""])].length, 1);
       }
+      if (factor !== "last") await task;
+      assertEquals([cues.pull(), cues.pull()], queries);
+      assertEquals(cues.length, 0);
+      release();
+      assertEquals((await task).kind, factor === "last" ? "accept" : factor === "source" ? "escrow" : "reject");
+      assertEquals(handled, factor === "last" ? 1 : 0);
+      if (factor === "last") assertEquals([...hby.db.esigs.getTopItemIter([said, ""])].length, 1);
     }
     const serder = exchange("/proof", {}, { sender: alice.pre, pvrsn: Vrsn_2_0 })[0];
-    const resources = new ResourcePolicy({ bytes: 1 }), empty = new CueDeck(resources, 0);
+    const cues = new Deck<AgentCue>();
     assertEquals(
-      (await run(() =>
-        new Exchanger(hby, { resources, cues: empty }).processEvent({ serder, tsgs: [endorse(alice, serder)] })
-      )).kind,
+      (await run(() => new Exchanger(hby, { cues }).processEvent({ serder, tsgs: [endorse(alice, serder)] }))).kind,
       "accept",
     );
-    assertEquals(resources.used.bytes, 0);
-    const ordinary = new Deck<AgentCue>(undefined, 1);
-    const legacy = new Exchanger(hby, { cues: ordinary });
-    await assertRejects(
-      () =>
-        run(() =>
-          legacy.processEvent({
-            serder,
-            unresolvedLast: [new Prefixer({ qb64: other.pre }), new Prefixer({ qb64: bob.pre })],
-          })
-        ),
-      DeckFullError,
-    );
-    assertEquals(ordinary.toArray(), [{ kin: "query", pre: other.pre, route: "logs", q: {} }]);
+    assertEquals(cues.length, 0);
   });
 });

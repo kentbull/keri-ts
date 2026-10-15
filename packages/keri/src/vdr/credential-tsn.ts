@@ -1,5 +1,4 @@
 import { Dater, Diger, SerderKERI, TraitDex } from "cesr-ts";
-import type { PreparedCueBatch } from "../core/cue-admission.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
@@ -116,8 +115,7 @@ export class CredentialStateReceiver {
     const stored = saved ? registryRecord(saved.asDict()) : null;
     if (saved && !stored) throw new Error("Corrupt stored registry state.");
     const issuer = stored?.ii ?? aid;
-    if (this.rvy.cues instanceof Deck) this.rvy.cues.checkSpace(1);
-    let queries: PreparedCueBatch | undefined;
+
     let queryCues: readonly AgentCue[] = [];
     const escrow = (typ: CredentialEscrowFamily, query: boolean, proof?: ReplyPlan): CredentialReplyDecision => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, vci, aid, diger);
@@ -132,35 +130,28 @@ export class CredentialStateReceiver {
           route: "tels",
           q: { ri: regk, i: typ === "credential-mre" ? "" : vci },
         }];
-      this.rvy.cues.checkSpace(cues.length);
-      const child = cues.length && !(this.rvy.cues instanceof Deck) ? this.rvy.cues.prepare(cues) : undefined;
-      try {
-        if (proof) this.rvy.writeReply(proof);
-        const added = this.tvy.reger.txnsb.escrowStateNotice({
-          typ,
-          pre: vci,
-          aid,
-          serder,
-          diger,
-          dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
-          cigars,
-          tsgs,
-        });
-        if (added !== isNew) throw new Error("Credential escrow membership changed before publication");
-        disposeIncoming();
-        if (queries) queries.publish();
-        else if (queryCues.length) this.rvy.cues.extend(queryCues);
-        if (child) child.publish();
-        else if (cues.length) this.rvy.cues.extend(cues);
-        return {
-          kind: "unverified",
-          reason: "dependencyPending",
-          family: typ,
-          message: "Credential state dependency unavailable.",
-        };
-      } finally {
-        child?.release();
-      }
+
+      if (proof) this.rvy.writeReply(proof);
+      const added = this.tvy.reger.txnsb.escrowStateNotice({
+        typ,
+        pre: vci,
+        aid,
+        serder,
+        diger,
+        dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
+        cigars,
+        tsgs,
+      });
+      if (added !== isNew) throw new Error("Credential escrow membership changed before publication");
+      disposeIncoming();
+      if (queryCues.length) this.rvy.cues.extend(queryCues);
+      if (cues.length) this.rvy.cues.extend(cues);
+      return {
+        kind: "unverified",
+        reason: "dependencyPending",
+        family: typ,
+        message: "Credential state dependency unavailable.",
+      };
     };
     const regsn = record.ra.s === undefined ? 0 : Number.parseInt(record.ra.s, 16);
     if (!stored || Number.parseInt(stored.s, 16) < regsn) return escrow("credential-mre", true);
@@ -195,56 +186,43 @@ export class CredentialStateReceiver {
       retainPrevious: true,
       externalEscrow: true,
     });
-    this.rvy.cues.checkSpace(proof.cues.length);
     queryCues = proof.cues;
-    queries = queryCues.length && !(this.rvy.cues instanceof Deck) ? this.rvy.cues.prepare(queryCues) : undefined;
-    try {
-      if (proof.kind !== "accept") {
-        if (proof.reason === "proofPending") return escrow("credential-mae", false, proof);
-        this.rvy.writeReply(proof);
-        if (queries) queries.publish();
-        else if (queryCues.length) this.rvy.cues.extend(queryCues);
-        return reject("Unverified credential state attester.");
-      }
-      const accepted = this.tvy.reger.tels.getOn(vci, sn);
-      if (!accepted) return escrow("credential-ooo", true, proof);
-      const current = tever.vcState(vci);
-      const raw = this.tvy.reger.tvts.get(dgKey(vci, accepted.qb64));
-      if (!raw || !current) throw new Error("Corrupt accepted credential TEL state.");
-      const event = new SerderKERI({ raw });
-      if (!event.verify() || event.pre !== vci || event.sn !== sn || event.said !== accepted.qb64) {
-        throw new Error("Corrupt accepted credential TEL body.");
-      }
-      if (Tevery.registryKey(event) !== regk) return reject("Credential belongs to a different registry.");
-      const fields = ["vn", "i", "s", "d", "ri", "dt", "et"] as const;
-      if (
-        accepted.qb64 !== record.d || fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(current[key]))
-        || (["s", "d"] as const).some((key) => record.a[key] !== current.a[key])
-        || (["i", "s", "d"] as const).some((key) => record.ra[key] !== current.ra[key])
-      ) return reject("Credential state does not match current accepted TEL and anchors.");
-      const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
-      this.rvy.cues.checkSpace(cues.length);
-      const child = this.rvy.cues instanceof Deck ? undefined : this.rvy.cues.prepare(cues);
-      try {
-        this.rvy.writeReply(proof);
-        this.tvy.reger.txnsb.updateReply(
-          aid,
-          serder,
-          diger,
-          new Dater({ qb64: encodeDateTimeToDater(stamp) }),
-        );
-        if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
-        if (queries) queries.publish();
-        else if (queryCues.length) this.rvy.cues.extend(queryCues);
-        if (child) child.publish();
-        else if (cues.length) this.rvy.cues.extend(cues);
-        return acceptReplyDecision();
-      } finally {
-        child?.release();
-      }
-    } finally {
-      queries?.release();
+
+    if (proof.kind !== "accept") {
+      if (proof.reason === "proofPending") return escrow("credential-mae", false, proof);
+      this.rvy.writeReply(proof);
+      if (queryCues.length) this.rvy.cues.extend(queryCues);
+      return reject("Unverified credential state attester.");
     }
+    const accepted = this.tvy.reger.tels.getOn(vci, sn);
+    if (!accepted) return escrow("credential-ooo", true, proof);
+    const current = tever.vcState(vci);
+    const raw = this.tvy.reger.tvts.get(dgKey(vci, accepted.qb64));
+    if (!raw || !current) throw new Error("Corrupt accepted credential TEL state.");
+    const event = new SerderKERI({ raw });
+    if (!event.verify() || event.pre !== vci || event.sn !== sn || event.said !== accepted.qb64) {
+      throw new Error("Corrupt accepted credential TEL body.");
+    }
+    if (Tevery.registryKey(event) !== regk) return reject("Credential belongs to a different registry.");
+    const fields = ["vn", "i", "s", "d", "ri", "dt", "et"] as const;
+    if (
+      accepted.qb64 !== record.d || fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(current[key]))
+      || (["s", "d"] as const).some((key) => record.a[key] !== current.a[key])
+      || (["i", "s", "d"] as const).some((key) => record.ra[key] !== current.ra[key])
+    ) return reject("Credential state does not match current accepted TEL and anchors.");
+    const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
+
+    this.rvy.writeReply(proof);
+    this.tvy.reger.txnsb.updateReply(
+      aid,
+      serder,
+      diger,
+      new Dater({ qb64: encodeDateTimeToDater(stamp) }),
+    );
+    if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
+    if (queryCues.length) this.rvy.cues.extend(queryCues);
+    if (cues.length) this.rvy.cues.extend(cues);
+    return acceptReplyDecision();
   }
 
   /** Dependency migration and terminal refusal remove indexes; the bounded Broker pass owns retry. */

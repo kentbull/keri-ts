@@ -1,6 +1,5 @@
 import { type SealEvent } from "cesr-ts";
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
-import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { AgentCue, CueEmission, QueryCue, QueryInstruction, QueryRequest } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
@@ -473,7 +472,7 @@ export class QueryCoordinator implements CueSink {
   }
 
   /** Observe a source cue only after the downstream owner has atomically retained eligible delivery. */
-  admitCue(source: CueQueueInput, interpreter: Hab | null, sink: CueSink = this.sink): CueAdmission {
+  admitCue(source: Deck<AgentCue>, interpreter: Hab | null, sink: CueSink = this.sink): CueAdmission {
     const cue = source.peekHead();
     let admission: CueAdmission;
     if (cue?.kin === "query" && sink.admitQuery) {
@@ -483,13 +482,8 @@ export class QueryCoordinator implements CueSink {
       });
       if (admission === "transferred") {
         if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
-        const original = source instanceof Deck ? undefined : source.takeOwned()!;
-        if (source instanceof Deck) source.pull();
-        try {
-          this.observeCue(cue);
-        } finally {
-          original?.release();
-        }
+        source.pull();
+        this.observeCue(cue);
         return "transferred";
       }
     } else admission = sink.admitCue?.(source, interpreter) ?? "ineligible";

@@ -29,17 +29,15 @@ record schemas in structing.ts and counted transport in wrappers.
 ## TEL, verifier and IPEX
 
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless escrow.
-Injected CueDeck prepares the actual rev/brv revoked cue before accepted TEL writes;
-its synchronous publication failures retain exact identity through router catches.
-Ordinary Deck keeps its existing count/decision behavior. TSN pairs and captured
-TEL replay use the existing atomic CueDeck extend/append publication.
+Revocation evidence persists before its ordinary cue is published. Storage or
+publication failures retain their exact identity through router catches. TSN
+pairs are appended in registry/credential order; captured replay stays lazy.
 Verifier owns cached schemas, registry/schema/chain dependencies and saved indexes;
-direct revoked saves and revoked-chain rejection are distinct. Injected CueDeck admits
-actual dependency/saved cues before credential proof, escrow dates or saved indexes.
-Registry/schema cues follow new escrow membership; chain retries always emit. Replay
-resource refusal preserves the current family. Ordinary Deck retains its count guard;
-constructor/native copies and durable cue recovery remain separate gates. Regery/Registry/
-Registrar/Credentialer compose issuer-side operations. Normal outcomes stay typed.
+direct revoked saves and revoked-chain rejection are distinct. Publish ordinary
+dependency/saved cues after writes. Registry/schema cues follow new escrow
+membership; chain retries emit again. Storage failure preserves the retry family.
+Regery/Registry/Registrar/Credentialer compose issuer operations. Normal outcomes
+stay typed. No queue capacity or metadata-credit contract belongs in these paths.
 
 V2 `regeventing.vet/vetBinds` observer verification is read-only; explicit
 RegistryObserver intake owns per-event engine publication, without bulk import. Supplied anchored prefixes cannot hide an unanchored suffix.

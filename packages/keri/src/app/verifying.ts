@@ -1,4 +1,3 @@
-import type { CueQueueInput } from "../core/cue-publishing.ts";
 /**
  * Registry-backed ACDC verifier.
  *
@@ -54,7 +53,7 @@ export interface CredentialStateProvider {
 
 export interface VerifierOptions {
   reger: Reger;
-  cues?: CueQueueInput;
+  cues?: Deck<AgentCue>;
   credentialExpiryMs?: number;
   missingRegistryTimeoutMs?: number;
   missingIssuerTimeoutMs?: number;
@@ -74,7 +73,7 @@ export class Verifier {
 
   readonly hby: Habery;
   readonly reger: Reger;
-  readonly cues: CueQueueInput;
+  readonly cues: Deck<AgentCue>;
   readonly credentialExpiryMs: number;
   readonly missingRegistryTimeoutMs: number;
   readonly missingIssuerTimeoutMs: number;
@@ -118,7 +117,6 @@ export class Verifier {
     seqner: NumberPrimitive;
     saider: Diger;
   }): VerifierDecision {
-    if (this.cues instanceof Deck) this.cues.checkSpace(1);
     const creder = args.creder;
     const said = credentialSaid(creder);
     const regk = creder.regid;
@@ -222,47 +220,27 @@ export class Verifier {
     }
 
     const cue: VerifierCue = { kin: "saved", creder };
-    this.cues.checkSpace();
-    const prepared = this.cues instanceof Deck ? undefined : this.cues.prepare([cue]);
-    try {
-      this.saveCredential(args);
-      if (prepared) prepared.publish();
-      else this.cues.push(cue);
-    } finally {
-      prepared?.release();
-    }
+
+    this.saveCredential(args);
+    this.cues.push(cue);
+
     return { kind: "accept", said };
   }
 
-  /** Admit the actual dependency before credential/proof/date writes in one synchronous turn.
+  /** Persist dependency evidence before publishing its ordinary query cue.
    * Registry/schema queries follow new membership; chain retries always request their dependency.
-   * Preparation refusal leaves the current escrow family and any prior credential proof unchanged.
    */
   private escrowDependency(
     args: Parameters<Verifier["processCredential"]>[0],
     reason: VerifierEscrowReason,
     cue: Exclude<VerifierCue, { kin: "saved" }>,
   ): void {
-    const table = reason === "missingRegistry"
-      ? this.reger.mre
+    const inserted = reason === "missingRegistry"
+      ? this.escrowMRE(args)
       : reason === "missingSchema"
-      ? this.reger.mse
-      : this.reger.mce;
-    const owned = this.cues instanceof Deck ? undefined : this.cues;
-    const fresh = owned ? table.get([credentialSaid(args.creder)]) === null : false;
-    const prepared = owned && (fresh || reason === "missingChain") ? owned.prepare([cue]) : undefined;
-    try {
-      const inserted = reason === "missingRegistry"
-        ? this.escrowMRE(args)
-        : reason === "missingSchema"
-        ? this.escrowMSE(args)
-        : this.escrowMCE(args);
-      if (owned && inserted !== fresh) throw new Error("Credential escrow membership changed during admission");
-      if (prepared) prepared.publish();
-      else if (!owned && (inserted || reason === "missingChain")) this.cues.push(cue);
-    } finally {
-      prepared?.release();
-    }
+      ? this.escrowMSE(args)
+      : this.escrowMCE(args);
+    if (inserted || reason === "missingChain") this.cues.push(cue);
   }
 
   /** Missing registry escrow. */

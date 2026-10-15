@@ -2,9 +2,8 @@ import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import type { Habery } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { StreamCue } from "../../../src/core/cues.ts";
-import { DeckFullError } from "../../../src/core/deck.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import type { Mailboxer } from "../../../src/db/mailboxing.ts";
 
 Deno.test("mailbox director stops active stream polling before its store closes", async () => {
@@ -133,13 +132,12 @@ Deno.test("mailbox query and nested provider share admission before metadata or 
   assertEquals(resources.used.streams, 0);
 });
 
-Deno.test("mailbox correlation retains selected ownership and preceding order through joined shutdown", async () => {
+Deno.test("mailbox correlation preserves preceding order through joined shutdown", async () => {
   const resources = new ResourcePolicy({ streams: 1 });
-  const queryCues = new CueDeck(resources, 5);
+  const queryCues = new Deck<StreamCue>();
   const director = new MailboxDirector({} as Habery, {
     resources,
     queryCues,
-    maxQueryCues: 5,
     mailboxer: { *cloneTopicIter() {} } as unknown as Mailboxer,
   });
   for (const said of ["before-1", "before-2", "selected", "selected", "after"]) {
@@ -165,12 +163,9 @@ Deno.test("mailbox correlation retains selected ownership and preceding order th
     "selected",
     "after",
   ]);
-  // Taking a correlation into the nested provider did not free its occupied slot.
-  assertThrows(() => queryCues.checkSpace(), DeckFullError);
   assertEquals(resources.used.streams, 1);
   const closing = director.close();
   assertEquals(resources.used.streams, 1); // Cancellation must join the pending nested read first.
-  assertThrows(() => queryCues.checkSpace(), DeckFullError);
   await closing;
   assertEquals(await pending, { value: undefined, done: true });
   assertEquals(queryCues.empty, true);
@@ -179,21 +174,14 @@ Deno.test("mailbox correlation retains selected ownership and preceding order th
   assertThrows(() => director.streamQueryResponse("selected"), Error, "closed");
 });
 
-Deno.test("mailbox correlation enforces policy and retires a selected cue on provider failure", async () => {
+Deno.test("mailbox correlation consumes only the selected cue on provider failure", async () => {
   const resources = new ResourcePolicy();
-  const queryCues = new CueDeck(resources, 2);
-  assertThrows(
-    () => new MailboxDirector({} as Habery, { resources, queryCues: new CueDeck(new ResourcePolicy()) }),
-    RangeError,
-    "policy",
-  );
-  assertThrows(() => new MailboxDirector({} as Habery, { maxQueryCues: Infinity }), RangeError, "capacity");
+  const queryCues = new Deck<StreamCue>();
   const failure = new Error("provider storage failure");
   let opened = 0;
   const director = new MailboxDirector({} as Habery, {
     resources,
     queryCues,
-    maxQueryCues: 2,
     mailboxer: {
       *cloneTopicIter() {
         opened++;
@@ -210,17 +198,14 @@ Deno.test("mailbox correlation enforces policy and retires a selected cue on pro
       topics: { "/reply": 0 },
     } as unknown as StreamCue);
   }
-  assertThrows(() => director.retainQueryCue({ kin: "stream" } as StreamCue), DeckFullError);
   assertEquals(opened, 0);
   const reader = director.streamQueryResponse("selected").getReader();
   await reader.read();
   const caught = await assertRejects(() => reader.read());
   assertStrictEquals(caught, failure);
   assertEquals(opened, 1);
-  assertEquals(queryCues.length, 1);
+  assertEquals([...queryCues].map((cue) => cue.serder.said), ["unmatched"]);
   assertEquals(resources.used.streams, 0);
-  queryCues.checkSpace(); // The failed selected owner retired; the unmatched cue still retains credit.
-  assertEquals(resources.used.bytes > 0, true);
   await director.close();
   assertEquals(resources.used.bytes, 0);
 });

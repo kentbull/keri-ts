@@ -1,10 +1,11 @@
-import { b, Dater, ResourceAdmissionError, ResourceLimitError, ResourcePolicy, SerderKERI } from "cesr-ts";
+import { b, Dater, ResourceLimitError, ResourcePolicy, SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ReplyStreams } from "../../../src/app/reply-streams.ts";
 import { witnessQueryGet } from "../../../src/app/witnessing.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
 import { interact } from "../../../src/core/protocol-eventing.ts";
 import { dgKey, onKey } from "../../../src/db/core/keys.ts";
@@ -130,14 +131,13 @@ Deno.test("replay sources reopen their captured extent without including later f
     try {
       const hab = hby.makeHab("alice");
       const said = hab.kever!.said;
-      // Capture and cue admission must not open a body reader, iterator or retained Baser graph.
+      // Capture and queue transfer must not open a body reader, iterator or retained Baser graph.
       const readBody = hby.db.getValBounded;
       hby.db.getValBounded = () => {
-        throw new Error("capture/admission opened event bytes");
+        throw new Error("capture/queue transfer opened event bytes");
       };
       let replay: CapturedKelReplay | null;
-      const resources = new ResourcePolicy();
-      const cues = new CueDeck(resources, 2);
+      const cues = new Deck<AgentCue>();
       try {
         replay = hby.db.replay(hab.pre);
         assertExists(replay);
@@ -150,7 +150,7 @@ Deno.test("replay sources reopen their captured extent without including later f
         assertThrows(() => (replay!.ranges[0] as unknown as number[])[1] = 1, TypeError);
         assertThrows(() => (replay!.ranges as unknown as string[]).push("late"), TypeError);
         assertEquals(CapturedKelReplay.is(Object.create(CapturedKelReplay.prototype)), false);
-        // Copying primitive tuples prevents an Array subclass from hiding an uncharged retained owner.
+        // Copying primitive tuples prevents an Array subclass from retaining unrelated caller data.
         class RetainedRanges extends Array<readonly [string, number, number]> {
           #body = new Uint8Array(1024 * 1024);
           /** Demonstrate actual additional caller retention, excluded from the canonical source. */
@@ -167,16 +167,9 @@ Deno.test("replay sources reopen their captured extent without including later f
           Array.prototype,
           Array.prototype,
         ]);
-        const captureCharge = (source: CapturedKelReplay): number => {
-          const batch = cues.prepare([{ kin: "replay", messages: source }]);
-          const bytes = resources.used.bytes;
-          batch.release();
-          return bytes;
-        };
-        assertEquals(captureCharge(normalized), captureCharge(replay));
         assertThrows(() => new CapturedKelReplay(hby.db, [[hab.pre, 1, 0]], replay!.maxMessageBytes), RangeError);
         assertThrows(() => new CapturedKelReplay(hby.db, [[hab.pre, 0, 0]], 0), RangeError);
-        // Even a borrowed store with opaque additional state is never walked by the cue inspector.
+        // Even a borrowed store with opaque additional state is never walked during queue transfer.
         Object.defineProperty(hby.db, "retainedProbe", {
           get() {
             throw new Error("Baser graph inspected");
@@ -184,27 +177,12 @@ Deno.test("replay sources reopen their captured extent without including later f
           configurable: true,
         });
         cues.push({ kin: "replay", messages: replay });
-        const held = resources.used.bytes;
-        assertEquals(held > 0 && held < 4096, true);
-        const occupied = resources.reserve({ bytes: resources.limits.bytes - held });
-        if (occupied.kind !== "reserve") throw new Error("Expected remaining credit");
-        assertThrows(
-          () => new CueDeck(resources).prepare([{ kin: "replay", messages: replay! }]),
-          ResourceAdmissionError,
-        );
-        assertEquals(resources.used.bytes, resources.limits.bytes);
-        occupied.reservation.release();
       } finally {
         hby.db.getValBounded = readBody;
         delete (hby.db as unknown as Record<string, unknown>).retainedProbe;
       }
       assertExists(replay!);
-      const owner = cues.takeOwned()!;
-      const held = resources.used.bytes;
-      const fanout = owner.retain();
-      assertEquals(resources.used.bytes, held + 128);
-      cues.clear();
-      assertEquals(resources.used.bytes, held + 128, "Active replay owners keep captured metadata credit");
+      assertEquals(cues.pull(), { kin: "replay", messages: replay });
       hab.interact();
       // The source was captured before interaction; two independent readers see the same event identities.
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -214,10 +192,6 @@ Deno.test("replay sources reopen their captured extent without including later f
       }
       assertEquals([...hby.db.replay(hab.pre)!].length, 2);
       assertEquals(hby.db.replay(hab.pre, 2), null);
-      owner.release();
-      assertEquals(resources.used.bytes, held + 128);
-      fanout.release();
-      assertEquals(resources.used.bytes, 0);
       const first = [...replay][0];
       // The counter and every proof byte count toward the exact final allocation budget.
       assertEquals(hby.db.cloneEvtMsg(hab.pre, 0, said, first.length), first);

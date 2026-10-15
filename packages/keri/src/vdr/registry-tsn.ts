@@ -1,5 +1,4 @@
 import { Dater, Diger, Prefixer, SerderKERI, TraitDex } from "cesr-ts";
-import type { PreparedCueBatch } from "../core/cue-admission.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
@@ -109,8 +108,7 @@ export class RegistryStateReceiver {
       return reject("Mismatched issuer or stale registry state.");
     }
     const kever = this.tvy.db.getKever(issuer, { refresh: true });
-    if (this.rvy.cues instanceof Deck) this.rvy.cues.checkSpace(1);
-    let queries: PreparedCueBatch | undefined;
+
     let queryCues: readonly AgentCue[] = [];
     const escrow = (typ: RegistryEscrowFamily, query: boolean, proof?: ReplyPlan): RegistryReplyDecision => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, regk, aid, diger);
@@ -119,36 +117,29 @@ export class RegistryStateReceiver {
         : typ === "registry-mae"
         ? [{ kin: "query", pre: issuer, src: aid, route: "logs", q: {} }]
         : [{ kin: "query", pre: issuer, src: aid, route: "tels", q: { ri: regk, i: "" } }];
-      this.rvy.cues.checkSpace(cues.length);
-      const child = cues.length && !(this.rvy.cues instanceof Deck) ? this.rvy.cues.prepare(cues) : undefined;
-      try {
-        if (proof) this.rvy.writeReply(proof);
-        const added = this.tvy.reger.txnsb.escrowStateNotice({
-          typ,
-          pre: regk,
-          aid,
-          serder,
-          diger,
-          dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
-          cigars,
-          tsgs,
-        });
-        if (added !== isNew) throw new Error("Registry escrow membership changed before publication");
-        // Broker now owns copied pending proof; retain prior accepted BADA evidence in Baser.
-        disposeIncoming();
-        if (queries) queries.publish();
-        else if (queryCues.length) this.rvy.cues.extend(queryCues);
-        if (child) child.publish();
-        else if (cues.length) this.rvy.cues.extend(cues);
-        return {
-          kind: "unverified",
-          reason: "dependencyPending",
-          family: typ,
-          message: "Registry state dependency unavailable.",
-        };
-      } finally {
-        child?.release();
-      }
+
+      if (proof) this.rvy.writeReply(proof);
+      const added = this.tvy.reger.txnsb.escrowStateNotice({
+        typ,
+        pre: regk,
+        aid,
+        serder,
+        diger,
+        dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
+        cigars,
+        tsgs,
+      });
+      if (added !== isNew) throw new Error("Registry escrow membership changed before publication");
+      // Broker now owns copied pending proof; retain prior accepted BADA evidence in Baser.
+      disposeIncoming();
+      if (queryCues.length) this.rvy.cues.extend(queryCues);
+      if (cues.length) this.rvy.cues.extend(cues);
+      return {
+        kind: "unverified",
+        reason: "dependencyPending",
+        family: typ,
+        message: "Registry state dependency unavailable.",
+      };
     };
     if (!kever) return escrow("registry-mae", true);
     const watchers = new Set<string>();
@@ -172,50 +163,37 @@ export class RegistryStateReceiver {
       retainPrevious: true,
       externalEscrow: true,
     });
-    this.rvy.cues.checkSpace(proof.cues.length);
     queryCues = proof.cues;
-    queries = queryCues.length && !(this.rvy.cues instanceof Deck) ? this.rvy.cues.prepare(queryCues) : undefined;
-    try {
-      if (proof.kind !== "accept") {
-        if (proof.reason === "proofPending") return escrow("registry-mae", false, proof);
-        this.rvy.writeReply(proof);
-        if (queries) queries.publish();
-        else if (queryCues.length) this.rvy.cues.extend(queryCues);
-        return reject("Unverified registry state attester.");
-      }
-      const accepted = this.tvy.reger.tels.getOn(regk, sn);
-      if (!accepted) return escrow("registry-ooo", true, proof);
-      const raw = this.tvy.reger.tvts.get(dgKey(regk, accepted.qb64));
-      if (!raw || !stored || stored.d !== accepted.qb64) throw new Error("Corrupt accepted registry TEL state.");
-      const event = new SerderKERI({ raw });
-      if (!event.verify() || event.said !== accepted.qb64 || event.pre !== regk || event.sn !== sn) {
-        throw new Error("Corrupt accepted registry TEL body.");
-      }
-      if (!trusted || accepted.qb64 !== record.d) return reject("Registry state does not match accepted TEL.");
-      // Receiver-generated record time is descriptive; configuration and state fields must agree.
-      const fields = ["vn", "i", "s", "d", "ii", "et", "bt", "b", "c"] as const;
-      if (fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(stored[key]))) {
-        return reject("Registry state metadata mismatch.");
-      }
-      const dater = new Dater({ qb64: encodeDateTimeToDater(stamp) });
-      const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
-      this.rvy.cues.checkSpace(cues.length);
-      const child = this.rvy.cues instanceof Deck ? undefined : this.rvy.cues.prepare(cues);
-      try {
-        this.rvy.writeReply(proof);
-        this.tvy.reger.txnsb.updateReply(aid, serder, diger, dater);
-        if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
-        if (queries) queries.publish();
-        else if (queryCues.length) this.rvy.cues.extend(queryCues);
-        if (child) child.publish();
-        else if (cues.length) this.rvy.cues.extend(cues);
-        return acceptReplyDecision();
-      } finally {
-        child?.release();
-      }
-    } finally {
-      queries?.release();
+
+    if (proof.kind !== "accept") {
+      if (proof.reason === "proofPending") return escrow("registry-mae", false, proof);
+      this.rvy.writeReply(proof);
+      if (queryCues.length) this.rvy.cues.extend(queryCues);
+      return reject("Unverified registry state attester.");
     }
+    const accepted = this.tvy.reger.tels.getOn(regk, sn);
+    if (!accepted) return escrow("registry-ooo", true, proof);
+    const raw = this.tvy.reger.tvts.get(dgKey(regk, accepted.qb64));
+    if (!raw || !stored || stored.d !== accepted.qb64) throw new Error("Corrupt accepted registry TEL state.");
+    const event = new SerderKERI({ raw });
+    if (!event.verify() || event.said !== accepted.qb64 || event.pre !== regk || event.sn !== sn) {
+      throw new Error("Corrupt accepted registry TEL body.");
+    }
+    if (!trusted || accepted.qb64 !== record.d) return reject("Registry state does not match accepted TEL.");
+    // Receiver-generated record time is descriptive; configuration and state fields must agree.
+    const fields = ["vn", "i", "s", "d", "ii", "et", "bt", "b", "c"] as const;
+    if (fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(stored[key]))) {
+      return reject("Registry state metadata mismatch.");
+    }
+    const dater = new Dater({ qb64: encodeDateTimeToDater(stamp) });
+    const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
+
+    this.rvy.writeReply(proof);
+    this.tvy.reger.txnsb.updateReply(aid, serder, diger, dater);
+    if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
+    if (queryCues.length) this.rvy.cues.extend(queryCues);
+    if (cues.length) this.rvy.cues.extend(cues);
+    return acceptReplyDecision();
   }
 
   /** Recheck trust, BADA and current dependencies on every finite retry pass. */

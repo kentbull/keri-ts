@@ -1,9 +1,7 @@
 import { type Cigar, Diger, Ilks, Prefixer, ResourceAdmissionError, SerderKERI } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import type { PreparedCueBatch } from "../core/cue-admission.ts";
-import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { AgentCue, OobiResolvedCue } from "../core/cues.ts";
-import { Deck, DeckFullError } from "../core/deck.ts";
+import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
@@ -45,7 +43,7 @@ export interface OobiJob {
 type OobiQueueKind = "oobis" | "woobi";
 
 interface OobieryOptions {
-  cues?: CueQueueInput;
+  cues?: Deck<AgentCue>;
   services?: RuntimeServices;
 }
 
@@ -65,7 +63,7 @@ interface OobieryOptions {
 export class Oobiery {
   readonly hby: Habery;
   readonly reactor: Reactor;
-  readonly cues: CueQueueInput;
+  readonly cues: Deck<AgentCue>;
   readonly services: RuntimeServices;
   private active = false;
 
@@ -91,18 +89,12 @@ export class Oobiery {
    * - unlike the older bootstrap runtime, there is no root in-memory OOBI deck
    */
   resolve(url: string, alias?: string): void {
-    this.cues.checkSpace();
     const meta = parseOobiUrl(url, alias);
     const kind = queueKindFor(url), record = this.queuedRecord(meta);
     const cues: AgentCue[] = [{ kin: "oobiQueued", url, alias: meta.alias }];
-    const batch = this.cues instanceof Deck ? undefined : this.cues.prepare(cues);
-    try {
-      this.pinQueueStore(kind, url, record);
-      if (batch) batch.publish();
-      else this.cues.extend(cues);
-    } finally {
-      batch?.release();
-    }
+
+    this.pinQueueStore(kind, url, record);
+    this.cues.extend(cues);
   }
 
   /**
@@ -115,7 +107,7 @@ export class Oobiery {
    * - transitions the durable record into `eoobi.` or `roobi.`
    */
   *processOnce(): Operation<void> {
-    if (this.active || this.cues.length === this.cues.capacity) return;
+    if (this.active) return;
     const item = this.nextQueued();
     if (item) {
       const [kind, url, record] = item;
@@ -129,7 +121,7 @@ export class Oobiery {
       try {
         this.completeMultiOobi(url, record);
       } catch (error) {
-        if (!(error instanceof DeckFullError || (error instanceof ResourceAdmissionError && error.reason === "busy"))) {
+        if (!(error instanceof ResourceAdmissionError && error.reason === "busy")) {
           throw error;
         }
         // The parent keeps its durable moobi owner until a later turn can admit its result.
@@ -159,7 +151,7 @@ export class Oobiery {
         // Each finite child joins its body, fetch and parser before releasing the earlier job owner.
         yield* call(() => self.processJob(kind, url, record));
       } catch (error) {
-        if (!(error instanceof DeckFullError || (error instanceof ResourceAdmissionError && error.reason === "busy"))) {
+        if (!(error instanceof ResourceAdmissionError && error.reason === "busy")) {
           throw error;
         }
         // Temporary cue/resource saturation leaves durable work for the existing worker's later turn.
@@ -277,18 +269,13 @@ export class Oobiery {
     const services = this.services;
     if (!response.ok) {
       yield* closeResponseBody(response);
-      this.cues.checkSpace();
       const result = { ...queuedRecord, date: new Date().toISOString(), state: `http-${response.status}` };
       const cues: AgentCue[] = [{ kin: "oobiFailed", url, reason: `HTTP ${response.status}` }];
-      const batch = this.cues instanceof Deck ? undefined : this.cues.prepare(cues);
-      try {
-        this.remQueueStore(kind, url);
-        this.hby.db.eoobi.pin(url, result);
-        if (batch) batch.publish();
-        else this.cues.extend(cues);
-      } finally {
-        batch?.release();
-      }
+
+      this.remQueueStore(kind, url);
+      this.hby.db.eoobi.pin(url, result);
+      this.cues.extend(cues);
+
       return;
     }
 
@@ -358,31 +345,14 @@ export class Oobiery {
       role: meta.role ?? undefined,
       eid: meta.eid ?? undefined,
     };
-    const batch = yield* this.holdResolvedOobi(cue);
     this.pinQueueStore(kind, url, queuedRecord);
     this.hby.db.coobi.pin(url, { ...queuedRecord, state: "streaming" });
     yield* this.reactor.process((signal) => streamBytes(response.body, { signal }));
 
-    if (!batch) this.cues.checkSpace(); // Preserve the ordinary Deck's existing post-intake guard.
     this.hby.db.coobi.rem(url);
     this.hby.db.roobi.pin(url, { ...queuedRecord, date: new Date().toISOString(), state: "resolved" });
     persistResolvedContact(this.hby, meta.cid, { alias: queuedRecord.oobialias, oobi: url });
-    if (batch) batch.publish();
-    else this.cues.push(cue);
-  }
-
-  /** Keep prospective CESR result credit until all later body/parser owners join cleanup. */
-  private *holdResolvedOobi(cue: OobiResolvedCue): Operation<PreparedCueBatch | undefined> {
-    if (this.cues instanceof Deck) return undefined;
-    const publisher = this.cues;
-    return yield* resource<PreparedCueBatch>(function*(provide) {
-      const batch = publisher.prepare([cue]);
-      try {
-        yield* provide(batch);
-      } finally {
-        batch.release();
-      }
-    });
+    this.cues.push(cue);
   }
 
   /** Handle schema data-OOBIs before generic JSON reply handling. */
@@ -405,19 +375,14 @@ export class Oobiery {
       return false;
     }
 
-    this.cues.checkSpace();
     const result = { ...record, date: new Date().toISOString(), state: "resolved" };
     const cues: AgentCue[] = [{ kin: "oobiResolved", url }];
-    const batch = this.cues instanceof Deck ? undefined : this.cues.prepare(cues);
-    try {
-      this.hby.db.schema.pin(schemer.said, schemer);
-      this.hby.db.coobi.rem(url);
-      this.hby.db.roobi.pin(url, result);
-      if (batch) batch.publish();
-      else this.cues.extend(cues);
-    } finally {
-      batch?.release();
-    }
+
+    this.hby.db.schema.pin(schemer.said, schemer);
+    this.hby.db.coobi.rem(url);
+    this.hby.db.roobi.pin(url, result);
+    this.cues.extend(cues);
+
     return true;
   }
 
@@ -472,7 +437,6 @@ export class Oobiery {
       return;
     }
 
-    this.cues.checkSpace(urls.length);
     // Normalize every child before the first queue write; malformed later URLs cannot leave partial fanout.
     const children = urls.map((childUrl) => {
       const meta = parseOobiUrl(childUrl, record.oobialias ?? undefined);
@@ -480,21 +444,15 @@ export class Oobiery {
     });
     const cues: AgentCue[] = children.map(({ url, meta }) => ({ kin: "oobiQueued", url, alias: meta.alias }));
     const parent = { ...record, cid, date: new Date().toISOString(), state: "pending-multi-oobi", urls };
-    const batch = this.cues instanceof Deck ? undefined : this.cues.prepare(cues);
-    try {
-      for (const child of children) this.pinQueueStore(child.kind, child.url, child.record);
-      this.hby.db.coobi.rem(url);
-      this.hby.db.moobi.pin(url, parent);
-      if (batch) batch.publish();
-      else this.cues.extend(cues);
-    } finally {
-      batch?.release();
-    }
+
+    for (const child of children) this.pinQueueStore(child.kind, child.url, child.record);
+    this.hby.db.coobi.rem(url);
+    this.hby.db.moobi.pin(url, parent);
+    this.cues.extend(cues);
   }
 
   /** Finalize one parent multi-OOBI after its child URLs all reach terminal state. */
   private completeMultiOobi(url: string, record: OobiRecord): void {
-    this.cues.checkSpace();
     const urls = record.urls ?? [];
     const date = new Date().toISOString();
     const failed = urls.length === 0
@@ -515,19 +473,14 @@ export class Oobiery {
         role: record.role ?? undefined,
         eid: record.eid ?? undefined,
       }];
-    const batch = this.cues instanceof Deck ? undefined : this.cues.prepare(cues);
-    try {
-      this.hby.db.moobi.rem(url);
-      if (failed) this.hby.db.eoobi.pin(url, result);
-      else {
-        this.hby.db.roobi.pin(url, result);
-        persistResolvedContact(this.hby, record.cid ?? null, { alias: record.oobialias, oobi: url });
-      }
-      if (batch) batch.publish();
-      else this.cues.extend(cues);
-    } finally {
-      batch?.release();
+
+    this.hby.db.moobi.rem(url);
+    if (failed) this.hby.db.eoobi.pin(url, result);
+    else {
+      this.hby.db.roobi.pin(url, result);
+      persistResolvedContact(this.hby, record.cid ?? null, { alias: record.oobialias, oobi: url });
     }
+    this.cues.extend(cues);
   }
 
   /** Mark one fetched OOBI as terminal failure and clear its in-flight state. */
@@ -536,18 +489,12 @@ export class Oobiery {
     record: OobiRecordShape,
     state: string,
   ): void {
-    this.cues.checkSpace();
     const result = { ...record, date: new Date().toISOString(), state };
     const cues: AgentCue[] = [{ kin: "oobiFailed", url, reason: state }];
-    const batch = this.cues instanceof Deck ? undefined : this.cues.prepare(cues);
-    try {
-      this.hby.db.coobi.rem(url);
-      this.hby.db.eoobi.pin(url, result);
-      if (batch) batch.publish();
-      else this.cues.extend(cues);
-    } finally {
-      batch?.release();
-    }
+
+    this.hby.db.coobi.rem(url);
+    this.hby.db.eoobi.pin(url, result);
+    this.cues.extend(cues);
   }
 
   /** Persist one queued record into the selected durable queue. */
@@ -611,7 +558,6 @@ export class Oobiery {
       );
     }
 
-    if (this.cues instanceof Deck) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
     const proof = this.reactor.revery.decideReply({
       serder: args.serder,
       saider: args.diger,
@@ -622,44 +568,29 @@ export class Oobiery {
       tsgs: args.tsgs,
     });
     const queryCues = this.reactor.revery.cues;
-    queryCues.checkSpace(proof.cues.length);
-    const queries = proof.cues.length && !(queryCues instanceof Deck)
-      ? queryCues.prepare(proof.cues)
-      : undefined;
-    try {
-      if (proof.kind === "unverified") {
-        this.reactor.revery.writeReply(proof);
-        if (queries) queries.publish();
-        else if (proof.cues.length) queryCues.extend(proof.cues);
-        return unverifiedReplyDecision(`Unverified introduction reply ${args.serder.said ?? "<unknown>"}.`);
-      }
-      const meta = parseOobiUrl(oobi), kind = queueKindFor(oobi);
-      const record = {
-        date: dt,
-        state: "queued",
-        cid: cid ?? meta.cid ?? null,
-        eid: meta.eid ?? null,
-        role: meta.role ?? null,
-        oobialias: meta.alias ?? null,
-        said: meta.said ?? null,
-      };
-      const cues: AgentCue[] = [{ kin: "oobiQueued", url: oobi }];
-      this.cues.checkSpace(cues.length);
-      const batch = this.cues instanceof Deck ? undefined : this.cues.prepare(cues);
-      try {
-        this.reactor.revery.writeReply(proof);
-        this.pinQueueStore(kind, oobi, record);
-        if (queries) queries.publish();
-        else if (proof.cues.length) queryCues.extend(proof.cues);
-        if (batch) batch.publish();
-        else this.cues.extend(cues);
-        return acceptReplyDecision();
-      } finally {
-        batch?.release();
-      }
-    } finally {
-      queries?.release();
+
+    if (proof.kind === "unverified") {
+      this.reactor.revery.writeReply(proof);
+      if (proof.cues.length) queryCues.extend(proof.cues);
+      return unverifiedReplyDecision(`Unverified introduction reply ${args.serder.said ?? "<unknown>"}.`);
     }
+    const meta = parseOobiUrl(oobi), kind = queueKindFor(oobi);
+    const record = {
+      date: dt,
+      state: "queued",
+      cid: cid ?? meta.cid ?? null,
+      eid: meta.eid ?? null,
+      role: meta.role ?? null,
+      oobialias: meta.alias ?? null,
+      said: meta.said ?? null,
+    };
+    const cues: AgentCue[] = [{ kin: "oobiQueued", url: oobi }];
+
+    this.reactor.revery.writeReply(proof);
+    this.pinQueueStore(kind, oobi, record);
+    if (proof.cues.length) queryCues.extend(proof.cues);
+    this.cues.extend(cues);
+    return acceptReplyDecision();
   }
 }
 

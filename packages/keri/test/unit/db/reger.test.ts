@@ -11,7 +11,6 @@ import {
   NumDex,
   Prefixer,
   ResourceLimitError,
-  ResourcePolicy,
   Saider,
   Seqner,
   SerderACDC,
@@ -21,7 +20,8 @@ import {
   type Versionage,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, Reger } from "../../../src/db/reger.ts";
@@ -334,7 +334,7 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
         assertEquals(input.hiddenBytes(), 1024 * 1024);
         assertEquals(Object.getPrototypeOf(normalized.ranges), Array.prototype);
         assertEquals(Object.getPrototypeOf(normalized.ranges[0]), Array.prototype);
-        const resources = new ResourcePolicy(), deck = new CueDeck(resources, 1);
+        const deck = new Deck<AgentCue>();
         const iterate = CapturedTelReplay.prototype[Symbol.iterator];
         let opened = 0;
         try {
@@ -344,31 +344,8 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
           };
           yield* reger.close();
           deck.push({ kin: "replay", messages: pair });
-          const owner = deck.takeOwned()!;
-          assertEquals([opened, reading], [0, 0], "Admission opens no iterator or store reader even while closed");
-          assertEquals(
-            resources.used.bytes > 0 && resources.used.bytes < 65536,
-            true,
-            "Only fixed metadata/reference is retained",
-          );
-          owner.release();
-          assertEquals(resources.used.bytes, 0);
-          assertThrows(
-            () => deck.prepare([{ kin: "replay", messages: Object.create(CapturedTelReplay.prototype) }]),
-            RangeError,
-            "Opaque",
-          );
-          /** Additional prototypes are not canonical replay owners. */
-          class DerivedCapture extends CapturedTelReplay {}
-          assertThrows(
-            () =>
-              deck.prepare([{
-                kin: "replay",
-                messages: new DerivedCapture(reger, selected.ranges, selected.settings),
-              }]),
-            RangeError,
-            "Opaque",
-          );
+          assertEquals(deck.pull(), { kin: "replay", messages: pair });
+          assertEquals([opened, reading], [0, 0], "Queue transfer opens no iterator or store reader even while closed");
           yield* reger.reopen();
           assertEquals([...pair], [
             concatBytes(Counter.makeGVC(Vrsn_2_0), v2Expected),

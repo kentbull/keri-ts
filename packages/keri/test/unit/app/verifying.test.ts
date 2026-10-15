@@ -6,16 +6,13 @@ import {
   NumberPrimitive,
   NumDex,
   Prefixer,
-  ResourceAdmissionError,
-  ResourceLimitError,
-  ResourcePolicy,
   SerderACDC,
   Signer,
 } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Verifier, type VerifierCue, type VerifierDecision } from "../../../src/app/verifying.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
-import { DeckFullError } from "../../../src/core/deck.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -402,111 +399,68 @@ Deno.test("Verifier rejects DI2I chains explicitly", async () => {
   });
 });
 
-Deno.test("Verifier admits actual saved and dependency ownership before credential or escrow writes", async () => {
+Deno.test("Verifier publishes saved and dependency cues with credential or escrow writes", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `verifier-cues-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const reger = yield* createReger({ name: `verifier-cues-${crypto.randomUUID()}`, temp: true });
     try {
       const issuer = makePrefixer();
       for (const branch of ["registry", "state", "staleState", "schema", "chain", "staleChain", "saved"] as const) {
-        for (const refusal of ["bytes", "items", "byteLimit", "itemLimit"] as const) {
-          const schema = new Schemer({ sed: schemaSed({ requiredIssuee: false }) });
-          if (branch === "schema") hby.db.schema.rem(schema.said);
-          else hby.db.schema.pin(schema.said, schema);
-          const registry = digestFor(`${branch}-${refusal}`).qb64;
-          const child = makeCredential({ issuer: issuer.qb64, registry, schema: schema.said });
-          const creder = makeCredential({
-            issuer: issuer.qb64,
-            registry,
-            schema: schema.said,
-            attrib: { i: issuer.qb64, role: `${branch}-${refusal}` },
-            ...((branch === "chain" || branch === "staleChain") ? { edge: { child: { n: child.said } } } : {}),
-          });
-          if (branch === "state") reger.tevers.set(registry, new FakeTever());
-          else if (branch !== "registry") setState(reger, registry, creder.said!, Ilks.rev);
-          if (branch === "staleState") {
-            (reger.tevers.get(registry) as FakeTever).states.get(creder.said!)!.dt = "2000-01-01T00:00:00Z";
-          }
-          const resources = new ResourcePolicy(refusal === "byteLimit" ? { bytes: 1024 } : {});
-          const cues = new CueDeck(resources, refusal === "itemLimit" ? 0 : 1);
-          const verifier = new Verifier(hby, { reger, cues, credentialExpiryMs: 60_000 });
-          if (branch === "staleChain") {
-            verifier.saveCredential(anchorArgs(child, issuer));
-            setState(reger, registry, child.said!);
-            (reger.tevers.get(registry) as FakeTever).states.get(child.said!)!.dt = "2000-01-01T00:00:00Z";
-          }
-          const pressure = refusal === "bytes" ? resources.reserve({ bytes: resources.limits.bytes }) : undefined;
-          if (pressure && pressure.kind !== "reserve") throw new Error("Expected byte pressure");
-          if (refusal === "items") cues.push({ kin: "proof", said: "occupied" });
-          const before = resources.used.bytes;
-          const error = assertThrows(
-            () => verifier.processCredential(anchorArgs(creder, issuer)),
-            refusal === "items" ? DeckFullError : refusal === "itemLimit" ? ResourceLimitError : ResourceAdmissionError,
-          );
-          if (error instanceof ResourceAdmissionError) {
-            assertEquals(error.reason, refusal === "byteLimit" ? "limit" : "busy");
-          }
-          assertEquals(resources.used.bytes, before);
-          assertEquals(reger.creds.get([creder.said!]), null);
-          assertEquals(reger.cancs.get([creder.said!]), null);
-          assertEquals(reger.saved.get([creder.said!]), null);
-          for (const table of [reger.mre, reger.mse, reger.mce]) assertEquals(table.get([creder.said!]), null);
-          for (
-            const entries of [
-              reger.issus.get([issuer.qb64]),
-              reger.schms.get([schema.said]),
-              reger.subjs.get([issuer.qb64]),
-            ]
-          ) {
-            assertEquals(entries.some((said) => said.qb64 === creder.said), false);
-          }
-          if (pressure?.kind === "reserve") pressure.reservation.release();
-          cues.takeOwned()?.release();
-          assertEquals(resources.used.bytes, 0);
-          if (refusal === "byteLimit" || refusal === "itemLimit") continue;
-          const decision = verifier.processCredential(anchorArgs(creder, issuer));
-          const reason = branch === "schema"
-            ? "missingSchema"
-            : branch === "chain" || branch === "staleChain"
-            ? "missingChain"
-            : "missingRegistry";
-          assertDecision(decision, branch === "saved" ? "accept" : "escrow", branch === "saved" ? undefined : reason);
-          const owner = cues.takeOwned()!;
-          const expected: VerifierCue = branch === "saved"
-            ? { kin: "saved", creder }
-            : branch === "schema"
-            ? { kin: "query", q: { r: "schema", said: schema.said } }
-            : branch === "chain"
-            ? { kin: "proof", said: child.said! }
-            : branch === "staleChain"
-            ? { kin: "query", q: { r: "tels", pre: child.said! } }
-            : {
-              kin: "telquery",
-              q: { ri: registry, i: creder.said!, ...(branch === "registry" ? { issr: issuer.qb64 } : {}) },
-            };
-          assertEquals(owner.cue, expected);
-          assertEquals(resources.used.bytes > 0, true);
-          cues.clear();
-          assertEquals(resources.used.bytes > 0, true);
-          owner.release();
-          assertEquals(resources.used.bytes, 0);
-          if (branch === "saved") {
-            assertEquals(reger.saved.get([creder.said!])?.qb64, creder.said);
-            assertEquals(reger.creds.get([creder.said!])?.raw, creder.raw);
-          } else if (reason === "missingChain") {
-            assertDecision(verifier.processCredential(anchorArgs(creder, issuer)), "escrow", reason);
-            const retry = cues.takeOwned()!;
-            assertEquals(retry.cue, expected);
-            retry.release();
-            assertEquals(resources.used.bytes, 0);
-          } else {
-            const date = (reason === "missingSchema" ? reger.mse : reger.mre).get([creder.said!])!.dts;
-            cues.capacity = 0;
-            assertDecision(verifier.processCredential(anchorArgs(creder, issuer)), "escrow", reason);
-            assertEquals(cues.length, 0);
-            assertEquals(resources.used.bytes, 0);
-            assertEquals((reason === "missingSchema" ? reger.mse : reger.mre).get([creder.said!])!.dts, date);
-          }
+        const schema = new Schemer({ sed: schemaSed({ requiredIssuee: false }) });
+        if (branch === "schema") hby.db.schema.rem(schema.said);
+        else hby.db.schema.pin(schema.said, schema);
+        const registry = digestFor(branch).qb64;
+        const child = makeCredential({ issuer: issuer.qb64, registry, schema: schema.said });
+        const creder = makeCredential({
+          issuer: issuer.qb64,
+          registry,
+          schema: schema.said,
+          attrib: { i: issuer.qb64, role: branch },
+          ...((branch === "chain" || branch === "staleChain") ? { edge: { child: { n: child.said } } } : {}),
+        });
+        if (branch === "state") reger.tevers.set(registry, new FakeTever());
+        else if (branch !== "registry") setState(reger, registry, creder.said!, Ilks.rev);
+        if (branch === "staleState") {
+          (reger.tevers.get(registry) as FakeTever).states.get(creder.said!)!.dt = "2000-01-01T00:00:00Z";
+        }
+        const cues = new Deck<AgentCue>();
+        const verifier = new Verifier(hby, { reger, cues, credentialExpiryMs: 60_000 });
+        if (branch === "staleChain") {
+          verifier.saveCredential(anchorArgs(child, issuer));
+          setState(reger, registry, child.said!);
+          (reger.tevers.get(registry) as FakeTever).states.get(child.said!)!.dt = "2000-01-01T00:00:00Z";
+        }
+        const decision = verifier.processCredential(anchorArgs(creder, issuer));
+        const reason = branch === "schema"
+          ? "missingSchema"
+          : branch === "chain" || branch === "staleChain"
+          ? "missingChain"
+          : "missingRegistry";
+        assertDecision(decision, branch === "saved" ? "accept" : "escrow", branch === "saved" ? undefined : reason);
+        const expected: VerifierCue = branch === "saved"
+          ? { kin: "saved", creder }
+          : branch === "schema"
+          ? { kin: "query", q: { r: "schema", said: schema.said } }
+          : branch === "chain"
+          ? { kin: "proof", said: child.said! }
+          : branch === "staleChain"
+          ? { kin: "query", q: { r: "tels", pre: child.said! } }
+          : {
+            kin: "telquery",
+            q: { ri: registry, i: creder.said!, ...(branch === "registry" ? { issr: issuer.qb64 } : {}) },
+          };
+        assertEquals(cues.pull(), expected);
+        if (branch === "saved") {
+          assertEquals(reger.saved.get([creder.said!])?.qb64, creder.said);
+          assertEquals(reger.creds.get([creder.said!])?.raw, creder.raw);
+        } else if (reason === "missingChain") {
+          assertDecision(verifier.processCredential(anchorArgs(creder, issuer)), "escrow", reason);
+          assertEquals(cues.pull(), expected);
+        } else {
+          const date = (reason === "missingSchema" ? reger.mse : reger.mre).get([creder.said!])!.dts;
+          assertDecision(verifier.processCredential(anchorArgs(creder, issuer)), "escrow", reason);
+          assertEquals(cues.length, 0);
+          assertEquals((reason === "missingSchema" ? reger.mse : reger.mre).get([creder.said!])!.dts, date);
         }
       }
     } finally {
@@ -516,7 +470,7 @@ Deno.test("Verifier admits actual saved and dependency ownership before credenti
   });
 });
 
-Deno.test("Verifier replay refusal retains original escrow family until admitted migration or save", async () => {
+Deno.test("Verifier replay retains original escrow on storage failure and advances dependencies", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `verifier-retry-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const reger = yield* createReger({ name: `verifier-retry-${crypto.randomUUID()}`, temp: true });
@@ -532,27 +486,13 @@ Deno.test("Verifier replay refusal retains original escrow family until admitted
           ...(migration ? { edge: { child: { n: child.said } } } : {}),
         });
         setState(reger, registry, creder.said!);
-        const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1);
+        const cues = new Deck<AgentCue>();
         const verifier = new Verifier(hby, { reger, cues });
         hby.db.schema.rem(schema.said);
         assertDecision(verifier.processCredential(anchorArgs(creder, issuer)), "escrow", "missingSchema");
-        cues.takeOwned()!.release();
+        cues.clear();
         const date = reger.mse.get([creder.said!])!.dts;
-        const anchor = reger.cancs.get([creder.said!]);
         hby.db.schema.pin(schema.said, schema);
-        const pressure = resources.reserve({ bytes: resources.limits.bytes });
-        if (pressure.kind !== "reserve") throw new Error("Expected byte pressure");
-        const error = assertThrows(() => verifier.processEscrows(), ResourceAdmissionError);
-        assertEquals(error.reason, "busy");
-        assertEquals(reger.mse.get([creder.said!])!.dts, date);
-        assertEquals(reger.mce.get([creder.said!]), null);
-        assertEquals(reger.saved.get([creder.said!]), null);
-        assertEquals(reger.cancs.get([creder.said!]), anchor);
-        pressure.reservation.release();
-        const limited = new Verifier(hby, { reger, cues: new CueDeck(new ResourcePolicy({ bytes: 1024 }), 1) });
-        assertEquals(assertThrows(() => limited.processEscrows(), ResourceAdmissionError).reason, "limit");
-        assertEquals(reger.mse.get([creder.said!])!.dts, date);
-        assertEquals(reger.mce.get([creder.said!]), null);
         if (!migration) {
           const save = verifier.saveCredential, failure = new Error("Credential storage failed");
           verifier.saveCredential = () => {
@@ -561,7 +501,6 @@ Deno.test("Verifier replay refusal retains original escrow family until admitted
           try {
             assertStrictEquals(assertThrows(() => verifier.processEscrows()), failure);
             assertEquals(reger.mse.get([creder.said!])!.dts, date);
-            assertEquals(resources.used.bytes, 0);
           } finally {
             verifier.saveCredential = save;
           }
@@ -571,8 +510,7 @@ Deno.test("Verifier replay refusal retains original escrow family until admitted
         assertEquals(cues.peekTail()?.kin, migration ? "proof" : "saved");
         assertEquals(reger.saved.get([creder.said!]) !== null, !migration);
         assertEquals(reger.mce.get([creder.said!]) !== null, migration);
-        cues.takeOwned()!.release();
-        assertEquals(resources.used.bytes, 0);
+        cues.clear();
         if (migration) reger.mce.rem([creder.said!]);
       }
       const invalidSchema = new Schemer({ sed: schemaSed({ requiredRole: true }) });
@@ -584,16 +522,15 @@ Deno.test("Verifier replay refusal retains original escrow family until admitted
         attrib: { i: issuer.qb64 },
       });
       setState(reger, registry, invalid.said!);
-      const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1);
+      const cues = new Deck<AgentCue>();
       const verifier = new Verifier(hby, { reger, cues });
       assertDecision(verifier.processCredential(anchorArgs(invalid, issuer)), "escrow", "missingSchema");
-      cues.takeOwned()!.release();
+      cues.clear();
       hby.db.schema.pin(invalidSchema.said, invalidSchema);
       verifier.processEscrows();
       assertEquals(reger.mse.get([invalid.said!]), null);
       assertEquals(reger.saved.get([invalid.said!]), null);
       assertEquals(cues.length, 0);
-      assertEquals(resources.used.bytes, 0);
     } finally {
       yield* reger.close(true);
       yield* hby.close(true);

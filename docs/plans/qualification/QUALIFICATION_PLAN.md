@@ -38,7 +38,8 @@ stay uncommitted; record exact commands/revisions/results without adding a
 permanent harness by default. Apply the same proportionality to unit tests.
 Delete redundant tests when a retained case proves the same boundary. Preserve
 protocol assertions and participant topology; do not substitute name-filtered skips
-for cleanup. Tests and fixtures count toward the 300–500-line target.
+for cleanup. Tests and fixtures count toward the roadmap's review size: cohesive
+deletion/refactoring PRs may use 1,000–3,000 changed lines.
 
 PR validation follows [explicit test scope](../../reference/PR_TEST_SCOPE.md).
 Relevant deterministic regressions may receive exact-head local credit instead

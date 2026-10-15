@@ -625,26 +625,6 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
           assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         }
         assertEquals(refusals, ["busy", "wire", "peer"]);
-        // Occupied cue slots are temporary capacity refusal, rather than a configured byte limit.
-        const capacity = runtime.cues.capacity;
-        runtime.cues.capacity = 1;
-        runtime.cues.push({ kin: "proof", said: "occupied" });
-        const blocked = createConnection({ port: tcpPort, host: "127.0.0.1" });
-        sockets.push(blocked);
-        blocked.on("error", () => {});
-        const blockedClosed = new Promise<void>((resolve) => blocked.once("close", resolve));
-        blocked.write(message);
-        yield* race([
-          call(() => blockedClosed),
-          (function*() {
-            yield* sleepOp(2000);
-            throw new Error("Cue saturation did not close");
-          })(),
-        ]);
-        assertEquals(refusals.pop(), "busy");
-        assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
-        runtime.cues.clear();
-        runtime.cues.capacity = capacity;
         // Actual signed replay is accepted while the producer deliberately leaves the connection open.
         const active = createConnection({ port: tcpPort, host: "127.0.0.1" });
         sockets.push(active);
@@ -808,8 +788,8 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         ]);
         assertEquals(
           refusals.at(-1),
-          "busy",
-          "one pending query per connection refuses further work without another queue",
+          "peer",
+          "a second unresolved query violates the connection exchange order",
         );
         stoppingReceiver = true;
         yield* waitForTaskHalt(tcpTask);
@@ -819,7 +799,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         assertEquals(
           refusals,
-          ["busy", "wire", "peer", "busy", "peer", "peer", "busy"],
+          ["busy", "wire", "peer", "busy", "peer", "peer", "peer"],
           "cancellation is distinct from peer refusal",
         );
         tcpTask = yield* spawn(serve);
@@ -845,7 +825,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         ]);
         assert(failure instanceof ParserError);
         assert(!(failure instanceof WireParseError));
-        assertEquals(refusals, ["busy", "wire", "peer", "busy", "peer", "peer", "busy"]);
+        assertEquals(refusals, ["busy", "wire", "peer", "busy", "peer", "peer", "peer"]);
       } finally {
         if (driver) yield* driver.halt();
         stoppingReceiver = true;

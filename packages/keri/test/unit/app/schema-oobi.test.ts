@@ -1,14 +1,13 @@
 import { type Operation, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { ResourcePolicy } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Oobiery, parseOobiUrl } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { parseSchemaReference, resolveCachedSchema } from "../../../src/app/schema-resolving.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
-import { expectKind } from "../../private-access.ts";
 import { FakeRuntimeHttpClient, fakeRuntimeServices } from "../../support/runtime-service-fakes.ts";
 
 function schemaSed(): Record<string, unknown> {
@@ -114,28 +113,20 @@ Deno.test("Oobiery rejects schema data OOBIs with mismatched SAIDs", async () =>
   });
 });
 
-Deno.test("OOBI response results admit actual cue credit before schema or terminal writes", async () => {
+Deno.test("OOBI response publishes schema or failure state with its result cue", async () => {
   for (const mode of ["schema", "invalid-json", "http-failure"] as const) {
     await run(function*() {
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-      const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1);
-      const reactor = new Reactor(hby, { resources }), http = new FakeRuntimeHttpClient();
+      const cues = new Deck<AgentCue>();
+      const reactor = new Reactor(hby), http = new FakeRuntimeHttpClient();
       const oobi = new Oobiery(hby, reactor, { cues, services: fakeRuntimeServices({ http }) });
       const schemer = new Schemer({ sed: schemaSed() }), url = `http://schema.test/oobi/${schemer.said}`;
-      let pressure = true, held: ReturnType<ResourcePolicy["reserve"]> | undefined;
-      const occupy = () => {
-        if (pressure) held = resources.reserve({ bytes: resources.limits.bytes - resources.used.bytes });
-      };
       http.registerOrigin("http://schema.test", () =>
         new Response(
           new ReadableStream<Uint8Array>({
             pull(controller) {
-              occupy();
               controller.enqueue(mode === "schema" ? schemer.raw : new TextEncoder().encode("invalid JSON"));
               controller.close();
-            },
-            cancel() {
-              occupy();
             },
           }, { highWaterMark: 0 }),
           {
@@ -145,18 +136,7 @@ Deno.test("OOBI response results admit actual cue credit before schema or termin
         ));
       try {
         oobi.resolve(url);
-        const queuedRecord = hby.db.oobis.get(url)!;
         cues.clear();
-        yield* oobi.processOnce();
-        assertEquals(hby.db.oobis.get(url), queuedRecord, "Finite result refusal preserves original queue metadata");
-        assertEquals(hby.db.coobi.get(url), null);
-        assertEquals(hby.db.roobi.get(url), null);
-        assertEquals(hby.db.eoobi.get(url), null);
-        assertEquals(hby.db.schema.get(schemer.said), null);
-        assertEquals(cues.length, 0);
-        expectKind(held!, "reserve").reservation.release();
-        assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-        pressure = false;
         yield* oobi.processOnce();
         assertEquals(hby.db.oobis.get(url), null);
         if (mode === "schema") {
@@ -166,15 +146,9 @@ Deno.test("OOBI response results admit actual cue credit before schema or termin
           assertEquals(hby.db.eoobi.get(url)?.state, mode === "http-failure" ? "http-404" : "invalid-json-oobi");
           assertEquals(hby.db.schema.get(schemer.said), null);
         }
-        const result = cues.takeOwned()!;
-        assertEquals(result.cue.kin, mode === "schema" ? "oobiResolved" : "oobiFailed");
-        assertEquals(resources.used.bytes > 0, true);
-        cues.clear();
-        assertEquals(resources.used.bytes > 0, true);
-        result.release();
-        assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+        assertEquals(cues.pull()?.kin, mode === "schema" ? "oobiResolved" : "oobiFailed");
+        assertEquals(cues.length, 0);
       } finally {
-        if (held?.kind === "reserve") held.reservation.release();
         cues.clear();
         yield* hby.close(true);
       }

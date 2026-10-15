@@ -89,7 +89,8 @@ admission, other native row allocation and crash recovery retain phases 4–5.
 TEL/TSN query processors, production transport and final resource measurements have
 their existing owners. None is closed by isolated registry tests.
 
-Use the roadmap's 300–500-line-or-smaller review units for discovered fixes.
+Use the roadmap's review units: cohesive deletion/refactoring may span
+1,000–3,000 changed lines; keep individual discovered bug fixes narrowly scoped.
 Preserve participant topology and independent oracle assertions; reuse existing
 scenarios and keep exploratory probes uncommitted unless a maintained regression
 has clear value. Hosted long qualification remains maintainer-only with its

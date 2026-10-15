@@ -58,10 +58,11 @@ The runtime, storage, parser, KRAM and ESSR subject plans own meaningful remaini
 correctness gates. The old phase-4 accounting work is retired.
 
 The multisig responsibility extraction (#161), ESSR outcome extraction (#163),
-and proof cleanup (#165) are delivered. Do not recreate them. Target **300–500
-added or removed lines, or fewer, per PR**, including tests, fixtures, scripts and
-docs. A larger unit needs a concrete reason explained before publication; prefer
-splitting complete semantic responsibilities. Do not game the count by minifying,
+and proof cleanup (#165) are delivered. Do not recreate them. During the
+deletion/refactoring phase, **1,000–3,000 changed lines per PR** are permitted
+when they complete one cohesive architectural cut. Count tests, fixtures, scripts
+and docs. Prefer a complete mechanism removal over artificial slices with
+temporary interfaces or repeated caller edits; split unrelated responsibilities. Do not game the count by minifying,
 compressing artifacts or omitting verification. Finish and merge the current cohesive PR before opening the next; keep WIP small.
 Require green scoped CI on the exact final head. Preserve published history unless rewriting is
 explicitly authorized.

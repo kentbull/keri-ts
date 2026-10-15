@@ -100,8 +100,10 @@ Record useful proposals and preserved work; do not implement them in this goal.
 
 ## Review units
 
-Use [small stacked PRs](../PARITY_ROADMAP.md), each targeting 300–500 changed
-lines or fewer. Split again if necessary; preserve the single parser engine.
+Use [cohesive review units](../PARITY_ROADMAP.md), permitting 1,000–3,000 changed
+lines for complete deletion/refactoring cuts. Avoid artificial splits and temporary
+accounting interfaces; preserve the single parser engine. Finish the active PR
+before opening the next.
 
 | Unit | Responsibility                         | Depends on       |
 | ---- | -------------------------------------- | ---------------- |

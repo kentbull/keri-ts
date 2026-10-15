@@ -1,4 +1,3 @@
-import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
 /** One interpreted reply batch owned by delivery and a borrowed HTTP/witness consumer until both close. */
 import { ResourceAdmissionError } from "cesr-ts";
@@ -19,7 +18,6 @@ export class DirectReplyDelivery {
   private published = false;
   private readonly owners: PreparedCueEmission[] = [];
   private readonly deliveries: CueDelivery[] = [];
-  private releaseInput?: () => void;
 
   /** All acquisition/publication is synchronous under the guard; no replay reader opens here. */
   static prepare(
@@ -52,7 +50,7 @@ export class DirectReplyDelivery {
   static prepareCue(
     runtime: AgentRuntime,
     hab: Hab,
-    cues: CueQueueInput,
+    cues: Deck<AgentCue>,
     resolve: (emission: CueEmission) => RawCesrRoute | null,
     accept: (delivery: DirectReplyDelivery, borrow: PreparedCueEmission) => void,
     onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
@@ -100,10 +98,9 @@ export class DirectReplyDelivery {
     batch.borrowDone = !publish;
     const responseBytes = publish ? runtime.replyStreams.preparationByteFloor : 0;
     let stream: ReadableStream<Uint8Array> | null = null;
-    reply.admit((cues, release) => {
-      batch.releaseInput = release;
+    reply.admit((cues) => {
       const preparationBytes = responseBytes + cues.length * cueDeliveryBudget.preparationFloorBytes;
-      if (reply.retainedBytes + preparationBytes > runtime.resources.limits.bytes) {
+      if (preparationBytes > runtime.resources.limits.bytes) {
         const refusal = new ResourceAdmissionError("Direct reply preparation exceeds shared byte capacity", "limit");
         onAdmissionRefusal?.(refusal);
         throw refusal;
@@ -203,13 +200,10 @@ export class DirectReplyDelivery {
   }
   private finish(cleanups: (() => void)[]): void {
     if (this.published && this.borrowDone && this.deliveryDone) {
-      const releaseInput = this.releaseInput;
       cleanups.push(
         ...this.owners.map((owner) => () => owner.release()),
-        () => releaseInput?.(),
       );
       this.owners.length = 0;
-      this.releaseInput = undefined;
     }
     const errors: unknown[] = [];
     for (const cleanup of cleanups) {

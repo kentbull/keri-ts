@@ -13,9 +13,8 @@ import {
 } from "cesr-ts";
 import { action, call, each, type Operation, resource } from "npm:effection@^3.6.0";
 import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
-import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
-import { Deck, DeckFullError } from "../core/deck.ts";
+import { Deck } from "../core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
 import { Kevery, type MessagePolicy } from "../core/eventing.ts";
 import { type KramConfig, Kramer } from "../core/kraming.ts";
@@ -71,7 +70,7 @@ export class Reactor {
   readonly hby: Habery;
   /** Shared host credit; omitted policy borrows the Habery Baser's existing ledger. */
   readonly resources: ResourcePolicy;
-  readonly cues: CueQueueInput;
+  readonly cues: Deck<AgentCue>;
   /** Bounded complete-record queue; callers enter only through ingest(). */
   private readonly ingress: Deck<IngressRecord>;
   readonly router: Router;
@@ -110,14 +109,13 @@ export class Reactor {
       acdc = {},
       maxSources = 8,
       maxQueuedBytes = 8 * 1024 * 1024,
-      maxPendingCues = 1024,
       messagePolicy,
       resources = hby.db.resources,
       kram,
       now,
       intake,
     }: {
-      cues?: CueQueueInput;
+      cues?: Deck<AgentCue>;
       local?: boolean;
       vdr?: VdrRuntimeServices;
       acdc?: AcdcRuntimeServices;
@@ -126,7 +124,6 @@ export class Reactor {
       /** Bound already resident complete records awaiting processOnce(). */
       maxQueuedBytes?: number;
       /** Reject more protocol work until the host drains a full cue deck. */
-      maxPendingCues?: number;
       /** Runtime-owned v2 non-event sender policy, independent of parser admission. */
       messagePolicy?: MessagePolicy;
       /** Borrow the host policy so other streams and recipients compete for the same credit. */
@@ -138,14 +135,14 @@ export class Reactor {
       intake?: FrameIntake;
     } = {},
   ) {
-    for (const limit of [maxSources, maxQueuedBytes, maxPendingCues]) {
+    for (const limit of [maxSources, maxQueuedBytes]) {
       if (!Number.isSafeInteger(limit) || limit < 1) {
         throw new RangeError("Ingress limits must be positive safe integers");
       }
     }
     this.maxSources = maxSources;
     this.maxQueuedBytes = maxQueuedBytes;
-    this.replies = new QueryReplies(maxSources);
+    this.replies = new QueryReplies();
     this.hby = hby;
     this.resources = resources;
     this.intake = intake
@@ -155,7 +152,6 @@ export class Reactor {
         maxSources,
       );
     this.cues = cues ?? new Deck();
-    this.cues.capacity = Math.min(this.cues.capacity, maxPendingCues);
     this.ingress = new Deck();
     this.router = new Router();
     this.revery = new Revery(hby.db, { rtr: this.router, cues: this.cues });
@@ -230,7 +226,6 @@ export class Reactor {
           if (consume) yield* consume(ready, current);
         };
         let consumed = false;
-        if (frame) self.cues.checkSpace();
         if (frame) {
           envelope = envelopeFromFrame(frame, local);
           decision = yield* dispatchEnvelope(
@@ -377,7 +372,7 @@ export class Reactor {
         yield* call(() => self.processBytes(record.bytes));
       } catch (error) {
         // Keep the record for retry after cue delivery; already accepted frames replay as duplicates.
-        if (error instanceof DeckFullError || (error instanceof ResourceAdmissionError && error.reason === "busy")) {
+        if ((error instanceof ResourceAdmissionError && error.reason === "busy")) {
           if (generation === self.ingressGeneration) {
             self.ingress.prepend(record);
             retained = true;
@@ -403,20 +398,15 @@ export class Reactor {
 
   /** Advance component escrows while the caller already owns the runtime turn. */
   private *advanceEscrows(): Operation<void> {
-    try {
-      this.kevery.kramer?.prune();
-      this.kevery.processEscrows();
-      this.revery.processEscrowReply();
-      this.vdr.tvy?.processEscrows?.();
-      this.registryStates?.processEscrows();
-      this.credentialStates?.processEscrows();
-      this.vdr.vry?.processEscrows?.();
-      this.acdc.rgy?.processEscrows();
-      yield* this.exchanger.processEscrows();
-    } catch (error) {
-      // A full cue deck pauses retry work; source escrow rows remain until application succeeds.
-      if (!(error instanceof DeckFullError)) throw error;
-    }
+    this.kevery.kramer?.prune();
+    this.kevery.processEscrows();
+    this.revery.processEscrowReply();
+    this.vdr.tvy?.processEscrows?.();
+    this.registryStates?.processEscrows();
+    this.credentialStates?.processEscrows();
+    this.vdr.vry?.processEscrows?.();
+    this.acdc.rgy?.processEscrows();
+    yield* this.exchanger.processEscrows();
   }
 
   /**

@@ -6,9 +6,9 @@
 applies post-acceptance effects. Kever has no queue dependency: decision-carried
 cue descriptions are data, and processing/publication stays with Kevery.
 Baser prepares and writes accepted-event row/FEL metadata; Kevery turns clone
-order anomalies into cues and owns admission/commit/publication sequencing.
+order anomalies into cues and owns write/commit/publication sequencing.
 Kever neither writes the event log nor prepares queue work. Delegation hint
-repairs/removals are decision data; Kevery writes them after cue admission in the
+repairs/removals are decision data; Kevery writes them in the
 same transaction as acceptance/escrow. Same-bucket retry keeps its existing row
 while applying discovered repairs. Within one validation, later lookups see
 pending repairs without durable publication.
@@ -19,13 +19,13 @@ escrow instruction, not open diagnostic slots. Invalid-prefix messages retain th
 caught parser detail; local habitat adapters forward the message alone.
 Local inception/interaction uses the same acceptance path as remote events.
 Kevery builds finalized first-seen/date, clone and acceptance cues before accepted
-writes, and holds concrete CueDeck batches before duplicate/escrow effects too.
+writes; duplicate and escrow cues are ordinary records as well.
 Baser logging checks the prospective FEL tail before writes. Kevery.processEvent
-owns one native writer through decision, cue admission and durable effects, then
+owns one native writer through decision and durable effects, then
 publishes live state/cues after commit. Plain EventMetadata carries log coordinates,
 cues and accepted cache state; it has no executable decision lifecycle. The owner
-explicitly sequences writes and publication and releases actual cue capacity.
-processEvent refuses a caller-owned native writer before evaluation or admission;
+explicitly sequences writes and publication. Queues carry no capacity or byte credit.
+processEvent refuses a caller-owned native writer before evaluation;
 its own successful commit is the publication boundary. The unused public
 applyDecision is removed, so callers cannot apply stale decisions outside that
 writer. Pure decideEvent remains an inspection seam. Group-prefix
@@ -104,9 +104,8 @@ Resource refusals propagate through RPE replay without deleting its durable row.
 Endpoint reply handlers derive their store from Revery. Each owns evaluation,
 proof replacement and authorization/location pointer/projection writes in one
 transaction, then publishes queries. Refuse caller-owned writers before effects;
-a failed replacement preserves prior proof and releases unpublished cue credit.
-KSN publication holds its concrete query batch while admitting the
-actual keyStateSaved child on Kevery's deck, including distinct local decks.
+a failed replacement preserves prior proof and publishes no cues.
+KSN publishes query records before keyStateSaved on shared or distinct Decks.
 Validate semantic correspondence before applying new proofs. Unverified replies
 still apply their existing escrow/query effects. Revery.decideReply returns plain
 ReplyPlan data with required accepted proof and complete signature alternatives.

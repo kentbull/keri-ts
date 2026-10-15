@@ -6,9 +6,7 @@ import {
   Diger,
   parseBytes,
   Prefixer,
-  ResourceAdmissionError,
   ResourceLimitError,
-  ResourcePolicy,
   Seqner,
   SerderKERI,
   Vrsn_2_0,
@@ -20,14 +18,13 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { isWellKnownOobiUrl, Oobiery, parseOobiUrl } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { loadStoredReply } from "../../../src/app/stored-replies.ts";
-import { CueDeck } from "../../../src/core/cue-admission.ts";
-import { DeckFullError } from "../../../src/core/deck.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { DatabaseOperationError, ValidationError } from "../../../src/core/errors.ts";
 import { reply } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
-import { expectKind } from "../../private-access.ts";
 import { FakeRuntimeHttpClient, fakeRuntimeServices } from "../../support/runtime-service-fakes.ts";
 import { assertOperationThrows, testCLICommand } from "../../utils.ts";
 
@@ -420,9 +417,9 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
       });
 
       for (const shared of [true, false]) {
-        const resources = new ResourcePolicy(), proofCues = new CueDeck(resources, 1);
-        const cues = shared ? proofCues : new CueDeck(resources, 1);
-        const reactor = new Reactor(hby, { resources, cues: proofCues });
+        const proofCues = new Deck<AgentCue>();
+        const cues = shared ? proofCues : new Deck<AgentCue>();
+        const reactor = new Reactor(hby, { cues: proofCues });
         const owner = new Oobiery(hby, reactor, { cues });
         const url = `${introducedUrl}?deck=${shared}`;
         const notice = new SerderKERI({
@@ -444,35 +441,17 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
           assertEquals(cues.length, 0);
           assertEquals(proofCues.length, 0);
         };
-        const busy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-        assertEquals(assertThrows(() => owner.processReply(args), ResourceAdmissionError).reason, "busy");
-        busy.reservation.release();
-        unchanged();
-        const tiny = new ResourcePolicy({ bytes: 1 }), tinyCues = new CueDeck(tiny, 1);
-        const limited = new Oobiery(hby, new Reactor(hby, { resources: tiny, cues: tinyCues }), { cues: tinyCues });
-        assertEquals(assertThrows(() => limited.processReply(args), ResourceAdmissionError).reason, "limit");
-        unchanged();
-        const slot = cues.prepare([{ kin: "proof", said: "occupied" }]);
-        const held = resources.used.bytes;
-        assertThrows(() => owner.processReply(args), DeckFullError);
-        assertEquals(resources.used.bytes, held);
-        slot.release();
         unchanged();
         assertEquals(owner.processReply(args).kind, "accept");
         assertEquals(hby.db.oobis.get(url)?.cid, hab.pre);
         assertExists(hby.db.rpys.get([notice.said!]));
-        const queued = cues.takeOwned()!;
-        assertEquals(queued.cue, { kin: "oobiQueued", url });
-        cues.clear();
-        assertEquals(resources.used.bytes > 0, true);
-        queued.release();
-        assertEquals(resources.used.bytes, 0);
+        assertEquals(cues.pull(), { kin: "oobiQueued", url });
         assertEquals(proofCues.length, 0);
       }
       const cold = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       try {
-        const resources = new ResourcePolicy(), queries = new CueDeck(resources, 1), queues = new CueDeck(resources, 0);
-        const reactor = new Reactor(cold, { resources, cues: queries }),
+        const queries = new Deck<AgentCue>(), queues = new Deck<AgentCue>();
+        const reactor = new Reactor(cold, { cues: queries }),
           owner = new Oobiery(cold, reactor, { cues: queues });
         const args = {
           serder,
@@ -484,11 +463,8 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
         assertEquals(cold.db.oobis.get(introducedUrl), null);
         assertEquals(cold.db.rpes.cnt(), 1, "Unverified introduction retains existing reply escrow ownership");
         assertExists(cold.db.rpys.get([serder.said!]));
-        const query = queries.takeOwned()!;
-        assertEquals(query.cue.kin, "query");
+        assertEquals(queries.pull()?.kin, "query");
         assertEquals(queues.length, 0);
-        query.release();
-        assertEquals(resources.used.bytes, 0);
       } finally {
         yield* cold.close(true);
       }
@@ -509,10 +485,10 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
   });
 });
 
-Deno.test("OOBI queue and multi-parent publication admit complete cue ownership before durable effects", async () => {
+Deno.test("OOBI multi-parent publication validates all URLs and publishes ordinary child and terminal cues", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const resources = new ResourcePolicy(), cues = new CueDeck(resources, 2), reactor = new Reactor(hby, { resources });
+    const cues = new Deck<AgentCue>(), reactor = new Reactor(hby);
     const http = new FakeRuntimeHttpClient();
     const oobi = new Oobiery(hby, reactor, { cues, services: fakeRuntimeServices({ http }) });
     try {
@@ -522,24 +498,10 @@ Deno.test("OOBI queue and multi-parent publication admit complete cue ownership 
         `http://oobi.test/oobi/${cid}/controller?child=1`,
         `http://oobi.test/.well-known/keri/oobi/${cid}?child=2`,
       ];
-      const busy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      assertEquals(assertThrows(() => oobi.resolve(parent, "source"), ResourceAdmissionError).reason, "busy");
-      busy.reservation.release();
-      assertEquals(hby.db.oobis.get(parent), null);
-      const limited = new Oobiery(hby, reactor, { cues: new CueDeck(new ResourcePolicy({ bytes: 1 })) });
-      assertEquals(assertThrows(() => limited.resolve(parent), ResourceAdmissionError).reason, "limit");
-      assertEquals(hby.db.oobis.get(parent), null);
       oobi.resolve(parent, "source");
-      const queued = cues.takeOwned()!;
-      assertEquals(queued.cue.kin, "oobiQueued");
+      assertEquals(cues.pull()?.kin, "oobiQueued");
       assertExists(hby.db.oobis.get(parent));
-      cues.clear();
-      assertEquals(resources.used.bytes > 0, true);
-      queued.release();
-      assertEquals(resources.used.bytes, 0);
-
-      let urls = [...children], pressure = false;
-      let held: ReturnType<ResourcePolicy["reserve"]> | undefined;
+      let urls = [...children];
       http.registerOrigin("http://oobi.test", () => {
         const reply = new SerderKERI({
           sad: { t: "rpy", dt: makeNowIso8601(), r: "/oobi/controller", a: { aid: cid, urls } },
@@ -548,8 +510,6 @@ Deno.test("OOBI queue and multi-parent publication admit complete cue ownership 
         return new Response(
           new ReadableStream<Uint8Array>({
             pull(controller) {
-              // The finite document lease is already held; saturate remaining bytes at the fanout boundary.
-              if (pressure) held = resources.reserve({ bytes: resources.limits.bytes - resources.used.bytes });
               controller.enqueue(reply.raw);
               controller.close();
             },
@@ -579,26 +539,6 @@ Deno.test("OOBI queue and multi-parent publication admit complete cue ownership 
       assertEquals(invalid instanceof TypeError, true);
       untouched();
       urls = [...children, children[0]];
-      cues.capacity = 1;
-      let limit: unknown;
-      try {
-        yield* oobi.processOnce();
-      } catch (error) {
-        limit = error;
-      }
-      assertEquals(limit instanceof ResourceLimitError, true);
-      untouched();
-      cues.capacity = 2;
-      const item = cues.prepare([{ kin: "proof", said: "occupied" }]);
-      yield* oobi.processOnce(); // The existing worker keeps queued work on temporary item saturation.
-      untouched();
-      item.release();
-      pressure = true;
-      yield* oobi.processOnce();
-      untouched();
-      expectKind(held!, "reserve").reservation.release();
-      assertEquals(resources.used.bytes, 0);
-      pressure = false;
       yield* oobi.processOnce();
       assertEquals(hby.db.oobis.get(parent), null);
       assertEquals(hby.db.moobi.get(parent)?.urls, children);
@@ -612,35 +552,18 @@ Deno.test("OOBI queue and multi-parent publication admit complete cue ownership 
         hby.db.roobi.pin(child, { state: "resolved" });
       }
       const pending = hby.db.moobi.get(parent)!;
-      const terminalBusy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      yield* oobi.processOnce();
-      terminalBusy.reservation.release();
-      assertEquals(hby.db.moobi.get(parent), pending);
-      assertEquals(hby.db.roobi.get(parent), null);
-      assertEquals(hby.db.cons.get([cid]), null);
       yield* oobi.processOnce();
       assertEquals(hby.db.moobi.get(parent), null);
       assertEquals(hby.db.roobi.get(parent)?.state, "resolved");
       assertExists(hby.db.cons.get([cid]));
-      const result = cues.takeOwned()!;
-      assertEquals(result.cue.kin, "oobiResolved");
-      assertEquals(resources.used.bytes > 0, true);
-      result.release();
+      assertEquals(cues.pull()?.kin, "oobiResolved");
       const failedParent = `${parent}&failed=1`;
       hby.db.moobi.pin(failedParent, pending);
       hby.db.eoobi.pin(children[0], { state: "http-404" });
-      const occupied = cues.prepare([{ kin: "proof", said: "held" }, { kin: "proof", said: "held2" }]);
-      yield* oobi.processOnce();
-      assertExists(hby.db.moobi.get(failedParent));
-      assertEquals(hby.db.eoobi.get(failedParent), null);
-      occupied.release();
       yield* oobi.processOnce();
       assertEquals(hby.db.moobi.get(failedParent), null);
       assertEquals(hby.db.eoobi.get(failedParent)?.state, "child-failed");
-      const failed = cues.takeOwned()!;
-      assertEquals(failed.cue, { kin: "oobiFailed", url: failedParent, reason: "child failed" });
-      failed.release();
-      assertEquals(resources.used.bytes, 0);
+      assertEquals(cues.pull(), { kin: "oobiFailed", url: failedParent, reason: "child failed" });
     } finally {
       cues.clear();
       yield* hby.close(true);

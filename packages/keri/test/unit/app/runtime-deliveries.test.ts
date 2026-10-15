@@ -6,7 +6,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { queryTransportSink, RuntimeDeliveries } from "../../../src/app/runtime-deliveries.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
-Deno.test("query delivery admission retains accepted requests on queue overflow and delivery failure", async () => {
+Deno.test("query delivery queues ordinary requests and retains failed deliveries for retry", async () => {
   const resources = new ResourcePolicy();
   const queue = new RuntimeDeliveries(resources);
   const request = {
@@ -15,9 +15,8 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
     bodyMode: "header" as const,
     destination: "aid",
   };
-  for (let index = 0; index < 8; index++) queue.enqueue(() => request);
-  assertObjectMatch(queue.enqueue(() => request), { kind: "refuse", error: { message: "Deck capacity exceeded" } });
-  assertEquals(resources.used.bytes, 72 * 1024 * 1024);
+  for (let index = 0; index < 9; index++) assertEquals(queue.enqueue(() => request), { kind: "queued" });
+  assertEquals(resources.used.bytes, 81 * 1024 * 1024);
   assertEquals(queue.hasPending, true);
   await run(() => queue.close());
   assertEquals(queue.hasPending, false);
@@ -50,11 +49,6 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
   const tooSmall = new RuntimeDeliveries(new ResourcePolicy({ bytes: shared.limits.bytes - 1 }));
   assertObjectMatch(tooSmall.enqueue(prepare), { kind: "refuse", error: { reason: "limit" } });
   assertEquals(prepared, false);
-  assertObjectMatch(
-    new RuntimeDeliveries(new ResourcePolicy({ bytes: 40 * 1024 ** 2 })).enqueue(prepare, 8 * 1024 ** 2),
-    { kind: "refuse", error: { reason: "limit" } },
-  );
-  assertEquals(prepared, false, "existing owned source credit cannot become irreducible busy");
   const oversized = new RuntimeDeliveries(resources);
   assertThrows(
     () => oversized.enqueue(() => ({ ...request, body: new Uint8Array(8 * 1024 ** 2 + 1) })),

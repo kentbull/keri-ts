@@ -1,10 +1,8 @@
 import type { ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
-import { CueDeck } from "../core/cue-admission.ts";
-import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
-import { type Deck, DeckFullError } from "../core/deck.ts";
+import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
 import type { MessagePolicy } from "../core/eventing.ts";
@@ -76,7 +74,7 @@ export function respondantCueSink(runtime: AgentRuntime, hab?: Hab | null): CueS
         sender,
       );
       if (transferred.kind === "refuse") {
-        if (transferred.error instanceof DeckFullError || transferred.error.reason === "busy") return "busy";
+        if (transferred.error.reason === "busy") return "busy";
         throw transferred.error;
       }
       return transferred.kind === "prepared" ? "transferred" : "ineligible";
@@ -125,7 +123,7 @@ export interface AgentRuntime {
    * Default cues retain shared byte/item credit through joined consumer cleanup.
    * Consume with processCuesOnce or an owned transfer; naked pull cannot discard that credit.
    */
-  cues: CueQueueInput;
+  cues: Deck<AgentCue>;
   /** Demand-driven input lifetime; protocol decisions stay with Reactor. */
   readonly intake: FrameIntake;
   reactor: Reactor;
@@ -268,8 +266,8 @@ export function* createAgentRuntime(
   }
   const acdcRegery = acdc.rgy;
   // Acquire after stores, before processors/consumers: reverse teardown joins consumers, clears cues, closes stores.
-  const cues = yield* resource<CueDeck>(function*(provide) {
-    const owned = new CueDeck(resources);
+  const cues = yield* resource<Deck<AgentCue>>(function*(provide) {
+    const owned = new Deck<AgentCue>();
     try {
       yield* provide(owned);
     } finally {
