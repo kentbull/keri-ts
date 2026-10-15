@@ -471,11 +471,12 @@ Shared admission and first verified usable child evidence remain in the
 [roadmap](../../docs/plans/PARITY_ROADMAP.md). Stale/timeout continuation breadth
 and broader DB parity need source-grounded evidence, not repeated foundation work.
 
-Signaler owns transient reload hints, not durable Noter rows. Method-managed pings
-reserve finite queue/copy credit before construction and notice effects; publish
-transfers that credit, collapse/expiry/clear/close release it. The borrowed queue
-view is readonly and entries are immutable snapshots. Runtime/CLI close only their
-created producers; injected notification services share the exact Baser policy.
+Signaler queues ordinary transient reload hints with collapse-key replacement and
+expiry, following KERIpy. No reservations, inspection walker, prepared signal,
+quota or immutable-owner protocol belongs here. Notifier publishes only after a
+successful durable mutation; false/throw emits no hint, and a later signal failure
+propagates without rolling back the notice. Runtime/CLI close only their created
+producers; injected signalers remain borrowed and need no Baser resource policy.
 
 Runtime output must be acquired after its database owners: Effection tears sibling
 resources down in reverse order. Explicit close alone cannot qualify cancellation

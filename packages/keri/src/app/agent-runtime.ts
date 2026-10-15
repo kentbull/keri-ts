@@ -223,11 +223,10 @@ export function* createAgentRuntime(
   }
   const injectedSignaler = options.signaler ?? options.notifier?.signaler;
   if (
-    (injectedSignaler && injectedSignaler.resources !== resources)
-    || (options.notifier && options.notifier.hby !== hby)
+    (options.notifier && options.notifier.hby !== hby)
     || (options.signaler && options.notifier && options.signaler !== options.notifier.signaler)
   ) {
-    throw new RangeError("AgentRuntime notification services require its exact Habery and resource policy");
+    throw new RangeError("AgentRuntime notification services require its exact Habery and Signaler");
   }
   const mode = options.mode ?? "local";
   const services = resolveRuntimeServices({ ...options.services, resources });
@@ -238,7 +237,7 @@ export function* createAgentRuntime(
   const ownsSignaler = injectedSignaler === undefined && hby.signator !== null;
   const signaler = injectedSignaler ?? (ownsSignaler
     ? (yield* resource<Signaler>(function*(provide) {
-      const owned = new Signaler({ resources });
+      const owned = new Signaler();
       try {
         yield* provide(owned);
       } finally {

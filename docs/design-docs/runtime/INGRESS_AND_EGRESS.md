@@ -662,13 +662,12 @@ borrowers must provide that driver for idle-RX query retries. Genuine receive EO
 keeps TX available for the pending reply under the same absolute deadline.
 Cancellation joins the pull and output before releasing reply or connection credit.
 
-Signaler bounds its existing UI wakeup queue: 1024 queued entries and one prepared
-replacement, a 64 KiB conservative JSON ceiling, and shared inspection/copy credit.
-Notifier prepares before Noter writes; false/throw releases unpublished credit,
-without rolling back partial durable writes. Collapse, expiry and owned shutdown
-return credit. The queue view is borrowed readonly; managed pings are immutable.
-Durable notices, native row hydration, caller-retained views/copies and arbitrary
-external mutation remain outside this transient owner contract.
+Signaler holds ordinary transient UI wakeups. A matching collapse key replaces
+its queue position; expiry and clear remove hints. There are no queue/byte quotas,
+prepared signals, JSON estimates or reservation lifetimes. Notifier writes the
+signed notice first, then publishes its hint after success. A false/throwing notice
+write emits no hint; a later signal failure propagates without undoing durable
+state. Runtime/CLI close their created producers and leave injected signalers open.
 
 Runtime output resources are acquired after their backing registry stores so
 reverse scope teardown joins delivery cancellation and closes lazy replies before

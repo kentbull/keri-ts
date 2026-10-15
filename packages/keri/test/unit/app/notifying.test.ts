@@ -1,6 +1,5 @@
-import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { DELEGATE_REQUEST_ROUTE, DelegateRequestHandler } from "../../../src/app/delegating.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
@@ -42,7 +41,7 @@ Deno.test("Notifier signs, lists, marks, removes, and signals notices with colla
       skipConfig: true,
     });
     const noter = yield* openNoterForHabery(hby);
-    const signaler = new Signaler({ resources: hby.db.resources });
+    const signaler = new Signaler();
     const notifier = new Notifier(hby, { noter, signaler });
 
     try {
@@ -59,24 +58,12 @@ Deno.test("Notifier signs, lists, marks, removes, and signals notices with colla
       assertEquals(listed[0]!.read, false);
 
       const rid = listed[0]!.rid;
-      const held = hby.db.resources.used.bytes;
-      const busy = hby.db.resources.reserve({ bytes: hby.db.resources.limits.bytes - held });
-      if (busy.kind !== "reserve") throw new Error("Expected test capacity");
-      try {
-        assertThrows(() => notifier.markRead(rid), ResourceAdmissionError, "busy");
-        assertThrows(() => notifier.remove(rid), ResourceAdmissionError, "busy");
-        assertEquals(notifier.list()[0]!.read, false);
-        assertEquals(notifier.count(), 1);
-      } finally {
-        busy.reservation.release();
-      }
       const fault = new Error("noter pin infrastructure fault"), pin = noter.notes.pin;
       noter.notes.pin = () => {
         throw fault;
       };
       try {
         assertStrictEquals(assertThrows(() => notifier.add({ r: "/fault" })), fault);
-        assertEquals(hby.db.resources.used.bytes, held);
         assertEquals(signaler.count(), 1);
         assertEquals(noter.nidx.cntAll(), 2, "Noter partial index writes are not rolled back");
       } finally {
@@ -86,7 +73,6 @@ Deno.test("Notifier signs, lists, marks, removes, and signals notices with colla
       noter.add = () => false;
       try {
         assertEquals(notifier.add({ r: "/false" }), false);
-        assertEquals(hby.db.resources.used.bytes, held);
       } finally {
         noter.add = add;
       }
@@ -100,7 +86,17 @@ Deno.test("Notifier signs, lists, marks, removes, and signals notices with colla
 
       signaler.processOnce(Date.now() + Signaler.SignalTimeoutMs + 1_000);
       assertEquals(signaler.count(), 0);
-      assertEquals(hby.db.resources.used.bytes, 0);
+      const push = signaler.push, signalFailure = new Error("signal publication failed");
+      signaler.push = () => {
+        throw signalFailure;
+      };
+      try {
+        assertStrictEquals(assertThrows(() => notifier.add({ r: "/persisted" })), signalFailure);
+        assertEquals(notifier.list().map((item) => item.attrs.r), ["/persisted"]);
+        assertEquals(signaler.count(), 0, "failed transient publication does not roll back the notice");
+      } finally {
+        signaler.push = push;
+      }
     } finally {
       signaler.close();
       if (noter.opened) {
@@ -163,62 +159,20 @@ Deno.test("Signaler preserves raw/pad round trips and explicit collapse keys", (
   assertEquals(roundTrip.ckey, "/notification");
 });
 
-Deno.test("Signaler admits finite immutable pings and releases collapse, rollback, expiry and shutdown credit once", () => {
-  const resources = new ResourcePolicy(), reserve = resources.reserve.bind(resources);
-  let releases = 0;
-  resources.reserve = (request) => {
-    const decision = reserve(request);
-    return decision.kind === "refuse" ? decision : {
-      kind: "reserve",
-      reservation: {
-        release() {
-          releases++;
-          decision.reservation.release();
-        },
-      },
-    };
-  };
-  const signaler = new Signaler({ resources, maxSignals: 1, maxSignalBytes: 4096 });
-  const input = { nested: { value: "original" } }, first = signaler.push(input, "/ping", { ckey: "" });
-  const held = resources.used.bytes;
-  input.nested.value = "changed";
-  assertEquals(first.attrs.nested.value, "original");
-  assertThrows(() => first.pad = { r: "/changed", a: input }, Error, "immutable");
-  assertThrows(() => signaler.push({}, "/full"), ResourceAdmissionError, "capacity");
-  const rollback = signaler.prepare({}, "/ping", { ckey: "" });
-  assertThrows(() => signaler.push({}, "/busy"), ResourceAdmissionError, "occupied");
-  rollback.release();
-  rollback.release();
-  assertEquals(releases, 1);
-  assertEquals(resources.used.bytes, held);
-  signaler.push({}, "/ping", { ckey: "", dt: "bad date" });
-  assertEquals(releases, 2);
-  assertEquals(signaler.processOnce(), 1);
-  assertEquals(releases, 3);
-  assertEquals(resources.used.bytes, 0);
-  assertThrows(() => signaler.push({ text: "x".repeat(4096) }, "/large"), ResourceLimitError, "byte ceiling");
-  assertEquals(resources.used.bytes, 0);
-  signaler.push({}, "/ping", { ckey: "" });
-  const pending = signaler.prepare({}, "/replace", { ckey: "" });
-  signaler.close();
-  pending.release();
+Deno.test("Signaler preserves collapse order, empty keys, ordinary values and expiry", () => {
+  const signaler = new Signaler({ signalTimeoutMs: 100 });
+  signaler.push({ value: "first" }, "/first", { ckey: "", dt: new Date(0) });
+  signaler.push({}, "/second", { dt: new Date(50) });
+  signaler.push({ value: "replacement" }, "/replace", { ckey: "", dt: new Date(100) });
+  assertEquals(signaler.signals.map((item) => item.topic), ["/replace", "/second"]);
+  assertEquals(signaler.processOnce(150), 0, "expiry cutoff is inclusive");
+  assertEquals(signaler.processOnce(151), 1);
+  signaler.push({ value: "x".repeat(65537), values: Array(5000).fill(1) }, "/large");
+  assertEquals(signaler.count(), 2);
   signaler.clear();
+  assertEquals(signaler.count(), 0);
   signaler.close();
-  assertEquals(releases, 6);
-  assertEquals(resources.used.bytes, 0);
   assertThrows(() => signaler.push({}, "/closed"), Error, "closed");
-  const limited = new Signaler({ resources: new ResourcePolicy({ bytes: 1 }) });
-  let invoked = false;
-  assertThrows(
-    () =>
-      limited.prepare(() => {
-        invoked = true;
-        return {};
-      }, "/limit"),
-    ResourceAdmissionError,
-    "limit",
-  );
-  assertEquals(invoked, false);
 });
 
 Deno.test("DelegateRequestHandler writes notices only for local delegators", async () => {
@@ -348,20 +302,17 @@ Deno.test("AgentRuntime owns and closes the noter it opened", async () => {
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       assertEquals(runtime.noter?.opened, true);
       assertEquals(runtime.notifier !== null, true);
-      assertStrictEquals(runtime.signaler?.resources, hby.db.resources);
       runtime.signaler!.push({}, "/owned");
       yield* runtime.close();
       assertEquals(runtime.noter?.opened, false);
       assertEquals(runtime.signaler?.count(), 0);
-      assertEquals(hby.db.resources.used.bytes, 0);
       const scoped = yield* call(function*() {
         const owned = yield* createAgentRuntime(hby, { mode: "local" });
         owned.signaler!.push({}, "/scope-owned");
         return owned.signaler!;
       });
       assertEquals(scoped.count(), 0);
-      assertEquals(hby.db.resources.used.bytes, 0);
-      const borrowed = new Signaler({ resources: hby.db.resources });
+      const borrowed = new Signaler();
       yield* call(function*() {
         const other = yield* createAgentRuntime(hby, { mode: "local", signaler: borrowed });
         borrowed.push({}, "/borrowed");
@@ -369,14 +320,6 @@ Deno.test("AgentRuntime owns and closes the noter it opened", async () => {
         assertEquals(borrowed.count(), 1);
       });
       borrowed.close();
-      assertEquals(hby.db.resources.used.bytes, 0);
-      yield* call(() =>
-        assertRejects(
-          () => run(() => createAgentRuntime(hby, { signaler: new Signaler() })),
-          RangeError,
-          "exact Habery",
-        )
-      );
     } finally {
       yield* hby.close(true);
     }
