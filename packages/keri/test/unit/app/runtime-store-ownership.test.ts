@@ -410,7 +410,7 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     const hab = hby.makeHab("sender");
     runtime.deliveries.enqueue(() => ({
       url: "https://query.test/",
-      body: hab.query(hab.pre, hab.pre, {}, "logs"),
+      body: hab.query(hab.pre, hab.pre, { route: "logs", q: {} }),
       bodyMode: "header",
       destination: hab.pre,
     }));

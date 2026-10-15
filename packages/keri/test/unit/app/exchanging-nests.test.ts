@@ -1048,7 +1048,8 @@ Deno.test("KRAM handoff freezes ready receipt through reopen, disposal failure a
     assertEquals(standaloneCues(handoff.cues).pull(), {
       kin: "query",
       pre: sender.pre,
-      q: { r: "logs", pre: sender.pre, sn: sn.toString(16) },
+      route: "logs",
+      q: { r: "logs", sn: sn.toString(16) },
     });
     assertEquals(hby.db.pmkm.get(key), null);
     await assertRejects(

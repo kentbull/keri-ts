@@ -123,15 +123,17 @@ export class CredentialStateReceiver {
     let queries: PreparedCueBatch | undefined;
     const escrow = (typ: CredentialEscrowFamily, query: boolean, proof?: ReplyPlan): CredentialReplyDecision => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, vci, aid, diger);
-      const cues: AgentCue[] = isNew && query
-        ? [{
+      const cues: AgentCue[] = !isNew || !query
+        ? []
+        : typ === "credential-mae"
+        ? [{ kin: "query", pre: issuer, src: aid, route: "logs", q: {} }]
+        : [{
           kin: "query",
           pre: issuer,
           src: aid,
-          route: typ === "credential-mae" ? "logs" : "tels",
-          q: typ === "credential-mae" ? { i: issuer } : { ri: regk, i: typ === "credential-mre" ? "" : vci },
-        }]
-        : [];
+          route: "tels",
+          q: { ri: regk, i: typ === "credential-mre" ? "" : vci },
+        }];
       this.rvy.cues.checkSpace(cues.length);
       const child = cues.length ? this.publisher.prepare(cues) : undefined;
       try {

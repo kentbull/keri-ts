@@ -2,7 +2,7 @@ import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type S
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
 import { reserveCueBytes } from "../core/cue-admission.ts";
 import { type CueQueueInput, cueReader } from "../core/cue-publishing.ts";
-import type { AgentCue, CueEmission, QueryCue } from "../core/cues.ts";
+import type { AgentCue, CueEmission, QueryCue, QueryInstruction } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
@@ -53,18 +53,27 @@ const ignoreSink: CueSink = {
  * across runtime turns until enough local knowledge exists to emit a real wire
  * query without guessing.
  */
-interface QueryRequest {
+type QueryRequest = QueryInstruction & {
   pre: string;
-  route: string;
-  q: Record<string, unknown>;
   hab?: Hab;
   src?: string;
   wits?: string[];
-}
+};
 
 /** One pending record retains canonical metadata; its Hab is an accepted-state borrow, outside the byte walk. */
-interface PendingQuery extends QueryRequest {
-  release(): void;
+type PendingQuery = QueryRequest & { release(): void };
+
+/** Copy only the owned query-body level without erasing its route/payload relationship. */
+function copyQuery(instruction: QueryInstruction): QueryInstruction {
+  switch (instruction.route) {
+    case "logs":
+      return { route: "logs", q: { ...instruction.q } };
+    case "ksn":
+      return { route: "ksn", q: { ...instruction.q } };
+    case "tels":
+    case "tsn":
+      return { route: instruction.route, q: { ...instruction.q } };
+  }
 }
 
 /**
@@ -185,35 +194,22 @@ function soleHab(hby: Habery): Hab | null {
   return first.done || !habitats.next().done ? null : first.value;
 }
 
-/** Resolve the queried AID from cue-level or body-level portability hints. */
+/** Resolve a routed target or the existing credential-recovery hint; schemas have no KEL target. */
 function extractQueriedPrefix(cue: QueryCue): string | null {
-  const body = cue.q;
-  const pre = cue.pre
-    ?? (typeof body.pre === "string" ? body.pre : null)
-    ?? (typeof body.i === "string" ? body.i : null);
-  return typeof pre === "string" && pre.length > 0 ? pre : null;
+  const pre = cue.route ? cue.pre : cue.q.r === "tels" ? cue.q.pre : null;
+  return pre && pre.length > 0 ? pre : null;
 }
 
-/**
- * Normalize one `QueryCue` body into the actual KERI `qry.q` payload.
- *
- * KERIpy correspondence:
- * - cue producers often use `pre` and `sn` as local portability hints
- * - wire queries still need the canonical `i` and `s` fields supplied by
- *   `Hab.query(...)`
- */
-function normalizeOutboundQuery(cue: QueryCue): Record<string, unknown> {
-  const body = { ...cue.q };
-  if (body.sn !== undefined && body.s === undefined) {
-    body.s = body.sn;
+/** Preserve the current recovery-hint normalization while retaining the concrete route/body contract. */
+function normalizeOutboundQuery(cue: QueryCue): QueryInstruction | null {
+  if (!cue.route) {
+    return cue.q.r === "tels" ? { route: "logs", q: { r: "tels" } } : null;
   }
-  if (body.anchor !== undefined && body.a === undefined) {
-    body.a = body.anchor;
+  const instruction = copyQuery(cue);
+  if (instruction.route === "logs" && instruction.q.sn !== undefined && instruction.q.s === undefined) {
+    instruction.q.s = instruction.q.sn;
   }
-  delete body.pre;
-  delete body.src;
-  if (cue.route !== "tels" && cue.route !== "tsn") delete body.i;
-  return body;
+  return instruction;
 }
 
 /** Parse one hex sequence number field from key-state/query payloads. */
@@ -600,11 +596,11 @@ export class QueryCoordinator implements CueSink {
    */
   enqueue(request: QueryRequest): void {
     if (this.closed) throw new Error("Query coordinator is closed");
-    const { pre, route, q, src, wits } = request;
-    this.pending.admit({ kin: "query", pre, route, q, src, wits }, () => ({
+    const { hab: _, ...cue } = request;
+    this.pending.admit({ kin: "query", ...cue }, () => ({
       ...request,
-      q: { ...q },
-      wits: wits ? [...wits] : undefined,
+      ...copyQuery(request),
+      wits: request.wits ? [...request.wits] : undefined,
     }));
   }
 
@@ -617,10 +613,11 @@ export class QueryCoordinator implements CueSink {
     const pre = extractQueriedPrefix(cue);
     if (!pre) return false;
     return this.pending.admit(cue, () => {
+      const instruction = normalizeOutboundQuery(cue);
+      if (!instruction) return;
       return {
         pre,
-        route: cue.route ?? "logs",
-        q: normalizeOutboundQuery(cue),
+        ...instruction,
         src: cue.src,
         wits: cue.wits ? [...cue.wits] : undefined,
       };
@@ -717,14 +714,8 @@ export class QueryCoordinator implements CueSink {
             if (!request) break;
             self.pending.holdHead();
             if (self.sink.admitQuery) {
-              const cue: QueryCue = {
-                kin: "query",
-                pre: request.pre,
-                route: request.route,
-                q: request.q,
-                src: request.src,
-                wits: request.wits,
-              };
+              const { hab: _, release: __, ...query } = request;
+              const cue: QueryCue = { kin: "query", ...query };
               const admission = self.sink.admitQuery(cue, () => self.wireEmissionForRequest(request));
               if (admission === "busy") break;
               if (admission === "transferred") {
@@ -854,11 +845,12 @@ export class QueryCoordinator implements CueSink {
     if (!pre) {
       return null;
     }
+    const instruction = normalizeOutboundQuery(cue);
+    if (!instruction) return null;
     return this.wireEmissionForRequest({
       hab,
       pre,
-      route: cue.route ?? "logs",
-      q: normalizeOutboundQuery(cue),
+      ...instruction,
       src: cue.src,
       wits: cue.wits,
     });
@@ -882,17 +874,16 @@ export class QueryCoordinator implements CueSink {
       return null;
     }
 
-    const query = { ...request.q };
+    const instruction = copyQuery(request);
     return {
       cue: {
         kin: "query",
         pre: request.pre,
         src,
-        route: request.route,
-        q: query,
+        ...instruction,
         wits: request.wits ? [...request.wits] : undefined,
       },
-      messages: [hab.query(request.pre, src, query, request.route)],
+      messages: [hab.query(request.pre, src, instruction)],
       kind: "wire",
     };
   }

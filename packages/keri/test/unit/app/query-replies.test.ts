@@ -339,7 +339,7 @@ Deno.test("queued replies preserve atomic slots without borrowing an HTTP respon
       const later = replies.reserve("tsn");
       cues.extend(pair);
       replies.capture(cues);
-      const request = sender.query(sender.pre, sender.pre, {}, "logs");
+      const request = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
       for (let index = 0; index < 8; index++) {
         runtime.deliveries.enqueue(() => ({
           url: "https://peer.test/",

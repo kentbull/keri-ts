@@ -116,15 +116,11 @@ export class RegistryStateReceiver {
     let queries: PreparedCueBatch | undefined;
     const escrow = (typ: RegistryEscrowFamily, query: boolean, proof?: ReplyPlan): RegistryReplyDecision => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, regk, aid, diger);
-      const cues: AgentCue[] = isNew && query
-        ? [{
-          kin: "query",
-          pre: issuer,
-          src: aid,
-          route: typ === "registry-mae" ? "logs" : "tels",
-          q: typ === "registry-mae" ? { i: issuer } : { ri: regk, i: "" },
-        }]
-        : [];
+      const cues: AgentCue[] = !isNew || !query
+        ? []
+        : typ === "registry-mae"
+        ? [{ kin: "query", pre: issuer, src: aid, route: "logs", q: {} }]
+        : [{ kin: "query", pre: issuer, src: aid, route: "tels", q: { ri: regk, i: "" } }];
       this.rvy.cues.checkSpace(cues.length);
       const child = cues.length ? this.publisher.prepare(cues) : undefined;
       try {

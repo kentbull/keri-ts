@@ -23,11 +23,7 @@ import {
   processRuntimeUntil,
   respondantCueSink,
 } from "../agent-runtime.ts";
-import {
-  groupSigningMembers,
-  isLocalGroupHab,
-  localGroupMember,
-} from "../endpoint-roleing.ts";
+import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../endpoint-roleing.ts";
 import { MULTISIG_IXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { queryTransportSink } from "../runtime-deliveries.ts";
@@ -157,7 +153,7 @@ function delegateWitnessLogsQuery(
       q: query,
       wits: [witness],
     },
-    messages: [hab.query(serder.pre, witness, query, "logs")],
+    messages: [hab.query(serder.pre, witness, { route: "logs", q: query })],
   };
 }
 

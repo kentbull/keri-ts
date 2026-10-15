@@ -100,8 +100,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
           const query = sender.query(
             remoteController.pre,
             remoteController.pre,
-            { s: "0", fn: "0" },
-            "logs",
+            { route: "logs" as const, q: { s: "0", fn: "0" } },
           );
           const sink = queryTransportSink(runtime, hby, sender);
 
@@ -111,7 +110,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               kin: "query",
               pre: remoteController.pre,
               src: remoteController.pre,
-              route: "logs",
+              route: "logs" as const,
               q: { s: "0", fn: "0" },
             },
             messages: [query],
@@ -128,7 +127,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             kin: "query" as const,
             pre: remoteController.pre,
             src: remoteController.pre,
-            route: "logs",
+            route: "logs" as const,
             q: { s: "0", fn: "0" },
           };
           assertThrows(() => sink.admitQuery!(cue, () => Promise.resolve(null) as never), TypeError);
@@ -182,7 +181,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             runtime.querying.enqueue({
               pre: remoteController.pre,
               src: remoteController.pre,
-              route: "logs",
+              route: "logs" as const,
               q: {},
             });
             const pending = runtime.querying.pending.peekHead();
@@ -350,11 +349,13 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             remoteController.pre,
             remoteWitness.pre,
             {
-              s: "0",
-              fn: "0",
-              a: { i: sender.pre, s: "0", d: sender.kever!.said! },
+              route: "logs" as const,
+              q: {
+                s: "0",
+                fn: "0",
+                a: { i: sender.pre, s: "0", d: sender.kever!.said! },
+              },
             },
-            "logs",
           );
           const sink = queryTransportSink(runtime, hby, sender);
 
@@ -364,7 +365,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
               kin: "query",
               pre: remoteController.pre,
               src: remoteWitness.pre,
-              route: "logs",
+              route: "logs" as const,
               q: {
                 s: "0",
                 fn: "0",
@@ -390,7 +391,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           const enqueue = () =>
             runtime.querying.enqueue({
               pre: remoteController.pre,
-              route: "logs",
+              route: "logs" as const,
               q: { s: "1", fn: "0" },
               hab: sender,
               wits: [remoteWitness.pre],
@@ -549,8 +550,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
           const query = sender.query(
             remoteController.pre,
             remoteController.pre,
-            { s: "0", fn: "0" },
-            "logs",
+            { route: "logs" as const, q: { s: "0", fn: "0" } },
           );
           const sink = queryTransportSink(runtime, hby, sender);
 
@@ -560,7 +560,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
               kin: "query",
               pre: remoteController.pre,
               src: remoteController.pre,
-              route: "logs",
+              route: "logs" as const,
               q: { s: "0", fn: "0" },
             },
             messages: [query],
@@ -617,8 +617,8 @@ Deno.test("query delivery settles a streamed reply after releasing the guarded c
       const sink = queryTransportSink(runtime, hby, sender);
       const emission = {
         kind: "wire" as const,
-        cue: { kin: "query" as const, pre: peer.pre, src: peer.pre, route: "logs", q: {} },
-        messages: [sender.query(peer.pre, peer.pre, {}, "logs")],
+        cue: { kin: "query" as const, pre: peer.pre, src: peer.pre, route: "logs" as const, q: {} },
+        messages: [sender.query(peer.pre, peer.pre, { route: "logs" as const, q: {} })],
       };
       // The real guard owns cue handling. Reply parsing here would recursively wait for this same guard.
       yield* runtime.reactor.settle(undefined, {}, () => sink.send(emission));

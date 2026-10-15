@@ -1,4 +1,4 @@
-import type { Dater, SerderACDC, SerderKERI, Siger } from "cesr-ts";
+import type { Dater, SealEvent, SerderACDC, SerderKERI, Siger } from "cesr-ts";
 import type { DispatchOrdinal } from "./dispatch.ts";
 import type { MbxTopicCursor } from "./mailbox-topics.ts";
 import type { KeyStateRecord, RegStateRecord, VcStateRecord } from "./records.ts";
@@ -26,29 +26,33 @@ export interface WitnessCue extends CueBase {
   serder: SerderKERI;
 }
 
-/**
- * Cue requesting one key-state or route-specific query.
- *
- * Gate E uses this in two different states:
- * - incomplete portable cues from `Revery` / `Kevery` that still need runtime
- *   correspondence work
- * - complete cues that already know `pre` and `src` and can be materialized by
- *   `Hab.processCuesIter()`
- *
- * Field rules:
- * - `q` is the sole query body, matching KERIpy cue records
- * - `wits` overrides endpoint-role lookup and tells runtime to query one of
- *   those watcher/witness identifiers directly
- */
-export interface QueryCue extends CueBase {
-  kin: "query";
-  pre?: string;
-  src?: string;
-  route?: string;
-  q: Record<string, unknown>;
-  dest?: string;
-  wits?: string[];
-}
+/** KEL query filters and existing recovery hints; the target lives in the cue/request envelope. */
+export type KelQueryFields = {
+  fn?: string;
+  s?: string;
+  a?: ReturnType<typeof SealEvent.toSad>;
+  sn?: string;
+  dig?: string;
+  r?: "logs" | "tels";
+};
+
+/** Concrete built-in outbound query routes, correlated with their actual bodies. */
+export type QueryInstruction =
+  | { route: "logs"; q: KelQueryFields }
+  | { route: "ksn"; q: Pick<KelQueryFields, "fn" | "s"> & { a?: never } }
+  | { route: "tels" | "tsn"; q: Pick<TelQueryCue["q"], "ri" | "i"> };
+
+/** Routed query work or an unresolved schema/credential-recovery notice, matching KERIpy cue records. */
+export type QueryCue =
+  | ({ kin: "query"; pre: string; src?: string; wits?: string[] } & QueryInstruction)
+  | {
+    kin: "query";
+    pre?: never;
+    src?: never;
+    route?: never;
+    wits?: never;
+    q: { r: "schema"; said: string } | { r: "tels"; pre: string };
+  };
 
 /** Cue carrying a reopenable replay of bounded complete messages back to the host or transport layer. */
 export interface ReplayCue extends CueBase {

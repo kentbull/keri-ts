@@ -734,8 +734,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           const message = sender.query(
             recipient.pre,
             sender.pre,
-            { s: "0" },
-            "logs",
+            { route: "logs", q: { s: "0" } },
           );
           const expectedIntro = introduce(sender, remoteWitness.pre);
           const introduction = yield* call(() => parseBytes(expectedIntro));
@@ -1311,8 +1310,7 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
         const forwarded = sender.query(
           recipient.pre,
           sender.pre,
-          { s: "0" },
-          "logs",
+          { route: "logs", q: { s: "0" } },
         );
         const wrapped = makeEmbeddedExchangeMessage("/fwd", {}, {
           sender: sender.pre,

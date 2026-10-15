@@ -580,7 +580,7 @@ export class Revery {
           sigers: [...tsg.sigers],
         });
         this.cues.checkSpace(cues.length + 1);
-        cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
+        cues.push({ kin: "query", pre: tsg.pre, route: "logs", q: {} });
         continue;
       }
 

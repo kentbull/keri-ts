@@ -50,7 +50,7 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
   const tooSmall = new RuntimeDeliveries(new ResourcePolicy({ bytes: shared.limits.bytes - 1 }));
   assertEquals(assertThrows(() => tooSmall.enqueue(prepare), ResourceAdmissionError).reason, "limit");
   assertEquals(prepared, false);
-  const cue = { kin: "query" as const, pre: "aid", src: "aid", q: {} };
+  const cue = { kin: "query" as const, pre: "aid", src: "aid", route: "logs" as const, q: {} };
   const emptyFloor = new RuntimeDeliveries(new ResourcePolicy({ bytes: 33 * 1024 ** 2 }));
   assertEquals(assertThrows(() => emptyFloor.enqueue(prepare, undefined, cue), ResourceAdmissionError).reason, "limit");
   assertEquals(prepared, false, "combined source retention floor refuses before signing");
@@ -64,7 +64,7 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
   assertThrows(() =>
     new RuntimeDeliveries(resources).enqueue(prepare, undefined, {
       ...cue,
-      q: { q: "x".repeat(4 * 1024 ** 2 + 1) },
+      q: { s: "x".repeat(4 * 1024 ** 2 + 1) },
     }), ResourceLimitError);
   assertEquals(prepared, false, "finite input ceiling refuses before query serialization");
   await run(() => first.close());
@@ -105,7 +105,7 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
     try {
       runtime.deliveries.enqueue(() => ({
         url: "https://query.test/",
-        body: hab.query(hab.pre, hab.pre, {}, "logs"),
+        body: hab.query(hab.pre, hab.pre, { route: "logs", q: {} }),
         bodyMode: "header",
         destination: hab.pre,
       }));
@@ -173,7 +173,7 @@ Deno.test("query shutdown after successful response consumption cannot send the 
     } as unknown as AgentRuntime;
     const request = {
       url: "https://query.test/",
-      body: hab.query(hab.pre, hab.pre, {}, "logs"),
+      body: hab.query(hab.pre, hab.pre, { route: "logs", q: {} }),
       bodyMode: "header" as const,
       destination: hab.pre,
     };

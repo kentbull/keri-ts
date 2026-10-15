@@ -32,12 +32,13 @@ import {
   Vrsn_1_0,
 } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import type { AgentCue, CueEmission } from "../core/cues.ts";
+import type { AgentCue, CueEmission, QueryInstruction } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
+import type { MbxTopicCursor } from "../core/mailbox-topics.ts";
 import {
   incept as inceptEvent,
   interact as interactEvent,
@@ -864,14 +865,13 @@ export class Hab {
   query(
     pre: string,
     src: string,
-    query: Record<string, unknown> = {},
-    route = "",
+    instruction: QueryInstruction | { route: "mbx"; q: { topics: MbxTopicCursor } },
     stamp = makeNowIso8601(),
   ): Uint8Array {
     return this.endorse(
-      queryEvent(route, {
-        ...query,
-        i: (route === "tels" || route === "tsn") && typeof query.i === "string" ? query.i : pre,
+      queryEvent(instruction.route, {
+        ...instruction.q,
+        i: instruction.route === "tels" || instruction.route === "tsn" ? instruction.q.i : pre,
         src,
       }, {
         pre: this.pre,
@@ -1263,11 +1263,10 @@ export class Hab {
           kind: "wire",
         };
       case "query": {
-        const query = cue.q;
-        if (cue.pre && cue.src) {
+        if (cue.route && cue.pre && cue.src) {
           return {
             cue,
-            messages: [this.query(cue.pre, cue.src, query, cue.route ?? "")],
+            messages: [this.query(cue.pre, cue.src, cue)],
             kind: "wire",
           };
         }

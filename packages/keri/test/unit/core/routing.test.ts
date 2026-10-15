@@ -137,7 +137,7 @@ for (const route of ["/end/role", "/loc/scheme"] as const) {
           );
           assertEquals(hby.db.rpys.get([prior.said!]), null);
           assertEquals(hby.db.rpys.get([incoming.said!])?.said, incoming.said);
-          assertEquals(cues.toArray().map(cue => cue.kin), transferable ? ["query"] : []);
+          assertEquals(cues.toArray().map((cue) => cue.kin), transferable ? ["query"] : []);
           cues.clear();
           assertEquals(resources.used.bytes, 0);
         } finally {
@@ -390,7 +390,7 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
       // External escrow must not virtually aggregate proofs which its semantic owner has not published.
       const pending = expectKind(rvy.acceptReply({ ...args, externalEscrow: true }), "unverified");
       assertEquals(pending.reason, "proofPending");
-      assertEquals(cues.toArray(), [{ kin: "query", pre: hab.pre, q: { pre: hab.pre } }]);
+      assertEquals(cues.toArray(), [{ kin: "query", pre: hab.pre, route: "logs", q: {} }]);
       cues.clear();
       unchanged();
       withPatchedMethod(hby.db.sdts, "pin", () => {
