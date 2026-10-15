@@ -3,6 +3,7 @@ import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertObjectMatch, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
+import { CueDelivery } from "../../../src/app/cue-delivery.ts";
 import { admitCueEmission, prepareCueEmission, type PreparedCueEmission } from "../../../src/app/cue-preparation.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -461,6 +462,49 @@ Deno.test("cue delivery accepts ordinary routes and preserves source on resoluti
   });
 });
 
+Deno.test("cue target preparation accepts wire views without backing quotas and closes its iterator", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("sender");
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const wire = hab.query(hab.pre, hab.pre, { route: "logs", q: {} });
+    const backing = new Uint8Array(9 * 1024 ** 2);
+    backing.set(wire);
+    let closed = 0;
+    const messages = {
+      *[Symbol.iterator]() {
+        try {
+          yield backing.subarray(0, wire.length);
+        } finally {
+          closed++;
+        }
+      },
+    };
+    const delivery = new CueDelivery({ cue: { kin: "replay", messages }, messages, kind: "wire" }, hab, {
+      sender: hab.pre,
+      recipient: hab.pre,
+      topic: "/reply",
+      kind: "direct",
+      bodyMode: "header",
+      targets: [{ eid: hab.pre, url: "https://peer.test/" }],
+    });
+    try {
+      const prepared = delivery.prepareTarget(runtime.poster);
+      if (prepared.kind !== "target" || prepared.target.kind !== "http") throw new Error("Expected HTTP packet");
+      assertEquals(prepared.target.message, wire);
+      assertEquals(delivery.prepareTarget(runtime.poster), prepared);
+      assertEquals(closed, 0);
+      delivery.release();
+      delivery.release();
+      assertEquals(closed, 1);
+    } finally {
+      delivery.release();
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("runtime cue delivery retains exact failed wire while admitted fanout and query owners progress", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -544,19 +588,16 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
       if (!original) throw new Error("Expected admitted runtime source");
       assertStrictEquals(original.cue, cue, "the capacity-refused original cue is still present");
       original.release();
-      assertEquals(runtime.resources.used.bytes, 24 * 1024 ** 2, "only independent failed packet credit remains");
       for (const wire of packets.first) assertEquals(wire, packets.first[0], "retries preserve the exact wire");
       injected = true;
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
         failed,
       );
-      assertEquals(runtime.resources.used.bytes, 24 * 1024 ** 2, "foreign busy retains the independent failed packet");
       injected = false;
       const occupied = runtime.resources.reserve({ streams: runtime.resources.limits.streams });
       if (occupied.kind !== "reserve") throw new Error("Expected free stream capacity");
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 0, pending: true });
-      assertEquals(runtime.resources.used.bytes, 24 * 1024 ** 2, "engine busy retains the packet for a later pass");
       occupied.reservation.release();
       acceptFirst = true;
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });

@@ -328,10 +328,11 @@ Invocation-local observers report actual TCP/RX capacity refusals so busy retain
 existing work before socket acquisition. Foreign failures and raw peer errors
 propagate with original identity; this adds no transport retry taxonomy.
 
-RuntimeDeliveries retains query requests, cue cursors and independently copied
-failed packets on the existing eight-item queue. Cue output retains 8 MiB plus
-source credit, and each target preparation 24 MiB until joined delivery or
-explicit shutdown. Cue route metadata is an ordinary record without quotas. A bounded pass
+RuntimeDeliveries retains query requests, cue cursors and prepared failed packets
+on the existing eight-item queue. Cue output still retains 8 MiB plus source
+credit. Route metadata and prepared packets are ordinary records, with no
+reservation/release protocol or target-preparation ceiling. Direct packets borrow
+the supplied wire; the cursor owns and closes its actual replay iterator. A bounded pass
 advances one target per cue. Only the observed exact HTTP refusal may transfer
 a failed packet into another admitted slot; otherwise its cursor stays put.
 Other targets then progress while the exact failed wire remains pending.

@@ -764,20 +764,6 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           const prepared = poster.prepareBytesTarget(sender, route, 0, message);
           assertEquals(prepared.kind, "http");
           if (prepared.kind !== "http") throw new Error("Expected HTTP target");
-          const cap = prepared.message.length;
-          assertEquals(poster.prepareBytesTarget(sender, route, 0, message, cap).kind, "http");
-          assertThrows(() => poster.prepareBytesTarget(sender, route, 0, message, cap - 1), ResourceLimitError);
-          assertThrows(() => poster.prepareBytesTarget(sender, route, 0, message, message.length), ResourceLimitError);
-          for (const invalid of [-1, 0.5, Infinity, NaN]) {
-            assertThrows(() => poster.prepareBytesTarget(sender, route, 0, message, invalid), RangeError);
-          }
-          const direct = { ...route, kind: "direct" as const };
-          const copied = poster.prepareBytesTarget(sender, direct, 0, message, message.length);
-          if (copied.kind !== "http") throw new Error("Expected independent direct wire");
-          assertEquals(copied.message, message);
-          assertEquals(copied.message.buffer === message.buffer, false);
-          const pooled = new Uint8Array(message.length + 1).subarray(0, message.length);
-          assertThrows(() => poster.prepareBytesTarget(sender, direct, 0, pooled, message.length), ResourceLimitError);
           assertEquals(bodies.length, 0);
           // Prepared transport needs no habitat/DB access; it preserves the original introduction wire.
           yield* sendPreparedCesrTarget(prepared, runtime.services);

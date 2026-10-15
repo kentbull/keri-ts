@@ -1,44 +1,20 @@
-/** One captured cue cursor plus independently owned failed packets on the existing runtime delivery queue. */
-import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type ResourceReservation } from "cesr-ts";
+/** One captured cue cursor and its current prepared packet. */
 import type { CueEmission } from "../core/cues.ts";
-import { cueDeliveryBudget } from "./cue-budget.ts";
 import type { Poster, PreparedCesrTarget, RawCesrRoute } from "./forwarding.ts";
 import type { Hab } from "./habbing.ts";
 
-const { wireBytes, preparationBytes } = cueDeliveryBudget;
-
-/** Exact independent wire and its credit; cleanup precedes release or transfer. */
-export interface OwnedCueTarget {
-  readonly target: PreparedCesrTarget;
-  release(): void;
-}
-
-/** Concrete preparation result; a batch may advance between cues without producing a packet. */
+/** A batch may advance between cues without producing a packet. */
 export type CueTargetPreparation =
-  | { kind: "target"; owner: OwnedCueTarget }
-  | { kind: "done" | "more" | "pending" };
+  | { kind: "target"; target: PreparedCesrTarget }
+  | { kind: "done" | "more" };
 
-/** Keep packet closures independent of the original cue, habitat and cursor. */
-function ownTarget(value: PreparedCesrTarget | undefined, credit: ResourceReservation): OwnedCueTarget {
-  return {
-    get target() {
-      if (!value) throw new Error("Cue target owner is released");
-      return value;
-    },
-    release() {
-      value = undefined;
-      credit.release();
-    },
-  };
-}
-
-/** Keep one lazy extent/current message and one target; failed packets transfer into admitted queue slots. */
+/** Keep one lazy extent/current message and one target; failed packets remain ordinary delivery records. */
 export class CueDelivery {
   private emission?: CueEmission;
   private iterator?: Iterator<Uint8Array>;
   private message?: Uint8Array;
   private targetIndex = 0;
-  private prepared?: OwnedCueTarget;
+  private prepared?: PreparedCesrTarget;
   private released = false;
   constructor(
     emission: CueEmission,
@@ -56,39 +32,23 @@ export class CueDelivery {
     return !this.prepared;
   }
 
-  /** Prepare one finite target synchronously; the queue owner schedules and transmits it. */
-  prepareTarget(poster: Poster, resources: ResourcePolicy): CueTargetPreparation {
-    if (this.prepared) return { kind: "target", owner: this.prepared };
-    const admitted = resources.reserve({ bytes: preparationBytes });
-    if (admitted.kind === "refuse") {
-      if (admitted.reason === "busy") return { kind: "pending" };
-      throw new ResourceAdmissionError("Cue target preparation refused", admitted.reason);
+  /** Prepare one target synchronously; the queue schedules and transmits its ordinary wire record. */
+  prepareTarget(poster: Poster): CueTargetPreparation {
+    if (this.prepared) return { kind: "target", target: this.prepared };
+    if (!this.message) {
+      this.iterator ??= this.emission!.messages[Symbol.iterator]();
+      const next = this.iterator.next();
+      if (next.done) return { kind: "done" };
+      this.message = next.value;
+      if (!(this.message instanceof Uint8Array)) throw new TypeError("Cue message must be binary");
     }
-    let transferred = false;
-    try {
-      if (!this.message) {
-        this.iterator ??= this.emission!.messages[Symbol.iterator]();
-        const next = this.iterator.next();
-        if (next.done) return { kind: "done" };
-        this.message = next.value;
-        if (!(this.message instanceof Uint8Array)) throw new TypeError("Cue message must be binary");
-        if (this.message.buffer.byteLength > wireBytes) {
-          throw new ResourceLimitError("Cue message backing exceeds limit");
-        }
-      }
-      const target = poster.prepareBytesTarget(this.hab, this.routing, this.targetIndex, this.message, wireBytes);
-      this.prepared = ownTarget(target, admitted.reservation);
-      transferred = true;
-      return { kind: "target", owner: this.prepared };
-    } finally {
-      if (!transferred) admitted.reservation.release();
-    }
+    this.prepared = poster.prepareBytesTarget(this.hab, this.routing, this.targetIndex, this.message);
+    return { kind: "target", target: this.prepared };
   }
 
-  /** Retire only after joined transmission or successful transfer to the failed-packet queue. */
-  retireTarget(outcome: "sent" | "retained"): void {
+  /** Advance only after joined transmission or transfer to the failed-packet queue. */
+  retireTarget(): void {
     if (!this.prepared) throw new Error("Cue target has not been prepared");
-    if (outcome === "sent") this.prepared.release();
     this.prepared = undefined;
     this.advance();
   }
@@ -101,27 +61,16 @@ export class CueDelivery {
     }
   }
 
-  /** Close the actual cursor/packet obligations; callers retain source and route owners through this cleanup. */
+  /** Close the actual replay iterator once, including when its return method fails. */
   release(): void {
     if (this.released) return;
     this.released = true;
-    const errors: unknown[] = [];
-    for (
-      const cleanup of [
-        () => this.iterator?.return?.(),
-        () => this.prepared?.release(),
-      ]
-    ) {
-      try {
-        cleanup();
-      } catch (error) {
-        if (!errors.includes(error)) errors.push(error);
-      }
+    try {
+      this.iterator?.return?.();
+    } finally {
+      this.emission = undefined;
+      this.iterator = this.message = undefined;
+      this.prepared = undefined;
     }
-    this.emission = undefined;
-    this.iterator = this.message = undefined;
-    this.prepared = undefined;
-    if (errors.length === 1) throw errors[0];
-    if (errors.length) throw new AggregateError(errors, "Cue delivery cleanup failed");
   }
 }
