@@ -17,7 +17,6 @@ import {
   REPLY_MAILBOX_TOPIC,
 } from "../core/mailbox-topics.ts";
 import type { OobiRecord } from "../core/records.ts";
-import type { MailboxInboxLimits } from "../db/mailbox-inbox.ts";
 import { Mailboxer } from "../db/mailboxing.ts";
 import { Noter } from "../db/noting.ts";
 import { createReger, Reger } from "../db/reger.ts";
@@ -170,8 +169,6 @@ export interface AgentRuntimeOptions {
   /** Finite reply concurrency/event/chunk admission, independent of replay length. */
   replyLimits?: ReplyStreamLimits;
   mailboxStreamLimits?: MailboxStreamLimits;
-  /** Raw-byte retention limits; reaching capacity pauses admission without losing cursors. */
-  mailboxAdmission?: { mode: "durable"; limits?: Partial<MailboxInboxLimits> };
   vdr?: VdrRuntimeServices;
   /** An injected v2 manager and its backing store remain caller-owned. */
   acdc?: AcdcRuntimeServices;
@@ -369,7 +366,6 @@ export function* createAgentRuntime(
   const mailboxPoller = new MailboxPoller(hby, mailboxDirector, {
     services,
     pollTransport: options.mailboxPollTransport,
-    mailboxAdmission: options.mailboxAdmission,
   });
   for (
     const topic of [

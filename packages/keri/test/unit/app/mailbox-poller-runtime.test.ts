@@ -1,4 +1,4 @@
-import { type Operation, run, spawn } from "effection";
+import { call, type Operation, run, spawn, suspend } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { createAgentRuntime, processMailboxTurn } from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
@@ -7,6 +7,7 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import type { MailboxSseMessage } from "../../../src/app/mailbox-sse.ts";
 import { mailboxDeliveryEndpoints, mailboxPollEndpoints, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { runtimeTurn } from "../../../src/app/runtime-turn.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { Roles } from "../../../src/core/roles.ts";
@@ -491,6 +492,48 @@ Deno.test("processMailboxTurn settles local mailbox batches and returns them", a
       );
     } finally {
       yield* hby.close();
+    }
+  });
+});
+
+Deno.test("continuous mailbox polling hands off one event before requesting its sibling", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("recipient");
+    const eid = "mailbox-stream";
+    hby.db.locs.pin([eid, "http"], { url: "http://mailbox.test/" });
+    hby.db.ends.pin([hab.pre, Roles.mailbox, eid], { allowed: true });
+    const delivered = Promise.withResolvers<void>();
+    let pulls = 0;
+    let cancelled = false;
+    const responseBody = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const idx = pulls++;
+        controller.enqueue(new TextEncoder().encode(`id: ${idx}\nevent: /reply\ndata: message-${idx}\n\n`));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }, { highWaterMark: 0 });
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), {
+      services: { ...defaultRuntimeServices, http: { fetch: () => Promise.resolve(new Response(responseBody)) } },
+    });
+    poller.registerTopic("/reply");
+    const worker = yield* spawn(() =>
+      poller.pollDo(function*(batch) {
+        assertEquals(batch.messages.length, 1);
+        delivered.resolve();
+        yield* suspend(); // The consumer must finish before the next event is read.
+      })
+    );
+    try {
+      yield* call(() => delivered.promise);
+      assertEquals(pulls, 1);
+      assertEquals(hby.db.tops.get([hab.pre, eid])?.topics["/reply"], undefined);
+    } finally {
+      yield* worker.halt();
+      assertEquals([cancelled, responseBody.locked], [true, false]);
+      yield* hby.close(true);
     }
   });
 });

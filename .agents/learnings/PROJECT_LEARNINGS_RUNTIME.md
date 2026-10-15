@@ -446,7 +446,9 @@ queries retain separate policy; no insecure read override exists.
 SSE consumes one complete event and awaits its consumer before another read.
 Provider output reads only with HTTP demand. Finite processOnce returns typed
 batches; long-lived pollDo is sink-based. Disconnect/timeout discards unfinished
-events so their cursors can retry. Durable inbox admission has separate dispositions.
+events so their cursors can retry. Pollers hand off ordinary bytes and retain only
+protocol topic cursors; there is no durable consumer inbox or acknowledgement API.
+Continuous sinks finish before cursor advancement and the next event read.
 Provider query/nested streams share one runtime lease. Validate cursor metadata
 before copying and use bounded native row reads; join director close before stores.
 Attempt every owner's cleanup and propagate failures after releasing its credit.
