@@ -1,9 +1,5 @@
 import { ShortageError } from "../core/errors.ts";
 import type { CesrBody } from "../core/types.ts";
-import type { DecodedBodyBudget } from "./body-admission.ts";
-import { admitCbor } from "./cbor-admission.ts";
-import { admitJson } from "./json-admission.ts";
-import { admitMsgpack } from "./msgpack-admission.ts";
 import { reapCesrNativeBody } from "./native.ts";
 import { parseSerder } from "./serder.ts";
 import { smell } from "./smell.ts";
@@ -44,7 +40,7 @@ export class Serdery {
    * the wider CESR/ACDC world. The protocol-specific decoder is responsible
    * for that final acceptance decision.
    */
-  reap(input: Uint8Array, bodyBudget?: DecodedBodyBudget): { serder: CesrBody; consumed: number } {
+  reap(input: Uint8Array, onDecodeFailure?: (error: unknown) => void): { serder: CesrBody; consumed: number } {
     const native = reapCesrNativeBody(input);
     if (native) {
       return {
@@ -57,26 +53,9 @@ export class Serdery {
     if (input.length < smellage.size) {
       throw new ShortageError(smellage.size, input.length);
     }
-    if (smellage.kind === "JSON" && bodyBudget) admitJson(input.subarray(0, smellage.size), bodyBudget);
-    const boundaryFailure = bodyBudget && smellage.kind === "MGPK"
-      ? admitMsgpack(input.subarray(0, smellage.size), bodyBudget)
-      : undefined;
-    const cborBoundaryFailure = bodyBudget && smellage.kind === "CBOR"
-      ? admitCbor(input.subarray(0, smellage.size), bodyBudget)
-      : undefined;
-    const context = cborBoundaryFailure !== undefined
-      ? { onDecodeFailure: bodyBudget?.onDecodeFailure, cborBoundaryFailure }
-      : boundaryFailure !== undefined
-      ? { onDecodeFailure: bodyBudget?.onDecodeFailure, msgpackBoundaryFailure: boundaryFailure }
-      : bodyBudget;
-    // Progressive peek owns exact independent backing; standalone reap still copies.
-    const raw = (smellage.kind === "JSON" || smellage.kind === "MGPK" || smellage.kind === "CBOR") && bodyBudget
-        && input.length === smellage.size
-        && input.buffer instanceof ArrayBuffer
-        && input.buffer.byteLength === smellage.size && !input.buffer.resizable
-      ? input
-      : input.slice(0, smellage.size);
-    const serder = parseSerder(raw, smellage, context);
+    // Own exactly this body; caller backing may contain a suffix, be shared or resize.
+    const raw = input.slice(0, smellage.size);
+    const serder = parseSerder(raw, smellage, onDecodeFailure);
     return { serder, consumed: smellage.size };
   }
 }
@@ -84,7 +63,7 @@ export class Serdery {
 /** Convenience wrapper for one-shot `Serdery.reap()` call sites. */
 export function reapSerder(
   input: Uint8Array,
-  bodyBudget?: DecodedBodyBudget,
+  onDecodeFailure?: (error: unknown) => void,
 ): { serder: CesrBody; consumed: number } {
-  return new Serdery().reap(input, bodyBudget);
+  return new Serdery().reap(input, onDecodeFailure);
 }

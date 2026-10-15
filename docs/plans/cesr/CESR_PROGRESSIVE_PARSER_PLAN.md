@@ -16,7 +16,10 @@ parent-owned trees, serialization and annotation are delivered. The
   number-width limits; final execution does not establish full Python object-API parity.
 - Keep structural guards on child kinds, ilks and contexts without completed
   consumers. Table membership alone never enables a runtime route.
-- Remove parser/codec allocation estimates, quota options, tree/frame credits,
+- Codec allocation estimators, DecodedBodyBudget and speculative CBOR extension
+  refusals are removed. Preserve native decoding, exact body ownership, syntax
+  provenance and proven CBOR state reset.
+- Remove remaining parser quota options, tree/frame credits,
   side tables and capacity refusal hooks. Preserve declared lengths, enclosure
   state, syntax/error provenance, actual payload disposal and source cancellation.
   No second engine, no-op policy or cross-major retry path. Review synthetic work

@@ -13,7 +13,7 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
 
 ## Parser ownership
 
-- Public CBOR exports are encodeKeriCbor/decodeKeriCbor only; admitted decode and
+- Public CBOR exports are encodeKeriCbor/decodeKeriCbor only; body decode and
   syntax provenance are internal. Use parse directly; the unused toAsyncFrames alias is removed.
 - `parse` is the sole progressive async engine; `parseBytes` is bounded async
   complete-input collection. There is no atomic/push compatibility engine.
@@ -27,32 +27,20 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
   ordinary bytes/leaves, decoded ESSR/items, nodes and depth. No full raw envelope
   or per-Texter manifest is retained. Optional shared ordinary-wire and finite ESSR-stage reservations
   belong to delivered roots, never independently to nested children. They do not
-  account for all hydrated copies or heap overhead. Progressive JSON/MGPK/CBOR separately
-  admit lexical/token logical decoded/work charges before codec allocation, retaining
-  them with root credit. CBOR-A covers base tokens/standard views and records; CBOR-B
-  exhaustive arithmetic/share/extension accounting is deferred. B2 guards actual JS-only tag allocators;
-  record IDs and 6/14/15 remain bounded Tags with definitions blocked/no private tables.
-  cbor2 6.1.4 unknown tags are not mandatory JS expansion parity. CBOR-B1 resets configured message globals before
-  helper return; injected tables/handlers, native residency and encoder caches remain open. Wrapped Matter, native, standalone
-  verification and store/cache allocation boundaries remain open. Native syntax owns JSON
-  semantics; MGPK uses private standard extensions and disables shared key caching.
-  Pin the audited MessagePack 3.1.3 and cbor-x 1.6.0 versions exactly in source
-  and emitted packages while decoder/reset assumptions depend on those implementations.
-  Declaration preflight, codec workspace policy and intrinsic syntax provenance are
-  separate responsibilities. MessagePack workspace uses an 8 KiB fixed allowance,
-  256 bytes per nonempty container/extension and one raw copy, not private field/pool counts.
-  CBOR uses a 4 KiB fixed workspace allowance and one raw copy; actual global reset
-  and allocating-extension preflight remain required. Tight policies may refuse earlier.
-  Arbitrary JS-global/prototype/private-decoder mutation is unsupported, not an
-  error-provenance contract. Keep actual pre-decode guards and supplied-interface
-  failure tests; do not enumerate private fields or count injected getter reads.
-  The CBOR retention regression uses explicit V8 collection to verify successful
-  and malformed source backing is collectible; it fails if the actual reset is omitted.
-  The body parser consults one codec syntax contract;
-  only locally created intrinsic refusals permit opaque fallback for admitted codecs.
-  Generic CBOR decode returns unknown; consumers validate the shape they need.
-  Admitted map decoders retain schema-defined keys and extension values without
-  pretending to validate named protocol fields owned by Serder.
+  account for all hydrated copies or heap overhead. These parser budgets are
+  transitional removal work. Codec allocation estimation and DecodedBodyBudget
+  are removed: decode supported wire without heap or workspace billing.
+  MessagePack uses a private standard codec and disables shared key caching.
+  Binary values, tags, maps, packed/record/bundle extensions and standard sharing
+  retain native codec semantics; there is no speculative CBOR tag allowlist.
+  Keep the pinned MessagePack 3.1.3 and cbor-x 1.6.0 while source-specific decoder
+  behavior is relied on. Token-extent inspection runs only after native failure
+  to establish syntax provenance, never to admit allocation. Opaque fallback
+  requires intrinsic syntax failure; unexpected decoder errors propagate.
+  CBOR resets actual message globals and restores map mode before returning.
+  Its V8 collection regression proves successful/malformed backing is collectible
+  and fails without reset. Generic CBOR returns unknown; consumers narrow shapes.
+  Serdery owns one exact body copy, including suffix/shared/resizable input.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each
   owner once, including shared credit on ordinary frames. A suspended generator
   also retains its output: credit returns after consumer disposal and generator

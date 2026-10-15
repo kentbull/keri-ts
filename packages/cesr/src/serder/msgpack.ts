@@ -1,8 +1,5 @@
 import { DecodeError, Decoder, ExtensionCodec } from "@msgpack/msgpack";
 import { codecSyntaxFailure } from "../core/codec-errors.ts";
-import { ResourceLimitError } from "../core/errors.ts";
-import type { DecodedBodyBudget } from "./body-admission.ts";
-import { msgpackWorkspaceBytes } from "./codec-workspace.ts";
 
 const standard = new ExtensionCodec();
 const standardDecode = standard.decode.bind(standard);
@@ -11,12 +8,11 @@ const codec = Object.freeze({ decode: standardDecode, tryToEncode: standardEncod
 
 /**
  * Decode with standard timestamp/ExtData semantics; global custom extensions and key caching stay outside.
- * The root guard admits a map; schema-defined keys and extension values remain
+ * The root guard requires a map; schema-defined keys and extension values remain
  * unknown here. Serder owns validation of named protocol fields after decode.
  */
-export function decodeAdmittedMsgpack(
+export function decodeMsgpackBody(
   raw: Uint8Array,
-  boundaryFailure: boolean,
   onFailure?: (error: unknown) => void,
 ): Record<string, unknown> {
   const decoder = new Decoder({ extensionCodec: codec, keyDecoder: null });
@@ -25,7 +21,7 @@ export function decodeAdmittedMsgpack(
     value = decoder.decode(raw);
   } catch (error) {
     if (
-      !(error instanceof DecodeError || (boundaryFailure && error instanceof RangeError))
+      !(error instanceof DecodeError || (error instanceof RangeError && msgpackBoundaryFailure(raw)))
     ) {
       onFailure?.(error);
       throw error;
@@ -38,25 +34,15 @@ export function decodeAdmittedMsgpack(
   return value as Record<string, unknown>;
 }
 
-/**
- * Scan token extents without constructing values or imposing syntax/depth limits.
- * Declared container capacity is charged before members, including truncated arrays/maps.
- * The pinned decoder remains semantic authority; trailing/invalid data stops inspection.
- */
-export function admitMsgpack(raw: Uint8Array, budget: DecodedBodyBudget): boolean {
-  if (!Number.isSafeInteger(budget.decodedBytes) || budget.decodedBytes < 0) {
-    throw new RangeError("Decoded credit must be a non-negative safe integer");
-  }
-  budget.admitStage?.(64); // Constant scalar scanner workspace precedes inspection.
-  let remaining = budget.decodedBytes;
-  let pending = 1, offset = 0, containers = 0, extensions = 0, shortage = false;
+/** Identify incomplete/trailing token extents; the native decoder still owns syntax and values. */
+function msgpackBoundaryFailure(raw: Uint8Array): boolean {
+  let pending = 1, offset = 0, shortage = false;
   while (offset < raw.length && pending > 0) {
     const token = raw[offset++];
-    let width = 0, size = 0, payload = 0, charge = 16;
+    let width = 0, size = 0, payload = 0;
     let kind: "scalar" | "array" | "map" | "string" | "binary" | "extension" = "scalar";
     if (token < 0x80 || token >= 0xe0 || token === 0xc0 || token === 0xc2 || token === 0xc3) {
-      // Scalars may become map labels: sign +17 digits +dot/e/exponent sign +3 exponent digits.
-      charge += 8 + 2 * 24;
+      // No following bytes belong to these immediate scalars.
     } else if (token < 0x90) {
       kind = "map";
       size = token & 15;
@@ -71,10 +57,8 @@ export function admitMsgpack(raw: Uint8Array, budget: DecodedBodyBudget): boolea
       kind = token <= 0xc6 ? "binary" : "extension";
     } else if (token === 0xca || token === 0xcb) {
       payload = token === 0xca ? 4 : 8;
-      charge += 8 + 2 * 24;
     } else if (token >= 0xcc && token <= 0xd3) {
       payload = 2 ** ((token - 0xcc) % 4);
-      charge += 8 + 2 * 24;
     } else if (token >= 0xd4 && token <= 0xd8) {
       kind = "extension";
       size = 2 ** (token - 0xd4);
@@ -90,22 +74,8 @@ export function admitMsgpack(raw: Uint8Array, budget: DecodedBodyBudget): boolea
       break;
     }
     for (let index = 0; index < width; index++) size = size * 256 + raw[offset++];
-    if (kind === "array" || kind === "map") {
-      charge += 64 + size * (kind === "array" ? 16 : 48);
-      if (size > 0) containers++;
-    } else if (kind === "string") {
-      charge += 2 * size;
-      payload = size;
-    } else if (kind === "binary") {
-      charge += 64 + size;
-      payload = size;
-    } else if (kind === "extension") {
-      charge += 64 + 2 * 16 + 8 + 64 + size; // ExtData/type/view (also bounds timestamp Date).
-      payload = size + 1; // Signed extension selector precedes its bytes.
-      extensions++;
-    }
-    if (charge > remaining) throw new ResourceLimitError("MGPK exceeds decoded tree credit");
-    remaining -= charge;
+    if (kind === "string" || kind === "binary") payload = size;
+    else if (kind === "extension") payload = size + 1; // Extension selector precedes its bytes.
     pending--;
     if (kind === "array" || kind === "map") pending += size * (kind === "map" ? 2 : 1);
     if (payload > raw.length - offset) {
@@ -114,11 +84,5 @@ export function admitMsgpack(raw: Uint8Array, budget: DecodedBodyBudget): boolea
     }
     offset += payload;
   }
-  const working = msgpackWorkspaceBytes(raw.length, containers, extensions);
-  const charge = budget.decodedBytes - remaining;
-  if (!Number.isSafeInteger(working)) throw new ResourceLimitError("MGPK working extent exceeds safe accounting");
-  budget.admitStage?.(working);
-  budget.admitStage?.(charge);
-  budget.decodedBytes = remaining;
   return shortage || pending > 0 || offset < raw.length;
 }
