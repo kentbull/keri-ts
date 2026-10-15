@@ -146,6 +146,8 @@ export function* publishProposalEmbeds(
       embeds: Object.keys(embeds).length > 0 ? embeds : undefined,
     });
     const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
+    // Persist the same signed proposal as local approval before peers can reply to its delivery.
+    yield* runtime.reactor.processBytes(message, { local: true });
     const result = yield* runtime.poster.sendPreparedExchange(member, {
       recipient: destination,
       serder,

@@ -56,9 +56,11 @@ frames; remote-first approval reopens evidence. V1 approval replays stored pathe
 child proofs through the same KEL/reply owners in either arrival order, including
 after database reopen. Decode signed cgvrsn before parsing; explicit child genus
 wins, and a hint applies only to a child with attachments. Parent signatures never
-supply missing child proofs. CLI proposal/join remains v1; its local publication
-registration is still unfinished. Preserve first-notice behavior or retries can
-republish approval unnecessarily.
+supply missing child proofs. CLI proposal/join remains v1. Shared proposal
+publication registers its actual signed wire through intake before transmission,
+so later peer proofs can replay without another approval prompt. Endpoint-role
+initiation still has a separate publication path to reconcile. Preserve first-notice
+behavior or retries can republish approval unnecessarily.
 
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
 proof; metadata offers withhold issuer proofs but still validate carried schemas.
@@ -99,8 +101,9 @@ Existing raw attribute re-publication remains at the wire boundary pending its
 own producer-contract cut; it must not become an input to approval policy again.
 Multisig publication prepares and endorses its recipient-specific EXN at the
 workflow owner. Poster borrows that exact body and wire for delivery and durable
-retry; its optional TCP dependency is the reply receiver contract. Preparing
-those bytes does not register local approval or establish child replay.
+retry; its optional TCP dependency is the reply receiver contract. Preparation
+alone is not approval: the publication owner first submits those bytes to local
+intake, then delivers them. Transport does not register approval.
 
 Pure multisig/IPEX body builders take parsed Serders synchronously. Byte convenience
 operations own cancellable parseBytes, finite nested-wire collection and finally
