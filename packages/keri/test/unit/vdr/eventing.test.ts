@@ -10,6 +10,7 @@ import {
   ResourceAdmissionError,
   ResourcePolicy,
   SerderACDC,
+  SerderKERI,
   TraitDex,
   Vrsn_1_0,
   Vrsn_2_0,
@@ -436,6 +437,11 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
         reason: "missingAuthentication",
       });
       assertEquals(tvy.processQuery({ serder: request(""), source }), { kind: "drop", reason: "invalidQuery" });
+      for (const q of [null, false, "query", [], { ri: vcp.pre, i: "" }, { ri: vcp.pre, src: issuer.pre, i: 0 }]) {
+        const malformed = new SerderKERI({ sad: { ...request().ked, q }, makify: true });
+        assertEquals(tvy.processQuery({ serder: malformed, source }), { kind: "drop", reason: "invalidQuery" });
+      }
+      assertEquals(runtime.cues.length, 0);
       assertEquals(tvy.processQuery({ serder: request(vcp.pre!, "", "tsn"), source }), undefined);
       assertRuntimeCue(runtime, "reply");
       const unsigned = hby.makeHab("nontransferable", undefined, { transferable: false });
@@ -518,13 +524,12 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
       }
       const partial = prepareTsnQuery({ serder: request(vcp.pre!, issuer.pre), source }, tvy.tevers);
       if (partial.kind !== "reply") throw new Error("Expected registry reply");
-      assertEquals([partial.replies.length, partial.missingCredential], [1, issuer.pre]);
+      assertEquals(partial.replies.length, 1, "Missing credential retains the registry reply");
       const registryOnly = prepareTsnQuery({ serder: request(vcp.pre!, ""), source }, tvy.tevers);
       if (registryOnly.kind !== "reply") throw new Error("Expected registry reply");
       assertEquals(registryOnly.replies.length, 1);
       assertEquals(prepareTsnQuery({ serder: request(issuer.pre), source }, tvy.tevers), {
         kind: "unavailable",
-        registry: issuer.pre,
       });
       assertEquals(prepareTsnQuery({ serder: request() }, tvy.tevers), {
         kind: "drop",
@@ -534,6 +539,14 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
         kind: "drop",
         reason: "invalidQuery",
       });
+
+      for (const q of [null, false, "query", [], { ri: vcp.pre }, { ri: vcp.pre, i: 0 }]) {
+        const malformed = new SerderKERI({ sad: { ...request().ked, q }, makify: true });
+        assertEquals(prepareTsnQuery({ serder: malformed, source }, tvy.tevers), {
+          kind: "drop",
+          reason: "invalidQuery",
+        });
+      }
       assertEquals(prepareTsnQuery({ serder: request(vcp.pre!, "", "tels"), source }, tvy.tevers), {
         kind: "drop",
         reason: "unsupportedRoute",

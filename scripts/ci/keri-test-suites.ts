@@ -72,7 +72,7 @@ export const suites: Record<string, TestSuite> = {
     ],
   },
   "interop-acdc-deep": {
-    jobs: 2,
+    // Cold files share a mutable pinned KERIpy venv; run them in separate sequential processes.
     files: [
       "test/integration/app/interop-acdc-mixed-chain-i2i.test.ts",
       "test/integration/app/interop-acdc-mixed-chain-ni2i.test.ts",

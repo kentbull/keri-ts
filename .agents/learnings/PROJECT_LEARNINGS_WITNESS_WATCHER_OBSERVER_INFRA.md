@@ -35,6 +35,11 @@ provision libsodium independently of cached venvs; expose the resolved Homebrew
 dylib without overwriting a conflict, verify actual loading and keep KLI import
 assertions. /bin/bash scrubs DYLD variables, so GITHUB_ENV alone is insufficient.
 
+Only pool interop files when their bootstrap is independent. Deep ACDC files share
+one mutable pinned KERIpy venv: cold parallel setup races create/remove, so this
+owner uses the runner's existing separate sequential processes. Preserve both
+protocol scenarios and participant topology; no lock or new installer is needed.
+
 PR scope uses the [existing suite owners](../../scripts/ci/keri-test-suites.ts)
 and [description controls](../../docs/reference/PR_TEST_SCOPE.md). Exact-head local
 unit credit avoids duplicate CI execution; selected interop/package checks retain
