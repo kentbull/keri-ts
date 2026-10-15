@@ -6,7 +6,7 @@ import {
   type ResourceReservation,
 } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import { reserveCueBytes } from "../core/cue-admission.ts";
+import { admitCueBytes } from "../core/cue-admission.ts";
 import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { cueReader } from "../core/cue-publishing.ts";
 import type { CueEmission, QueryCue } from "../core/cues.ts";
@@ -31,6 +31,12 @@ import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
 import type { QueryReply } from "./query-replies.ts";
 import { converseCesrTcp } from "./tcp-conversation.ts";
+
+/** One local query queue attempt; only its own item/byte capacity refusal becomes a value. */
+type QueryDeliveryAdmission =
+  | { kind: "queued" }
+  | { kind: "ineligible" }
+  | { kind: "refuse"; error: ResourceAdmissionError | DeckFullError };
 
 /**
  * Resolve the actual transport URL for one query destination AID.
@@ -106,50 +112,46 @@ export class RuntimeDeliveries {
   /** Borrow the same ledger as runtime parsing, crypto and HTTP reply ownership. */
   constructor(private readonly resources = new ResourcePolicy()) {}
 
-  /** Admit before synchronous wire preparation; undefined means no request was produced. */
+  /** Admit before synchronous wire preparation; an ineligible result never acknowledges queueing. */
   enqueue(
     prepare: () => QueryDelivery | undefined,
-    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
     cue?: QueryCue,
     sourceRetainedBytes = 0,
-  ): boolean {
-    const refuse: (error: ResourceAdmissionError) => never = (error) => {
-      onAdmissionRefusal?.(error);
-      throw error;
-    };
+  ): QueryDeliveryAdmission {
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    try {
-      this.pending.checkSpace();
-    } catch (error) {
-      if (error instanceof DeckFullError) onAdmissionRefusal?.(error);
-      throw error;
+    if (this.pending.capacity < 1) throw new ResourceLimitError("Batch exceeds deck capacity");
+    if (this.pending.length === this.pending.capacity) {
+      return { kind: "refuse", error: new DeckFullError("Deck capacity exceeded") };
     }
     if (!Number.isSafeInteger(sourceRetainedBytes) || sourceRetainedBytes < 0) {
       throw new RangeError("Invalid query source retention");
     }
     const floor = requestBytes + routeBytes + preparationBytes + sourceRetainedBytes;
     if (floor > this.resources.limits.bytes) {
-      refuse(new ResourceAdmissionError("Query preparation exceeds shared byte capacity", "limit"));
+      return {
+        kind: "refuse",
+        error: new ResourceAdmissionError("Query preparation exceeds shared byte capacity", "limit"),
+      };
     }
     const input = cue
-      ? reserveCueBytes(this.resources, [cue], undefined, onAdmissionRefusal, {
-        additionalBytes: floor,
-        maxBytes: requestBytes,
-      })
+      ? admitCueBytes(this.resources, [cue], undefined, { additionalBytes: floor, maxBytes: requestBytes })
       : undefined;
+    if (input?.kind === "refuse") return input;
     let retained: ResourceReservation | undefined, preparation: ResourceReservation | undefined;
     let queued = false;
     try {
       const credit = this.resources.reserve({ bytes: requestBytes + routeBytes });
-      if (credit.kind === "refuse") refuse(new ResourceAdmissionError("Query bytes are busy", credit.reason));
+      if (credit.kind === "refuse") {
+        return { kind: "refuse", error: new ResourceAdmissionError("Query bytes are busy", credit.reason) };
+      }
       retained = credit.reservation;
       const temporary = this.resources.reserve({ bytes: preparationBytes });
       if (temporary.kind === "refuse") {
-        refuse(new ResourceAdmissionError("Query preparation is busy", temporary.reason));
+        return { kind: "refuse", error: new ResourceAdmissionError("Query preparation is busy", temporary.reason) };
       }
       preparation = temporary.reservation;
       const delivery = prepare();
-      if (!delivery) return false;
+      if (!delivery) return { kind: "ineligible" };
       if (this.closed) throw new Error("Runtime deliveries are closed");
       if (delivery.body.buffer.byteLength > requestBytes) {
         throw new ResourceLimitError("Query request exceeds byte limit");
@@ -160,9 +162,9 @@ export class RuntimeDeliveries {
       const owner = retained;
       this.pending.push({ kind: "query", delivery, release: () => owner.release() });
       queued = true;
-      return true;
+      return { kind: "queued" };
     } finally {
-      input?.release();
+      input?.reservation.release();
       preparation?.release();
       if (!queued) retained?.release();
     }
@@ -492,26 +494,21 @@ export function queryTransportSink(
       const reader = cueReader(runtime.cues);
       const source = reader.resourcePolicy && reader.peekHead() === cue ? reader : undefined;
       if (source && source.resourcePolicy !== runtime.resources) throw new RangeError("Wrong query source policy");
-      let refusal: ResourceAdmissionError | DeckFullError | undefined;
-      try {
-        return runtime.deliveries.enqueue(
-            () => prepareDelivery(prepare()),
-            (error) => refusal = error,
-            cue,
-            source?.headRetentionBytes(),
-          )
-          ? "transferred"
-          : "ineligible";
-      } catch (error) {
-        if (refusal && error === refusal && (refusal instanceof DeckFullError || refusal.reason === "busy")) {
-          return "busy";
-        }
-        throw error;
+      const result = runtime.deliveries.enqueue(
+        () => prepareDelivery(prepare()),
+        cue,
+        source?.headRetentionBytes(),
+      );
+      if (result.kind === "refuse") {
+        if (result.error instanceof DeckFullError || result.error.reason === "busy") return "busy";
+        throw result.error;
       }
+      return result.kind === "queued" ? "transferred" : "ineligible";
     },
     *send(emission: CueEmission): Operation<void> {
       if (emission.kind !== "wire" || emission.cue.kin !== "query") return;
-      runtime.deliveries.enqueue(() => prepareDelivery(emission));
+      const result = runtime.deliveries.enqueue(() => prepareDelivery(emission));
+      if (result.kind === "refuse") throw result.error;
     },
   };
   return sink;

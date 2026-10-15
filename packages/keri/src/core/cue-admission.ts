@@ -147,17 +147,42 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
   return bytes;
 }
 
+/** Concrete cue retention credit; the measured logical charge follows its owner. */
+export type CueByteReservation = ResourceReservation & { readonly bytes: number };
+/** Only this operation's own capacity refusal is a value; inspection/service failures still throw. */
+export type CueByteAdmission =
+  | { kind: "reserve"; reservation: CueByteReservation }
+  | { kind: "refuse"; error: ResourceAdmissionError };
+
+/** Logical coexistence policy shared by strict and outcome-based retention admission. */
+type CueByteLimits = { additionalBytes?: number; maxBytes?: number; copies?: number };
+
+/** Strict producer boundary; runtime admission callers consume admitCueBytes directly. */
+export function reserveCueBytes(
+  resources: ResourcePolicy,
+  cues: readonly AgentCue[],
+  maxNodes?: number,
+  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+  limits: CueByteLimits = {},
+): CueByteReservation {
+  const result = admitCueBytes(resources, cues, maxNodes, limits);
+  if (result.kind === "refuse") {
+    onAdmissionRefusal?.(result.error);
+    throw result.error;
+  }
+  return result.reservation;
+}
+
 /**
  * Reserve canonical retention before copying/interpreting; caller releases after joined consumption.
  * Optional copies is conservative coexistence allowance, not a count of physical/native allocations.
  */
-export function reserveCueBytes(
+export function admitCueBytes(
   resources: ResourcePolicy,
   cues: readonly AgentCue[],
   maxNodes = 65536,
-  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
-  limits: { additionalBytes?: number; maxBytes?: number; copies?: number } = {},
-): ResourceReservation & { readonly bytes: number } {
+  limits: CueByteLimits = {},
+): CueByteAdmission {
   if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) throw new RangeError("Invalid cue inspection limit");
   const { additionalBytes = 0, maxBytes = Number.MAX_SAFE_INTEGER, copies = 1 } = limits;
   if (!Number.isSafeInteger(copies) || copies < 1) throw new RangeError("Invalid cue copy allowance");
@@ -168,8 +193,7 @@ export function reserveCueBytes(
   const inspection = resources.reserve({ bytes: inspectionBytes });
   if (inspection.kind === "refuse") {
     const refusal = new ResourceAdmissionError("Cue inspection admission refused", inspection.reason);
-    onAdmissionRefusal?.(refusal);
-    throw refusal;
+    return { kind: "refuse", error: refusal };
   }
   try {
     const measured = retainedBytes(cues, maxNodes);
@@ -178,16 +202,14 @@ export function reserveCueBytes(
     if (measured > maxBytes) throw new ResourceLimitError("Cue retention exceeds finite byte limit");
     if (bytes > resources.limits.bytes - additionalBytes - (copies > 1 ? inspectionBytes : 0)) {
       const refusal = new ResourceAdmissionError("Cue retention exceeds combined byte capacity", "limit");
-      onAdmissionRefusal?.(refusal);
-      throw refusal;
+      return { kind: "refuse", error: refusal };
     }
     const retained = resources.reserve({ bytes });
     if (retained.kind === "refuse") {
       const refusal = new ResourceAdmissionError("Cue byte admission refused", retained.reason);
-      onAdmissionRefusal?.(refusal);
-      throw refusal;
+      return { kind: "refuse", error: refusal };
     }
-    return { bytes, release: () => retained.reservation.release() };
+    return { kind: "reserve", reservation: { bytes, release: () => retained.reservation.release() } };
   } finally {
     inspection.reservation.release();
   }
