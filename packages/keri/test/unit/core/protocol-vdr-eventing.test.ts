@@ -1,7 +1,12 @@
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
-import { Ilks } from "../../../../cesr/mod.ts";
+import { Diger, Ilks, NumberPrimitive, Prefixer, SealEvent } from "../../../../cesr/mod.ts";
 import { backerIssue, incept, issue, query, state, vcstate } from "../../../src/core/protocol-vdr-eventing.ts";
-import { type CredentialKelAnchor, RegStateRecord, VcStateRecord } from "../../../src/core/records.ts";
+import {
+  type CredentialKelAnchor,
+  type RegistrySealFields,
+  RegStateRecord,
+  VcStateRecord,
+} from "../../../src/core/records.ts";
 
 const ISSUER = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const REGISTRY = "EBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
@@ -10,6 +15,10 @@ const SAID = "EDdddddddddddddddddddddddddddddddddddddddddd";
 
 // @ts-expect-error A credential KEL anchor sequence is an integer, not registry-seal hex text.
 void ({ s: "3", d: SAID } satisfies CredentialKelAnchor);
+// @ts-expect-error A registry seal's sequence is hex text, not a credential KEL integer.
+void ({ i: REGISTRY, s: 3, d: SAID } satisfies RegistrySealFields);
+// @ts-expect-error Known registry seal fields provide no arbitrary metadata slot.
+void ({ extra: "value" } satisfies Partial<RegistrySealFields>);
 // @ts-expect-error An anchor must carry its digest as well as its sequence.
 void ({ s: 3 } satisfies CredentialKelAnchor);
 
@@ -77,5 +86,15 @@ Deno.test("protocol-vdr-eventing state builders return KERIpy-shaped records", (
   assertInstanceOf(vsr, VcStateRecord);
   assertEquals(vsr.ri, REGISTRY);
   assertEquals(vsr.a, { s: 3, d: SAID });
+  assertEquals(vsr.ra, {});
+  const partial = vcstate(VC, SAID, 0, REGISTRY, Ilks.bis, { s: 3, d: SAID }, { ra: { i: REGISTRY, d: SAID } });
+  assertEquals(partial.ra, { i: REGISTRY, d: SAID }, "Raw state preserves partial registry references");
+  const seal = SealEvent.fromTuple([
+    new Prefixer({ code: "E", raw: new Uint8Array(32) }),
+    NumberPrimitive.fromNum(3n),
+    new Diger({ code: "E", raw: new Uint8Array(32).fill(1) }),
+  ]);
+  const typed = vcstate(VC, SAID, 0, REGISTRY, Ilks.bis, { s: 3, d: SAID }, { ra: seal });
+  assertEquals(typed.ra, SealEvent.toSad(seal));
   assertEquals(qry.ilk, Ilks.qry);
 });
