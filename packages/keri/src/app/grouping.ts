@@ -512,14 +512,12 @@ export class Multiplexor {
   /** Replay v1 children with their own stored proofs and signed attachment genus, as KERIpy does. */
   private *processLegacyApproved(wrapper: SerderKERI): Operation<void> {
     const embeds = embeddedSection(wrapper.ked!);
-    for (const [label, sad] of Object.entries(embeds ?? {})) {
-      if (!isRecord(sad)) continue;
-      const child = new SerderKERI({ sad });
-      const attachment = multisigPathedAttachment(this.hby, wrapper.said!, label);
-      const hint = attachment.length ? childGenusHint(wrapper.ked!.a) : undefined;
-      const genus = child.gvrsn ?? hint ?? child.pvrsn;
+    for (const label of Object.keys(embeds ?? {})) {
+      const child = multisigChild(this.hby, wrapper, label);
+      if (!child) continue;
+      const { event, attachment, genus } = child;
       const channel = yield* toEffectionFrames(async function*(signal) {
-        for (const bytes of [Counter.makeGVC(genus), child.raw, attachment]) {
+        for (const bytes of [Counter.makeGVC(genus), event.raw, attachment]) {
           yield* chunkBytes(bytes, { signal });
         }
       });
@@ -652,6 +650,23 @@ export function embeddedBusinessExnSAD(serder: SerderKERI): Record<string, unkno
   const embed = serder.ked ? embeddedSection(serder.ked) : null;
   const exn = embed && isRecord(embed["exn"]) ? embed["exn"] : null;
   return exn ? { ...exn } : null;
+}
+
+/** Decoded v1 child and its own proof bytes; the signed hint cannot override a body's explicit genus. */
+export interface MultisigChild {
+  event: SerderKERI;
+  attachment: Uint8Array;
+  genus: Versionage;
+}
+
+/** Read one stored v1 child at the wire boundary, without authenticating its independent proof. */
+export function multisigChild(hby: Habery, wrapper: SerderKERI, label: string): MultisigChild | null {
+  const sad = embeddedSection(wrapper.ked ?? {})?.[label];
+  if (!isRecord(sad)) return null;
+  const event = new SerderKERI({ sad });
+  const attachment = multisigPathedAttachment(hby, wrapper.said!, label);
+  const hint = attachment.length ? childGenusHint(wrapper.ked?.a) : undefined;
+  return { event, attachment, genus: event.gvrsn ?? hint ?? event.pvrsn };
 }
 
 /** Extract raw attachment bytes for one label from a stored multisig wrapper. */

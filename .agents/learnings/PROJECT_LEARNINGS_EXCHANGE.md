@@ -88,7 +88,10 @@ For a v1 wrapper around a legacy body with a different explicit attachment genus
 derive signed a.cgvrsn from childGvrsn. Omit it when the body declares its genus or
 the versions agree. Canonical 714 icp/rot/ixn/rpy vectors compare complete unsigned
 bodies and supplemental wire; KERIpy's separate parent endorsement is not part of
-our builder output. Receiving approval workflows still need their own genus audit.
+our builder output. KEL and reply approval use the same decoded child/body,
+pathed proof and resolved genus as replay. Sign local attachments in that genus
+and prefix only parser input with its selector; embedded wire remains body-first.
+VDR anchor approval still needs its separate genus and input-contract audit.
 Endpoint-role proposal publication constructs its one known gid/rpy envelope at
 the workflow owner; a one-caller helper accepting arbitrary payload/embed maps
 adds no boundary. Decoded endpoint-reply attributes narrow unknown cid/role/eid

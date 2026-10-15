@@ -7,6 +7,7 @@
  */
 import {
   concatBytes,
+  Counter,
   Diger,
   Ilks,
   NumberPrimitive,
@@ -44,6 +45,8 @@ import {
   MULTISIG_ROT_ROUTE,
   MULTISIG_RPY_ROUTE,
   MULTISIG_VCP_ROUTE,
+  type MultisigChild,
+  multisigChild,
   multisigPathedAttachment,
 } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -62,14 +65,16 @@ export type MultisigProposalRoute = MultisigKelRoute | MultisigVdrRoute | Multis
 
 /** Decoded child and membership fields consumed by KEL approval policy; child proofs are verified during intake. */
 type KelApproval =
-  | {
-    route: typeof MULTISIG_ICP_ROUTE | typeof MULTISIG_ROT_ROUTE;
-    event: SerderKERI;
-    group: string;
-    smids: string[];
-    rmids: string[];
-  }
-  | { route: typeof MULTISIG_IXN_ROUTE; event: SerderKERI; group: string; smids: string[] };
+  & MultisigChild
+  & (
+    | {
+      route: typeof MULTISIG_ICP_ROUTE | typeof MULTISIG_ROT_ROUTE;
+      group: string;
+      smids: string[];
+      rmids: string[];
+    }
+    | { route: typeof MULTISIG_IXN_ROUTE; group: string; smids: string[] }
+  );
 
 export interface ApprovalResult {
   route: MultisigProposalRoute;
@@ -373,25 +378,21 @@ function* approveRpyProposal(
     throw new ValidationError(`Group ${groupPre} must be joined before approving ${route}.`);
   }
   const member = localGroupMember(hby, groupPre);
-  const embeddedSad = embeddedSection(exn.ked ?? {})?.rpy;
-  if (!isRecord(embeddedSad)) {
-    return null;
-  }
-
-  const rpySerder = new SerderKERI({ sad: embeddedSad });
+  const child = multisigChild(hby, exn, "rpy");
+  if (!child) return null;
+  const { event: rpySerder, attachment, genus } = child;
   const embeddedSaid = rpySerder.said ?? "";
   if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid || "<unknown>" })) {
     return null;
   }
 
-  const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, "rpy");
   yield* runtime.reactor.processBytes(
-    concatBytes(rpySerder.raw, peerAttachment),
+    concatBytes(Counter.makeGVC(genus), rpySerder.raw, attachment),
     { local: true },
   );
 
-  const localRpy = groupEndorseReply(hby, groupPre, rpySerder);
-  yield* runtime.reactor.processBytes(localRpy, { local: true });
+  const localRpy = groupEndorseReply(hby, groupPre, rpySerder, genus);
+  yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localRpy), { local: true });
   yield* runtime.reactor.processEscrowsOnce();
 
   const attrs = rpyAttrs(rpySerder);
@@ -419,7 +420,7 @@ function* approveKelProposal(
   if (!wrapperSaid) {
     return null;
   }
-  const proposal = kelApproval(exn, route);
+  const proposal = kelApproval(hby, exn, route);
   if (!proposal) {
     return null;
   }
@@ -448,10 +449,12 @@ function* approveKelProposal(
   const keys = groupEventKeys(hby, groupPre, serder);
   const sigers = signLocalGroupEvent(hby, serder, smids, keys);
   // Keep the attachment set open until the peer signatures are appended.
-  const localMessage = messagize(serder, { sigers, pipelined: false });
+  const localMessage = messagize(serder, { sigers, pipelined: false, gvrsn: proposal.genus });
   const label = kelProposalLabel(proposal.route);
-  const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, label);
-  yield* runtime.reactor.processBytes(concatBytes(localMessage, peerAttachment), { local: true });
+  yield* runtime.reactor.processBytes(
+    concatBytes(Counter.makeGVC(proposal.genus), localMessage, proposal.attachment),
+    { local: true },
+  );
   yield* runtime.reactor.processEscrowsOnce();
 
   // Preserve the existing wire re-publication until its producer contract is narrowed;
@@ -546,10 +549,10 @@ function kelProposalLabel(route: MultisigKelRoute): "icp" | "rot" | "ixn" {
 }
 
 /** Decode the fields used by approval, preserving existing missing-embed and member-list behavior. */
-function kelApproval(exn: SerderKERI, route: MultisigKelRoute): KelApproval | null {
-  const embedded = embeddedSection(exn.ked ?? {})?.[kelProposalLabel(route)];
-  if (!isRecord(embedded)) return null;
-  const event = new SerderKERI({ sad: embedded });
+function kelApproval(hby: Habery, exn: SerderKERI, route: MultisigKelRoute): KelApproval | null {
+  const child = multisigChild(hby, exn, kelProposalLabel(route));
+  if (!child) return null;
+  const { event } = child;
   const attrs: unknown = exn.ked?.a;
   const payload = isRecord(attrs) ? attrs : {};
   const group = requireText(
@@ -560,8 +563,8 @@ function kelApproval(exn: SerderKERI, route: MultisigKelRoute): KelApproval | nu
   );
   const smids = stringArrayField(payload, "smids");
   return route === MULTISIG_IXN_ROUTE
-    ? { route, event, group, smids }
-    : { route, event, group, smids, rmids: stringArrayField(payload, "rmids") };
+    ? { route, ...child, group, smids }
+    : { route, ...child, group, smids, rmids: stringArrayField(payload, "rmids") };
 }
 
 function approveRegistryIncept(
