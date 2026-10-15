@@ -34,11 +34,7 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { PathedMaterialGroup, TransIdxSigGroup, type TransLastIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
-import {
-  type ExchangeFactors,
-  type MissingExchangeState,
-  verifyExchangeProofs,
-} from "../core/exchange-proofing.ts";
+import { type ExchangeFactors, type MissingExchangeState, verifyExchangeProofs } from "../core/exchange-proofing.ts";
 import { Kever } from "../core/kever.ts";
 import { type KramReceipt, kramReceiptTime } from "../core/kraming.ts";
 import { exchange as exchangeMessage, supportsNestedExchange } from "../core/protocol-exchanging.ts";
@@ -546,11 +542,8 @@ export class Exchanger {
         cues.push({
           kin: "query",
           pre: senderQuery.pre,
-          q: {
-            r: "logs",
-            pre: senderQuery.pre,
-            ...(senderQuery.sn === null ? {} : { sn: senderQuery.sn.toString(16) }),
-          },
+          route: "logs",
+          q: senderQuery.sn === null ? {} : { s: senderQuery.sn.toString(16) },
         });
       }
       if (needsProof) cues.push({ kin: "proof", said });
@@ -1025,7 +1018,12 @@ export class Exchanger {
         this.cues.checkSpace(unique.size);
         const cues: AgentCue[] = [];
         for (const { pre, sn } of unique.values()) {
-          cues.push({ kin: "query", pre, q: { r: "logs", pre, ...(sn === null ? {} : { sn: sn.toString(16) }) } });
+          cues.push({
+            kin: "query",
+            pre,
+            route: "logs",
+            q: sn === null ? {} : { s: sn.toString(16) },
+          });
         }
         batch = this.publisher.prepare(cues);
         batch.publish();
@@ -1043,7 +1041,12 @@ export class Exchanger {
       const key = `${pre}:${sn ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      this.cues.push({ kin: "query", pre, q: { r: "logs", pre, ...(sn === null ? {} : { sn: sn.toString(16) }) } });
+      this.cues.push({
+        kin: "query",
+        pre,
+        route: "logs",
+        q: sn === null ? {} : { s: sn.toString(16) },
+      });
     }
   }
 

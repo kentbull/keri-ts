@@ -1,4 +1,4 @@
-import type { Dater, SerderACDC, SerderKERI, Siger } from "cesr-ts";
+import type { Dater, SealEvent, SerderACDC, SerderKERI, Siger } from "cesr-ts";
 import type { DispatchOrdinal } from "./dispatch.ts";
 import type { MbxTopicCursor } from "./mailbox-topics.ts";
 import type { KeyStateRecord, RegStateRecord, VcStateRecord } from "./records.ts";
@@ -26,30 +26,39 @@ export interface WitnessCue extends CueBase {
   serder: SerderKERI;
 }
 
-/**
- * Cue requesting one key-state or route-specific query.
- *
- * Gate E uses this in two different states:
- * - incomplete portable cues from `Revery` / `Kevery` that still need runtime
- *   correspondence work
- * - complete cues that already know `pre` and `src` and can be materialized by
- *   `Hab.processCuesIter()`
- *
- * Field rules:
- * - `query` and legacy `q` carry the raw KERI `qry.q` body
- * - `wits` overrides endpoint-role lookup and tells runtime to query one of
- *   those watcher/witness identifiers directly
- */
-export interface QueryCue extends CueBase {
-  kin: "query";
-  pre?: string;
+/** KEL wire filters; the target lives in the cue/request envelope. */
+export type KelQueryFields = {
+  fn?: string;
+  s?: string;
+  a?: ReturnType<typeof SealEvent.toSad>;
+};
+
+/** Concrete built-in outbound query routes, correlated with their actual bodies. */
+export type QueryInstruction =
+  | { route: "logs"; q: KelQueryFields }
+  | { route: "ksn"; q: Pick<KelQueryFields, "fn" | "s"> & { a?: never } }
+  | { route: "tels" | "tsn"; q: Pick<TelQueryCue["q"], "ri" | "i"> };
+
+/** Deferred query work names its local signer and remote attester; it never borrows a Hab. */
+export type QueryRequest = QueryInstruction & {
+  pre: string;
+  signer?: string;
   src?: string;
-  route?: string;
-  query?: Record<string, unknown>;
-  q?: Record<string, unknown>;
-  dest?: string;
   wits?: string[];
-}
+};
+
+/** Routed query work or an unresolved schema/credential-recovery notice, matching KERIpy cue records. */
+export type QueryCue =
+  | ({ kin: "query" } & QueryRequest)
+  | {
+    kin: "query";
+    pre?: never;
+    signer?: never;
+    src?: never;
+    route?: never;
+    wits?: never;
+    q: { r: "schema"; said: string } | { r: "tels"; pre: string };
+  };
 
 /** Cue carrying a reopenable replay of bounded complete messages back to the host or transport layer. */
 export interface ReplayCue extends CueBase {
@@ -63,23 +72,22 @@ export interface ReplayCue extends CueBase {
   dest?: string;
 }
 
-/**
- * Cue requesting that one local reply message be emitted.
- *
- * KERIpy producers sometimes hand back route/data pairs and sometimes a
- * prebuilt reply serder. `keri-ts` keeps both forms so later `/ksn` parity
- * does not need another cue-shape migration.
+/** Reply bodies already prepared by KEL processing, or concrete TSN state awaiting its local attester.
+ * KSN uses its serder's authoritative route; TSN state is serialized only at Hab interpretation.
  */
-export interface ReplyCue extends CueBase {
-  /** Query SAID that requested this response, including deferred escrow results. */
-  querySaid?: string;
-  kin: "reply";
-  route: string;
-  data?: Record<string, unknown>;
-  serder?: SerderKERI;
-  src?: string;
-  dest?: string;
-}
+export type ReplyCue =
+  & {
+    kin: "reply";
+    /** Query SAID that requested this response, including deferred escrow results. */
+    querySaid?: string;
+    src?: string;
+    dest?: string;
+  }
+  & (
+    | { serder: SerderKERI; route?: never; data?: never }
+    | { route: "/tsn/registry"; data: Required<RegStateRecord>; serder?: never; dest: string }
+    | { route: "/tsn/credential"; data: Required<VcStateRecord>; serder?: never; dest: string }
+  );
 
 /** Cue carrying one streaming publication request plus its topic metadata. */
 export interface StreamCue extends CueBase {
@@ -110,7 +118,8 @@ export interface TransactionStateSavedCue extends CueBase {
 /** Cue requesting TEL replay or transaction-state lookup work. */
 export interface TelQueryCue extends CueBase {
   kin: "telquery";
-  q: Record<string, unknown>;
+  /** Registry/credential recovery target; issuer is supplied when the registry itself is unknown. */
+  q: { ri: string; i: string; issr?: string };
 }
 
 /** Cue emitted when a TEL revoke event is accepted. */

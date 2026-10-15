@@ -264,7 +264,7 @@ export class Reger extends LMDBer {
     } catch (error) {
       throw new DatabaseOperationError(
         "Failed to open Reger sub-databases",
-        { cause: error instanceof Error ? error.message : String(error) },
+        { cause: error },
       );
     }
   }

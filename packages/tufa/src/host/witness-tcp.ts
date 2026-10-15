@@ -18,6 +18,7 @@ import {
   type PreparedCueEmission,
   processCuesOnce,
   type QueryReply,
+  respondantCueSink,
   socketBytes,
   writeCesrTcpSocket,
 } from "keri-ts/runtime";
@@ -111,7 +112,7 @@ function* processWitnessSocket(
   try {
     yield* race([
       call(function*() {
-        const channel = yield* runtime.reactor.frames((signal) => {
+        const channel = yield* runtime.intake.frames((signal) => {
           receiveSignal = signal;
           const input = socketBytes(socket, { signal });
           const source: AsyncIterableIterator<Uint8Array> = {
@@ -246,7 +247,7 @@ function* processWitnessSocket(
               } else batch = slot?.takeAll();
             }
           });
-          yield* processCuesOnce(runtime, { hab: serviceHab, sink: runtime.respondant.forHab(serviceHab) });
+          yield* processCuesOnce(runtime, { hab: serviceHab, sink: respondantCueSink(runtime, serviceHab) });
           if (batch) yield* sendBatch(batch);
         }
         while (!rxEOF || pending) {

@@ -93,7 +93,6 @@ export interface AttachmentEscrow {
   message: string;
   instruction: EscrowInstruction;
   cues?: readonly AgentCue[];
-  context?: Record<string, unknown>;
 }
 
 /** Attachment validation variant for terminal rejection outcomes. */
@@ -101,14 +100,20 @@ export interface AttachmentReject {
   kind: "reject";
   code: RejectKind;
   message: string;
-  context?: Record<string, unknown>;
+}
+
+/** Repair of one accepted delegation hint discovered during validation, applied by Kevery. */
+export interface DelegationSourceRepair {
+  pre: string;
+  said: string;
+  /** Null removes a broken hint; otherwise retain the discovered authorizing event. */
+  sourceSeal: SealSource | null;
 }
 
 /** Result of attachment validation prior to full event-state acceptance. */
-export type AttachmentDecision =
-  | AttachmentVerified
-  | AttachmentEscrow
-  | AttachmentReject;
+export type AttachmentDecision = (AttachmentVerified | AttachmentEscrow | AttachmentReject) & {
+  sourceSealRepairs?: readonly DelegationSourceRepair[];
+};
 
 /** Top-level kever decision variant for accepted transitions. */
 export interface KeverAccept {
@@ -132,7 +137,6 @@ export interface KeverEscrow {
   message: string;
   instruction: EscrowInstruction;
   cues?: readonly AgentCue[];
-  context?: Record<string, unknown>;
 }
 
 /** Top-level kever decision variant for terminal rejection outcomes. */
@@ -140,15 +144,12 @@ export interface KeverReject {
   kind: "reject";
   code: RejectKind;
   message: string;
-  context?: Record<string, unknown>;
 }
 
 /** Top-level typed outcome returned by `Kevery.processEvent()`. */
-export type KeverDecision =
-  | KeverAccept
-  | KeverDuplicate
-  | KeverEscrow
-  | KeverReject;
+export type KeverDecision = (KeverAccept | KeverDuplicate | KeverEscrow | KeverReject) & {
+  sourceSealRepairs?: readonly DelegationSourceRepair[];
+};
 
 /**
  * Recoverable escrow-processing reasons that keep one escrow row in place for a
@@ -192,18 +193,11 @@ export type EscrowDropReason =
   | "missingEscrowedEvent"
   | "missingEscrowedEndorsements"
   | "malformedEscrowedQuery"
-  | "malformedEscrowedReply"
-  | "processingError"
-  | "outerCorruption";
+  | "processingError";
 
 /** Escrow-processing variant for one escrow row that has now been successfully applied. */
 export interface EscrowAccept {
   kind: "accept";
-}
-
-export interface EscrowDecisionMeta {
-  message?: string;
-  context?: Record<string, unknown>;
 }
 
 /** Escrow-processing variant for one escrow row that should remain in escrow. */
@@ -211,7 +205,6 @@ export interface EscrowKeep {
   kind: "keep";
   reason: EscrowKeepReason;
   message?: string;
-  context?: Record<string, unknown>;
 }
 
 /** Escrow-processing variant for one escrow row that should be removed. */
@@ -219,7 +212,6 @@ export interface EscrowDrop {
   kind: "drop";
   reason: EscrowDropReason;
   message?: string;
-  context?: Record<string, unknown>;
 }
 
 /**
@@ -243,17 +235,17 @@ export function acceptEscrow(): EscrowAccept {
 /** Builder for one recoverable miss that should remain escrowed. */
 export function keepEscrow(
   reason: EscrowKeepReason,
-  meta: EscrowDecisionMeta = {},
+  message?: string,
 ): EscrowKeep {
-  return { kind: "keep", reason, ...meta };
+  return { kind: "keep", reason, message };
 }
 
 /** Builder for one terminal outcome that should remove the escrow row. */
 export function dropEscrow(
   reason: EscrowDropReason,
-  meta: EscrowDecisionMeta = {},
+  message?: string,
 ): EscrowDrop {
-  return { kind: "drop", reason, ...meta };
+  return { kind: "drop", reason, message };
 }
 
 /**
@@ -274,12 +266,7 @@ export function logEscrowDecision(
   const detail = decision.message
     ? `${scope}: ${decision.message}`
     : `${scope}: escrow ${decision.kind} (${decision.reason})`;
-  const meta = decision.context ? [decision.context] : [];
-  if (decision.kind === "keep") {
-    logger.info(detail, ...meta);
-    return;
-  }
-  logger.info(detail, ...meta);
+  logger.info(detail);
 }
 
 /** Recoverable live-receipt outcomes that require escrowing attached material. */

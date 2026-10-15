@@ -19,6 +19,10 @@ Track children before readiness waits and report their output on startup failure
 Probe OOBIs, not nonexistent health endpoints; resolve both controller and witness
 OOBIs. Proved controller/witness combinations do not imply untested KLI replacement
 or arbitrary topology. The six-witness soak is manual, outside merge CI.
+A default KLI inception may poll before the witness knows its KEL. The pinned
+KERIpy Poller reconnects after 30 seconds and retries one second later; its outer
+command deadline must include that cycle. Preserve authorization and full receipt
+assertions rather than treating the arrival order as a different topology.
 
 Verify Python interpreter, revision and actually imported modules. Console entry
 exit status matters: python -m can ignore main's return. Explicitly select body
@@ -34,6 +38,19 @@ LMDB V1 needs its own native rebuild/preflight and cache boundary. On macOS,
 provision libsodium independently of cached venvs; expose the resolved Homebrew
 dylib without overwriting a conflict, verify actual loading and keep KLI import
 assertions. /bin/bash scrubs DYLD variables, so GITHUB_ENV alone is insufficient.
+
+Only pool interop files when their bootstrap is independent. Deep ACDC files share
+one mutable pinned KERIpy venv: cold parallel setup races create/remove, so this
+owner uses the runner's existing separate sequential processes. Preserve both
+protocol scenarios and participant topology; no lock or new installer is needed.
+
+PR scope uses the [existing suite owners](../../scripts/ci/keri-test-suites.ts)
+and [description controls](../../docs/reference/PR_TEST_SCOPE.md). Exact-head local
+unit credit avoids duplicate CI execution. Draft promotion does not rerun an
+unchanged head; source pushes do. Selected interop/package checks retain
+their real assertions and topology. A skipped lane is not execution evidence.
+Periodic broad checks catch cross-feature regressions; full release qualification
+still includes the maintained manual/endurance gates.
 
 ## Packaging and release
 
