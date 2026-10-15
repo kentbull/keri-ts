@@ -37,6 +37,9 @@ Finite retry credit precedes native row materialization and outlives joined tran
 Active KERIpy parity targets `7143832813cac6a394ab1faf9be83bb3372be87c`.
 Keep historical 927 fixtures and fork/legacy compatibility results labeled by their actual sources.
 
+Kever returns decisions and describes follow-up work without a queue. Baser owns
+accepted event/FEL row persistence; Kevery keeps processing and publication policy.
+
 Normal remote outcomes use typed decisions. Exceptions retain invariant,
 infrastructure and caller-contract failures. Keep protocol compatibility and
 frozen-reference evidence explicit; no old TypeScript API shims are required.

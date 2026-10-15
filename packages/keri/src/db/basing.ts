@@ -9,6 +9,7 @@ import {
   type EssrOptions,
   type EssrPayload,
   essrPayload,
+  Ilks,
   Labeler,
   Noncer,
   NumberPrimitive,
@@ -37,7 +38,9 @@ import {
   attachmentCounterQb64b,
   resolveAttachmentGvrsn,
 } from "../core/attachment-countering.ts";
-import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
+import type { DispatchOrdinal } from "../core/dispatch.ts";
+import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
+import type { KELEventState } from "../core/kever-decisions.ts";
 import { Kever } from "../core/kever.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import {
@@ -79,6 +82,7 @@ import {
   WellKnownAuthN,
   type WellKnownAuthNShape,
 } from "../core/records.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { dgKey, splitOnKey, suffix, unsuffix } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { ExchangeRecord, PlaintextRecord } from "./exchange-records.ts";
@@ -150,8 +154,13 @@ function eventSealsEqual(
 }
 
 /** Encode a replay/first-seen ordinal using the huge CESR number code family. */
-function encodeHugeOrdinal(num: number): NumberPrimitive {
+function encodeHugeOrdinal(num: number | bigint): NumberPrimitive {
   return new NumberPrimitive({ code: NumDex.Huge, raw: hugeOrdinalRaw(num) });
+}
+
+/** Preserve qualified numeric source ordinals; normalize legacy Seqner input to the stored number family. */
+function eventSourceOrdinal(ordinal: DispatchOrdinal): NumberPrimitive {
+  return ordinal instanceof NumberPrimitive ? ordinal : encodeHugeOrdinal(ordinal.sn);
 }
 
 function hugeOrdinalRaw(num: number | bigint): Uint8Array {
@@ -1424,6 +1433,63 @@ export class Baser {
       throw new Error("Invalid prospective first-seen ordinal");
     }
     return next;
+  }
+
+  /** Fix prospective FEL metadata before the processing owner admits follow-up work or writes. */
+  prepareKelEventLog(args: KELEventState): { fn: number | null; dater: Dater } {
+    const pre = args.serder.pre;
+    if (!pre || !args.serder.said || args.serder.sn === null) {
+      throw new ValidationError("logEvent requires pre, said, and sn.");
+    }
+    return {
+      fn: args.first ? this.nextFelOrdinal(pre) : null,
+      dater: args.frc?.dt ?? new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
+    };
+  }
+
+  /**
+   * Persist verified accepted/duplicate event material under the caller's synchronous writer.
+   * The processing owner supplies the validated delegated fact, admits follow-up
+   * work before this call, and publishes live state/cues after native commit.
+   * This owns row layout and first-seen checks, not decisions, queues or transport.
+   */
+  writeKelEventLog(
+    args: KELEventState,
+    prepared: ReturnType<Baser["prepareKelEventLog"]>,
+    delegated: boolean,
+  ): void {
+    const local = args.local ?? false;
+    const pre = args.serder.pre, said = args.serder.said, sn = args.serder.sn;
+    if (!pre || !said || sn === null) {
+      throw new ValidationError("logEvent requires pre, said, and sn.");
+    }
+    const first = args.first ?? false;
+    const { fn, dater } = prepared;
+    if (fn !== (first ? this.nextFelOrdinal(pre) : null)) {
+      throw new Error("Prepared first-seen ordinal changed before logging");
+    }
+    const dgkey = dgKey(pre, said);
+    this.dtss.put(dgkey, dater);
+    if (args.sigers?.length) this.sigs.put(dgkey, [...args.sigers]);
+    if (args.wigers?.length) this.wigs.put(dgkey, [...args.wigers]);
+    if (args.wits?.length) this.wits.put(dgkey, args.wits.map((wit) => new Prefixer({ qb64: wit })));
+    this.evts.put(dgkey, args.serder);
+    if (args.sourceSeal && delegated && args.serder.ilk !== Ilks.ixn) {
+      this.aess.pin(dgkey, [eventSourceOrdinal(args.sourceSeal.s), args.sourceSeal.d]);
+    }
+    const existing = this.esrs.get(dgkey);
+    if (existing) {
+      if (local && !existing.local) {
+        existing.local = true;
+        this.esrs.pin(dgkey, existing);
+      }
+    } else this.esrs.put(dgkey, { local });
+    if (first) {
+      if (this.appendFel(pre, said) !== fn) throw new Error("First-seen append disagrees with preparation");
+      this.dtss.pin(dgkey, dater);
+      this.fons.pin(dgkey, encodeHugeOrdinal(fn!));
+    }
+    this.kels.add(pre, sn, said);
   }
 
   /** Read one first-seen digest by `(pre, fn)` from `fels.`. */

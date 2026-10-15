@@ -2,6 +2,11 @@
 
 ## Database truth
 
+Baser owns accepted KEL row layout and prospective first-seen metadata. Its
+prepareKelEventLog/writeKelEventLog seam consumes verified material and the
+processing owner's delegated fact under the existing synchronous writer.
+It emits no cues and owns no transport work; Kevery publishes after commit.
+
 Use typed Suber/Komer seams and the [DB invariants][db]. Symbol presence does not
 prove row parity; the [DB plan](../../docs/plans/db/DB_PARITY_PLAN.md) retains Partial
 rows until evidence closes them. Record models are FooRecord plus FooRecordShape,

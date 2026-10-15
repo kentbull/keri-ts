@@ -54,7 +54,6 @@ decision-returning helpers such as:
 - provisional next-state construction
 - attachment validation
 - accepted-state serialization
-- accepted-event log application through `logEvent(...)`
 
 `Kevery` owns:
 
@@ -63,6 +62,11 @@ decision-returning helpers such as:
 - escrow persistence
 - duplicate late-attachment logging
 - post-acceptance cue emission
+
+Baser owns accepted-event row/FEL preparation and persistence through
+prepareKelEventLog/writeKelEventLog. It receives verified event material and the
+processing owner's delegated fact. Clone-order notification policy stays with
+Kevery; the storage seam neither decides validity nor publishes cues.
 
 Kever's constructors and evaluation input have no cue-queue dependency. Any
 follow-up cue descriptions are returned in decisions or log preparation; the

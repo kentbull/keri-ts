@@ -958,16 +958,20 @@ export class Kevery {
       const target = !kever || decision.transition.mode === "create"
         ? Kever.fromTransition(decision.transition, { db: this.db })
         : kever;
-      const logged = target.prepareLogEvent(decision.transition.log);
+      const logged = this.db.prepareKelEventLog(decision.transition.log);
       const transition = this.applyFirstSeenState(decision.transition, logged.fn, logged.dater.dts);
       const group = !!this.db.getHab(transition.pre)?.mid;
-      const cues = [...logged.cues, ...(decision.cues ?? []), ...this.acceptanceCues(transition, group)];
+      const cues = [
+        ...this.logNoticeCues(decision.transition.log, logged),
+        ...(decision.cues ?? []),
+        ...this.acceptanceCues(transition, group),
+      ];
       // Hold exact cue objects/backing and slots before accepted-event writes.
       this.cues.checkSpace(cues.length);
       const prepared = this.publisher.prepare(cues);
       return {
         write: () => {
-          target.logEvent(transition.log, logged);
+          this.db.writeKelEventLog(transition.log, logged, target.delegated);
           this.db.pinState(transition.pre, transition.state);
           this.db.udes.rem(dgKey(transition.pre, transition.said));
           this.repairAnchoredDelegationSourceSeals(transition.log.serder);
@@ -987,21 +991,33 @@ export class Kevery {
 
     const kever = decision.kind === "duplicate" ? this.kevers.get(decision.log?.serder.pre ?? "") : undefined;
     const logged = decision.kind === "duplicate" && decision.log && kever
-      ? kever.prepareLogEvent(decision.log)
+      ? this.db.prepareKelEventLog(decision.log)
       : undefined;
-    const cues = [...(logged?.cues ?? []), ...(decision.cues ?? [])];
+    const cues = [
+      ...(logged && decision.kind === "duplicate" && decision.log ? this.logNoticeCues(decision.log, logged) : []),
+      ...(decision.cues ?? []),
+    ];
     this.cues.checkSpace(cues.length);
     const prepared = cues.length ? this.publisher.prepare(cues) : undefined;
     return {
       write: () => {
         if (decision.kind === "escrow") this.persistEscrowInstruction(decision.instruction);
-        else if (decision.log && kever && logged) kever.logEvent(decision.log, logged);
+        else if (decision.log && kever && logged) this.db.writeKelEventLog(decision.log, logged, kever.delegated);
       },
       publish: () => {
         prepared?.publish();
       },
       release: () => prepared?.release(),
     };
+  }
+
+  /** Describe a clone-order anomaly; storage metadata does not publish protocol work. */
+  private logNoticeCues(
+    log: KELEventState,
+    prepared: ReturnType<Baser["prepareKelEventLog"]>,
+  ): AgentCue[] {
+    if (prepared.fn === null || !log.frc || prepared.fn === Number(log.frc.f.num)) return [];
+    return [{ kin: "noticeBadCloneFN", serder: log.serder, fn: prepared.fn, firner: log.frc.f, dater: log.frc.dt }];
   }
 
   /** Reprocess one pass of out-of-order escrowed events. */
