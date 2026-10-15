@@ -35,7 +35,7 @@ import {
   state as registryState,
   vcstate as credentialState,
 } from "../core/protocol-vdr-eventing.ts";
-import { RegStateRecord, VcStateRecord } from "../core/records.ts";
+import { RegStateRecord } from "../core/records.ts";
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
@@ -378,7 +378,7 @@ export class Tever {
   }
 
   /** Current credential transaction-state record for one credential SAID. */
-  vcState(vci: string): VcStateRecord | null {
+  vcState(vci: string): ReturnType<typeof credentialState> | null {
     const digs = [...this.reger.tels.getAllItemIter(vci)]
       .sort((left, right) => left[1] - right[1])
       .map(([, , dig]) => dig);

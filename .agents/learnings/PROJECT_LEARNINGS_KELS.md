@@ -129,6 +129,12 @@ registry seals reuse CESR's finite SAD fields with Partial: current KERIpy/TS TE
 lookup uses i/d and carries omitted s through raw state. projectRegistrySeal
 projects only those known fields; it does not imply full TSN semantic acceptance.
 The receiver still requires an empty or complete authenticated registry seal.
+Credential notice decoding narrows unknown fields into an owned required record;
+its seal type distinguishes empty from complete. Producers retain required outer
+fields without running raw TEL state through stricter TSN validation. Compare
+known fields and reuse the checked timestamp, without asserted hydration or
+non-null recovery. Event kinds must be actual strings: String coercion can route
+a signed array-valued kind into dependency escrow before correspondence checks.
 TEL recovery must preserve credential `i` separately from the queried issuer.
 TSN cue-to-wire routes require the signing attester suffix; actual 714 emits bare
 routes. HTTP pair capture and success do not replace independent receiver proofs.

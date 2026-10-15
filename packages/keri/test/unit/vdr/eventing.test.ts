@@ -1168,6 +1168,18 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
           ),
         ],
       };
+      for (const et of [["iss"], null]) {
+        const malformed = reply(`/tsn/credential/${issuer.pre}`, {
+          ...tvy.tevers.get(vcp.pre!)!.vcState(credential.said!)!.asDict(),
+          et,
+        }, { pre: issuer.pre });
+        yield* runtime.reactor.processBytes(issuer.endorse(malformed));
+        assertEquals(reger.txnsb.escrowdb.cnt(), 0, "Malformed kinds must not acquire dependency escrow");
+        assertEquals(reger.txnsb.serderdb.get([malformed.said!]), null);
+        assertEquals(reger.txnsb.daterdb.get([malformed.said!]), null);
+        assertEquals(hby.db.rpys.get([malformed.said!]), null);
+        assertEquals(runtime.cues.length, 0);
+      }
       const busy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
       assertThrows(() => owned.processReply(incoming), ResourceAdmissionError);
       busy.reservation.release();
