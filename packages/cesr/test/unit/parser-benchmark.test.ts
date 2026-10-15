@@ -23,15 +23,11 @@ Deno.test("benchmarkParser returns stable metric envelope", async () => {
   assertEquals(result.totalFrames, 6);
 });
 
-Deno.test("benchmark rejects malformed input and enforces a configurable finite corpus budget", async () => {
+Deno.test("benchmark rejects malformed input", async () => {
   const stream = TEXT_ENCODER.encode(SAMPLE_FRAME);
-  await assertRejects(() =>
-    benchmarkParser(stream, { maxBytes: stream.length - 1, iterations: 1, warmupIterations: 0 })
-  );
   await assertRejects(() => benchmarkParser(stream.subarray(0, 20), { iterations: 1, warmupIterations: 0 }));
-  // Exact admission succeeds; the cap is caller policy rather than a wire-format restriction.
   assertEquals(
-    (await benchmarkParser(stream, { maxBytes: stream.length, iterations: 1, warmupIterations: 0 })).totalFrames,
+    (await benchmarkParser(stream, { iterations: 1, warmupIterations: 0 })).totalFrames,
     1,
   );
 });

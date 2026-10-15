@@ -30,7 +30,7 @@ Deno.test("tufa/benchmark - cesr reads stream file and prints metrics", async ()
   assertStringIncludes(output, "throughput:");
 });
 
-Deno.test("tufa/benchmark - JSON counts complete runs and rejects malformed or oversized corpora", async () => {
+Deno.test("tufa/benchmark - JSON counts complete runs and rejects malformed corpora", async () => {
   const result = await benchmarkFile(SAMPLE.repeat(2), ["--json"]);
   assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
   const parsed = JSON.parse(new TextDecoder().decode(result.stdout));
@@ -38,7 +38,7 @@ Deno.test("tufa/benchmark - JSON counts complete runs and rejects malformed or o
   assertEquals(parsed.totalFrames, 2);
   assertEquals(parsed.totalBytes, SAMPLE.length * 2);
   // Failed runs must not emit successful throughput metrics, even before the first measured pass.
-  for (const [input, options] of [[SAMPLE.slice(0, 20), []], [SAMPLE, ["--max-bytes", "8"]]] as const) {
+  for (const [input, options] of [[SAMPLE.slice(0, 20), []]] as const) {
     const failed = await benchmarkFile(input, [...options]);
     assertEquals(failed.code, 1);
     assertEquals(failed.stdout.length, 0);

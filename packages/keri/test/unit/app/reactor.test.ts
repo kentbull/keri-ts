@@ -48,7 +48,7 @@ Deno.test("app/reactor - query parsing normalizes transferable last-establishmen
       yield* reactor.process(() => queryChunks());
       seen = null;
       // Finite input must respect a caller's tighter chunk budget and still finish at EOF.
-      yield* reactor.processBytes(query, { maxChunkBytes: 32 });
+      yield* reactor.processBytes(query);
       assertExists(seen);
       seen = null;
       // Queued complete records finish independently of the open stream.

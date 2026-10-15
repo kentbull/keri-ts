@@ -1,5 +1,9 @@
 # CESR learnings
 
+ADR-0012 now requires buffered complete-enclosure decoding. The progressive
+engine/cursor/staging behavior below is transitional and must not be preserved as
+a migration requirement. Remove parser-only lifetimes and keep real wire rules.
+
 ## Removal precedence (2026-10-15)
 
 [ADR-0013](../../docs/adr/adr-0013-simple-component-flows.md) now requires removal
@@ -23,13 +27,12 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
 - GenericGroup siblings may be delivered early. `CesrFrame.nests` are parent-owned
   evidence: finish the entire tree before yielding its parent. A failed later
   independent sibling cannot revoke earlier delivered owners.
-- A shared cursor bounds consumption and input backing. Tree credits cover
-  ordinary bytes/leaves, decoded ESSR/items, nodes and depth. No full raw envelope
-  or per-Texter manifest is retained. Optional shared ordinary-wire and finite ESSR-stage reservations
-  belong to delivered roots, never independently to nested children. They do not
-  account for all hydrated copies or heap overhead. These parser budgets are
-  transitional removal work. Codec allocation estimation and DecodedBodyBudget
-  are removed: decode supported wire without heap or workspace billing.
+- One input owner and immutable enclosure ends govern the shared cursor position.
+  Parser tree/group/node/depth/ESSR/input limits, source-slot accounting and hidden
+  frame-credit ownership are removed. PendingFrame and actual writer/owner sets
+  retain unfinished payloads; complete roots transfer real owners at yield.
+  Codec allocation estimation and DecodedBodyBudget are removed; decode supported
+  wire without heap or workspace billing.
   MessagePack uses a private standard codec and disables shared key caching.
   Binary values, tags, maps, packed/record/bundle extensions and standard sharing
   retain native codec semantics; there is no speculative CBOR tag allowlist.
@@ -42,9 +45,7 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
   and fails without reset. Generic CBOR returns unknown; consumers narrow shapes.
   Serdery owns one exact body copy, including suffix/shared/resizable input.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each
-  owner once, including shared credit on ordinary frames. A suspended generator
-  also retains its output: credit returns after consumer disposal and generator
-  resumption/closure. Sink finish transfers ownership; abort cannot revoke it.
+  owner once. Ordinary frame records need no synthetic disposal credit. Sink finish transfers ownership; abort cannot revoke it.
   A writer disposes its finished sink owner if ESSR qualification fails before
   transfer, and propagates joined disposal failures alongside the primary error.
 - `collectPayload(payload, signal)` uses Payload.size as exact framing, not a caller
@@ -65,9 +66,8 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
   chunks count. Abort clears the single checkpoint timer and retains source-error
   identity. This is local scheduling policy, not a wire limit or RSS guarantee.
 
-Tree admission observers report only errors created by that parse invocation.
-Reserve, source, sink and observer exceptions retain identity; preserve their
-external provenance when intrinsic wire classification is enabled.
+Wire classification reports only intrinsic failures from that parse invocation.
+Source, sink, decoder infrastructure and cleanup exceptions retain identity.
 
 ## Wire and version rules
 

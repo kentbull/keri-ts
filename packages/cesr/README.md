@@ -59,18 +59,15 @@ use this Operation model while the standalone CESR API stays framework-neutral.
 ## Finite annotation and benchmark helpers
 
 `annotate()` and `annotateFrames()` are asynchronous and validate with the same
-progressive engine as `parse()`. Wire sniffing selects text or binary automatically. Annotation retains its input and rendered output;
-its default input budget is 8 MiB. Set `maxBytes` to another finite budget when
-needed. This is application admission policy, not a CESR wire-format limit.
+progressive engine as `parse()`. Wire sniffing selects text or binary automatically. Annotation retains its input and rendered output.
 `annotate()` releases temporary ESSR payloads; successful `annotateFrames()` callers
-own each returned `frame.essr` and must call its `discard()` when finished.
+own each returned tree and call `discardFrame()` when finished.
 
-`benchmarkParser()` and `countFrames()` are also asynchronous. The
-benchmark retains one replayable corpus, limited to 64 MiB by default through
-`maxBytes`, and rejects malformed or truncated runs instead of reporting partial
-throughput. `tephra annotate`, `tufa annotate`, `tephra bench`, and `tufa benchmark cesr` expose these
-budgets as `--max-bytes`. `tephra validate` reads incrementally and releases each
-frame before requesting the next; it has no retained-corpus limit.
+`benchmarkParser()` and `countFrames()` are asynchronous. The benchmark retains
+one replayable corpus and rejects malformed or truncated runs instead of reporting
+partial throughput. Annotation, collection and benchmark helpers have no input
+quota or max-bytes flag. `tephra validate` reads incrementally and releases each
+frame before requesting the next.
 
 ## CLI usage
 

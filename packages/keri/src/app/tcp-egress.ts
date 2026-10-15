@@ -52,7 +52,6 @@ export interface TcpTransmission {
  */
 export interface TcpRead {
   readonly maxChunkBytes: number;
-  readonly maxBufferedBytes: number;
   open(source: (signal: AbortSignal) => AsyncIterable<Uint8Array>, signal: AbortSignal): Operation<Operation<void>>;
 }
 
@@ -305,23 +304,14 @@ function attemptWriteTcp(
     const drainTimeout = positive(options.drainTimeoutMs ?? 30000, "drainTimeoutMs");
     const read = options.read === undefined ? undefined : {
       maxChunkBytes: options.read.maxChunkBytes,
-      maxBufferedBytes: options.read.maxBufferedBytes,
       open: options.read.open.bind(options.read),
     };
     const services = options.services ?? defaultRuntimeServices;
     if (read) {
       positive(read.maxChunkBytes, "read.maxChunkBytes");
-      positive(read.maxBufferedBytes, "read.maxBufferedBytes");
-      if (read.maxChunkBytes > read.maxBufferedBytes) throw new RangeError("Read chunk limit exceeds buffer limit");
     }
     const outputBytes = retainedBytes + 2 * cap + (read ? RX_HANDLE : 0);
     if (!Number.isSafeInteger(outputBytes)) throw new RangeError("TCP output charge exceeds safe integer range");
-    if (
-      read && (services.resources.limits.streams < 2
-        || services.resources.limits.bytes < outputBytes + read.maxChunkBytes + read.maxBufferedBytes)
-    ) {
-      return refuse(new ResourceAdmissionError("TCP duplex exceeds configured capacity", "limit"));
-    }
     const credit = yield* resource<ResourceDecision>(function*(provide) {
       const admission = services.resources.reserve({ streams: 1, bytes: outputBytes });
       try {

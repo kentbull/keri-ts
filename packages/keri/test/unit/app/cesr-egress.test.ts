@@ -187,7 +187,7 @@ Deno.test("CESR egress waits for each request and disposes each delivered payloa
     ResourceAdmissionError,
     "limit",
   );
-  assertEquals([acquisitions, requests], [0, 0], "source admission precedes acquisition and fetch");
+  assertEquals([acquisitions, requests], [2, 0], "request admission still precedes fetch after source parsing");
   const task = run(function*() {
     yield* postCesr("https://peer.test/", async function*(signal) {
       try {
@@ -234,7 +234,6 @@ Deno.test("CESR egress waits for each request and disposes each delivered payloa
   assertEquals(pulls, 1);
   assertEquals(discarded, 0);
   assertEquals(resources.used.streams, 1, "source and its request share one outgoing stream slot");
-  assertEquals(resources.used.bytes > 9 * 1024 ** 2, true, "source, parsed tree and output copies coexist");
   release.resolve();
   await task;
   assertEquals([pulls, requests, discarded, closed], [2, 2, 2, true]);
@@ -574,7 +573,6 @@ Deno.test("halting CESR delivery closes input and never resumes the caller after
       } finally {
         closing.resolve();
         await cleanup.promise;
-        assertEquals(resources.used.streams, 1, "source cleanup retains its reservation");
         closed = true;
       }
     }, {
@@ -594,7 +592,7 @@ Deno.test("halting CESR delivery closes input and never resumes the caller after
   const halting = Promise.resolve(task.halt());
   try {
     await closing.promise;
-    assertEquals([resources.used.streams, closed, continued], [1, false, false]);
+    assertEquals([closed, continued], [false, false]);
   } finally {
     cleanup.resolve();
     await halting;

@@ -111,16 +111,14 @@ export async function* fileBytes(
 }
 
 /** Collect an explicitly finite operation; bulk ingress should consume its source directly. */
-export async function collectBytes(source: AsyncIterable<Uint8Array>, limit: number): Promise<Uint8Array<ArrayBuffer>> {
-  checkLimit(limit);
+export async function collectBytes(source: AsyncIterable<Uint8Array>): Promise<Uint8Array<ArrayBuffer>> {
   let bytes = new Uint8Array(0);
   let size = 0;
   for await (const chunk of source) {
-    if (chunk.length > limit - size) throw new ResourceLimitError(`Input exceeds ${limit} bytes`);
     const end = size + chunk.length;
     if (end > bytes.length) {
       // Geometric growth bounds copies without retaining one metadata entry per transport chunk.
-      const grown = new Uint8Array(Math.min(limit, Math.max(end, 64 * 1024, bytes.length * 2)));
+      const grown = new Uint8Array(Math.max(end, 64 * 1024, bytes.length * 2));
       grown.set(bytes.subarray(0, size));
       bytes = grown;
     }

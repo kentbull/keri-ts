@@ -154,7 +154,7 @@ Deno.test("annotation work yields a host turn and cancellation joins its source"
           closed = true;
         }
       })(),
-      { signal: controller.signal, maxChunkBytes: wire.length },
+      { signal: controller.signal },
     );
     const timer = setTimeout(() => {
       timerRan = true;

@@ -2,11 +2,15 @@
 
 ## Status and scope
 
-One progressive engine is implemented; final runtime qualification remains pending.
+One progressive engine is implemented and is transitional removal work.
+[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) requires buffered
+complete-enclosure decoding and removal of the cursor, staging and channel bridge.
+Early child delivery and parser-owned resource lifetimes below describe current
+behavior, not requirements to preserve in that replacement.
 [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of all
 application accounting. Codec allocation estimators, decoded-body budgets and
-CBOR expansion refusals are removed. Parser cursor/tree/frame/ESSR quotas and
-frame-credit plumbing remain transitional removal work, not contracts to preserve.
+CBOR expansion refusals are removed. Parser cursor/tree/frame/ESSR quotas, source slots and frame-credit plumbing
+are removed. Runtime/transport accounting remains separate removal work.
 The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) owns lifecycle
 and framing; the [plan](../../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) owns the
 remaining migration. There is one async engine and no atomic/push compatibility path.
@@ -153,8 +157,8 @@ canonical sequence retains item codes and boundaries, but not incoming enclosing
 counters or text/binary presentation. Replay chooses counters for its requested
 genus/domain. `discard()` releases the sole wire owner and invalidates both views.
 `essrPayload()` reconstructs these views from an owned stored wire payload.
-Reader backing-allocation caps remain parser-removal work. Preserve actual
-reader closure and avoid accidental retention independently of those caps.
+Readers accept the source's immutable bytes without backing-allocation quotas.
+Actual source closure and prompt consumed-segment release remain required.
 
 The parser owns unfinished frame resources. On parse failure or cancellation it
 aborts those resources. At yield, completed payload ownership for the entire tree passes to the

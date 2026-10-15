@@ -287,7 +287,6 @@ function registerAnnotateCmd(
       .option("--in <path>", "Input file path (defaults to stdin)")
       .option("--out <path>", "Output file path (defaults to stdout)")
       .option("--pretty", "Pretty-print annotation output")
-      .option("--max-bytes <n>", "Finite annotation input limit in bytes", Number)
       .option("--colored", "Colorize annotation output (stdout only)"),
     dispatch,
     {
@@ -299,13 +298,11 @@ function registerAnnotateCmd(
         out?: string;
         pretty?: boolean;
         colored?: boolean;
-        maxBytes?: number;
       }) => ({
         inPath: options.in,
         outPath: options.out,
         pretty: options.pretty || false,
         colored: options.colored || false,
-        maxBytes: options.maxBytes,
       }),
     },
   );

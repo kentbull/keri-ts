@@ -1,4 +1,4 @@
-import { annotate, ANNOTATION_LIMIT } from "../../annotate/annotator.ts";
+import { annotate } from "../../annotate/annotator.ts";
 import { collectInput } from "../input.ts";
 import type { CliIo } from "../types.ts";
 
@@ -11,24 +11,16 @@ interface AnnotateCliOptions {
   /** Render embedded JSON with indentation. */
   pretty: boolean;
   /** Finite annotation admission budget selected by the caller. */
-  maxBytes: number;
 }
 
 /** Supported annotation flags shown by help and usage errors. */
-const ANNOTATE_USAGE = "Usage: tephra annotate [--in <path>] [--out <path>] [--pretty] [--max-bytes <n>]";
+const ANNOTATE_USAGE = "Usage: tephra annotate [--in <path>] [--out <path>] [--pretty]";
 
 /** Parse `tephra annotate` command-line flags without performing IO. */
 function parseArgs(args: string[]): AnnotateCliOptions {
-  const out: AnnotateCliOptions = { pretty: false, maxBytes: ANNOTATION_LIMIT };
+  const out: AnnotateCliOptions = { pretty: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--max-bytes") {
-      out.maxBytes = Number(args[++i]);
-      if (!Number.isSafeInteger(out.maxBytes) || out.maxBytes < 1) {
-        throw new Error("max-bytes must be a positive safe integer");
-      }
-      continue;
-    }
     if (arg === "--pretty") {
       out.pretty = true;
       continue;
@@ -61,10 +53,9 @@ export async function annotateCommand(args: string[], io: CliIo): Promise<number
 
   try {
     const options = parseArgs(args);
-    const inputBytes = await collectInput(io.read(options.inPath), options.maxBytes);
+    const inputBytes = await collectInput(io.read(options.inPath));
     const annotated = await annotate(inputBytes, {
       pretty: options.pretty,
-      maxBytes: options.maxBytes,
     });
 
     if (options.outPath) {

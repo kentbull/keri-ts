@@ -1,15 +1,8 @@
-import { GroupSizeError, ResourceLimitError, ShortageError } from "../core/errors.ts";
+import { GroupSizeError, ShortageError } from "../core/errors.ts";
 
-/** Input budgets are deployment policy, not limits on valid CESR wire sizes. */
+/** Cancellation shared by the input owner and every enclosure view. */
 export interface CursorOptions {
-  /** Cancel a pending source read and release parser-owned input. */
   signal?: AbortSignal;
-  /** Maximum backing allocation of any source chunk; default 1 MiB. */
-  maxChunkBytes?: number;
-  /** Maximum sum of retained backing allocations; default 8 MiB. */
-  maxBufferedBytes?: number;
-  /** Maximum counted-enclosure nesting below the root; default 64. */
-  maxDepth?: number;
 }
 
 /** One immutable source allocation and its unconsumed suffix. */
@@ -28,8 +21,6 @@ class Input {
   offset = 0;
   /** Unconsumed bytes across all queued segments. */
   available = 0;
-  /** Backing allocations pinned by queued segments, including consumed prefixes. */
-  retained = 0;
   /** Queue ends; consuming the last segment clears both references. */
   head?: Segment;
   private tail?: Segment;
@@ -56,24 +47,8 @@ class Input {
   private readonly iterator: AsyncIterator<Uint8Array>;
   /** Caller cancellation is observed once for this input's lifetime. */
   private readonly signal?: AbortSignal;
-  /** Validated source-allocation admission limit. */
-  readonly maxChunkBytes: number;
-  /** Validated total queued-allocation admission limit. */
-  readonly maxBufferedBytes: number;
-  /** Validated enclosure depth limit. */
-  readonly maxDepth: number;
-
-  /** Validate policy before taking ownership of the caller's source. */
+  /** Own the caller's source and observe cancellation once. */
   constructor(source: AsyncIterable<Uint8Array>, options: CursorOptions) {
-    this.maxChunkBytes = options.maxChunkBytes ?? 1024 ** 2;
-    this.maxBufferedBytes = options.maxBufferedBytes ?? 8 * 1024 ** 2;
-    this.maxDepth = options.maxDepth ?? 64;
-    for (const value of [this.maxChunkBytes, this.maxBufferedBytes, this.maxDepth]) {
-      if (!Number.isSafeInteger(value) || value < 1) {
-        throw new RangeError("Cursor limits must be positive safe integers");
-      }
-    }
-    if (this.maxChunkBytes > this.maxBufferedBytes) throw new RangeError("Chunk limit exceeds buffer limit");
     this.iterator = source[Symbol.asyncIterator]();
     this.signal = options.signal;
     this.signal?.addEventListener("abort", this.abort, { once: true });
@@ -103,10 +78,9 @@ class Input {
     }
   }
 
-  /** Pull only until the requested prefix is available, enforcing allocation budgets. */
+  /** Pull only until the requested prefix is available. */
   async ensure(size: number): Promise<boolean> {
     this.check();
-    if (size > this.maxBufferedBytes) throw new ResourceLimitError("Read exceeds cursor buffer limit", this.offset);
     while (this.available < size && !this.eof) {
       try {
         // Record the pending operation before invoking user code, which may abort synchronously.
@@ -132,20 +106,12 @@ class Input {
         }
         const bytes = result.value;
         if (!(bytes instanceof Uint8Array)) throw new TypeError("Cursor source must yield Uint8Array chunks");
-        // A small subarray still pins its entire producer allocation.
-        if (bytes.buffer.byteLength > this.maxChunkBytes) {
-          throw new ResourceLimitError("Input chunk backing buffer exceeds cursor chunk limit", this.offset);
-        }
         if (bytes.length === 0) continue;
-        if (this.retained + bytes.buffer.byteLength > this.maxBufferedBytes) {
-          throw new ResourceLimitError("Queued input exceeds cursor buffer limit", this.offset);
-        }
         const segment: Segment = { bytes, start: 0 };
         if (this.tail) this.tail.next = segment;
         else this.head = segment;
         this.tail = segment;
         this.available += bytes.length;
-        this.retained += bytes.buffer.byteLength;
       } catch (error) {
         this.rejectRead = undefined;
         this.pending = undefined;
@@ -156,7 +122,7 @@ class Input {
     return this.available >= size;
   }
 
-  /** Copy an admitted prefix into independently owned primitive storage. */
+  /** Copy a requested prefix into independently owned primitive storage. */
   copy(size: number): Uint8Array {
     // Give hydrated primitives only their own bytes, never a view pinning the input queue.
     const result = new Uint8Array(size);
@@ -180,7 +146,6 @@ class Input {
       segment.start += length;
       size -= length;
       if (segment.start === segment.bytes.length) {
-        this.retained -= segment.bytes.buffer.byteLength;
         // Unlink immediately; retaining consumed segments would make memory grow with the stream.
         this.head = segment.next;
         if (!this.head) this.tail = undefined;
@@ -216,7 +181,7 @@ class Input {
     this.signal?.removeEventListener("abort", this.abort);
     this.resumeWork?.();
     this.head = this.tail = undefined;
-    this.available = this.retained = 0;
+    this.available = 0;
     // Wake blocked readers before attempting upstream cleanup, which may itself be blocked.
     this.rejectRead?.(reason);
     this.rejectRead = undefined;
@@ -241,8 +206,8 @@ class Input {
 /**
  * Pull-based byte cursor with immutable enclosure ends and a shared position.
  *
- * Source chunks transfer immutable ownership to the cursor. Budget accounting
- * includes their entire backing buffers. Only one scope may read at a time.
+ * Source chunks transfer immutable ownership to the cursor. Only one scope may
+ * read at a time.
  * `read`/`peek` return owned bytes; `take` borrows a consumed segment for an
  * awaited sink write. Callers retaining returned values own that memory.
  *
@@ -254,17 +219,14 @@ export class Cursor {
   private readonly input: Input;
   /** Absolute exclusive enclosure end; Infinity denotes the root stream. */
   readonly end: number;
-  /** Root-relative enclosure depth for admission checks. */
-  readonly depth: number;
 
-  /** Own a new source with independently validated resource policy. */
+  /** Own a new source and its cancellation. */
   constructor(source: AsyncIterable<Uint8Array>, options?: CursorOptions);
   /** Internal child view over an already owned source and absolute extent. */
-  constructor(source: Input, end: number, depth: number);
-  constructor(source: AsyncIterable<Uint8Array> | Input, options: CursorOptions | number = {}, depth = 0) {
+  constructor(source: Input, end: number);
+  constructor(source: AsyncIterable<Uint8Array> | Input, options: CursorOptions | number = {}) {
     this.input = source instanceof Input ? source : new Input(source, options as CursorOptions);
     this.end = typeof options === "number" ? options : Infinity;
-    this.depth = depth;
   }
 
   /** Shared absolute consumed-byte position. */
@@ -279,11 +241,6 @@ export class Cursor {
   get bufferedBytes(): number {
     return this.input.available;
   }
-  /** Actual backing allocation bytes pinned by the shared queue. */
-  get retainedBytes(): number {
-    return this.input.retained;
-  }
-
   /** Reject invalid arithmetic and enclosure crossings before any source pull. */
   private extent(size: number): void {
     this.input.check();
@@ -296,8 +253,7 @@ export class Cursor {
   /** Make a bounded view without reading ahead or allocating its declared payload. */
   scope(length: number): Cursor {
     this.extent(length);
-    if (this.depth >= this.input.maxDepth) throw new ResourceLimitError("Parser nesting limit exceeded", this.offset);
-    return new Cursor(this.input, this.offset + length, this.depth + 1);
+    return new Cursor(this.input, this.offset + length);
   }
 
   /** Wait for an exact prefix without consuming it; headers should be read in size stages. */
@@ -310,7 +266,7 @@ export class Cursor {
     return this.bytes(size, true);
   }
 
-  /** Share the admission and owned-copy path for read and peek. */
+  /** Share the extent and owned-copy path for read and peek. */
   private bytes(size: number, consume: boolean): Promise<Uint8Array> {
     return this.input.access(async () => {
       this.extent(size);

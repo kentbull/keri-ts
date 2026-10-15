@@ -1,88 +1,69 @@
-# ADR-0012: Progressive Nested Parsing and Bounded Payload Storage
+# ADR-0012: Buffered CESR Decoding and Concrete Input Ownership
 
-- Status: Accepted; progressive engine implemented, full runtime qualification pending
-- Date: 2026-10-12
-- Scope: CESR parsing and its KERI transport, payload, and storage boundaries
-- Replaces: the long-term architecture decision in
-  [ADR-0001](adr-0001-parser-atomic-bounded-first.md)
-- Contract: [progressive parser ownership](../design-docs/cesr/CESR_PROGRESSIVE_PARSER_CONTRACT.md)
-- Execution: [parity roadmap](../plans/PARITY_ROADMAP.md)
+- Status: Accepted replacement decision; implementation migration pending
+- Updated: 2026-10-15
+- Scope: CESR framing, decoding, ESSR evidence and transport integration
+- Related: [simple component flows](adr-0013-simple-component-flows.md)
+- Execution: [parser replacement plan](../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md)
 
-## Context
+## Decision and tradeoff
 
-The committed workload is many small ESSR messages in transfers that can total
-multiple gigabytes. The synchronous parser waits for a complete counted enclosure,
-retains its child frames, and copies accumulated input. Transport, primitive
-hydration, exchange handling, and storage can independently materialize the
-same transfer. Making nested parsing resumable alone does not establish bounded
-memory.
+Replace progressive traversal with one synchronous finite decoder shared by
+complete input and a small network receiving loop. The receiving boundary buffers
+incomplete input and enters a counted enclosure only after its entire declared
+extent arrives. Decode nested enclosures using local offsets and finite ranges.
+Continue processing successive messages on an open connection.
 
-The user has approved replacing the atomic parser with a progressive parser,
-with measurements before and after implementation. This is an explicit change
-of architecture, not a claim that KERIpy requires progressive enclosure reads.
-Protocol v1/v2 support remains required; compatibility with old keri-ts APIs
-is not a goal.
+Memory use and first-message latency may grow with the complete enclosing group.
+Early GenericGroup child delivery and constant-memory processing of arbitrarily
+large groups are no longer goals. Do not restore progressive traversal, scoped
+parser cursors, strategies, parser-owned staging or accounting to recover them.
+Historical measurements describe the former design, not acceptance requirements.
+Do not restore an old parser wholesale or discard later wire-correctness fixes.
 
-## Decision
+## Framing and evidence
 
-Use one pull-based parser built from async generators composed with `yield*`.
-Generator locals retain parsing progress and local genus selection. One
-segmented byte cursor supplies bounded views of counted payloads; there is no
-additional explicit resumable parse stack or parser strategy registry.
+Network chunks never delimit messages. A body does not necessarily complete its
+attachments: unenclosed messages need an actual attachment/following-message
+boundary or applicable EOF. Completed wire framing must not wait for connection
+EOF. A truncated item inside a complete enclosure is malformed; later bytes
+cannot repair it. Preserve scoped genus, both protocol versions and domains,
+parent-owned nests and independently authenticated child evidence.
 
-Emit a complete child of `GenericGroup` before the outer enclosure finishes.
-Each child's own frame boundary and required attachments must be complete.
-A later malformed sibling fails the stream without retracting earlier children.
-Structural parsing never grants cryptographic or application acceptance.
+Extract ESSR as ordinary Texter values and qualified/raw bytes with one
+authoritative parsed representation. Preserve qualified evidence for verification,
+relay, persistence and replay. Texter fragmentation never introduces independent
+encryption messages. Authenticate logical plaintext before publication.
 
-Keep synchronous decoding of a complete bounded primitive. Stream large payload
-bytes through awaited sinks, expose reopenable payload references, and carry
-that representation through persistence and consumption. Bound queues, active
-logical messages, metadata, and decryption concurrency as well as input bytes.
-Filesystem storage belongs behind runtime/DB entrypoints, not in CESR core.
+## Ownership
 
-For recipient processing, authenticate/decrypt one admitted logical sealed
-message before writing its plaintext to disk. Texter fragmentation does not
-create separate encryption messages. Preserve qualified ciphertext Texters where
-KERIpy-compatible exchange evidence, relay, or replay requires them; plaintext
-storage is a separate representation and must not replace original wire evidence.
+Transport owns blocked reads, EOF, cancellation, deadlines and real resource
+closure. The host operation scope connects received bytes to the decoder and
+complete messages to protocol processing. CESR decoding has no Effection
+dependency. Remove FrameIntake, TcpRead, custom frame channels, parser option
+forwarding, provenance callbacks and iterator machinery made unnecessary by this
+separation. Choose one cancellation owner; transport readers cooperate with it.
 
-## Implementation transition
+Remove parser sink factories, EssrWriter staging, pending/finished owner registries,
+parallel pending trees, cursor reopening and mandatory disposal of ordinary parsed
+values. Real file storage/reopenable payloads remain only where current storage
+consumers need them. Do not redesign storage merely to mirror parser changes.
 
-The production parser and all consumers use the progressive engine. The
-[state-machine contract](../design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md)
-maps its lifecycle to the retained protocol tests. The atomic engine, push API,
-event wrappers, and atomic ESSR adapter have been removed; finite callers await
-`parseBytes`, and KERI operations use `Reactor.process` or `Reactor.processBytes`.
+TCP send and receive can progress concurrently. Receive EOF must not destroy the
+connection before a queued response drains. Local transmission, protocol
+acceptance and remote acknowledgement remain distinct. Buffering adds no
+whole-enclosure database transaction or rollback framework.
 
-The execution plan still requires shared runtime resource accounting, the
-current-main protocol follow-ons, and final end-to-end benchmark qualification.
-Do not infer those guarantees from parser-only measurements.
+## Migration and qualification
 
-## Consequences
+The current progressive implementation is transitional. First establish finite
+decoding responsibility, then switch behavior and delete its cursor/staging and
+dependent contracts in cohesive cuts. Keep one engine, no compatibility aliases
+or alternate strategy. The old early-delivery tests must become complete-enclosure
+checks when production behavior switches; retain fragmentation, framing, evidence,
+real network cleanup and current KERIpy interoperability coverage.
 
-Progressive delivery changes error semantics: accepted child A can survive a
-malformed later child B. Consumers must own and dispose of yielded resources
-explicitly, and must not equate parser delivery with accepted exchange state.
-Cancellation must interrupt pending I/O and unwind unfinished sinks.
-
-The expected gains are lower first-child latency and retained memory that scales
-with configured limits and the largest active logical message, rather than total
-transfer size. Throughput is an empirical result, not an assumed benefit of
-generators. Measure decoding and input-copy fixes separately so they are not
-misattributed to nested suspension.
-
-Whole-message sealed-box decryption still requires a configured logical-message
-size limit. This decision introduces neither new encryption framing nor a claim
-of constant memory for arbitrarily large individual encrypted messages.
-
-## Completion gate
-
-The plan must demonstrate early emission, correct v1/v2 decoding, bounded queues
-and retained metadata, cancellation cleanup, durable reopen/replay, and KERIpy
-interoperability. Capture an immutable initial baseline and a decoding-fixed
-atomic baseline, then compare cursor, generator, and complete runtime checkpoints.
-Large and long-running ESSR qualification uses a one-off manually dispatched CI
-job; it is excluded from normal PR tests and required master merge checks.
-Do not mark the architecture implemented until the production call chain and the
-final benchmark satisfy the target contract.
+Application accounting is prohibited by ADR-0013. Full maintained integration,
+e2e, interop and installed-package qualification, including live disclosure/KRAM,
+remains required before publication. Giant-transfer performance matrices are not
+architecture gates.

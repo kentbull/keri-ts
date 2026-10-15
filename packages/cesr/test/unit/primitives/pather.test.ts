@@ -78,15 +78,14 @@ Deno.test("pather: resolves SAD labels and mapping or list ordinals with whole-n
   }
 });
 
-Deno.test("pather: depth policy applies to resolution without changing legal path wire", () => {
+Deno.test("pather: resolution follows the complete legal path", () => {
   const path = makePather("a/b", { relative: true });
   const sad = { a: { b: "value" } };
-  assertThrows(() => path.resolve(sad, { maxDepth: 1 }), DeserializeError, "depth");
-  assertEquals(path.resolve(sad, { maxDepth: 2 }), "value");
-  assertThrows(() => path.resolve(sad, { maxDepth: -1 }), RangeError);
+  assertEquals(path.resolve(sad), "value");
   const deep = makePather(Array(257).fill("a"), { relative: true });
   assertEquals(parsePather(deep.qb64b, "txt").path, deep.path);
-  assertThrows(() => deep.resolve({}), DeserializeError, "depth");
+  const nested = Array(257).fill("a").reduceRight((child) => ({ a: child }), "value" as unknown);
+  assertEquals(deep.resolve(nested), "value");
 });
 
 Deno.test("pather: byte paths reject malformed UTF-8 before resolving", () => {

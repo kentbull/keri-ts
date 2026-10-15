@@ -2,8 +2,6 @@ import type { CesrFrame } from "../core/types.ts";
 
 /** Rendering options for maintainer-facing CESR annotation output. */
 export interface AnnotateOptions {
-  /** Finite input admission policy, not a CESR wire limit; default 8 MiB. */
-  maxBytes?: number;
   /** Cancel parsing and release annotation-owned ESSR stages. */
   signal?: AbortSignal;
   /** Place comments beside or above each rendered token. */
@@ -14,8 +12,8 @@ export interface AnnotateOptions {
   pretty?: boolean;
 }
 
-/** Resolved presentation options, separate from input admission and cancellation. */
-export type RenderOptions = Required<Omit<AnnotateOptions, "maxBytes" | "signal">>;
+/** Resolved presentation options, separate from parsing and cancellation. */
+export type RenderOptions = Required<Omit<AnnotateOptions, "signal">>;
 
 /** Annotated line set for one independently delivered root and its owned descendants. */
 export interface AnnotatedFrame {

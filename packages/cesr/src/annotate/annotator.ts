@@ -1,14 +1,11 @@
 import { b } from "../core/bytes.ts";
-import { ResourceLimitError } from "../core/errors.ts";
 import { discardFrame } from "../core/frame.ts";
 import type { CesrFrame } from "../core/types.ts";
 import { parseBytes } from "../parser/complete.ts";
 import { renderAnnotatedFrames } from "./render.ts";
 import type { AnnotatedFrame, AnnotateOptions, RenderOptions } from "./types.ts";
 
-/** Default policy for finite annotation text; callers may select another finite budget. */
-export const ANNOTATION_LIMIT = 8 * 1024 ** 2;
-/** Presentation defaults do not change protocol parsing or input admission. */
+/** Presentation defaults do not change protocol parsing. */
 const DEFAULT_OPTIONS: RenderOptions = Object.freeze({
   commentMode: "inline",
   indent: 2,
@@ -31,20 +28,8 @@ export async function annotateFrames(
   input: Uint8Array | string,
   options: AnnotateOptions = {},
 ): Promise<AnnotatedFrame[]> {
-  const limit = options.maxBytes ?? ANNOTATION_LIMIT;
-  if (!Number.isSafeInteger(limit) || limit < 1) {
-    throw new RangeError("Annotation maxBytes must be a positive safe integer");
-  }
-  // Reject oversized text before UTF-8 encoding can allocate a second large copy.
-  if (input.length > limit) throw new ResourceLimitError(`Annotation input exceeds ${limit} bytes`);
   const bytes = typeof input === "string" ? b(input) : input;
-  if (bytes.length > limit) throw new ResourceLimitError(`Annotation input exceeds ${limit} bytes`);
-  const frames = await parseBytes(bytes, {
-    maxInputBytes: limit,
-    maxFrameBytes: limit,
-    maxEssrBytes: limit,
-    signal: options.signal,
-  });
+  const frames = await parseBytes(bytes, { signal: options.signal });
   try {
     return renderAnnotatedFrames(frames, { ...DEFAULT_OPTIONS, ...options }, bytes);
   } catch (error) {

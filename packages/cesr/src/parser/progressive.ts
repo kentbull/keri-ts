@@ -3,13 +3,9 @@ import {
   ColdStartError,
   GroupSizeError,
   ParserError,
-  ResourceAdmissionError,
-  ResourceLimitError,
   ShortageError,
   WireParseError,
 } from "../core/errors.ts";
-import { retainFrameCredit } from "../core/frame-credit.ts";
-import { ResourcePolicy, type ResourceReservation } from "../core/resource-policy.ts";
 import type { CesrFrame, EssrPayload } from "../core/types.ts";
 import { decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import { smell } from "../serder/smell.ts";
@@ -19,22 +15,12 @@ import { parseBody, readFrameCounter } from "./body.ts";
 import { sniff } from "./cold-start.ts";
 import { DEFAULT_GVRSN, FRAME_GROUPS, FRAME_LISTS, FRAME_STARTS, GENUS_VERSION_CODE } from "./common.ts";
 import { Cursor, type CursorOptions } from "./cursor.ts";
-import { type EssrBudget, essrFactory, type EssrOptions, type EssrWriter } from "./essr.ts";
+import { essrFactory, type EssrOptions, type EssrWriter } from "./essr.ts";
 
-/** Resource limits and cancellation for one progressive stream invocation. */
+/** Source cancellation, actual staging, and optional intrinsic-wire classification. */
 export interface ParseOptions extends CursorOptions, EssrOptions {
-  /** Wrap intrinsic wire decoding failures only; source, sink, policy and cleanup errors retain identity. */
+  /** Source, sink, decoder infrastructure and cleanup failures retain their identity. */
   classifyWireErrors?: boolean;
-  /** Observe only this invocation's own tree admission refusal; external failures retain their identity. */
-  onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
-  /** Shared ordinary-tree and ESSR-stage allowances, retained until root disposal. */
-  resources?: ResourcePolicy;
-  /** Resident body and ordinary attachment byte limit per owned tree; streamed ESSR is budgeted separately. */
-  maxFrameBytes?: number;
-  /** Maximum retained ordinary attachment leaves per owned tree; default 4,096. */
-  maxAttachmentGroups?: number;
-  /** Maximum body nodes in one owned tree, including the root; default 256. */
-  maxTreeNodes?: number;
 }
 
 /** Consume already inspected bytes without copying their remaining suffix. */
@@ -42,11 +28,10 @@ async function consume(input: Cursor, size: number): Promise<void> {
   while (size > 0) size -= (await input.take(size)).length;
 }
 
-/** Probe a small header or admitted attachment until its declared input is available. */
-async function peek<T>(input: Cursor, decode: (bytes: Uint8Array) => T, limit = Infinity): Promise<T> {
+/** Probe a small header or attachment until its declared input is available. */
+async function peek<T>(input: Cursor, decode: (bytes: Uint8Array) => T): Promise<T> {
   let size = 1;
   while (true) {
-    if (size > limit) throw new ResourceLimitError("Frame exceeds materialization limit", input.offset);
     const bytes = await input.peek(size);
     try {
       return decode(bytes);
@@ -80,50 +65,26 @@ async function separators(input: Cursor): Promise<void> {
 
 /** A frame under construction or enclosure validation; its stages stay parser-owned until delivery. */
 interface PendingFrame {
-  /** Hydrated body and bounded ordinary attachment leaves awaiting public delivery. */
+  /** Hydrated body and ordinary attachment leaves awaiting public delivery. */
   frame: CesrFrame;
   /** Frame genus remains independent of temporary attachment-wrapper selectors. */
   gvrsn: Versionage;
-  /** Admission credit shared with descendants, including their finite ESSR stages. */
-  tree: TreeBudget;
   /** Pending descendants retain their own writers until root delivery. */
   nests: PendingFrame[];
   /** Shared unfinished stage for every ESSR group encountered in this frame. */
   writer?: EssrWriter;
 }
 
-/** Remaining admission credit shared only by one pending message and its descendants. */
-interface TreeBudget extends EssrBudget {
-  /** One root owns the admission allowance for all parent-owned descendants. */
-  credit?: ResourceReservation;
-  /** Ordinary body and attachment wire bytes retained so far. */
-  resident: number;
-  /** Ordinary attachment groups retained so far, including empty groups. */
-  groups: number;
-  /** Number of admitted body nodes, including the root. */
-  nodes: number;
-}
-
-/** Limits and stage ownership shared by nested readers during one parse invocation. */
+/** Actual stage ownership and decoder provenance for one parse invocation. */
 interface ParseContext {
   /** Preserve unexpected decoder failures outside this invocation's wire classification. */
   onDecodeFailure: (error: unknown) => void;
-  /** Maximum admitted body plus ordinary attachment bytes for one owned tree. */
-  limit: number;
-  /** Maximum retained leaf objects, including zero-item groups. */
-  maxGroups: number;
-  /** Maximum body nodes in one pending owned tree. */
-  maxNodes: number;
-  /** Start independent credit for each top-level or GenericGroup message. */
-  newTree: () => TreeBudget;
-  /** Open a finite stage only when the frame actually contains ESSR. */
-  openEssr: (gvrsn: Versionage, budget: EssrBudget) => Promise<EssrWriter>;
+  /** Open staging only when a frame actually contains ESSR. */
+  openEssr: (gvrsn: Versionage) => Promise<EssrWriter>;
   /** Every unfinished candidate stage, including children held by oneFrame validation. */
   stages: Set<EssrWriter>;
   /** Finished owners remain parser-owned until every descendant finishes. */
   owners: Set<EssrPayload>;
-  /** Reserved tree/stage allowances not yet transferred at public delivery. */
-  credits: Set<ResourceReservation>;
 }
 
 /** Structural attachment scopes are traversed, never retained as giant raw containers. */
@@ -161,8 +122,8 @@ async function attachments(
       if (FRAME_LISTS.has(counter.name)) {
         throw new ColdStartError("GenericGroup cannot be a nested message attachment");
       }
-      // Read exactly one child with the same tree credit; its own enclosure owns grandchildren.
-      const children = frames(input, gvrsn, context, pending.tree);
+      // Read exactly one child with the same stage owner; its own enclosure owns grandchildren.
+      const children = frames(input, gvrsn, context);
       try {
         const child = await children.next();
         if (child.done) throw new ColdStartError("Expected nested message");
@@ -186,22 +147,14 @@ async function attachments(
     if (counter.name === "ESSRPayloadGroup" || counter.name === "BigESSRPayloadGroup") {
       await consume(input, header);
       if (!pending.writer) {
-        pending.writer = await context.openEssr(pending.gvrsn, pending.tree);
+        pending.writer = await context.openEssr(pending.gvrsn);
         context.stages.add(pending.writer);
       }
       await pending.writer.read(input, counter, gvrsn, domain);
       continue;
     }
-    if (pending.tree.groups >= context.maxGroups) {
-      throw new ResourceLimitError("Frame exceeds attachment group limit", input.offset);
-    }
-    // Previously admitted leaves reduce the same frame-wide byte budget.
-    const remaining = context.limit - pending.tree.resident;
-    // Ordinary semantic groups remain bounded hydrated values under the existing dispatcher.
-    const parsed = await peek(input, (bytes) => parseAttachmentGroup(bytes, gvrsn, domain), remaining);
+    const parsed = await peek(input, (bytes) => parseAttachmentGroup(bytes, gvrsn, domain));
     await consume(input, parsed.consumed);
-    pending.tree.resident += parsed.consumed;
-    pending.tree.groups++;
     pending.frame.attachments.push(parsed.group);
   }
 }
@@ -211,9 +164,8 @@ async function oneFrame(
   input: Cursor,
   gvrsn: Versionage,
   context: ParseContext,
-  tree: TreeBudget,
 ): Promise<PendingFrame> {
-  const nested = frames(input, gvrsn, context, tree, true);
+  const nested = frames(input, gvrsn, context, true);
   try {
     const first = await nested.next();
     if (first.done) throw new ColdStartError("BodyWithAttachmentGroup contained no frame");
@@ -230,7 +182,6 @@ async function* frames(
   input: Cursor,
   inherited: Versionage | null,
   context: ParseContext,
-  tree?: TreeBudget,
   enclosed = false,
 ): AsyncGenerator<PendingFrame, number> {
   // A selector belongs to this enclosure; recursive children inherit but cannot overwrite it.
@@ -249,15 +200,12 @@ async function* frames(
     if (domain === "msg") {
       needsBody = false;
       const size = await messageSize(input);
-      const budget = tree ?? context.newTree();
-      admitBody(budget, size, context, input.offset);
       const base = parseBody(await input.peek(size), selected, context.onDecodeFailure);
       await consume(input, base.consumed);
       // Keep stage ownership separate from the public frame until its boundary is proven.
       const pending: PendingFrame = {
         frame: { body: base.body, attachments: [], gvrsn: base.gvrsn },
         gvrsn: base.gvrsn,
-        tree: budget,
         nests: [],
       };
       await attachments(input, pending, base.gvrsn, context, enclosed);
@@ -285,12 +233,12 @@ async function* frames(
       await consume(input, headerSize);
       const scope = input.scope(payloadSize);
       if (FRAME_LISTS.has(counter.name)) {
-        const children = yield* frames(scope, gvrsn, context, tree);
+        const children = yield* frames(scope, gvrsn, context);
         scope.expectEnd();
         if (children === 0) throw new ColdStartError("GenericGroup contained no frames");
         count += children;
       } else {
-        const frame = await oneFrame(scope, gvrsn, context, tree ?? context.newTree());
+        const frame = await oneFrame(scope, gvrsn, context);
         count++;
         yield frame;
       }
@@ -299,10 +247,8 @@ async function* frames(
     if (!FRAME_STARTS.has(counter.name)) {
       throw new ColdStartError(`Unsupported body-group counter at frame start: ${counter.code}`);
     }
-    // Bodies are admitted finite values; Serder keeps authority over hydration.
+    // Bodies hydrate as complete values; Serder keeps authority over hydration.
     const size = headerSize + payloadSize;
-    const budget = tree ?? context.newTree();
-    admitBody(budget, size, context, input.offset);
     const base = parseBody(await input.peek(size), gvrsn, context.onDecodeFailure);
     if (base.consumed !== size) throw new GroupSizeError("Body did not consume its declared extent", input.offset);
     await consume(input, size);
@@ -310,21 +256,12 @@ async function* frames(
     const pending: PendingFrame = {
       frame: { body: base.body, attachments: [], gvrsn: base.gvrsn },
       gvrsn: base.gvrsn,
-      tree: budget,
       nests: [],
     };
     await attachments(input, pending, base.gvrsn, context, enclosed);
     count++;
     yield pending;
   }
-}
-
-/** Charge body retention before hydration; enclosing wire is never charged a second time. */
-function admitBody(tree: TreeBudget, size: number, context: ParseContext, offset: number): void {
-  if (tree.nodes >= context.maxNodes) throw new ResourceLimitError("Tree exceeds message node limit", offset);
-  if (size > context.limit - tree.resident) throw new ResourceLimitError("Body exceeds frame tree limit", offset);
-  tree.nodes++;
-  tree.resident += size;
 }
 
 /** Finish all descendants while keeping ownership until the root is ready to yield. */
@@ -347,7 +284,7 @@ function deliverTree(frame: CesrFrame, context: ParseContext): void {
  * Parse a byte source progressively, yielding complete children before their
  * enclosing GenericGroup finishes. Earlier frames survive a later parse error.
  *
- * Pulling a result supplies output credit; source EOF closes an open frame.
+ * Pulling a result requests the next complete frame; source EOF closes an open frame.
  * Use a signal-aware source with `signal` to cancel pending I/O. The invocation
  * closes its source on completion, failure, or consumer return.
  */
@@ -389,74 +326,11 @@ export async function* parse(
       },
     }
     : options;
-  const resources = options.resources;
-  const limit = options.maxFrameBytes ?? 8 * 1024 ** 2;
-  if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Frame limit must be a positive safe integer");
-  // Empty attachment groups require an object-count cap in addition to the byte cap.
-  const maxGroups = options.maxAttachmentGroups ?? 4096;
-  if (!Number.isSafeInteger(maxGroups) || maxGroups < 0) {
-    throw new RangeError("Attachment group limit must be a non-negative safe integer");
-  }
-  const maxNodes = options.maxTreeNodes ?? 256;
-  if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) {
-    throw new RangeError("Tree node limit must be a positive safe integer");
-  }
-  const maxEssrBytes = options.maxEssrBytes ?? 8 * 1024 ** 2;
-  const maxEssrItems = options.maxEssrItems ?? 16384;
-  // One invocation owns every stage that has not crossed the public yield below.
   const context: ParseContext = {
     onDecodeFailure: (error) => external.add(error),
-    limit,
-    maxGroups,
-    maxNodes,
     openEssr: essrFactory(decodeOptions, options.signal),
     stages: new Set(),
     owners: new Set(),
-    credits: new Set(),
-    newTree: () => {
-      const reservations: ResourceReservation[] = [];
-      let reservedBytes = 0;
-      const refuse: (error: ResourceAdmissionError) => never = (error) => {
-        try {
-          options.onAdmissionRefusal?.(error);
-        } catch (failure) {
-          external.add(failure);
-          throw failure;
-        }
-        throw error;
-      };
-      const reserve = (bytes: number) => {
-        if (!resources || bytes === 0) return;
-        if (bytes > resources.limits.bytes - reservedBytes) {
-          refuse(new ResourceAdmissionError("Tree admission refused: limit", "limit"));
-        }
-        let decision;
-        try {
-          decision = resources.reserve({ bytes });
-        } catch (error) {
-          external.add(error);
-          throw error;
-        }
-        if (decision.kind === "refuse") {
-          refuse(new ResourceAdmissionError(`Tree admission refused: ${decision.reason}`, decision.reason));
-        }
-        reservations.push(decision.reservation);
-        reservedBytes += bytes;
-      };
-      reserve(limit);
-      // One consumer owner retains all child stages through parser and disposal cleanup.
-      const credit = resources && { release: () => reservations.forEach((held) => held.release()) };
-      if (credit) context.credits.add(credit);
-      return {
-        credit,
-        resident: 0,
-        groups: 0,
-        nodes: 0,
-        bytes: maxEssrBytes,
-        items: maxEssrItems,
-        admitStage: reserve,
-      };
-    },
   };
   const input = new Cursor(options.classifyWireErrors ? supplied() : source, options);
   /** Classify only decoding; payload finalization and all joined cleanup stay outside this iterator. */
@@ -466,7 +340,7 @@ export async function* parse(
     } catch (error) {
       if (
         options.classifyWireErrors && !options.signal?.aborted && !external.has(error)
-        && error instanceof ParserError && !(error instanceof ResourceLimitError)
+        && error instanceof ParserError
       ) {
         throw new WireParseError(error);
       }
@@ -480,15 +354,8 @@ export async function* parse(
       // Finishing one descendant does not transfer it before a later finish succeeds.
       await finishTree(pending, context);
       options.signal?.throwIfAborted();
-      const released = pending.tree.credit && retainFrameCredit(pending.frame, pending.tree.credit);
-      if (pending.tree.credit) context.credits.delete(pending.tree.credit);
       deliverTree(pending.frame, context);
-      try {
-        yield pending.frame;
-      } finally {
-        // A suspended generator still retains the delivered tree until next()/return().
-        released?.();
-      }
+      yield pending.frame;
     }
   } catch (error) {
     errors.push(error);
@@ -504,7 +371,6 @@ export async function* parse(
     } catch (error) {
       cleanup.push({ status: "rejected", reason: error });
     }
-    for (const credit of context.credits) credit.release();
     const failures = cleanup.filter((result) => result.status === "rejected");
     if (failures.length) {
       // deno-lint-ignore no-unsafe-finally -- Preserve the original failure alongside every cleanup failure.

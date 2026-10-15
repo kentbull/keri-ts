@@ -79,7 +79,7 @@ Deno.test("transport abort interrupts a pending read and releases its reader", a
   assertEquals([broken.locked, cancels], [false, 1], "Abort/finally share exactly one cancel and always unlock");
 });
 
-Deno.test("transport budgets count backing buffers and finite collection closes overflowed sources", async () => {
+Deno.test("transport reader caps count backing buffers and collection joins its source", async () => {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(new Uint8Array(16).subarray(0, 1));
@@ -112,7 +112,7 @@ Deno.test("transport budgets count backing buffers and finite collection closes 
   assertEquals(errored.locked, false);
   let closed = false;
   async function* chunks() {
-    // Two small writes cross the aggregate budget without relying on a giant transport allocation.
+    // Collection preserves both chunks and closes the finite source.
     try {
       yield new Uint8Array(4);
       yield new Uint8Array(4);
@@ -120,7 +120,7 @@ Deno.test("transport budgets count backing buffers and finite collection closes 
       closed = true;
     }
   }
-  await assertRejects(() => collectBytes(chunks(), 6), ResourceLimitError);
+  assertEquals((await collectBytes(chunks())).length, 8);
   assertEquals(closed, true);
 });
 
@@ -132,13 +132,13 @@ Deno.test("CESR HTTP appends bounded attachment headers after streamed bodies fo
       body: new Uint8Array([1, 2]),
     });
     // The four ASCII attachment bytes follow the body, including for KERIpy's +json media type.
-    assertEquals(await collectBytes(requestBytes(req), 6), new Uint8Array([1, 2, 45, 65, 65, 65]));
+    assertEquals(await collectBytes(requestBytes(req)), new Uint8Array([1, 2, 45, 65, 65, 65]));
   }
   const req = new Request("http://example.test", {
     method: "POST",
     headers: { "content-type": "application/cesr", "CESR-ATTACHMENT": "-AAA" },
   });
-  await assertRejects(() => collectBytes(requestBytes(req, { maxHeaderBytes: 3 }), 8), ResourceLimitError);
+  await assertRejects(() => collectBytes(requestBytes(req, { maxHeaderBytes: 3 })), ResourceLimitError);
 });
 
 Deno.test("file input yields fixed-size buffers and closes on early return", async () => {

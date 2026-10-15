@@ -42,7 +42,6 @@ function registerBenchmarkCmds(
         (value: string) => Number(value),
         65536,
       )
-      .option("--max-bytes <n>", "Finite benchmark corpus limit in bytes", Number)
       .option("--json", "Emit benchmark result as one JSON line"),
     dispatch,
     {
@@ -54,7 +53,6 @@ function registerBenchmarkCmds(
         iterations: options.iterations,
         warmupIterations: options.warmup,
         chunkSize: options.chunkSize,
-        maxBytes: options.maxBytes,
         json: options.json || false,
       }),
     },

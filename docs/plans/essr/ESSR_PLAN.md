@@ -8,7 +8,7 @@ older recipient accounting requirements are superseded.
 
 - Message/concurrency quotas, decryption slots, eightfold copy estimates,
   policy constructors, reservations and capacity-refusal branches are removed.
-  Parser-internal ESSR quotas remain in the parser removal round.
+  Parser-internal ESSR quotas and frame credit are removed as well.
 - Keep envelope/key/digest/authentication/framing validation and exact payload
   size consistency. Crypto minimum lengths are format facts, not quotas.
 - Keep original qualified ciphertext as protocol evidence; authenticated plaintext

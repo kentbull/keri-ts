@@ -12,7 +12,7 @@ import { CtrDexV1, CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { sigerToken, token } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_V1_JSON_ICP_BODY as json } from "../../fixtures/external-vectors.ts";
 
-/** Build one admitted frame with a transferable signature group and two ESSR fragments. */
+/** Build one frame with a transferable signature group and two ESSR fragments. */
 function fixture(major: 1 | 2) {
   // Count semantics come from genus even though the embedded JSON always declares protocol v1.
   const gvrsn = { major, minor: 0 } as const;
@@ -62,7 +62,7 @@ Deno.test("frame serialization normalizes both genera/domains and preserves inne
         for (const major of [1, 2] as const) {
           const expected = fixture(major);
           for (const domain of ["txt", "bny"] as const) {
-            // Only one admitted frame is collected here; production consumers iterate open().
+            // Only one frame is collected here; production consumers iterate open().
             const output = framePayload(frame, { gvrsn: expected.gvrsn, domain });
             const roundtrip = await read(await collectPayload(output));
             try {
@@ -192,7 +192,7 @@ Deno.test("genus conversion rejects a transferable signature tuple needing an un
   );
 });
 
-Deno.test("ESSR serialization rejects a tiny view retaining an oversized reader allocation", async () => {
+Deno.test("ESSR serialization preserves exact wire from a view over larger backing", async () => {
   // A producer's short visible slice must not conceal an unbounded resident buffer.
   const value = fixture(1);
   const backing = new Uint8Array(1024 * 1024 + 1);
@@ -207,11 +207,7 @@ Deno.test("ESSR serialization rejects a tiny view retaining an oversized reader 
     discard: () => Promise.resolve(),
   };
   const essr = essrPayload(wire, 2, 6, value.gvrsn);
-  await assertRejects(
-    async () => {
-      for await (const _chunk of essrChunks(essr)) { /* Drain to the producer admission boundary. */ }
-    },
-    SerializeError,
-    "backing allocation",
-  );
+  const pieces: Uint8Array[] = [];
+  for await (const chunk of essrChunks(essr)) pieces.push(chunk);
+  assertEquals(pieces.at(-1), b(value.wire));
 });
