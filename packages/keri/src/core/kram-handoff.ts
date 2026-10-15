@@ -115,7 +115,8 @@ export class KramHandoff {
           this.cues.push({
             kin: "query",
             pre: result.sender,
-            q: { r: "logs", pre: result.sender, ...(result.sn === null ? {} : { sn: result.sn.toString(16) }) },
+            route: "logs",
+            q: result.sn === null ? {} : { s: result.sn.toString(16) },
           });
         }
         if (result.kind !== "ready") return result;

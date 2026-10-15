@@ -20,7 +20,14 @@ import {
 import { makeNowIso8601 } from "../time/mod.ts";
 import { ValidationError } from "./errors.ts";
 import { query as coreQuery } from "./protocol-eventing.ts";
-import { RegStateRecord, type RegStateRecordShape, VcStateRecord, type VcStateRecordShape } from "./records.ts";
+import {
+  type CredentialKelAnchor,
+  type RegistrySealFields,
+  RegStateRecord,
+  type RegStateRecordShape,
+  VcStateRecord,
+  type VcStateRecordShape,
+} from "./records.ts";
 
 function resolveVersion(version?: Versionage): Versionage {
   return version ?? Vrsn_1_0;
@@ -44,15 +51,14 @@ function cloneStrings(values?: readonly string[]): string[] {
   return [...(values ?? [])];
 }
 
-/** Project a typed or plain event seal into the SAD dictionary shape used by VDR events. */
-function cloneSealDict(seal?: Record<string, unknown> | SealEvent): Record<string, unknown> {
-  if (!seal) {
+/** Project known seal fields from raw state or CESR primitives; partial legacy state is not semantic acceptance. */
+export function projectRegistrySeal(seal: unknown): Partial<RegistrySealFields> {
+  if (!seal || typeof seal !== "object" || Array.isArray(seal)) {
     return {};
   }
-  const record = seal as Record<string, unknown>;
-  const prefix = record.i;
-  const sequence = record.s;
-  const digest = record.d;
+  const prefix = "i" in seal ? seal.i : undefined;
+  const sequence = "s" in seal ? seal.s : undefined;
+  const digest = "d" in seal ? seal.d : undefined;
   return {
     ...((typeof prefix === "string")
       ? { i: prefix }
@@ -376,7 +382,7 @@ export function state(
     cnfg?: string[];
     version?: Versionage;
   } = {},
-): RegStateRecord {
+): Required<RegStateRecord> {
   if (sn < 0) {
     throw new ValidationError(`Negative sn = ${sn} in key state.`);
   }
@@ -389,7 +395,8 @@ export function state(
   }
   const actualToad = toad
     ?? (actualWits.length === 0 ? 0 : Math.max(1, Math.ceil(actualWits.length / 2)));
-  return new RegStateRecord(
+  return Object.assign(
+    new RegStateRecord(),
     {
       vn: [resolveVersion(version).major, resolveVersion(version).minor],
       i: ri,
@@ -401,7 +408,7 @@ export function state(
       bt: actualToad.toString(16),
       b: actualWits,
       c: cloneStrings(cnfg),
-    } satisfies RegStateRecordShape,
+    } satisfies Required<RegStateRecordShape>,
   );
 }
 
@@ -411,17 +418,17 @@ export function vcstate(
   sn: number,
   ri: string,
   eilk: string,
-  anchor: Record<string, unknown>,
+  anchor: CredentialKelAnchor,
   {
     ra,
     dts,
     version,
   }: {
-    ra?: Record<string, unknown> | SealEvent;
+    ra?: Partial<RegistrySealFields> | SealEvent;
     dts?: string;
     version?: Versionage;
   } = {},
-): VcStateRecord {
+): Required<VcStateRecord> {
   if (sn < 0) {
     throw new ValidationError(`Negative sn = ${sn} in key state.`);
   }
@@ -429,18 +436,19 @@ export function vcstate(
     throw new ValidationError(`Invalid event type et=${eilk} in key state.`);
   }
   const actualVersion = resolveVersion(version);
-  return new VcStateRecord(
+  return Object.assign(
+    new VcStateRecord(),
     {
       vn: [actualVersion.major, actualVersion.minor],
       i: vcpre,
       s: sn.toString(16),
       d: said,
       ri,
-      ra: cloneSealDict(ra),
+      ra: projectRegistrySeal(ra),
       a: { ...anchor },
       dt: dts ?? makeNowIso8601(),
       et: eilk,
-    } satisfies VcStateRecordShape,
+    } satisfies Required<VcStateRecordShape>,
   );
 }
 

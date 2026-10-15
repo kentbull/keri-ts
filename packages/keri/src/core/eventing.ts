@@ -13,6 +13,7 @@ import {
 import { Baser } from "../db/basing.ts";
 import { dgKey, snKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import type { PreparedCueBatch } from "./cue-admission.ts";
 import type { CueQueueInput } from "./cue-publishing.ts";
 import { type CuePublisher, cuePublisher } from "./cue-publishing.ts";
 import type { AgentCue } from "./cues.ts";
@@ -168,11 +169,15 @@ interface EventEscrowEntry {
   said: string;
 }
 
-/** One invocation's admitted KEL effects, published after its owning native commit. */
-interface PreparedKeverDecision {
-  write(): void;
-  publish(): void;
-  release(): void;
+/** Concrete log coordinates and accepted cache state for one synchronous processing turn. */
+interface EventMetadata {
+  cues: AgentCue[];
+  log?: {
+    event: KELEventState;
+    firstSeen: ReturnType<Baser["prepareKelEventLog"]>;
+    delegated: boolean;
+  };
+  accepted?: { target: Kever; transition: KeverTransition; group: boolean };
 }
 
 /**
@@ -258,7 +263,8 @@ export class Kevery {
    * The returned decision is the normal typed outcome for remote processing.
    * The owning native writer covers decision, admission and durable effects;
    * accepted live state and cues publish only after that commit returns.
-   * An already active writer remains caller-owned, including its publication boundary.
+   * Caller-owned native writers are refused before evaluation or effects: this
+   * processor must own the commit that precedes live state/cue publication.
    * Exceptions are reserved for invariant/corruption cases during application.
    */
   processEvent(envelope: KeverEventEnvelope): KeverDecision {
@@ -273,7 +279,11 @@ export class Kevery {
     escrow?: EventEscrowEntry,
   ): KeverDecision | null {
     const env = this.db.env!;
-    let prepared: PreparedKeverDecision | undefined;
+    if (this.db.inWriteTransaction) {
+      throw new Error("Kevery must own the KEL transaction; process events outside caller-owned writers");
+    }
+    let metadata: EventMetadata | undefined;
+    let batch: PreparedCueBatch | undefined;
     try {
       const write = () => {
         // Replay hydration may repair an existing delegation source hint; it belongs to this writer too.
@@ -284,20 +294,23 @@ export class Kevery {
         }
         const decision = this.decideEvent(envelope);
         // A still-pending replay keeps its existing row and emits no additional cues.
-        if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) return decision;
-        prepared = this.prepareDecision(decision);
-        prepared?.write();
+        if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) {
+          this.writeSourceSealRepairs(decision);
+          return decision;
+        }
+        metadata = this.eventMetadata(decision);
+        this.cues.checkSpace(metadata.cues.length);
+        batch = metadata.cues.length ? this.publisher.prepare(metadata.cues) : undefined;
+        this.writeEventDecision(decision, metadata);
         if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
         return decision;
       };
-      // Nested callers retain their existing caller-owned commit/publication contract.
-      const decision = (env as unknown as { env: { writeTxn?: unknown } }).env.writeTxn
-        ? write()
-        : env.transactionSync(write);
-      prepared?.publish();
+      const decision = env.transactionSync(write);
+      this.publishEventState(metadata?.accepted);
+      batch?.publish();
       return decision;
     } finally {
-      prepared?.release();
+      batch?.release();
     }
   }
 
@@ -417,7 +430,6 @@ export class Kevery {
         return acceptQuery([{
           kin: "reply",
           querySaid: envelope.serder.said ?? undefined,
-          route: "/ksn",
           serder: replyEvent(`/ksn/${src}`, kever.state().asDict()),
           src,
           dest,
@@ -863,10 +875,7 @@ export class Kevery {
       return {
         kind: "reject",
         code: "invalidPre",
-        message: `Invalid pre=${pre} for event ${said}.`,
-        context: {
-          cause: error instanceof Error ? error.message : String(error),
-        },
+        message: `Invalid pre=${pre} for event ${said}: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
 
@@ -926,82 +935,85 @@ export class Kevery {
     return kever.evaluateUpdate(init);
   }
 
-  /**
-   * Apply one previously decided outcome to the durable DB/runtime state.
-   *
-   * Ownership rule:
-   * - `Kever` decides acceptance/rejection criteria
-   * - `Kevery` owns durable mutation, escrow routing, duplicate logging, and
-   *   post-acceptance cue emission
-   * - explicit decide/apply callers own synchronous writer and commit/publication ordering
-   */
-  applyDecision(decision: KeverDecision): void {
-    const prepared = this.prepareDecision(decision);
-    try {
-      prepared?.write();
-      prepared?.publish();
-    } finally {
-      prepared?.release();
-    }
-  }
-
-  /** Admit concrete cues and fix FEL metadata under the caller's synchronous writer ownership. */
-  private prepareDecision(decision: KeverDecision): PreparedKeverDecision | undefined {
-    // Ordinary Runtime decks retain their existing refusal/retry boundary until ownership is fully ported.
+  /** Describe finalized log coordinates, clone notices and accepted state without executable effects. */
+  private eventMetadata(decision: KeverDecision): EventMetadata {
+    // Preserve the standalone Deck refusal boundary until its producer migration.
     this.publisher.preflight(
       ("cues" in decision ? decision.cues?.length ?? 0 : 0)
         + (decision.kind === "accept" ? 4 : decision.kind === "duplicate" ? 1 : 0),
     );
-    if (decision.kind === "reject") return;
+    if (decision.kind === "reject") return { cues: [] };
     if (decision.kind === "accept") {
       const kever = this.kevers.get(decision.transition.pre);
       const target = !kever || decision.transition.mode === "create"
-        ? Kever.fromTransition(decision.transition, { db: this.db, cues: this.cues })
+        ? Kever.fromTransition(decision.transition, { db: this.db })
         : kever;
-      const logged = target.prepareLogEvent(decision.transition.log);
-      const transition = this.applyFirstSeenState(decision.transition, logged.fn, logged.dater.dts);
+      const firstSeen = this.db.prepareKelEventLog(decision.transition.log);
+      const transition = this.applyFirstSeenState(decision.transition, firstSeen.fn, firstSeen.dater.dts);
       const group = !!this.db.getHab(transition.pre)?.mid;
-      const cues = [...logged.cues, ...(decision.cues ?? []), ...this.acceptanceCues(transition, group)];
-      // Hold exact cue objects/backing and slots before accepted-event writes.
-      this.cues.checkSpace(cues.length);
-      const prepared = this.publisher.prepare(cues);
       return {
-        write: () => {
-          target.logEvent(transition.log, logged);
-          this.db.pinState(transition.pre, transition.state);
-          this.db.udes.rem(dgKey(transition.pre, transition.said));
-          this.repairAnchoredDelegationSourceSeals(transition.log.serder);
-        },
-        publish: () => {
-          target.applyTransition(transition);
-          this.kevers.set(transition.pre, target);
-          if (group) {
-            this.db.prefixes.add(transition.pre);
-            this.db.groups.add(transition.pre);
-          }
-          prepared.publish();
-        },
-        release: () => prepared?.release(),
+        cues: [
+          ...this.logNoticeCues(decision.transition.log, firstSeen),
+          ...(decision.cues ?? []),
+          ...this.acceptanceCues(transition, group),
+        ],
+        log: { event: transition.log, firstSeen, delegated: target.delegated },
+        accepted: { target, transition, group },
       };
     }
-
     const kever = decision.kind === "duplicate" ? this.kevers.get(decision.log?.serder.pre ?? "") : undefined;
-    const logged = decision.kind === "duplicate" && decision.log && kever
-      ? kever.prepareLogEvent(decision.log)
+    const log = decision.kind === "duplicate" && decision.log && kever
+      ? { event: decision.log, firstSeen: this.db.prepareKelEventLog(decision.log), delegated: kever.delegated }
       : undefined;
-    const cues = [...(logged?.cues ?? []), ...(decision.cues ?? [])];
-    this.cues.checkSpace(cues.length);
-    const prepared = cues.length ? this.publisher.prepare(cues) : undefined;
     return {
-      write: () => {
-        if (decision.kind === "escrow") this.persistEscrowInstruction(decision.instruction);
-        else if (decision.log && kever && logged) kever.logEvent(decision.log, logged);
-      },
-      publish: () => {
-        prepared?.publish();
-      },
-      release: () => prepared?.release(),
+      cues: [...(log ? this.logNoticeCues(log.event, log.firstSeen) : []), ...(decision.cues ?? [])],
+      log,
     };
+  }
+
+  /** Persist the decision and its concrete log metadata after cue admission. */
+  private writeEventDecision(decision: KeverDecision, metadata: EventMetadata): void {
+    this.writeSourceSealRepairs(decision);
+    if (metadata.log) {
+      const { event, firstSeen, delegated } = metadata.log;
+      this.db.writeKelEventLog(event, firstSeen, delegated);
+    }
+    if (metadata.accepted) {
+      const { transition } = metadata.accepted;
+      this.db.pinState(transition.pre, transition.state);
+      this.db.udes.rem(dgKey(transition.pre, transition.said));
+      this.repairAnchoredDelegationSourceSeals(transition.log.serder);
+    } else if (decision.kind === "escrow") this.persistEscrowInstruction(decision.instruction);
+  }
+
+  /** Publish accepted cache state; cue publication remains explicit at the processing owner. */
+  private publishEventState(accepted: EventMetadata["accepted"]): void {
+    if (!accepted) return;
+    const { target, transition, group } = accepted;
+    target.applyTransition(transition);
+    this.kevers.set(transition.pre, target);
+    if (group) {
+      this.db.prefixes.add(transition.pre);
+      this.db.groups.add(transition.pre);
+    }
+  }
+
+  /** Apply concrete delegation-hint discoveries only under the processing owner's write phase. */
+  private writeSourceSealRepairs(decision: KeverDecision): void {
+    for (const { pre, said, sourceSeal } of decision.sourceSealRepairs ?? []) {
+      const key = dgKey(pre, said);
+      if (sourceSeal) this.db.aess.pin(key, [sourceSeal.s, sourceSeal.d]);
+      else this.db.aess.rem(key);
+    }
+  }
+
+  /** Describe a clone-order anomaly; storage metadata does not publish protocol work. */
+  private logNoticeCues(
+    log: KELEventState,
+    prepared: ReturnType<Baser["prepareKelEventLog"]>,
+  ): AgentCue[] {
+    if (prepared.fn === null || !log.frc || prepared.fn === Number(log.frc.f.num)) return [];
+    return [{ kin: "noticeBadCloneFN", serder: log.serder, fn: prepared.fn, firner: log.frc.f, dater: log.frc.dt }];
   }
 
   /** Reprocess one pass of out-of-order escrowed events. */
@@ -1275,7 +1287,7 @@ export class Kevery {
     if (osaider?.qb64 === args.diger.qb64) {
       osaider = null;
     }
-    const reply = this.rvy.prepareReply({
+    const reply = this.rvy.decideReply({
       serder: args.serder,
       saider: args.diger,
       route: args.route,
@@ -1284,10 +1296,12 @@ export class Kevery {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
+    this.rvy.cues.checkSpace(reply.cues.length);
+    const queries = reply.cues.length ? cuePublisher(this.rvy.cues).prepare(reply.cues) : undefined;
     try {
-      if (reply.decision.kind === "unverified") {
-        reply.applyProofs();
-        reply.publishQueries();
+      if (reply.kind === "unverified") {
+        this.rvy.writeReply(reply);
+        queries?.publish();
         return unverifiedReplyDecision(
           `Unverified key state notice reply ${args.serder.said ?? "<unknown>"}.`,
         );
@@ -1305,16 +1319,16 @@ export class Kevery {
       this.cues.checkSpace();
       const child = this.publisher.prepare(cues);
       try {
-        reply.applyProofs();
+        this.rvy.writeReply(reply);
         this.updateKeyState(args.aid, ksn, saider, dater);
-        reply.publishQueries();
+        queries?.publish();
         child.publish();
         return acceptReplyDecision();
       } finally {
         child?.release();
       }
     } finally {
-      reply.release();
+      queries?.release();
     }
   }
 
@@ -1539,16 +1553,10 @@ export class Kevery {
 
     const serder = this.db.evts.get(dgkey);
     if (!serder) {
-      return dropEscrow("missingEscrowedEvent", {
-        message: `QNF Missing escrowed evt at dig = ${qsaid}`,
-        context: { requester, qsaid },
-      });
+      return dropEscrow("missingEscrowedEvent", `QNF Missing escrowed evt at dig = ${qsaid}`);
     }
     if (serder.ilk !== Ilks.qry) {
-      return dropEscrow("malformedEscrowedQuery", {
-        message: `QNF Escrowed event at dig = ${qsaid} is not a query.`,
-        context: { requester, qsaid, ilk: serder.ilk },
-      });
+      return dropEscrow("malformedEscrowedQuery", `QNF Escrowed event at dig = ${qsaid} is not a query.`);
     }
 
     const sigers = this.db.sigs.get(dgkey);
@@ -1560,10 +1568,7 @@ export class Kevery {
       new Cigar(cigar, new Verfer({ qb64: prefixer.qb64 }))
     );
     if (sigers.length === 0 && cigars.length === 0) {
-      return dropEscrow("missingEscrowedEndorsements", {
-        message: `QNF Missing escrowed evt sigs at dig = ${qsaid}`,
-        context: { requester, qsaid },
-      });
+      return dropEscrow("missingEscrowedEndorsements", `QNF Missing escrowed evt sigs at dig = ${qsaid}`);
     }
 
     let source: Prefixer | undefined;
@@ -1571,14 +1576,12 @@ export class Kevery {
       try {
         source = new Prefixer({ qb64: requester });
       } catch (error) {
-        return dropEscrow("malformedEscrowedQuery", {
-          message: `QNF Failed to reconstruct escrowed query requester at dig = ${qsaid}`,
-          context: {
-            requester,
-            qsaid,
-            cause: error instanceof Error ? error.message : String(error),
-          },
-        });
+        return dropEscrow(
+          "malformedEscrowedQuery",
+          `QNF Failed to reconstruct requester=${requester} at dig=${qsaid}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     }
 
@@ -1593,15 +1596,12 @@ export class Kevery {
         this.publishQueryCues(serder, decision.cues);
         return acceptEscrow();
       case "escrow":
-        return keepEscrow("queryNotFound", {
-          message: `QNF Query still waiting on continuation state at dig = ${qsaid}`,
-          context: { requester, qsaid, queryReason: decision.reason },
-        });
+        return keepEscrow(
+          "queryNotFound",
+          `QNF Query still waiting on continuation state at dig=${qsaid}: ${decision.reason}`,
+        );
       case "drop":
-        return dropEscrow("malformedEscrowedQuery", {
-          message: `QNF Dropping escrowed query at dig = ${qsaid} after live query validation failed.`,
-          context: { requester, qsaid, liveReason: decision.reason },
-        });
+        return dropEscrow("malformedEscrowedQuery", `QNF Dropping escrowed query at dig=${qsaid}: ${decision.reason}.`);
     }
   }
 
@@ -2077,30 +2077,21 @@ export class Kevery {
     const acceptedSaid = this.db.kels.getLast(pre, sn);
     const snh = sn.toString(16);
     if (!acceptedSaid) {
-      return keepEscrow("missingReceiptedEvent", {
-        message: `${scope} Missing receipted evt at pre=${pre} sn=${snh}`,
-        context: { pre, sn, said, scope },
-      });
+      return keepEscrow("missingReceiptedEvent", `${scope} Missing receipted evt at pre=${pre} sn=${snh}`);
     }
     if (acceptedSaid !== said) {
-      return dropEscrow("invalidReceiptDigest", {
-        message: `${scope} Bad escrowed receipt dig at pre=${pre} sn=${snh}`,
-        context: { pre, sn, said, acceptedSaid, scope },
-      });
+      return dropEscrow("invalidReceiptDigest", `${scope} Bad escrowed receipt dig at pre=${pre} sn=${snh}`);
     }
     const serder = this.db.getEvtSerder(pre, said);
     if (!serder) {
-      return dropEscrow("invalidReceiptedEventReference", {
-        message: `${scope} Invalid receipted evt reference at pre=${pre} sn=${snh}`,
-        context: { pre, sn, said, acceptedSaid, scope },
-      });
+      return dropEscrow(
+        "invalidReceiptedEventReference",
+        `${scope} Invalid receipted evt reference at pre=${pre} sn=${snh}`,
+      );
     }
     const wits = this.resolveAcceptedEventWitnesses(pre, said, serder);
     if (!wits) {
-      return keepEscrow("missingReceiptedEvent", {
-        message: `${scope} Kever not ready for receipted evt at pre=${pre} sn=${snh}`,
-        context: { pre, sn, said, scope },
-      });
+      return keepEscrow("missingReceiptedEvent", `${scope} Kever not ready for receipted evt at pre=${pre} sn=${snh}`);
     }
     return {
       kind: "accept",
@@ -2166,10 +2157,10 @@ export class Kevery {
       const wits = [...serder.backs];
       return hasUniqueWitnesses(wits)
         ? { kind: "accept", wits }
-        : dropEscrow("duplicateWitnesses", {
-          message: `PWE Invalid wits = ${JSON.stringify(wits)} has duplicates for evt = ${JSON.stringify(serder.ked)}.`,
-          context: { pre: serder.pre, said: serder.said, wits },
-        });
+        : dropEscrow(
+          "duplicateWitnesses",
+          `PWE Invalid wits = ${JSON.stringify(wits)} has duplicates for evt = ${JSON.stringify(serder.ked)}.`,
+        );
     }
 
     const kever = this.db.getKever(serder.pre ?? "");
@@ -2187,26 +2178,16 @@ export class Kevery {
       if (derived.kind === "accept") {
         return { kind: "accept", wits: derived.value.wits };
       }
-      return dropEscrow(derived.reason, {
-        message: `PWE Invalid witness cuts/adds for evt = ${JSON.stringify(serder.ked)}.`,
-        context: {
-          pre: serder.pre,
-          said: serder.said,
-          reason: derived.reason,
-          cuts: [...serder.cuts],
-          adds: [...serder.adds],
-          currentWits: [...kever.wits],
-        },
-      });
+      return dropEscrow(derived.reason, `PWE Invalid witness cuts/adds for evt = ${JSON.stringify(serder.ked)}.`);
     }
 
     // For non-establishment events, partial-witness replay expects current key
     // state to be available already; otherwise the escrowed state is corrupt.
     if (!kever) {
-      return dropEscrow("processingError", {
-        message: `PWE Missing current key state for receipted evt at pre=${serder.pre ?? ""}.`,
-        context: { pre: serder.pre, said: serder.said, ilk: serder.ilk },
-      });
+      return dropEscrow(
+        "processingError",
+        `PWE Missing current key state for receipted evt at pre=${serder.pre ?? ""}.`,
+      );
     }
     return { kind: "accept", wits: [...kever.wits] };
   }
@@ -2242,10 +2223,7 @@ export class Kevery {
 
       const serder = this.db.getEvtSerder(pre, candidateSaid);
       if (!serder) {
-        return dropEscrow("missingEscrowedEvent", {
-          message: `PWE Missing escrowed evt at dig = ${candidateSaid}`,
-          context: { pre, sn, said: candidateSaid },
-        });
+        return dropEscrow("missingEscrowedEvent", `PWE Missing escrowed evt at dig = ${candidateSaid}`);
       }
 
       const witnessState = this.resolvePartialWitnessEscrowWitnesses(serder);
@@ -2260,20 +2238,20 @@ export class Kevery {
         const verfer = cigar.verfer;
         const receiptorPre = verfer?.qb64;
         if (!verfer || !receiptorPre) {
-          return dropEscrow("missingEscrowArtifact", {
-            message: `PWE Missing verifier context for escrowed receipt at pre=${pre} sn=${sn.toString(16)}.`,
-            context: { pre, sn, said },
-          });
+          return dropEscrow(
+            "missingEscrowArtifact",
+            `PWE Missing verifier context for escrowed receipt at pre=${pre} sn=${sn.toString(16)}.`,
+          );
         }
         const witnessIndex = witnessState.wits.indexOf(receiptorPre);
         if (witnessIndex < 0) {
           continue;
         }
         if (!verfer.verify(cigar.raw, serder.raw)) {
-          return dropEscrow("invalidReceiptSignature", {
-            message: `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${sn.toString(16)}.`,
-            context: { pre, sn, said, receiptor: receiptorPre },
-          });
+          return dropEscrow(
+            "invalidReceiptSignature",
+            `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${sn.toString(16)}.`,
+          );
         }
         this.db.wigs.add(
           dgKey(pre, serder.said ?? said),
@@ -2283,36 +2261,24 @@ export class Kevery {
       }
 
       if (!wiger) {
-        return dropEscrow("missingEscrowArtifact", {
-          message: `PWE Missing escrowed witness signature material at pre=${pre} sn=${sn.toString(16)}.`,
-          context: { pre, sn, said },
-        });
+        return dropEscrow(
+          "missingEscrowArtifact",
+          `PWE Missing escrowed witness signature material at pre=${pre} sn=${sn.toString(16)}.`,
+        );
       }
       const verferQb64 = witnessState.wits[wiger.index];
       if (!verferQb64) {
-        return dropEscrow("invalidWitnessIndex", {
-          message: `PWE Bad escrowed witness receipt index=${wiger.index} at pre=${pre} sn=${sn.toString(16)}`,
-          context: {
-            pre,
-            sn,
-            said,
-            witnessIndex: wiger.index,
-            wits: witnessState.wits,
-          },
-        });
+        return dropEscrow(
+          "invalidWitnessIndex",
+          `PWE Bad escrowed witness receipt index=${wiger.index} at pre=${pre} sn=${sn.toString(16)}`,
+        );
       }
       const verfer = new Verfer({ qb64: verferQb64 });
       if (!verfer.verify(wiger.raw, serder.raw)) {
-        return dropEscrow("invalidReceiptSignature", {
-          message: `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${sn.toString(16)}.`,
-          context: {
-            pre,
-            sn,
-            said,
-            witnessIndex: wiger.index,
-            witness: verferQb64,
-          },
-        });
+        return dropEscrow(
+          "invalidReceiptSignature",
+          `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${sn.toString(16)}.`,
+        );
       }
       this.db.wigs.add(
         dgKey(pre, serder.said ?? said),
@@ -2356,10 +2322,7 @@ export class Kevery {
     }
     const decision = this.processEscrowFindUnver(pre, sn, said, { wiger });
     return decision.kind === "continue"
-      ? keepEscrow("missingReceiptedEvent", {
-        message: `UWE Missing witness receipted evt at pre=${pre} sn=${sn.toString(16)}`,
-        context: { pre, sn, said },
-      })
+      ? keepEscrow("missingReceiptedEvent", `UWE Missing witness receipted evt at pre=${pre} sn=${sn.toString(16)}`)
       : decision;
   }
 
@@ -2388,10 +2351,10 @@ export class Kevery {
     }
     const verfer = cigar.verfer;
     if (!verfer) {
-      return dropEscrow("missingEscrowArtifact", {
-        message: `URE Missing escrowed receipt verifier at pre=${pre} sn=${sn.toString(16)}.`,
-        context: { pre, sn, said },
-      });
+      return dropEscrow(
+        "missingEscrowArtifact",
+        `URE Missing escrowed receipt verifier at pre=${pre} sn=${sn.toString(16)}.`,
+      );
     }
 
     const partialDecision = this.processEscrowFindUnver(pre, sn, said, {
@@ -2407,10 +2370,10 @@ export class Kevery {
     }
     const { event } = lookup;
     if (!verfer.verify(cigar.raw, event.serder.raw)) {
-      return dropEscrow("invalidReceiptSignature", {
-        message: `URE Bad escrowed receipt sig at pre=${pre} sn=${sn.toString(16)} receipter=${verfer.qb64}`,
-        context: { pre, sn, said, receiptor: verfer.qb64 },
-      });
+      return dropEscrow(
+        "invalidReceiptSignature",
+        `URE Bad escrowed receipt sig at pre=${pre} sn=${sn.toString(16)} receipter=${verfer.qb64}`,
+      );
     }
     const dgkey = dgKey(event.pre, event.said);
     const witnessIndex = event.wits.indexOf(verfer.qb64);
@@ -2462,69 +2425,42 @@ export class Kevery {
 
     const estSaid = this.db.kels.getLast(prefixer.qb64, Number(snumber.num));
     if (!estSaid) {
-      return keepEscrow("missingReceiptorEstablishment", {
-        message: `VRE Missing receiptor establishment evt at pre=${prefixer.qb64} sn=${snumber.num.toString(16)}`,
-        context: {
-          pre,
-          sn,
-          said,
-          receiptor: prefixer.qb64,
-          receiptorSn: snumber.num.toString(16),
-        },
-      });
+      return keepEscrow(
+        "missingReceiptorEstablishment",
+        `VRE Missing receiptor establishment evt at pre=${prefixer.qb64} sn=${snumber.num.toString(16)}`,
+      );
     }
     if (estSaid !== ssaider.qb64) {
-      return dropEscrow("invalidReceiptorSeal", {
-        message: `VRE Bad chit seal at sn = ${snumber.num.toString(16)} for receipt from pre = ${prefixer.qb64}`,
-        context: {
-          pre,
-          sn,
-          said,
-          receiptor: prefixer.qb64,
-          estSaid,
-          sealSaid: ssaider.qb64,
-        },
-      });
+      return dropEscrow(
+        "invalidReceiptorSeal",
+        `VRE Bad chit seal at sn = ${snumber.num.toString(16)} for receipt from pre = ${prefixer.qb64}`,
+      );
     }
     const estEvent = this.db.getEvtSerder(prefixer.qb64, estSaid);
     if (!estEvent) {
-      return dropEscrow("invalidReceiptorEstablishment", {
-        message: `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64}`,
-        context: { pre, sn, said, receiptor: prefixer.qb64, estSaid },
-      });
+      return dropEscrow(
+        "invalidReceiptorEstablishment",
+        `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64}`,
+      );
     }
     if (estEvent.verfers.length === 0) {
-      return dropEscrow("missingReceiptorKeys", {
-        message: `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64} no keys`,
-        context: { pre, sn, said, receiptor: prefixer.qb64, estSaid },
-      });
+      return dropEscrow(
+        "missingReceiptorKeys",
+        `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64} no keys`,
+      );
     }
     if (siger.index >= estEvent.verfers.length) {
-      return dropEscrow("receiptorIndexOutOfRange", {
-        message: `VRE Index = ${siger.index} too large for keys`,
-        context: {
-          pre,
-          sn,
-          said,
-          receiptor: prefixer.qb64,
-          estSaid,
-          sigerIndex: siger.index,
-          keyCount: estEvent.verfers.length,
-        },
-      });
+      return dropEscrow(
+        "receiptorIndexOutOfRange",
+        `VRE Index=${siger.index} exceeds key count=${estEvent.verfers.length} for receiptor=${prefixer.qb64} at dig=${said}.`,
+      );
     }
     const verfer = estEvent.verfers[siger.index];
     if (!verfer.verify(siger.raw, event.serder.raw)) {
-      return dropEscrow("invalidReceiptSignature", {
-        message: `VRE Bad escrowed trans receipt sig at pre=${pre} sn=${sn.toString(16)} receipter=${prefixer.qb64}`,
-        context: {
-          pre,
-          sn,
-          said,
-          receiptor: prefixer.qb64,
-          sigerIndex: siger.index,
-        },
-      });
+      return dropEscrow(
+        "invalidReceiptSignature",
+        `VRE Bad escrowed trans receipt sig at pre=${pre} sn=${sn.toString(16)} receipter=${prefixer.qb64}`,
+      );
     }
     const dgkey = dgKey(event.pre, event.said);
     this.db.vrcs.add(
@@ -2556,16 +2492,10 @@ export class Kevery {
   ): EscrowDrop | null {
     const dater = this.db.dtss.get(dgKey(pre, said));
     if (!dater) {
-      return dropEscrow("missingDater", {
-        message: `${scope} Missing escrowed event datetime at dig = ${said}`,
-        context: { pre, said, scope },
-      });
+      return dropEscrow("missingDater", `${scope} Missing escrowed event datetime at dig = ${said}`);
     }
     return Date.now() - new Date(dater.dts).getTime() > timeoutMs
-      ? dropEscrow("stale", {
-        message: `${scope} Stale event escrow at dig = ${said}`,
-        context: { pre, said, scope },
-      })
+      ? dropEscrow("stale", `${scope} Stale event escrow at dig = ${said}`)
       : null;
   }
 
@@ -2576,7 +2506,6 @@ export class Kevery {
   ): KeverEventInit {
     return {
       db: this.db,
-      cues: this.cues,
       serder: envelope.serder,
       sigers: [...envelope.sigers],
       wigers: [...envelope.wigers],
@@ -3049,7 +2978,7 @@ export class Kevery {
    *
    * Event-escrow replay differs from receipt/query/reply replay:
    * - the escrowed event is reconstructed back into a normal event envelope
-   * - the same native writer and prepared decision path as live intake is reused
+   * - the same native writer and explicit processing path as live intake is reused
    * - escrow movement/removal commits with event effects before state/cue publication
    */
   private replayEscrowEntry(

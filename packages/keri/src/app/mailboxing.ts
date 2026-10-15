@@ -121,7 +121,7 @@ export function updateMailboxRemoteCursor(
  *
  * KERIpy parity rule:
  * - mailbox role endpoints take precedence when authorized
- * - otherwise poll one witness mailbox endpoint
+ * - otherwise poll every eligible witness mailbox endpoint
  * - SSE uses HTTP(S) only; a TCP-only mailbox keeps role precedence while awaiting HTTP
  *
  * The result is intentionally already flattened to one preferred URL per
@@ -145,15 +145,15 @@ export function mailboxPollEndpoints(
     }));
   }
 
-  const witness = firstSortedEndpoint(ends[Roles.witness]);
-  if (!witness || hby.db.prefixes.has(witness.eid) || !isHttp(witness)) {
-    return [];
-  }
-  return [{
-    key: `${Roles.witness}:${witness.eid}:${witness.url}`,
-    eid: witness.eid,
-    url: witness.url,
-  }];
+  // Query replies are stored at the witness that answered; these mailboxes are not interchangeable.
+  return flattenRoleUrls(ends[Roles.witness])
+    .filter((endpoint) => !hby.db.prefixes.has(endpoint.eid) && isHttp(endpoint))
+    .sort((left, right) => left.eid.localeCompare(right.eid))
+    .map((endpoint) => ({
+      key: `${Roles.witness}:${endpoint.eid}:${endpoint.url}`,
+      eid: endpoint.eid,
+      url: endpoint.url,
+    }));
 }
 
 /**
@@ -419,8 +419,8 @@ export function flattenRoleUrls(
 /**
  * Return the deterministic first preferred endpoint from one role map.
  *
- * Witness polling intentionally uses a stable choice instead of a randomized
- * one so local cursor progression is deterministic.
+ * Forwarding fallback chooses one witness deterministically; mailbox polling
+ * enumerates its eligible witnesses separately.
  */
 export function firstSortedEndpoint(
   roleUrls?: Record<string, Record<string, string>>,

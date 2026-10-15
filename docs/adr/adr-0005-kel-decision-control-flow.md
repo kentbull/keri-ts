@@ -41,7 +41,6 @@ decision-returning helpers such as:
 `Kevery` owns orchestration:
 
 - `Kevery.decideEvent(...)`
-- `Kevery.applyDecision(...)`
 - `Kevery.processEvent(...)`
 
 `Kevery.processEvent(...)` now returns a `KeverDecision` instead of `void`.
@@ -54,7 +53,6 @@ decision-returning helpers such as:
 - provisional next-state construction
 - attachment validation
 - accepted-state serialization
-- accepted-event log application through `logEvent(...)`
 
 `Kevery` owns:
 
@@ -64,16 +62,42 @@ decision-returning helpers such as:
 - duplicate late-attachment logging
 - post-acceptance cue emission
 
-This keeps the KERIpy mental model while making the control surface explicit in
+Baser owns accepted-event row/FEL preparation and persistence through
+prepareKelEventLog/writeKelEventLog. It receives verified event material and the
+processing owner's delegated fact. Clone-order notification policy stays with
+Kevery; the storage seam neither decides validity nor publishes cues.
+
+Delegation lookup discoveries travel as concrete `sourceSealRepairs` in the
+attachment/event decision. Kever reads existing hints and sees earlier repairs
+within that evaluation, but does not write `aess`. Kevery applies discovered
+repairs in its existing write phase after cue admission; a same-bucket escrow
+retry may still repair its hint without rewriting the escrow or publishing cues.
+This preserves KERIpy's `fetchDelegatingEvent` recovery behavior while respecting
+the TypeScript decide/apply boundary. No generic effect language or transaction
+hook system is involved. The internal lookup is no longer a public Kever API.
+
+Kever's constructors and evaluation input have no cue-queue dependency. Any
+follow-up cue descriptions are returned in decisions or log preparation; the
+processing orchestrator controls acceptance, persistence and publication. This
+keeps the KERIpy mental model while making the control surface explicit in
 TypeScript.
+
+Kevery uses plain EventMetadata for finalized first-seen/log coordinates, clone
+notices and accepted cache state. Its control flow explicitly admits the actual
+cue batch, writes decision data, publishes accepted state and publishes cues.
+Metadata has no write/publish/release methods; finally releases only acquired cue
+capacity. Repair-only rejection needs no fabricated lifecycle object.
 
 When `processEvent` owns the native writer, one synchronous transaction covers
 decision, concrete cue admission, first-seen preparation and durable effects.
 Live accepted state and cues publish only after that commit succeeds; failed
-writes or commits release unpublished cue ownership. Explicit `decideEvent` /
-`applyDecision` callers and `processEvent` within an already active writer retain
-caller-owned commit/publication ordering. An in-process Reactor guard alone does
-not serialize another process writing the same LMDB environment.
+writes or commits release unpublished cue ownership. `processEvent` refuses an
+already-active native writer before evaluation or admission: the processing owner
+must observe its own successful commit before publishing. No production caller
+needs nested KEL processing. The unused public `applyDecision` entrypoint is removed;
+pure `decideEvent` remains available for inspection, without a separate application
+API that can apply stale decisions outside the owning writer. An in-process Reactor
+guard alone does not serialize another process writing the same LMDB environment.
 Event escrow replay uses this same owning writer: promotion or bucket movement
 and original-row removal commit before publication. A retry remaining in its
 current bucket leaves the existing row untouched and emits no additional cues.
