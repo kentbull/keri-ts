@@ -862,14 +862,8 @@ export class Revery {
  *   `Kevery` port is complete
  */
 export class BasicReplyRouteHandler {
-  readonly db: Baser;
-  readonly rvy: Revery;
-
   /** Create one reply-route handler bound to one reply verifier and database. */
-  constructor(db: Baser, rvy: Revery) {
-    this.db = db;
-    this.rvy = rvy;
-  }
+  constructor(readonly rvy: Revery) {}
 
   /**
    * Register the Gate E reply routes handled by this bootstrap handler.
@@ -898,9 +892,9 @@ export class BasicReplyRouteHandler {
     saider: Diger,
     allowed: boolean,
   ): void {
-    this.db.eans.pin(keys, saider);
-    const existing = this.db.ends.get(keys);
-    this.db.ends.pin(keys, new EndpointRecord({ ...existing?.asDict(), allowed }));
+    this.rvy.db.eans.pin(keys, saider);
+    const existing = this.rvy.db.ends.get(keys);
+    this.rvy.db.ends.pin(keys, new EndpointRecord({ ...existing?.asDict(), allowed }));
   }
 
   /**
@@ -911,9 +905,9 @@ export class BasicReplyRouteHandler {
    * - `locs.` stores the latest URL projection by endpoint and scheme
    */
   updateLoc(keys: [string, string], saider: Diger, url: string): void {
-    this.db.lans.pin(keys, saider);
-    const existing = this.db.locs.get(keys);
-    this.db.locs.pin(keys, new LocationRecord({ ...existing?.asDict(), url }));
+    this.rvy.db.lans.pin(keys, saider);
+    const existing = this.rvy.db.locs.get(keys);
+    this.rvy.db.locs.pin(keys, new LocationRecord({ ...existing?.asDict(), url }));
   }
 
   /**
@@ -961,7 +955,7 @@ export class BasicReplyRouteHandler {
     }
 
     const keys: [string, string, string] = [cid, role, eid];
-    let osaider = this.db.eans.get(keys);
+    let osaider = this.rvy.db.eans.get(keys);
     if (osaider && osaider.qb64 === args.diger.qb64) {
       osaider = null;
     }
@@ -1029,7 +1023,7 @@ export class BasicReplyRouteHandler {
     }
 
     const keys: [string, string] = [eid, scheme];
-    let osaider = this.db.lans.get(keys);
+    let osaider = this.rvy.db.lans.get(keys);
     if (osaider && osaider.qb64 === args.diger.qb64) {
       osaider = null;
     }
