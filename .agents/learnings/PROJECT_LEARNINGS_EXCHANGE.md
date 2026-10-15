@@ -79,7 +79,11 @@ The four multisig event builders carry one MultisigEventProposal with correlated
 icp/rot/ixn/rpy attributes through byte preparation and synchronous body building.
 Inception derives gid from its child; callers supply member lists, not another gid
 or child commitment. Do not reconstruct typed input from an erased serialized SAD.
-Other multisig/TEL/business routes retain their separate builders. Inbound
+Local KEL publication reuses this proposal and preparation contract, including the
+resolved recipient. Derive labels and inception gid at the grouping owner; do not
+accept a second CLI label or group identity. Approval re-publication remains a
+private raw-wire boundary pending its own inbound contract cut. Other
+multisig/TEL/business routes retain their separate builders. Inbound
 membership decodes unknown attributes into join, rotate or participate requests
 before consulting local habitats. Preserve optional-list filtering, rotation's
 known-group shortcut and KERIpy's family-wide membership rule; handler registration

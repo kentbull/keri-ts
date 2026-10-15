@@ -49,6 +49,8 @@ import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventin
 import { Reger } from "../../../src/db/reger.ts";
 import framing714 from "../../fixtures/multisig-framing-714.json" with { type: "json" };
 
+// @ts-expect-error KEL publication cannot accept a reply proposal.
+void ({ route: "/multisig/rpy", attrs: { gid: "group" } } satisfies Parameters<typeof publishProposal>[3]);
 // @ts-expect-error Inception derives gid from its child instead of accepting a second identity.
 void ({ route: "/multisig/icp", attrs: { gid: "group", smids: [], rmids: [] } } satisfies MultisigEventProposal);
 // @ts-expect-error Rotation requires its rotation members as well as signing members.
@@ -126,6 +128,10 @@ Deno.test("multisig publication records its actual local proposal before deliver
         runtime.poster.sendPreparedExchange = function*(sender, args) {
           assertEquals(sender, alice);
           assertEquals(args.recipient, bob.pre);
+          assertEquals(args.serder.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, i: bob.pre });
+          const embeds = args.serder.ked!.e;
+          assertExists(embeds);
+          assertEquals(Object.keys(embeds), ["icp", "d"]);
           assertEquals(left.db.exns.get([args.serder.said!])?.raw, args.serder.raw);
           assertEquals(runtime.reactor.exchanger.complete(args.serder.said!), true);
           const embedded = (args.serder.ked!.e as { d: string }).d;
@@ -133,10 +139,9 @@ Deno.test("multisig publication records its actual local proposal before deliver
           delivered = args.serder;
           return { serder: args.serder, deliveries: ["test-transmission"], queued: [] };
         };
-        const deliveries = yield* publishProposal(runtime, alice, mids, "/multisig/icp", "icp", {
-          gid: local.hab.pre,
-          smids: mids,
-          rmids: mids,
+        const deliveries = yield* publishProposal(runtime, alice, mids, {
+          route: "/multisig/icp",
+          attrs: { smids: mids, rmids: mids },
         }, messagize(local.serder, { sigers: local.sigers, gvrsn: Vrsn_1_0 }));
         assertEquals(deliveries, ["test-transmission"]);
         assertExists(delivered);
