@@ -1263,7 +1263,7 @@ export class Hab {
           kind: "wire",
         };
       case "query": {
-        const query = cue.query ?? cue.q ?? {};
+        const query = cue.q;
         if (cue.pre && cue.src) {
           return {
             cue,

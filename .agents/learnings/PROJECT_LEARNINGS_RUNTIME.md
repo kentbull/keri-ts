@@ -11,7 +11,10 @@ config and accepted endpoints are absent.
 
 Kever decides, Kevery routes KEL/KEL-derived replies, Revery owns BADA/reply
 escrows, Oobiery owns introductions. Runtime and local Habery.kevery have distinct
-cue decks. Incomplete query cues require QueryCoordinator to resolve a local
+cue decks. Query cues and pending requests use one required KERIpy-shaped `q`
+body; do not restore a `query` alias, default-recovery or two copy wrappers.
+TEL recovery cues require registry/credential fields, with issuer only when needed.
+Incomplete query cues require QueryCoordinator to resolve a local
 habitat and honest remote attester before producing wire. Hab.processCuesIter
 remains the cue-semantics seam.
 

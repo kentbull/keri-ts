@@ -118,12 +118,21 @@ teach the wrong mental model. Habitat cue interpretation should not guess:
 
 ## Incomplete Versus Complete `query` Cues
 
-`keri-ts` intentionally keeps two shapes under one `QueryCue` contract.
+`keri-ts` intentionally keeps two states under one `QueryCue` contract. Both use
+one required `q` body, as KERIpy does; there is no `query` alias or precedence rule.
+Continuation-owned pending requests use the same field. Copy the top level at the
+existing ownership boundaries before normalization or signing; preserve nested
+immutable borrows and joined retry/cancellation lifetimes.
+
+TEL recovery notifications carry concrete `q.ri` and `q.i` fields, with `q.issr`
+when the registry itself is unknown. This does not add a transport consumer for
+TEL/schema notifications. Route-specific query variants and the remaining
+coordinator/runtime dependency are still part of the ADR-0013 migration.
 
 Incomplete cue:
 
 - usually produced by `Revery` or `Kevery`
-- may contain only `pre`, `route`, `q/query`, or `wits`
+- carries its body in `q`; `pre`, `route`, and `wits` may still be unresolved
 - does not yet know the honest `src`
 - does not yet know whether runtime can honestly choose a local habitat
 

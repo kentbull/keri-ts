@@ -39,7 +39,7 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       assertEquals(runtime.cues.empty, true);
       assertEquals(runtime.resources.used.bytes > 0, true);
       yield* runtime.reactor.settle(undefined, {}, function*() {
-        runtime.cues.push({ kin: "query", pre: "unresolved", query: {} });
+        runtime.cues.push({ kin: "query", pre: "unresolved", q: {} });
       });
       assertEquals(runtime.cues.length, 1, "another guarded turn progresses during network wait");
       failure = new ResourceAdmissionError("foreign fetch busy", "busy");

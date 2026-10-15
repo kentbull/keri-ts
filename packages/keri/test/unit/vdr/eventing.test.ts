@@ -795,7 +795,7 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
           pre: issuer.pre,
           src: issuer.pre,
           route: "logs",
-          query: { i: issuer.pre },
+          q: { i: issuer.pre },
         }]);
         pendingCues.clear();
         pendingCues.capacity = 0;
@@ -1206,7 +1206,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
         pre: issuer.pre,
         src: issuer.pre,
         route: "tels",
-        query: { ri: vcp.pre, i: "" },
+        q: { ri: vcp.pre, i: "" },
       });
       cues.capacity = 0;
       const duplicateBusy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
@@ -1248,7 +1248,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
         pre: issuer.pre,
         src: issuer.pre,
         route: "tels",
-        query: { ri: vcp.pre, i: credential.said },
+        q: { ri: vcp.pre, i: credential.said },
       });
       assertExists(reger.txnsb.serderdb.get([notice.said!]));
       assertEquals(hby.db.rpys.get([notice.said!]), null, "Pending proof belongs only to Broker");

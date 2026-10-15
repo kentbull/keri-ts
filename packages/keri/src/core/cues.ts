@@ -36,7 +36,7 @@ export interface WitnessCue extends CueBase {
  *   `Hab.processCuesIter()`
  *
  * Field rules:
- * - `query` and legacy `q` carry the raw KERI `qry.q` body
+ * - `q` is the sole query body, matching KERIpy cue records
  * - `wits` overrides endpoint-role lookup and tells runtime to query one of
  *   those watcher/witness identifiers directly
  */
@@ -45,8 +45,7 @@ export interface QueryCue extends CueBase {
   pre?: string;
   src?: string;
   route?: string;
-  query?: Record<string, unknown>;
-  q?: Record<string, unknown>;
+  q: Record<string, unknown>;
   dest?: string;
   wits?: string[];
 }
@@ -110,7 +109,8 @@ export interface TransactionStateSavedCue extends CueBase {
 /** Cue requesting TEL replay or transaction-state lookup work. */
 export interface TelQueryCue extends CueBase {
   kin: "telquery";
-  q: Record<string, unknown>;
+  /** Registry/credential recovery target; issuer is supplied when the registry itself is unknown. */
+  q: { ri: string; i: string; issr?: string };
 }
 
 /** Cue emitted when a TEL revoke event is accepted. */

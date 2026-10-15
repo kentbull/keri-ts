@@ -112,7 +112,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               pre: remoteController.pre,
               src: remoteController.pre,
               route: "logs",
-              query: { s: "0", fn: "0" },
+              q: { s: "0", fn: "0" },
             },
             messages: [query],
           });
@@ -129,7 +129,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             pre: remoteController.pre,
             src: remoteController.pre,
             route: "logs",
-            query: { s: "0", fn: "0" },
+            q: { s: "0", fn: "0" },
           };
           assertThrows(() => sink.admitQuery!(cue, () => Promise.resolve(null) as never), TypeError);
           assertEquals(runtime.resources.used.bytes, 0, "async preparation cannot escape admitted scope");
@@ -183,7 +183,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               pre: remoteController.pre,
               src: remoteController.pre,
               route: "logs",
-              query: {},
+              q: {},
             });
             const pending = runtime.querying.pending.peekHead();
             yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
@@ -365,7 +365,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
               pre: remoteController.pre,
               src: remoteWitness.pre,
               route: "logs",
-              query: {
+              q: {
                 s: "0",
                 fn: "0",
                 a: { i: sender.pre, s: "0", d: sender.kever!.said! },
@@ -391,7 +391,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             runtime.querying.enqueue({
               pre: remoteController.pre,
               route: "logs",
-              query: { s: "1", fn: "0" },
+              q: { s: "1", fn: "0" },
               hab: sender,
               wits: [remoteWitness.pre],
             });
@@ -561,7 +561,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
               pre: remoteController.pre,
               src: remoteController.pre,
               route: "logs",
-              query: { s: "0", fn: "0" },
+              q: { s: "0", fn: "0" },
             },
             messages: [query],
           });
@@ -617,7 +617,7 @@ Deno.test("query delivery settles a streamed reply after releasing the guarded c
       const sink = queryTransportSink(runtime, hby, sender);
       const emission = {
         kind: "wire" as const,
-        cue: { kin: "query" as const, pre: peer.pre, src: peer.pre, route: "logs", query: {} },
+        cue: { kin: "query" as const, pre: peer.pre, src: peer.pre, route: "logs", q: {} },
         messages: [sender.query(peer.pre, peer.pre, {}, "logs")],
       };
       // The real guard owns cue handling. Reply parsing here would recursively wait for this same guard.

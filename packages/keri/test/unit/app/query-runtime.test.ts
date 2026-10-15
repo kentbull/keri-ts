@@ -400,7 +400,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
           pre: delegator.pre,
           src: witness.pre,
           route: "logs",
-          query: { fn: "0", s: "0", a: seal },
+          q: { fn: "0", s: "0", a: seal },
           wits: [witness.pre],
         },
         messages: [query],

@@ -745,7 +745,7 @@ export class Anchorer {
     this.querying.enqueue({
       pre: delpre,
       route: "logs",
-      query: { fn: "0", s: "0", a: eventAnchor(serder) },
+      q: { fn: "0", s: "0", a: eventAnchor(serder) },
       hab: communicationHab,
       wits: [witness],
     });
@@ -785,7 +785,7 @@ export class Anchorer {
       this.querying.enqueue({
         pre: delpre,
         route: "logs",
-        query: { fn: "0", s: "0", a: eventAnchor(serder) },
+        q: { fn: "0", s: "0", a: eventAnchor(serder) },
         hab: communicationHab,
         wits: [witness],
       });
@@ -804,7 +804,7 @@ export class Anchorer {
     this.querying.enqueue({
       pre: delpre,
       route: "logs",
-      query: { fn: "0", s: "0", a: eventAnchor(serder) },
+      q: { fn: "0", s: "0", a: eventAnchor(serder) },
       hab: communicationHab,
       wits: [witness],
     });
