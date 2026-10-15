@@ -230,12 +230,6 @@ function encodeHexOrdinal(num: number): string {
   return Math.max(0, num).toString(16);
 }
 
-/** Pick the deterministic first sorted candidate from a role endpoint set. */
-function firstSorted(values: Iterable<string>): string | null {
-  const sorted = [...values].sort();
-  return sorted[0] ?? null;
-}
-
 /**
  * KERIpy-style noticer that starts with a `ksn` query and upgrades to a
  * `logs` query when the remote key state is ahead of local accepted state.
@@ -882,7 +876,7 @@ export class QueryCoordinator implements CueSink {
     }
 
     const src = request.src
-      ?? this.resolveAttester(hab, request.pre, request.wits);
+      ?? this.attestersFor(request.pre, { hab, wits: request.wits })[0];
     if (!src) {
       return null;
     }
@@ -902,30 +896,27 @@ export class QueryCoordinator implements CueSink {
     };
   }
 
-  private resolveAttester(
-    hab: Hab,
+  /** Return eligible attester IDs in role priority; explicit witness overrides retain caller order. */
+  attestersFor(
     pre: string,
-    wits?: string[],
-  ): string | null {
+    { hab, wits }: { hab?: Hab; wits?: string[] } = {},
+  ): string[] {
+    const signer = this.configuredHab(hab);
+    if (!signer) return [];
     if (wits && wits.length > 0) {
       // Explicit watcher/witness overrides outrank endpoint-role lookup.
-      return wits[0] ?? null;
+      return [...wits];
     }
 
-    const ends = hab.endsFor(pre);
+    const ends = signer.endsFor(pre);
     for (const role of QUERY_ROLE_PRIORITY) {
       const roleEnds = ends[role];
       if (!roleEnds) {
         continue;
       }
-      // Pick the first sorted endpoint deterministically instead of randomly.
-      // This is a deliberate `keri-ts` divergence from KERIpy's more variable
-      // witness/controller selection because deterministic choice makes
-      // interop tests and maintainer reasoning much easier.
-      const eid = firstSorted(Object.keys(roleEnds));
-      if (eid) {
-        return eid;
-      }
+      // Keep stable candidate order; ordinary requests still select the first ID.
+      const eids = Object.keys(roleEnds).sort();
+      if (eids.length > 0) return eids;
     }
 
     if (
@@ -934,9 +925,9 @@ export class QueryCoordinator implements CueSink {
     ) {
       // Mailbox-only topologies still query the controller AID itself; the
       // mailbox role affects delivery transport, not the attester identity.
-      return pre;
+      return [pre];
     }
 
-    return null;
+    return [];
   }
 }
