@@ -48,6 +48,9 @@ approval precedes ordinary KEL/reply processing. Local-first approval borrows pa
 frames; remote-first approval reopens evidence. CLI proposal/join remains v1.
 Preserve first-notice behavior or retries can republish approval unnecessarily.
 
+Normalization and Exchanger share supportsNestedExchange for the structural v2
+route gate. Handler opt-in, route-local child validation and independent proofs
+remain required; IPEX handler support derives from the same nestedIpexRoute rule.
 V2 IPEX construction and verification share IPEX_V2_PREDECESSORS in protocol-exchanging;
 v1 retains its distinct prior-route rule (grant follows agree, not apply).
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer

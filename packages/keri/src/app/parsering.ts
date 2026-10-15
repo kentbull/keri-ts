@@ -41,7 +41,7 @@ import {
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
 import type { KeverDecision, QueryProcessDecision } from "../core/kever-decisions.ts";
 import { type KramReceipt, kramReceipt, type KramRefusal } from "../core/kraming.ts";
-import { nestedIpexRoute, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
+import { supportsNestedExchange } from "../core/protocol-exchanging.ts";
 import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
 import type { ExchangeDecision } from "./exchanging.ts";
 
@@ -572,8 +572,7 @@ export function envelopeFromFrame(
   // Only completed consumers may retain parent-owned children through normalization.
   const route = String(message.body.ked?.r ?? "");
   if (
-    message.body.ilk !== "exn" || message.body.pvrsn.major < 2
-    || (route !== "/fwd" && !nestedMultisigIlks(route) && !nestedIpexRoute(route))
+    message.body.ilk !== "exn" || !supportsNestedExchange(route, message.body.pvrsn.major)
   ) {
     requireFlatFrame(message, "KERI runtime normalization");
   }

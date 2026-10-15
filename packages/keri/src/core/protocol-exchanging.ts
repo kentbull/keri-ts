@@ -273,3 +273,8 @@ export function nestedMultisigIlks(route: string): readonly string[] | null {
 export function nestedIpexRoute(route: string): boolean {
   return route === "/ipex/offer" || route === "/ipex/grant";
 }
+
+/** Structural v2 nested-route support; handler child validation and independent proofs remain separate obligations. */
+export function supportsNestedExchange(route: string, protocolMajor: number): boolean {
+  return protocolMajor >= 2 && (route === "/fwd" || nestedMultisigIlks(route) !== null || nestedIpexRoute(route));
+}
