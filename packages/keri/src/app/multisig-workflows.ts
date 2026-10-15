@@ -20,6 +20,7 @@ import {
 } from "cesr-ts";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
+import { exchange } from "../core/protocol-exchanging.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { RegistryRecord } from "../core/records.ts";
 import { Reger } from "../db/reger.ts";
@@ -138,11 +139,17 @@ export function* publishProposalEmbeds(
     if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
       continue;
     }
-    const result = yield* runtime.poster.sendExchange(member, {
-      recipient,
-      route,
-      payload,
-      embeds,
+    const destination = runtime.poster.resolveRecipient(recipient);
+    const [serder, attachments] = exchange(route, payload, {
+      sender: member.pre,
+      recipient: destination,
+      embeds: Object.keys(embeds).length > 0 ? embeds : undefined,
+    });
+    const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
+    const result = yield* runtime.poster.sendPreparedExchange(member, {
+      recipient: destination,
+      serder,
+      message,
       topic: MULTISIG_TOPIC,
     });
     deliveries.push(...result.deliveries, ...result.queued);

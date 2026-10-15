@@ -92,6 +92,10 @@ KEL approval decodes its named child, group and member lists before local member
 selection, joining or signing. Interaction does not carry rotation members.
 Existing raw attribute re-publication remains at the wire boundary pending its
 own producer-contract cut; it must not become an input to approval policy again.
+Multisig publication prepares and endorses its recipient-specific EXN at the
+workflow owner. Poster borrows that exact body and wire for delivery and durable
+retry; its optional TCP dependency is the reply receiver contract. Preparing
+those bytes does not register local approval or establish child replay.
 
 Pure multisig/IPEX body builders take parsed Serders synchronously. Byte convenience
 operations own cancellable parseBytes, finite nested-wire collection and finally
