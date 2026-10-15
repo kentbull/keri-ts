@@ -2,7 +2,9 @@
 
 This is the normative lifecycle of `parser/progressive.ts` and its finite
 `parser/complete.ts` collector. The [progressive contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md)
-describes payload ownership and resource policy. The atomic engine has been removed.
+describes payload ownership and codec correctness. ADR-0013 requires removal of
+all parser budgeting; remaining quota descriptions below identify transitional
+implementation, never preservation requirements. The atomic engine has been removed.
 
 ## Lifecycle and ownership
 

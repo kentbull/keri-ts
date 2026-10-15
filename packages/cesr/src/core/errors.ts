@@ -51,13 +51,6 @@ export class ResourceAdmissionError extends ResourceLimitError {
     super(message);
   }
 }
-/** Runtime admission has no qualified owner for this CBOR format; this is not malformed proof. */
-export class CborAdmissionError extends ResourceLimitError {
-  readonly reason = "unqualified-format";
-  constructor(readonly tag: number) {
-    super(`CBOR tag ${tag} has no qualified runtime allocation owner`);
-  }
-}
 /** Qualified input could not be deserialized into a valid CESR payload. */
 export class DeserializeError extends ParserError {}
 /** A CESR payload could not be serialized into a valid protocol representation. */

@@ -1,6 +1,6 @@
-import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
+import { encode as encodeMsgpack } from "@msgpack/msgpack";
 import { b, t } from "../core/bytes.ts";
-import { decodeAdmittedKeriCbor, decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
+import { decodeKeriCborBody, encodeKeriCbor } from "../core/cbor.ts";
 import { codecSyntaxFailure } from "../core/codec-errors.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import type { CesrBody, CesrFrame, Smellage } from "../core/types.ts";
@@ -38,9 +38,8 @@ import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type Kind, Kinds, Protocols, Vrsn_1_0, Vrsn_2_0 } from "../tables/versions.ts";
 import type { Protocol } from "../tables/versions.ts";
-import type { BodyDecodeContext } from "./codec-context.ts";
 import { decodeJson } from "./json.ts";
-import { decodeAdmittedMsgpack } from "./msgpack.ts";
+import { decodeMsgpackBody } from "./msgpack.ts";
 import { dumpCesrNativeSad, parseCesrNativeKed, reapCesrNativeBody } from "./native.ts";
 import { smell, versify } from "./smell.ts";
 
@@ -872,7 +871,7 @@ function getFieldDom(
 }
 
 /** Decode raw serialized bytes into a protocol SAD plus projected ilk/said fields. */
-function parseRawToKed(raw: Uint8Array, smellage: Smellage, context?: BodyDecodeContext): {
+function parseRawToKed(raw: Uint8Array, smellage: Smellage, onDecodeFailure?: (error: unknown) => void): {
   ked: SadMap | null;
   ilk: string | null;
   said: string | null;
@@ -884,19 +883,15 @@ function parseRawToKed(raw: Uint8Array, smellage: Smellage, context?: BodyDecode
 
   try {
     if (kind === "JSON") {
-      ked = decodeJson(raw, context?.onDecodeFailure) as SadMap;
+      ked = decodeJson(raw, onDecodeFailure) as SadMap;
     } else if (kind === "MGPK") {
-      ked = context?.msgpackBoundaryFailure !== undefined
-        ? decodeAdmittedMsgpack(raw, context.msgpackBoundaryFailure, context.onDecodeFailure)
-        : normalizeDecodedMap(decodeMsgpack(raw), kind);
+      ked = decodeMsgpackBody(raw, onDecodeFailure);
     } else if (kind === "CBOR") {
-      ked = context?.cborBoundaryFailure !== undefined
-        ? normalizeDecodedMap(
-          decodeAdmittedKeriCbor(raw, context.cborBoundaryFailure, context.onDecodeFailure),
-          kind,
-          (message) => codecSyntaxFailure("CBOR", message),
-        )
-        : normalizeDecodedMap(decodeKeriCbor(raw), kind);
+      ked = normalizeDecodedMap(
+        decodeKeriCborBody(raw, onDecodeFailure),
+        kind,
+        (message) => codecSyntaxFailure("CBOR", message),
+      );
     } else if (kind === "CESR") {
       // Native inhale is delegated to the shared helper layer because CESR
       // bodies are not self-describing through `smell()` the same way
@@ -908,8 +903,7 @@ function parseRawToKed(raw: Uint8Array, smellage: Smellage, context?: BodyDecode
     }
   } catch (error) {
     if (
-      kind === "JSON" || (kind === "MGPK" && context?.msgpackBoundaryFailure !== undefined)
-      || (kind === "CBOR" && context?.cborBoundaryFailure !== undefined)
+      kind === "JSON" || kind === "MGPK" || kind === "CBOR"
     ) throw error;
     if (error instanceof DeserializeError) {
       throw new DeserializeError(
@@ -2050,14 +2044,14 @@ export class SerderACDC extends Serder {
 
 /**
  * Parse one raw Serder body and hydrate protocol-specific Serder subclasses.
- * Context records decoder provenance only; Serdery admits progressive bodies before this seam.
+ * The optional observer preserves unexpected decoder-failure provenance for stream owners.
  */
 export function parseSerder(
   raw: Uint8Array,
   smellage: Smellage,
-  context?: BodyDecodeContext,
+  onDecodeFailure?: (error: unknown) => void,
 ): Serder {
-  const { ked, ilk, said } = parseRawToKed(raw, smellage, context);
+  const { ked, ilk, said } = parseRawToKed(raw, smellage, onDecodeFailure);
   const init: SerderHydratedInit = {
     raw,
     smellage,

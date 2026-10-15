@@ -182,11 +182,10 @@ function decodeCborScope(
 /**
  * Preserve the shared codec's exact shapes; only scanned malformed boundaries are intrinsic.
  * Complete-input/tag/infrastructure failures propagate; incomplete/RangeError alone is not provenance.
- * Special tag expansion, external table/callback mutation and native residency remain unqualified.
+ * Boundary inspection runs only after native failure and never restricts allocation or supported tags.
  */
-export function decodeAdmittedKeriCbor(
+export function decodeKeriCborBody(
   raw: Uint8Array,
-  boundaryFailure: boolean,
   onFailure?: (error: unknown) => void,
 ): unknown {
   const decode = keriCborDecoder.decode;
@@ -199,11 +198,65 @@ export function decodeAdmittedKeriCbor(
   } catch (error) {
     if (resetFailed) throw error;
     if (
-      !boundaryFailure || !(error instanceof Error)
+      !cborBoundaryFailure(raw) || !(error instanceof Error)
     ) {
       onFailure?.(error);
       throw error;
     }
     throw codecSyntaxFailure("CBOR", `Failed to decode CBOR Serder: ${String(error)}`);
   }
+}
+
+/** Identify known malformed token extents without restricting tags, values or allocation. */
+function cborBoundaryFailure(raw: Uint8Array): boolean {
+  let offset = 0, pending = 1;
+  let indefinite = false, tagged = false, boundaryFailure = false;
+  while (offset < raw.length) {
+    const token = raw[offset++], major = token >> 5, additional = token & 31;
+    let size = additional, width = 0, payload = 0;
+    if (additional >= 28 && additional <= 30) {
+      boundaryFailure = true;
+      break;
+    }
+    if (additional === 31) {
+      if (major === 4 || major === 5) {
+        indefinite = true;
+      } else if (major !== 7) {
+        boundaryFailure = true; // The pinned codec rejects indefinite strings/other majors.
+        break;
+      }
+      size = 0;
+    } else {
+      if (additional >= 24) width = 2 ** (additional - 24);
+      if (width > raw.length - offset) {
+        boundaryFailure = true;
+        break;
+      }
+      size = width ? 0 : size;
+      for (let index = 0; index < width; index++) {
+        // Integer/float payloads are opaque; only length/tag declarations need numeric extent.
+        if (major >= 2 && major <= 6) size = size * 256 + raw[offset];
+        offset++;
+      }
+      if (!Number.isSafeInteger(size)) return true;
+      if (major === 4 || major === 5) {
+        pending += size * (major === 4 ? 1 : 2);
+      } else if (major === 2) {
+        payload = size;
+      } else if (major === 3) {
+        payload = size;
+      } else if (major === 6) {
+        tagged = true;
+        pending++;
+      }
+    }
+    pending--;
+    if (payload > raw.length - offset) {
+      boundaryFailure = true;
+      break;
+    }
+    offset += payload;
+  }
+  // Tag handlers have distinct failure causes; token extents alone cannot classify their errors.
+  return !tagged && (boundaryFailure || (!indefinite && pending !== 0));
 }
