@@ -1,4 +1,4 @@
-/** Public registry intake preserves accepted prefixes and historical storage bytes across reopen. */
+/** Public registry intake preserves accepted prefixes and current storage bytes across reopen. */
 import {
   b,
   BoundState,
@@ -20,7 +20,6 @@ import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbi
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
-import { LMDBer } from "../../../src/db/core/lmdber.ts";
 import fixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
 
 Deno.test("named v2 registries reopen by stored issuer and retain explicit store ownership", async () => {
@@ -188,72 +187,41 @@ Deno.test("public registry intake preserves accepted prefixes across missing anc
   });
 });
 
-Deno.test("RegBaser and public registry facade reopen old three-table stores readonly without migration", async () => {
-  const headDirPath = Deno.makeTempDirSync({ prefix: "old-registry-" });
-  const options = { name: "legacy", headDirPath, temp: false };
-  const databasePath = `${headDirPath}/keri/acdc/reg/legacy`;
+Deno.test("current registry store reopens readonly without changing evidence", async () => {
+  const headDirPath = Deno.makeTempDirSync({ prefix: "registry-readonly-" });
+  const options = { name: "current", headDirPath, temp: false };
   const rip = new SerderACDC({ raw: b(fixture.bodies.rip) });
   const issued = new SerderACDC({ raw: b(fixture.bodies.issued) });
-  // Seed only the #168 physical layout; no new RegBaser bindings create these rows.
-  const old = new LMDBer(options, { tailDirPath: "keri/acdc/reg" });
-  const baser = new RegBaser({ ...options, readonly: true });
   try {
     await run(function*() {
+      const writer = yield* openRegistry(options);
+      const path = writer.path!;
       try {
-        yield* old.reopen();
-        assertEquals(old.path, databasePath);
-        const evts = old.openDB("evts.");
-        const tels = old.openDB("tels.");
-        const heads = old.openDB("heds.");
-        old.setVal(evts, b(rip.said!), rip.raw);
-        old.setVal(evts, b(issued.said!), issued.raw);
-        old.setVal(tels, b(`${rip.said}.00000000000000000000000000000000`), b(rip.said!));
-        old.setVal(tels, b(`${rip.said}.00000000000000000000000000000001`), b(issued.said!));
-        old.setVal(heads, b(rip.said!), b(issued.said!));
+        const store = new RegistryStore(writer);
+        store.accept(rip.said!, 0, rip);
+        store.accept(rip.said!, 1, issued);
+        store.putAnchor(issued.said!, NumberPrimitive.fromNum(1n), new Diger({ qb64: issued.said! }));
       } finally {
-        yield* old.close();
+        yield* writer.close();
       }
-      const before = Deno.readFileSync(`${databasePath}/data.mdb`);
-      try {
-        assertEquals(baser.opened, false);
-        yield* baser.reopen();
-        assertEquals(baser.path, databasePath);
-        assertEquals(baser.evts.get(issued.said!)!.raw, issued.raw);
-        assertEquals(baser.tels.getOn(rip.said!, 0)!.qb64, rip.said);
-        assertEquals(baser.tels.getOn(rip.said!, 1)!.qb64, issued.said);
-        assertEquals(baser.heads.get(rip.said!)!.qb64, issued.said);
-        const facade = new RegistryStore(baser);
-        assertEquals([baser.ancs, baser.maes, baser.ooes, facade.records], [null, null, null, null]);
-        assertEquals(facade.anchor(issued.said!), null);
-        assertEquals(facade.seqEvent(rip.said!, 1)!.raw, issued.raw);
-        assertEquals(facade.cloneTel(rip.said!, 1), issued.raw);
-        facade.clearEscrows(rip.said!, 1, issued.said!);
-        assertThrows(() => facade.putRecord("old", { registryKey: rip.said! }), DatabaseOperationError);
-        assertThrows(
-          () => facade.putAnchor(issued.said!, NumberPrimitive.fromNum(1n), new Diger({ qb64: issued.said! })),
-          DatabaseOperationError,
-        );
-        const previous = baser.evts;
-        yield* baser.reopen();
-        assertEquals(baser.evts === previous, false, "reopen must replace closed table handles");
-        assertEquals(baser.evts.get(rip.said!)!.raw, rip.raw);
-      } finally {
-        yield* baser.close();
-      }
+      const before = Deno.readFileSync(`${path}/data.mdb`);
       const reader = yield* openRegistry({ ...options, readonly: true });
       try {
-        assertEquals(reader instanceof RegBaser, true);
-        const facade = new RegistryStore(reader);
-        assertEquals(facade.seqEvent(rip.said!, 0)!.raw, rip.raw);
-        assertEquals(facade.seqEvent(rip.said!, 1)!.raw, issued.raw);
+        const store = new RegistryStore(reader);
+        assertEquals(store.seqEvent(rip.said!, 0)!.raw, rip.raw);
+        assertEquals(store.cloneTel(rip.said!, 1), issued.raw);
+        assertEquals(store.anchor(issued.said!)![0].num, 1n);
+        assertEquals([...reader.maes.getTopItemIter()], []);
+        assertEquals([...reader.ooes.getTopItemIter()], []);
+        assertThrows(() => store.escrowMissingAnchor(rip.said!, 2, issued.said!), Error);
+        const previous = reader.evts;
+        yield* reader.reopen();
+        assertEquals(reader.evts === previous, false, "reopen replaces closed table handles");
+        assertEquals(store.seqEvent(rip.said!, 1)!.raw, issued.raw);
       } finally {
         yield* reader.close();
       }
-      assertEquals(
-        Deno.readFileSync(`${databasePath}/data.mdb`),
-        before,
-        "readonly opening must preserve stored bytes",
-      );
+      assertEquals(Deno.readFileSync(`${path}/data.mdb`), before, "readonly access preserves stored bytes");
     });
   } finally {
     Deno.removeSync(headDirPath, { recursive: true });
@@ -270,7 +238,7 @@ Deno.test("registry storage facade preserves aliases, earliest anchors, accepted
     try {
       assertEquals(store.opened, true);
       assertEquals(store.records, null);
-      assertEquals(baser.hasTable("ancs."), false);
+      assertEquals(baser.hasTable("ancs."), true);
       for (const sn of [-1, Number.MAX_SAFE_INTEGER + 1, NaN]) {
         assertThrows(() => store.seqEvent(rip.said!, sn), RangeError, "safe integer");
         assertThrows(() => store.accept(rip.said!, sn, vacuous), RangeError, "safe integer");
@@ -278,8 +246,8 @@ Deno.test("registry storage facade preserves aliases, earliest anchors, accepted
         assertThrows(() => store.cloneTel(rip.said!, sn), RangeError, "safe integer");
         assertThrows(() => store.clearEscrows(rip.said!, sn, vacuous.said!), RangeError, "safe integer");
       }
-      assertEquals(store.event(vacuous.said!), null, "invalid ordinals publish no bodies or tables");
-      assertEquals(baser.hasTable("maes."), false);
+      assertEquals(store.event(vacuous.said!), null, "invalid ordinals publish no bodies");
+      assertEquals([...baser.maes.getTopItemIter()], []);
       store.putEvent(issued);
       assertEquals(store.event(issued.said!)!.raw, issued.raw);
       assertEquals(store.head(rip.said!), null, "a stored body is not an acceptance marker");

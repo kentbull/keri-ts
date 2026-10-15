@@ -126,7 +126,7 @@ multiple aliases share one instance. Inception staging and alias publication
 share a transaction, and in-memory maps change only after it commits.
 `createRegery` owns a default backend until transfer, joining cleanup if loading
 fails; injected backends stay caller-owned, including after `close`. Owned close
-is joined and repeat-safe. Opening neither migrates nor rewrites old layouts.
+is joined and repeat-safe. Opening binds the current registry layout.
 Local `blind` also applies the separately inspected 71438328 v2 schema profile
 before derivation/staging. Internal `acdc/scheming.validateSchema` returns valid,
 missing SAID, or invalid content; caller-facing missing/failed errors remain
@@ -183,12 +183,13 @@ boundary, including events staged before inception.
 Each accepted event commits independently, preserving a prefix if a later event
 fails. Corrupt stored inception/accepted state and datastore failures propagate.
 
-Existing #168 stores retain their paths, bodies, 32-digit ordinal keys and head
-markers. Readonly opening binds the existing three tables without rewriting or
-migrating rows. Body presence does not establish acceptance; `tels` contains the
-accepted ordinals and `heads` is their current head cache. Missing anchor/escrow
-and `regs.` alias tables remain null on old layouts; reads create no tables.
-Explicit storage writes initialize their facilities. Alias records contain only
+Current stores bind event, ordinal, head, anchor and both escrow tables at open.
+There are no absent-table fallbacks or lazy initialization for old layouts.
+Readonly reopen uses those existing tables without rewriting evidence. Body
+presence does not establish acceptance; `tels` contains accepted ordinals and
+`heads` caches their current head. Local `regs.` aliases remain optional because
+public observer stores have no local aliases.
+Alias records contain only
 `registryKey`, distinct from legacy VDR records. Earliest-anchor storage compares
 full bigint NumberPrimitive values, preserving equal/later reseals unchanged;
 its caller authenticates the Number/Diger couple. Storage `accept` publishes
@@ -197,12 +198,10 @@ with the processing engine. `openRegistry` transfers one LMDB owner after joined
 acquisition; RegistryStore wraps that owner, and explicit close delegates to it.
 The facade rejects negative/unsafe numeric ordinals before any storage mutation;
 engines retain incoming ordinals as bigint until checked conversion. `cloneTel`
-eagerly collects accepted bodies and provides no shared-budget guarantee; IPEX
-must reserve credit before collecting. The web backend remains unsupported.
+eagerly collects accepted bodies without application accounting. The web backend remains unsupported.
 The custom whole-chain import API is removed. RegistryObserver validates and
 commits each event through the normal engine; missing anchors/order remain in
-escrow for explicit retry. Previously accepted #168 digest-only evidence remains
-readable without migration, but readability does not authorize fresh intake.
+escrow for explicit retry. Old keri-ts layout compatibility is not supported.
 The historical [import design](../../reference/credentials/VERIFIED_IMPORT_SNAPSHOT.md)
 remains deferred. Automatic parser intake and global freshness are separate work.
 

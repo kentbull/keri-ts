@@ -124,8 +124,10 @@ credit, while durable enqueue/duplicates release it before guard-free webhooks.
 ## Remaining work
 
 The [registry foundation](../../docs/plans/credentials/REGISTRY_PLAN.md) owns
-full v2 services and the recorded upstream intake gap. Preserve legacy VDR and #168 stores;
-storage readability, observer vetting and issuer processing are separate gates.
+full v2 services and the recorded upstream intake gap. Preserve v1 VDR protocol
+behavior. Current registry tables open together; old-layout fallback and migration
+are not supported. Local aliases remain optional for public observer stores.
+Storage readability, observer vetting and issuer processing are separate gates.
 
 Standalone saidive Mapper verifies top-level claims across all input formats.
 Compactor disclosure construction does not flat-rehash compact claims in expanded

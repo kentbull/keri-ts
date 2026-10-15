@@ -6,8 +6,9 @@ keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
 
 Owner: roadmap **3e registry**, alongside [IPEX][ipex]. R1–R12 are implemented:
 separate v2 storage, event engine, issuer services, public observer intake,
-bounded IPEX chain assembly, presentation cutoffs and explicit runtime ownership.
-Keep the delivered v1 VDR stack and existing #168 stores operational. The
+IPEX accepted-chain assembly, presentation cutoffs and explicit runtime ownership.
+Keep the delivered v1 VDR protocol stack operational; old keri-ts data compatibility
+is not required. The
 [current contract][contract] owns behavior; this plan owns remaining evidence.
 
 Pinned reference: `7143832813cac6a394ab1faf9be83bb3372be87c`.
@@ -70,8 +71,8 @@ host-resolution path and is not an indefinitely blocking port requirement.
    earliest anchors, dependency retry, close/reopen and durable replay.
 2. Qualify current v1/v2 protocol stores without path/table/owner collisions.
    Preserve current ordinal precision, insertion/deduplication order, accepted
-   markers and aliases. Remove old #168-layout compatibility tests and lazy-table
-   machinery added solely for that layout; no migration or old-data reader.
+   markers and aliases. Old-layout compatibility tests and lazy-table machinery
+   are removed; add no migration or old-data reader.
 3. Preserve `LMDB_DATA_V1=true`; LMDB format, body protocol and attachment genus
    are independent. Use disposable stores and one live V1 owner per path/process.
    Compare Python→TS and TS→Python where the reference actually supports the path.
