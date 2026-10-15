@@ -231,7 +231,7 @@ export class Kever {
   /**
    * Materialize one live `Kever` from an already accepted transition.
    *
-   * This constructor bypasses durable-event reload because `applyDecision()`
+   * This constructor bypasses durable-event reload because Kevery
    * may need a working `Kever` instance before the event state has been persisted.
    */
   static fromTransition(

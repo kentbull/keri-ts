@@ -521,20 +521,33 @@ Deno.test("Kevery admits prospective clone/state cues before accepted writes and
         assertEquals(cues.length, 0);
       };
       const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      assertEquals(assertThrows(() => kvy.applyDecision(decision), ResourceAdmissionError).reason, "busy");
+      assertEquals(assertThrows(() => kvy.processEvent(envelope), ResourceAdmissionError).reason, "busy");
       unchanged();
       occupied.reservation.release();
       const limited = new Kevery(hby.db, { cues: new CueDeck(new ResourcePolicy({ bytes: 1 })) });
-      assertEquals(assertThrows(() => limited.applyDecision(decision), ResourceAdmissionError).reason, "limit");
+      assertEquals(assertThrows(() => limited.processEvent(envelope), ResourceAdmissionError).reason, "limit");
       unchanged();
       cues.capacity = 2;
-      assertThrows(() => kvy.applyDecision(decision), ResourceLimitError);
+      assertThrows(() => kvy.processEvent(envelope), ResourceLimitError);
       unchanged();
       cues.capacity = 3;
       const slot = cues.prepare([{ kin: "proof", said: "occupied" }]);
-      assertThrows(() => kvy.applyDecision(decision), DeckFullError);
+      assertThrows(() => kvy.processEvent(envelope), DeckFullError);
       unchanged();
       slot.release();
+      const outerFailure = new Error("outer writer aborted");
+      assertEquals(
+        assertThrows(() =>
+          hby.db.env!.transactionSync(() => {
+            assertThrows(() => kvy.processEvent(envelope), Error, "must own the KEL transaction");
+            unchanged();
+            assertEquals(resources.used.bytes, 0, "nested refusal precedes cue admission");
+            throw outerFailure;
+          })
+        ),
+        outerFailure,
+      );
+      unchanged();
       const log = hby.db.prepareKelEventLog(decision.transition.log);
       withPatchedMethod(hby.db, "nextFelOrdinal", () => 2, () => {
         assertThrows(
@@ -604,20 +617,20 @@ Deno.test("Kevery admits prospective clone/state cues before accepted writes and
       const duplicate = expectKind(kvy.decideEvent({ ...envelope, sigers: [sigers[1]] }), "duplicate");
       assertEquals(duplicate.duplicate, "lateAttachments");
       const busy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      kvy.applyDecision(duplicate);
+      kvy.processEvent({ ...envelope, sigers: [sigers[1]] });
       busy.reservation.release();
       assertEquals(hby.db.sigs.get(key).map((s) => s.qb64).sort(), sigers.map((s) => s.qb64).sort());
       assertEquals(hby.db.getFel(hab.pre, 2), null);
       assertEquals(cues.length, 0);
       // A publication infrastructure fault releases preparation but is not durable rollback.
       const next = new SerderKERI({ sad: { t: "ixn", i: hab.pre, s: "2", p: serder.said, a: [] }, makify: true });
-      const nextDecision = kvy.decideEvent({ ...envelope, serder: next, sigers: hab.sign(next.raw, true), frcs: [] });
+      const nextEnvelope = { ...envelope, serder: next, sigers: hab.sign(next.raw, true), frcs: [] };
       const extend = Deck.prototype.extend;
       try {
         Deck.prototype.extend = () => {
           throw new Error("publication fault");
         };
-        assertThrows(() => kvy.applyDecision(nextDecision), Error, "publication fault");
+        assertThrows(() => kvy.processEvent(nextEnvelope), Error, "publication fault");
       } finally {
         Deck.prototype.extend = extend;
       }
@@ -639,21 +652,19 @@ Deno.test("Kevery reserves escrow query cues before persisting partial-witness m
       const resources = new ResourcePolicy();
       const cues = new CueDeck(resources, 1);
       const kvy = new Kevery(remote.db, { cues });
-      const decision = expectKind(
-        kvy.decideEvent({
-          serder,
-          sigers: hab.sign(serder.raw, true),
-          wigers: [],
-          frcs: [],
-          sscs: [],
-          ssts: [],
-          local: false,
-        }),
-        "escrow",
-      );
+      const envelope = {
+        serder,
+        sigers: hab.sign(serder.raw, true),
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: false,
+      };
+      const decision = expectKind(kvy.decideEvent(envelope), "escrow");
       assertEquals(decision.reason, "partialWigs");
       const occupied = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      assertEquals(assertThrows(() => kvy.applyDecision(decision), ResourceAdmissionError).reason, "busy");
+      assertEquals(assertThrows(() => kvy.processEvent(envelope), ResourceAdmissionError).reason, "busy");
       occupied.reservation.release();
       const key = dgKey(hab.pre, serder.said!);
       assertEquals(remote.db.evts.get(key), null);
@@ -663,7 +674,7 @@ Deno.test("Kevery reserves escrow query cues before persisting partial-witness m
       assertEquals(remote.db.esrs.get(key), null);
       assertEquals(remote.db.pwes.getOn(hab.pre, 0), []);
       assertEquals(remote.db.getKever(hab.pre), null);
-      kvy.applyDecision(decision);
+      kvy.processEvent(envelope);
       assertEquals(remote.db.pwes.getOn(hab.pre, 0), [serder.said]);
       assertEquals(remote.db.evts.get(key)?.said, serder.said);
       assertEquals(cues.toArray().map((cue) => cue.kin), ["query"]);
