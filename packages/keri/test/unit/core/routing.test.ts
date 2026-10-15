@@ -14,9 +14,175 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import { DeckFullError } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { Revery, unverifiedReplyDecision } from "../../../src/core/routing.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
+import { Roles } from "../../../src/core/roles.ts";
+import {
+  BasicReplyRouteHandler,
+  type ReplyPlan,
+  type ReplyProcessDecision,
+  type ReplyProofDecision,
+  Revery,
+  Router,
+  unverifiedReplyDecision,
+} from "../../../src/core/routing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
+import type { RegistryReplyDecision } from "../../../src/vdr/registry-tsn.ts";
 import { expectKind, routingTestApi, withPatchedMethod } from "../../private-access.ts";
+
+// @ts-expect-error An accepted proof plan requires verified material and its prior-reply policy.
+void ({ kind: "accept", escrows: [], cues: [] } satisfies ReplyPlan);
+
+// Compile-time checks: dependency outcomes require their receiver's family;
+// proof verification alone cannot claim a semantic dependency escrow.
+// @ts-expect-error A dependency outcome must name its escrow family.
+void ({ kind: "unverified", reason: "dependencyPending", message: "waiting" } satisfies RegistryReplyDecision);
+void ({
+  kind: "unverified",
+  reason: "dependencyPending",
+  // @ts-expect-error A registry receiver cannot return a credential escrow family.
+  family: "credential-mae",
+  message: "waiting",
+} satisfies RegistryReplyDecision);
+void ({
+  kind: "unverified",
+  // @ts-expect-error Proof verification cannot choose a semantic receiver's family.
+  reason: "dependencyPending",
+  family: "registry-mae",
+  message: "waiting",
+} satisfies ReplyProofDecision);
+
+for (const route of ["/end/role", "/loc/scheme"] as const) {
+  for (const transferable of [false, true]) {
+    Deno.test(`endpoint reply replacement is atomic: ${route}, transferable=${transferable}`, async () => {
+      await run(function*() {
+        const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true });
+        const resources = new ResourcePolicy();
+        const cues = new CueDeck(resources, 4);
+        try {
+          const hab = hby.makeHab("endpoint", undefined, { transferable, toad: 0 });
+          const rvy = new Revery(hby.db, { cues });
+          new BasicReplyRouteHandler(rvy).registerReplyRoutes();
+          const body = (replacement: boolean) =>
+            new SerderKERI({
+              sad: {
+                t: "rpy",
+                dt: replacement ? "2026-10-13T00:00:00.000002+00:00" : "2026-10-13T00:00:00.000001+00:00",
+                r: route === "/end/role" ? `/end/role/${replacement ? "cut" : "add"}` : route,
+                a: route === "/end/role"
+                  ? { cid: hab.pre, role: Roles.mailbox, eid: hab.pre }
+                  : { eid: hab.pre, scheme: "http", url: replacement ? "http://after.test" : "http://before.test" },
+              },
+              makify: true,
+            });
+          const process = (serder: SerderKERI, pending = false) => {
+            const group = (missing: boolean) =>
+              new TransIdxSigGroup(
+                new Prefixer({ qb64: hab.pre }),
+                missing ? NumberPrimitive.fromNum(1n) : hab.kever!.sner,
+                new Diger({ qb64: hab.kever!.said }),
+                hab.sign(serder.raw, true),
+              );
+            return rvy.processReply({
+              serder,
+              ...(transferable
+                ? { tsgs: pending ? [group(true), group(false)] : [group(false)] }
+                : { cigars: hab.sign(serder.raw, false) }),
+            });
+          };
+          const prior = body(false), incoming = body(true);
+          const keys: [string, string, string] = [hab.pre, Roles.mailbox, hab.pre];
+          const locKeys: [string, string] = [hab.pre, "http"];
+          const pointer = () => route === "/end/role" ? hby.db.eans.get(keys) : hby.db.lans.get(locKeys);
+          const projection = () => route === "/end/role" ? hby.db.ends.get(keys) : hby.db.locs.get(locKeys);
+          assertEquals(process(prior).kind, "accept");
+          const previousProjection = projection();
+          const previousSignatures = [...hby.db.ssgs.getTopItemIter([prior.said!], { topive: true })];
+          const previousCigars = hby.db.scgs.get([prior.said!]).map(([verfer, cigar]) => [verfer.qb64, cigar.qb64]);
+          const unchanged = () => {
+            assertEquals(pointer()?.qb64, prior.said);
+            assertEquals(projection(), previousProjection);
+            assertEquals(hby.db.rpys.get([prior.said!])?.said, prior.said);
+            assertExists(hby.db.sdts.get([prior.said!]));
+            assertEquals([...hby.db.ssgs.getTopItemIter([prior.said!], { topive: true })], previousSignatures);
+            assertEquals(
+              hby.db.scgs.get([prior.said!]).map(([verfer, cigar]) => [verfer.qb64, cigar.qb64]),
+              previousCigars,
+            );
+            assertEquals(hby.db.rpys.get([incoming.said!]), null);
+            assertEquals(hby.db.sdts.get([incoming.said!]), null);
+            assertEquals([...hby.db.ssgs.getTopItemIter([incoming.said!], { topive: true })], []);
+            assertEquals(hby.db.scgs.get([incoming.said!]), []);
+            assertEquals(hby.db.rpes.get([route]), []);
+            assertEquals([cues.length, resources.used.bytes], [0, 0]);
+          };
+          const failure = new Error("projection write failed");
+          const refuse = () => {
+            throw failure;
+          };
+          const attempt = () => assertEquals(assertThrows(() => process(incoming, true)), failure);
+          if (route === "/end/role") withPatchedMethod(hby.db.ends, "pin", refuse, attempt);
+          else withPatchedMethod(hby.db.locs, "pin", refuse, attempt);
+          unchanged();
+          assertThrows(
+            () => hby.db.env!.transactionSync(() => process(incoming, true)),
+            Error,
+            "must own the reply transaction",
+          );
+          unchanged();
+          assertEquals(process(incoming, true).kind, "accept");
+          assertEquals(pointer()?.qb64, incoming.said);
+          assertEquals(
+            projection()?.asDict(),
+            route === "/end/role" ? { allowed: false } : { url: "http://after.test" },
+          );
+          assertEquals(hby.db.rpys.get([prior.said!]), null);
+          assertEquals(hby.db.rpys.get([incoming.said!])?.said, incoming.said);
+          assertEquals(cues.toArray().map((cue) => cue.kin), transferable ? ["query"] : []);
+          cues.clear();
+          assertEquals(resources.used.bytes, 0);
+        } finally {
+          cues.clear();
+          yield* hby.close(true);
+        }
+      });
+    });
+  }
+}
+
+Deno.test("Router validates semantic reply outcomes returned by reflective handlers", () => {
+  const serder = new SerderKERI({
+    sad: { t: "rpy", dt: makeNowIso8601(), r: "/decision", a: {} },
+    makify: true,
+  });
+  const diger = new Diger({ qb64: serder.said! });
+  const dispatch = (outcome: unknown) => {
+    const router = new Router();
+    router.addRoute("/decision", { processReply: () => outcome });
+    return router.dispatch({ serder, diger });
+  };
+  for (
+    const invalid of [
+      undefined,
+      { kind: "unverified", message: "no reason" },
+      { kind: "unverified", reason: "dependencyPending", message: "no family" },
+      { kind: "unverified", reason: "dependencyPending", family: 1, message: "invalid family" },
+      { kind: "unverified", reason: "proofPending", message: 1 },
+      { kind: "unverified", reason: "unknown", message: "unknown reason" },
+    ]
+  ) {
+    assertThrows(() => dispatch(invalid), ValidationError, "valid reply decision");
+  }
+  for (
+    const valid of [
+      { kind: "accept" },
+      unverifiedReplyDecision("not accepted"),
+      { kind: "unverified", reason: "proofPending", message: "missing signatures" },
+      { kind: "unverified", reason: "dependencyPending", family: "registry-mae", message: "missing signer" },
+    ] satisfies ReplyProcessDecision[]
+  ) {
+    assertEquals(dispatch(valid), valid);
+  }
+});
 
 function createEscrowedReplyFixture(
   hby: {
@@ -223,10 +389,8 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
       unchanged();
       // External escrow must not virtually aggregate proofs which its semantic owner has not published.
       const pending = expectKind(rvy.acceptReply({ ...args, externalEscrow: true }), "unverified");
-      assertEquals(pending.context?.pending, true);
-      assertEquals(Object.isFrozen(pending), true);
-      assertEquals(Object.isFrozen(pending.context), true);
-      assertEquals(cues.toArray(), [{ kin: "query", pre: hab.pre, q: { pre: hab.pre } }]);
+      assertEquals(pending.reason, "proofPending");
+      assertEquals(cues.toArray(), [{ kin: "query", pre: hab.pre, route: "logs", q: {} }]);
       cues.clear();
       unchanged();
       withPatchedMethod(hby.db.sdts, "pin", () => {
@@ -269,23 +433,19 @@ Deno.test("Revery holds the exact query batch before ordered proof effects and p
       assertEquals(hby.db.rpys.get([saider.qb64]), null, "default BADA supersession removes previous proof");
       assertEquals([cues.length, resources.used.bytes], [0, 0], "cue-free acceptance needs no cue credit");
       const preparedBody = body("2026-10-13T00:00:00.000004+00:00");
-      const prepared = rvy.prepareReply({
+      const plan = rvy.decideReply({
         serder: preparedBody,
         saider: new Diger({ qb64: preparedBody.said! }),
         route: args.route,
         aid: hab.pre,
         tsgs: [group(preparedBody, [0, 1])],
       });
-      assertEquals(Object.isFrozen(prepared.decision), true);
-      assertThrows(() => prepared.publishQueries(), Error, "successful proof application");
-      assertEquals(hby.db.rpys.get([preparedBody.said!]), null);
-      prepared.applyProofs();
-      assertThrows(() => prepared.applyProofs(), Error, "no longer applicable");
-      prepared.publishQueries();
-      assertThrows(() => prepared.publishQueries(), Error, "successful proof application");
-      prepared.release();
-      prepared.release();
-      assertThrows(() => prepared.applyProofs(), Error, "no longer applicable");
+      const accepted = expectKind(plan, "accept");
+      assertEquals(accepted.accepted.kind, "transferable");
+      assertEquals([plan.cues.length, plan.escrows.length], [0, 0]);
+      assertEquals(hby.db.rpys.get([preparedBody.said!]), null, "evaluation does not persist proof");
+      rvy.writeReply(plan);
+      assertEquals(hby.db.rpys.get([preparedBody.said!])?.said, preparedBody.said);
     } finally {
       yield* hby.close(true);
     }
@@ -510,8 +670,7 @@ Deno.test("Revery escrow replay preserves processing error detail on drop decisi
 
       const drop = expectKind(decision, "drop");
       assertEquals(drop.reason, "processingError");
-      assertEquals(drop.message, "boom");
-      assertEquals(drop.context?.said, saider.qb64);
+      assertEquals(drop.message, `boom (said=${saider.qb64}, route=/escrow/reply/detail)`);
       fault = new ResourceAdmissionError("query bytes occupied", "busy");
       assertThrows(() => replyVerifier.processEscrowReply(), ResourceAdmissionError);
       assertEquals(hby.db.rpes.get(["/escrow/reply/detail"]).length, 1);
