@@ -48,7 +48,7 @@ function registryOrdinal(sn: number): number {
  * Wrap a supplied RegBaser without opening another environment. Reads and writes
  * are storage operations: callers authenticate events/anchors and decide acceptance.
  * Explicit close delegates to the supplied owner; construction adds no lifetime scope.
- * Missing old-layout facilities remain null until an explicit writable operation.
+ * Local aliases are optional; public observer stores need only evidence tables.
  */
 export class RegistryStore {
   private aliases: Komer<RegistryRecord> | null = null;
@@ -56,7 +56,7 @@ export class RegistryStore {
 
   constructor(readonly baser: RegBaser) {}
 
-  /** Alias mapper is absent for old layouts; refresh it after the owner's reopen. */
+  /** Local alias mapper is optional; refresh it after the owner's reopen. */
   get records(): Komer<RegistryRecord> | null {
     if (!this.baser.env) throw new DatabaseNotOpenError("Registry backing store is closed.");
     if (this.aliasEnv !== this.baser.env) {
@@ -68,7 +68,7 @@ export class RegistryStore {
     return this.aliases;
   }
 
-  /** Explicit alias write creates regs. only when needed, without an opening migration. */
+  /** Explicit alias write creates regs. only when needed, for local registry management. */
   putRecord(name: string, record: RegistryRecordShape): boolean {
     return this.initializeRecords().pin(name, record);
   }
@@ -99,17 +99,16 @@ export class RegistryStore {
   putEvent(serder: SerderACDC): boolean {
     return this.baser.evts.pin(serder.said!, serder);
   }
-  /** Read a stored source couple; missing old-layout ancs. has no anchors. */
+  /** Read a stored source couple. */
   anchor(said: string): [NumberPrimitive, Diger] | null {
     if (!this.baser.opened) throw new DatabaseNotOpenError("Registry backing store is closed.");
-    return this.baser.ancs?.get(said) ?? null;
+    return this.baser.ancs.get(said);
   }
   /** Retain the earliest caller-verified anchor; equal/later reseals cannot reorder siblings. */
   putAnchor(said: string, number: NumberPrimitive, diger: Diger): boolean {
     const current = this.anchor(said);
     if (current && current[0].num <= number.num) return false;
-    this.baser.initializeStorage();
-    return this.baser.ancs!.pin(said, [number, diger]);
+    return this.baser.ancs.pin(said, [number, diger]);
   }
   /** Read the accepted-head cache without verifying the event. */
   head(regk: string): Saider | null {
@@ -144,7 +143,7 @@ export class RegistryStore {
       if (event) yield event.raw;
     }
   }
-  /** Eagerly collect accepted TEL bytes; callers must reserve collection credit, not infer a shared budget. */
+  /** Eagerly collect accepted TEL bytes in ordinal order. */
   cloneTel(regk: string, sn = 0): Uint8Array {
     const chunks = [...this.cloneTelIter(regk, sn)];
     const stream = new Uint8Array(chunks.reduce((size, raw) => size + raw.length, 0));
@@ -158,19 +157,17 @@ export class RegistryStore {
   /** Add one missing-anchor candidate in insertion order, deduplicating its SAID. */
   escrowMissingAnchor(regk: string, sn: number, said: string): boolean {
     sn = registryOrdinal(sn);
-    this.baser.initializeStorage();
-    return this.baser.maes!.add(regk, sn, [said]);
+    return this.baser.maes.add(regk, sn, [said]);
   }
   /** Add one out-of-order candidate in insertion order, deduplicating its SAID. */
   escrowOutOfOrder(regk: string, sn: number, said: string): boolean {
     sn = registryOrdinal(sn);
-    this.baser.initializeStorage();
-    return this.baser.ooes!.add(regk, sn, [said]);
+    return this.baser.ooes.add(regk, sn, [said]);
   }
-  /** Remove this candidate from both escrow families without creating absent tables. */
+  /** Remove this candidate from both escrow families. */
   clearEscrows(regk: string, sn: number, said: string): void {
     sn = registryOrdinal(sn);
-    this.baser.maes?.rem(regk, sn, [said]);
-    this.baser.ooes?.rem(regk, sn, [said]);
+    this.baser.maes.rem(regk, sn, [said]);
+    this.baser.ooes.rem(regk, sn, [said]);
   }
 }

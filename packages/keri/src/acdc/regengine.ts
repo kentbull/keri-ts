@@ -6,7 +6,7 @@ import {
   type Saider,
   SerderACDC,
 } from "cesr-ts";
-import { DatabaseNotOpenError, ValidationError } from "../core/errors.ts";
+import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
 import {
   type RegistryEvent,
@@ -98,7 +98,7 @@ export class RegistryEventer {
       if (!head) return;
       const sn = head.sn + 1n;
       if (sn > BigInt(Number.MAX_SAFE_INTEGER)) return;
-      const candidates = this.store.baser.ooes?.get(this.regk, Number(sn)).map(([said]) => said) ?? [];
+      const candidates = this.store.baser.ooes.get(this.regk, Number(sn)).map(([said]) => said);
       candidates.sort((a, b) => this.compareAnchors(a, b));
       let advanced = false;
       for (const said of candidates) {
@@ -118,8 +118,8 @@ export class RegistryEventer {
   processMissingAnchors(): void {
     if (this.regk === null) return;
     const slots = new Map<number, string[]>();
-    // Finish the read cursor before writes. Shared scan credit belongs to the resource-policy phase.
-    for (const [, sn, [said]] of this.store.baser.maes?.getTopItemIter(this.regk) ?? []) {
+    // Finish the read cursor before writes.
+    for (const [, sn, [said]] of this.store.baser.maes.getTopItemIter(this.regk)) {
       if (!Number.isSafeInteger(sn) || sn < 0) throw new RangeError("Unsafe registry escrow ordinal.");
       const candidates = slots.get(sn) ?? [];
       candidates.push(said);
@@ -199,7 +199,7 @@ export class RegistryEventer {
     if (previous) return previous;
     const env = this.store.baser.env;
     if (!env) throw new DatabaseNotOpenError("Registry acceptance requires an open backing store.");
-    this.store.baser.initializeStorage();
+    if (this.store.baser.readonly) throw new DatabaseOperationError("Cannot write readonly registry storage.");
     return env.transactionSync((): RegistryEventDecision => {
       const prior = this.acceptedAt(event.regid, Number(event.sn) - 1);
       if (prior && prior.said !== event.prior) return { kind: "reject", reason: "prior" };
@@ -211,7 +211,7 @@ export class RegistryEventer {
         this.store.escrowMissingAnchor(event.regid, Number(event.sn), event.said);
         return { kind: "escrow", reason: "anchor", event };
       }
-      this.store.baser.maes!.rem(event.regid, Number(event.sn), [event.said]);
+      this.store.baser.maes.rem(event.regid, Number(event.sn), [event.said]);
       if (!prior) {
         this.store.escrowOutOfOrder(event.regid, Number(event.sn), event.said);
         return { kind: "escrow", reason: "order", event };
@@ -236,8 +236,7 @@ export class RegistryEventer {
     }
     const env = this.store.baser.env;
     if (!env) throw new DatabaseNotOpenError("Registry acceptance requires an open backing store.");
-    // Bind named tables before the rollback-capable event transaction owns their rows.
-    this.store.baser.initializeStorage();
+    if (this.store.baser.readonly) throw new DatabaseOperationError("Cannot write readonly registry storage.");
     const decision = env.transactionSync((): RegistryEventDecision => {
       const previous = this.acceptedEvent(event);
       if (previous) return previous;
@@ -303,8 +302,8 @@ export class RegistryEventer {
   /** Publish one verified winner and remove all siblings from its decided slot atomically. */
   private commit(event: RegistryEvent): void {
     this.store.accept(event.regid, Number(event.sn), event.serder);
-    this.store.baser.maes!.rem(event.regid, Number(event.sn));
-    this.store.baser.ooes!.rem(event.regid, Number(event.sn));
+    this.store.baser.maes.rem(event.regid, Number(event.sn));
+    this.store.baser.ooes.rem(event.regid, Number(event.sn));
   }
 
   /** Keep an already verified anchor or discover the earliest fully witnessed seal. */

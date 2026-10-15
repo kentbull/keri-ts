@@ -83,7 +83,6 @@ export class Regery {
     if (this.regs.has(rip.said!)) throw new ValidationError(`Registry already exists: ${rip.said}`);
     const env = this.baser.env;
     if (!env) throw new DatabaseNotOpenError("Registry backing store is closed.");
-    this.baser.initializeStorage();
     const records = this.store.initializeRecords();
     const registry = new Registry(hab, this.store, name);
     env.transactionSync(() => {

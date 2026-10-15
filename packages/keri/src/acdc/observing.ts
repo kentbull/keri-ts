@@ -1,6 +1,6 @@
 /** Explicit public registry intake; this TypeScript integration is beyond frozen KERIpy 927. */
 import { Diger, Ilks, ParserError, ResourceLimitError, type SerderACDC } from "cesr-ts";
-import { DatabaseNotOpenError } from "../core/errors.ts";
+import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
 import { type RegistryEventDecision, RegistryEventer } from "./regengine.ts";
 import { type RegistryEvent, validateRip, validateUpdate } from "./regeventing.ts";
@@ -45,7 +45,7 @@ export class RegistryObserver {
     }
     // Issuer/anchor discovery is impossible until RIP arrives; the existing anchor escrow owns this body.
     const baser = this.store.baser;
-    baser.initializeStorage();
+    if (baser.readonly) throw new DatabaseOperationError("Cannot write readonly registry storage.");
     return baser.env!.transactionSync(() => {
       this.store.putEvent(serder);
       this.store.escrowMissingAnchor(event.regid, Number(event.sn), event.said);

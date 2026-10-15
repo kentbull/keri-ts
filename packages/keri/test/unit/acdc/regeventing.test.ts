@@ -853,6 +853,8 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
       observer = new RegistryObserver(hby.db, store);
       assertEquals(observer.processEvent(second).kind, "duplicate", "readonly accepted replay opens no writer");
       assertThrows(() => observer.processEvent(orphan), Error, "readonly");
+      assertThrows(() => observer.processEvent(orphanRip), Error, "readonly");
+      assertThrows(() => observer.processEvent(blindate(regid, third.said!, blid, { sn: 4 })), Error, "readonly");
       assertEquals(
         [baser.opened, hby.db.opened, source.db.opened],
         [true, true, true],
