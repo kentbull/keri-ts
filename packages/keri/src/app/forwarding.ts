@@ -30,7 +30,6 @@ import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } 
 import { exchange } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
-import { MAX_NESTED_WIRE_BYTES } from "../db/exchange-nests.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import { abortable } from "./abortable.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
@@ -672,9 +671,9 @@ export class ForwardHandler implements ExchangeRouteHandler {
       return;
     }
     if (child) {
-      // Mailbox LMDB accepts a finite row; collect one admitted child, never the whole exchange stream.
+      // Mailbox LMDB accepts a finite row; collect one child, never the whole exchange stream.
       return abortable(async (signal) => {
-        const wire = await collectPayload(nestedPayload(child, Vrsn_2_0), MAX_NESTED_WIRE_BYTES, signal);
+        const wire = await collectPayload(nestedPayload(child, Vrsn_2_0), signal);
         signal.throwIfAborted();
         this.mailboxDirector.publish(recipient, topic, wire);
       });

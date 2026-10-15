@@ -180,7 +180,7 @@ Deno.test("historical v1 receipt quadruples remain item-counted protocol input",
   assertStringIncludes(await annotate(body + attachment), "TransReceiptQuadruples");
   const [frame] = await parseBytes(b(body + attachment));
   assertEquals(
-    await collectPayload(attachmentPayload(frame, { gvrsn: V1 }), 4096),
+    await collectPayload(attachmentPayload(frame, { gvrsn: V1 })),
     Counter.enclose({ qb64: attachment, version: V1 }),
   );
   assertThrows(() => attachmentPayload(frame, { gvrsn: V2 }), SerializeError);

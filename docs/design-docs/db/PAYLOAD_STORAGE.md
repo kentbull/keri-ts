@@ -1,9 +1,10 @@
 # Payload ownership
 
 CESR's `Payload` interface exposes a byte length and a reopenable async reader.
-`collectPayload(payload, limit)` is the explicit bounded materialization boundary.
-`MemoryPayloadSink` copies awaited writes into fixed-size slabs under its byte
-limit. Neither interface depends on a filesystem or database.
+`collectPayload(payload, signal)` materializes exactly that declared extent and
+rejects an overlong or truncated reader, including closing the source on failure.
+It accepts no collection quota. `MemoryPayloadSink(signal)` copies awaited writes
+into fixed-size slabs without a byte limit. Neither depends on files or a database.
 
 `OwnedPayload` adds explicit `discard()` to the read-only payload view. Every
 sink returns an owner. Memory disposal releases its slabs; file disposal removes
@@ -18,7 +19,7 @@ to settle before cleanup.
 
 The ownership sequence is:
 
-1. `store.stage(maxBytes, signal)` returns an unfinished sink owned by the caller.
+1. `store.stage(signal)` returns an unfinished sink owned by the caller.
 2. `sink.finish()` flushes and closes the file, transferring ownership to the
    returned `FilePayload`. The caller must promote or discard that result.
 3. `payload.promote(id)` publishes under a caller-supplied SAID or scoped digest

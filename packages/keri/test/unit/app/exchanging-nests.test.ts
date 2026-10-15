@@ -137,7 +137,7 @@ function budget() {
 /** Attach repeated qualified ciphertext fragments to prove exact wire retention inside enst. */
 async function attachEssr(frame: CesrFrame): Promise<Uint8Array> {
   const wire = b("4BABYWJj4BABYWJj4BABeHl6");
-  const sink = new MemoryPayloadSink(wire.length);
+  const sink = new MemoryPayloadSink();
   await sink.write(wire);
   frame.essr = essrPayload(await sink.finish(), 3, 9, Vrsn_2_0);
   return wire;
@@ -149,7 +149,7 @@ async function assertTree(actual: CesrFrame, expected: CesrFrame): Promise<void>
   assertEquals(actual.attachments.map((group) => group.raw), expected.attachments.map((group) => group.raw));
   assertEquals(actual.nests?.length ?? 0, expected.nests?.length ?? 0);
   if (expected.essr) {
-    assertEquals(await collectPayload(actual.essr!.wire, 1024), await collectPayload(expected.essr.wire, 1024));
+    assertEquals(await collectPayload(actual.essr!.wire), await collectPayload(expected.essr.wire));
   }
   for (let i = 0; i < (expected.nests?.length ?? 0); i++) await assertTree(actual.nests![i], expected.nests![i]);
 }
@@ -183,7 +183,7 @@ Deno.test("nested forward preserves signed tree, ciphertext and duplicates acros
     duplicate.attachments = [];
     assertEquals((await run(() => exchanger.processEvent({ ...input, nests: [duplicate] }))).kind, "accept");
     assertEquals(hby.db.enst.get([input.serder.said!]), [
-      new TextDecoder().decode(await collectPayload(nestedPayload(duplicate, Vrsn_2_0), 4096)),
+      new TextDecoder().decode(await collectPayload(nestedPayload(duplicate, Vrsn_2_0))),
     ]);
     assertEquals([...director.topicIter(recipient.pre, "/nested")].length, 2);
     // Restore the full supplied proof, then qualify reopen/replay of that successful replacement.
@@ -251,7 +251,7 @@ Deno.test("nested forward escrows missing sender state then reopens and retries 
     assertEquals(hby.db.epse.get([input.serder.said!]), null);
     assertEquals([...director.topicIter(recipient.pre, "/nested")].length, 1);
     const loaded = await loadNests(hby.db, input.serder.said!, budget());
-    assertEquals(await collectPayload(loaded[0].essr!.wire, 1024), b("4BABYWJj4BABYWJj4BABeHl6"));
+    assertEquals(await collectPayload(loaded[0].essr!.wire), b("4BABYWJj4BABYWJj4BABeHl6"));
     await discardNests(loaded);
   });
 });
@@ -549,34 +549,28 @@ Deno.test("optional runtime KRAM pools proofs across reopen and forwards current
       new TransIdxSigGroup(original.prefixer, original.seqner, original.diger, [original.sigers[index]]);
     try {
       const first = yield* call(() =>
-        collectPayload(
-          framePayload({
-            body: input.serder,
-            attachments: messageAttachmentGroups({ tsgs: [group(0)] }, Vrsn_2_0),
-            nests: [nest],
-            gvrsn: Vrsn_2_0,
-          }),
-          8192,
-        )
+        collectPayload(framePayload({
+          body: input.serder,
+          attachments: messageAttachmentGroups({ tsgs: [group(0)] }, Vrsn_2_0),
+          nests: [nest],
+          gvrsn: Vrsn_2_0,
+        }))
       );
       yield* runtime.reactor.processBytes(first, { mailboxAid: provider.pre });
       assertEquals([hby.db.exns.get(input.serder.said!), hby.db.exns.get(nest.body.said!)], [null, null]);
       assertExists(hby.db.pmkm.get(key));
       yield* hby.db.reopen();
       const [retry] = yield* call(() =>
-        collectPayload(
-          framePayload({
-            body: input.serder,
-            attachments: messageAttachmentGroups({ tsgs: [group(1)] }, Vrsn_2_0),
-            nests: [nest],
-            gvrsn: Vrsn_2_0,
-          }),
-          8192,
-        ).then(parseBytes)
+        collectPayload(framePayload({
+          body: input.serder,
+          attachments: messageAttachmentGroups({ tsgs: [group(1)] }, Vrsn_2_0),
+          nests: [nest],
+          gvrsn: Vrsn_2_0,
+        })).then(parseBytes)
       );
       yield* runtime.reactor.settle(retry, { mailboxAid: provider.pre }, function*(ready) {
         assertEquals(ready!.nests[0].body.raw, nest.body.raw);
-        assertEquals(yield* call(() => collectPayload(ready!.nests[0].essr!.wire, 1024)), wire);
+        assertEquals(yield* call(() => collectPayload(ready!.nests[0].essr!.wire)), wire);
         assertEquals(hby.db.pmkm.get(key), null, "acceptance retires partial state before transport callback");
         assertEquals(hby.db.exns.get(nest.body.said!), null);
       });

@@ -32,8 +32,8 @@ function observed(onFinish: (count: number) => void = () => {}, failFirstDiscard
   let finished = 0;
   const discarded: number[] = [];
   /** Wrap one real stage without changing its size, write or abort behavior. */
-  function factory(limit: number, signal?: AbortSignal): PayloadSink {
-    const sink = new MemoryPayloadSink(limit, signal);
+  function factory(signal?: AbortSignal): PayloadSink {
+    const sink = new MemoryPayloadSink(signal);
     return {
       /** Preserve awaited copying and cancellation at the storage boundary. */
       write: (chunk) => sink.write(chunk),
@@ -69,8 +69,8 @@ Deno.test("complete input parsing chunks large backing buffers and transfers ord
     assertEquals(frames.length, 2);
     assertExists(frames[0].essr);
     assertExists(frames[1].essr);
-    assertEquals(await collectPayload(frames[0].essr.raw, raw.length), raw);
-    assertEquals(await collectPayload(frames[1].essr.raw, 6), b("second"));
+    assertEquals(await collectPayload(frames[0].essr.raw), raw);
+    assertEquals(await collectPayload(frames[1].essr.raw), b("second"));
     assertEquals(await parseBytes(new Uint8Array()), []);
   } finally {
     // Successful collection transfers ownership to the finite-input caller.

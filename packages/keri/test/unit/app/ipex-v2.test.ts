@@ -107,8 +107,8 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
                 row.name,
               );
               for (const [i, child] of (restored[0].nests ?? []).entries()) {
-                const before = yield* call(() => collectPayload(framePayload(frames[0].nests![i]), 8 * 1024 ** 2));
-                const after = yield* call(() => collectPayload(framePayload(child), 8 * 1024 ** 2));
+                const before = yield* call(() => collectPayload(framePayload(frames[0].nests![i])));
+                const after = yield* call(() => collectPayload(framePayload(child)));
                 assertEquals(after, before, "replay retains each child's own proof enclosure");
                 assertEquals(hby.db.exns.get(child.body.said!), null);
               }
@@ -150,7 +150,7 @@ Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation
     assertEquals(built.raw, parent.raw);
     // No frame payload is touched by the ordinary body constructor.
     assertThrows(() => ipexExnBody(parent.pre!, "/ipex/apply", nodes, opts), Error, "Only offer and grant");
-    const childWire = await collectPayload(framePayload(frame.nests![0]), 8 * 1024 ** 2);
+    const childWire = await collectPayload(framePayload(frame.nests![0]));
     const [prepared, nested] = await run(() => prepareIpexExn(parent.pre!, "/ipex/grant", childWire, opts));
     assertEquals(prepared.raw, built.raw);
     assertEquals(nested.length > 0, true);
@@ -226,7 +226,7 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
           attachments: messageAttachmentGroups({ tsgs }, Vrsn_2_0),
           nests: children,
         };
-        const wire = yield* call(() => collectPayload(framePayload(frame), 8 * 1024 ** 2));
+        const wire = yield* call(() => collectPayload(framePayload(frame)));
         for (const [hby, exn] of [[left, receiving], [right, sending]] as const) {
           const [parsed] = yield* call(() => parseBytes(wire));
           try {
@@ -550,10 +550,10 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
 Deno.test("IPEX byte preparation cancels its read and joins payload-owner disposal", async () => {
   const [parent] = await parseBytes(b(fixture.cases[0].wire));
   const node = parent.nests![0];
-  const sink = new MemoryPayloadSink(8);
+  const sink = new MemoryPayloadSink();
   await sink.write(b("4BABYWJj"));
   node.essr = essrPayload(await sink.finish(), 1, 3, Vrsn_2_0);
-  const wire = await collectPayload(framePayload(node), 8192);
+  const wire = await collectPayload(framePayload(node));
   const body = parent.body as SerderKERI;
   const options = { kind: body.kind, message: "cancel", recipient: body.sad!.ri as string, xid: body.sad!.x as string };
   await discardFrame(parent);

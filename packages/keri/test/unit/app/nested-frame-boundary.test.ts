@@ -11,7 +11,7 @@ Deno.test("nested runtime boundaries reject before processing and release child-
   const [frame] = await parseBytes(b(vectors.rows[0].qb64));
   assertThrows(() => envelopeFromFrame(frame), Error, "nested message trees");
   await assertRejects(() => inspectCesrStream(b(vectors.rows[0].qb64)), Error, "nested message trees");
-  const sink = new MemoryPayloadSink(32);
+  const sink = new MemoryPayloadSink();
   await sink.write(b("4BABYWJj"));
   const owner = await sink.finish();
   let discarded = 0;

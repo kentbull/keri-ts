@@ -44,8 +44,6 @@ export interface EgressOptions {
   headers?: HeadersInit;
   /** Optional endpoint AID carried in CESR-DESTINATION. */
   destination?: string;
-  /** Header mode admits at most this many text-qualified attachment bytes; default 64 KiB. */
-  maxHeaderBytes?: number;
   /** Failed responses retain at most this many diagnostic bytes; default 16 KiB. */
   maxErrorBytes?: number;
   /** Upstream cancellation joins the same request lifetime as Effection cancellation. */
@@ -182,11 +180,10 @@ function openFrameResponse(
     const services = options.services ?? defaultRuntimeServices;
     // Header mode is the KERIpy default, and bulk body mode is explicit.
     const mode = options.bodyMode ?? "header";
-    // Validate both finite metadata budgets before creating any network or payload reader.
-    const headerLimit = byteLimit(options.maxHeaderBytes ?? 64 * 1024, "maxHeaderBytes");
+    // Diagnostic output policy remains separate from attachment collection.
     const errorLimit = byteLimit(options.maxErrorBytes ?? 16 * 1024, "maxErrorBytes");
     // Retain conservative qualification/header/diagnostic copies plus bounded serializer reader/output backing.
-    const bytes = 8 * cesrOutputMetadataBytes(frame) + 6 * headerLimit + 4 * errorLimit + 2 * 1024 ** 2;
+    const bytes = 8 * cesrOutputMetadataBytes(frame) + 4 * errorLimit + 2 * 1024 ** 2;
     const credit = services.resources.reserve({ streams, bytes });
     if (credit.kind === "refuse") {
       const refusal = new ResourceAdmissionError(
@@ -222,8 +219,8 @@ function openFrameResponse(
           enclosingGvrsn: frame.body.gvrsn ?? frame.body.pvrsn,
         })
         : undefined;
-      preparing = attachments ? collectPayload(attachments, headerLimit, signal) : undefined;
-      // Only detached-header mode collects attachments, under its explicit finite limit.
+      preparing = attachments ? collectPayload(attachments, signal) : undefined;
+      // Detached-header mode materializes text attachments; body mode streams them.
       const header = preparing ? byteString(yield* call(() => preparing!)) : undefined;
       // Retry only the established KERIpy media-type negotiation, using the same reopenable frame.
       const types = mode === "header" ? [CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE] : [CESR_CONTENT_TYPE];

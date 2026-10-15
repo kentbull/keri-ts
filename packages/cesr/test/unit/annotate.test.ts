@@ -176,12 +176,12 @@ Deno.test("annotation preserves non-native bodies and ESSR wire through nested e
       const [owned] = await annotateFrames(source);
       try {
         assertEquals(owned.frame.essr?.count, 1);
-        assertEquals(TEXT_DECODER.decode(await collectPayload(owned.frame.essr!.raw, 32)), "one ESSR item");
+        assertEquals(TEXT_DECODER.decode(await collectPayload(owned.frame.essr!.raw)), "one ESSR item");
       } finally {
         // Programmatic annotation transfers payload ownership; plain annotate releases it internally.
         await owned.frame.essr?.discard();
       }
-      await assertRejects(() => collectPayload(owned.frame.essr!.wire, 128));
+      await assertRejects(() => collectPayload(owned.frame.essr!.wire));
     }
   }
 });

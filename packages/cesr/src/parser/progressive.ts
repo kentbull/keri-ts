@@ -378,8 +378,8 @@ export async function* parse(
   const decodeOptions = options.classifyWireErrors && sinkFactory
     ? {
       ...options,
-      payloadSink: async (limit: number, signal?: AbortSignal) => {
-        const sink = await observe(() => sinkFactory(limit, signal));
+      payloadSink: async (signal?: AbortSignal) => {
+        const sink = await observe(() => sinkFactory(signal));
         return {
           write: (bytes: Uint8Array) => observe(() => sink.write(bytes)),
           finish: () => sink.finish(),

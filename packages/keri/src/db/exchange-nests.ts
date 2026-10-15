@@ -107,10 +107,8 @@ export async function stageNests(
   signal?: AbortSignal,
 ): Promise<void> {
   if (hasRow(db.enstStaging, stage)) throw new Error("Nested stage is already owned");
-  let remaining = MAX_NESTED_WIRE_BYTES;
   for (const child of nests) {
-    const wire = await collectPayload(nestedPayload(child, Vrsn_2_0), remaining, signal);
-    remaining -= wire.length;
+    const wire = await collectPayload(nestedPayload(child, Vrsn_2_0), signal);
     let ordinal = 0;
     let duplicate = false;
     // One finite comparison row at a time preserves Python IoSet ordering and deduplication.
@@ -193,7 +191,7 @@ export async function loadNests(
           maxEssrBytes: budget.essrBytes,
           maxEssrItems: budget.essrItems,
           maxDepth: 63,
-          payloadSink: (limit, stageSignal) => archive.files.stage(limit, stageSignal),
+          payloadSink: (stageSignal) => archive.files.stage(stageSignal),
         })
       ) {
         // Claim every owner before cardinality/accounting checks; never parse another row with reset credit.

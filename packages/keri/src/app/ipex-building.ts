@@ -4,7 +4,6 @@ import {
   discardFrame,
   nestedPayload,
   parseBytes,
-  ResourceLimitError,
   SerderACDC,
   type SerderKERI,
   Vrsn_2_0,
@@ -145,8 +144,6 @@ export function* prepareIpexExn(
   options: IpexV2BodyOptions,
 ): Operation<IpexMessage> {
   return yield* abortable(async (signal) => {
-    const limit = 8 * 1024 ** 2;
-    if (wire.length > limit) throw new ResourceLimitError("IPEX input exceeds collection limit.");
     const frames = await parseBytes(wire, { signal });
     const errors: unknown[] = [];
     try {
@@ -162,7 +159,7 @@ export function* prepareIpexExn(
           for (const child of payloads) yield* child.open(signal);
         },
       };
-      return [body, await collectPayload(payload, limit, signal)] as const;
+      return [body, await collectPayload(payload, signal)] as const;
     } catch (error) {
       errors.push(error);
       throw error;

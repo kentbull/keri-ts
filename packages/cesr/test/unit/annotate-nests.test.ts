@@ -94,11 +94,11 @@ Deno.test("annotation requires each hydrated node exactly once within its owning
 Deno.test("nested annotation transfers or releases every ESSR owner on success, failure and cancellation", async () => {
   const [source] = await parseBytes(b(vectors.rows[0].qb64));
   for (const node of nodes(source)) {
-    const sink = new MemoryPayloadSink(8);
+    const sink = new MemoryPayloadSink();
     await sink.write(b("4BABYWJj"));
     node.essr = essrPayload(await sink.finish(), 1, 3, node.gvrsn!);
   }
-  const wire = await collectPayload(framePayload(source), 8192);
+  const wire = await collectPayload(framePayload(source));
   await discardFrame(source);
   const finish = MemoryPayloadSink.prototype.finish;
   for (const mode of ["transfer", "text", "render-failure", "parse-failure", "cancel"] as const) {
@@ -114,12 +114,12 @@ Deno.test("nested annotation transfers or releases every ESSR owner on success, 
     try {
       if (mode === "transfer") {
         const [entry] = await annotateFrames(wire);
-        for (const node of nodes(entry.frame)) assertEquals(t(await collectPayload(node.essr!.raw, 3)), "abc");
+        for (const node of nodes(entry.frame)) assertEquals(t(await collectPayload(node.essr!.raw)), "abc");
         await discardFrame(entry.frame);
         await discardFrame(entry.frame);
       } else if (mode === "text") {
         const [restored] = await parseBytes(denot(await annotate(wire)));
-        for (const node of nodes(restored)) assertEquals(t(await collectPayload(node.essr!.raw, 3)), "abc");
+        for (const node of nodes(restored)) assertEquals(t(await collectPayload(node.essr!.raw)), "abc");
         await discardFrame(restored);
       } else if (mode === "render-failure") {
         await assertRejects(() => annotateFrames(wire, { indent: Infinity }), RangeError);
@@ -130,7 +130,7 @@ Deno.test("nested annotation transfers or releases every ESSR owner on success, 
         await assertRejects(() => annotateFrames(wire, { signal: controller.signal }), DOMException);
       }
       assertEquals(owners.length, mode === "cancel" ? 2 : mode === "text" ? 6 : 3);
-      for (const owner of owners) await assertRejects(() => collectPayload(owner, owner.size), Error, "discarded");
+      for (const owner of owners) await assertRejects(() => collectPayload(owner), Error, "discarded");
     } finally {
       MemoryPayloadSink.prototype.finish = finish;
     }

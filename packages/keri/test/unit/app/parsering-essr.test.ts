@@ -26,8 +26,8 @@ Deno.test("ESSR payload ownership transfers unchanged into the KERI envelope", a
       const essr = envelopes[0].essr!;
       assertStrictEquals(essr, frames[0].essr);
       assertEquals(essr.count, 2);
-      assertEquals(new TextDecoder().decode(await collectPayload(essr.raw, 9)), "abcdefghi");
-      assertEquals(new TextDecoder().decode(await collectPayload(essr.wire, payload.length)), payload);
+      assertEquals(new TextDecoder().decode(await collectPayload(essr.raw)), "abcdefghi");
+      assertEquals(new TextDecoder().decode(await collectPayload(essr.wire)), payload);
       assertStrictEquals(envelopes[0].serder, frames[0].body);
       await essr.discard();
     }

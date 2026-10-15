@@ -115,8 +115,8 @@ function payloadTree(): string {
 function tracking(failFinish = 0, failDiscard = 0) {
   const records: { writes: number; finished: number; aborted: number; discarded: number }[] = [];
   /** Create a separate finite sink for each message while recording its lifetime. */
-  const factory = (limit: number, signal?: AbortSignal): PayloadSink => {
-    const sink = new MemoryPayloadSink(limit, signal);
+  const factory = (signal?: AbortSignal): PayloadSink => {
+    const sink = new MemoryPayloadSink(signal);
     const record = { writes: 0, finished: 0, aborted: 0, discarded: 0 };
     records.push(record);
     const index = records.length;
@@ -184,7 +184,7 @@ Deno.test("tree limits aggregate descendants before ordinary or ESSR retention",
     payloadSink: sinks.factory,
   });
   assertEquals(frame.nests?.length, 2);
-  for (const node of [frame, ...frame.nests!]) assertEquals(t(await collectPayload(node.essr!.raw, 3)), "abc");
+  for (const node of [frame, ...frame.nests!]) assertEquals(t(await collectPayload(node.essr!.raw)), "abc");
   await discardFrame(frame);
   await discardFrame(frame); // Repeated scope cleanup cannot release descendants twice.
   assertEquals(sinks.records.map((record) => [record.finished, record.aborted, record.discarded]), [[1, 0, 1], [
@@ -274,8 +274,8 @@ Deno.test("cancellation while finishing a descendant discards earlier finished o
       maxEssrBytes: 9,
       maxEssrItems: 3,
       signal: controller.signal,
-      payloadSink(limit, signal) {
-        const sink = sinks.factory(limit, signal);
+      payloadSink(signal) {
+        const sink = sinks.factory(signal);
         return {
           write: (bytes) => sink.write(bytes),
           abort: (reason) => sink.abort(reason),

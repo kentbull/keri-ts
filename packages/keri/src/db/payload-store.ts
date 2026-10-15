@@ -48,17 +48,16 @@ export class PayloadStore {
     this.root = resolve(root);
   }
 
-  /** Open one bounded, exclusively created stage. Await every write. */
-  async stage(maxBytes: number, signal?: AbortSignal): Promise<FilePayloadSink> {
+  /** Open one exclusively created stage. Await every write. */
+  async stage(signal?: AbortSignal): Promise<FilePayloadSink> {
     if (this.closed) throw new Error("Payload store is closed");
-    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Invalid payload limit");
     signal?.throwIfAborted();
     await Deno.mkdir(join(this.root, "staging"), { recursive: true, mode: 0o700 });
     // The final content/owner identity is unavailable while the stream is incomplete.
     const id = crypto.randomUUID();
     const path = join(this.root, "staging", id);
     const file = await Deno.open(path, { write: true, createNew: true, mode: 0o600 });
-    const sink = new FileSink(file, path, maxBytes, signal, (size) => {
+    const sink = new FileSink(file, path, signal, (size) => {
       this.sinks.delete(sink);
       return new FileValue(this.root, id, size, this.chunkSize, true);
     }, () => {
@@ -238,7 +237,6 @@ class FileSink implements FilePayloadSink {
   constructor(
     private readonly file: Deno.FsFile,
     private readonly path: string,
-    private readonly maxBytes: number,
     private readonly signal: AbortSignal | undefined,
     private readonly completed: (size: number) => FilePayload,
     private readonly removed: () => void,
@@ -249,7 +247,6 @@ class FileSink implements FilePayloadSink {
   /** Await every partial write before accepting another chunk or finalizing. */
   async write(chunk: Uint8Array): Promise<void> {
     this.check();
-    if (chunk.length > this.maxBytes - this.size) throw new RangeError("Payload exceeds sink limit");
     const writing = writePayloadChunk(this.file, chunk, this.signal);
     this.active = writing;
     try {

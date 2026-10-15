@@ -22,12 +22,11 @@ export interface PayloadSink {
   abort(reason?: unknown): Promise<void>;
 }
 
-/** Collect explicitly bounded content, rejecting dishonest size declarations. */
-export async function collectPayload(payload: Payload, limit: number, signal?: AbortSignal): Promise<Uint8Array> {
-  if (!Number.isSafeInteger(limit) || limit < 0 || !Number.isSafeInteger(payload.size) || payload.size < 0) {
-    throw new RangeError("Invalid payload size or limit");
+/** Collect the declared content extent, rejecting truncated or overlong readers. */
+export async function collectPayload(payload: Payload, signal?: AbortSignal): Promise<Uint8Array> {
+  if (!Number.isSafeInteger(payload.size) || payload.size < 0) {
+    throw new RangeError("Invalid payload size");
   }
-  if (payload.size > limit) throw new RangeError("Payload exceeds collection limit");
   signal?.throwIfAborted();
   const result = new Uint8Array(payload.size);
   let offset = 0;
@@ -42,9 +41,9 @@ export async function collectPayload(payload: Payload, limit: number, signal?: A
   return result;
 }
 
-/** Bounded staging in fixed-size slabs, independent of incoming chunk count. */
+/** Memory staging in fixed-size slabs, independent of incoming chunk count. */
 export class MemoryPayloadSink implements PayloadSink {
-  /** Fixed-size storage slabs; count is bounded by maxBytes rather than input chunk count. */
+  /** Fixed-size storage slabs, independent of incoming chunk boundaries. */
   private chunks: Uint8Array[] = [];
   /** Accepted content bytes across every slab. */
   private size = 0;
@@ -57,9 +56,8 @@ export class MemoryPayloadSink implements PayloadSink {
     void this.abort();
   };
 
-  /** Bind a finite allocation budget and optional cancellation to one stage. */
-  constructor(private readonly maxBytes: number, private readonly signal?: AbortSignal) {
-    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Invalid payload limit");
+  /** Bind optional cancellation to one stage. */
+  constructor(private readonly signal?: AbortSignal) {
     signal?.throwIfAborted();
     signal?.addEventListener("abort", this.cancel, { once: true });
   }
@@ -68,12 +66,11 @@ export class MemoryPayloadSink implements PayloadSink {
   write(chunk: Uint8Array): Promise<void> {
     return Promise.resolve().then(() => {
       this.check();
-      if (chunk.length > this.maxBytes - this.size) throw new RangeError("Payload exceeds sink limit");
       let offset = 0;
       while (offset < chunk.length) {
         let slab = this.chunks[this.chunks.length - 1];
         if (!slab || this.used === slab.length) {
-          slab = new Uint8Array(Math.min(65536, this.maxBytes - this.size));
+          slab = new Uint8Array(65536);
           this.chunks.push(slab);
           this.used = 0;
         }

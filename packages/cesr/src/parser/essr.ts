@@ -17,9 +17,8 @@ export interface EssrOptions {
   maxEssrItems?: number;
   /**
    * Awaited writes supply backpressure; the sink must honor the supplied signal.
-   * Finished open() readers must yield chunks with backing buffers of at most 1 MiB.
    */
-  payloadSink?: (maxBytes: number, signal?: AbortSignal) => PayloadSink | Promise<PayloadSink>;
+  payloadSink?: (signal?: AbortSignal) => PayloadSink | Promise<PayloadSink>;
 }
 
 /** Remaining decoded bytes and item credit shared by an owned parent tree. */
@@ -234,10 +233,10 @@ export function essrFactory(
   const payloadSink = options.payloadSink;
   return async (gvrsn, budget) => {
     budget?.admitStage?.(wireLimit);
-    // A custom sink receives the same finite wire cap and operation cancellation signal.
+    // A custom sink receives operation cancellation; staging has no allocation policy.
     const sink = payloadSink
-      ? await payloadSink(wireLimit, signal)
-      : new MemoryPayloadSink(wireLimit, signal);
+      ? await payloadSink(signal)
+      : new MemoryPayloadSink(signal);
     return new EssrWriter(sink, bytes, items, gvrsn, budget);
   };
 }

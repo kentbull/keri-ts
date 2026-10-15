@@ -59,6 +59,10 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
   resumption/closure. Sink finish transfers ownership; abort cannot revoke it.
   A writer disposes its finished sink owner if ESSR qualification fails before
   transfer, and propagates joined disposal failures alongside the primary error.
+- `collectPayload(payload, signal)` uses Payload.size as exact framing, not a caller
+  quota. Reject invalid numeric sizes and truncated/overlong readers; source cleanup
+  and cancellation remain. MemoryPayloadSink and payloadSink factories take only
+  cancellation, with no allocation ceiling. Fixed slabs are copy granularity.
 - `Payload.open(signal)` must cooperate with cancellation. Generator return alone
   cannot interrupt blocked I/O. CESR root has no Effection import; its optional
   adapter owns one subscription, abort and joined cleanup. Its earlier next-scope

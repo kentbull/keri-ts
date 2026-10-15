@@ -148,7 +148,7 @@ export class Reactor {
     this.intake = intake
       ?? new FrameIntake(
         resources,
-        async (maxBytes, signal) => (await hby.db.openPayloads(signal)).files.stage(maxBytes, signal),
+        async (signal) => (await hby.db.openPayloads(signal)).files.stage(signal),
         maxSources,
       );
     this.cues = cues ?? new Deck();
