@@ -50,6 +50,11 @@ export class CueDelivery {
     }
   }
 
+  /** Existing packets need no guarded preparation or protocol-side cue capture. */
+  get needsPreparation(): boolean {
+    return !this.prepared;
+  }
+
   /** Prepare one finite target synchronously; the queue owner schedules and transmits it. */
   prepareTarget(poster: Poster, resources: ResourcePolicy): CueTargetPreparation {
     if (this.prepared) return { kind: "target", owner: this.prepared };

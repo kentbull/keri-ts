@@ -228,6 +228,11 @@ export class DirectReplyDelivery {
     return this.deliveries.length > 0;
   }
 
+  /** Exhausted batches and already prepared packets do not enter a new preparation turn. */
+  get needsPreparation(): boolean {
+    return this.deliveries[this.index]?.needsPreparation ?? false;
+  }
+
   /** Prepare one target per pass, preserving bounded sibling fairness across reply cues. */
   prepareTarget(poster: Poster, resources: ResourcePolicy): CueTargetPreparation {
     const current = this.deliveries[this.index];

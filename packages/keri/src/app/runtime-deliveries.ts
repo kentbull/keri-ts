@@ -357,9 +357,13 @@ export class RuntimeDeliveries {
           if (entry.kind === "cue") {
             // Preparation stays in the existing state turn; transport and joined cleanup stay outside it.
             const preparation: { result: CueTargetPreparation } = { result: { kind: "pending" } };
-            yield* runtime.reactor.settle(undefined, {}, function*() {
+            if (entry.delivery.needsPreparation) {
+              yield* runtime.reactor.settle(undefined, {}, function*() {
+                preparation.result = entry.delivery.prepareTarget(runtime.poster, self.resources);
+              });
+            } else {
               preparation.result = entry.delivery.prepareTarget(runtime.poster, self.resources);
-            });
+            }
             const next = preparation.result;
             done = next.kind === "done";
             if (next.kind === "target") {

@@ -488,6 +488,12 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
         },
       },
     });
+    let preparationTurns = 0;
+    const settle = runtime.reactor.settle.bind(runtime.reactor);
+    runtime.reactor.settle = (...args) => {
+      preparationTurns++;
+      return settle(...args);
+    };
     const cue = { kin: "query" as const, pre: sender.pre, src: sender.pre, route: "logs" as const, q: {} };
     const route = () => {
       routes++;
@@ -526,12 +532,13 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
       );
       assertEquals(runtime.deliveries.hasPending, true, "an unobserved typed transport failure preserves progress");
       failed = new ResourceAdmissionError("foreign transport busy", "busy");
-      const retained = runtime.resources.used.bytes;
+      const retained = runtime.resources.used.bytes, previousTurns = preparationTurns;
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
         failed,
       );
       assertEquals(runtime.resources.used.bytes, retained, "foreign busy retains the prepared cue owner");
+      assertEquals(preparationTurns, previousTurns, "an exact packet retry cannot recapture protocol reply cues");
       injected = false;
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 7, pending: true });
       assertEquals(
