@@ -22,7 +22,7 @@ import { postCesr } from "./cesr-egress.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
 import { CueDelivery, type CueTargetPreparation, type OwnedCueTarget } from "./cue-delivery.ts";
 import { admitCueEmission, type CuePreparationResult, type PreparedCueEmission } from "./cue-preparation.ts";
-import { admitCueRoute } from "./cue-route.ts";
+import { admitCueRoute, type PreparedCueRoute } from "./cue-route.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import { DirectReplyDelivery } from "./direct-reply-delivery.ts";
 import { attemptPreparedCesrTarget, introduce, type RawCesrRoute } from "./forwarding.ts";
@@ -92,9 +92,30 @@ const { wireBytes: requestBytes, routeBytes, preparationBytes } = cueDeliveryBud
 
 /** One shared item slot owns either query bytes, a lazy cue cursor or an exact failed packet. */
 type AdmittedDelivery =
-  | { kind: "query"; delivery: QueryDelivery; release(): void }
-  | { kind: "cue"; delivery: CueDelivery | DirectReplyDelivery; release(): void }
-  | { kind: "target"; delivery: OwnedCueTarget; release(): void };
+  | { kind: "query"; delivery: QueryDelivery; credit: ResourceReservation }
+  | { kind: "cue"; delivery: CueDelivery; source: PreparedCueEmission; route: PreparedCueRoute }
+  | { kind: "reply"; delivery: DirectReplyDelivery }
+  | { kind: "target"; delivery: OwnedCueTarget };
+
+/** Retire the actual obligations for this queue entry after joined transport cleanup. */
+function releaseDelivery(entry: AdmittedDelivery): void {
+  if (entry.kind === "query") {
+    entry.credit.release();
+  } else if (entry.kind === "cue") {
+    const errors: unknown[] = [];
+    for (const owner of [entry.delivery, entry.source, entry.route]) {
+      try {
+        owner.release();
+      } catch (error) {
+        if (!errors.includes(error)) errors.push(error);
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length) throw new AggregateError(errors, "Cue delivery cleanup failed");
+  } else {
+    entry.delivery.release();
+  }
+}
 
 /** Own query/cue delivery on one finite queue; network work executes outside guarded preparation. */
 export class RuntimeDeliveries {
@@ -159,8 +180,7 @@ export class RuntimeDeliveries {
       if (128 + 2 * (delivery.url.length + delivery.destination.length) > routeBytes) {
         throw new ResourceLimitError("Query route metadata exceeds byte limit");
       }
-      const owner = retained;
-      this.pending.push({ kind: "query", delivery, release: () => owner.release() });
+      this.pending.push({ kind: "query", delivery, credit: retained });
       queued = true;
       return { kind: "queued" };
     } finally {
@@ -196,8 +216,8 @@ export class RuntimeDeliveries {
       }
       let queued = false;
       try {
-        const delivery = new CueDelivery(owner, sender, captured);
-        this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
+        const delivery = new CueDelivery(owner.emission, sender, captured.route);
+        this.pending.push({ kind: "cue", delivery, source: owner, route: captured });
         queued = true;
         return undefined;
       } finally {
@@ -231,7 +251,7 @@ export class RuntimeDeliveries {
       } else if (emission?.cue.kin === "query" && emission.kind !== "wire") {
         runtime.querying.enqueueCue(emission.cue);
       }
-      if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
+      if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
       else delivery.release();
       borrow = prepared;
     }, onAdmissionRefusal);
@@ -256,7 +276,7 @@ export class RuntimeDeliveries {
     return DirectReplyDelivery.prepare(runtime, hab, reply, (delivery, open) => {
       this.pending.checkSpace();
       const stream = open();
-      if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
+      if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
       else delivery.release();
       return stream;
     }, onAdmissionRefusal);
@@ -279,7 +299,7 @@ export class RuntimeDeliveries {
     this.pending.checkSpace();
     return DirectReplyDelivery.prepareQueued(runtime, hab, reply, (delivery) => {
       this.pending.checkSpace();
-      if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
+      if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
       else delivery.release();
     }, onAdmissionRefusal);
   }
@@ -293,7 +313,7 @@ export class RuntimeDeliveries {
       if (error instanceof DeckFullError) return false;
       throw error;
     }
-    this.pending.push({ kind: "target", delivery: target, release: () => target.release() });
+    this.pending.push({ kind: "target", delivery: target });
     return true;
   }
 
@@ -312,7 +332,7 @@ export class RuntimeDeliveries {
     for (let index = 0; index < count; index++) {
       const entry = this.pending.pull()!;
       try {
-        entry.release();
+        releaseDelivery(entry);
       } catch (error) {
         errors.push(error);
       }
@@ -354,7 +374,7 @@ export class RuntimeDeliveries {
           if (runtime.resources !== self.resources) {
             throw new RangeError("Cue delivery requires runtime's exact policy");
           }
-          if (entry.kind === "cue") {
+          if (entry.kind === "cue" || entry.kind === "reply") {
             // Preparation stays in the existing state turn; transport and joined cleanup stay outside it.
             const preparation: { result: CueTargetPreparation } = { result: { kind: "pending" } };
             if (entry.delivery.needsPreparation) {
@@ -387,7 +407,7 @@ export class RuntimeDeliveries {
         active.signal.throwIfAborted();
         if (done) {
           try {
-            entry.release();
+            releaseDelivery(entry);
           } finally {
             self.pending.pull();
           }
