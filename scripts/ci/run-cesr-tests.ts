@@ -64,7 +64,8 @@ async function main(): Promise<void> {
   );
 
   const child = new Deno.Command("deno", {
-    args: ["test", "--parallel", ...Deno.args],
+    // Actual decoder retention is checked in-process; no subprocess permission is granted to tests.
+    args: ["test", "--parallel", "--v8-flags=--expose-gc", ...Deno.args],
     cwd: fromFileUrl(packageDir),
     env: { DENO_JOBS: `${jobs.chosen}` },
     stdin: "inherit",
