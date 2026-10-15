@@ -93,7 +93,6 @@ export interface AttachmentEscrow {
   message: string;
   instruction: EscrowInstruction;
   cues?: readonly AgentCue[];
-  context?: Record<string, unknown>;
 }
 
 /** Attachment validation variant for terminal rejection outcomes. */
@@ -101,7 +100,6 @@ export interface AttachmentReject {
   kind: "reject";
   code: RejectKind;
   message: string;
-  context?: Record<string, unknown>;
 }
 
 /** Repair of one accepted delegation hint discovered during validation, applied by Kevery. */
@@ -139,7 +137,6 @@ export interface KeverEscrow {
   message: string;
   instruction: EscrowInstruction;
   cues?: readonly AgentCue[];
-  context?: Record<string, unknown>;
 }
 
 /** Top-level kever decision variant for terminal rejection outcomes. */
@@ -147,7 +144,6 @@ export interface KeverReject {
   kind: "reject";
   code: RejectKind;
   message: string;
-  context?: Record<string, unknown>;
 }
 
 /** Top-level typed outcome returned by `Kevery.processEvent()`. */
