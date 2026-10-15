@@ -12,10 +12,11 @@
  *   one bounded command lifetime instead of being spread across long-lived HIO
  *   doers
  */
-import { type Operation } from "npm:effection@^3.6.0";
+import { SealEvent } from "cesr-ts";
+import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
-import { processRuntimeTurn, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
+import { runAgentRuntime, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
 import type { Hab } from "../habbing.ts";
 import { flattenRoleUrls } from "../mailboxing.ts";
 import { queryTransportSink } from "../runtime-deliveries.ts";
@@ -43,14 +44,16 @@ interface QueryArgs {
  */
 const QueryTimeoutMs = 10_000;
 
-/** Load and validate one anchor JSON object for `--anchor` query mode. */
-function loadAnchor(path: string): Record<string, unknown> {
+/** Decode one concrete event seal before opening state or scheduling an anchor query. */
+function loadAnchor(path: string): ReturnType<typeof SealEvent.toSad> {
   const text = Deno.readTextFileSync(path);
-  const anchor = JSON.parse(text);
-  if (!anchor || typeof anchor !== "object" || Array.isArray(anchor)) {
-    throw new ValidationError("Anchor file must contain a JSON object.");
+  const anchor: unknown = JSON.parse(text);
+  if (!SealEvent.isSad(anchor)) {
+    throw new ValidationError("Anchor file must contain only string i, s and d event-seal fields.");
   }
-  return anchor as Record<string, unknown>;
+  // Reuse CESR primitive validation without rewriting the supplied seal representation.
+  SealEvent.fromSad(anchor);
+  return anchor;
 }
 
 /**
@@ -111,6 +114,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Prefix is required and cannot be empty");
   }
   const prefix = queryArgs.prefix;
+  const anchor = queryArgs.anchor ? loadAnchor(queryArgs.anchor) : undefined;
 
   yield* withHabAndAgentRuntime(
     queryArgs,
@@ -125,50 +129,44 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
       const sink = queryTransportSink(runtime, hby, hab);
 
       let watchDone = () => false;
-      if (queryArgs.anchor) {
-        const anchor = loadAnchor(queryArgs.anchor);
+      if (anchor) {
         console.log(`Checking for anchor ${JSON.stringify(anchor)}...`);
         const querier = runtime.querying.watchAnchor(
           prefix,
           anchor,
           {
-            hab,
+            signer: hab.pre,
           },
         );
         watchDone = () => querier.done;
       } else {
         console.log("Checking for updates...");
         const noticer = runtime.querying.watchKeyState(prefix, {
-          hab,
+          signer: hab.pre,
         });
         watchDone = () => noticer.done;
       }
 
-      const deadline = Date.now() + QueryTimeoutMs;
-      while (!watchDone() && Date.now() < deadline) {
-        yield* processRuntimeTurn(runtime, { hab, pollMailbox: true, sink });
-        if (!watchDone()) {
+      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab, sink }));
+      try {
+        const deadline = Date.now() + QueryTimeoutMs;
+        while (!watchDone() && Date.now() < deadline) {
           yield* runtimeTurn();
         }
-      }
 
-      if (!watchDone() && !queryArgs.anchor) {
-        const catchupUrl = controllerCatchupUrl(hab, prefix);
-        if (catchupUrl) {
-          runtime.oobiery.resolve(catchupUrl);
-          const catchupDeadline = Date.now() + 5_000;
-          while (!watchDone() && Date.now() < catchupDeadline) {
-            yield* processRuntimeTurn(runtime, {
-              hab,
-              pollMailbox: true,
-              sink,
-            });
-            if (!runtimeHasPendingWork(runtime)) {
-              break;
+        if (!watchDone() && !queryArgs.anchor) {
+          const catchupUrl = controllerCatchupUrl(hab, prefix);
+          if (catchupUrl) {
+            runtime.oobiery.resolve(catchupUrl);
+            const catchupDeadline = Date.now() + 5_000;
+            while (!watchDone() && Date.now() < catchupDeadline) {
+              if (!runtimeHasPendingWork(runtime)) break;
+              yield* runtimeTurn();
             }
-            yield* runtimeTurn();
           }
         }
+      } finally {
+        yield* worker.halt();
       }
 
       console.log("");

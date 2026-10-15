@@ -1,5 +1,6 @@
 import { action, call, type Operation, run } from "effection";
 import { assertEquals, assertExists, assertStrictEquals } from "jsr:@std/assert";
+import { concatBytes, Counter, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
@@ -50,6 +51,7 @@ function issueFixture(
   issuerHby: Habery,
   issuerReger: Reger,
   verifierHby: Habery,
+  gvrsn: Versionage = Vrsn_1_0,
 ): IssuedFixture {
   const issuer = issuerHby.makeHab("issuer", undefined, {
     transferable: true,
@@ -90,6 +92,7 @@ function issueFixture(
     recipient: verifier.pre,
     credentialSaid: creder.said!,
     message: "grant",
+    options: { gvrsn },
   });
   return { issuerHby, issuerReger, issuer, verifier, registry, creder, grant };
 }
@@ -99,11 +102,14 @@ function* ingestGrant(runtime: AgentRuntime, fixture: IssuedFixture): Operation<
   for (const message of fixture.grant.support) {
     yield* runtime.reactor.processBytes(message);
   }
-  yield* runtime.reactor.processBytes(fixture.grant.wire);
+  yield* runtime.reactor.processBytes(
+    concatBytes(Counter.makeGVC(fixture.grant.artifacts.acdc.genus), fixture.grant.wire),
+  );
   yield* runtime.reactor.processEscrowsOnce();
 }
 
-Deno.test("VerifierAgent scans accepted grants and sends issuance webhook without notifier dependency", async () => {
+/** Verify grant reconstruction reaches the webhook through the configured receiver genus. */
+async function assertIssuanceWebhook(gvrsn: Versionage): Promise<void> {
   await run(function*() {
     const issuerHby = yield* createHabery({
       name: `verifier-agent-issuer-${crypto.randomUUID()}`,
@@ -143,7 +149,7 @@ Deno.test("VerifierAgent scans accepted grants and sends issuance webhook withou
       },
     });
     try {
-      const fixture = issueFixture(issuerHby, issuerReger, verifierHby);
+      const fixture = issueFixture(issuerHby, issuerReger, verifierHby, gvrsn);
       yield* ingestGrant(runtime, fixture);
 
       const agent = new VerifierAgent({
@@ -154,6 +160,7 @@ Deno.test("VerifierAgent scans accepted grants and sends issuance webhook withou
         cues: runtime.cues,
         services: runtime.services,
         hook: "http://example.test/hook",
+        gvrsn,
       });
       const result = yield* agent.processOnce();
 
@@ -177,7 +184,12 @@ Deno.test("VerifierAgent scans accepted grants and sends issuance webhook withou
       yield* issuerHby.close(true);
     }
   });
-});
+}
+
+for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
+  Deno.test(`VerifierAgent scans genus ${genus.major} grants and sends issuance webhook without notifier dependency`, () =>
+    assertIssuanceWebhook(genus));
+}
 
 Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", async () => {
   await run(function*() {

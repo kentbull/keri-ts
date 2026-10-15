@@ -73,7 +73,7 @@ export function* collectMailboxDebugReport(
 
     const response = yield* fetchMailboxDebug(
       endpointUrl,
-      hab.query(hab.pre, witness, { topics: cursor }, "mbx"),
+      hab.query(hab.pre, witness, { route: "mbx", q: { topics: cursor } }),
       hby.cesrBodyMode,
       witness,
     );

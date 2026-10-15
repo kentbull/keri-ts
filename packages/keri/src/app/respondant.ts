@@ -1,9 +1,6 @@
-import { ResourceAdmissionError } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
-import { DeckFullError } from "../core/deck.ts";
-import type { AgentRuntime } from "./agent-runtime.ts";
-import type { CueAdmission, CueSink } from "./cue-runtime.ts";
+import type { CueSink } from "./cue-runtime.ts";
 import type { Poster, RawCesrRoute } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
@@ -44,48 +41,6 @@ export class Respondant implements CueSink {
     this.hby = hby;
     this.poster = poster;
     this.mailboxDirector = mailboxDirector;
-  }
-
-  /** Bind one default forwarding habitat for long-lived host sinks. */
-  forHab(hab?: Hab | null): CueSink {
-    return {
-      admitCue: (runtime, interpreter) => this.admitCue(runtime, interpreter, hab),
-      send: (emission) => this.sendWithHab(emission, hab),
-    };
-  }
-
-  /** Atomically retain eligible source wire; occupied capacity never falls back to destructive sending. */
-  admitCue(runtime: AgentRuntime, interpreter: Hab | null, hint?: Hab | null): CueAdmission {
-    const cue = runtime.cues.peekHead();
-    if (!cue || !interpreter) return "ineligible";
-    const recipient = recipientForCue(cue), topic = topicForCue(cue);
-    const sender = senderHabForCue(this.hby, cue, hint);
-    if (!recipient || !topic || !sender) return "ineligible";
-    if (this.hby !== runtime.hby || this.poster !== runtime.poster) throw new RangeError("Wrong cue runtime");
-    let refusal: ResourceAdmissionError | DeckFullError | undefined;
-    try {
-      const transferred = runtime.deliveries.enqueueCue(
-        interpreter,
-        runtime.cues,
-        () =>
-          this.poster.findBytesRoute(sender, { recipient, topic }) ?? {
-            sender: sender.pre,
-            recipient,
-            topic,
-            bodyMode: this.hby.cesrBodyMode,
-            kind: "direct",
-            targets: [],
-          },
-        sender,
-        (error) => refusal = error,
-      );
-      return transferred ? "transferred" : "ineligible";
-    } catch (error) {
-      if (refusal && error === refusal && (refusal instanceof DeckFullError || refusal.reason === "busy")) {
-        return "busy";
-      }
-      throw error;
-    }
   }
 
   /** Resolve the existing responder policy for an admitted witness emission without sending or signing again. */
@@ -140,7 +95,8 @@ export class Respondant implements CueSink {
   }
 }
 
-function topicForCue(
+/** Select the existing mailbox topic for a responder cue. */
+export function topicForCue(
   cue: CueEmission["cue"],
 ): string | null {
   switch (cue.kin) {
@@ -156,7 +112,8 @@ function topicForCue(
   }
 }
 
-function recipientForCue(
+/** Select the intended recipient without preparing or transmitting bytes. */
+export function recipientForCue(
   cue: CueEmission["cue"],
 ): string | null {
   switch (cue.kin) {
@@ -172,7 +129,8 @@ function recipientForCue(
   }
 }
 
-function senderHabForCue(
+/** Borrow the local sender selected by cue provenance, explicit hint or sole habitat. */
+export function senderHabForCue(
   hby: Habery,
   cue: CueEmission["cue"],
   hab?: Hab | null,

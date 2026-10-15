@@ -248,7 +248,7 @@ function* ingest(
   try {
     // This child scope closes its parser before an optional deferred query wait begins.
     yield* call(function*() {
-      const channel = yield* runtime.reactor.frames(
+      const channel = yield* runtime.intake.frames(
         (signal) => requestBytes(context.req, { signal }),
         { signal: context.req.signal, onAdmissionRefusal },
       );

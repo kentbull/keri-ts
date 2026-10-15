@@ -3,7 +3,9 @@ import { ValidationError } from "../../core/errors.ts";
 import { processMailboxTurn } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import {
+  CHALLENGE_RESPONSE_ROUTE,
   type ChallengeOutput,
+  type ChallengeResponsePayload,
   findVerifiedChallengeResponse,
   formatChallengeWords,
   generateChallengeWords,
@@ -116,11 +118,12 @@ export function* challengeRespondCommand(
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
     function*({ hby, hab }) {
+      const payload: ChallengeResponsePayload = { words };
       const { serder } = yield* sendExchangeMessage(hby, hab, {
         recipient,
-        route: "/challenge/response",
+        route: CHALLENGE_RESPONSE_ROUTE,
         topic: "challenge",
-        payload: { i: hab.pre, words },
+        payload: { i: hab.pre, ...payload },
         delivery: normalizeTransport(commandArgs.transport),
       });
       console.log("Sent EXN message");

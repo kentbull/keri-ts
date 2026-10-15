@@ -350,49 +350,58 @@ Deno.test("MailboxPoller.processOnce stops after the bounded command-local budge
  * rather than being serialized behind one long poll.
  */
 Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remote endpoint", async () => {
-  await run(function*(): Operation<void> {
-    const hby = yield* createHabery({
-      name: `mailbox-concurrency-client-${crypto.randomUUID()}`,
-      temp: true,
-      skipConfig: true,
-      skipSignator: true,
-    });
-    const clock = new ManualRuntimeClock();
-    const transport = new FakeMailboxPollTransport([], clock);
-
-    try {
-      const { poller, endpoints } = makePollerFixture(hby, {
-        endpointCount: 2,
-        clock,
-        transport,
-        timeouts: {
-          requestOpenTimeoutMs: 20,
-          maxPollDurationMs: 80,
-          commandLocalBudgetMs: 20,
-        },
+  const check = (role: typeof Roles.mailbox | typeof Roles.witness) =>
+    run(function*(): Operation<void> {
+      const hby = yield* createHabery({
+        name: `mailbox-concurrency-client-${crypto.randomUUID()}`,
+        temp: true,
+        skipConfig: true,
+        skipSignator: true,
       });
-
-      const task = yield* spawn(function*() {
-        yield* poller.pollDo((_batch) => {});
-      });
+      const clock = new ManualRuntimeClock();
+      const transport = new FakeMailboxPollTransport([], clock);
 
       try {
-        yield* waitForCondition(
-          () => {
-            const polledEids = new Set(
-              transport.polls.map((poll) => poll.endpoint.eid),
-            );
-            return endpoints.every((endpoint) => polledEids.has(endpoint.eid));
+        const { hab, poller, endpoints } = makePollerFixture(hby, {
+          endpointCount: 2,
+          clock,
+          transport,
+          timeouts: {
+            requestOpenTimeoutMs: 20,
+            maxPollDurationMs: 80,
+            commandLocalBudgetMs: 20,
           },
-          "Expected two concurrent mailbox poll requests.",
-        );
+        });
+
+        if (role === Roles.witness) {
+          for (const endpoint of endpoints) {
+            hby.db.ends.rem([hab.pre, Roles.mailbox, endpoint.eid]);
+            hby.db.ends.pin([hab.pre, Roles.witness, endpoint.eid], { allowed: true });
+          }
+        }
+        const task = yield* spawn(function*() {
+          yield* poller.pollDo((_batch) => {});
+        });
+
+        try {
+          yield* waitForCondition(
+            () => {
+              const polledEids = new Set(
+                transport.polls.map((poll) => poll.endpoint.eid),
+              );
+              return endpoints.every((endpoint) => polledEids.has(endpoint.eid));
+            },
+            `Expected both ${role} endpoints to be polled even when the first is silent.`,
+          );
+        } finally {
+          yield* waitForTaskHalt(task);
+        }
       } finally {
-        yield* waitForTaskHalt(task);
+        yield* hby.close();
       }
-    } finally {
-      yield* hby.close();
-    }
-  });
+    });
+  await check(Roles.mailbox);
+  await check(Roles.witness);
 });
 
 /**

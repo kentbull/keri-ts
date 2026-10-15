@@ -44,6 +44,15 @@ non-README `.changeset/*.md` file. Use:
 Run `deno task changeset:check` before PR handoff. PR summaries must state
 whether the changeset is release-impacting or empty/no-release.
 
+## PR Validation Scope
+
+Use `docs/reference/PR_TEST_SCOPE.md` for PR-description CI controls. During this
+cleanup goal, validate the relevant units locally and record exact-head credit
+instead of duplicating them in CI. Select only applicable interop/package checks.
+Run the broad battery about every 20 implementation PRs and repair regressions
+before continuing. Static checks and changesets remain mandatory; final release
+qualification is never replaced by scoped PR checks.
+
 ## Learnings Policy
 
 Use a hierarchical memory model:
@@ -74,6 +83,20 @@ chronology unless they are themselves durable operational knowledge.
 - `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is normative for
   parser lifecycle work
 - Keep contract, tests, and parity vectors in sync when parser behavior changes
+
+### Component Flows and Explicit Contracts
+
+- `docs/adr/adr-0013-simple-component-flows.md` is normative for component
+  ownership, scheduling, decisions, resource lifetime, and explicit contracts.
+- Independently progressing siblings exchange concrete records through flows
+  wired by composition; do not pass runtime-shaped component bundles.
+- Decisions carry data. Owners persist within their transaction and publish
+  live state/cues after commit. Reactor is not a general callback scheduler.
+- Open metadata bags require a specific local justification. Never drive domain
+  behavior from diagnostic keys; validate unknown input and preserve known types.
+- Unbounded Decks are allowed. Bounds, accounting, and reservation machinery
+  must earn their complexity through concrete benefit, as the ADR describes.
+- Refactor ownership/contracts first; change behavior in a cohesive follow-up.
 
 ### State-Machine Control Flow
 

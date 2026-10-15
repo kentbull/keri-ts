@@ -11,22 +11,56 @@ config and accepted endpoints are absent.
 
 Kever decides, Kevery routes KEL/KEL-derived replies, Revery owns BADA/reply
 escrows, Oobiery owns introductions. Runtime and local Habery.kevery have distinct
-cue decks. Incomplete query cues require QueryCoordinator to resolve a local
+cue decks. Query cues and pending requests use one required KERIpy-shaped `q`
+body. Routed requests correlate logs/ksn/tels/tsn with their concrete filters and
+keep one required target in the envelope. QueryRequest is the shared routed record;
+its optional signer names a local AID and src names the remote attester. Continuations
+and pending work retain identifiers, not Hab objects. QueryCoordinator resolves an
+explicit signer through its existing Habery; an unavailable selection stays pending
+rather than falling back to the configured/sole Hab. Hab interpretation defers cues
+selected for another signer to correspondence. Query delivery resolves that same
+signer for endpoint lookup and introduction; a transport sink's ambient Hab cannot
+supply the introduction for another selected identity. Anchorer receives only the
+concrete QueryRequest enqueue port, not the consuming coordinator's control surface.
+Hab.query accepts that instruction plus
+its existing mailbox-topic form; raw protocol-eventing.query remains the open codec
+boundary. Do not restore a `query` alias, duplicate body target or arbitrary route/body
+bag. Schema/credential notices retain their separate KERIpy-shaped hint records.
+TEL recovery cues require registry/credential fields, with issuer only when needed.
+Reply cues separate prebuilt serders from typed registry/credential TSN records.
+Prebuilt routes live only in the serder; TSN state is serialized at Hab interpretation,
+where the local attester suffix is known. Do not restore optional data/default empty
+replies or erase required state fields through a generic route/data helper.
+Incomplete query cues require QueryCoordinator to resolve a local
 habitat and honest remote attester before producing wire. Hab.processCuesIter
-remains the cue-semantics seam.
+remains the cue-semantics seam. CueSink admission receives the actual source queue,
+not AgentRuntime. respondantCueSink wires source-to-delivery work at the runtime
+root; do not inject a delivery-worker bundle into Respondant. QueryCoordinator
+prepares/adopts pending queries synchronously over committed accepted state,
+without Reactor callbacks or parent-runtime arguments. Network waits remain in
+delivery, and failed/cancelled drains retain pending ownership through cleanup.
 
 KERI/Tufa operations own lifecycle. Acquire source/frame/runtime resources before
 work children so cancellation aborts and joins I/O before releasing permits or
-owners. Promise adaptation belongs at real edges. Reactor serializes dispatch,
+owners. Promise adaptation belongs at real edges. FrameIntake owns demand-driven parser/source acquisition and source concurrency;
+application composition shares that owner with HTTP, witness and TCP intake.
+Its admission stays private and predates parser cleanup; per-source options do
+not expose a resource policy. Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
-QueryCoordinator composes a private pending-query Deck with only admission, head
-inspection, completion, rotation and scoped clear. It owns canonical query/witness
-metadata on Baser's exact policy before normalization/copies. Rotation retains the same owner; sent or
-transferred work releases only after consumption joins. clear() preserves an
-active head; close cancels/joins processing before clearing every pending owner.
-Borrowed Hab references remain accepted-state residency, outside this byte walk.
+QueryCoordinator owns an ordinary private Deck of plain QueryRequest records.
+Pending inspection exposes length/empty/peekHead, never queue mutation. Query
+metadata and continuations have no byte reservations or configured caps: no
+production caller used those controls and no demonstrated backlog justified them.
+The current head remains until send/transfer succeeds; failed or cancelled sends
+retry it, unresolved records rotate, and new work waits for the next finite pass.
+Close cancels/joins active consumption before clearing. Actual wire/source owners
+retain their separate admission and joined cleanup; this is not a shared memory bound.
 Receiving mailbox identity is an explicit per-message argument, never ambient
-mutable request state. Mailbox query correlation uses its own exact-policy
+mutable request state. Without explicit mailbox routes, poll every eligible witness
+mailbox in stable order through the existing per-endpoint workers. A logs reply is stored at the
+witness that answered; querying alternatives while polling one retired witness
+cannot recover it. Explicit mailbox precedence remains separate.
+Mailbox query correlation uses its own exact-policy
 CueDeck (64 held slots by default); selected cues retain byte/item credit through
 joined nested-reader cleanup. Admit the destination before removing a source cue;
 shutdown clears unmatched owners only after active reads close.
@@ -105,7 +139,7 @@ Default AgentRuntime CueDeck preparation holds concrete metadata/backing and ite
 ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
 clone/state and decision-carried duplicate/escrow cues now prepare before effects
 in the default runtime or an explicitly supplied CueDeck. Revery's own missing-signer query batches
-also prepare before BADA/proof/escrow effects. /ksn holds PreparedReply ownership
+also prepare before BADA/proof/escrow effects. /ksn holds its concrete query batch
 and admits its concrete keyStateSaved child before proof/state writes on shared
 or distinct decks. Registry and credential TSN hold the same preparation while admitting its
 actual new dependency query or txnStateSaved child before proof/Broker effects.
@@ -171,7 +205,10 @@ retains TCP fallback. Witness-only polling also waits for HTTP(S).
 
 Poster route snapshots and synchronous target preparation own habitat/DB work;
 prepared sending selects HTTP or the shared TCP engine. Runtime cue/failed-target
-and Poster outbox drains explicitly lend runtime for same-socket local intake;
+and Poster outbox drains use the application `tcp-conversation` flow to compose
+same-socket parsing/dispatch. Lower TCP takes only a bounded byte consumer, with
+no AgentRuntime, Reactor or FrameIntake dependency. The application consumer
+prepares intake before connect and processes its pull stream afterward;
 standalone targets remain transmit-only. Keep wire alive through joined cleanup.
 HTTP/HTTPS priority and signed introductions stay unchanged. TCP and RX capacity
 refusals use invocation-local observation; foreign failures preserve identity.
@@ -193,11 +230,22 @@ has its own pre-admitted finite credit. Retired owners are local progress, not
 protocol success or durable retry. Respondant source heads now transfer immediately
 under the guard; their queued network work drains outside it. Unsupported/custom
 cues retain existing sink handling; occupied capacity never destructively falls back.
-Source query/continuation callbacks now run only after bounded input, item, wire,
+Query wire preparation runs only after bounded input, item, wire,
 route and preparation admission; captured signature/routing survive later changes.
 Busy preserves the raw or continuation head, and unresolved/custom sinks keep
-notify semantics. Actual continuation drains receive their owning runtime for
-a short guarded preparation turn. Request-local HTTP/witness owners still need adoption.
+notify semantics. QueryCoordinator prepares/signs synchronously against committed
+accepted state without a parent-runtime argument or Reactor callback; network waits
+remain outside preparation. AnchorQuerier retains an owned CESR event-seal SAD in KERIpy’s required i/s/d key order;
+CLI anchor JSON/primitive validation precedes controller-store opening.
+Anchor continuations ask each eligible attester once; no partial-admission index
+is needed for the ordinary pending Deck. A retired first witness cannot strand recovery.
+Ordinary queries retain first-choice behavior. Completion uses accepted seal state.
+CLI query uses the existing concurrent runner and joins it before state display/close;
+serial mailbox polls must not consume the query window before other workers progress.
+Schema/credential notices stay notify-only, even when a hint happens to name a known
+KEL. Producers use canonical s rather than sn; do not restore fallback logs routing,
+redundant r/dig hints or a normalization pass. Request-local HTTP/witness ownership
+remains unfinished.
 Actual HTTP and source/tree/output admission refusal observation is invocation-local;
 source/fetch/sink/cleanup and external observer failures retain original identity.
 Prepared target attempts return local complete/refused/busy only after joined
@@ -217,7 +265,7 @@ short turn and await the sink outside the guard; register that owner before sink
 resources so cancellation joins child cleanup before release. Initial pass count
 and eligible immediate transfer/busy semantics stay bounded. QueryCoordinator
 transforms under the same preparation/output check and sends without repeating
-observation/signing. Standalone custom pending queries retain caller-owned bounds.
+observation/signing. Standalone custom wire preparation retains caller-owned bounds; pending metadata is unbounded.
 Generic HTTP drains reuse that owner with invocation-local service-habitat/sink
 selection. Transfer stream/query metadata before source removal; observe query
 continuations only after transfer. Earlier captured query batches use their own
@@ -328,9 +376,10 @@ credit precedes body reads. Transient saturation uses the existing queued worker
 OOBI queueing and multi-URL fanout stage all child records and admit exact ordered
 cue batches before queue/moobi writes; validate every URL before mutation. Admit
 parent resolved/failed cues before terminal/contact effects. Preserve ordinary
-Deck guards. Introductions hold PreparedReply and admit actual queued children
+Deck guards. Introductions hold concrete query batches and admit actual queued children
 before BADA/proof/queue effects; unverified replies retain existing escrow/query
-publication without a child. Keep the one-shot plan in a single synchronous turn.
+publication without a child. Keep plain reply evaluation and explicit writes in
+one synchronous owner turn; finally releases actual unpublished cue batches.
 Attempt queue metadata stays staged until result admission; current queue retry
 uses row presence, not attempt-date TTL. Finite results preserve the original row
 until terminal publication. CESR result credit is an earlier scope resource held

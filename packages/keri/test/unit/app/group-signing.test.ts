@@ -24,7 +24,7 @@ Deno.test("group query signs only its local member at current index3", async () 
         nsith: "1",
         toad: 0,
       }).hab;
-      const bytes = group.query(group.pre, peers[0].pre, { topics: { "/receipt": 0 } }, "mbx");
+      const bytes = group.query(group.pre, peers[0].pre, { route: "mbx", q: { topics: { "/receipt": 0 } } });
       const frames = yield* call(() => parseBytes(bytes));
       const envelopes = envelopesFromFrames(frames);
       assertEquals(envelopes.length, 1);

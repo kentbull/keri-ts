@@ -5,6 +5,7 @@ import {
   BlindState,
   BoundState,
   CtrDexV1,
+  CtrDexV2,
   Dater,
   Diger,
   FirstSeen,
@@ -185,6 +186,10 @@ Deno.test("db/basing - cloneEvtMsg emits v1 replay counters", async () => {
       assertEquals(group.code, CtrDexV1.AttachmentGroup);
       assertEquals(signatures.code, CtrDexV1.ControllerIdxSigs);
       assertEquals(firstSeen.code, CtrDexV1.FirstSeenReplayCouples);
+      const v2Message = baser.cloneEvtMsg(pre, 0, said, Infinity, Vrsn_2_0);
+      assertEquals(parseCounterFromText(v2Message.slice(serder.size), Vrsn_2_0).code, CtrDexV2.AttachmentGroup);
+      assertEquals(baser.cloneEvtMsg(pre, 0, said, v2Message.length, Vrsn_2_0), v2Message);
+      assertThrows(() => baser.cloneEvtMsg(pre, 0, said, v2Message.length - 1, Vrsn_2_0), ResourceLimitError);
     } finally {
       yield* baser.close(true);
     }
