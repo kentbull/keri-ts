@@ -20,6 +20,15 @@ import { pathedMaterialCounterQb64b } from "./attachment-countering.ts";
 import { type TransIdxSigGroup } from "./dispatch.ts";
 import { serializeMessage as serializeExchangeMessage } from "./protocol-serialization.ts";
 
+/** V2 IPEX prior-route policy shared by body construction and accepted-conversation verification. */
+export const IPEX_V2_PREDECESSORS: Readonly<Record<string, readonly string[]>> = {
+  offer: ["apply"],
+  agree: ["offer"],
+  grant: ["apply", "agree"],
+  admit: ["grant"],
+  spurn: ["apply", "offer", "agree", "grant"],
+};
+
 function resolveVersion(
   version?: Versionage,
   pvrsn?: Versionage,

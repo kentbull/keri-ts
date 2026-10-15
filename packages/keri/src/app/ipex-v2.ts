@@ -1,3 +1,4 @@
+import { IPEX_V2_PREDECESSORS } from "../core/protocol-exchanging.ts";
 /** V2 IPEX route policy; v1 routing remains independently registered. */
 import {
   type CesrFrame,
@@ -32,14 +33,6 @@ import { envelopeFromFrame } from "./parsering.ts";
 
 type VerifyArgs = Parameters<NonNullable<ExchangeRouteHandler["verify"]>>[0];
 type EvidenceArgs = Parameters<NonNullable<ExchangeRouteHandler["verifyEvidence"]>>[0];
-const previousRoutes: Record<string, readonly string[]> = {
-  offer: ["apply"],
-  agree: ["offer"],
-  grant: ["apply", "agree"],
-  admit: ["grant"],
-  spurn: ["apply", "offer", "agree", "grant"],
-};
-
 /** JSON-like mapping test at the untrusted SAD boundary. */
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -113,7 +106,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     const verb = route[2];
     if (
       route.length !== 3 || route[0] !== "" || route[1] !== "ipex"
-      || (verb !== "apply" && !Object.hasOwn(previousRoutes, verb))
+      || (verb !== "apply" && !Object.hasOwn(IPEX_V2_PREDECESSORS, verb))
     ) return false;
     const attrs = serder.sad!.a;
     const q = serder.sad!.q;
@@ -241,7 +234,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     const previous = prior?.route?.split("/");
     if (
       !prior || previous?.length !== 3 || previous[0] !== "" || previous[1] !== "ipex"
-      || !previousRoutes[verb].includes(previous[2])
+      || !IPEX_V2_PREDECESSORS[verb].includes(previous[2])
     ) return null;
     if (verb === "spurn" && previous[2] === "grant" && prior.sad!.p) return null;
     if (

@@ -48,6 +48,8 @@ approval precedes ordinary KEL/reply processing. Local-first approval borrows pa
 frames; remote-first approval reopens evidence. CLI proposal/join remains v1.
 Preserve first-notice behavior or retries can republish approval unnecessarily.
 
+V2 IPEX construction and verification share IPEX_V2_PREDECESSORS in protocol-exchanging;
+v1 retains its distinct prior-route rule (grant follows agree, not apply).
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
 proof; metadata offers withhold issuer proofs but still validate carried schemas.
 Grant order is issuer authentication, own schemas, edge pins, then presentation.

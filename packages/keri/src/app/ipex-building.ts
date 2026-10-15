@@ -10,7 +10,7 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import type { Operation } from "effection";
-import { exchange } from "../core/protocol-exchanging.ts";
+import { exchange, IPEX_V2_PREDECESSORS } from "../core/protocol-exchanging.ts";
 import { abortable } from "./abortable.ts";
 import { type DisclosurePlan, validDisclosurePlan } from "./ipex-graph.ts";
 import type { IpexBuilderOptions, IpexMessage, IpexRoute } from "./ipexing.ts";
@@ -25,13 +25,6 @@ export interface IpexV2BodyOptions extends Omit<IpexBuilderOptions, "version" | 
   anchor?: boolean;
   attrs?: Record<string, unknown>;
 }
-const predecessors: Record<string, readonly string[]> = {
-  offer: ["apply"],
-  agree: ["offer"],
-  grant: ["apply", "agree"],
-  admit: ["grant"],
-  spurn: ["apply", "offer", "agree", "grant"],
-};
 const nodeIlks = new Set([null, "acm", "ace", "act", "acg"]);
 
 /**
@@ -47,7 +40,7 @@ export function ipexExnBody(
   options: IpexV2BodyOptions,
 ): SerderKERI {
   const verb = route.slice("/ipex/".length);
-  if (route !== `/ipex/${verb}` || (verb !== "apply" && !Object.hasOwn(predecessors, verb))) {
+  if (route !== `/ipex/${verb}` || (verb !== "apply" && !Object.hasOwn(IPEX_V2_PREDECESSORS, verb))) {
     throw new Error("Unsupported IPEX route.");
   }
   if (nodes.length && verb !== "offer" && verb !== "grant") {
@@ -61,7 +54,10 @@ export function ipexExnBody(
   let recipient = options.recipient;
   let xid = options.xid;
   if (prior) {
-    if (prior.pvrsn.major !== 2 || verb === "apply" || !predecessors[verb]?.some((v) => prior.route === `/ipex/${v}`)) {
+    if (
+      prior.pvrsn.major !== 2 || verb === "apply"
+      || !IPEX_V2_PREDECESSORS[verb]?.some((v) => prior.route === `/ipex/${v}`)
+    ) {
       throw new Error("Unsupported IPEX prior route.");
     }
     if (!prior.sad!.ri || prior.sad!.ri !== sender || (recipient !== undefined && recipient !== prior.pre)) {
