@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { decodeHex } from "jsr:@std/encoding/hex";
 import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
 import { discardFrame } from "../../../src/core/frame.ts";
@@ -202,4 +202,36 @@ Deno.test("cancellation closes a pending nested ESSR reader and leaves tree owne
   assertEquals(discarded, 0);
   await discardFrame(frame);
   assertEquals(discarded, 1);
+});
+
+Deno.test("nested serialization checks caller-supplied ESSR extent before opening its wire", async () => {
+  const [frame] = await parseBytes(b(vectors.rows[0].qb64));
+  let opened = false;
+  const wire = {
+    size: 8,
+    /** Invalid extent must fail before acquiring an output reader. */
+    async *open() {
+      opened = true;
+      yield b("4BABYWJj");
+    },
+    async discard() {},
+  };
+  const valid = essrPayload(wire, 1, 3, frame.gvrsn!);
+  try {
+    for (
+      const extent of [
+        { ...valid, count: -1 },
+        { ...valid, count: 1.5 },
+        { ...valid, raw: { ...valid.raw, size: NaN } },
+        { ...valid, wire: { ...wire, size: Infinity } },
+        { ...valid, count: 0, raw: { ...valid.raw, size: 0 } },
+      ]
+    ) {
+      frame.nests![0].essr = extent;
+      assertThrows(() => framePayload(frame), Error, "Invalid ESSR payload extent");
+    }
+    assertEquals(opened, false);
+  } finally {
+    await discardFrame(frame);
+  }
 });

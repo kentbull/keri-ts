@@ -179,6 +179,11 @@ async function* wireChunks(wire: Payload, domain: CesrDomain, signal?: AbortSign
 
 /** One counter calculation serves both streamed output and the enclosing payload size. */
 function essrHeader(essr: EssrPayload, gvrsn: Versionage, domain: CesrDomain): Uint8Array {
+  // Caller-supplied nested frames must satisfy metadata framing without a separate tree walk.
+  if (
+    [essr.count, essr.raw.size, essr.wire.size].some((value) => !Number.isSafeInteger(value) || value < 0)
+    || essr.wire.size > 4 * Math.ceil(essr.raw.size / 3) + 12 * essr.count
+  ) throw new SerializeError("Invalid ESSR payload extent");
   // Canonical Texters include their qualified headers and are always quadlet aligned.
   const count = gvrsn.major === 1 ? essr.count : essr.wire.size / 4;
   return counter("ESSRPayloadGroup", count, gvrsn, domain);
