@@ -31,19 +31,19 @@ strict Serder seal projection remains opt-in. Accepted digest/opaque data must
 not hide a later fully witnessed tuple anchor.
 
 Use the repository-pinned LMDB release (runtime source currently 3.5.3), V1 data
-format for KERIpy interop, and the actual native rebuild/preflight path.
+format for KERIpy interop, and the actual native rebuild path.
 Deno rebuilds with official `ENABLE_V8_FUNCTIONS=false`: Node-header V8 imports
 can terminate Deno on the large-row mapped-buffer path. Native Node may use the
 pinned official V8 build with matching compiled/runtime major and enabled V8
-acceleration. Preflight may create a mapped view, never an owned row copy before
-admission; mapping residency/metadata and fixed scratch remain separate overhead.
-Qualify actual addons under both runtimes, including rows above 16 MiB.
-TEL capture metadata and fixed pair composition own no event bodies or cursors;
-consumer readers close each cursor before clone/yield, including reopened stores.
-TEL replay preflights body rows before copies and reads native dupsort signatures
-incrementally, checking its ceiling before payload retention. Each native duplicate
-is finite (LMDB's 511-byte maximum); ordinary standalone hydration, native scratch
-and mapped residency remain separate qualification limits.
+acceleration. Ordinary native reads copy whole rows. Row size billing, prototype
+hook probes and before-copy callbacks are removed; no storage policy may return.
+Qualify actual addons under both runtimes, including rows above 16 MiB, owned
+bytes surviving replacement/later reads, and active writer access.
+TEL capture metadata retains no event bodies or cursors. Readers close each
+cursor before clone/yield, including reopened stores. No message/proof ceiling
+or canonical pair/brand inspection remains. Tevery composes management then
+credential iterables directly, preserving missing and duplicate ranges. Genus
+and genus-selector settings remain actual wire semantics and snapshot on capture.
 KEL replay captures immutable identity/ordinal horizons without event bytes or
 open cursors. It has no message/depth ceiling or copy accounting. Cycle detection,
 ordinal validity, current proof reads and cursor closure remain correctness rules.

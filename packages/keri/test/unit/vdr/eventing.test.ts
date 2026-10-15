@@ -31,7 +31,6 @@ import {
 import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
-import { CapturedTelReplay } from "../../../src/db/tel-replay.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { CredentialStateReceiver } from "../../../src/vdr/credential-tsn.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
@@ -337,15 +336,13 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
           assertExists(cue);
           if (cue.kin !== "replay") throw new Error("Expected TEL replay");
           assertEquals([cue.querySaid, cue.src, cue.dest], [request.said, issuer.pre, issuer.pre]);
-          assertEquals(CapturedTelReplay.is(cue.messages), true);
-          assertEquals((cue.messages as CapturedTelReplay).ranges, [[vcp.pre!, 0], [iss.pre!, 0]]);
           const admitted = new Deck<AgentCue>();
           const clone = reger.cloneTvt;
           let reads = 0;
           try {
             reger.cloneTvt = () => {
               reads++;
-              throw new Error("Unexpected TEL body read during admission");
+              throw new Error("Unexpected TEL body read during cue publication");
             };
             const producing = new Tevery({ db: hby.db, reger, cues: admitted });
             producing.processQuery({ serder: request, source: issuer.kever!.prefixer });
@@ -385,6 +382,11 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
       const source = new Prefixer({ qb64: issuer.pre });
       assertEquals(tvy.processQuery({ serder: request(), source }), undefined);
       assertRuntimeCue(runtime, "replay");
+      tvy.processQuery({ serder: request(vcp.pre!, vcp.pre!), source });
+      const duplicate = runtime.cues.pull();
+      if (duplicate?.kin !== "replay") throw new Error("Expected duplicate TEL replay");
+      const first = [...responses[0]][0];
+      assertEquals([...duplicate.messages], [first, first], "Repeated ranges preserve management/credential order");
       assertEquals(tvy.processQuery({ serder: request(issuer.pre), source }), undefined);
       assertEquals(runtime.cues.length, 0, "Unknown TEL has no response or query escrow");
       assertEquals(tvy.processQuery({ serder: request(), source: undefined }), {

@@ -69,12 +69,11 @@ function nextRow(
   table: IoSetSuber<string>,
   said: string,
   ordinal: number,
-  maxBytes: number,
 ): { wire: Uint8Array; next: number } | null {
   for (const key of table.sdb.getKeys({ start: suffix(b(said), ordinal) })) {
     const [owner, index] = unsuffix(key);
     if (t(owner) !== said) return null;
-    const wire = db.getValBounded(table.sdb, key, maxBytes);
+    const wire = db.getVal(table.sdb, key);
     if (!wire) throw new Error("Stored nested row disappeared");
     return { wire, next: index + 1 };
   }
@@ -114,14 +113,12 @@ export async function stageNests(
     remaining -= wire.length;
     let ordinal = 0;
     let duplicate = false;
-    let comparisonBytes = MAX_NESTED_WIRE_BYTES;
     // One finite comparison row at a time preserves Python IoSet ordering and deduplication.
     for (
-      let row = nextRow(db, db.enstStaging, stage, ordinal, comparisonBytes);
+      let row = nextRow(db, db.enstStaging, stage, ordinal);
       row;
-      row = nextRow(db, db.enstStaging, stage, ordinal, comparisonBytes)
+      row = nextRow(db, db.enstStaging, stage, ordinal)
     ) {
-      comparisonBytes -= row.wire.length;
       if (sameWire(row.wire, wire)) {
         duplicate = true;
         break;
@@ -136,13 +133,12 @@ export async function stageNests(
 /** Replace the public IoSet within the caller's accepted/escrow transaction; never retain an array of rows. */
 export function publishNests(db: Baser, said: string, stage: string): void {
   db.enst.rem([said]);
-  let ordinal = 0, remaining = MAX_NESTED_WIRE_BYTES;
+  let ordinal = 0;
   for (
-    let row = nextRow(db, db.enstStaging, stage, ordinal, remaining);
+    let row = nextRow(db, db.enstStaging, stage, ordinal);
     row;
-    row = nextRow(db, db.enstStaging, stage, ordinal, remaining)
+    row = nextRow(db, db.enstStaging, stage, ordinal)
   ) {
-    remaining -= row.wire.length;
     db.enst.sdb.putSync(suffix(b(said), ordinal), row.wire);
     ordinal = row.next;
   }
@@ -171,7 +167,6 @@ export async function loadNests(
 ): Promise<CesrFrame[]> {
   const nests: CesrFrame[] = [];
   let ordinal = 0;
-  let remainingWire = MAX_NESTED_WIRE_BYTES;
   try {
     for (;;) {
       signal?.throwIfAborted();
@@ -180,10 +175,9 @@ export async function loadNests(
         if (hasNests(db, said, ordinal)) throw new ResourceLimitError("Stored nested tree exceeds node limit");
         break;
       }
-      const row = nextRow(db, db.enst, said, ordinal, remainingWire);
+      const row = nextRow(db, db.enst, said, ordinal);
       if (!row) break;
       ordinal = row.next;
-      remainingWire -= row.wire.length;
       const archive = await db.openPayloads(signal);
       let count = 0;
       for await (

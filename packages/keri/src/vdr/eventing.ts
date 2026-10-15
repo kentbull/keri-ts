@@ -36,7 +36,6 @@ import { RegStateRecord } from "../core/records.ts";
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
-import { CapturedTelReplay } from "../db/tel-replay.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { prepareTsnQuery } from "./tsn-query.ts";
 
@@ -1028,8 +1027,13 @@ export class Tevery {
     ) return { kind: "drop", reason: "invalidQuery" };
     const management = this.reger.replay(query.ri, { gvrsn: Vrsn_2_0, genusify: true });
     const credential = query.i ? this.reger.replay(query.i, { gvrsn: Vrsn_2_0, genusify: true }) : null;
-    const messages = CapturedTelReplay.pair(management, credential);
-    if (!messages) return;
+    if (!management && !credential) return;
+    const messages = {
+      *[Symbol.iterator]() {
+        if (management) yield* management;
+        if (credential) yield* credential;
+      },
+    };
     this.cues.push({
       kin: "replay",
       querySaid: serder.said ?? undefined,

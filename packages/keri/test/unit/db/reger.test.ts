@@ -236,18 +236,6 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
         assertEquals(reading, 0, "Slow consumers and iterator cancellation retain no LMDB cursor");
         reader.return?.(undefined);
         assertEquals(reading, 0);
-        assertThrows(() => reger.cloneTvt(regk, regk, KERI_V1, expected.length - 1), ResourceLimitError);
-        const bounded = reger.tvts.getBounded.bind(reger.tvts);
-        let copies = 0;
-        reger.tvts.getBounded = (keys, limit) => bounded(keys, limit, () => copies++);
-        try {
-          assertThrows(() => [...reger.replay(regk, { maxMessageBytes: tel.raw.length - 1 })!], ResourceLimitError);
-          assertEquals(copies, 0, "Native body preflight refuses before either owned row copy");
-          assertEquals(reger.cloneTvt(regk, regk, KERI_V1, expected.length), expected);
-          assertEquals(copies, 1, "The admitted native read copies exactly one body under its ceiling");
-        } finally {
-          reger.tvts.getBounded = bounded;
-        }
         const getProofs = reger.tibs.get, iterateProofs = reger.tibs.getIter.bind(reger.tibs);
         let proofsRead = 0, proofCursorClosed = false;
         reger.tibs.pin([regk, regk], [wiger, ...[1, 2].map((index) => signer.sign(tel.raw, { index }) as Siger)]);
@@ -265,11 +253,8 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
           }
         };
         try {
-          assertThrows(
-            () => [...reger.replay(regk, { maxMessageBytes: tel.raw.length + wiger.qb64.length })!],
-            ResourceLimitError,
-          );
-          assertEquals([proofsRead, proofCursorClosed], [2, true], "Refusal stops before the third native proof");
+          assertEquals([...replay].length, 1);
+          assertEquals([proofsRead, proofCursorClosed], [3, true], "All proofs read incrementally and cursor closed");
           const fault = new Error("foreign proof storage failure");
           reger.tibs.getIter = function*() {
             throw fault;
@@ -280,8 +265,7 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
           reger.tibs.getIter = iterateProofs;
           reger.tibs.pin([regk, regk], [wiger]);
         }
-        assertEquals([...replay], [expected], "Failed bounded reads preserve stored body and proof wire");
-        assertThrows(() => reger.replay(regk, { maxMessageBytes: 0 }), RangeError);
+        assertEquals([...replay], [expected], "Failed reads preserve stored body and proof wire");
         const v2Attachments = concatBytes(
           new Counter({ code: CtrDexV2.WitnessIdxSigs, count: wiger.qb64b.length / 4, version: Vrsn_2_0 }).qb64b,
           wiger.qb64b,
@@ -303,37 +287,12 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
         const selected = reger.replay(regk, { gvrsn: genus, genusify: true })!;
         genus.major = 1;
         assertEquals([...selected], [concatBytes(Counter.makeGVC(Vrsn_2_0), v2Expected)]);
-        const pair = CapturedTelReplay.pair(selected, selected)!;
-        assertEquals(pair.ranges, [[regk, 0], [regk, 0]], "Duplicate ranges preserve exact wire order");
-        assertEquals(CapturedTelReplay.pair(null, selected), selected);
-        assertEquals(CapturedTelReplay.pair(null, null), null);
-        assertThrows(() => CapturedTelReplay.pair(replay, selected), RangeError, "wire settings");
-        assertThrows(() => CapturedTelReplay.pair(pair, selected), RangeError, "fixed pair");
-        assertThrows(() => Object.defineProperty(pair, "ranges", { value: [] }), TypeError);
-        assertThrows(() => (pair.ranges[0] as unknown as string[]).push("mutation"), TypeError);
-        const other = yield* createReger({ name: crypto.randomUUID(), temp: true });
-        try {
-          assertThrows(
-            () => CapturedTelReplay.pair(selected, new CapturedTelReplay(other, selected.ranges, selected.settings)),
-            RangeError,
-            "same borrowed store",
-          );
-        } finally {
-          yield* other.close(true);
-        }
-        /** Caller array subclasses may retain private data; captures copy only primitive tuples. */
-        class RangeList extends Array<readonly [string, number]> {
-          #data = new Uint8Array(1024 * 1024);
-          hiddenBytes(): number {
-            return this.#data.byteLength;
-          }
-        }
-        const input = new RangeList();
-        input.push([regk, 0]);
+        assertThrows(() => Object.defineProperty(selected, "ranges", { value: [] }), TypeError);
+        assertThrows(() => (selected.ranges[0] as unknown as string[]).push("mutation"), TypeError);
+        const input = [[regk, 0] as const];
         const normalized = new CapturedTelReplay(reger, input, selected.settings);
-        assertEquals(input.hiddenBytes(), 1024 * 1024);
-        assertEquals(Object.getPrototypeOf(normalized.ranges), Array.prototype);
-        assertEquals(Object.getPrototypeOf(normalized.ranges[0]), Array.prototype);
+        assertEquals(normalized.ranges === input, false);
+        assertEquals(normalized.ranges[0] === input[0], false);
         const deck = new Deck<AgentCue>();
         const iterate = CapturedTelReplay.prototype[Symbol.iterator];
         let opened = 0;
@@ -343,22 +302,17 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
             return iterate.call(this);
           };
           yield* reger.close();
-          deck.push({ kin: "replay", messages: pair });
-          assertEquals(deck.pull(), { kin: "replay", messages: pair });
+          deck.push({ kin: "replay", messages: selected });
+          assertEquals(deck.pull(), { kin: "replay", messages: selected });
           assertEquals([opened, reading], [0, 0], "Queue transfer opens no iterator or store reader even while closed");
           yield* reger.reopen();
-          assertEquals([...pair], [
-            concatBytes(Counter.makeGVC(Vrsn_2_0), v2Expected),
+          assertEquals([...selected], [
             concatBytes(Counter.makeGVC(Vrsn_2_0), v2Expected),
           ]);
         } finally {
           CapturedTelReplay.prototype[Symbol.iterator] = iterate;
           if (!reger.opened) yield* reger.reopen();
         }
-        assertThrows(
-          () => [...reger.replay(regk, { gvrsn: Vrsn_2_0, genusify: true, maxMessageBytes: v2Expected.length + 7 })!],
-          ResourceLimitError,
-        );
       } finally {
         table.getAllItemIter = rows;
       }

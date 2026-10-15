@@ -166,19 +166,7 @@ previous public rows. Parent `/fwd` verification checks exactly one child's vali
 body and the signed `a.evt` digest; child signature authentication belongs to its
 recipient. No recursive dispatch occurs at the forwarder.
 
-Private snapshot facilities require explicit shared credit. `kramSnapshotIdentity`
-uses `BytesSuber.getBounded` and holds 48 MiB for both owned row copies through its
-synchronous digest, including active writers. Stored wire above 24 MiB is corruption;
-byte contention is ResourceAdmissionError, and infrastructure errors propagate.
-`withKramSnapshot` holds 48 MiB through joined serialization and synchronous storage
-publication. Its callback cannot retain wire or return asynchronous work using it.
-Invalid extent metadata fails as a contract error before admission. Incoming payload
-owners remain borrowed. Runtime Kramer/Handoff/Staging and Exchanger borrow the same
-policy. Hydration admits both row copies before reading, then 8 MiB + 64 KiB for
-cursor/chunk backing. Those phases release after parser/source closure joins; parsed
-ordinary/ESSR credit stays with actual frame owners through callback disposal. No
-FilePayload wrapper changes identity or adoption. Serialization credit lasts through
-the synchronous publication transaction, then releases before downstream work.
-The default 256 MiB also admits existing partial nested reopen/delivery alongside a
-64 MiB crypto allowance. Direct hydration requires explicit resources; standalone
-Kramer/Handoff defaults are separate finite ledgers, not a shared process bound.
+KRAM ready/partial snapshots and their copy-admission helpers are removed.
+KERIpy-supported partial factors, replay caches and actual accepted payload
+ownership remain distinct. Ordinary database row reads have no byte ceiling or
+before-copy callback; nested parser/collection quotas are remaining removal work.

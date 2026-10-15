@@ -586,9 +586,9 @@ export class Baser {
     return this.lmdber.inWriteTransaction;
   }
 
-  /** Admit one physical binary row before its owned copy; native scratch remains separate. */
-  getValBounded(table: Database<BinVal, BinKey>, key: Uint8Array, maxBytes: number): Uint8Array | null {
-    return this.lmdber.getValBounded(table, key, maxBytes);
+  /** Read an owned binary row through the backing database's normal copy path. */
+  getVal(table: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array | null {
+    return this.lmdber.getVal(table, key);
   }
 
   /**

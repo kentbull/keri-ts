@@ -81,11 +81,10 @@ Deno.test("mailbox SSE provider clones only the event requested by HTTP demand",
 });
 
 Deno.test("mailbox query and nested provider share admission before metadata or row reads", async () => {
-  let rows = 0, ceiling = 0;
+  let rows = 0;
   const mailboxer = {
-    *cloneTopicIter(_topic: string, from: number, maxBytes: number) {
+    *cloneTopicIter(_topic: string, from: number) {
       rows++;
-      ceiling = maxBytes;
       yield [from, "", new Uint8Array([1, 2, 3])];
     },
   } as unknown as Mailboxer;
@@ -107,7 +106,7 @@ Deno.test("mailbox query and nested provider share admission before metadata or 
     } as unknown as StreamCue,
   );
   await reader.read();
-  assertEquals([resources.used.streams, rows, ceiling], [1, 1, 4 * 1024 ** 2]);
+  assertEquals([resources.used.streams, rows], [1, 1]);
   assertThrows(() => director.streamMailbox("aid", { "/reply": 0 }), ResourceAdmissionError, "busy");
   assertEquals(rows, 1);
   await director.close();

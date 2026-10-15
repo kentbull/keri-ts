@@ -58,26 +58,17 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
       const event = [...peer.db.clonePreIter(controller.pre)][0];
       assertEquals((yield* witnessReceiptPost(runtime, witness, event)).kind, "accepted");
       // The actual query handler captures metadata without hydrating an event or pulling output early.
-      const read = hby.db.getValBounded;
-      hby.db.getValBounded = () => {
+      const read = hby.db.getEvt;
+      hby.db.getEvt = () => {
         throw new Error("GET hydrated before response pull");
       };
       try {
         const lazy = yield* call(() => handle(new Request(origin + `/query?typ=kel&pre=${controller.pre}`)));
-        assertEquals([lazy.status, runtime.resources.used.streams], [200, 1]);
-        const occupied = runtime.resources.reserve({ streams: 1 });
-        if (occupied.kind !== "reserve") throw new Error("Expected remaining stream credit");
-        try {
-          const busy = yield* call(() => handle(new Request(origin + `/query?typ=kel&pre=${controller.pre}`)));
-          assertEquals(busy.status, 503);
-          yield* call(() => busy.text());
-        } finally {
-          occupied.reservation.release();
-        }
+        assertEquals(lazy.status, 200);
         yield* call(() => lazy.body!.cancel());
         assertEquals(runtime.resources.used.bytes, 0);
       } finally {
-        hby.db.getValBounded = read;
+        hby.db.getEvt = read;
       }
       for (
         const [query, status] of [
