@@ -184,11 +184,12 @@ and polling cursors, accepted evidence and protocol receipts. KRAM acceptance is
 not downstream business acknowledgement. Local transport completion is not remote
 application acceptance. Use the pinned reference to distinguish them.
 
-Stop creating/opening retired stores. Do not erase historical pending records or
-mark them delivered. Document one-time inspection/export with the old version,
-stopping the old process before upgrade. Inert historical files may remain until
-operator disposition; no permanent compatibility reader or migration subsystem.
-The deferred outbox roadmap is an unimplemented idea, never retention authority.
+Stop creating/opening retired stores and delete their code outright. Compatibility
+with previous keri-ts versions and their data is not a requirement. Do not build
+migration/export/recovery paths, compatibility readers, disabled implementations
+or new-to-old version tests. Current KERIpy protocol interoperability remains the
+target. The deferred outbox roadmap is an unimplemented idea, never retention
+authority. Removing code does not require touching unrelated live databases.
 
 ## KERIpy grounding and deliberate differences
 

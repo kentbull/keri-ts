@@ -29,7 +29,8 @@ The 2026-10-15 decision requires complete removal of application accounting and
 unsupported outbox/mailbox-consumer/KRAM-ready durability. Only a minimal private
 socket constraint supported by production evidence may remain. No no-op policies,
 renamed ledgers or dormant hooks. Preserve real protocol state and resource cleanup;
-retired user records remain inert until explicit operator disposition.
+old keri-ts API/data compatibility is not required. Add no migration readers,
+upgrade machinery or new-to-old version tests.
 Use concrete semantic records, narrow validated input, and locally justified
 open boundaries. Diagnostic metadata must not drive domain control flow.
 
