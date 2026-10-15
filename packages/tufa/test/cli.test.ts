@@ -299,9 +299,12 @@ Deno.test("tufa/cli - IPEX runtime knobs dispatch renamed args", () => {
     "3",
     "--poll-budget-ms",
     "1000",
+    "--gvrsn",
+    "2.0",
   ]);
   assertEquals(poll.name, "ipex.poll");
   assertEquals(poll.args.pollTurns, 3);
+  assertEquals(poll.args.gvrsn, "2.0");
   assertEquals(poll.args.pollBudgetMs, 1000);
   assertEquals("maxTurns" in poll.args, false);
   assertEquals("budgetMs" in poll.args, false);
@@ -718,4 +721,19 @@ Deno.test("tufa/cli - --debug-error prints the AppError stack for handled comman
   assertStringIncludes(res.stderr, "ValidationError:", res.stderr);
   assertStringIncludes(res.stderr, "\n    at ", res.stderr);
   assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+});
+
+Deno.test("tufa/cli - verifier run accepts the grant child attachment genus", () => {
+  const verifier = parseCommandSelection([
+    "verifier",
+    "run",
+    "-n",
+    "store",
+    "--hook",
+    "http://127.0.0.1:9923",
+    "--gvrsn",
+    "2.0",
+  ]);
+  assertEquals(verifier.name, "verifier.run");
+  assertEquals(verifier.args.gvrsn, "2.0");
 });

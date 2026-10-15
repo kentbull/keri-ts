@@ -293,7 +293,7 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
       const batches = yield* processMailboxTurn(runtime, { hab, budgetMs: pollBudgetMs });
       batchesSeen += batches.length;
       messagesSeen += batches.reduce((total, batch) => total + batch.messages.length, 0);
-      yield* processStoredCredentialGrants(hby, runtime, reger);
+      yield* processStoredCredentialGrants(hby, runtime, reger, ipexArgs.gvrsn);
       yield* runtime.reactor.processEscrowsOnce();
       if (newIpexMessages(hby, beforeExns).length > 0 || newSavedCredentials(reger, beforeSaved).length > 0) {
         break;
@@ -534,6 +534,7 @@ function* processStoredCredentialGrants(
   hby: Habery,
   runtime: AgentRuntime,
   reger: Reger,
+  gvrsn?: Versionage,
 ): Operation<void> {
   for (const [, grant] of hby.db.exns.getTopItemIter()) {
     if (grant.route !== IPEX_GRANT_ROUTE) {
@@ -545,7 +546,7 @@ function* processStoredCredentialGrants(
     }
     yield* processCredentialPresentationArtifacts(
       runtime.reactor,
-      storedGrantArtifacts(hby, grant),
+      storedGrantArtifacts(hby, grant, gvrsn),
     );
   }
 }
