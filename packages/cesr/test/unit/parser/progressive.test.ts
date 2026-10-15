@@ -566,8 +566,14 @@ Deno.test("JSON and MGPK descendants share decoded credit through refusal, suspe
   const wrap = (raw: Uint8Array) => v.group("NonNativeBodyGroup", new Texter({ raw, code: "4B" }).qb64);
   const child = v.group("BodyWithAttachmentGroup", wrap(msgpackBody));
   const wire = v.group("BodyWithAttachmentGroup", wrap(encode(jsonBody)) + child);
-  // JSON charge406; pinned MGPK scanner64 +working1394 +declared decoded342.
-  const held = 512 + 406 + 64 + 1394 + 342;
+  const measured = new ResourcePolicy();
+  const measuring = parse(chunks(encode(wire)), { resources: measured, maxFrameBytes: 512 });
+  const sample = (await measuring.next()).value!;
+  const held = measured.used.bytes;
+  assert(held > 512, "decoded parent and child retain credit beyond the wire allowance");
+  await discardFrame(sample);
+  await measuring.return(undefined);
+  assertEquals(measured.used.bytes, 0);
   const resources = new ResourcePolicy({ bytes: held });
   const options = { resources, maxFrameBytes: 512, classifyWireErrors: true };
   const occupied = resources.reserve({ bytes: 1 });

@@ -26,7 +26,9 @@
   Pin the audited MessagePack 3.1.3 and cbor-x 1.6.0 versions exactly in source
   and emitted packages while decoder/reset assumptions depend on those implementations.
   Declaration preflight, codec workspace policy and intrinsic syntax provenance are
-  separate responsibilities. The body parser consults one codec syntax contract;
+  separate responsibilities. MessagePack workspace uses an 8 KiB fixed allowance,
+  256 bytes per nonempty container/extension and one raw copy, not private field/pool counts.
+  The body parser consults one codec syntax contract;
   only locally created intrinsic refusals permit opaque fallback for admitted codecs.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each
   owner once, including shared credit on ordinary frames. A suspended generator
