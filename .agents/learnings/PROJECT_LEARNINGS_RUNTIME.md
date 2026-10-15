@@ -211,8 +211,11 @@ cues retain existing sink handling; occupied capacity never destructively falls 
 Source query/continuation callbacks now run only after bounded input, item, wire,
 route and preparation admission; captured signature/routing survive later changes.
 Busy preserves the raw or continuation head, and unresolved/custom sinks keep
-notify semantics. Actual continuation drains receive their owning runtime for
-a short guarded preparation turn. Request-local HTTP/witness owners still need adoption.
+notify semantics. QueryCoordinator prepares/signs synchronously against committed
+accepted state without a parent-runtime argument or Reactor callback; network waits
+remain outside preparation. AnchorQuerier retains an owned CESR event-seal SAD in KERIpy’s required i/s/d key order;
+CLI anchor JSON/primitive validation precedes controller-store opening. Generic
+query-body contracts and request-local HTTP/witness ownership remain unfinished.
 Actual HTTP and source/tree/output admission refusal observation is invocation-local;
 source/fetch/sink/cleanup and external observer failures retain original identity.
 Prepared target attempts return local complete/refused/busy only after joined

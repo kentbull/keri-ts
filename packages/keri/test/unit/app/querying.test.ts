@@ -1,6 +1,7 @@
 import { call, resource, run, spawn, suspend } from "effection";
-import { assertEquals, assertExists, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import {
+  ParserError,
   ResourceAdmissionError,
   ResourceLimitError,
   ResourcePolicy,
@@ -14,11 +15,13 @@ import {
   runtimeOobiConverged,
   runtimePendingState,
 } from "../../../src/app/agent-runtime.ts";
+import { queryCommand } from "../../../src/app/cli/query.ts";
 import { type CueSink } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { QueryCoordinator } from "../../../src/app/querying.ts";
+import { type AnchorQuerier, QueryCoordinator } from "../../../src/app/querying.ts";
 import { reserveCueBytes } from "../../../src/core/cue-admission.ts";
 import type { QueryCue, TelQueryCue } from "../../../src/core/cues.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { type KeverEventEnvelope } from "../../../src/core/eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 
@@ -26,6 +29,12 @@ import { Roles } from "../../../src/core/roles.ts";
 void ({ kin: "query", q: {}, query: {} } satisfies QueryCue);
 // @ts-expect-error TEL recovery must identify its registry and credential.
 void ({ kin: "telquery", q: { i: "credential" } } satisfies TelQueryCue);
+// @ts-expect-error Anchor queries require the event digest, not an optional payload bag.
+void ({ i: "prefix", s: "0" } satisfies ConstructorParameters<typeof AnchorQuerier>[1]);
+// @ts-expect-error Event-seal ordinals are hex text; credential KEL anchors use another shape.
+void ({ i: "prefix", s: 0, d: "digest" } satisfies ConstructorParameters<typeof AnchorQuerier>[1]);
+// @ts-expect-error Event seals have no diagnostic extension slot.
+void ({ i: "prefix", s: "0", d: "digest", extra: true } satisfies ConstructorParameters<typeof AnchorQuerier>[1]);
 
 function eventEnvelope(
   serder: SerderKERI,
@@ -526,7 +535,7 @@ Deno.test("KeyStateNoticer upgrades to a `logs` query when a saved key state is 
   });
 });
 
-Deno.test("SeqNoQuerier and AnchorQuerier stay pending until their local completion conditions are satisfied", async () => {
+Deno.test("SeqNoQuerier and AnchorQuerier complete only after the accepted sequence and seal arrive", async () => {
   await run(function*() {
     const requesterHby = yield* createHabery({
       name: `querying-continuations-requester-${crypto.randomUUID()}`,
@@ -571,11 +580,11 @@ Deno.test("SeqNoQuerier and AnchorQuerier stay pending until their local complet
       const seq = runtime.querying.watchSeqNo(subject.pre, 1, {
         hab: requester,
       });
-      const anchor = runtime.querying.watchAnchor(subject.pre, {
-        i: subject.pre,
-        s: "1",
-        d: subject.kever!.said,
-      }, { hab: requester });
+      assertExists(subjectIcp.said);
+      const requestedAnchor = { d: subjectIcp.said, s: "0", i: subject.pre };
+      const expectedAnchor = { i: subject.pre, s: "0", d: subjectIcp.said };
+      const anchor = runtime.querying.watchAnchor(subject.pre, requestedAnchor, { hab: requester });
+      requestedAnchor.d = requester.pre; // Caller mutation must not change queued wire or completion.
 
       const emissions: CueRecord[] = [];
       yield* processRuntimeTurn(runtime, {
@@ -594,6 +603,24 @@ Deno.test("SeqNoQuerier and AnchorQuerier stay pending until their local complet
       assertEquals(seq.done, false);
       assertEquals(anchor.done, false);
       assertEquals(runtime.querying.hasPendingWork(), true);
+      assertEquals(emissions[1]?.serder?.ked?.q, {
+        fn: "0",
+        s: "0",
+        a: expectedAnchor,
+        i: subject.pre,
+        src: subject.pre,
+      });
+      const wireQuery = emissions[1]?.serder?.ked?.q;
+      assert(
+        wireQuery && typeof wireQuery === "object" && "a" in wireQuery
+          && wireQuery.a && typeof wireQuery.a === "object",
+      );
+      // KERIpy fetchLastSealingEventByEventSeal requires tuple(seal) == (i, s, d).
+      assertEquals(Object.keys(wireQuery.a), ["i", "s", "d"]);
+      assertEquals(anchor.anchor, expectedAnchor);
+      yield* runtime.reactor.processBytes(subject.interact({ data: [expectedAnchor] }));
+      yield* processRuntimeTurn(runtime, { hab: requester, sink: captureSink(emissions) });
+      assertEquals([seq.done, anchor.done, runtime.querying.hasPendingWork()], [true, true, false]);
     } finally {
       yield* subjectHby.close(true);
       yield* requesterHby.close(true);
@@ -853,5 +880,40 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       yield* runtime.close();
       yield* hby.close(true);
     });
+  }
+});
+
+Deno.test("query command rejects malformed anchor files before opening a controller store", async () => {
+  const root = await Deno.makeTempDir({ prefix: "query-anchor-" });
+  const pre = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+  try {
+    for (
+      const [value, error] of [
+        [null, ValidationError],
+        [[], ValidationError],
+        [{}, ValidationError],
+        [{ i: pre, s: "0" }, ValidationError],
+        [{ i: pre, s: 0, d: pre }, ValidationError],
+        [{ i: pre, s: "0", d: pre, extra: true }, ValidationError],
+        [{ i: "", s: "0", d: pre }, ParserError],
+        [{ i: pre, s: "not-hex", d: pre }, SyntaxError],
+      ] as const
+    ) {
+      const anchor = `${root}/anchor.json`;
+      await Deno.writeTextFile(anchor, JSON.stringify(value));
+      await assertRejects(() =>
+        run(() =>
+          queryCommand({
+            name: "unopened",
+            alias: "controller",
+            prefix: pre,
+            headDirPath: `${root}/store`,
+            anchor,
+          })
+        ), error);
+      assertEquals((await Array.fromAsync(Deno.readDir(root))).map((entry) => entry.name), ["anchor.json"]);
+    }
+  } finally {
+    await Deno.remove(root, { recursive: true });
   }
 });

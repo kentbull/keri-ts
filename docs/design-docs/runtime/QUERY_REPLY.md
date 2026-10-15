@@ -300,6 +300,12 @@ runtime-owned coordinator instead of as independent HIO doers.
 
 - emits `logs` with anchor search criteria
 - completes when the local database contains a sealing event for that anchor
+- accepts the existing CESR event-seal SAD contract (`i`, hexadecimal `s`, `d`),
+  copies it at registration and emits the owned seal as the logs query’s `q.a`
+- `tufa query --anchor` validates the JSON shape and CESR primitive values before
+  opening a controller store; malformed files cannot become pending query work
+- emits `i, s, d` key order required by KERIpy’s lookup; supplied field values
+  are retained rather than canonicalized
 
 ## Runtime Convergence Rule
 

@@ -12,6 +12,7 @@
  *   one bounded command lifetime instead of being spread across long-lived HIO
  *   doers
  */
+import { SealEvent } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
@@ -43,14 +44,16 @@ interface QueryArgs {
  */
 const QueryTimeoutMs = 10_000;
 
-/** Load and validate one anchor JSON object for `--anchor` query mode. */
-function loadAnchor(path: string): Record<string, unknown> {
+/** Decode one concrete event seal before opening state or scheduling an anchor query. */
+function loadAnchor(path: string): ReturnType<typeof SealEvent.toSad> {
   const text = Deno.readTextFileSync(path);
   const anchor: unknown = JSON.parse(text);
-  if (!anchor || typeof anchor !== "object" || Array.isArray(anchor)) {
-    throw new ValidationError("Anchor file must contain a JSON object.");
+  if (!SealEvent.isSad(anchor)) {
+    throw new ValidationError("Anchor file must contain only string i, s and d event-seal fields.");
   }
-  return { ...anchor };
+  // Reuse CESR primitive validation without rewriting the supplied seal representation.
+  SealEvent.fromSad(anchor);
+  return anchor;
 }
 
 /**
@@ -111,6 +114,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Prefix is required and cannot be empty");
   }
   const prefix = queryArgs.prefix;
+  const anchor = queryArgs.anchor ? loadAnchor(queryArgs.anchor) : undefined;
 
   yield* withHabAndAgentRuntime(
     queryArgs,
@@ -125,8 +129,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
       const sink = queryTransportSink(runtime, hby, hab);
 
       let watchDone = () => false;
-      if (queryArgs.anchor) {
-        const anchor = loadAnchor(queryArgs.anchor);
+      if (anchor) {
         console.log(`Checking for anchor ${JSON.stringify(anchor)}...`);
         const querier = runtime.querying.watchAnchor(
           prefix,

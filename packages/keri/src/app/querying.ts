@@ -1,4 +1,4 @@
-import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy } from "cesr-ts";
+import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type SealEvent } from "cesr-ts";
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
 import { reserveCueBytes } from "../core/cue-admission.ts";
 import { type CueQueueInput, cueReader } from "../core/cue-publishing.ts";
@@ -456,7 +456,7 @@ export class SeqNoQuerier implements QueryContinuation {
  */
 export class AnchorQuerier implements QueryContinuation {
   readonly pre: string;
-  readonly anchor: Record<string, unknown>;
+  readonly anchor: ReturnType<typeof SealEvent.toSad>;
   readonly hab?: Hab;
   readonly wits?: string[];
   done = false;
@@ -464,11 +464,11 @@ export class AnchorQuerier implements QueryContinuation {
 
   constructor(
     pre: string,
-    anchor: Record<string, unknown>,
+    anchor: AnchorQuerier["anchor"],
     { hab, wits }: { hab?: Hab; wits?: string[] } = {},
   ) {
     this.pre = pre;
-    this.anchor = { ...anchor };
+    this.anchor = { i: anchor.i, s: anchor.s, d: anchor.d };
     this.hab = hab;
     this.wits = wits ? [...wits] : undefined;
   }
@@ -584,7 +584,7 @@ export class QueryCoordinator implements CueSink {
   /** Register one persistent logs-until-anchor continuation. */
   watchAnchor(
     pre: string,
-    anchor: Record<string, unknown>,
+    anchor: AnchorQuerier["anchor"],
     options: { hab?: Hab; wits?: string[] } = {},
   ): AnchorQuerier {
     this.admitContinuation();
