@@ -341,6 +341,15 @@ export class LMDBer {
     return this.pathManager.opened && this.env !== null;
   }
 
+  /** Inspect the pinned lmdb-js writer at the storage boundary, without exposing its native handle. */
+  get inWriteTransaction(): boolean {
+    const root = this.requireEnv();
+    if (!("env" in root) || !root.env || typeof root.env !== "object") {
+      throw new DatabaseOperationError("Unsupported LMDB writer inspection");
+    }
+    return "writeTxn" in root.env && root.env.writeTxn != null;
+  }
+
   /** Report whether this environment uses a temporary backing directory. */
   get temp(): boolean {
     return this.pathManager.temp;
