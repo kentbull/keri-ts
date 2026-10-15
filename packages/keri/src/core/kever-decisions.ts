@@ -193,9 +193,7 @@ export type EscrowDropReason =
   | "missingEscrowedEvent"
   | "missingEscrowedEndorsements"
   | "malformedEscrowedQuery"
-  | "malformedEscrowedReply"
-  | "processingError"
-  | "outerCorruption";
+  | "processingError";
 
 /** Escrow-processing variant for one escrow row that has now been successfully applied. */
 export interface EscrowAccept {

@@ -107,8 +107,10 @@ still apply their existing escrow/query effects. Revery.decideReply returns plai
 ReplyPlan data with required accepted proof and complete signature alternatives.
 Callers hold actual query batches, invoke Revery.writeReply explicitly and release
 unpublished batches in finally. Keep evaluation and writes in one synchronous
-owner turn; suspension permits stale BADA decisions. TSN retry must use Broker's typed finite
-family pass; its legacy exception adapter can conceal infrastructure errors.
+owner turn; suspension permits stale BADA decisions. Broker has one typed finite
+retry path used by both TSN receivers. Infrastructure and corruption failures
+propagate unchanged and retain evidence; accept/drop remove only the family index.
+There is no exception adapter or error-constructor hook for pending decisions.
 Persist the outer reply SAID for BADA, not the contained TEL digest: actual 714's
 registry handler confuses these domains and accepts older signed notices.
 Registry TSN trust uses accepted configuration and issuer witnesses, never claimed
