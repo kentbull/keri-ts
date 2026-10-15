@@ -79,6 +79,12 @@ commit together. Admit concrete queries before writes and publish after commit.
 Refuse caller-owned writers rather than treating a nested return as a commit.
 This rule does not imply atomicity across independent Baser/Reger environments.
 
+Broker exposes one typed retry path for registry and credential state notices.
+Callbacks return accept/keep/drop; unexpected failures propagate and retain the
+row and its evidence. Accept/drop remove the family index without purging proof
+artifacts another family can own. Do not add an exception-mapping compatibility
+adapter alongside the actual receiver path.
+
 This does not prohibit exceptions. It prohibits using exceptions as the primary
 representation for normal expected remote-processing branches.
 
