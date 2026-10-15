@@ -90,6 +90,8 @@ two-slot deployments can refuse ingress while both polls are live. Byte/decrypti
 ceilings remain 256 MiB/one, and older two-slot measurements keep that label.
 AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
+Protocol producers borrow CuePublisher; its optional retention policy distinguishes
+held runtime credit from caller-owned standalone queues without concrete queue checks.
 Default AgentRuntime CueDeck preparation holds concrete metadata/backing and item credit;
 ownership transfers through fanout/requeue until final cleanup. KEL acceptance,
 clone/state and decision-carried duplicate/escrow cues now prepare before effects
