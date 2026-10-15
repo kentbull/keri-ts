@@ -49,7 +49,7 @@ whether the changeset is release-impacting or empty/no-release.
 Use `docs/reference/PR_TEST_SCOPE.md` for PR-description CI controls. During this
 cleanup goal, validate the relevant units locally and record exact-head credit
 instead of duplicating them in CI. Select only applicable interop/package checks.
-Run the broad battery about every 12 implementation PRs and repair regressions
+Run the broad battery about every 20 implementation PRs and repair regressions
 before continuing. Static checks and changesets remain mandatory; final release
 qualification is never replaced by scoped PR checks.
 

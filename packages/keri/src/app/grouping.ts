@@ -81,6 +81,8 @@ interface RawMessage {
 }
 
 export interface MultisigBuilderOptions {
+  /** Destination bound into a recipient-specific proposal wrapper. */
+  recipient?: string;
   /** Explicit attachment genus when a legacy child body does not declare it. */
   childGvrsn?: Versionage;
   stamp?: string;

@@ -47,6 +47,9 @@ import {
   MULTISIG_VCP_ROUTE,
   type MultisigChild,
   multisigChild,
+  type MultisigEventProposal,
+  type MultisigMessage,
+  prepareMultisigEventExn,
 } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { queryTransportSink } from "./runtime-deliveries.ts";
@@ -109,28 +112,28 @@ interface NoticeLike {
   attrs: { r?: unknown; d?: unknown };
 }
 
-/** Publish one KEL-style group proposal to remote members. */
+/** Publish a route-correlated KEL proposal; grouping owns child identity and label derivation. */
 export function* publishProposal(
   runtime: AgentRuntime,
   member: Hab,
   recipients: readonly string[],
-  route: MultisigKelRoute,
-  label: "icp" | "rot" | "ixn",
-  payload: Record<string, unknown>,
+  proposal: Extract<MultisigEventProposal, { route: MultisigKelRoute }>,
   embeddedMessage: Uint8Array,
 ): Operation<string[]> {
-  return yield* publishProposalEmbeds(
-    runtime,
-    member,
-    recipients,
-    route,
-    payload,
-    { [label]: embeddedMessage },
-  );
+  const deliveries: string[] = [];
+  for (const recipient of uniqueMembers(recipients)) {
+    if (recipient === member.pre || runtime.hby.habs.has(recipient)) continue;
+    const destination = runtime.poster.resolveRecipient(recipient);
+    const prepared = yield* prepareMultisigEventExn(member.pre, proposal, embeddedMessage, {
+      recipient: destination,
+    });
+    deliveries.push(...yield* registerAndSendProposal(runtime, member, destination, prepared));
+  }
+  return deliveries;
 }
 
 /** Publish one multisig proposal with explicit embedded attachments. */
-export function* publishProposalEmbeds(
+function* publishProposalEmbeds(
   runtime: AgentRuntime,
   member: Hab,
   recipients: readonly string[],
@@ -149,18 +152,27 @@ export function* publishProposalEmbeds(
       recipient: destination,
       embeds: Object.keys(embeds).length > 0 ? embeds : undefined,
     });
-    const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
-    // Persist the same signed proposal as local approval before peers can reply to its delivery.
-    yield* runtime.reactor.processBytes(message, { local: true });
-    const result = yield* runtime.poster.sendPreparedExchange(member, {
-      recipient: destination,
-      serder,
-      message,
-      topic: MULTISIG_TOPIC,
-    });
-    deliveries.push(...result.deliveries, ...result.queued);
+    deliveries.push(...yield* registerAndSendProposal(runtime, member, destination, [serder, attachments]));
   }
   return deliveries;
+}
+
+/** Register the exact signed proposal before peers can reply to its delivery. */
+function* registerAndSendProposal(
+  runtime: AgentRuntime,
+  member: Hab,
+  recipient: string,
+  [serder, attachments]: MultisigMessage,
+): Operation<string[]> {
+  const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
+  yield* runtime.reactor.processBytes(message, { local: true });
+  const result = yield* runtime.poster.sendPreparedExchange(member, {
+    recipient,
+    serder,
+    message,
+    topic: MULTISIG_TOPIC,
+  });
+  return [...result.deliveries, ...result.queued];
 }
 
 /** Poll until a specific group KEL event is accepted or attempts expire. */
@@ -458,14 +470,13 @@ function* approveKelProposal(
 
   // Preserve the existing wire re-publication until its producer contract is narrowed;
   // approval policy uses only the decoded proposal above, never these raw attributes.
-  const deliveries = yield* publishProposal(
+  const deliveries = yield* publishProposalEmbeds(
     runtime,
     member,
     members,
     proposal.route,
-    label,
     payloadSection(exn.ked ?? {}),
-    localMessage,
+    { [label]: localMessage },
   );
   const accepted = eventAccepted(hby, serder);
   if (accepted && proposal.route !== MULTISIG_IXN_ROUTE) {

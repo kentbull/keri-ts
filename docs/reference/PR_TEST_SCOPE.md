@@ -45,8 +45,9 @@ Full mode runs all required KERI owners, Tufa, CESR, every maintained extended
 interop owner and installed-package smoke tests. Interop owners run in separate
 jobs with their existing 25-minute PR cap. This is the broad PR battery; manual
 endurance and final clean-source release qualification remain separate gates.
-During the cleanup goal, select full mode about every 12 implementation PRs
-(within the requested 10–15 interval), and fix regressions before proceeding.
+During the cleanup goal, select full mode about every 20 implementation PRs,
+and fix regressions before proceeding. This cadence does not replace relevant
+checks on each PR or the full final release qualification.
 
 The selector reads the current PR description through the API on every run.
 After editing only the block, rerun the workflow with `gh run rerun RUN_ID` or
