@@ -841,6 +841,14 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             const busy = runtime.resources.reserve({ streams: runtime.resources.limits.streams - 1 });
             if (busy.kind !== "reserve") throw new Error("Expected free stream credit");
             try {
+              const remaining = runtime.resources.reserve({ streams: 1 });
+              if (remaining.kind !== "reserve") throw new Error("Expected last stream credit");
+              try {
+                assertEquals(yield* attemptPreparedCesrTarget(tcpTarget, runtime.services), "busy");
+                assertEquals(connections, 0, "TX refusal must precede socket acquisition");
+              } finally {
+                remaining.reservation.release();
+              }
               assertEquals(yield* attemptPreparedCesrTarget(tcpTarget, runtime.services, undefined, runtime), "busy");
               assertEquals(connections, 0, "RX refusal must precede socket acquisition");
             } finally {
@@ -889,7 +897,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             assertEquals(concatBytes(...tcpBodies[1]).subarray(0, expectedIntro.length), expectedIntro);
             assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
             hby.db.rcts.rem(receiptKey);
-            yield* sendPreparedCesrTarget(tcpTarget, runtime.services);
+            assertEquals(yield* attemptPreparedCesrTarget(tcpTarget, runtime.services), "complete");
             assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");
             assertEquals(concatBytes(...tcpBodies[2]), tcpTarget.message);
             // Drive the actual durable outbox through both deterministic and background composition roots.
