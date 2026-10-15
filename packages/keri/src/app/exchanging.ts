@@ -545,10 +545,7 @@ export class Exchanger {
           kin: "query",
           pre: senderQuery.pre,
           route: "logs",
-          q: {
-            r: "logs",
-            ...(senderQuery.sn === null ? {} : { sn: senderQuery.sn.toString(16) }),
-          },
+          q: senderQuery.sn === null ? {} : { s: senderQuery.sn.toString(16) },
         });
       }
       if (needsProof) cues.push({ kin: "proof", said });
@@ -1027,7 +1024,7 @@ export class Exchanger {
             kin: "query",
             pre,
             route: "logs",
-            q: { r: "logs", ...(sn === null ? {} : { sn: sn.toString(16) }) },
+            q: sn === null ? {} : { s: sn.toString(16) },
           });
         }
         batch = this.publisher.prepare(cues);
@@ -1050,7 +1047,7 @@ export class Exchanger {
         kin: "query",
         pre,
         route: "logs",
-        q: { r: "logs", ...(sn === null ? {} : { sn: sn.toString(16) }) },
+        q: sn === null ? {} : { s: sn.toString(16) },
       });
     }
   }

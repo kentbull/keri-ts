@@ -1223,7 +1223,7 @@ export class Kever {
               kin: "query",
               route: "logs",
               q: {
-                sn: input.serder.snh ?? undefined,
+                s: input.serder.snh ?? undefined,
               },
               pre,
             },
@@ -1398,8 +1398,7 @@ export class Kever {
           kin: "query",
           route: "logs",
           q: {
-            sn: input.sourceSeal ? ordinalHex(sourceSealOrdinal(input.sourceSeal)) : undefined,
-            dig: input.sourceSeal ? sourceSealDigest(input.sourceSeal).qb64 : undefined,
+            s: input.sourceSeal ? ordinalHex(sourceSealOrdinal(input.sourceSeal)) : undefined,
           },
           pre: delpre,
         }],

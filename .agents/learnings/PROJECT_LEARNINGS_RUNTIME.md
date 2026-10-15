@@ -224,7 +224,10 @@ across pending-queue refusal; a retired first witness cannot strand recovery.
 Ordinary queries retain first-choice behavior. Completion uses accepted seal state.
 CLI query uses the existing concurrent runner and joins it before state display/close;
 serial mailbox polls must not consume the query window before other workers progress.
-Legacy recovery-hint normalization and request-local HTTP/witness ownership remain unfinished.
+Schema/credential notices stay notify-only, even when a hint happens to name a known
+KEL. Producers use canonical s rather than sn; do not restore fallback logs routing,
+redundant r/dig hints or a normalization pass. Request-local HTTP/witness ownership
+remains unfinished.
 Actual HTTP and source/tree/output admission refusal observation is invocation-local;
 source/fetch/sink/cleanup and external observer failures retain original identity.
 Prepared target attempts return local complete/refused/busy only after joined

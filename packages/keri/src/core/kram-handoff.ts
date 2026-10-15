@@ -116,7 +116,7 @@ export class KramHandoff {
             kin: "query",
             pre: result.sender,
             route: "logs",
-            q: { r: "logs", ...(result.sn === null ? {} : { sn: result.sn.toString(16) }) },
+            q: result.sn === null ? {} : { s: result.sn.toString(16) },
           });
         }
         if (result.kind !== "ready") return result;

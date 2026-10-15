@@ -153,7 +153,9 @@ TEL recovery notifications carry concrete `q.ri` and `q.i` fields, with `q.issr`
 when the registry itself is unknown. This does not add a transport consumer for
 TEL/schema notifications. Schema and credential-recovery `query` notices retain
 their concrete KERIpy-shaped q.r hints; they are separate from routed work.
-Legacy hint normalization is retained for the structural cut and remains to be pruned.
+Notices remain notify-only even if a hint happens to name a known KEL. They must
+not fall through to a logs request. Producers use canonical s filters directly;
+there is no sn/anchor alias normalization or redundant r/dig wire hint.
 
 Incomplete cue:
 

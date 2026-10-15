@@ -641,7 +641,7 @@ Deno.test("EXN pending cues admit before new proof, escrow, archive or metadata 
         if (owner.cue.kin === "query") {
           assertEquals(
             owner.cue.q,
-            outcome === "schema" ? { r: "schema", said: schema } : { r: "logs", sn: "63" },
+            outcome === "schema" ? { r: "schema", said: schema } : { s: "63" },
           );
         }
         assertEquals(resources.used.bytes > 0, true);

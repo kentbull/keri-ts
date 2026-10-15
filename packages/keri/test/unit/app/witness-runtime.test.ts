@@ -720,7 +720,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
           1,
           "TX borrows its connection permit while both RX slots are occupied",
         );
-        active.write(controller.query(controller.pre, witness.pre, { route: "logs", q: { sn: "0" } }));
+        active.write(controller.query(controller.pre, witness.pre, { route: "logs", q: { s: "0" } }));
         for (let attempt = 0; attempt < 200 && replayed !== 3; attempt++) yield* sleepOp(10);
         assertEquals(replayed, 3, "correlated query replay drains on its existing socket before EOF");
         assertEquals(foreignReplay, false, "shared cues from another request cannot leak to this socket");

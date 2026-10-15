@@ -41,6 +41,10 @@ void ({ route: "ksn", q: { a: { i: "aid", s: "0", d: "digest" } } } satisfies Qu
 void ({ kin: "query", src: "aid", q: { r: "schema", said: "schema" } } satisfies QueryCue);
 // @ts-expect-error Mailbox signing requires its topic cursors.
 void ({ route: "mbx", q: {} } satisfies Parameters<Hab["query"]>[2]);
+// @ts-expect-error Recovery sequences use the canonical wire filter s.
+void ({ route: "logs", q: { sn: "1" } } satisfies QueryInstruction);
+// @ts-expect-error The route is authoritative; there is no redundant body route.
+void ({ route: "logs", q: { r: "logs" } } satisfies QueryInstruction);
 // @ts-expect-error TEL recovery must identify its registry and credential.
 void ({ kin: "telquery", q: { i: "credential" } } satisfies TelQueryCue);
 // @ts-expect-error Anchor queries require the event digest, not an optional payload bag.
@@ -206,6 +210,30 @@ Deno.test("Query coordinator turns incomplete query cues into outbound `logs` qu
         undefined,
       );
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Query coordinator keeps schema and credential notices notify-only even when their hint names a known KEL", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const requester = hby.makeHab("requester"), subject = hby.makeHab("subject");
+    seedControllerEndpoint(hby, subject.pre);
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    try {
+      runtime.cues.push({ kin: "query", q: { r: "tels", pre: subject.pre } });
+      runtime.cues.push({ kin: "query", q: { r: "schema", said: subject.pre } });
+      const emissions: CueRecord[] = [];
+      yield* processRuntimeTurn(runtime, { hab: requester, sink: captureSink(emissions) });
+      assertEquals(emissions, [
+        { kind: "notify", kin: "query", serder: null },
+        { kind: "notify", kin: "query", serder: null },
+      ]);
+      assertEquals(runtime.querying.pending.length, 0);
+      assertEquals(runtime.resources.used.bytes, 0);
+    } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });

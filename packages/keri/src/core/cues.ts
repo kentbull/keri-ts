@@ -26,14 +26,11 @@ export interface WitnessCue extends CueBase {
   serder: SerderKERI;
 }
 
-/** KEL query filters and existing recovery hints; the target lives in the cue/request envelope. */
+/** KEL wire filters; the target lives in the cue/request envelope. */
 export type KelQueryFields = {
   fn?: string;
   s?: string;
   a?: ReturnType<typeof SealEvent.toSad>;
-  sn?: string;
-  dig?: string;
-  r?: "logs" | "tels";
 };
 
 /** Concrete built-in outbound query routes, correlated with their actual bodies. */

@@ -194,24 +194,6 @@ function soleHab(hby: Habery): Hab | null {
   return first.done || !habitats.next().done ? null : first.value;
 }
 
-/** Resolve a routed target or the existing credential-recovery hint; schemas have no KEL target. */
-function extractQueriedPrefix(cue: QueryCue): string | null {
-  const pre = cue.route ? cue.pre : cue.q.r === "tels" ? cue.q.pre : null;
-  return pre && pre.length > 0 ? pre : null;
-}
-
-/** Preserve the current recovery-hint normalization while retaining the concrete route/body contract. */
-function normalizeOutboundQuery(cue: QueryCue): QueryInstruction | null {
-  if (!cue.route) {
-    return cue.q.r === "tels" ? { route: "logs", q: { r: "tels" } } : null;
-  }
-  const instruction = copyQuery(cue);
-  if (instruction.route === "logs" && instruction.q.sn !== undefined && instruction.q.s === undefined) {
-    instruction.q.s = instruction.q.sn;
-  }
-  return instruction;
-}
-
 /** Parse one hex sequence number field from key-state/query payloads. */
 function parseHexOrdinal(value: unknown): number | null {
   if (typeof value !== "string" || value.length === 0) {
@@ -604,24 +586,19 @@ export class QueryCoordinator implements CueSink {
     }));
   }
 
-  /** Retain a portable recovery cue using the normal field normalization and bounded pending queue. */
+  /** Retain routed work only; unresolved schema/credential notices have no outbound query instruction. */
   enqueueCue(
     cue: QueryCue,
     onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
   ): boolean {
     if (this.closed) throw new Error("Query coordinator is closed");
-    const pre = extractQueriedPrefix(cue);
-    if (!pre) return false;
-    return this.pending.admit(cue, () => {
-      const instruction = normalizeOutboundQuery(cue);
-      if (!instruction) return;
-      return {
-        pre,
-        ...instruction,
-        src: cue.src,
-        wits: cue.wits ? [...cue.wits] : undefined,
-      };
-    }, onAdmissionRefusal);
+    if (!cue.route || !cue.pre) return false;
+    return this.pending.admit(cue, () => ({
+      pre: cue.pre,
+      ...copyQuery(cue),
+      src: cue.src,
+      wits: cue.wits ? [...cue.wits] : undefined,
+    }), onAdmissionRefusal);
   }
 
   /** Observe a source cue only after the downstream owner has atomically retained eligible delivery. */
@@ -841,16 +818,11 @@ export class QueryCoordinator implements CueSink {
    * runtime can honestly resolve its queried prefix.
    */
   private transientQueryEmission(cue: QueryCue, hab?: Hab): CueEmission | null {
-    const pre = extractQueriedPrefix(cue);
-    if (!pre) {
-      return null;
-    }
-    const instruction = normalizeOutboundQuery(cue);
-    if (!instruction) return null;
+    if (!cue.route || !cue.pre) return null;
     return this.wireEmissionForRequest({
       hab,
-      pre,
-      ...instruction,
+      pre: cue.pre,
+      ...copyQuery(cue),
       src: cue.src,
       wits: cue.wits,
     });
