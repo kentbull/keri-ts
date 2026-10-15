@@ -52,7 +52,7 @@ import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
-import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
+import { incept as inceptRegistry, issue as issueCredential } from "../../../src/core/protocol-vdr-eventing.ts";
 import { Reger } from "../../../src/db/reger.ts";
 import framing714 from "../../fixtures/multisig-framing-714.json" with { type: "json" };
 
@@ -936,3 +936,45 @@ for (const route of ["ixn", "vcp"] as const) {
     });
   });
 }
+
+Deno.test("multisig issuance missing its credential neither prompts nor accepts its anchor", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    const registry = inceptRegistry(local.hab.pre, { cnfg: ["NB"] });
+    const issuance = issueCredential(registry.said!, registry.pre!);
+    const anchor = right.interactGroupHab("group", mids, { data: [{ i: issuance.pre, s: "0", d: issuance.said }] });
+    const [wrapper, paths] = exchange("/multisig/iss", { gid: local.hab.pre }, {
+      sender: bob.pre,
+      embeds: { iss: issuance.raw, anc: messagize(anchor.serder, { sigers: anchor.sigers, gvrsn: Vrsn_1_0 }) },
+    });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, { mode: "local", notifier });
+      try {
+        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), paths), {
+          local: true,
+        });
+        assertNotEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
+        let prompted = false;
+        const result = yield* waitForOneApproval(left, runtime, {
+          pollTurns: 1,
+          pollBudgetMs: 1,
+          callbacks: {
+            approveProposal: () => {
+              prompted = true;
+              return true;
+            },
+            chooseGroupAlias: () => "group",
+            chooseRegistryName: () => "unused",
+          },
+        });
+        assertEquals(prompted, false);
+        assertEquals(result, null);
+        assertNotEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});

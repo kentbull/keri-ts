@@ -99,7 +99,9 @@ pathed proof and resolved genus as replay. Sign local attachments in that genus
 and prefix only parser input with its selector; embedded wire remains body-first.
 VDR anchor approval uses the same decoded proof/genus for local signatures and
 combined intake; the registry regression verifies both accepted KEL anchor and
-TEL state. Other VDR/credential input contracts and live issuance qualification
+TEL state. Decode the issuance credential before prompting or signing/accepting its
+anchor; a missing required child must not leave an accepted anchor behind a null
+approval result. Other VDR/credential input contracts and live issuance qualification
 remain separate work.
 Endpoint-role publication prepares its known gid/rpy envelope at the workflow
 owner. Keep recipient-specific SAIDs: the existing outbox stores one recipient
