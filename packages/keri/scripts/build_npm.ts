@@ -302,8 +302,8 @@ try {
       },
       files: ["esm", "types", "README.md", "LICENSE"],
       dependencies: {
-        "@msgpack/msgpack": "^3.1.2",
-        "cbor-x": "^1.6.0",
+        "@msgpack/msgpack": "3.1.3",
+        "cbor-x": "1.6.0",
         "cesr-ts": resolveCesrDependencyRange(),
         "libsodium-wrappers-sumo": "0.8.4",
       },
