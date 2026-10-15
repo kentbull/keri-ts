@@ -13,6 +13,7 @@ import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
+  respondantCueSink,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest, inspectCesrRequest } from "../../../src/app/cesr-http.ts";
@@ -1373,7 +1374,7 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
         }, "mbx");
         const query = inspectCesrRequest(validWire)!;
         ingestKeriBytes(runtime, validWire);
-        yield* processRuntimeTurn(runtime, { hab: hab!, sink: runtime.respondant.forHab(hab!), pollMailbox: false });
+        yield* processRuntimeTurn(runtime, { hab: hab!, sink: respondantCueSink(runtime, hab!), pollMailbox: false });
         assertEquals(runtime.mailboxDirector.hasQueryCue(query.said!), true);
         const forged = buildCesrRequest(senderHby.habByName("sender")!.endorse(query), { destination: providerPre });
         const response = yield* fetchOp(url, {

@@ -472,17 +472,17 @@ export function queryTransportSink(
     return { url, body: concatBytes(intro, message), bodyMode: hby.cesrBodyMode, destination };
   };
   const sink: CueSink = {
-    admitCue(current, interpreter) {
-      if (current !== runtime) throw new RangeError("Query sink requires its owning runtime");
-      const cue = current.cues.peekHead();
+    admitCue(source, interpreter) {
+      if (source !== runtime.cues) throw new RangeError("Query sink requires its composed source queue");
+      const cue = source.peekHead();
       if (cue?.kin !== "query" || !interpreter) return "ineligible";
       const admission = sink.admitQuery!(cue, () => {
         const emission = interpreter.interpretCue(cue);
         return emission?.kind === "wire" ? emission : null;
       });
       if (admission === "transferred") {
-        if (current.cues.peekHead() !== cue) throw new Error("Query source changed during admission");
-        cueReader(current.cues).takeOwned()!.release();
+        if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
+        cueReader(source).takeOwned()!.release();
       }
       return admission;
     },

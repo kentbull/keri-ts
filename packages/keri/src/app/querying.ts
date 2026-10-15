@@ -1,7 +1,7 @@
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
 import { reserveCueBytes } from "../core/cue-admission.ts";
-import { cueReader } from "../core/cue-publishing.ts";
+import { type CueQueueInput, cueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CueEmission, QueryCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
@@ -634,8 +634,8 @@ export class QueryCoordinator implements CueSink {
   }
 
   /** Observe a source cue only after the downstream owner has atomically retained eligible delivery. */
-  admitCue(runtime: AgentRuntime, interpreter: Hab | null, sink: CueSink = this.sink): CueAdmission {
-    const cue = runtime.cues.peekHead();
+  admitCue(source: CueQueueInput, interpreter: Hab | null, sink: CueSink = this.sink): CueAdmission {
+    const cue = source.peekHead();
     let admission: CueAdmission;
     if (cue?.kin === "query" && sink.admitQuery) {
       admission = sink.admitQuery(cue, () => {
@@ -643,8 +643,8 @@ export class QueryCoordinator implements CueSink {
         return emission?.kind === "wire" ? emission : this.transientQueryEmission(cue, interpreter ?? undefined);
       });
       if (admission === "transferred") {
-        if (runtime.cues.peekHead() !== cue) throw new Error("Query source changed during admission");
-        const original = cueReader(runtime.cues).takeOwned()!;
+        if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
+        const original = cueReader(source).takeOwned()!;
         try {
           this.observeCue(cue);
         } finally {
@@ -652,7 +652,7 @@ export class QueryCoordinator implements CueSink {
         }
         return "transferred";
       }
-    } else admission = sink.admitCue?.(runtime, interpreter) ?? "ineligible";
+    } else admission = sink.admitCue?.(source, interpreter) ?? "ineligible";
     if (admission !== "transferred" && admission !== "busy" && admission !== "ineligible") {
       throw new TypeError("Invalid query source admission");
     }

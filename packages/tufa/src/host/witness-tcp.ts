@@ -18,6 +18,7 @@ import {
   type PreparedCueEmission,
   processCuesOnce,
   type QueryReply,
+  respondantCueSink,
   socketBytes,
   writeCesrTcpSocket,
 } from "keri-ts/runtime";
@@ -246,7 +247,7 @@ function* processWitnessSocket(
               } else batch = slot?.takeAll();
             }
           });
-          yield* processCuesOnce(runtime, { hab: serviceHab, sink: runtime.respondant.forHab(serviceHab) });
+          yield* processCuesOnce(runtime, { hab: serviceHab, sink: respondantCueSink(runtime, serviceHab) });
           if (batch) yield* sendBatch(batch);
         }
         while (!rxEOF || pending) {

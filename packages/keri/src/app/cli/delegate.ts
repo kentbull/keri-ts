@@ -21,6 +21,7 @@ import {
   type CueSink,
   processRuntimeTurn,
   processRuntimeUntil,
+  respondantCueSink,
 } from "../agent-runtime.ts";
 import {
   groupSigningMembers,
@@ -213,9 +214,10 @@ function delegateConfirmSink(
   hab: Hab,
 ): CueSink {
   const querySink = queryTransportSink(runtime, hby, hab);
+  const responder = respondantCueSink(runtime, hab);
   return {
     admitQuery: querySink.admitQuery,
-    admitCue: (current, interpreter) => runtime.respondant.admitCue(current, interpreter, hab),
+    admitCue: responder.admitCue,
     *send(emission: CueEmission): Operation<void> {
       if (emission.kind === "wire" && emission.cue.kin === "query") {
         yield* querySink.send(emission);

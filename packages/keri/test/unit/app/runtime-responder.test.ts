@@ -1,7 +1,12 @@
 import { ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+  respondantCueSink,
+} from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
@@ -441,7 +446,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
           destination: sender.pre,
         };
         for (let index = 0; index < 8; index++) runtime.deliveries.enqueue(() => queued);
-        runtime.querying.configure({ hab: sender, sink: runtime.respondant.forHab(sender) });
+        runtime.querying.configure({ hab: sender, sink: respondantCueSink(runtime, sender) });
         yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
         assertStrictEquals(runtime.cues.peekHead(), cue);
         assertEquals([interpreted, runtime.deliveries.hasPending], [0, true]);
@@ -449,7 +454,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
         yield* runtime.close();
         const active = yield* createAgentRuntime(hby, { mode: "local" });
         active.cues.push(cue);
-        const sink = active.respondant.forHab(sender);
+        const sink = respondantCueSink(active, sender);
         if (!(active.cues instanceof CueDeck)) throw new Error("Expected admitted runtime source");
         const queuedBytes = active.cues.headRetentionBytes();
         assertEquals(active.resources.used.bytes, queuedBytes, "only this source's queued owner is live");
@@ -504,7 +509,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
         const sending = yield* spawn(function*() {
           yield* processRuntimeTurn(active, {
             hab: sender,
-            sink: active.respondant.forHab(sender),
+            sink: respondantCueSink(active, sender),
             pollMailbox: false,
           });
           returned = true;

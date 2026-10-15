@@ -9,6 +9,7 @@ import {
   type Hab,
   processCuesOnce,
   queryTransportSink,
+  respondantCueSink,
 } from "keri-ts/runtime";
 
 /**
@@ -28,9 +29,10 @@ export function* drainRuntimeCues(
   const hab = serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
   if (!hab) return;
   const transport = queryTransportSink(runtime, runtime.hby, hab);
+  const responder = respondantCueSink(runtime, hab);
   const destination: CueSink = {
     admitQuery: transport.admitQuery,
-    admitCue: (current, interpreter) => runtime.respondant.admitCue(current, interpreter, hab),
+    admitCue: responder.admitCue,
     send: (emission) => runtime.respondant.sendWithHab(emission, hab),
   };
   let refusal: ResourceAdmissionError | DeckFullError | undefined;
@@ -39,7 +41,7 @@ export function* drainRuntimeCues(
     if (error instanceof ResourceAdmissionError) onAdmissionRefusal?.(error);
   };
   const sink: CueSink = {
-    admitCue: (current, interpreter) => runtime.querying.admitCue(current, interpreter, destination),
+    admitCue: (source, interpreter) => runtime.querying.admitCue(source, interpreter, destination),
     prepareEmission(emission) {
       if (emission.kind === "transport" && emission.cue.kin === "stream") {
         runtime.mailboxDirector.retainQueryCue(emission.cue, note);
