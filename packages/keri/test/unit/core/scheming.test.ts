@@ -1,4 +1,4 @@
-import { Diger, dumps, type MapperMap, ResourceLimitError } from "cesr-ts";
+import { Diger, dumps, type MapperMap } from "cesr-ts";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import { validateSchema } from "../../../src/acdc/scheming.ts";
@@ -178,12 +178,15 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
     },
   } as unknown as Baser;
   assertThrows(() => validateSchema(credential(simple.said), failed), Error, "database unavailable");
-  assertThrows(
-    () => validateSchema(credential(make({}, { annotation: "x".repeat(8 * 1024 ** 2) }).sed), db),
-    ResourceLimitError,
-  );
+  expect(make({}, { annotation: "x".repeat(8 * 1024 ** 2) }), "valid");
+  expect(make({}, { annotation: Array.from({ length: 5000 }, (_, i) => i) }), "valid");
   const deep: Record<string, unknown> = {};
   let next = deep;
   for (let i = 0; i < 70; i++) next = next.child = {} as Record<string, unknown>;
-  assertThrows(() => validateSchema(credential(make({}, { annotation: deep }).sed), db), ResourceLimitError);
+  expect(make({}, { annotation: deep }), "valid");
+  const definitions = Object.fromEntries(Array.from({ length: 129 }, (_, i) => [
+    `item${i}`,
+    make({}, { title: `Resource ${i}` }).sed,
+  ]));
+  expect(make({}, { $defs: definitions }), "valid");
 });

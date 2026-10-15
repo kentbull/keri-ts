@@ -1,11 +1,11 @@
-/** Bounded v2 ACDC schema validation against the inspected 71438328 profile; no network resolution. */
+/** Local v2 ACDC schema validation against the inspected 71438328 profile; no network resolution. */
 import { Diger, dumps, ParserError, ResourceLimitError, type SerderACDC } from "cesr-ts";
 import Ajv2020 from "npm:ajv@8.17.1/dist/2020.js";
 import { ValidationError } from "../core/errors.ts";
 import { Schemer } from "../core/scheming.ts";
 import type { Baser } from "../db/basing.ts";
 
-/** Normal schema dependencies/invalid content stay distinct from infrastructure and resource failures. */
+/** Normal schema dependencies/invalid content stay distinct from infrastructure failures. */
 export type SchemaValidation = { kind: "valid" } | { kind: "missing"; said: string } | {
   kind: "invalid";
   reason: string;
@@ -52,33 +52,6 @@ const singles = [
 ];
 const maps = ["$defs", "properties", "patternProperties", "dependentSchemas"];
 const arrays = ["prefixItems", "allOf", "anyOf", "oneOf"];
-/** Admission counts values/depth as well as bytes before cloning or compiling; native row allocation remains separate. */
-class Credit {
-  bytes = 8 * 1024 ** 2;
-  values = 4096;
-  refs = 4096;
-  take(schema: Schema): void {
-    const work: [unknown, number][] = [[schema, 0]];
-    let characters = this.bytes;
-    while (work.length) {
-      const [value, depth] = work.pop()!;
-      if (--this.values < 0 || depth > 64) throw new ResourceLimitError("ACDC schema value/depth credit exhausted");
-      if (typeof value === "string") characters -= value.length;
-      if (characters < 0) throw new ResourceLimitError("ACDC schema byte credit exhausted");
-      if (value && typeof value === "object") {
-        for (const key in value) {
-          if (!Object.hasOwn(value, key)) continue;
-          characters -= key.length;
-          if (characters < 0) throw new ResourceLimitError("ACDC schema byte credit exhausted");
-          if (work.length >= this.values) throw new ResourceLimitError("ACDC schema value credit exhausted");
-          work.push([(value as Schema)[key], depth + 1]);
-        }
-      }
-    }
-    this.bytes -= dumps(schema, "JSON").length;
-    if (this.bytes < 0) throw new ResourceLimitError("ACDC schema byte credit exhausted");
-  }
-}
 /** Plain maps and booleans are the only JSON Schema resource/fragment targets. */
 function object(value: unknown): value is Schema {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -179,8 +152,7 @@ function fragment(resource: Resource, value: string): Schema | boolean {
 }
 /** Local static schema closure plus a synchronous Draft 2020-12 validator; legacy Schemer behavior is unchanged. */
 export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | Readonly<Schema>): SchemaValidation {
-  if (acdc.raw.length > 8 * 1024 ** 2) throw new ResourceLimitError("ACDC schema input exceeds finite body limit");
-  const credit = new Credit(), resources = new Map<string, Resource>(), roots: Schema[] = [];
+  const resources = new Map<string, Resource>(), roots: Schema[] = [];
   const scopes = new Map<Schema, Resource>(), refs: { node: Schema; resource: Resource; value: unknown }[] = [];
   const work: { schema: Schema | boolean; resource: Resource }[] = [];
   let missing: string | null = null;
@@ -198,14 +170,12 @@ export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | 
     }
     return add(cached.sed, true, said);
   }
-  /** Admit a complete original resource before charging dependent schemas or cloning it. */
+  /** Verify each original resource before cloning it for compilation. */
   function add(schema: Schema, root: boolean, expected?: string): Resource {
-    if (root) credit.take(schema);
     const said = identity(schema, root);
     if (expected && said !== expected) throw new InvalidSchema("Cached schema does not match its lookup SAID");
     const existing = resources.get(said);
     if (existing) return existing;
-    if (resources.size >= 128) throw new ResourceLimitError("ACDC schema resource credit exhausted");
     const resource = { said, schema, anchors: new Map<string, Schema | boolean>() };
     resources.set(said, resource);
     if (root) roots.push(schema);
@@ -232,7 +202,6 @@ export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | 
         if ("$schema" in node && node.$schema !== dialect) throw new InvalidSchema("Schema must use Draft 2020-12");
         if (typeof node.$anchor === "string") owner.anchors.set(node.$anchor, node);
         if ("$ref" in node) {
-          if (--credit.refs < 0) throw new ResourceLimitError("ACDC schema reference credit exhausted");
           refs.push({ node, resource: owner, value: node.$ref });
         }
         for (const child of children(node)) work.push({ schema: child, resource: owner });
