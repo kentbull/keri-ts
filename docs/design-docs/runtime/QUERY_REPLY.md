@@ -299,6 +299,11 @@ runtime-owned coordinator instead of as independent HIO doers.
 `AnchorQuerier`
 
 - emits `logs` with anchor search criteria
+- asks each eligible attester once through the existing pending queue; a retired
+  witness must not prevent another known witness from answering
+- resumes unqueued candidates after capacity refusal, without resending admitted
+  candidates; accepted seal state ends the continuation
+- retains the ordinary deferred-resolution request when no endpoint is yet known
 - completes when the local database contains a sealing event for that anchor
 - accepts the existing CESR event-seal SAD contract (`i`, hexadecimal `s`, `d`),
   copies it at registration and emits the owned seal as the logs query’s `q.a`
@@ -306,6 +311,16 @@ runtime-owned coordinator instead of as independent HIO doers.
   opening a controller store; malformed files cannot become pending query work
 - emits `i, s, d` key order required by KERIpy’s lookup; supplied field values
   are retained rather than canonicalized
+
+KERIpy's WitnessInquisitor selects one random peer. Anchor queries deliberately
+try the known alternatives because a witness cut can leave the old first peer
+without the requested seal. This is finite query work, with no new retry timer or
+scheduler. Witness HTTP replies can arrive through mailbox delivery; the querying
+controller needs actual witness/mailbox routing and active polling. Transmission
+alone does not establish local acceptance. `tufa query` uses the existing concurrent
+runtime runner so an empty long poll at one mailbox cannot postpone query
+transmission or polling another endpoint until the command deadline. It halts
+and joins those workers before printing state and closing its stores.
 
 ## Runtime Convergence Rule
 

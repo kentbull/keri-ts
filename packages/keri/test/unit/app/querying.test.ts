@@ -883,6 +883,41 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
   }
 });
 
+Deno.test("anchor queries retain unqueued attesters across a full pending queue", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const requester = hby.makeHab("requester");
+    const first = hby.makeHab("first", undefined, { transferable: false, ncount: 0 });
+    const second = hby.makeHab("second", undefined, { transferable: false, ncount: 0 });
+    const emissions: CueRecord[] = [];
+    const coordinator = new QueryCoordinator(hby, { hab: requester, maxPending: 1, sink: captureSink(emissions) });
+    const seal = { i: requester.pre, s: "0", d: requester.pre };
+    const anchor = coordinator.watchAnchor(requester.pre, seal, { wits: [first.pre, second.pre] });
+    try {
+      yield* coordinator.processPending();
+      assertEquals([emissions.length, coordinator.pending.length, anchor.done], [1, 1, false]);
+      yield* coordinator.processPending();
+      assertEquals([emissions.length, coordinator.pending.length, anchor.done], [2, 0, false]);
+      assertEquals(
+        emissions.map((emission) => emission.serder?.ked?.q),
+        [first, second].map((attester) => ({
+          fn: "0",
+          s: "0",
+          a: seal,
+          i: requester.pre,
+          src: attester.pre,
+        })),
+      );
+      requester.interact({ data: [seal] });
+      yield* coordinator.processPending();
+      assertEquals([anchor.done, emissions.length], [true, 2]);
+    } finally {
+      yield* coordinator.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("query command rejects malformed anchor files before opening a controller store", async () => {
   const root = await Deno.makeTempDir({ prefix: "query-anchor-" });
   const pre = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";

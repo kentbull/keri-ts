@@ -13,10 +13,10 @@
  *   doers
  */
 import { SealEvent } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
-import { processRuntimeTurn, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
+import { runAgentRuntime, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
 import type { Hab } from "../habbing.ts";
 import { flattenRoleUrls } from "../mailboxing.ts";
 import { queryTransportSink } from "../runtime-deliveries.ts";
@@ -147,31 +147,26 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
         watchDone = () => noticer.done;
       }
 
-      const deadline = Date.now() + QueryTimeoutMs;
-      while (!watchDone() && Date.now() < deadline) {
-        yield* processRuntimeTurn(runtime, { hab, pollMailbox: true, sink });
-        if (!watchDone()) {
+      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab, sink }));
+      try {
+        const deadline = Date.now() + QueryTimeoutMs;
+        while (!watchDone() && Date.now() < deadline) {
           yield* runtimeTurn();
         }
-      }
 
-      if (!watchDone() && !queryArgs.anchor) {
-        const catchupUrl = controllerCatchupUrl(hab, prefix);
-        if (catchupUrl) {
-          runtime.oobiery.resolve(catchupUrl);
-          const catchupDeadline = Date.now() + 5_000;
-          while (!watchDone() && Date.now() < catchupDeadline) {
-            yield* processRuntimeTurn(runtime, {
-              hab,
-              pollMailbox: true,
-              sink,
-            });
-            if (!runtimeHasPendingWork(runtime)) {
-              break;
+        if (!watchDone() && !queryArgs.anchor) {
+          const catchupUrl = controllerCatchupUrl(hab, prefix);
+          if (catchupUrl) {
+            runtime.oobiery.resolve(catchupUrl);
+            const catchupDeadline = Date.now() + 5_000;
+            while (!watchDone() && Date.now() < catchupDeadline) {
+              if (!runtimeHasPendingWork(runtime)) break;
+              yield* runtimeTurn();
             }
-            yield* runtimeTurn();
           }
         }
+      } finally {
+        yield* worker.halt();
       }
 
       console.log("");

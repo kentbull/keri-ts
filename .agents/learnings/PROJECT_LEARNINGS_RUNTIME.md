@@ -214,7 +214,12 @@ Busy preserves the raw or continuation head, and unresolved/custom sinks keep
 notify semantics. QueryCoordinator prepares/signs synchronously against committed
 accepted state without a parent-runtime argument or Reactor callback; network waits
 remain outside preparation. AnchorQuerier retains an owned CESR event-seal SAD in KERIpy’s required i/s/d key order;
-CLI anchor JSON/primitive validation precedes controller-store opening. Generic
+CLI anchor JSON/primitive validation precedes controller-store opening.
+Anchor continuations ask each eligible attester once and retain the next index
+across pending-queue refusal; a retired first witness cannot strand recovery.
+Ordinary queries retain first-choice behavior. Completion uses accepted seal state.
+CLI query uses the existing concurrent runner and joins it before state display/close;
+serial mailbox polls must not consume the query window before other workers progress. Generic
 query-body contracts and request-local HTTP/witness ownership remain unfinished.
 Actual HTTP and source/tree/output admission refusal observation is invocation-local;
 source/fetch/sink/cleanup and external observer failures retain original identity.

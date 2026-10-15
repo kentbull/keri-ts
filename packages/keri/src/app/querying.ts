@@ -454,7 +454,8 @@ export class AnchorQuerier implements QueryContinuation {
   readonly hab?: Hab;
   readonly wits?: string[];
   done = false;
-  private queried = false;
+  private queued = 0;
+  private attesters?: string[];
 
   constructor(
     pre: string,
@@ -472,24 +473,24 @@ export class AnchorQuerier implements QueryContinuation {
   }
 
   tick(coordinator: QueryCoordinator): void {
-    if (this.done) {
+    if (this.done) return;
+    if (coordinator.hby.db.fetchLastSealingEventByEventSeal(this.pre, this.anchor)) {
+      this.done = true;
       return;
     }
-    if (!this.queried) {
+    this.attesters ??= coordinator.attestersFor(this.pre, { hab: this.hab, wits: this.wits });
+    // A retired witness may never learn the seal. Ask each known candidate once;
+    // preserve the next index when the existing queue refuses a later candidate.
+    // With no current endpoints, retain the ordinary deferred-resolution request.
+    for (; this.queued < Math.max(1, this.attesters.length); this.queued++) {
       coordinator.enqueue({
         pre: this.pre,
         route: "logs",
         q: { fn: "0", s: "0", a: { ...this.anchor } },
         hab: this.hab,
+        src: this.attesters[this.queued],
         wits: this.wits,
       });
-      this.queried = true;
-    }
-
-    if (
-      coordinator.hby.db.fetchLastSealingEventByEventSeal(this.pre, this.anchor)
-    ) {
-      this.done = true;
     }
   }
 }
@@ -901,12 +902,12 @@ export class QueryCoordinator implements CueSink {
     pre: string,
     { hab, wits }: { hab?: Hab; wits?: string[] } = {},
   ): string[] {
-    const signer = this.configuredHab(hab);
-    if (!signer) return [];
     if (wits && wits.length > 0) {
       // Explicit watcher/witness overrides outrank endpoint-role lookup.
       return [...wits];
     }
+    const signer = this.configuredHab(hab);
+    if (!signer) return [];
 
     const ends = signer.endsFor(pre);
     for (const role of QUERY_ROLE_PRIORITY) {

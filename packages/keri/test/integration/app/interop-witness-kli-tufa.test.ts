@@ -1,6 +1,7 @@
 /** Live witness receipting matrix with unchanged participant topologies. */
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
+import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import {
@@ -162,6 +163,8 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
           "--receipt-endpoint",
           "--data",
           "{\"anchor\":\"acdc\"}",
+          "--data",
+          JSON.stringify({ i: controllerPre, s: "0", d: controllerPre }),
         ],
         ctx.env,
         ctx.repoRoot,
@@ -170,6 +173,7 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
     );
 
     let inceptionSaid = "";
+    let inceptionWire: Uint8Array = new Uint8Array();
     let firstRotationSaid = "";
     let secondRotationSaid = "";
     let interactionSaid = "";
@@ -187,6 +191,8 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
           0,
           3,
         );
+        assertEquals(inceptionSaid, controllerPre);
+        inceptionWire = controllerHby.db.cloneEvtMsg(controllerPre, 0, inceptionSaid);
         firstRotationSaid = assertFullyWitnessed(
           controllerHby,
           controllerPre,
@@ -207,6 +213,80 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
         );
       } finally {
         yield* controllerHby.close();
+      }
+    });
+
+    // Start a different controller with only the subject's fully witnessed inception.
+    // KERIpy must answer the anchor-filtered logs query for the later interaction.
+    const readerName = `${controllerName}-reader`;
+    await initTufaStore(readerName, headDirPath, ctx.env, ctx.repoRoot);
+    await resolveWitnessesForTufa(readerName, headDirPath, ctx.env, ctx.repoRoot, initialWitnesses);
+    await requireSuccess(
+      "incept anchor-query reader",
+      runTufaWithTimeout(
+        [
+          "incept",
+          "--name",
+          readerName,
+          "--head-dir",
+          headDirPath,
+          "--alias",
+          "reader",
+          "--transferable",
+          "--receipt-endpoint",
+          "--toad",
+          "3",
+          "--wits",
+          initialWitnesses[0]!.pre,
+          "--wits",
+          initialWitnesses[1]!.pre,
+          "--wits",
+          initialWitnesses[2]!.pre,
+        ],
+        ctx.env,
+        ctx.repoRoot,
+      ),
+    );
+    await run(function*() {
+      const reader = yield* createHabery({ name: readerName, headDirPath, skipConfig: true, skipSignator: true });
+      try {
+        const runtime = yield* createAgentRuntime(reader);
+        yield* runtime.reactor.processBytes(inceptionWire);
+        assertEquals(reader.db.getKever(controllerPre)?.sn, 0);
+      } finally {
+        yield* reader.close();
+      }
+    });
+    const anchorPath = `${headDirPath}/anchor.json`;
+    await Deno.writeTextFile(anchorPath, JSON.stringify({ d: inceptionSaid, s: "0", i: controllerPre }));
+    const queried = await requireSuccess(
+      "query KERIpy witnesses with reverse-ordered anchor file",
+      runTufaWithTimeout(
+        [
+          "query",
+          "--name",
+          readerName,
+          "--head-dir",
+          headDirPath,
+          "--alias",
+          "reader",
+          "--prefix",
+          controllerPre,
+          "--anchor",
+          anchorPath,
+        ],
+        ctx.env,
+        ctx.repoRoot,
+        30_000,
+      ),
+    );
+    await run(function*() {
+      const reader = yield* createHabery({ name: readerName, headDirPath, skipConfig: true, skipSignator: true });
+      try {
+        assertEquals(reader.db.getKever(controllerPre)?.sn, 3, `${queried.stdout}\n${queried.stderr}`);
+        assertEquals(assertFullyWitnessed(reader, controllerPre, 3, 3), interactionSaid);
+      } finally {
+        yield* reader.close();
       }
     });
 
