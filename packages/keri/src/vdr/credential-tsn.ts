@@ -1,5 +1,5 @@
 import { Dater, Diger, SerderKERI, TraitDex } from "cesr-ts";
-import { CueDeck } from "../core/cue-admission.ts";
+import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
 import { VcStateRecord } from "../core/records.ts";
@@ -53,7 +53,10 @@ function credentialRecord(data: unknown): VcStateRecord | null {
  * intentional corrections to actual 714's BADA and credential correspondence gaps.
  */
 export class CredentialStateReceiver {
-  constructor(private readonly tvy: Tevery, private readonly rvy: Revery) {}
+  private readonly publisher: CuePublisher;
+  constructor(private readonly tvy: Tevery, private readonly rvy: Revery) {
+    this.publisher = cuePublisher(rvy.cues);
+  }
 
   /** Revery's canonical route and Broker retries use the same current-state checks. */
   processReply({ serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs): ReplyProcessDecision {
@@ -75,7 +78,7 @@ export class CredentialStateReceiver {
     const stored = this.tvy.reger.states.get(regk);
     if (stored && !registryRecord(stored.asDict())) throw new Error("Corrupt stored registry state.");
     const issuer = stored?.ii ?? aid;
-    if (!(this.rvy.cues instanceof CueDeck)) this.rvy.cues.checkSpace();
+    this.publisher.preflight(1);
     const escrow = (typ: string, query: boolean, proof?: PreparedReply) => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, vci, aid, diger);
       const cues: AgentCue[] = isNew && query
@@ -88,7 +91,7 @@ export class CredentialStateReceiver {
         }]
         : [];
       this.rvy.cues.checkSpace(cues.length);
-      const child = cues.length && this.rvy.cues instanceof CueDeck ? this.rvy.cues.prepare(cues) : undefined;
+      const child = cues.length ? this.publisher.prepare(cues) : undefined;
       try {
         proof?.applyProofs();
         const added = this.tvy.reger.txnsb.escrowStateNotice({
@@ -104,8 +107,7 @@ export class CredentialStateReceiver {
         if (added !== isNew) throw new Error("Credential escrow membership changed before publication");
         disposeIncoming();
         proof?.publishQueries();
-        if (child) child.publish();
-        else this.rvy.cues.extend(cues);
+        child?.publish();
         return refuse("Credential state dependency unavailable.", typ);
       } finally {
         child?.release();
@@ -169,7 +171,7 @@ export class CredentialStateReceiver {
       ) return reject("Credential state does not match current accepted TEL and anchors.");
       const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
       this.rvy.cues.checkSpace(cues.length);
-      const child = this.rvy.cues instanceof CueDeck ? this.rvy.cues.prepare(cues) : undefined;
+      const child = this.publisher.prepare(cues);
       try {
         proof.applyProofs();
         this.tvy.reger.txnsb.updateReply(
@@ -180,8 +182,7 @@ export class CredentialStateReceiver {
         );
         if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
         proof.publishQueries();
-        if (child) child.publish();
-        else this.rvy.cues.extend(cues);
+        child?.publish();
         return acceptReplyDecision();
       } finally {
         child?.release();
