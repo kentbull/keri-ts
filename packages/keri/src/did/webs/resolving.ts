@@ -62,7 +62,7 @@ function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions
   yield* holdArtifactCredit(runtime, 8 * 8 * 1024 ** 2, 1);
   const expected = generateBareDidDocument(runtime, parsed.canonical);
   const bytes = yield* abortable((signal) =>
-    collectBytes(artifactBytes(runtime, urls.didJson, fallbackUrls.didJson, preferHttp, signal), 8 * 1024 ** 2)
+    collectBytes(artifactBytes(runtime, urls.didJson, fallbackUrls.didJson, preferHttp, signal))
   );
   let hosted: unknown;
   try {

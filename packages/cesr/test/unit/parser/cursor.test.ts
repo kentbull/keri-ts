@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { GroupSizeError, ResourceLimitError, ShortageError } from "../../../src/core/errors.ts";
+import { GroupSizeError, ShortageError } from "../../../src/core/errors.ts";
 import { Cursor } from "../../../src/parser/cursor.ts";
 
 /** A finite source with separate backing buffers like transport-owned chunks. */
@@ -34,7 +34,6 @@ Deno.test("cursor: peeks and owned reads span every split without advancing on p
     assertEquals(first.buffer.byteLength, 4);
     assertEquals(await input.read(12), bytes.slice(4));
     assertEquals(input.offset, 16);
-    assertEquals(input.retainedBytes, 0);
     assertEquals(await input.atEnd(), true);
     await input.close();
   }
@@ -107,44 +106,18 @@ Deno.test("cursor: demand pulls one segment and releases consumed backing buffer
         yield new Uint8Array(chunkBytes).fill(i % 256);
       }
     },
-  }, { maxChunkBytes: chunkBytes, maxBufferedBytes: chunkBytes });
+  });
   // Transfer many chunks without collecting results; each completed write releases its segment.
   for (let i = 0; i < 1024; i++) {
     assertEquals(pulls, i);
     assertEquals(await input.peek(1), new Uint8Array([i % 256]));
-    assertEquals(input.retainedBytes, chunkBytes);
     const chunk = await input.take(chunkBytes * 2);
     assertEquals(chunk.length, chunkBytes);
-    assertEquals(input.retainedBytes, 0);
     assertEquals(input.bufferedBytes, 0);
     assertEquals(pulls, i + 1);
   }
   assertEquals(input.offset, 1024 ** 2);
   await input.close();
-});
-
-Deno.test("cursor: resource limits count backing allocations and stay distinct from wire errors", async () => {
-  // A one-byte view cannot hide the larger allocation it would keep alive.
-  const large = new Uint8Array(1024);
-  const input = new Cursor({
-    async *[Symbol.asyncIterator]() {
-      yield large.subarray(0, 1);
-    },
-  }, { maxChunkBytes: 16, maxBufferedBytes: 32, maxDepth: 2 });
-  await assertRejects(() => input.read(1), ResourceLimitError, "backing buffer");
-  assertEquals(input.retainedBytes, 0);
-  await input.close();
-
-  const limited = new Cursor(source([1, 2, 3], [4, 5, 6]), {
-    maxChunkBytes: 3,
-    maxBufferedBytes: 5,
-    maxDepth: 2,
-  });
-  assertThrows(() => limited.scope(9).scope(9).scope(9), ResourceLimitError);
-  await assertRejects(() => limited.peek(6), ResourceLimitError, "Read exceeds");
-  await assertRejects(() => limited.peek(5), ResourceLimitError, "Queued input");
-  assertEquals(limited.retainedBytes, 0);
-  await limited.close();
 });
 
 Deno.test("cursor: abort interrupts blocked next and closes an uncooperative source once", async () => {
@@ -177,7 +150,6 @@ Deno.test("cursor: abort interrupts blocked next and closes an uncooperative sou
   await timely(input.close());
   await timely(input.close());
   assertEquals(returns, 1);
-  assertEquals(input.retainedBytes, 0);
   // Release the test-owned source after proving cursor shutdown does not depend on it.
   release();
   await originalReturn();
@@ -211,7 +183,6 @@ Deno.test("cursor: cancellation targets only the pending read after completed pu
   controller.abort(new Error("finished pulls"));
   await timely(reading);
   await timely(input.close());
-  assertEquals(input.retainedBytes, 0);
 });
 
 Deno.test("cursor: explicit close interrupts a pending read and rejects concurrent scope reads", async () => {
@@ -277,7 +248,6 @@ Deno.test("cursor: empty producer work yields to cancellation without retaining 
     assertStrictEquals(await timely(assertRejects(() => input.read(1))), reason);
     await input.close();
     assertEquals(closed, true);
-    assertEquals(input.retainedBytes, 0);
     assertEquals(pulls > 0 && pulls <= 4096, true);
   } finally {
     clearTimeout(timer);
@@ -298,7 +268,7 @@ Deno.test("cursor: consumed-byte checkpoints span child scopes without changing 
   try {
     assertEquals(await child.read(bytes.length), bytes);
     assertEquals(timerRan, true);
-    assertEquals([child.remaining, input.offset, input.retainedBytes], [0, bytes.length, 0]);
+    assertEquals([child.remaining, input.offset], [0, bytes.length]);
   } finally {
     clearTimeout(timer);
     await input.close();

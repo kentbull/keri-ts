@@ -5,7 +5,6 @@ import { abortable } from "../../../src/app/abortable.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
-import { FrameIntake } from "../../../src/app/frame-intake.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { Oobiery } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
@@ -224,53 +223,7 @@ Deno.test("queued ingress reserves shared bytes before copying and releases allo
   });
 });
 
-Deno.test("external intake and protocol processing share one source concurrency owner", async () => {
-  await run(function*() {
-    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const resources = new ResourcePolicy();
-    const intake = new FrameIntake(resources, undefined, 1);
-    const reactor = new Reactor(target, { resources, intake });
-    const sender = source.makeHab("sender");
-    const wire = acceptedEventReplayMessage(source, sender.pre, 0).message;
-    const acquired = gate();
-    let opened = 0;
-    const occupied = yield* spawn(function*() {
-      yield* intake.frames(async function*() {
-        opened++;
-        yield wire;
-      });
-      acquired.open();
-      yield* suspend();
-    });
-    try {
-      yield* call(() => acquired.wait);
-      assertEquals(opened, 0, "admitted parser channels remain demand driven");
-      const failure = yield* call(() =>
-        assertRejects(() =>
-          run(() =>
-            reactor.process(async function*() {
-              opened++;
-              yield wire;
-            })
-          ), ResourceAdmissionError)
-      );
-      assertEquals(failure.reason, "busy");
-      assertEquals(opened, 0, "shared source refusal precedes either source factory");
-      assertEquals(target.db.getKever(sender.pre), null);
-      yield* occupied.halt();
-      yield* reactor.process((signal) => chunkBytes(wire, { signal }));
-      assertEquals(target.db.getKever(sender.pre)?.sn, 0);
-      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-    } finally {
-      yield* occupied.halt();
-      yield* target.close(true);
-      yield* source.close(true);
-    }
-  });
-});
-
-Deno.test("queued ingress resumes after parser admission without waiting for cue delivery", async () => {
+Deno.test("queued ingress processes without waiting for cue delivery", async () => {
   await run(function*() {
     const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -280,23 +233,11 @@ Deno.test("queued ingress resumes after parser admission without waiting for cue
       const resources = new ResourcePolicy({ streams: 2 });
       const reactor = new Reactor(target, { resources, maxSources: 1 });
       reactor.ingest(wire);
-      const occupied = resources.reserve({ streams: 2 });
-      assertEquals(occupied.kind, "reserve");
-      if (occupied.kind !== "reserve") throw new Error("stream reservation failed");
-      yield* reactor.processOnce();
-      assertEquals(reactor.hasIngress, true, "temporary parser admission retains queued work");
-      assertEquals(resources.used.bytes, wire.length);
-      occupied.reservation.release();
       reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
       yield* reactor.processOnce();
       assertEquals(target.db.getKever(sender.pre)!.sn, 0);
       assertEquals(reactor.hasIngress, false);
       assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-      const limited = new Reactor(target, { resources: new ResourcePolicy({ bytes: wire.length }) });
-      limited.ingest(wire);
-      yield* call(() => assertRejects(() => run(() => limited.processOnce()), ResourceAdmissionError, "limit"));
-      assertEquals(limited.hasIngress, false, "a configuration refusal is terminal for this record");
-      assertEquals(limited.resources.used.bytes, 0);
     } finally {
       yield* target.close(true);
       yield* source.close(true);
@@ -382,17 +323,15 @@ Deno.test("runtime explicit close and scope exit release queued ingress and cue 
   });
 });
 
-Deno.test("stream credit is shared before reads and held until cancelled source cleanup joins", async () => {
+Deno.test("stream cancellation joins the actual source cleanup", async () => {
   await run(function*() {
-    const hby = yield* createHabery({ name: `stream-credit-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const hby = yield* createHabery({ name: `stream-cleanup-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
-      const resources = new ResourcePolicy({ streams: 1, bytes: 128 });
-      const first = new Reactor(hby, { resources });
-      const second = new Reactor(hby, { resources });
+      const first = new Reactor(hby);
+      const second = new Reactor(hby);
       const started = gate();
       const cleaning = gate();
       const cleanup = gate();
-      const limits = { maxChunkBytes: 16, maxBufferedBytes: 64 };
       const task = yield* spawn(() =>
         first.process(async function*(signal) {
           try {
@@ -404,7 +343,7 @@ Deno.test("stream credit is shared before reads and held until cancelled source 
             cleaning.open();
             await cleanup.wait;
           }
-        }, limits)
+        })
       );
       yield* call(() => started.wait);
       let opened = false;
@@ -412,25 +351,17 @@ Deno.test("stream credit is shared before reads and held until cancelled source 
         opened = true;
         yield new Uint8Array();
       };
-      assertEquals(resources.used, { bytes: 80, streams: 1, decryptions: 0 });
-      yield* call(() => assertRejects(() => run(() => second.process(source, limits)), ResourceLimitError, "busy"));
-      yield* call(() => assertRejects(() => run(() => second.process(source)), ResourceLimitError, "limit"));
-      for (const maxBufferedBytes of [0, Infinity, Number.MAX_SAFE_INTEGER]) {
-        yield* call(() =>
-          assertRejects(() => run(() => second.process(source, { ...limits, maxBufferedBytes })), RangeError)
-        );
-      }
-      assertEquals(opened, false);
-      const halted = yield* spawn(() => task.halt());
+      let joined = false;
+      const halted = yield* spawn(function*() {
+        yield* task.halt();
+        joined = true;
+      });
       yield* call(() => cleaning.wait);
-      assertEquals(resources.used.streams, 1);
-      yield* call(() => assertRejects(() => run(() => second.process(source, limits)), ResourceLimitError, "busy"));
+      assertEquals(joined, false);
       cleanup.open();
       yield* halted;
-      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-      yield* second.process(source, limits);
+      yield* second.process(source);
       assertEquals(opened, true);
-      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     } finally {
       yield* hby.close(true);
     }
@@ -549,7 +480,6 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
             haltFinished = true;
           });
           yield* call(() => cancelling.wait);
-          assertEquals(resources.used.streams, 1, "The parser stream owner outlives body cleanup");
           assertEquals(haltFinished, false);
           yield* oobi.processOnce();
           assertEquals(requests, 1, "In-flight durable work cannot be fetched twice");

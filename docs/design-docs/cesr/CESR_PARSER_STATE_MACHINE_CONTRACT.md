@@ -1,15 +1,16 @@
 # CESR Parser State Machine Contract
 
-This is the normative lifecycle of `parser/progressive.ts` and its finite
+This describes the transitional lifecycle of `parser/progressive.ts` and its finite
 `parser/complete.ts` collector. The [progressive contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md)
-describes payload ownership and codec correctness. ADR-0013 requires removal of
-all parser budgeting; remaining quota descriptions below identify transitional
-implementation, never preservation requirements. The atomic engine has been removed.
+describes payload ownership and codec correctness. Parser accounting and the
+former atomic engine are removed. [ADR-0012](../../adr/adr-0012-progressive-nested-parser.md)
+now requires a buffered finite decoder, replacing progressive traversal and parser
+staging. The behavior below is not a preservation requirement for that migration.
 
 ## Lifecycle and ownership
 
 `parse(source, options)` is an async generator over an async byte source. Each
-pull grants one frame of output credit. Generator locals retain nested progress;
+pull requests one complete frame. Generator locals retain nested progress;
 a segmented cursor owns input, declared enclosure ends, and cancellation.
 
 | Boundary                              | Required behavior                                                                |
@@ -29,40 +30,26 @@ boundaries and annotation separators never delimit messages. A partial token
 inside a fully received declared enclosure is a `GroupSizeError`, not a shortage
 that later transport bytes could repair.
 
-`parseBytes` collects finite input under `maxInputBytes` (8 MiB by default),
-returns frames, and propagates rejection. On failure it releases every collected
-payload because ownership has not transferred. Successful streaming or finite
-callers own each delivered root and use `discardFrame` after consumption, including
-ordinary frames when shared resource admission is enabled. Descendants remain
-borrowed from that root.
+`parseBytes` collects complete input and transfers all returned frames together.
+Failure disposes every collected payload; successful callers own delivered ESSR
+payloads and use `discardFrame` after consumption. Descendants remain borrowed
+from their root. No byte/node/depth/item quota or hidden frame-credit registry
+controls parsing or disposal.
 
-With `resources`, each independent tree reserves its `maxFrameBytes` allowance
-before body hydration. Descendants share that reservation. It transfers with the
-root and survives parser exit; failure releases undelivered credit after owner
-cleanup. A generator suspended at yield also retains the tree, so credit is
-released only after consumer disposal and the next `next()`/`return()` call.
-This accounts for ordinary wire allowance, not all hydrated representations,
-storage copies or JavaScript heap overhead. Each ESSR stage additionally reserves
-its finite canonical-wire cap before sink acquisition, retaining it with the
-root through joined cleanup. Empty item headers and memory-slab rounding fit
-that cap; custom sinks must honor the same bounded contract.
-
-Bodies hydrate once through Serder. Ordinary attachment leaves remain admitted
-finite values; attachment wrappers flatten into ordered semantic leaves. Enclosed
-message bodies remain separate `nests` records; their evidence is never flattened.
-A parent yields only after all descendants finish, using shared tree admission.
-`maxTreeNodes` defaults to 256 and existing byte/leaf/ESSR limits aggregate over
-the owned tree. Failed parse/finalization or cancellation releases every
-undelivered stage and finished owner; independent delivered siblings survive. ESSR
-material streams through an awaited sink with explicit count and byte limits.
-Source/sink failures retain their original identity; malformed wire uses parser
-error classes. Parsing does not itself authorize or verify a KERI event.
+Bodies hydrate through Serder. Attachment wrappers flatten into ordered semantic
+leaves; enclosed messages remain separate `nests` records with their own evidence.
+A parent yields only after every descendant finishes and its wrapper exhausts.
+Failure or cancellation aborts every unfinished stage and disposes every finished
+undelivered owner. Earlier independent delivered siblings survive. ESSR streams
+through awaited writes; declared token counts, lengths and qualification padding
+remain exact framing requirements. Source/sink failures retain their identity.
+Parsing never authorizes or verifies a KERI event.
 
 One input owner shares consumed-work counters across every child cursor. It
 yields a host turn after 64 KiB consumed or 4,096 source-pull/consume operations;
-empty producer chunks count as work. A single already admitted operation may
+empty producer chunks count as work. A single operation may
 cross the byte quantum. This fixed local scheduling policy changes no wire
-boundary or admission limit. Cancellation wakes and clears the owner's single
+boundary and does not reject input. Cancellation wakes and clears the owner's single
 checkpoint timer, preserving the original failure and joined source cleanup.
 
 ## Genus and protocol versions
@@ -119,7 +106,7 @@ source, semantic regressions, and reference-version evidence.
 `test/unit/parser/nests.test.ts` compares signed Python `927c0cb8` trees in txt/qb2,
 protocol v1/v2 and JSON/CBOR/MGPK/native forms. It covers child-local genus selectors,
 v1 nesting, every-byte splits, malformed later children, closure boundaries,
-shared limits, cancellation during reads and finish, collection failure, and
+cancellation during reads and finish, collection failure, and
 repeated recursive disposal. Runtime boundary coverage is in
 `packages/keri/test/unit/app/nested-frame-boundary.test.ts`.
 `test/unit/parser/serialize-nests.test.ts` covers structure-preserving payload
@@ -141,5 +128,5 @@ and byte convenience ownership: cancellation must abort reads and join disposal
 before returning. Constructing a parent never authenticates its child.
 Nested IPEX offer/grant evidence is covered by
 `packages/keri/test/unit/app/ipex-v2.test.ts`; conversation and issuer proof rules
-live in the [IPEX contract](../exchange/IPEX.md). Unfinished routes and HTTP inspection remain guarded. A frozen 40-node fixture verifies serialization preserves admitted
-enclosure depth under the default parser limit.
+live in the [IPEX contract](../exchange/IPEX.md). Unfinished routes and HTTP inspection remain guarded. A frozen 40-node fixture verifies serialization preserves nested
+enclosure structure without a depth policy.

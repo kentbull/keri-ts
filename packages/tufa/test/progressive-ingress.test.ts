@@ -12,7 +12,6 @@ import {
   parseBytes,
   Prefixer,
   ResourceAdmissionError,
-  ResourcePolicy,
   SealEvent,
   SerderKERI,
   Texter,
@@ -174,38 +173,9 @@ Deno.test("HTTP cancellation closes a blocked body and joins its parser task", a
       name: `http-cancel-${crypto.randomUUID()}`,
       temp: true,
       skipConfig: true,
-      resources: new ResourcePolicy({ streams: 2 }),
     });
     const runtime = yield* createAgentRuntime(hby);
     try {
-      const occupied = runtime.resources.reserve({ streams: 2 });
-      assertEquals(occupied.kind, "reserve");
-      if (occupied.kind !== "reserve") throw new Error("Test failed to occupy stream credit");
-      let refusedPulls = 0;
-      let refusedClosed = false;
-      try {
-        const refused = yield* call(() =>
-          createProtocolHandler(runtime)(
-            new Request("http://localhost/", {
-              method: "POST",
-              headers: { "content-type": "application/cesr" },
-              body: new ReadableStream<Uint8Array>({
-                pull() {
-                  refusedPulls++;
-                },
-                cancel() {
-                  refusedClosed = true;
-                },
-              }, { highWaterMark: 0 }),
-            }),
-          )
-        );
-        assertEquals(refused.status, 503);
-        yield* call(() => refused.body?.cancel());
-        assertEquals([refusedPulls, refusedClosed], [0, true]);
-      } finally {
-        occupied.reservation.release();
-      }
       for (
         const fault of [
           new ResourceAdmissionError("foreign source busy", "busy"),

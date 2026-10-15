@@ -6,14 +6,11 @@ import {
   DeserializeError,
   GroupSizeError,
   ParserError,
-  ResourceAdmissionError,
-  ResourceLimitError,
   ShortageError,
   WireParseError,
 } from "../../../src/core/errors.ts";
 import { discardFrame } from "../../../src/core/frame.ts";
 import { collectPayload, MemoryPayloadSink, type PayloadSink } from "../../../src/core/payload.ts";
-import { ResourcePolicy } from "../../../src/core/resource-policy.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parse } from "../../../src/parser/progressive.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
@@ -176,12 +173,12 @@ Deno.test("ESSR streams mixed Texter lengths in both genera/domains and reopens 
       // A complete frame encloses ordinary signatures and the streamed ESSR sequence.
       const input = v.selector
         + v.group("BodyWithAttachmentGroup", v.body + v.group("AttachmentGroup", v.sig + v.essr(wire, raw.length)));
-      // ESSR exceeds the resident metadata cap but has its own finite decoded budget.
-      const parser = parse(chunks(encode(input), 1021), { maxFrameBytes: v.body.length + v.sig.length });
+      // Stream ESSR independently of the ordinary body and signature metadata.
+      const parser = parse(chunks(encode(input), 1021));
       // Capture the delivery boundary separately from subsequent stream completion.
       const first = await parser.next();
       assertEquals(first.done, false);
-      // Inspect the admitted frame and its owned payload without retaining other results.
+      // Inspect the delivered frame and its owned payload without retaining other results.
       const frame = first.value as CesrFrame;
       // The delivered owner exposes independent wire and decoded read views.
       const essr = frame.essr;
@@ -197,102 +194,6 @@ Deno.test("ESSR streams mixed Texter lengths in both genera/domains and reopens 
       await assertRejects(() => collectPayload(essr.raw), Error, "discarded");
     }
   }
-});
-
-Deno.test("shared ESSR stages refuse before sink acquisition and retain credit with the root", async () => {
-  const v = vector(2);
-  const wire = b(v.selector + v.group("BodyWithAttachmentGroup", v.body + v.essr("4BABYWJj", 1)));
-  // Parser frame/stage accounting remains until its own removal; codec estimates are gone.
-  const retained = 1024 + 16;
-  const resources = new ResourcePolicy({ bytes: 2 * 1024 + 16 });
-  const observed = tracking();
-  const options = { resources, maxFrameBytes: 1024, maxEssrBytes: 3, maxEssrItems: 1, payloadSink: observed.factory };
-  const parser = parse(chunks(wire), options);
-  const frame = (await parser.next()).value!;
-  await parser.return(undefined);
-  assertEquals(resources.used.bytes, retained);
-  let payloadReads = 0;
-  let sinks = 0;
-  let refusal: ResourceAdmissionError | undefined;
-  const second = parse(
-    (async function*() {
-      yield wire.slice(0, -8);
-      payloadReads++;
-      yield wire.slice(-8);
-    })(),
-    {
-      ...options,
-      onAdmissionRefusal: (error) => refusal = error,
-      payloadSink(signal) {
-        sinks++;
-        return observed.factory(signal);
-      },
-    },
-  );
-  assertStrictEquals(await assertRejects(() => second.next(), ResourceAdmissionError, "busy"), refusal);
-  assertEquals([sinks, payloadReads], [0, 0]);
-  assertEquals(resources.used.bytes, retained);
-  await discardFrame(frame);
-  assertEquals(resources.used.bytes, 0);
-
-  refusal = undefined;
-  const tooLarge = parse(chunks(wire), {
-    ...options,
-    maxEssrBytes: resources.limits.bytes,
-    onAdmissionRefusal: (error) => refusal = error,
-  });
-  assertStrictEquals(await assertRejects(() => tooLarge.next(), ResourceAdmissionError, "limit"), refusal);
-  assertEquals(resources.used.bytes, 0);
-  await assertRejects(
-    () =>
-      parse(chunks(wire), {
-        ...options,
-        payloadSink() {
-          throw new Error("stage unavailable");
-        },
-      }).next(),
-    Error,
-    "stage unavailable",
-  );
-  assertEquals(resources.used.bytes, 0);
-  refusal = undefined;
-  const foreign = new ResourceAdmissionError("foreign sink busy", "busy");
-  assertStrictEquals(
-    await assertRejects(() =>
-      parse(chunks(wire), {
-        ...options,
-        classifyWireErrors: true,
-        onAdmissionRefusal: (error) => refusal = error,
-        payloadSink() {
-          throw foreign;
-        },
-      }).next()
-    ),
-    foreign,
-  );
-  assertEquals(refusal, undefined);
-  const observerFailure = new ParserError("observer failed");
-  assertStrictEquals(
-    await assertRejects(() =>
-      parse(chunks(wire), {
-        ...options,
-        maxEssrBytes: resources.limits.bytes,
-        classifyWireErrors: true,
-        onAdmissionRefusal() {
-          throw observerFailure;
-        },
-      }).next()
-    ),
-    observerFailure,
-  );
-  assertEquals(resources.used.bytes, 0);
-  const retry = parse(chunks(wire), options);
-  const accepted = (await retry.next()).value!;
-  assertEquals(await collectPayload(accepted.essr!.raw), b("abc"));
-  await discardFrame(accepted);
-  assertEquals(resources.used.bytes, retained, "suspended parser retains the complete tree allowance");
-  await retry.return(undefined);
-  assertEquals(resources.used.bytes, 0);
 });
 
 Deno.test("ESSR headers survive every source split and small and big codes preserve canonical wire", async () => {
@@ -341,20 +242,6 @@ Deno.test("ESSR rejects invalid alphabet, nonzero lead padding, impossible exten
   }
 });
 
-Deno.test("ESSR per-frame byte and item budgets include empty Texters and multiple groups", async () => {
-  // Fixture helpers for the genus selected by this case.
-  const v = vector(1);
-  // One nonempty Texter is repeated to test frame-wide rather than per-group limits.
-  const item = new Texter({ raw: b("abc"), code: "4B" }).qb64;
-  // Limits accumulate across separate groups instead of resetting at each counter.
-  const bytes = b(v.selector + v.body + v.essr(item, 1) + v.essr(item, 1));
-  await assertRejects(() => parse(chunks(bytes), { maxEssrBytes: 5 }).next(), ResourceLimitError);
-  await assertRejects(() => parse(chunks(bytes), { maxEssrItems: 1 }).next(), ResourceLimitError);
-  // Empty values still consume metadata and must obey an explicit count budget.
-  const empty = b(v.selector + v.body + v.essr("4BAA4BAA", 2));
-  await assertRejects(() => parse(chunks(empty), { maxEssrBytes: 0, maxEssrItems: 1 }).next(), ResourceLimitError);
-});
-
 Deno.test("single-frame enclosure failure aborts every staged candidate before any finish", async () => {
   // Fixture helpers for the genus selected by this case.
   const v = vector(2);
@@ -392,10 +279,10 @@ Deno.test("delivered ESSR survives a later sibling error while undelivered stage
   await first.essr.discard();
 });
 
-Deno.test("awaited ESSR sink writes stop source pulls until credit returns", async () => {
+Deno.test("awaited ESSR sink writes stop source pulls until the write completes", async () => {
   // Fixture helpers for the genus selected by this case.
   const v = vector(1);
-  // Withhold sink credit until the test confirms upstream pulling has stopped.
+  // Withhold sink completion until the test confirms upstream pulling has stopped.
   const gate = Promise.withResolvers<void>();
   // Signal the exact blocked operation rather than relying on a timing delay.
   const waiting = Promise.withResolvers<void>();
@@ -418,7 +305,7 @@ Deno.test("awaited ESSR sink writes stop source pulls until credit returns", asy
       // Real memory storage keeps the probe faithful to awaited writes and ownership transfer.
       const sink = new MemoryPayloadSink();
       return {
-        /** Hold sink credit until the test explicitly releases it. */
+        /** Hold sink completion until the test explicitly releases it. */
         async write(bytes) {
           waiting.resolve();
           await gate.promise;
@@ -508,7 +395,7 @@ Deno.test("sink failure aborts staged ESSR and binary lead padding remains stric
   );
 });
 
-Deno.test("attachment wrapper selectors restore genus and empty leaves obey a metadata count cap", async () => {
+Deno.test("attachment wrapper selectors restore genus", async () => {
   // V1 group semantics are selected only inside the nested attachment scope.
   const one = vector(1);
   // The enclosing frame and subsequent siblings continue using v2 semantics.
@@ -532,13 +419,6 @@ Deno.test("attachment wrapper selectors restore genus and empty leaves obey a me
       await frame.essr.discard();
     }
   }
-  // Empty values still consume metadata and must obey an explicit count budget.
-  const empty = new Counter({ code: CtrDexV2.ControllerIdxSigs, count: 0, version: two.gvrsn }).qb64;
-  // Empty groups still allocate leaf objects, so a byte-only budget is insufficient.
-  await assertRejects(
-    () => parse(chunks(b(two.selector + two.body + empty + empty)), { maxAttachmentGroups: 1 }).next(),
-    ResourceLimitError,
-  );
 });
 
 Deno.test("ESSR Effection scope preserves delivered ownership and aborts pending sink writes", async () => {
@@ -559,11 +439,9 @@ Deno.test("ESSR Effection scope preserves delivered ownership and aborts pending
 
   const writing = Promise.withResolvers<void>();
   const cleanup = Promise.withResolvers<void>();
-  const resources = new ResourcePolicy();
   let abandoned = false;
   const task = run(function*() {
     const channel = yield* toEffectionFrames(() => chunks(wire), {
-      resources,
       payloadSink(signal) {
         const sink = new MemoryPayloadSink(signal);
         return {
@@ -592,9 +470,7 @@ Deno.test("ESSR Effection scope preserves delivered ownership and aborts pending
   await writing.promise;
   const halted = Promise.resolve(task.halt());
   while (!abandoned) await new Promise((resolve) => setTimeout(resolve, 0));
-  assertEquals(resources.used.bytes > 8 * 1024 ** 2, true, "stage credit remains held during joined cleanup");
   cleanup.resolve();
   await halted;
-  assertEquals(resources.used.bytes, 0);
   assertEquals(abandoned, true);
 });

@@ -248,8 +248,8 @@ function inspectReceiptMessage(
 }
 
 /** Receipt endpoints return one finite proof; cancellation joins the reader before leaving this operation. */
-function* readResponseBytes(response: Response, limit = 1024 * 1024): Operation<Uint8Array> {
-  return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal }), limit));
+function* readResponseBytes(response: Response): Operation<Uint8Array> {
+  return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal })));
 }
 
 /** Sleep for one short polling interval while staying cancellable. */
@@ -376,8 +376,6 @@ function* consumeWitnessCues(
 
 /** Witness-local dispatch and existing responder delivery policy for one ingress source. */
 export interface WitnessIngressOptions {
-  /** Invocation-local observation of this engine's own admission refusals, never foreign errors. */
-  onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
   /** Let hosts distinguish intrinsic wire refusals from source, storage and cleanup failures. */
   classifyWireErrors?: boolean;
   /** Accept with witness-local semantics; default false preserves ordinary ingress policy. */
@@ -398,11 +396,11 @@ export function* processWitnessIngressSource(
   runtime: AgentRuntime,
   serviceHab: Hab,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
-  { local = false, deliver = true, classifyWireErrors = false, onAdmissionRefusal }: WitnessIngressOptions = {},
+  { local = false, deliver = true, classifyWireErrors = false }: WitnessIngressOptions = {},
   consume?: (emission: CueEmission) => Operation<void>,
 ): Operation<void> {
   yield* call(function*() {
-    const channel = yield* runtime.intake.frames(source, { classifyWireErrors, onAdmissionRefusal });
+    const channel = yield* runtime.intake.frames(source, { classifyWireErrors });
     for (const frame of yield* each(channel.frames)) {
       yield* runtime.reactor.settle(frame, { local, escrows: true });
       yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume);
@@ -855,7 +853,7 @@ function* postWitnessReceiptEndpoint(
         cigars: inspected.cigars,
       };
     }
-    const body = yield* readResponseBytes(response, 16 * 1024);
+    const body = yield* readResponseBytes(response);
     lastStatus = response.status;
     lastText = new TextDecoder().decode(body);
     if (isKeripyContentTypeRejection(response.status, contentType, lastText)) {
@@ -898,7 +896,7 @@ function* getWitnessReceiptEndpoint(
     method: "GET",
   });
   if (response.status !== 200) {
-    const body = yield* readResponseBytes(response, 16 * 1024);
+    const body = yield* readResponseBytes(response);
     return {
       kind: "reject",
       status: response.status,

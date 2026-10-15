@@ -1,12 +1,11 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import { b, decodeB64, t } from "../../../src/core/bytes.ts";
-import { ColdStartError, ResourceLimitError, ShortageError } from "../../../src/core/errors.ts";
+import { ColdStartError, ShortageError } from "../../../src/core/errors.ts";
 import { discardFrame } from "../../../src/core/frame.ts";
 import { collectPayload, MemoryPayloadSink, type PayloadSink } from "../../../src/core/payload.ts";
-import { ResourcePolicy } from "../../../src/core/resource-policy.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { parse, type ParseOptions } from "../../../src/parser/progressive.ts";
+import { parse } from "../../../src/parser/progressive.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Siger } from "../../../src/primitives/siger.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
@@ -121,7 +120,7 @@ function tracking(failFinish = 0, failDiscard = 0) {
     records.push(record);
     const index = records.length;
     return {
-      /** Count admitted writes before delegating the real storage operation. */
+      /** Count staged writes before delegating the real storage operation. */
       write(bytes) {
         record.writes += bytes.length;
         return sink.write(bytes);
@@ -152,47 +151,6 @@ function tracking(failFinish = 0, failDiscard = 0) {
   };
   return { records, factory };
 }
-
-Deno.test("tree limits aggregate descendants before ordinary or ESSR retention", async () => {
-  const wire = payloadTree();
-  for (
-    const options of [
-      { maxTreeNodes: 2 },
-      { maxAttachmentGroups: 2 },
-      { maxFrameBytes: 500 },
-      { maxEssrBytes: 8 },
-      { maxEssrItems: 2 },
-      { maxDepth: 2 },
-    ] satisfies ParseOptions[]
-  ) {
-    const sinks = tracking();
-    await assertRejects(() => parseBytes(b(wire), { ...options, payloadSink: sinks.factory }), ResourceLimitError);
-    if ("maxEssrBytes" in options || "maxEssrItems" in options) {
-      assertEquals(sinks.records[2].writes, 0, "Reject the third payload before any sink retention");
-    }
-    for (const record of sinks.records) {
-      assertEquals(record.finished, 0);
-      assertEquals(record.aborted, 1);
-    }
-  }
-  const sinks = tracking();
-  const [frame] = await parseBytes(b(wire), {
-    maxTreeNodes: 3,
-    maxAttachmentGroups: 3,
-    maxEssrBytes: 9,
-    maxEssrItems: 3,
-    payloadSink: sinks.factory,
-  });
-  assertEquals(frame.nests?.length, 2);
-  for (const node of [frame, ...frame.nests!]) assertEquals(t(await collectPayload(node.essr!.raw)), "abc");
-  await discardFrame(frame);
-  await discardFrame(frame); // Repeated scope cleanup cannot release descendants twice.
-  assertEquals(sinks.records.map((record) => [record.finished, record.aborted, record.discarded]), [[1, 0, 1], [
-    1,
-    0,
-    1,
-  ], [1, 0, 1]]);
-});
 
 Deno.test("malformed later descendants, finish failure and cancellation release every undelivered owner", async () => {
   const wire = payloadTree();
@@ -263,16 +221,11 @@ Deno.test("earlier delivered trees survive a malformed later independent tree", 
 });
 
 Deno.test("cancellation while finishing a descendant discards earlier finished owners", async () => {
-  const resources = new ResourcePolicy({ bytes: 4096 + 3 * 48 });
   const controller = new AbortController();
   const sinks = tracking();
   let finishes = 0;
   await assertRejects(() =>
     parseBytes(b(payloadTree()), {
-      resources,
-      maxFrameBytes: 4096,
-      maxEssrBytes: 9,
-      maxEssrItems: 3,
       signal: controller.signal,
       payloadSink(signal) {
         const sink = sinks.factory(signal);
@@ -288,7 +241,6 @@ Deno.test("cancellation while finishing a descendant discards earlier finished o
       },
     }), DOMException);
   assertEquals(sinks.records.map((record) => [record.aborted, record.discarded]), [[0, 1], [0, 1], [0, 1]]);
-  assertEquals(resources.used.bytes, 0);
 });
 
 Deno.test("closed attachments cannot absorb later evidence or a second unwrapped body", async () => {
@@ -306,58 +258,10 @@ Deno.test("closed attachments cannot absorb later evidence or a second unwrapped
   }
 });
 
-Deno.test("ordinary tree bytes count each retained region once and reset between independent siblings", async () => {
-  const row = vectors.rows[0];
-  for (const encode of [b, decodeB64]) {
-    // Three body-with-attachment headers only delimit input; each retained body/signature is charged once.
-    const resident = encode(row.qb64).length - encode("-BAA").length * 3;
-    assertEquals((await parseBytes(encode(row.qb64), { maxFrameBytes: resident })).length, 1);
-    await assertRejects(() => parseBytes(encode(row.qb64), { maxFrameBytes: resident - 1 }), ResourceLimitError);
-    assertEquals(
-      (await parseBytes(encode(groupV2("-A", row.qb64 + row.qb64)), {
-        maxFrameBytes: resident,
-        maxTreeNodes: 3,
-        maxAttachmentGroups: 3,
-      })).length,
-      2,
-    );
-  }
-});
-
-Deno.test("shared tree credit follows parent ownership across delivery, failure and disposal", async () => {
-  const row = vectors.rows[0];
-  const resources = new ResourcePolicy({ bytes: 4096 });
-  const options = { resources, maxFrameBytes: 4096 };
-  const parser = parse(chunks(b(groupV2("-A", row.qb64 + row.qb64))), options);
-  const first = (await parser.next()).value!;
-  assertEquals(summary(first), row.tree);
-  assertEquals(resources.used.bytes, 4096, "children share the root allowance");
-  await assertRejects(() => parseBytes(b(row.qb64), options), ResourceLimitError, "busy");
-  // Borrowed children cannot release the enclosing parent's reservation.
-  await discardFrame(first.nests![0]);
-  assertEquals(resources.used.bytes, 4096);
-  await discardFrame(first);
-  await discardFrame(first);
-  assertEquals(resources.used.bytes, 4096, "a suspended generator still retains its delivered root");
-  const second = (await parser.next()).value!;
-  assertEquals(summary(second), row.tree);
-  assertEquals((await parser.next()).done, true);
-  assertEquals(resources.used.bytes, 4096, "parser exit does not dispose a delivered root");
-  await discardFrame(second);
-  await assertRejects(() => parseBytes(b(row.qb64.slice(0, -4)), options), ShortageError);
-  assertEquals(resources.used.bytes, 0);
-  await assertRejects(() => parseBytes(b(row.qb64 + row.qb64), options), ResourceLimitError);
-  assertEquals(resources.used.bytes, 0, "failed collection releases earlier frames");
-
+Deno.test("recursive discard joins descendant disposal", async () => {
   const cleanup = Promise.withResolvers<void>();
   let started = false;
-  const staged = new ResourcePolicy({ bytes: 4096 + 3 * 48 });
-  const [owned] = await parseBytes(b(payloadTree()), {
-    ...options,
-    resources: staged,
-    maxEssrBytes: 9,
-    maxEssrItems: 3,
-  });
+  const [owned] = await parseBytes(b(payloadTree()));
   const discard = owned.nests![0].essr!.discard;
   owned.nests![0].essr!.discard = async () => {
     started = true;
@@ -366,8 +270,6 @@ Deno.test("shared tree credit follows parent ownership across delivery, failure 
   };
   const disposing = discardFrame(owned);
   assertEquals(started, true);
-  assertEquals(staged.used.bytes, 4096 + 3 * 48, "tree and stage credit outlive descendant cleanup");
   cleanup.resolve();
   await disposing;
-  assertEquals(staged.used.bytes, 0);
 });

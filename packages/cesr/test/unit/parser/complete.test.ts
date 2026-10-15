@@ -1,6 +1,6 @@
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { b } from "../../../src/core/bytes.ts";
-import { ResourceLimitError, ShortageError } from "../../../src/core/errors.ts";
+import { ShortageError } from "../../../src/core/errors.ts";
 import { collectPayload, MemoryPayloadSink, type PayloadSink } from "../../../src/core/payload.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
@@ -61,8 +61,8 @@ function observed(onFinish: (count: number) => void = () => {}, failFirstDiscard
   return { factory, discarded };
 }
 
-Deno.test("complete input parsing chunks large backing buffers and transfers ordered payloads", async () => {
-  // A finite input larger than the cursor chunk budget must be adapted, not rejected.
+Deno.test("complete input parsing accepts large backing buffers and transfers ordered payloads", async () => {
+  // A large input remains valid without a parser backing-allocation quota.
   const raw = new Uint8Array(1024 ** 2 + 1).fill(37);
   const frames = await parseBytes(b(frame(raw) + frame(b("second"))));
   try {
@@ -106,28 +106,4 @@ Deno.test("complete input cancellation releases both collected and not-yet-deliv
     "collection cancelled",
   );
   assertEquals(owners.discarded, [2, 1]);
-});
-
-Deno.test("complete input rejects its collection limit before opening a payload stage", async () => {
-  const input = b(frame(b("bounded")));
-  let opened = false;
-  await assertRejects(
-    () =>
-      parseBytes(input, {
-        maxInputBytes: input.length - 1,
-        /** Admission must reject the aggregate before any payload allocation. */
-        payloadSink() {
-          opened = true;
-          throw new Error("unexpected payload stage");
-        },
-      }),
-    ResourceLimitError,
-    "collection limit",
-  );
-  assertEquals(opened, false);
-  // An exact limit succeeds; zero permits empty input but Infinity is never unbounded policy.
-  const frames = await parseBytes(input, { maxInputBytes: input.length });
-  for (const parsed of frames) await parsed.essr?.discard();
-  assertEquals(await parseBytes(new Uint8Array(), { maxInputBytes: 0 }), []);
-  await assertRejects(() => parseBytes(input, { maxInputBytes: Infinity }), RangeError);
 });

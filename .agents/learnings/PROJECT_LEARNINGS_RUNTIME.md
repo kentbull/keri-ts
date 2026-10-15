@@ -151,15 +151,12 @@ GET reserves handle/URL credit before fetch; busy retains durable pending work.
 Joined response cleanup precedes credit release and authorization publication.
 Native fetch headers/buffering and pending-row allocation remain separate bounds.
 
-Shared ResourcePolicy credit belongs to an owner until consumption and joined
-cleanup complete. One shared instance is required; separate ledgers do not bound
-a runtime. Reactor reserves stream/cursor/producer credit before source acquisition
-and retains it through joined parser cleanup. The default eight stream slots leave
-headroom for KLI's separate mailbox-role and witness SSE polls; explicitly configured
-two-slot deployments can refuse ingress while both polls are live. Byte/decryption
-ceilings remain 256 MiB/one, and older two-slot measurements keep that label.
-AgentRuntime exposes that same policy
-for recipients; shared deployments must inject one policy into all runtimes.
+FrameIntake binds actual ESSR staging to the parser adapter. It has no policy,
+source slots, cursor caps or reservation resource. The adapter owns cancellation,
+source advancement and joined cleanup. Reactor queued-record accounting and
+composition/transport policy remain removal work. HTTP requests retain their own
+actual transport scope independently of parsing; do not restore a parser slot
+merely to coordinate HTTP/TCP resource lifetime.
 Protocol producers and consumers share ordinary Deck records. KEL/Revery/KSN,
 registry/credential TSN, EXN, verifier and OOBI publish cues after the owning
 writes. KEL live state and cues wait for native commit. Broker membership controls

@@ -799,5 +799,5 @@ function* fetchOobiResponse(
 
 /** Admit at most 8 MiB for the existing finite OOBI/document consumer and join its reader on cancellation. */
 function* readResponseBytes(response: Response): Operation<Uint8Array> {
-  return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal }), 8 * 1024 * 1024));
+  return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal })));
 }

@@ -1,4 +1,4 @@
-/** Reopenable frame serialization with bounded metadata and streamed canonical ESSR wire. */
+/** Reopenable frame serialization with semantic metadata and streamed canonical ESSR wire. */
 import { b, byteString, concatBytes, decodeB64, encodeB64 } from "../core/bytes.ts";
 import { SerializeError } from "../core/errors.ts";
 import type { Payload } from "../core/payload.ts";
@@ -26,11 +26,8 @@ export interface AttachmentOptions extends SerializeOptions {
   enclosingGvrsn?: Versionage;
 }
 
-/** Qualified chunks stay small enough for the parser's default producer admission. */
+/** Copy granularity for streamed qualified output. */
 const CHUNK_BYTES = 65536;
-
-/** Finished ESSR readers share the parser raw-view contract for accepted backing allocations. */
-const MAX_READER_BYTES = 1024 * 1024;
 
 /** Compare genus identity without conflating it with message protocol metadata. */
 function sameVersion(left: Versionage, right: Versionage): boolean {
@@ -51,9 +48,9 @@ function frameGenus(frame: CesrFrame, requested?: Versionage): Versionage {
   return selected;
 }
 
-/** Join already admitted metadata without a potentially unbounded argument spread. */
+/** Join semantic metadata without argument spreading. */
 function join(chunks: readonly Uint8Array[]): Uint8Array {
-  // The aggregate is one bounded semantic group, never the external ESSR wire.
+  // The aggregate is one semantic group; ESSR wire is streamed separately.
   const result = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0));
   // Copy in wire order, preserving tuple and signature order.
   let offset = 0;
@@ -80,7 +77,7 @@ function counter(name: string, count: number, gvrsn: Versionage, domain: CesrDom
   return domain === "txt" ? value.qb64b : value.qb2;
 }
 
-/** Convert admitted qualified bytes without altering primitive or inner-counter boundaries. */
+/** Convert qualified bytes without altering primitive or inner-counter boundaries. */
 function qualify(bytes: Uint8Array, from: CesrDomain, to: CesrDomain): Uint8Array {
   if (from === to) return bytes;
   if (from === "bny") return b(encodeB64(bytes));
@@ -155,10 +152,6 @@ async function* wireChunks(wire: Payload, domain: CesrDomain, signal?: AbortSign
   let size = 0;
   for await (const chunk of wire.open(signal)) {
     signal?.throwIfAborted();
-    // Reject a tiny view onto an oversized allocation before conversion can copy it.
-    if (chunk.buffer.byteLength > MAX_READER_BYTES) {
-      throw new SerializeError("ESSR reader backing allocation exceeds 1 MiB");
-    }
     size += chunk.length;
     if (size > wire.size) throw new SerializeError("ESSR wire exceeds its declared size");
     if (domain === "txt") {
@@ -253,7 +246,7 @@ function bodyBytes(frame: CesrFrame, gvrsn: Versionage, domain: CesrDomain, nest
     return qualify(frame.body.raw, sniff(frame.body.raw) as CesrDomain, domain);
   }
   if (!nested) return frame.body.raw;
-  // The parser already admitted body metadata under the shared tree byte limit; ESSR never enters here.
+  // Only the body is encoded here; ESSR retains its separate streamed owner.
   const texter = new Texter({ raw: frame.body.raw, code: "4B" });
   const body = domain === "txt" ? texter.qb64b : texter.qb2;
   return concatBytes(counter("NonNativeBodyGroup", body.length / (domain === "txt" ? 4 : 3), gvrsn, domain), body);
@@ -265,11 +258,10 @@ function attachmentContent(frame: CesrFrame, options: SerializeOptions): Payload
   const gvrsn = frameGenus(frame, options.gvrsn);
   // One attachment enclosure cannot mix text and binary qualification.
   const domain = options.domain ?? "txt";
-  // Ordinary leaves were admitted as metadata; normalize them before calculating the outer count.
+  // Normalize ordinary leaves before calculating the outer count.
   const groups = frame.attachments.map((group) => groupBytes(group, gvrsn, domain));
-  // Resident ordinary metadata is bounded when the frame is admitted by parse().
   const ordinary = groups.reduce((size, group) => size + group.length, 0);
-  // Retain one view per already admitted tree node, preserving child order and separate evidence.
+  // Retain one view per tree node, preserving child order and separate evidence.
   const children = (frame.nests ?? []).map((child) =>
     nestedPayload(child, gvrsn, {
       gvrsn: options.gvrsn,

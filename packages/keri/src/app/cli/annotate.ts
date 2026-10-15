@@ -1,4 +1,4 @@
-import { annotate, ANNOTATION_LIMIT } from "cesr-ts";
+import { annotate } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import { abortable } from "../abortable.ts";
 import { collectBytes, fileBytes, streamBytes } from "../byte-source.ts";
@@ -15,24 +15,17 @@ interface AnnotateArgs {
   pretty?: boolean;
   /** Apply terminal colors to stdout only. */
   colored?: boolean;
-  /** Finite input policy, configurable independently of protocol wire sizes. */
-  maxBytes?: number;
 }
 
 /** Annotate bounded file/stdin input with every I/O leaf owned by this operation. */
 export function* annotateCommand(args: Record<string, unknown>): Operation<void> {
   const options = args as AnnotateArgs;
-  const limit = options.maxBytes ?? ANNOTATION_LIMIT;
   const bytes = yield* abortable((signal) =>
-    collectBytes(
-      options.inPath ? fileBytes(options.inPath, { signal }) : streamBytes(Deno.stdin.readable, { signal }),
-      limit,
-    )
+    collectBytes(options.inPath ? fileBytes(options.inPath, { signal }) : streamBytes(Deno.stdin.readable, { signal }))
   );
   const text = yield* abortable((signal) =>
     annotate(bytes, {
       pretty: options.pretty,
-      maxBytes: limit,
       signal,
     })
   );

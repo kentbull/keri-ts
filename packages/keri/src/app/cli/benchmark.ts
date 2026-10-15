@@ -1,5 +1,4 @@
 import {
-  BENCH_INPUT_LIMIT,
   type BenchmarkOptions,
   benchmarkParser,
   type BenchmarkResult,
@@ -35,18 +34,13 @@ function formatBenchmarkText(source: string, result: BenchmarkResult): string {
 /** Retain one admitted corpus and own every input, parse, and output leaf in this operation. */
 export function* benchmarkCommand(args: Record<string, unknown>): Operation<void> {
   const options = args as BenchmarkArgs;
-  const limit = options.maxBytes ?? BENCH_INPUT_LIMIT;
   const source = options.inPath ?? "stdin";
   const bytes = yield* abortable((signal) =>
-    collectBytes(
-      options.inPath ? fileBytes(options.inPath, { signal }) : streamBytes(Deno.stdin.readable, { signal }),
-      limit,
-    )
+    collectBytes(options.inPath ? fileBytes(options.inPath, { signal }) : streamBytes(Deno.stdin.readable, { signal }))
   );
   const result = yield* abortable((signal) =>
     benchmarkParser(bytes, {
       ...options,
-      maxBytes: limit,
       parserOptions: { signal },
     })
   );

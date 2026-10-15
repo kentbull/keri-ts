@@ -115,7 +115,7 @@ Deno.test("app/protocol/mailbox-admin - ingest settles parser state without resp
         { local, mailboxAid, escrows }: { local?: boolean; mailboxAid?: string | null; escrows?: boolean } = {},
       ) {
         // The edge supplies a bounded source and asks dispatch to advance escrows in the same turn.
-        const bytes = yield* call(() => collectBytes(source(new AbortController().signal), 3));
+        const bytes = yield* call(() => collectBytes(source(new AbortController().signal)));
         settled.push({ bytes, local });
         activeMailboxAid = mailboxAid ?? null;
         assertEquals(escrows, true);

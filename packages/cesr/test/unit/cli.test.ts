@@ -141,7 +141,7 @@ Deno.test("tephra bench routes through the package-level dispatcher", async () =
   assertEquals(state.stderr.join(""), "");
 });
 
-Deno.test("tephra finite annotation closes input when its admission limit is crossed", async () => {
+Deno.test("tephra annotation closes its fully consumed input", async () => {
   const state = memoryCliIo();
   let pulled = 0;
   let closed = false;
@@ -155,11 +155,9 @@ Deno.test("tephra finite annotation closes input when its admission limit is cro
       closed = true;
     }
   };
-  // The second chunk crosses admission; a third chunk must stay upstream.
-  assertEquals(await tephraCli(["annotate", "--max-bytes", String(VALID_FRAME.length)], state.io), 1);
-  assertEquals(pulled, 2);
+  assertEquals(await tephraCli(["annotate"], state.io), 0);
+  assertEquals(pulled, 3);
   assertEquals(closed, true);
-  assertStringIncludes(state.stderr.join(""), "exceeds");
 });
 
 Deno.test("tephra validation retains completed counts and closes a later malformed source", async () => {

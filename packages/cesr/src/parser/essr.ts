@@ -1,5 +1,5 @@
 import { b, b64ToInt, byteString, decodeB64, encodeB64 } from "../core/bytes.ts";
-import { DeserializeError, ResourceLimitError, UnknownCodeError } from "../core/errors.ts";
+import { DeserializeError, UnknownCodeError } from "../core/errors.ts";
 import { MemoryPayloadSink, type OwnedPayload, type PayloadSink } from "../core/payload.ts";
 import type { CesrDomain, EssrPayload } from "../core/types.ts";
 import { TEXTER_CODES } from "../primitives/codex.ts";
@@ -9,26 +9,10 @@ import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Cursor } from "./cursor.ts";
 
-/** Finite logical-message budgets apply even when the sink writes to disk. */
+/** Optional staging owned by the parser until a complete frame is delivered. */
 export interface EssrOptions {
-  /** Maximum concatenated decoded ESSR bytes in one owned tree; default 8 MiB. */
-  maxEssrBytes?: number;
-  /** Maximum Texters in one owned tree, including empty values; default 16,384. */
-  maxEssrItems?: number;
-  /**
-   * Awaited writes supply backpressure; the sink must honor the supplied signal.
-   */
+  /** Awaited writes supply backpressure; the sink must honor cancellation. */
   payloadSink?: (signal?: AbortSignal) => PayloadSink | Promise<PayloadSink>;
-}
-
-/** Remaining decoded bytes and item credit shared by an owned parent tree. */
-export interface EssrBudget {
-  /** Available decoded bytes, reserved before writing token content. */
-  bytes: number;
-  /** Available Texters, including zero-length values. */
-  items: number;
-  /** Reserve one finite canonical-wire stage before its sink is acquired. */
-  admitStage?: (wireBytes: number) => void;
 }
 
 /** Texter headers are aligned whole quadlets/triplets in both Bytes code families. */
@@ -64,14 +48,13 @@ async function header(input: Cursor, domain: CesrDomain) {
 async function* texter(
   input: Cursor,
   domain: CesrDomain,
-  remaining: number,
   sink?: PayloadSink,
-  admit?: (size: number) => void,
+  remaining?: number,
 ): AsyncGenerator<Uint8Array, number> {
-  // Admission happens before pulling any declared payload bytes.
   const token = await header(input, domain);
-  if (token.rawSize > remaining) throw new ResourceLimitError("ESSR exceeds decoded byte limit", input.offset);
-  admit?.(token.rawSize);
+  if (remaining !== undefined && token.rawSize > remaining) {
+    throw new DeserializeError("ESSR token exceeds declared decoded payload size", input.offset);
+  }
   // This scope prevents following attachment bytes from repairing an incomplete token.
   const payload = input.scope(token.count * (domain === "txt" ? 4 : 3));
   if (sink) await sink.write(b(token.text));
@@ -100,8 +83,6 @@ async function* texter(
 
 /**
  * Reopen one owned wire stream as a non-owning concatenated raw-byte view.
- * Readers admit backing buffers up to 1 MiB, matching built-in memory/file sinks;
- * custom owners must obey that chunk contract even for short subarray views.
  */
 export function essrPayload(wire: OwnedPayload, count: number, size: number, gvrsn: Versionage): EssrPayload {
   if (![count, size, wire.size].every((value) => Number.isSafeInteger(value) && value >= 0)) {
@@ -122,7 +103,7 @@ export function essrPayload(wire: OwnedPayload, count: number, size: number, gvr
         try {
           for (let item = 0; item < count; item++) {
             // yield* preserves backpressure through decoding instead of collecting a Texter.
-            decoded += yield* texter(input, "txt", size - decoded);
+            decoded += yield* texter(input, "txt", undefined, size - decoded);
           }
           if (decoded !== size || !await input.atEnd()) throw new DeserializeError("ESSR payload metadata mismatch");
         } finally {
@@ -139,21 +120,15 @@ export function essrPayload(wire: OwnedPayload, count: number, size: number, gvr
 export class EssrWriter {
   /** Completed Texters across every ESSR group in this frame. */
   private count = 0;
-  /** Sum of admitted decoded bytes, excluding qualification padding. */
+  /** Sum of decoded bytes, excluding qualification padding. */
   private size = 0;
 
-  /** Capture one stage and the frame-wide budgets that all appended groups share. */
+  /** Capture one unfinished stage and its resolved genus. */
   constructor(
     /** Unfinished storage owned by this writer until finish succeeds. */
     private readonly sink: PayloadSink,
-    /** Decoded-byte cap across this frame, independent of sink storage medium. */
-    private readonly maxBytes: number,
-    /** Item cap also bounds streams containing only empty Texters. */
-    private readonly maxItems: number,
     /** Resolved frame genus used as the default when replay constructs new counters. */
     private readonly gvrsn: Versionage,
-    /** Optional shared credit for every descendant of the pending parent. */
-    private readonly budget?: EssrBudget,
   ) {}
 
   /** Append one group; v1 counts items and v2 bounds qualified payload bytes. */
@@ -162,26 +137,11 @@ export class EssrWriter {
     const bounded = gvrsn.major === 2;
     // V2 must exhaust its own extent; v1 stops after exactly the declared item count.
     const body = bounded ? input.scope(counter.count * (domain === "txt" ? 4 : 3)) : input;
-    // This counter is local to the group; this.count enforces the frame-wide policy.
+    // This counter is local to the group; this.count records exact frame metadata.
     let items = 0;
     while (bounded ? !await body.atEnd() : items < counter.count) {
-      if (this.count >= this.maxItems || this.budget?.items === 0) {
-        throw new ResourceLimitError("ESSR exceeds item limit", input.offset);
-      }
-      // Fully validate this token while each awaited write supplies downstream credit.
-      const token = texter(
-        body,
-        domain,
-        Math.min(this.maxBytes - this.size, this.budget?.bytes ?? Infinity),
-        this.sink,
-        (size) => {
-          if (this.budget) {
-            this.budget.bytes -= size;
-            this.budget.items--;
-          }
-        },
-      );
-      // The iterator return carries even a zero-length item's admitted byte count.
+      const token = texter(body, domain, this.sink);
+      // The iterator return carries even a zero-length item's decoded byte count.
       let step = await token.next();
       while (!step.done) step = await token.next();
       this.size += step.value;
@@ -213,31 +173,15 @@ export class EssrWriter {
   }
 }
 
-/** Validate budgets and derive a finite canonical-wire cap including empty item headers. */
+/** Acquire actual staging only when a frame first encounters ESSR. */
 export function essrFactory(
   options: EssrOptions,
   signal?: AbortSignal,
-): (gvrsn: Versionage, budget?: EssrBudget) => Promise<EssrWriter> {
-  // Decoded-byte and item limits constrain separate sources of retained work.
-  const bytes = options.maxEssrBytes ?? 8 * 1024 ** 2;
-  // Empty items consume headers even when they contribute no decoded bytes.
-  const items = options.maxEssrItems ?? 16384;
-  for (const value of [bytes, items]) {
-    if (!Number.isSafeInteger(value) || value < 0) {
-      throw new RangeError("ESSR limits must be non-negative safe integers");
-    }
-  }
-  // Each item needs at most two lead bytes and an eight-character qualified header.
-  const wireLimit = 4 * Math.ceil(bytes / 3) + 12 * items;
-  if (!Number.isSafeInteger(wireLimit)) throw new RangeError("ESSR wire limit exceeds safe integer range");
+): (gvrsn: Versionage) => Promise<EssrWriter> {
   const payloadSink = options.payloadSink;
-  return async (gvrsn, budget) => {
-    budget?.admitStage?.(wireLimit);
-    // A custom sink receives operation cancellation; staging has no allocation policy.
-    const sink = payloadSink
-      ? await payloadSink(signal)
-      : new MemoryPayloadSink(signal);
-    return new EssrWriter(sink, bytes, items, gvrsn, budget);
+  return async (gvrsn) => {
+    const sink = payloadSink ? await payloadSink(signal) : new MemoryPayloadSink(signal);
+    return new EssrWriter(sink, gvrsn);
   };
 }
 

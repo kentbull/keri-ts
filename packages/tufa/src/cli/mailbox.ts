@@ -610,7 +610,7 @@ function* postMailboxAdminCesr(
   });
 
   // Administrative JSON/diagnostics are finite metadata, not an unbounded stream.
-  const responseBytes = yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal }), 1024 * 1024));
+  const responseBytes = yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal })));
   const body = new TextDecoder().decode(responseBytes);
   return { ok: response.ok, status: response.status, body };
 }
@@ -636,7 +636,7 @@ function* postMailboxAdminMultipart(
   });
 
   // Administrative JSON/diagnostics are finite metadata, not an unbounded stream.
-  const responseBytes = yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal }), 1024 * 1024));
+  const responseBytes = yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal })));
   const body = new TextDecoder().decode(responseBytes);
   return { ok: response.ok, status: response.status, body };
 }

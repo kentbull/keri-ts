@@ -41,7 +41,7 @@ Deno.test("witness delivery preserves authorization and retries the media type f
         controller.interact();
         const services = { ...defaultRuntimeServices, resources: new ResourcePolicy({ streams: 1 }) };
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
-        const busy = services.resources.reserve({ streams: 1 });
+        const busy = services.resources.reserve({ streams: services.resources.limits.streams });
         if (busy.kind !== "reserve") throw new Error("Expected free test capacity");
         try {
           yield* call(() =>
@@ -116,7 +116,7 @@ Deno.test("TCP witness admission owns its socket through cancellation and permit
         hby.db.locs.pin([witness.pre, "tcp"], { url: `tcp://127.0.0.1:${address.port}` });
         const runtime = yield* createAgentRuntime(hby, { mode: "local", services });
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
-        const busy = services.resources.reserve({ streams: 1 });
+        const busy = services.resources.reserve({ streams: services.resources.limits.streams });
         if (busy.kind !== "reserve") throw new Error("Expected free test capacity");
         try {
           yield* call(() =>
@@ -149,7 +149,7 @@ Deno.test("TCP witness admission owns its socket through cancellation and permit
         });
         try {
           yield* call(() => received.promise);
-          assertEquals(services.resources.used.streams, 2);
+          assertEquals(services.resources.used.streams, 1);
           assertEquals(services.resources.used.bytes > wire.buffer.byteLength, true);
         } finally {
           yield* call(() => task.halt());
@@ -241,45 +241,6 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
   } finally {
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  }
-});
-
-Deno.test("witness receipt collection rejects an oversized response and cancels its source", async () => {
-  const cancelled = Promise.withResolvers<void>();
-  const server = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, () =>
-    new Response(
-      new ReadableStream<Uint8Array>({
-        pull(controller) {
-          controller.enqueue(new Uint8Array(64 * 1024));
-        },
-        cancel() {
-          cancelled.resolve();
-        },
-      }),
-    ));
-  try {
-    await assertRejects(
-      () =>
-        run(function*() {
-          const hby = yield* createHabery({
-            name: `receipt-limit-${crypto.randomUUID()}`,
-            temp: true,
-            skipConfig: true,
-          });
-          try {
-            const { controller } = fixture(hby, `http://127.0.0.1:${server.addr.port}`);
-            // The finite receipt budget is checked while reading, before receipt parsing starts.
-            yield* new Receiptor(hby).get(controller.pre);
-          } finally {
-            yield* hby.close(true);
-          }
-        }),
-      ResourceLimitError,
-      "Input exceeds",
-    );
-    await cancelled.promise;
-  } finally {
-    await server.shutdown();
   }
 });
 
@@ -475,11 +436,11 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
       // The connection owns its intake and borrows only the protocol processor from the host.
       const replies = {
         services: runtime.services,
-        intake: new FrameIntake(runtime.resources, undefined, 1),
+        intake: new FrameIntake(undefined),
         reactor: runtime.reactor,
       };
       const options = { replies, connectTimeoutMs: 1000, drainTimeoutMs: 40 };
-      const occupied = runtime.resources.reserve({ streams: 1 });
+      const occupied = runtime.resources.reserve({ streams: runtime.resources.limits.streams });
       if (occupied.kind !== "reserve") throw new Error("Expected free capacity");
       try {
         const source = async function*() {
@@ -579,14 +540,12 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
           yield* call(() => promptly(verified.promise));
           assertEquals(eof, false, "signed reply reaches durable state before outgoing EOF");
           assertEquals(continued, false);
-          if (mode !== "rxFault") assertEquals(runtime.resources.used.streams, 2);
           assertEquals(timers.filter((ms) => ms === 40).length, 0, "drain deadline starts at TX EOF");
           if (mode === "cancel") {
             let joined = false;
             const halted = task.halt().then(() => joined = true);
             yield* call(() => promptly(Promise.all([txReturning.promise, rxReturning.promise])));
             assertEquals(joined, false);
-            assertEquals(runtime.resources.used.streams, 2, "neither direction releases before both cleanups join");
             txCleanup.resolve();
             yield* call(() => Promise.resolve());
             assertEquals(joined, false);
@@ -935,7 +894,6 @@ Deno.test("TCP duplex consumes bounded raw bytes without a protocol runtime", as
           maxChunkBytes: 4,
           read: {
             maxChunkBytes: 4,
-            maxBufferedBytes: 8,
             open(source, signal) {
               return resource(function*(provide) {
                 assertEquals(connected, false, "consumer setup precedes socket acquisition");

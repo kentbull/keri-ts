@@ -164,11 +164,9 @@ export class Pather extends Matter {
     return parts;
   }
 
-  /** Resolve SAD labels or field/list ordinals under a deployment depth limit, not a wire limit. */
-  resolve(sad: unknown, { maxDepth = 256 }: { maxDepth?: number } = {}): unknown {
-    if (!Number.isSafeInteger(maxDepth) || maxDepth < 0) throw new RangeError("Invalid path depth limit");
+  /** Resolve SAD labels or field/list ordinals without a traversal quota. */
+  resolve(sad: unknown): unknown {
     const parts = this.rparts;
-    if (parts.length > maxDepth) throw new DeserializeError(`Path depth exceeds limit ${maxDepth}`);
     let value = sad;
     for (const part of parts) {
       if (Array.isArray(value)) {

@@ -300,7 +300,6 @@ export function* createAgentRuntime(
     }
   });
   const intake = new FrameIntake(
-    resources,
     async (signal) => (await hby.db.openPayloads(signal)).files.stage(signal),
   );
   const reactor = new Reactor(hby, {

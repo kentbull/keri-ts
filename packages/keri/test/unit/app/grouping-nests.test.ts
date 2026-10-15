@@ -15,7 +15,6 @@ import {
   type OwnedPayload,
   parseBytes,
   Prefixer,
-  ResourcePolicy,
   SerderACDC,
   SerderKERI,
   Siger,
@@ -423,14 +422,11 @@ for (const remoteFirst of [false, true]) {
       const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
       const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
       assertEquals(local.serder.raw, remote.serder.raw);
-      const resources = new ResourcePolicy();
       const [own] = await parseBytes(
         messagize(local.serder, { sigers: local.sigers, gvrsn: Vrsn_2_0, genusify: true }),
-        { resources },
       );
       const [other] = await parseBytes(
         messagize(remote.serder, { sigers: remote.sigers, gvrsn: Vrsn_2_0, genusify: true }),
-        { resources },
       );
       try {
         const attrs = { gid: local.hab.pre, smids: mids, rmids: mids };
@@ -483,7 +479,6 @@ for (const remoteFirst of [false, true]) {
       } finally {
         await discardFrame(own);
         await discardFrame(other);
-        assertEquals(resources.used.bytes, 0);
       }
     });
   });

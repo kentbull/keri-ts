@@ -37,8 +37,10 @@ restore queue credit, capacity, inspection or synthetic retain/release handles.
 Use concrete semantic records, narrow validated input, and locally justified
 open boundaries. Diagnostic metadata must not drive domain control flow.
 
-One progressive parser engine; CESR stays framework-neutral with an optional
-Effection adapter. KERI/Tufa own cancellable operations and joined cleanup.
+ADR-0012 now requires one buffered finite decoder. The progressive engine, cursor,
+parser-owned staging and Effection frame bridge remain transitional removal work.
+Buffer complete counted enclosures before synchronous decoding; accept the group
+memory/latency tradeoff. KERI/Tufa own concrete transport cancellation and cleanup.
 Composition points depend downward: transport lends bounded byte streams;
 application flows compose parsing/dispatch without an AgentRuntime dependency in transport.
 Consume-scoped hydration joins disposal and propagates cleanup failures before returning.

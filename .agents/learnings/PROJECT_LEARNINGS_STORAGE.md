@@ -120,8 +120,8 @@ parent-tree budget or storage-copy reservation. Key cursors close before suspens
 publication stays inside its caller's transaction. Reopened frames are claimed
 before cardinality checks and disposed after handler/replay completion or failure.
 ESSR rows retain their actual insertion order, qualified framing and exact
-size/count metadata without storage quotas. Parser-internal accounting and
-runtime composition policy remain separate removal work.
+size/count metadata without storage quotas. Parser accounting is removed;
+runtime composition/transport policy remains separate removal work.
 
 Stored reply reconstruction uses the typed reply store, 714 key-ordered groups
 and exactly one optional cigar. The shared serializer owns framing; do not duplicate

@@ -1,9 +1,5 @@
-import { ResourceLimitError } from "../core/errors.ts";
 import { discardFrame } from "../core/frame.ts";
 import { parse, type ParseOptions } from "../parser/progressive.ts";
-
-/** Finite replay policy for the convenience benchmark, independent of protocol sizes. */
-export const BENCH_INPUT_LIMIT = 64 * 1024 ** 2;
 
 /** Controls repeated progressive parses; every run must consume valid input completely. */
 export interface BenchmarkOptions {
@@ -13,9 +9,7 @@ export interface BenchmarkOptions {
   warmupIterations?: number;
   /** Independent copied source chunks; default 64 KiB. */
   chunkSize?: number;
-  /** Finite retained corpus budget; default 64 MiB. */
-  maxBytes?: number;
-  /** Protocol admission and cancellation passed directly to the single engine. */
+  /** Parser staging and cancellation passed directly to the single engine. */
   parserOptions?: ParseOptions;
 }
 
@@ -54,12 +48,10 @@ function integer(value: number, name: string, minimum = 1): number {
 /** Consume one progressive pass, releasing ESSR on every delivered frame. */
 export async function countFrames(
   input: Uint8Array,
-  options: Pick<BenchmarkOptions, "chunkSize" | "parserOptions" | "maxBytes"> = {},
+  options: Pick<BenchmarkOptions, "chunkSize" | "parserOptions"> = {},
 ): Promise<number> {
-  const limit = integer(options.maxBytes ?? BENCH_INPUT_LIMIT, "maxBytes");
-  if (input.length > limit) throw new ResourceLimitError(`Benchmark corpus exceeds ${limit} bytes`);
   const chunkSize = integer(options.chunkSize ?? 65536, "chunkSize");
-  /** Allocate only the next admitted chunk; no array of slices retains source metadata. */
+  /** Allocate only the next chunk; no array of slices retains source metadata. */
   async function* source(): AsyncGenerator<Uint8Array> {
     for (let offset = 0; offset < input.length; offset += chunkSize) {
       options.parserOptions?.signal?.throwIfAborted();

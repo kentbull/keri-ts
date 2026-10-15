@@ -1,34 +1,19 @@
-import { ResourceLimitError } from "../core/errors.ts";
 import { discardFrame } from "../core/frame.ts";
 import type { CesrFrame } from "../core/types.ts";
 import { parse, type ParseOptions } from "./progressive.ts";
 
-/** Finite collection policy, separate from each streamed frame's admission limits. */
-export interface ParseBytesOptions extends ParseOptions {
-  /** Total encoded input admitted for collection; defaults to 8 MiB. */
-  maxInputBytes?: number;
-}
-
 /**
  * Parse complete input with the progressive engine and return every frame.
  *
- * This convenience API retains all results under an explicit input limit. Use parse() for bounded streaming
+ * This convenience API retains all results. Use parse() for progressive streaming
  * consumption. Keep input immutable until the promise settles. Successful
  * callers own each frame's ESSR payload; failure releases every collected payload
  * because no result has yet transferred to the caller.
  */
-export async function parseBytes(bytes: Uint8Array, options: ParseBytesOptions = {}): Promise<CesrFrame[]> {
-  const limit = options.maxInputBytes ?? 8 * 1024 ** 2;
-  if (!Number.isSafeInteger(limit) || limit < 0) throw new RangeError("Invalid finite input limit");
-  if (bytes.length > limit) throw new ResourceLimitError("Complete input exceeds collection limit");
-  // Copy each admitted chunk once: subarrays would pin the caller's entire input
-  // and violate the cursor's backing-allocation budget for large finite inputs.
+export async function parseBytes(bytes: Uint8Array, options: ParseOptions = {}): Promise<CesrFrame[]> {
   async function* source(): AsyncGenerator<Uint8Array> {
-    const size = Math.min(65536, options.maxChunkBytes ?? 1024 ** 2);
-    for (let offset = 0; offset < bytes.length; offset += size) {
-      options.signal?.throwIfAborted();
-      yield bytes.slice(offset, offset + size);
-    }
+    options.signal?.throwIfAborted();
+    yield bytes;
   }
 
   // Collection owns every publicly yielded frame until the whole input succeeds.

@@ -7,13 +7,10 @@ import {
   DeserializeError,
   GroupSizeError,
   ParserError,
-  ResourceAdmissionError,
-  ResourceLimitError,
   ShortageError,
   WireParseError,
 } from "../../../src/core/errors.ts";
 import { discardFrame } from "../../../src/core/frame.ts";
-import { ResourcePolicy } from "../../../src/core/resource-policy.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { parse } from "../../../src/parser/progressive.ts";
@@ -78,7 +75,7 @@ async function promptly<T>(operation: Promise<T>): Promise<T> {
   }
 }
 
-Deno.test("progressive wire classification preserves source, cancellation and policy failure identity", async () => {
+Deno.test("progressive wire classification preserves source and cancellation failure identity", async () => {
   const wire = encode(vector(2).selector + vector(2).frame.slice(0, -4));
   const original = await assertRejects(() => collect(parse(chunks(wire))), ParserError);
   assert(!(original instanceof WireParseError));
@@ -99,11 +96,6 @@ Deno.test("progressive wire classification preserves source, cancellation and po
       () => collect(parse(chunks(wire), { classifyWireErrors: true, signal: controller.signal })),
     ) === external,
   );
-  const policy = await assertRejects(
-    () => collect(parse(chunks(wire), { classifyWireErrors: true, maxFrameBytes: 1 })),
-    ResourceLimitError,
-  );
-  assert(!(policy instanceof WireParseError));
 });
 
 Deno.test("progressive GenericGroup emits a complete child before receiving its siblings in both genera/domains", async () => {
@@ -350,28 +342,7 @@ Deno.test("progressive cancellation interrupts blocked input and consumer return
   assertEquals(ended, true);
 });
 
-Deno.test("progressive scope depth uses an explicit resource limit", async () => {
-  const { group, frame } = vector(2);
-  let wire = frame;
-  // Reject before opening a fourth nested cursor under a depth-three budget.
-  for (let i = 0; i < 4; i++) wire = group("GenericGroup", wire);
-  await assertRejects(() => collect(parse(chunks(encode(wire)), { maxDepth: 3 })), ResourceLimitError);
-});
-
-Deno.test("materialized frame admission includes all attachment groups before yielding", async () => {
-  const { body, sig } = vector(2);
-  const wire = encode(body + sig + sig);
-  // Each group fits independently; the second exceeds the total frame budget.
-  const parser = parse(chunks(wire), { maxFrameBytes: body.length + sig.length });
-  await assertRejects(() => parser.next(), ResourceLimitError);
-  assertEquals((await parser.next()).done, true);
-  await assertRejects(
-    () => collect(parse(chunks(encode(body)), { maxFrameBytes: body.length - 1 })),
-    ResourceLimitError,
-  );
-});
-
-/** JSON values whose short wire requires much more decoded logical credit. */
+/** Build a small versioned JSON body shared by mixed-codec framing cases. */
 function tinyJson(count: number): string {
   return v1ify("{\"v\":\"KERI10JSON000000_\",\"a\":[" + Array(count).fill("0").join(",") + "]}");
 }
@@ -412,11 +383,7 @@ Deno.test("JSON parent and descendants preserve framing and joined disposal thro
     parent
       + vector(1).group("BodyWithAttachmentGroup", parent + essr),
   );
-  const [owned] = await parseBytes(encode(payloadWire), {
-    ...options,
-    maxEssrBytes: 3,
-    maxEssrItems: 1,
-  });
+  const [owned] = await parseBytes(encode(payloadWire), options);
   const gate = Promise.withResolvers<void>();
   const failure = new Error("child disposal failed");
   const discard = owned.nests![0].essr!.discard;

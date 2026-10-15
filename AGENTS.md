@@ -80,6 +80,11 @@ chronology unless they are themselves durable operational knowledge.
 
 ### Parser Contract
 
+- ADR-0012 now requires buffered complete-enclosure decoding. Progressive traversal,
+  parser cursors/staging and FrameIntake/TcpRead are transitional removal work.
+- The state-machine/progressive contracts describe current behavior until the
+  replacement lands; their early-delivery/lifecycle instructions do not override
+  the buffered decision.
 - `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is normative for
   parser lifecycle work
 - Keep contract, tests, and parity vectors in sync when parser behavior changes

@@ -206,12 +206,6 @@ Deno.test(
   },
 );
 
-Deno.test("annotation finite admission is configurable and rejects before parsing", async () => {
-  const source = KERIPY_NATIVE_V2_ICP_FIX_BODY;
-  await assertRejects(() => annotate(source, { maxBytes: source.length - 1 }), ResourceLimitError);
-  assertEquals(TEXT_DECODER.decode(denot(await annotate(source, { maxBytes: source.length }))), source);
-});
-
 Deno.test("annotation restores outer genus after a nested selector and honors later stream selectors", async () => {
   const json = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}");
   const token = new Texter({ raw: TEXT_ENCODER.encode(json), code: "4B" }).qb64;

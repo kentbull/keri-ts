@@ -30,6 +30,11 @@ requirements. The 2026-10-15 removal decision supersedes all earlier local-budge
 exceptions and blanket outbox/durable-recovery preservation instructions. Existing
 implementation is transitional and must be removed before release.
 
+ADR-0012 now requires buffered complete-enclosure decoding. Progressive parsing,
+its cursor/staging, FrameIntake/TcpRead and custom frame channels are transitional
+removal work. Early child delivery and giant-transfer memory/performance gates
+are superseded; preserve incremental network input and concrete I/O cleanup.
+
 ## Decision
 
 ### 1. Establish ownership before adding communication machinery

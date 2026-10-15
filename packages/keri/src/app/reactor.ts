@@ -1,3 +1,4 @@
+import type { ParseOptions } from "cesr-ts";
 import {
   type CesrFrame,
   Cigar,
@@ -24,7 +25,7 @@ import { Tevery } from "../vdr/eventing.ts";
 import { RegistryStateReceiver } from "../vdr/registry-tsn.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
-import { type FrameInputOptions, FrameIntake } from "./frame-intake.ts";
+import { FrameIntake } from "./frame-intake.ts";
 import type { Habery } from "./habbing.ts";
 import {
   type DispatchDecision,
@@ -36,8 +37,8 @@ import {
 import { QueryReplies } from "./query-replies.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
-/** Request-local provenance and parser bounds; each source keeps independent parser state. */
-export interface IngressOptions extends FrameInputOptions {
+/** Request-local provenance and parser staging; each source keeps independent parser state. */
+export interface IngressOptions extends ParseOptions {
   /** Treat witness/controller ingress as locally received protocol events. */
   local?: boolean;
   /** Hosted mailbox endpoint that received this source. */
@@ -147,9 +148,7 @@ export class Reactor {
     this.resources = resources;
     this.intake = intake
       ?? new FrameIntake(
-        resources,
         async (signal) => (await hby.db.openPayloads(signal)).files.stage(signal),
-        maxSources,
       );
     this.cues = cues ?? new Deck();
     this.ingress = new Deck();
@@ -336,9 +335,8 @@ export class Reactor {
 
   /** Consume one complete record through the same progressive source and dispatch path as network input. */
   *processBytes(bytes: Uint8Array, options: IngressOptions = {}): Operation<void> {
-    // Honor tighter caller chunk limits while keeping copies bounded for already resident input.
-    const maxChunkBytes = Math.min(64 * 1024, options.maxChunkBytes ?? 64 * 1024);
-    yield* this.process((signal) => chunkBytes(bytes, { signal, maxChunkBytes }), options);
+    // Copy already resident input in fixed-size chunks for the progressive source.
+    yield* this.process((signal) => chunkBytes(bytes, { signal }), options);
   }
 
   /**

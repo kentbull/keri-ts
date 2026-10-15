@@ -1,4 +1,4 @@
-import { BENCH_INPUT_LIMIT, benchmarkParser } from "../../bench/parser-benchmark.ts";
+import { benchmarkParser } from "../../bench/parser-benchmark.ts";
 import { collectInput } from "../input.ts";
 import type { CliIo } from "../types.ts";
 
@@ -19,14 +19,13 @@ interface BenchmarkCliOptions {
   /** Owned input bytes offered per parser pull. */
   chunkSize: number;
   /** Finite retained benchmark corpus limit. */
-  maxBytes: number;
   /** Select machine-readable metrics. */
   json: boolean;
 }
 
 /** Supported replay controls; failed parses always fail the benchmark. */
 const BENCH_USAGE =
-  "Usage: tephra bench [--in <path>] [--iterations <n>] [--warmup <n>] [--chunk-size <bytes>] [--max-bytes <n>] [--json]";
+  "Usage: tephra bench [--in <path>] [--iterations <n>] [--warmup <n>] [--chunk-size <bytes>] [--json]";
 
 /** Parse non-negative integer flags used for sizing and warmup controls. */
 function parseNonNegativeInt(argName: string, value: string): number {
@@ -52,7 +51,6 @@ function parseArgs(args: string[]): BenchmarkCliOptions {
     iterations: 50,
     warmupIterations: 5,
     chunkSize: 65536,
-    maxBytes: BENCH_INPUT_LIMIT,
     json: false,
   };
 
@@ -84,10 +82,6 @@ function parseArgs(args: string[]): BenchmarkCliOptions {
       if (!next) throw new Error("Missing value for --chunk-size");
       out.chunkSize = parsePositiveInt("--chunk-size", next);
       i++;
-      continue;
-    }
-    if (arg === "--max-bytes") {
-      out.maxBytes = parsePositiveInt("--max-bytes", args[++i]);
       continue;
     }
     if (arg === "--json") {
@@ -131,12 +125,11 @@ export async function benchCommand(args: string[], io: CliIo): Promise<number> {
   try {
     const options = parseArgs(args);
     const sourceLabel = options.inPath ? options.inPath : "stdin";
-    const inputBytes = await collectInput(io.read(options.inPath), options.maxBytes);
+    const inputBytes = await collectInput(io.read(options.inPath));
     const result = await benchmarkParser(inputBytes, {
       iterations: options.iterations,
       warmupIterations: options.warmupIterations,
       chunkSize: options.chunkSize,
-      maxBytes: options.maxBytes,
     });
 
     if (options.json) {

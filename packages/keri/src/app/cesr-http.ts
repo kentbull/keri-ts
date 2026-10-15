@@ -202,10 +202,10 @@ export function requestBytes(
 }
 
 /** Collect a bounded administrative/receipt request; generic ingress uses requestBytes directly. */
-export async function readCesrRequestBytes(req: Request, limit = 8 * 1024 * 1024): Promise<Uint8Array> {
+export async function readCesrRequestBytes(req: Request): Promise<Uint8Array> {
   let failed = false, failure: unknown;
   try {
-    return await collectBytes(requestBytes(req), limit);
+    return await collectBytes(requestBytes(req));
   } catch (error) {
     failed = true;
     failure = error;
@@ -263,7 +263,7 @@ export async function readMailboxAdminRequest(
   }
 
   if (isMultipartFormContentType(contentType)) {
-    const bytes = await collectBytes(streamBytes(req.body, { signal: req.signal }), 8 * 1024 * 1024);
+    const bytes = await collectBytes(streamBytes(req.body, { signal: req.signal }));
     const form = await new Response(bytes, { headers: { "content-type": contentType! } }).formData();
     const kel = readRequiredMailboxAdminField(form, "kel");
     const rpy = readRequiredMailboxAdminField(form, "rpy");

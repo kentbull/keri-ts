@@ -159,12 +159,9 @@ export async function handleGenericCesrIngress(
     return textResponse("Unacceptable content type.", 406);
   }
   let response: Response | undefined, operationFailure: { error: unknown } | undefined;
-  const admissionRefusals = new Set<unknown>();
   const task = run(function*() {
     try {
-      response = yield* call(() =>
-        ingest(context, hosted, (value) => response = value, (error) => admissionRefusals.add(error))
-      );
+      response = yield* call(() => ingest(context, hosted, (value) => response = value));
       return response;
     } catch (error) {
       operationFailure = { error };
@@ -197,7 +194,7 @@ export async function handleGenericCesrIngress(
     } catch (error) {
       note(error);
     }
-    // Admission may precede reader acquisition; cancellation failure is still this owner's responsibility.
+    // Failure may precede reader acquisition; cancellation failure is still this owner's responsibility.
     if (context.req.body && !context.req.body.locked) {
       try {
         await context.req.body.cancel();
@@ -211,9 +208,6 @@ export async function handleGenericCesrIngress(
   if (primary && !ownCancellation) {
     const error = primary.error;
     if (!context.req.signal.aborted && !cleanup.length) {
-      if (error instanceof ResourceAdmissionError && admissionRefusals.has(error)) {
-        return textResponse(error.message, error.reason === "busy" ? 503 : 413);
-      }
       if (error instanceof ResourceLimitError && !(error instanceof ResourceAdmissionError)) {
         return textResponse(error.message, 413);
       }
@@ -239,7 +233,6 @@ function* ingest(
   context: ProtocolRequestContext,
   hosted: HostedRouteResolution,
   publish: (response: Response) => void,
-  onAdmissionRefusal: (error: ResourceAdmissionError) => void,
 ): Operation<Response> {
   const runtime = context.runtime!;
   let seen = false;
@@ -249,7 +242,7 @@ function* ingest(
     yield* call(function*() {
       const channel = yield* runtime.intake.frames(
         (signal) => requestBytes(context.req, { signal }),
-        { signal: context.req.signal, onAdmissionRefusal },
+        { signal: context.req.signal },
       );
       for (const frame of yield* each(channel.frames)) {
         yield* call(function*() {
