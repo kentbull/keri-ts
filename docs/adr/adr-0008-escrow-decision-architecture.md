@@ -68,6 +68,11 @@ Concretely:
   - malformed programming use
   - lower-level infrastructure failures
 
+Keep replay decisions limited to their typed kind/reason and an optional human
+message. Do not attach open diagnostic context bags or inspect messages to choose
+retry/purge behavior. The replay site can include useful identity and failure
+detail in its message; logging consumes that message directly.
+
 This does not prohibit exceptions. It prohibits using exceptions as the primary
 representation for normal expected remote-processing branches.
 

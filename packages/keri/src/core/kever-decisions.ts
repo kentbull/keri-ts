@@ -202,17 +202,11 @@ export interface EscrowAccept {
   kind: "accept";
 }
 
-export interface EscrowDecisionMeta {
-  message?: string;
-  context?: Record<string, unknown>;
-}
-
 /** Escrow-processing variant for one escrow row that should remain in escrow. */
 export interface EscrowKeep {
   kind: "keep";
   reason: EscrowKeepReason;
   message?: string;
-  context?: Record<string, unknown>;
 }
 
 /** Escrow-processing variant for one escrow row that should be removed. */
@@ -220,7 +214,6 @@ export interface EscrowDrop {
   kind: "drop";
   reason: EscrowDropReason;
   message?: string;
-  context?: Record<string, unknown>;
 }
 
 /**
@@ -244,17 +237,17 @@ export function acceptEscrow(): EscrowAccept {
 /** Builder for one recoverable miss that should remain escrowed. */
 export function keepEscrow(
   reason: EscrowKeepReason,
-  meta: EscrowDecisionMeta = {},
+  message?: string,
 ): EscrowKeep {
-  return { kind: "keep", reason, ...meta };
+  return { kind: "keep", reason, message };
 }
 
 /** Builder for one terminal outcome that should remove the escrow row. */
 export function dropEscrow(
   reason: EscrowDropReason,
-  meta: EscrowDecisionMeta = {},
+  message?: string,
 ): EscrowDrop {
-  return { kind: "drop", reason, ...meta };
+  return { kind: "drop", reason, message };
 }
 
 /**
@@ -275,12 +268,7 @@ export function logEscrowDecision(
   const detail = decision.message
     ? `${scope}: ${decision.message}`
     : `${scope}: escrow ${decision.kind} (${decision.reason})`;
-  const meta = decision.context ? [decision.context] : [];
-  if (decision.kind === "keep") {
-    logger.info(detail, ...meta);
-    return;
-  }
-  logger.info(detail, ...meta);
+  logger.info(detail);
 }
 
 /** Recoverable live-receipt outcomes that require escrowing attached material. */

@@ -92,6 +92,9 @@ and credential retry compare that semantic field, never diagnostic context keys.
 Proof verification cannot choose a semantic family. The reflective Router validates
 unknown handler results before returning the shared outcome contract. It transports
 family names without importing receiver policy; each receiver closes its own set.
+Escrow replay decisions carry kind/reason and optional diagnostic text only.
+Keep useful failure/identity detail in messages; retry/purge policy uses typed
+reasons, never diagnostic fields or parsed messages.
 Resource refusals propagate through RPE replay without deleting its durable row.
 KSN publication holds caller-owned PreparedReply query credit while admitting the
 actual keyStateSaved child on Kevery's deck, including distinct local decks.

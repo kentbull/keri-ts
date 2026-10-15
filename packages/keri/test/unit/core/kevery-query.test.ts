@@ -1105,7 +1105,7 @@ Deno.test("Kevery query replay keeps live query drop reasons in escrow drop cont
 
       const drop = expectKind(decision, "drop");
       assertEquals(drop.reason, "malformedEscrowedQuery");
-      assertEquals(drop.context?.liveReason, "invalidLogsGate");
+      assertEquals(drop.message, `QNF Dropping escrowed query at dig=${malformed.said}: invalidLogsGate.`);
     } finally {
       yield* remote.close(true);
       yield* source.close(true);

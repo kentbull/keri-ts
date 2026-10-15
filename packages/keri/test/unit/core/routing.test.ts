@@ -571,8 +571,7 @@ Deno.test("Revery escrow replay preserves processing error detail on drop decisi
 
       const drop = expectKind(decision, "drop");
       assertEquals(drop.reason, "processingError");
-      assertEquals(drop.message, "boom");
-      assertEquals(drop.context?.said, saider.qb64);
+      assertEquals(drop.message, `boom (said=${saider.qb64}, route=/escrow/reply/detail)`);
       fault = new ResourceAdmissionError("query bytes occupied", "busy");
       assertThrows(() => replyVerifier.processEscrowReply(), ResourceAdmissionError);
       assertEquals(hby.db.rpes.get(["/escrow/reply/detail"]).length, 1);

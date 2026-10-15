@@ -1552,16 +1552,10 @@ export class Kevery {
 
     const serder = this.db.evts.get(dgkey);
     if (!serder) {
-      return dropEscrow("missingEscrowedEvent", {
-        message: `QNF Missing escrowed evt at dig = ${qsaid}`,
-        context: { requester, qsaid },
-      });
+      return dropEscrow("missingEscrowedEvent", `QNF Missing escrowed evt at dig = ${qsaid}`);
     }
     if (serder.ilk !== Ilks.qry) {
-      return dropEscrow("malformedEscrowedQuery", {
-        message: `QNF Escrowed event at dig = ${qsaid} is not a query.`,
-        context: { requester, qsaid, ilk: serder.ilk },
-      });
+      return dropEscrow("malformedEscrowedQuery", `QNF Escrowed event at dig = ${qsaid} is not a query.`);
     }
 
     const sigers = this.db.sigs.get(dgkey);
@@ -1573,10 +1567,7 @@ export class Kevery {
       new Cigar(cigar, new Verfer({ qb64: prefixer.qb64 }))
     );
     if (sigers.length === 0 && cigars.length === 0) {
-      return dropEscrow("missingEscrowedEndorsements", {
-        message: `QNF Missing escrowed evt sigs at dig = ${qsaid}`,
-        context: { requester, qsaid },
-      });
+      return dropEscrow("missingEscrowedEndorsements", `QNF Missing escrowed evt sigs at dig = ${qsaid}`);
     }
 
     let source: Prefixer | undefined;
@@ -1584,14 +1575,12 @@ export class Kevery {
       try {
         source = new Prefixer({ qb64: requester });
       } catch (error) {
-        return dropEscrow("malformedEscrowedQuery", {
-          message: `QNF Failed to reconstruct escrowed query requester at dig = ${qsaid}`,
-          context: {
-            requester,
-            qsaid,
-            cause: error instanceof Error ? error.message : String(error),
-          },
-        });
+        return dropEscrow(
+          "malformedEscrowedQuery",
+          `QNF Failed to reconstruct requester=${requester} at dig=${qsaid}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     }
 
@@ -1606,15 +1595,12 @@ export class Kevery {
         this.publishQueryCues(serder, decision.cues);
         return acceptEscrow();
       case "escrow":
-        return keepEscrow("queryNotFound", {
-          message: `QNF Query still waiting on continuation state at dig = ${qsaid}`,
-          context: { requester, qsaid, queryReason: decision.reason },
-        });
+        return keepEscrow(
+          "queryNotFound",
+          `QNF Query still waiting on continuation state at dig=${qsaid}: ${decision.reason}`,
+        );
       case "drop":
-        return dropEscrow("malformedEscrowedQuery", {
-          message: `QNF Dropping escrowed query at dig = ${qsaid} after live query validation failed.`,
-          context: { requester, qsaid, liveReason: decision.reason },
-        });
+        return dropEscrow("malformedEscrowedQuery", `QNF Dropping escrowed query at dig=${qsaid}: ${decision.reason}.`);
     }
   }
 
@@ -2090,30 +2076,21 @@ export class Kevery {
     const acceptedSaid = this.db.kels.getLast(pre, sn);
     const snh = sn.toString(16);
     if (!acceptedSaid) {
-      return keepEscrow("missingReceiptedEvent", {
-        message: `${scope} Missing receipted evt at pre=${pre} sn=${snh}`,
-        context: { pre, sn, said, scope },
-      });
+      return keepEscrow("missingReceiptedEvent", `${scope} Missing receipted evt at pre=${pre} sn=${snh}`);
     }
     if (acceptedSaid !== said) {
-      return dropEscrow("invalidReceiptDigest", {
-        message: `${scope} Bad escrowed receipt dig at pre=${pre} sn=${snh}`,
-        context: { pre, sn, said, acceptedSaid, scope },
-      });
+      return dropEscrow("invalidReceiptDigest", `${scope} Bad escrowed receipt dig at pre=${pre} sn=${snh}`);
     }
     const serder = this.db.getEvtSerder(pre, said);
     if (!serder) {
-      return dropEscrow("invalidReceiptedEventReference", {
-        message: `${scope} Invalid receipted evt reference at pre=${pre} sn=${snh}`,
-        context: { pre, sn, said, acceptedSaid, scope },
-      });
+      return dropEscrow(
+        "invalidReceiptedEventReference",
+        `${scope} Invalid receipted evt reference at pre=${pre} sn=${snh}`,
+      );
     }
     const wits = this.resolveAcceptedEventWitnesses(pre, said, serder);
     if (!wits) {
-      return keepEscrow("missingReceiptedEvent", {
-        message: `${scope} Kever not ready for receipted evt at pre=${pre} sn=${snh}`,
-        context: { pre, sn, said, scope },
-      });
+      return keepEscrow("missingReceiptedEvent", `${scope} Kever not ready for receipted evt at pre=${pre} sn=${snh}`);
     }
     return {
       kind: "accept",
@@ -2179,10 +2156,10 @@ export class Kevery {
       const wits = [...serder.backs];
       return hasUniqueWitnesses(wits)
         ? { kind: "accept", wits }
-        : dropEscrow("duplicateWitnesses", {
-          message: `PWE Invalid wits = ${JSON.stringify(wits)} has duplicates for evt = ${JSON.stringify(serder.ked)}.`,
-          context: { pre: serder.pre, said: serder.said, wits },
-        });
+        : dropEscrow(
+          "duplicateWitnesses",
+          `PWE Invalid wits = ${JSON.stringify(wits)} has duplicates for evt = ${JSON.stringify(serder.ked)}.`,
+        );
     }
 
     const kever = this.db.getKever(serder.pre ?? "");
@@ -2200,26 +2177,16 @@ export class Kevery {
       if (derived.kind === "accept") {
         return { kind: "accept", wits: derived.value.wits };
       }
-      return dropEscrow(derived.reason, {
-        message: `PWE Invalid witness cuts/adds for evt = ${JSON.stringify(serder.ked)}.`,
-        context: {
-          pre: serder.pre,
-          said: serder.said,
-          reason: derived.reason,
-          cuts: [...serder.cuts],
-          adds: [...serder.adds],
-          currentWits: [...kever.wits],
-        },
-      });
+      return dropEscrow(derived.reason, `PWE Invalid witness cuts/adds for evt = ${JSON.stringify(serder.ked)}.`);
     }
 
     // For non-establishment events, partial-witness replay expects current key
     // state to be available already; otherwise the escrowed state is corrupt.
     if (!kever) {
-      return dropEscrow("processingError", {
-        message: `PWE Missing current key state for receipted evt at pre=${serder.pre ?? ""}.`,
-        context: { pre: serder.pre, said: serder.said, ilk: serder.ilk },
-      });
+      return dropEscrow(
+        "processingError",
+        `PWE Missing current key state for receipted evt at pre=${serder.pre ?? ""}.`,
+      );
     }
     return { kind: "accept", wits: [...kever.wits] };
   }
@@ -2255,10 +2222,7 @@ export class Kevery {
 
       const serder = this.db.getEvtSerder(pre, candidateSaid);
       if (!serder) {
-        return dropEscrow("missingEscrowedEvent", {
-          message: `PWE Missing escrowed evt at dig = ${candidateSaid}`,
-          context: { pre, sn, said: candidateSaid },
-        });
+        return dropEscrow("missingEscrowedEvent", `PWE Missing escrowed evt at dig = ${candidateSaid}`);
       }
 
       const witnessState = this.resolvePartialWitnessEscrowWitnesses(serder);
@@ -2273,20 +2237,20 @@ export class Kevery {
         const verfer = cigar.verfer;
         const receiptorPre = verfer?.qb64;
         if (!verfer || !receiptorPre) {
-          return dropEscrow("missingEscrowArtifact", {
-            message: `PWE Missing verifier context for escrowed receipt at pre=${pre} sn=${sn.toString(16)}.`,
-            context: { pre, sn, said },
-          });
+          return dropEscrow(
+            "missingEscrowArtifact",
+            `PWE Missing verifier context for escrowed receipt at pre=${pre} sn=${sn.toString(16)}.`,
+          );
         }
         const witnessIndex = witnessState.wits.indexOf(receiptorPre);
         if (witnessIndex < 0) {
           continue;
         }
         if (!verfer.verify(cigar.raw, serder.raw)) {
-          return dropEscrow("invalidReceiptSignature", {
-            message: `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${sn.toString(16)}.`,
-            context: { pre, sn, said, receiptor: receiptorPre },
-          });
+          return dropEscrow(
+            "invalidReceiptSignature",
+            `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${sn.toString(16)}.`,
+          );
         }
         this.db.wigs.add(
           dgKey(pre, serder.said ?? said),
@@ -2296,36 +2260,24 @@ export class Kevery {
       }
 
       if (!wiger) {
-        return dropEscrow("missingEscrowArtifact", {
-          message: `PWE Missing escrowed witness signature material at pre=${pre} sn=${sn.toString(16)}.`,
-          context: { pre, sn, said },
-        });
+        return dropEscrow(
+          "missingEscrowArtifact",
+          `PWE Missing escrowed witness signature material at pre=${pre} sn=${sn.toString(16)}.`,
+        );
       }
       const verferQb64 = witnessState.wits[wiger.index];
       if (!verferQb64) {
-        return dropEscrow("invalidWitnessIndex", {
-          message: `PWE Bad escrowed witness receipt index=${wiger.index} at pre=${pre} sn=${sn.toString(16)}`,
-          context: {
-            pre,
-            sn,
-            said,
-            witnessIndex: wiger.index,
-            wits: witnessState.wits,
-          },
-        });
+        return dropEscrow(
+          "invalidWitnessIndex",
+          `PWE Bad escrowed witness receipt index=${wiger.index} at pre=${pre} sn=${sn.toString(16)}`,
+        );
       }
       const verfer = new Verfer({ qb64: verferQb64 });
       if (!verfer.verify(wiger.raw, serder.raw)) {
-        return dropEscrow("invalidReceiptSignature", {
-          message: `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${sn.toString(16)}.`,
-          context: {
-            pre,
-            sn,
-            said,
-            witnessIndex: wiger.index,
-            witness: verferQb64,
-          },
-        });
+        return dropEscrow(
+          "invalidReceiptSignature",
+          `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${sn.toString(16)}.`,
+        );
       }
       this.db.wigs.add(
         dgKey(pre, serder.said ?? said),
@@ -2369,10 +2321,7 @@ export class Kevery {
     }
     const decision = this.processEscrowFindUnver(pre, sn, said, { wiger });
     return decision.kind === "continue"
-      ? keepEscrow("missingReceiptedEvent", {
-        message: `UWE Missing witness receipted evt at pre=${pre} sn=${sn.toString(16)}`,
-        context: { pre, sn, said },
-      })
+      ? keepEscrow("missingReceiptedEvent", `UWE Missing witness receipted evt at pre=${pre} sn=${sn.toString(16)}`)
       : decision;
   }
 
@@ -2401,10 +2350,10 @@ export class Kevery {
     }
     const verfer = cigar.verfer;
     if (!verfer) {
-      return dropEscrow("missingEscrowArtifact", {
-        message: `URE Missing escrowed receipt verifier at pre=${pre} sn=${sn.toString(16)}.`,
-        context: { pre, sn, said },
-      });
+      return dropEscrow(
+        "missingEscrowArtifact",
+        `URE Missing escrowed receipt verifier at pre=${pre} sn=${sn.toString(16)}.`,
+      );
     }
 
     const partialDecision = this.processEscrowFindUnver(pre, sn, said, {
@@ -2420,10 +2369,10 @@ export class Kevery {
     }
     const { event } = lookup;
     if (!verfer.verify(cigar.raw, event.serder.raw)) {
-      return dropEscrow("invalidReceiptSignature", {
-        message: `URE Bad escrowed receipt sig at pre=${pre} sn=${sn.toString(16)} receipter=${verfer.qb64}`,
-        context: { pre, sn, said, receiptor: verfer.qb64 },
-      });
+      return dropEscrow(
+        "invalidReceiptSignature",
+        `URE Bad escrowed receipt sig at pre=${pre} sn=${sn.toString(16)} receipter=${verfer.qb64}`,
+      );
     }
     const dgkey = dgKey(event.pre, event.said);
     const witnessIndex = event.wits.indexOf(verfer.qb64);
@@ -2475,69 +2424,42 @@ export class Kevery {
 
     const estSaid = this.db.kels.getLast(prefixer.qb64, Number(snumber.num));
     if (!estSaid) {
-      return keepEscrow("missingReceiptorEstablishment", {
-        message: `VRE Missing receiptor establishment evt at pre=${prefixer.qb64} sn=${snumber.num.toString(16)}`,
-        context: {
-          pre,
-          sn,
-          said,
-          receiptor: prefixer.qb64,
-          receiptorSn: snumber.num.toString(16),
-        },
-      });
+      return keepEscrow(
+        "missingReceiptorEstablishment",
+        `VRE Missing receiptor establishment evt at pre=${prefixer.qb64} sn=${snumber.num.toString(16)}`,
+      );
     }
     if (estSaid !== ssaider.qb64) {
-      return dropEscrow("invalidReceiptorSeal", {
-        message: `VRE Bad chit seal at sn = ${snumber.num.toString(16)} for receipt from pre = ${prefixer.qb64}`,
-        context: {
-          pre,
-          sn,
-          said,
-          receiptor: prefixer.qb64,
-          estSaid,
-          sealSaid: ssaider.qb64,
-        },
-      });
+      return dropEscrow(
+        "invalidReceiptorSeal",
+        `VRE Bad chit seal at sn = ${snumber.num.toString(16)} for receipt from pre = ${prefixer.qb64}`,
+      );
     }
     const estEvent = this.db.getEvtSerder(prefixer.qb64, estSaid);
     if (!estEvent) {
-      return dropEscrow("invalidReceiptorEstablishment", {
-        message: `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64}`,
-        context: { pre, sn, said, receiptor: prefixer.qb64, estSaid },
-      });
+      return dropEscrow(
+        "invalidReceiptorEstablishment",
+        `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64}`,
+      );
     }
     if (estEvent.verfers.length === 0) {
-      return dropEscrow("missingReceiptorKeys", {
-        message: `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64} no keys`,
-        context: { pre, sn, said, receiptor: prefixer.qb64, estSaid },
-      });
+      return dropEscrow(
+        "missingReceiptorKeys",
+        `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64} no keys`,
+      );
     }
     if (siger.index >= estEvent.verfers.length) {
-      return dropEscrow("receiptorIndexOutOfRange", {
-        message: `VRE Index = ${siger.index} too large for keys`,
-        context: {
-          pre,
-          sn,
-          said,
-          receiptor: prefixer.qb64,
-          estSaid,
-          sigerIndex: siger.index,
-          keyCount: estEvent.verfers.length,
-        },
-      });
+      return dropEscrow(
+        "receiptorIndexOutOfRange",
+        `VRE Index=${siger.index} exceeds key count=${estEvent.verfers.length} for receiptor=${prefixer.qb64} at dig=${said}.`,
+      );
     }
     const verfer = estEvent.verfers[siger.index];
     if (!verfer.verify(siger.raw, event.serder.raw)) {
-      return dropEscrow("invalidReceiptSignature", {
-        message: `VRE Bad escrowed trans receipt sig at pre=${pre} sn=${sn.toString(16)} receipter=${prefixer.qb64}`,
-        context: {
-          pre,
-          sn,
-          said,
-          receiptor: prefixer.qb64,
-          sigerIndex: siger.index,
-        },
-      });
+      return dropEscrow(
+        "invalidReceiptSignature",
+        `VRE Bad escrowed trans receipt sig at pre=${pre} sn=${sn.toString(16)} receipter=${prefixer.qb64}`,
+      );
     }
     const dgkey = dgKey(event.pre, event.said);
     this.db.vrcs.add(
@@ -2569,16 +2491,10 @@ export class Kevery {
   ): EscrowDrop | null {
     const dater = this.db.dtss.get(dgKey(pre, said));
     if (!dater) {
-      return dropEscrow("missingDater", {
-        message: `${scope} Missing escrowed event datetime at dig = ${said}`,
-        context: { pre, said, scope },
-      });
+      return dropEscrow("missingDater", `${scope} Missing escrowed event datetime at dig = ${said}`);
     }
     return Date.now() - new Date(dater.dts).getTime() > timeoutMs
-      ? dropEscrow("stale", {
-        message: `${scope} Stale event escrow at dig = ${said}`,
-        context: { pre, said, scope },
-      })
+      ? dropEscrow("stale", `${scope} Stale event escrow at dig = ${said}`)
       : null;
   }
 
