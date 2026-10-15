@@ -16,7 +16,6 @@ import {
   NumberPrimitive,
   parseBytes,
   Prefixer,
-  ResourceLimitError,
   type SealEvent,
   SerderACDC,
   SerderKERI,
@@ -486,21 +485,8 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
       );
       observer.processEscrows(rip.said!);
       assertEquals(registry.head(rip.said!)!.qb64, issued.said);
-      const limited = new IpexV2Handler("/ipex/grant", hby, null, registry, 1);
       const seqEvent = registry.seqEvent;
-      const reads: number[] = [];
       try {
-        registry.seqEvent = (regid, sn) => {
-          reads.push(sn);
-          if (sn > 0) throw new Error("limit must precede update reads");
-          return seqEvent.call(registry, regid, sn);
-        };
-        assertThrows(
-          () => limited.verify({ serder: body, nests: [node], attachments: [] }),
-          ResourceLimitError,
-          "event limit",
-        );
-        assertEquals(reads, [0]);
         const handler = new IpexV2Handler("/ipex/grant", hby, null, registry);
         registry.seqEvent = (regid, sn) => sn ? null : seqEvent.call(registry, regid, sn);
         assertThrows(
@@ -528,7 +514,6 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
       } finally {
         registry.seqEvent = seqEvent;
       }
-      assertThrows(() => new IpexV2Handler("/ipex/grant", hby, null, registry, 0), RangeError);
       yield* store.reopen();
       yield* exchanger.processEscrows();
       assertExists(hby.db.exns.get(body.said!));

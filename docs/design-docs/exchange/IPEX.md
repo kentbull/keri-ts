@@ -39,13 +39,12 @@ normal engine with full witnessed tuple anchors and per-event atomic acceptance.
 Missing evidence remains in registry escrow; accepted-prefix replay cannot lower
 the head. Staged bodies never satisfy IPEX's registry dependency. IPEX borrows `RegistryStore`, not an issuer's Hab or alias
 manager, and assembles its own complete accepted chain through `seqEvent` and
-`headEvent`. Its `maxRegistryEvents` limit (default 16,384 including inception)
-is checked before collecting updates. A missing head is a retryable dependency;
+`headEvent`, without an application event-count quota. Ordinals must fit the
+exact numeric storage representation. A missing head is a retryable dependency;
 a declared accepted head with missing rows or inconsistent markers is corruption.
 I/O failures propagate. AgentRuntime owns its default `acdc.rgy` manager and joins close;
 injected managers remain caller-owned. IPEX borrows that manager's store. There is no automatic `rip/bup` parser intake
-route; local registry services are separate. The event ceiling bounds one accepted-chain read or intake ordinal, not
-runtime memory; native whole-row allocation and shared admission remain phases 4–5.
+route; local registry services are separate.
 
 Disclosed presentation registries require retained, trusted KRAM receiver time.
 After every node's issuer verifies, each unique Issuee/registry declaration must

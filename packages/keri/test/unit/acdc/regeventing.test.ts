@@ -7,7 +7,6 @@ import {
   discardFrame,
   NumberPrimitive,
   parseBytes,
-  ResourceLimitError,
   Saider,
   SerderACDC,
 } from "cesr-ts";
@@ -745,7 +744,7 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
       };
       const regid = rip.said!, blid = fixture.disclosures.issued.d;
       const first = blindate(regid, regid, blid), second = blindate(regid, first.said!, blid, { sn: 2 });
-      let observer = new RegistryObserver(hby.db, store, { maxEvents: 3 });
+      let observer = new RegistryObserver(hby.db, store);
       for (const regid of ["", "not-a-SAID"]) {
         const invalid = blindate(regid, rip.said!, blid);
         assertEquals(invalid.verify(), true, "body SAID verification does not validate the registry reference");
@@ -761,7 +760,7 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
       assertEquals([store.head(regid), store.seqSaider(regid, 0)], [null, null]);
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true });
-      observer = new RegistryObserver(hby.db, store, { maxEvents: 3 });
+      observer = new RegistryObserver(hby.db, store);
       const pending = observer.processEvent(rip);
       assertEquals(pending.kind === "escrow" && pending.reason, "anchor");
       assertEquals([store.head(regid), ...[0, 1, 2].map((sn) => store.seqSaider(regid, sn))], [null, null, null, null]);
@@ -797,14 +796,10 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
       const competitor = blindate(regid, first.said!, blid, { sn: 2, stamp: "2026-10-13T01:00:00Z" });
       assertEquals(observer.processEvent(competitor), { kind: "reject", reason: "duplicity" });
       assertEquals(store.head(regid)!.qb64, second.said);
-      assertThrows(() => new RegistryObserver(hby.db, store, { maxEvents: 0 }), RangeError);
       const third = blindate(regid, second.said!, blid, { sn: 3 });
-      assertThrows(() => observer.processEvent(third), ResourceLimitError);
-      assertEquals(store.event(third.said!), null, "finite admission precedes staging");
-      const larger = new RegistryObserver(hby.db, store, { maxEvents: 4 });
-      assertEquals(larger.processEvent(third).kind, "escrow");
-      assertThrows(() => observer.processEscrows(regid), ResourceLimitError, "event limit");
-      assertEquals(store.head(regid)!.qb64, second.said, "tightening cannot advance previously staged rows");
+      assertEquals(observer.processEvent(third).kind, "escrow");
+      observer.processEscrows(regid);
+      assertEquals(store.head(regid)!.qb64, second.said, "unanchored successors cannot advance acceptance");
 
       // A later acceptance fault preserves the earlier prefix and its existing staged successor.
       yield* call(() => ingest(hby, issuer.interact({ data: [{ i: regid, s: "3", d: third.said! }] })));
@@ -815,15 +810,15 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
         throw new Error("observer acceptance fault");
       };
       try {
-        assertThrows(() => larger.processEscrows(regid), Error, "observer acceptance fault");
+        assertThrows(() => observer.processEscrows(regid), Error, "observer acceptance fault");
       } finally {
         store.accept = accept;
       }
       assertEquals([store.head(regid)!.qb64, store.seqSaider(regid, 3)], [second.said, null]);
       assertEquals(store.event(third.said!)!.raw, third.raw);
-      larger.processEscrows(regid);
+      observer.processEscrows(regid);
       assertEquals(store.head(regid)!.qb64, third.said);
-      assertEquals(larger.processEvent(first).kind, "duplicate");
+      assertEquals(observer.processEvent(first).kind, "duplicate");
       assertEquals(store.head(regid)!.qb64, third.said);
 
       // Missing-inception staging also owns one rollback-capable transaction.
@@ -834,28 +829,28 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
         throw new Error("observer staging fault");
       };
       try {
-        assertThrows(() => larger.processEvent(orphan), Error, "observer staging fault");
+        assertThrows(() => observer.processEvent(orphan), Error, "observer staging fault");
       } finally {
         store.escrowMissingAnchor = escrow;
       }
       assertEquals([store.event(orphan.said!), store.head(orphanRip.said!)], [null, null]);
       assertEquals(baser.maes!.get(orphanRip.said!, 1), []);
       baser.evts.pin(regid, orphanRip);
-      assertThrows(() => larger.processEscrows(regid), Error, "Corrupt observer registry inception");
+      assertThrows(() => observer.processEscrows(regid), Error, "Corrupt observer registry inception");
       assertEquals(store.head(regid)!.qb64, third.said);
       baser.evts.pin(regid, rip);
       const head = store.head(regid)!;
       baser.evts.rem(regid);
-      assertThrows(() => larger.processEvent(first), Error, "Corrupt observer registry inception");
+      assertThrows(() => observer.processEvent(first), Error, "Corrupt observer registry inception");
       baser.heads.rem(regid);
-      assertThrows(() => larger.processEscrows(regid), Error, "Corrupt observer registry inception");
+      assertThrows(() => observer.processEscrows(regid), Error, "Corrupt observer registry inception");
       assertEquals(store.event(regid), null, "accepted markers cannot turn body loss into missing-inception staging");
       assertEquals(store.seqSaider(regid, 0)!.qb64, regid);
       baser.heads.pin(regid, head);
       baser.evts.pin(regid, rip);
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true, readonly: true });
-      observer = new RegistryObserver(hby.db, store, { maxEvents: 4 });
+      observer = new RegistryObserver(hby.db, store);
       assertEquals(observer.processEvent(second).kind, "duplicate", "readonly accepted replay opens no writer");
       assertThrows(() => observer.processEvent(orphan), Error, "readonly");
       assertEquals(
