@@ -2,12 +2,13 @@
 import { ResourceAdmissionError, ResourceLimitError, type ResourceReservation } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
 import type { AgentRuntime } from "./agent-runtime.ts";
+import { cueDeliveryBudget } from "./cue-budget.ts";
 import type { PreparedCueEmission } from "./cue-preparation.ts";
 import type { PreparedCueRoute } from "./cue-route.ts";
 import { attemptPreparedCesrTarget, type PreparedCesrTarget } from "./forwarding.ts";
 import type { Hab } from "./habbing.ts";
 
-const wireBytes = 8 * 1024 ** 2, preparationBytes = 3 * wireBytes;
+const { wireBytes, preparationBytes } = cueDeliveryBudget;
 
 /** Exact independent wire and its credit; cleanup precedes release or transfer. */
 export interface OwnedCueTarget {

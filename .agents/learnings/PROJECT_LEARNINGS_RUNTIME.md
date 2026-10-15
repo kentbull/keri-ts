@@ -202,6 +202,9 @@ cleanup, matching observed engine-created errors rather than foreign classes.
 Cue preparation/item refusal follows the same exact invocation rule; foreign
 interpretation, route, reserve and observer failures propagate. This does not
 admit all decoded/native preparation copies.
+Cue interpretation, routes, target preparation and finite witness snapshots share
+cueDeliveryBudget: 8 MiB wire, 24 MiB preparation, 1 MiB route. Direct reply combined
+floors derive from it; cue admission returns its charge instead of ledger-delta inspection.
 Admitted cue interpretation is synchronous: destination item admission precedes
 preparation, and atomic acceptance precedes ordinary source removal. Existing
 CueDeck credit transfers/requeues; lazy replay stays unopened. The accepting

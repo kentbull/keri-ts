@@ -1,9 +1,10 @@
 /** Finite synchronous route capture; transfer its credit into the existing delivery owner. */
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type ResourceReservation } from "cesr-ts";
+import { cueDeliveryBudget } from "./cue-budget.ts";
 import type { PreparedCueEmission } from "./cue-preparation.ts";
 import type { RawCesrRoute } from "./forwarding.ts";
 
-const routeBytes = 1024 ** 2, interpretationBytes = 24 * 1024 ** 2;
+const { routeBytes, preparationBytes } = cueDeliveryBudget;
 
 /** Borrow captured routing only while its independent metadata credit remains live. */
 export class PreparedCueRoute {
@@ -35,7 +36,7 @@ export function prepareCueRoute(
   };
   void owner.emission;
   if (owner.resourcePolicy !== resources) throw new RangeError("Cue route requires the owner's exact policy");
-  if (owner.retainedBytes + interpretationBytes + routeBytes > resources.limits.bytes) {
+  if (owner.retainedBytes + preparationBytes + routeBytes > resources.limits.bytes) {
     refuse(new ResourceAdmissionError("Cue route retention exceeds shared capacity", "limit"));
   }
   const admitted = resources.reserve({ bytes: routeBytes });

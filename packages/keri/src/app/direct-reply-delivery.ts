@@ -1,4 +1,5 @@
 import type { CueQueueInput } from "../core/cue-publishing.ts";
+import { cueDeliveryBudget } from "./cue-budget.ts";
 /** One interpreted reply batch owned by delivery and a borrowed HTTP/witness consumer until both close. */
 import { ResourceAdmissionError } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
@@ -132,19 +133,18 @@ export class DirectReplyDelivery {
     try {
       reply.admit((cues, release) => {
         batch.releaseInput = release;
-        const before = runtime.resources.used.bytes;
         const input = reserveCueBytes(runtime.resources, cues, undefined, onAdmissionRefusal, {
           additionalBytes: reply.retainedBytes + responseBytes
-            + cues.length * 33 * 1024 ** 2,
-          maxBytes: 8 * 1024 ** 2,
+            + cues.length * cueDeliveryBudget.preparationFloorBytes,
+          maxBytes: cueDeliveryBudget.wireBytes,
         });
         let response: ReturnType<AgentRuntime["replyStreams"]["prepare"]> | undefined;
         try {
           // One synchronous combined preflight guarantees all internal acquisitions before signing.
           const combined = runtime.resources.reserve({
             streams: publish ? 1 : 0,
-            bytes: responseBytes + cues.length * 33 * 1024 ** 2
-              + 2 * (runtime.resources.used.bytes - before),
+            bytes: responseBytes + cues.length * cueDeliveryBudget.preparationFloorBytes
+              + 2 * input.bytes,
           });
           if (combined.kind === "refuse") {
             const refusal = new ResourceAdmissionError("Direct reply preparation refused", combined.reason);

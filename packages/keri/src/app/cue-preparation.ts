@@ -1,4 +1,5 @@
 import type { CueQueueInput } from "../core/cue-publishing.ts";
+import { cueDeliveryBudget } from "./cue-budget.ts";
 /** Synchronous admitted cue interpretation; destination owners provide retention and joined delivery. */
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type ResourceReservation } from "cesr-ts";
 import { type OwnedCue, reserveCueBytes } from "../core/cue-admission.ts";
@@ -7,8 +8,7 @@ import type { AgentCue, CueEmission } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import type { Hab } from "./habbing.ts";
 
-// Local finite policy matches RuntimeDeliveries' 8 MiB retained wire plus 24 MiB preparation allowance.
-const wireBytes = 8 * 1024 ** 2, preparationBytes = 3 * wireBytes;
+const { wireBytes, preparationBytes } = cueDeliveryBudget;
 
 /** Borrow emission/evidence until the accepting delivery owner finishes consumption and joined cleanup. */
 export interface PreparedCueEmission {
@@ -51,18 +51,18 @@ export function prepareCueEmission(
   if (heldInput + wireBytes + preparationBytes > resources.limits.bytes) {
     refuse(new ResourceAdmissionError("Cue interpretation exceeds shared byte capacity", "limit"));
   }
-  let input: ResourceReservation | undefined, output: ResourceReservation | undefined;
+  let input: ReturnType<typeof reserveCueBytes> | undefined;
+  let output: ResourceReservation | undefined;
   let preparation: ResourceReservation | undefined, original: OwnedCue | undefined;
   let inputBytes = heldInput;
   let published = false, live = true;
   let emission: CueEmission | undefined;
   try {
     if (!source.resourcePolicy) {
-      const before = resources.used.bytes;
       input = reserveCueBytes(resources, [cue], undefined, onAdmissionRefusal);
-      inputBytes = resources.used.bytes - before;
+      inputBytes = input.bytes;
       // Synchronous inspection has no yield; classify this operation's own combined floor before contention.
-      if (resources.used.bytes - before + wireBytes + preparationBytes > resources.limits.bytes) {
+      if (inputBytes + wireBytes + preparationBytes > resources.limits.bytes) {
         refuse(new ResourceAdmissionError("Cue retention and interpretation exceed shared capacity", "limit"));
       }
     }
