@@ -177,27 +177,22 @@ after item preflight, bounded raw input, 8 MiB retained wire, 1 MiB route metada
 and 24 MiB temporary preparation admission. This local input/wire policy refuses
 before signing when capacity is occupied; configured input/floor limits remain
 distinct. Ineligible preparation publishes nothing and preserves unresolved/custom
-notify behavior. Continuation drains receive their owning runtime for guarded
-preparation; no signing, route lookup, capacity or network wait occurs before that
+notify behavior. Continuation drains prepare synchronously over committed state without a parent
+runtime or Reactor callback; no signing, route lookup, capacity or network wait occurs before that
 admission. Source removal/observation follows transfer, and joined network work
 retains the original endpoint/signature. These logical allowances leave decoded
 serialization/native endpoint-row copy qualification open. Request-local HTTP/
 witness response ownership, mailbox workers and the remaining stack inventory
 still require their caller ports.
 
-Pending queries retain canonical query/witness metadata on the Baser policy
-before normalized body/witness-list copies. Three conservative canonical estimates
-cover retention/copy coexistence; this is not a native heap/RSS measurement. Their existing default 1024 slots
-include the active head. Unresolved rotation keeps its lease; successful send or
-atomic transport transfer retires it. `pending.clear()` releases queued records,
-while an active head remains charged until processing joins. Runtime shutdown
-cancels and joins the coordinator before clearing it; a standalone coordinator
-caller owns its `close()` lifecycle. Hab references are borrowed accepted state,
-not recursively charged metadata. The top-level query/witness list is copied;
-nested query values remain aliases and must stay immutable while queued or consumed.
-Pending pull/push bypasses are rejected; use
-coordinator enqueue and completion/rotation ownership. Wire preparation still
-needs the caller's existing admission/guard, separately from this metadata lease.
+Pending queries are plain QueryRequest records in the coordinator's private
+ordinary Deck; continuations are unbounded metadata too. No byte estimates,
+reservation wrappers or configurable caps apply to these records. The top-level
+query/witness list is copied; nested query values remain immutable borrows.
+Failed/cancelled sends retain the head, unresolved work rotates, and close joins
+active consumption before clearing. Inspection cannot mutate the queue. Actual
+wire preparation and source/transport cleanup keep their separate controls; this
+metadata path does not establish a shared memory bound.
 
 ## Messenger responsibilities
 
@@ -315,8 +310,8 @@ or stream slot is added. `QueryCoordinator.prepareEmission` observes continuatio
 and resolves/signs incomplete queries within that admitted preparation and final
 finite output check; `sendPrepared` performs no repeated local preparation.
 Actual runtime/host callers enter this drain outside an enclosing Reactor turn.
-`processPending(runtime)` also guards fallback signing before custom delivery;
-standalone/custom pending queries retain caller-owned byte bounds. Default runtime
+`processPending()` owns synchronous fallback signing without a parent runtime;
+standalone/custom wire preparation retains caller-owned byte bounds. Default runtime
 cues retain byte/item credit through transfer and joined consumer cleanup.
 
 Prepared Poster targets preserve HTTP/HTTPS priority and select the shared TCP
@@ -411,9 +406,8 @@ before response transfer, ingress joins its task then cancels the published body
 outside status mapping; foreign source/fetch/cleanup failures remain failures.
 No background task or whole-replay array is needed for these synchronous database readers.
 
-`QueryCoordinator` caps pending requests and continuations separately. A request
-retains its queue credit until delivery succeeds; failure leaves it available
-for retry. Concurrent drains cannot send the same head, and newly appended work
+`QueryCoordinator` retains a pending request until delivery succeeds; failure
+leaves it available for retry. Concurrent drains cannot send the same head, and newly appended work
 waits for the next bounded pass.
 
 Finite `cloneEvtMsg` body reads use native row-size preflight before owned

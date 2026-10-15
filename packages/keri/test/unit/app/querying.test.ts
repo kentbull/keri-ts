@@ -5,8 +5,6 @@ import {
   parseBytes,
   ParserError,
   ResourceAdmissionError,
-  ResourceLimitError,
-  ResourcePolicy,
   SerderKERI,
   type Siger,
 } from "../../../../cesr/mod.ts";
@@ -22,7 +20,6 @@ import { type CueSink } from "../../../src/app/cue-runtime.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { type AnchorQuerier, QueryCoordinator } from "../../../src/app/querying.ts";
-import { reserveCueBytes } from "../../../src/core/cue-admission.ts";
 import type { QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { type KeverEventEnvelope } from "../../../src/core/eventing.ts";
@@ -807,23 +804,15 @@ Deno.test("QueryCoordinator prepares admitted requests without a parent runtime"
 
 Deno.test("query queues keep failed deliveries and defer newly appended work to the next pass", async () => {
   await run(function*() {
-    const hby = yield* createHabery({ name: `query-bounds-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("alice");
+    seedControllerEndpoint(hby, hab.pre);
+    const coordinator = new QueryCoordinator(hby, { hab });
     try {
-      const hab = hby.makeHab("alice");
-      seedControllerEndpoint(hby, hab.pre);
-      const coordinator = new QueryCoordinator(hby, { hab, maxPending: 3, maxContinuations: 1 });
       const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
       coordinator.enqueue(request);
-      coordinator.enqueue(request);
-      coordinator.enqueue(request);
-      assertThrows(() => coordinator.enqueue(request), ResourceLimitError);
-      assertEquals(
-        coordinator.enqueueCue({ kin: "query", q: { r: "schema", said: "unresolved" } }),
-        false,
-        "Ineligible metadata never claims pending admission",
-      );
-      coordinator.watchSeqNo(hab.pre, 100);
-      assertThrows(() => coordinator.watchKeyState(hab.pre), ResourceLimitError);
+      const pending = coordinator.pending.peekHead();
+      assertEquals(coordinator.enqueueCue({ kin: "query", q: { r: "schema", said: "unresolved" } }), false);
       const failure = new ResourceAdmissionError("foreign transport busy", "busy");
       coordinator.configure({
         hab,
@@ -833,19 +822,8 @@ Deno.test("query queues keep failed deliveries and defer newly appended work to 
           },
         },
       });
-      // The in-flight head retains its queue credit; a failed transport must not erase retry work.
-      let failed = false;
-      try {
-        yield* coordinator.processPending();
-      } catch (error) {
-        failed = true;
-        assertStrictEquals(error, failure);
-      }
-      assertEquals(failed, true);
-      assertEquals(coordinator.pending.length, 3);
-      assertEquals(hby.db.resources.used.bytes > 0, true);
-      coordinator.pending.clear();
-      assertEquals(hby.db.resources.used.bytes, 0);
+      assertStrictEquals(yield* call(() => assertRejects(() => run(() => coordinator.processPending()))), failure);
+      assertStrictEquals(coordinator.pending.peekHead(), pending);
       let sent = 0;
       coordinator.configure({
         hab,
@@ -856,25 +834,23 @@ Deno.test("query queues keep failed deliveries and defer newly appended work to 
           },
         },
       });
-      coordinator.enqueue(request);
       yield* coordinator.processPending();
-      // One continuation may enqueue a second initial request; each send's new work remains pending.
-      assertEquals(sent, 2);
-      assertEquals(coordinator.pending.length, 2);
+      assertEquals([sent, coordinator.pending.length], [1, 1], "new work waits for the next pass");
     } finally {
+      yield* coordinator.close();
       yield* hby.close(true);
     }
   });
 });
 
-Deno.test("query cancellation preserves its in-flight queue credit and permits the next drain", async () => {
+Deno.test("query cancellation preserves its in-flight request and permits the next drain", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `query-cancel-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const hab = hby.makeHab("alice");
       seedControllerEndpoint(hby, hab.pre);
       const entered = Promise.withResolvers<void>();
-      const coordinator = new QueryCoordinator(hby, { hab, maxPending: 1 });
+      const coordinator = new QueryCoordinator(hby, { hab });
       const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
       coordinator.configure({
         hab,
@@ -888,10 +864,11 @@ Deno.test("query cancellation preserves its in-flight queue credit and permits t
       coordinator.enqueue(request);
       const sending = yield* spawn(() => coordinator.processPending());
       yield* call(() => entered.promise);
-      // The suspended sender still owns the head, so admission cannot steal its slot.
-      assertThrows(() => coordinator.enqueue(request), ResourceLimitError);
+      const pending = coordinator.pending.peekHead();
+      coordinator.enqueue(request);
+      assertStrictEquals(coordinator.pending.peekHead(), pending, "appending cannot replace the suspended head");
       yield* sending.halt();
-      assertEquals(coordinator.pending.length, 1);
+      assertEquals(coordinator.pending.length, 2);
       let sent = 0;
       coordinator.configure({
         hab,
@@ -903,7 +880,7 @@ Deno.test("query cancellation preserves its in-flight queue credit and permits t
       });
       yield* coordinator.processPending();
       // Halt releases only the drain guard; the retained request is delivered by the next turn.
-      assertEquals(sent, 1);
+      assertEquals(sent, 2);
       assertEquals(coordinator.pending.length, 0);
     } finally {
       yield* hby.close(true);
@@ -911,7 +888,7 @@ Deno.test("query cancellation preserves its in-flight queue credit and permits t
   });
 });
 
-Deno.test("pending query metadata refuses before copies and runtime close joins active consumption", async () => {
+Deno.test("runtime close joins active query consumption and preserves cleanup failures", async () => {
   for (const fault of [undefined, new ResourceAdmissionError("foreign cleanup busy", "busy")]) {
     let entered!: () => void, cleaning!: () => void, release!: () => void;
     const ready = new Promise<void>((resolve) => entered = resolve),
@@ -923,46 +900,6 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       seedControllerEndpoint(hby, hab.pre);
       const runtime = yield* createAgentRuntime(hby), coordinator = runtime.querying;
       const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
-      assertThrows(() => reserveCueBytes(hby.db.resources, [cue], 64, undefined, { copies: 0 }), RangeError);
-      const finite = new ResourcePolicy({ bytes: 25000 });
-      let floor: unknown;
-      const impossible = assertThrows(
-        () => reserveCueBytes(finite, [cue], 64, (error) => floor = error, { copies: 3 }),
-        ResourceAdmissionError,
-      );
-      assertStrictEquals(impossible, floor);
-      assertEquals([impossible.reason, finite.used.bytes], ["limit", 0]);
-      const occupied = hby.db.resources.reserve({ bytes: hby.db.resources.limits.bytes });
-      if (occupied.kind !== "reserve") throw new Error("Expected byte occupancy");
-      let copied = false, observed: unknown;
-      const guarded = {
-        ...cue,
-        q: {
-          get s() {
-            copied = true;
-            return "0";
-          },
-        },
-      };
-      const refusal = assertThrows(
-        () => coordinator.enqueueCue(guarded, (error) => observed = error),
-        ResourceAdmissionError,
-      );
-      assertStrictEquals(refusal, observed);
-      assertEquals([refusal.reason, copied, coordinator.pending.length], ["busy", false, 0]);
-      occupied.reservation.release();
-      coordinator.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, signer: hab.pre });
-      coordinator.enqueueCue({ ...cue, pre: "unresolved", src: undefined });
-      const retained = hby.db.resources.used.bytes;
-      yield* coordinator.processPending(); // The default sink retires resolved input; unresolved metadata rotates.
-      assertEquals(coordinator.pending.length, 1);
-      assertEquals(hby.db.resources.used.bytes > 0 && hby.db.resources.used.bytes < retained, true);
-      const deferred = coordinator.pending.peekHead(), deferredBytes = hby.db.resources.used.bytes;
-      yield* coordinator.processPending();
-      assertStrictEquals(coordinator.pending.peekHead(), deferred);
-      assertEquals(hby.db.resources.used.bytes, deferredBytes);
-      coordinator.pending.clear();
-      assertEquals(hby.db.resources.used.bytes, 0);
       coordinator.configure({
         hab,
         sink: {
@@ -992,9 +929,7 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
         }
       });
       yield* call(() => ready);
-      // Clearing queued work never releases the currently borrowed source record.
-      coordinator.pending.clear();
-      assertEquals([coordinator.pending.length, hby.db.resources.used.bytes > 0], [1, true]);
+      assertEquals(coordinator.pending.length, 1);
       let closed = false;
       const closing = yield* spawn(function*() {
         try {
@@ -1006,7 +941,7 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       });
       try {
         yield* call(() => cleanup);
-        assertEquals([closed, coordinator.pending.length, hby.db.resources.used.bytes > 0], [false, 1, true]);
+        assertEquals([closed, coordinator.pending.length], [false, 1]);
       } finally {
         release();
       }
@@ -1014,7 +949,7 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       yield* sending;
       assertStrictEquals(consumeError, fault);
       assertStrictEquals(closeError, fault);
-      assertEquals([closed, coordinator.pending.length, hby.db.resources.used.bytes], [!fault, 0, 0]);
+      assertEquals([closed, coordinator.pending.length], [!fault, 0]);
       assertThrows(() => coordinator.enqueueCue(cue), Error, "closed");
       yield* runtime.close();
       yield* hby.close(true);
@@ -1022,19 +957,19 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
   }
 });
 
-Deno.test("anchor queries retain unqueued attesters across a full pending queue", async () => {
+Deno.test("anchor queries ask every attester once and complete on accepted state", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const requester = hby.makeHab("requester");
     const first = hby.makeHab("first", undefined, { transferable: false, ncount: 0 });
     const second = hby.makeHab("second", undefined, { transferable: false, ncount: 0 });
     const emissions: CueRecord[] = [];
-    const coordinator = new QueryCoordinator(hby, { hab: requester, maxPending: 1, sink: captureSink(emissions) });
+    const coordinator = new QueryCoordinator(hby, { hab: requester, sink: captureSink(emissions) });
     const seal = { i: requester.pre, s: "0", d: requester.pre };
     const anchor = coordinator.watchAnchor(requester.pre, seal, { wits: [first.pre, second.pre] });
     try {
       yield* coordinator.processPending();
-      assertEquals([emissions.length, coordinator.pending.length, anchor.done], [1, 1, false]);
+      assertEquals([emissions.length, coordinator.pending.length, anchor.done], [2, 0, false]);
       yield* coordinator.processPending();
       assertEquals([emissions.length, coordinator.pending.length, anchor.done], [2, 0, false]);
       assertEquals(

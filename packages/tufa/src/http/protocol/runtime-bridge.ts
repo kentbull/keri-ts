@@ -46,7 +46,7 @@ export function* drainRuntimeCues(
       if (emission.kind === "transport" && emission.cue.kin === "stream") {
         runtime.mailboxDirector.retainQueryCue(emission.cue, note);
       } else if (emission.cue.kin === "query" && emission.kind !== "wire") {
-        runtime.querying.enqueueCue(emission.cue, note);
+        runtime.querying.enqueueCue(emission.cue);
       }
       return emission;
     },

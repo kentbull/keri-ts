@@ -204,10 +204,15 @@ not remove guards from other workers or declare the full flow migration complete
 
 The root composition replaces Respondant.forHab with respondantCueSink. Internal
 address-selection helpers are not added to the runtime barrel's public surface.
-Queue capacity, accounting and retention policy are unchanged in this structural
-cut; their ADR-0013 justification/removal remains a separate deliberate policy
-change. Existing tests are evidence for cleanup and retry, not proof that a
-particular accounting formula is necessary.
+After the signer-identifier refactor, pending queries use one private ordinary
+Deck of plain QueryRequest records with read-only inspection. Metadata reservation
+wrappers, configurable pending/continuation caps and partial-admission bookkeeping
+are removed: no production caller used those controls and no demonstrated backlog
+justified their complexity. Failed/cancelled sends retain the head, unresolved work
+rotates, newly appended work waits for the next finite pass, and close joins active
+consumption before clearing. Actual wire preparation, payload/source lifetime and
+transport cleanup retain their own controls. Pending metadata is unbounded; there
+is no shared memory-bound claim.
 
 ## Attester Resolution Contract
 

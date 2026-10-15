@@ -228,7 +228,7 @@ export class RuntimeDeliveries {
       if (emission?.kind === "transport" && emission.cue.kin === "stream") {
         runtime.mailboxDirector.retainQueryCue(emission.cue, onAdmissionRefusal);
       } else if (emission?.cue.kin === "query" && emission.kind !== "wire") {
-        runtime.querying.enqueueCue(emission.cue, onAdmissionRefusal);
+        runtime.querying.enqueueCue(emission.cue);
       }
       if (delivery.hasTargets) this.pending.push({ kind: "cue", delivery, release: () => delivery.release() });
       else delivery.release();
