@@ -1,90 +1,72 @@
-# KERIpy parity and bounded in-flight runtime roadmap
+# KERIpy parity, removal and release roadmap
 
-Pre-release checkpoint (2026-10-14): `8497ebb6` after #333–339. The completed inventory on
-`576064bf` (tree identical to `1aa470fd`) has five failed commands/twelve cases.
-Targeted #336–339 qualification closes those original failures and the additional
-KLI case. Docs/static closure, final installed packages and publication remain open.
-Frozen upstream: `7143832813cac6a394ab1faf9be83bb3372be87c`.
-This roadmap continues the approved parser-gap sequence; the subject plans below
-own its existing work, not additional projects. The original migration and
-completed PR evidence are summarized in the [delivery report][delivered].
+Current direction (2026-10-15): remove application budgeting and unsupported
+delivery durability before remaining cleanup and release qualification. The
+previous source checkpoint and resource guarantees are superseded, not proof of
+current completion. [ADR-0013](../adr/adr-0013-simple-component-flows.md) is normative.
+KERIpy reference: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 
-The workload is many bounded logical messages in large aggregate transfers.
-Structural parsing is implemented. Full runtime parity and bounded-memory
-qualification are **incomplete**. Parent-owned nested children are never
-independently accepted GenericGroup siblings.
-The approved release bound covers in-flight work. Accepted-state cache residency
-is reported separately; eviction, generation ownership and public borrowing API
-redesign are deferred. Existing storage/escrow recovery is qualified as implemented,
-without inventing a general durable-delivery guarantee to claim KERIpy parity.
+Structural parsing and substantial protocol foundations exist. Full composed
+interop and release qualification remain incomplete. Parent-owned nested children
+are never independently accepted GenericGroup siblings. Ordinary queues carry
+records; actual files, sockets, iterators and payloads retain explicit cleanup.
+Existing accepted-state APIs need no eviction redesign for this removal.
 
 ## Acceptance matrix
 
 Each linked owner contains the evidence gate and unresolved limitations. Phase
 numbers refer to the seven follow-on phases, not the earlier migration steps.
 
-| Area          | Implementation                                                     | Qualification / limit      |
-| ------------- | ------------------------------------------------------------------ | -------------------------- |
-| Parser/Mapper | [Engine][cesr], [claims/IDs][mapper]                               | API limits                 |
-| Protocol      | [Protocol owners][protocol-owners]                                 | Route limits               |
-| Runtime       | [ESSR][essr], [shared admission][resource], [transport][transport] | Installed artifacts        |
-| Storage       | [Adopted reads/recovery][storage]                                  | Caller/native limits       |
-| Qualification | [Reference pins][pins], [two observations][qualification]          | Source closed; packed gate |
-| Release       | [Three packages][release]                                          | Registry artifacts         |
+| Area          | Implementation                                                            | Qualification / limit        |
+| ------------- | ------------------------------------------------------------------------- | ---------------------------- |
+| Parser/Mapper | [Engine][cesr], [claims/IDs][mapper]                                      | Wire correctness             |
+| Protocol      | [Protocol owners][protocol-owners]                                        | Protocol semantics           |
+| Runtime       | [ESSR][essr], [retired accounting plan][resource], [transport][transport] | Installed artifacts          |
+| Storage       | [Adopted reads/recovery][storage]                                         | Actual store/cursor lifetime |
+| Qualification | [Reference pins][pins], [two observations][qualification]                 | Source closed; packed gate   |
+| Release       | [Three packages][release]                                                 | Registry artifacts           |
 
-The [closeout report](../reports/parity/RUNTIME_PARITY_2026-10-14.md) distinguishes
-supported, unfinished, intentional differences, reference stubs and unqualified
-claims. Owner plans retain their exact boundaries; targeted source closure does not qualify
-final physical packs. After docs/static closure, [#104][release] and its linked release
-artifacts own final installed-package and publication evidence for this checkpoint.
+The [closeout report](../reports/parity/RUNTIME_PARITY_2026-10-14.md) is historical
+source evidence. Requalify the final implementation; it does not authorize
+preserving removed accounting or delivery guarantees.
 
 ## Publication sequence
 
-1. KRAM K1–K10, registry R1–R12, IPEX cutoffs and schema gates S1–S3 are
-   implemented. Qualify their composed workflows; do not recreate foundations.
-   The retired #172 snapshot remains recoverable evidence.
-2. Legacy TEL/TSN query and independent registry/credential receiving composition
-   and adopted bounded TEL replay are implemented.
-   Qualify these actual paths in the final composition;
-   retain the full workflow qualification gate. `xip/pro/bar` remain reference stubs.
-3. Complete shared admission (4), storage/recovery (5) and production
-   backpressure (6) through the active stack below and its remaining owner gates.
-   The socket-to-application streamability work is phase 6's S1–9 sequence:
-   bounded cue handoff, network waits outside the guard, progressive TCP intake,
-   supervised connections, streamed output, explicit duplex and composed proof.
-   Finite/source messenger entries share two engines within those units; HTTP
-   preserves its framed POST contract. Required caller adoption is limited to
-   streaming supported by KERIpy 714: continuous TCP intake/replies, owned HTTP
-   messenger work and mailbox SSE. Keep already merged TS integrations, but defer
-   further stack-wide artifact/export/JSON conversion. Actual caller and lifecycle
-   qualification remain release gates; reference finite collection is permitted.
-4. Qualify delivered Mapper claims (#223) and bundled schema IDs (#226) in the
-   final composition; keep format-dependent default-builder limits explicit.
-5. Run the maintained full inventory and two end-to-end scale observations (7)
-   against the final composition. Import probes alone do not qualify workflows.
-6. Finish with the npm release: refresh and merge [#104][release] only after
-   the preceding work and qualification, then publish and verify the exact
-   package artifacts. The version PR alone does not prove publication.
+1. Remove application accounting and unsupported delivery durability under
+   [ADR-0013](../adr/adr-0013-simple-component-flows.md). Parser/codecs/domain,
+   ordinary Decks, storage/replay, runtime and CLI must not expose budgets,
+   estimates, reservations, credits or capacity-refusal protocols. Only a minimal
+   private socket control justified by production evidence may remain.
+2. Delete outbox storage/workers/wiring/CLI/tests completely; remove durable mailbox
+   consumer acknowledgements/deadletters and KRAM ready/snapshot acknowledgement
+   machinery. Keep KERIpy-supported escrows, caches, mailbox storage/cursors,
+   accepted evidence, transactions and real cleanup. No old-version keri-ts API or
+   data compatibility, migration/recovery readers, or new-to-old tests.
+3. Reconcile remaining explicit-contract and KERIpy-shaped worker cleanup. Preserve
+   wire framing and cryptographic checks; no replacement framework or no-op policy.
+4. Establish live graduated-disclosure and KRAM interop in both directions,
+   single-signature and multisig with witnesses and mailboxes. Existing frozen
+   fixtures and legacy ACDC tests do not close this gate. `xip/pro/bar` reference
+   processing stubs remain labeled; do not invent upstream support.
+5. Run the full maintained integration/e2e/interop inventory, final scale/lifecycle
+   observations and exact installed-package checks. Preserve participant topology.
+6. Refresh the held version PR only after those gates pass; publish CESR, KERI and
+   Tufa in dependency order and verify actual registry artifacts. No release yet.
 
-At this boundary, the active resource stack owns ESSR staging [#213][stage-credit],
-nested storage [#221][nested-credit], HTTP replies [#218][reply-credit], query
-preparation [#219][query-credit], HTTP frame preparation [#224][http-credit] and
-outgoing parsing [#225][output-credit]. KRAM storage follows nested storage.
-Pending metadata/work accounting, other native reads, crash recovery and the
-production measurements remain open in their subject plans.
+Historical resource PRs are removal inputs, not a stack to finish or preserve.
+The runtime, storage, parser, KRAM and ESSR subject plans own meaningful remaining
+correctness gates. The old phase-4 accounting work is retired.
 
 The multisig responsibility extraction (#161), ESSR outcome extraction (#163),
 and proof cleanup (#165) are delivered. Do not recreate them. Target **300–500
 added or removed lines, or fewer, per PR**, including tests, fixtures, scripts and
 docs. A larger unit needs a concrete reason explained before publication; prefer
 splitting complete semantic responsibilities. Do not game the count by minifying,
-compressing artifacts or omitting verification. Dependent PRs may branch from
-unmerged predecessors and target their branches for a small stacked diff.
-Independent units may proceed in parallel worktrees. Before merging a dependent
-PR, land its predecessors, synchronize/retarget it to master, then require green
-CI on its resulting exact head. Preserve published history unless rewriting is
+compressing artifacts or omitting verification. Finish and merge the current cohesive PR before opening the next; keep WIP small.
+Require green scoped CI on the exact final head. Preserve published history unless rewriting is
 explicitly authorized.
-Preserve worktrees, benchmark baselines, assertions and participant topology.
+Preserve benchmark evidence and protocol participant topology; merged clean
+worktrees may be retired. Delete implementation-mirroring accounting tests.
 Use explicit changesets and register every maintained test in the inventory.
 
 Reuse existing tests/workflows before adding coverage. Commit new integration or
@@ -98,7 +80,7 @@ gigabyte runs, automatic repetitions and historical checkpoint reruns are deferr
 
 Final reporting must classify **supported**, **unfinished**, **intentional
 divergence**, **reference stub**, and **unqualified** behavior separately.
-Passing parser tests or finite per-recipient guards cannot close phases 4–7.
+Passing parser tests alone cannot close final composed qualification.
 [Upstream gaps][upstream-gaps] do not block completion indefinitely: implement and
 qualify the approved TypeScript path, record the reference limitation and any
 intentional difference, then complete against our own acceptance/release gates.
@@ -109,16 +91,14 @@ hosted extended jobs, whose existing 15-minute cap remains unchanged.
 ## Final release gate
 
 The approved final task is publication of `cesr-ts`, `keri-ts` and `@keri-ts/tufa`
-for downstream diddaemon adoption. Complete the reference-backed transport S1–9
-caller scope, bounded in-flight work and existing storage/escrow recovery checks
-before merging #104 or publishing. Default notification/mailbox store acquisition
-and joined shutdown clear temporary sidecars; borrowed stores remain caller-owned.
-Cache redesign, exhaustive CBOR accounting and
-additional stack-wide streaming are deferred, not release blockers. Prove real
-HTTP/TCP progress through verified acceptance before transfer completion; parser
-tests, finite TCP admission and local write completion cannot satisfy this gate.
-Recheck #104's generated versions, dependency
-ranges, changelogs and exact-head checks after all implementation changes land.
+for downstream diddaemon adoption. Complete the removal acceptance, reference-backed
+transport/lifecycle and storage/escrow checks, and live graduated-disclosure/KRAM
+single/multisig witness/mailbox interop before publishing. Default store acquisition
+and joined shutdown remain correct; borrowed stores remain caller-owned.
+No accounting completion or old-version compatibility gate remains. Prove actual
+HTTP/TCP progress through verified acceptance; local write completion is insufficient.
+Recheck the current held version PR's generated versions, dependency ranges,
+changelogs and exact-head checks after all implementation changes land.
 The current Changesets workflow only maintains versions; npm publication uses
 the existing package tag/dispatch workflows. Release in dependency order and
 verify registry versions, dependency metadata, tarball identity and installed
@@ -127,20 +107,7 @@ publishing path while preserving the checked artifact and version identity.
 Report exact published versions and release evidence for the downstream chat;
 do not close the goal on a merged version PR or a successful build alone.
 
-[registry-observer]: https://github.com/kentbull/keri-ts/pull/202
-[mapper-repair]: https://github.com/kentbull/keri-ts/pull/223
-[native-rows]: https://github.com/kentbull/keri-ts/pull/214
-[stage-credit]: https://github.com/kentbull/keri-ts/pull/213
-[nested-credit]: https://github.com/kentbull/keri-ts/pull/221
-[reply-credit]: https://github.com/kentbull/keri-ts/pull/218
-[query-credit]: https://github.com/kentbull/keri-ts/pull/219
-[http-credit]: https://github.com/kentbull/keri-ts/pull/224
-[output-credit]: https://github.com/kentbull/keri-ts/pull/225
-[release]: https://github.com/kentbull/keri-ts/pull/104
-[kram]: exchange/KRAM_PLAN.md
-[registry]: credentials/REGISTRY_PLAN.md
-[ownership]: ../design-docs/runtime/INGRESS_AND_EGRESS.md#runtime-store-ownership
-[intake]: ../design-docs/exchange/MESSAGE_ADMISSION.md
+[release]: https://github.com/kentbull/keri-ts/pull/347
 [delivered]: ../reports/parity/DELIVERED_THROUGH_168.md
 [cesr]: cesr/CESR_PROGRESSIVE_PARSER_PLAN.md
 [multisig]: exchange/MULTISIG_PLAN.md

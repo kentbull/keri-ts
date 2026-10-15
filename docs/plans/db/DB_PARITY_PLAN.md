@@ -1,5 +1,9 @@
 # Database parity plan
 
+Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
+application accounting and unsupported delivery durability, without old-version
+keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+
 The broad LMDB/Suber/Komer/databaser foundation is implemented. Remaining work is
 row-specific parity evidence and edge closure, not re-creating those APIs. The
 [April audit](../../reference/db/DB_PARITY_AUDIT_2026-04-03.md) is a dated baseline;

@@ -1,5 +1,9 @@
 # Historical plans
 
+Historical plan: the [2026-10-15 removal boundary](../adr/adr-0013-simple-component-flows.md)
+supersedes accounting, outbox and unsupported delivery-ack preservation here.
+Do not resume these mechanisms or add old-version keri-ts API/data compatibility.
+
 Files here preserve superseded scope, bootstrap proposals and past investigations.
 Unchecked boxes and historical blockers are not current implementation claims or
 authorization to restart work. Use [active plans](../plans/README.md) and

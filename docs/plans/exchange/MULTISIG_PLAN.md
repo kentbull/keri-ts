@@ -36,8 +36,8 @@ scope, not a reference stub or a new release-gating implementation project.
 - Keep parent signatures and child evidence in one parent enclosure. Wrapper
   construction and wrapper acceptance do not authenticate or accept the child.
 
-Broader sender policy belongs to [3f](EXCHANGE_ADMISSION_PLAN.md), resource limits
-to [4](../runtime/RESOURCE_POLICY_PLAN.md), and full runtime tests to
+Broader sender policy belongs to [3f](EXCHANGE_ADMISSION_PLAN.md), accounting removal
+to [ADR-0013](../../adr/adr-0013-simple-component-flows.md), and full runtime tests to
 [7](../qualification/QUALIFICATION_PLAN.md).
 
 [v2-routes]: https://github.com/WebOfTrust/keripy/blob/7143832813cac6a394ab1faf9be83bb3372be87c/src/keri/app/grouping.py#L903

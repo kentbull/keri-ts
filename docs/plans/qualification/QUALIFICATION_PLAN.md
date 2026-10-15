@@ -1,6 +1,10 @@
 # End-to-end qualification plan
 
-Owner: roadmap **7**, after the actual runtime/resource/storage/transport paths
+Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
+application accounting and unsupported delivery durability, without old-version
+keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+
+Owner: roadmap **7**, after the actual runtime/storage/transport paths
 work. Preserve the original test topology and benchmark checkpoints. #134's test
 reorganization is complete; use the maintained inventory, not its historical count.
 The [reference inventory](REFERENCE_ENVIRONMENTS.md) owns environment/pin closure.
@@ -39,7 +43,7 @@ for cleanup. Tests and fixtures count toward the 300–500-line target.
 PR validation follows [explicit test scope](../../reference/PR_TEST_SCOPE.md).
 Relevant deterministic regressions may receive exact-head local credit instead
 of duplicate CI execution. Select applicable interop/package checks and run the
-broad maintained battery about every 12 implementation PRs. Scoped PR checks do
+broad maintained battery about every 20 implementation PRs. Scoped PR checks do
 not replace this final full clean-source qualification. Large ESSR, gigabyte
 and endurance runs remain local/manual. Only the maintainer dispatches hosted
 extended jobs; retain both existing **15-minute** job caps. Do not dispatch them
@@ -50,19 +54,18 @@ as part of autonomous continuation. Use identified disposable test stores only.
 The reduced release gate replaces the previous 24 runtime trials and automatic
 gigabyte/repeat matrix. Run the final real HTTP→verification→plaintext storage→
 reopen/replay path once at **16 MiB** and once at **256 MiB**, using fixed 1 MiB
-logical messages, 64 KiB input chunks and the same policy/identity cardinality.
-The small run proves the full path; the 16-fold larger run checks in-flight growth.
+logical messages, 64 KiB input chunks and the same identity cardinality.
+The small run proves the full path; the 16-fold larger run observes actual memory growth.
 
-Use existing small cases for v1/v2, qb64/qb2, nesting, fragmented ESSR, limit
-refusal and actual TCP callers. Retain one case per distinct slow-consumer,
+Use existing small cases for v1/v2, qb64/qb2, nesting, fragmented ESSR, malformed
+wire and actual TCP callers. Retain one case per distinct slow-consumer,
 cancellation, directional failure or shutdown boundary; do not repeat the same
 failure for every volume, wire format and host. Signed independent GenericGroup
 early usability must still be proved on real HTTP and TCP. Parent-owned nested
 children are a different boundary.
 
 Generate corpora incrementally outside the measured path; no transfer-sized
-arrays. Keep each sealed message within admission limits. Use fresh processes
-and explicit budgets. Report individual observations without statistical
+arrays. Use fresh processes and explicit workload dimensions. Report individual observations without statistical
 variance or throughput claims beyond the measured envelope. Repeat or enlarge
 only to resolve a concrete anomaly; 1/4 GiB qualification is deferred.
 
@@ -72,26 +75,21 @@ automatically. Their parser-only timings are separate from the production path.
 ## Measurements and provenance
 
 Record exact source revisions, interpreter/runtime/dependencies, actual imported
-modules, machine, commands, policy overrides, corpus/representation hashes,
+modules, machine, commands, runtime configuration, corpus/representation hashes,
 durations, failures/skips and individual observations. Measure:
 
 - First parsed child and bytes received; first verified usable child separately.
 - Throughput, CPU and elapsed time; peak RSS, heap, external/native crypto memory.
-- Retained-byte high water, queue/tree counts, active decryptions, metadata,
+- Actual queue/tree counts, active I/O, metadata,
   open resources, storage and cleanup. Separate mapped-file residency.
 
-Acceptance requires bounded in-flight credit as aggregate bytes rise
-under fixed policy, real backpressure, durable replay and usable independent
-GenericGroup children before transfer completion. No predetermined speedup is
-promised. Two observations establish a measured envelope, not a statistical
-memory plateau or universal size guarantee. Earlier parser-only 4 GiB observations
-do not qualify the full runtime.
-This is an in-flight guarantee. Keep accepted-state cardinality fixed in the
-scale comparison; use existing evidence for increasing identifiers/state and report
-resident cache growth. Existing KERIpy-style accepted-state APIs are preserved;
-eviction/public borrowing redesign is deferred. Do not subtract unexplained
-growth or promote in-flight credit into a total-RSS claim. Store/escrow reopen
-and existing payload-staging recovery checks do not imply new delivery durability.
+Acceptance requires correct native backpressure, supported replay, usable
+independent GenericGroup children before transfer completion and joined cleanup.
+There is no logical-credit plateau or application-budget gate. Report actual RSS,
+heap/native measurements honestly; two observations establish a measured envelope,
+not a universal bound or statistical plateau. Keep accepted-state cardinality fixed
+for comparison and report unexplained growth without subtracting it. Existing
+store/escrow reopen and payload-stage cleanup do not imply added delivery durability.
 
 The next-release [transport S9 gate](../runtime/TRANSPORT_PLAN.md) uses real TCP
 sockets and HTTP bodies, not a parser-only source substitution. Include signed
@@ -99,7 +97,7 @@ enclosed acceptance before client EOF, fragmented multi-message connections,
 independent GenericGroup usability, concurrent stalled peers, slow reads/writes,
 partial delivery, cancellation, truncated EOF, shutdown and half-close deadline
 expiry. Measure both parsed and verified-usable latency at the application state
-boundary. Verify source pulls, pending bytes/items, credit and open handles plateau;
+boundary. Observe source pulls, actual pending data and open handles;
 report kernel/native buffering separately. Exercise source Deno and packed Node.
 Qualify installed tarballs at the advertised Node minimum as well as the current
 CI runtime. Transport promises use the older supported API; that repair alone
@@ -122,7 +120,7 @@ local socket drain does not prove recovery or remote acceptance.
 
 Classify supported behavior, unfinished processing, intentional divergences,
 reference stubs and unqualified claims separately. Include exact PRs/revisions,
-default policy, measured envelope, every unresolved failure and its dependency.
+runtime configuration, measured envelope, every unresolved failure and its dependency.
 Retain explicit historical v1 extensions, native-genus limitations, reference
 `xip/pro/bar` stubs, API narrowing and upstream-versus-fork provenance. Re-run
 affected checks after the final [Mapper repair](../cesr/MAPPER_PLAN.md).
@@ -132,3 +130,13 @@ Qualify our implemented behavior without waiting for absent upstream processing.
 The active baseline is `7143832813cac6a394ab1faf9be83bb3372be87c`, including
 schema hardening (#1713). Earlier `927c0cb8` results remain historical evidence;
 run final qualification against 714 and label retained fork/legacy targets separately.
+
+## Removal-specific release gates
+
+Verify no shared accounting APIs, aliases, formula tests or retired store creators
+remain in source or built declarations. Test current supported state and actual
+cleanup; no old-version keri-ts data or new-to-old compatibility tests. Current
+KERIpy interop remains mandatory: live graduated disclosure and KRAM in both
+directions, single-signature and multisig, with witnesses and mailboxes. Frozen
+fixtures or legacy ACDC cases cannot substitute for that topology. KRAM downstream
+failure must follow KERIpy's acceptance boundary, not an application ack protocol.

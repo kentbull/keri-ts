@@ -1,5 +1,9 @@
 # Active plans
 
+Planning constraint: [ADR-0013](../adr/adr-0013-simple-component-flows.md) requires removal of
+application accounting and unsupported delivery durability, without old-version
+keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+
 The [parity roadmap](PARITY_ROADMAP.md) coordinates the existing incremental PR
 sequence. Subject files below own acceptance, without duplicating that sequence.
 
@@ -7,7 +11,7 @@ sequence. Subject files below own acceptance, without duplicating that sequence.
 - [Multisig](exchange/MULTISIG_PLAN.md), [IPEX](exchange/IPEX_PLAN.md),
   [exchange proofs and v2 admission](exchange/EXCHANGE_ADMISSION_PLAN.md).
 - [V1/V2 registries](credentials/REGISTRY_PLAN.md) and [KRAM](exchange/KRAM_PLAN.md).
-- [ESSR](essr/ESSR_PLAN.md) and [shared resource policy](runtime/RESOURCE_POLICY_PLAN.md).
+- [ESSR](essr/ESSR_PLAN.md) and [retired resource policy](runtime/RESOURCE_POLICY_PLAN.md).
 - [Storage/recovery](db/STORAGE_RECOVERY_PLAN.md) and [transport](runtime/TRANSPORT_PLAN.md).
 - [Full qualification](qualification/QUALIFICATION_PLAN.md) and
   [reference environments](qualification/REFERENCE_ENVIRONMENTS.md).

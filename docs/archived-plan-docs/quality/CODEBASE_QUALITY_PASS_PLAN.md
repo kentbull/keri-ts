@@ -1,5 +1,9 @@
 # keri-ts Code Quality Pass Plan
 
+Historical plan: the [2026-10-15 removal boundary](../../adr/adr-0013-simple-component-flows.md)
+supersedes accounting, outbox and unsupported delivery-ack preservation here.
+Do not resume these mechanisms or add old-version keri-ts API/data compatibility.
+
 ## Objective
 
 Raise maintainability, readability, library consumability, and long-term

@@ -1,5 +1,9 @@
 # V1/V2 registry qualification plan
 
+Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
+application accounting and unsupported delivery durability, without old-version
+keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+
 Owner: roadmap **3e registry**, alongside [IPEX][ipex]. R1–R12 are implemented:
 separate v2 storage, event engine, issuer services, public observer intake,
 bounded IPEX chain assembly, presentation cutoffs and explicit runtime ownership.

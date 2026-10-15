@@ -1,5 +1,9 @@
 # Async vs Sync LMDB Transactions
 
+Historical plan: the [2026-10-15 removal boundary](../../adr/adr-0013-simple-component-flows.md)
+supersedes accounting, outbox and unsupported delivery-ack preservation here.
+Do not resume these mechanisms or add old-version keri-ts API/data compatibility.
+
 ## Executive Summary
 
 For **local, single-user LMDB** (like KERI TS), **synchronous transactions are

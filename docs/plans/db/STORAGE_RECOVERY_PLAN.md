@@ -1,100 +1,56 @@
 # Payload storage and recovery plan
 
-Owner: roadmap **5**, coordinated with shared admission **4**. Durable payload
-references, exchange evidence and nested replay are implemented; see the
-[storage contract](../../design-docs/db/PAYLOAD_STORAGE.md). These foundations
-do not close runtime allocation or crash-recovery qualification.
+Owner: roadmap **5**, under [ADR-0013](../../adr/adr-0013-simple-component-flows.md).
+Remove storage accounting and unsupported delivery persistence. Existing payload
+and accepted-evidence foundations still need final composed qualification; this
+plan does not preserve their byte-credit architecture.
 
-## Review units
+## Removal units
 
-Apply the [roadmap review rules](../PARITY_ROADMAP.md), in dependency order:
+1. Remove native row-size billing, getValBounded/getBounded/beforeCopy callbacks,
+   replay byte ceilings and copy reservations. Keep native buffer validity, actual
+   copies where required, logical replay horizons and cursor closure.
+2. Delete the outbox environment, records, APIs, disabled implementation and all
+   runtime/CLI readers/writers. No compatibility or migration path.
+3. Delete consumer inbox `mbin.` and KRAM ready/snapshot `kready.`/`kpnd.` stores.
+   Keep provider Mailboxer messages/topics and Baser `tops` polling cursors.
+4. Keep KERIpy partial-signature/factor escrows and replay/timeliness caches;
+   remove accounting and downstream acknowledgement coupling around them.
+5. Preserve actual payload file/reference publication and joined cleanup. Remove
+   storage quota parameters and claims, not digest/size consistency or disposal.
 
-1. Native row-size admission before materialization; prove the actual binding seam.
-2. Charged finite row/hydration/replay reads, coordinated with resource phase 4.
-3. Atomic file/reference publication and failed duplicate rollback.
-4. Crash recovery of proven task-owned stages and unreferenced files.
-5. Joined cleanup-error handling and durable reopen/retry reconciliation.
-   Include [transport delivery obligations](../runtime/TRANSPORT_PLAN.md): the
-   optional mailbox-only outbox publishes rows and terminal pruning in one
-   transaction. Qualify finite admission, partial-target
-   status and reopen before claiming durable transfer. KERIpy's ordinary outbound
-   queues are volatile; preserve and disclose that boundary. New general delivery
-   journals or regeneration are deferred. Do not silently enable the optional
-   outbox or claim an in-memory delivery queue survives restart.
+No old keri-ts API/data compatibility or new-to-old tests are required. Do not
+build export/recovery tools, dual writes or dormant readers for retired stores.
+New supported databases must not create them. Do not touch unrelated live data
+merely to retire code. Accepted-state cache eviction is not part of this work.
 
-Keep each PR within the size target, including regressions. Reuse existing storage
-tests; exercise failure/crash designs with uncommitted probes unless a maintained
-regression has clear value. An unavailable native pre-allocation seam must remain
-an explicit limitation rather than becoming an after-allocation size assertion.
+## Native and payload correctness
 
-## Accepted-state residency boundary
+LMDB V1 inspection uses the existing owner or a separate process. Preserve actual
+native addon/data-format qualification, especially mapped rows above 16 MiB.
+The native-copy removal does not authorize invalid borrowed buffers or cursors
+held past their owner. Snapshot logical replay extents where correctness needs it.
 
-The shared policy is installed on Baser before reopen and inherited by Habery's
-runtime; borrowed runtime shutdown does not own that policy's store lifetimes.
-Accepted cache residency and public borrowing/eviction redesign are
-[deferred](../runtime/RESOURCE_POLICY_PLAN.md#deferred-accepted-state-residency).
-Preserve existing accepted-state APIs and report their growth separately. Transient
-row hydration/replay copies still need admission in the adopted streaming paths;
-do not retain a parent proof tree merely to keep an accepted event alive. Existing
-store reopen, escrow retry and task-owned staging recovery qualification remain;
-they do not establish a new general durable-delivery guarantee.
+Keep qualified ciphertext in KERIpy-compatible `essrs.`, accepted nested evidence
+and supported escrow/replay rows. Private pointers never replace required wire;
+authenticated plaintext stays separate. Read Python-origin rows with their actual
+ordering/deduplication. Current KERIpy interoperability is distinct from supporting
+an obsolete keri-ts storage layout.
 
-## Allocation boundary
+File publication must not leave a published reference to missing content. Recovery
+of current task-owned stages removes only proven unreferenced files. Keep actual
+size/digest checks, accepted payload reopening and cleanup on failed publication.
+No general delivery journal or application acknowledgement is introduced.
 
-Nested wire now uses the pinned NAPI size preflight before owned row copies,
-including aggregate 24 MiB credit during comparisons, publication and hydration.
-Exchanger nested admission/replay additionally holds a conservative shared copy
-allowance through joined cleanup; this covers its cooperating row/serialization
-and cursor phases, with parser frames charging ordinary/ESSR staging separately.
-Mailbox provider reads use native size preflight before copies, backed by shared
-message/chunk/metadata admission through joined close.
-KRAM snapshot/hash/serialization and reopened hydration now share runtime credit.
-Temporary rows/cursors release after parser join; real frame owners retain their
-ordinary/ESSR reservations through scoped consumer disposal. No file owner wrapper
-is introduced, and synchronous publication retains its collected wire credit.
-Configured KEL replay body reads now preflight native row size; lazy HTTP readers
-reserve reconstruction copies before opening an iterator. Companion proof-row reads
-and allocation measurements remain separate boundaries. Broader KEL/reply replay (`clonePreIter`,
-`replyEndRole`), parent factors and query preparation/retained introductions still
-require native-row and copy audits. Queue/stream credit alone does not prove their
-pre-read boundary.
-Optional outbox runtime retry reads now preflight target/metadata/payload rows
-under shared copy credit retained through joined transport and iterator return.
-Other outbox scans and general record hydration remain outside that finite claim.
-Fixed native scratch (initially 16 MiB), growth through other read APIs and LMDB
-mapped residency remain separate overhead. Shared leases and measured native/string
-coexistence must cover these categories before a runtime-total/RSS claim.
+## Verification
 
-LMDB V1 inspection must use the existing owner or a separate process. The #164
-test repair moved the live CLI host and inspector into separate processes without
-changing participants/assertions; it did not solve row allocation or shared budgets.
+Reuse meaningful tests for exact replay bytes/order, accepted horizons, cursor
+closure, close/reopen, ordered Texters, nested rejection, cancellation, supported
+escrow retry, duplicate rollback and cleanup errors. Inject failures around
+stage/finish/file/DB publication as needed. Delete reservation/formula-only tests.
+Do not add compatibility fixtures for retired versions or stores.
 
-## Source-audited remaining envelope
-
-Adopted TEL replay now preflights body rows and incrementally caps native dupsort
-proof retention (#331). Its existing reconstruction lease precedes source acquisition.
-KEL/stored reply bodies already preflight native extent. Their signature/receipt
-iteration is capped before aggregate retention; canonical tuples and native
-511-byte duplicate records are finite. This is not corrupt-row/native-scratch parity.
-Legacy Verifier `verifyChain`/escrow retries still hydrate accepted credentials
-through ordinary reads. Finite IPEX support/export collectors, standalone DB APIs,
-other outbox scans and accepted-state residency retain explicit caller/native
-limits. Do not claim all storage is admitted or create a general scan/cache redesign.
-
-## Required acceptance
-
-1. Retain qualified ciphertext in KERIpy-compatible `essrs.`, `enst.`, escrow,
-   relay and replay rows. Private pointers never replace required wire evidence;
-   authenticated plaintext remains separately owned.
-2. Read Python-origin rows with their actual insertion order and deduplication.
-   Reopen/retry/replay use streams or finite batches, not bulk `getAll`/joins.
-3. Bound staging, handles, row copies and pending metadata. File-backed processing
-   must not retain a second complete ciphertext array.
-4. Exercise close/reopen, ordered Texters, nested rejection/cancellation, escrow
-   retry, failed duplicate publication and cleanup errors.
-5. Inject failures around stage, finish, file publication, DB publication and
-   cleanup. No published reference may point at missing content. Recovery removes
-   only proven unreferenced task-owned files/stages.
-
-The broader row-by-row [DB parity plan](DB_PARITY_PLAN.md) remains distinct from
-this runtime storage phase. Reuse its invariants without restarting DB foundations.
+The [DB parity plan](DB_PARITY_PLAN.md) owns row-level protocol compatibility;
+the [payload contract](../../design-docs/db/PAYLOAD_STORAGE.md) owns real file
+lifetime, subject to the removal boundary. Final interop and installed-package
+qualification remain mandatory.
