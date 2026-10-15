@@ -81,8 +81,9 @@ export class CredentialStateReceiver {
       disposeIncoming();
       return unverifiedReplyDecision(reason);
     };
-    const stored = this.tvy.reger.states.get(regk);
-    if (stored && !registryRecord(stored.asDict())) throw new Error("Corrupt stored registry state.");
+    const saved = this.tvy.reger.states.get(regk);
+    const stored = saved ? registryRecord(saved.asDict()) : null;
+    if (saved && !stored) throw new Error("Corrupt stored registry state.");
     const issuer = stored?.ii ?? aid;
     this.publisher.preflight(1);
     let queries: PreparedCueBatch | undefined;
@@ -126,7 +127,7 @@ export class CredentialStateReceiver {
       }
     };
     const regsn = record.ra!.s === undefined ? 0 : Number.parseInt(record.ra!.s as string, 16);
-    if (!stored || Number.parseInt(stored.s!, 16) < regsn) return escrow("credential-mre", true);
+    if (!stored || Number.parseInt(stored.s, 16) < regsn) return escrow("credential-mre", true);
     const tever = new Tever({ db: this.tvy.db, reger: this.tvy.reger, rsr: stored });
     if (
       !tever.serder.verify() || tever.serder.said !== stored.d
@@ -140,7 +141,7 @@ export class CredentialStateReceiver {
     }
     if (
       aid !== issuer && !watchers.has(aid)
-      && !(stored.c!.includes(TraitDex.NoBackers) ? kever.wits : stored.b!).includes(aid)
+      && !(stored.c.includes(TraitDex.NoBackers) ? kever.wits : stored.b).includes(aid)
     ) {
       return reject("Untrusted credential state attester.");
     }

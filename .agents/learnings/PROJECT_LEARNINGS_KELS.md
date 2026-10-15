@@ -114,7 +114,10 @@ There is no exception adapter or error-constructor hook for pending decisions.
 Persist the outer reply SAID for BADA, not the contained TEL digest: actual 714's
 registry handler confuses these domains and accepts older signed notices.
 Registry TSN trust uses accepted configuration and issuer witnesses, never claimed
-notice backers. The semantic receiver owns missing/partial proofs in Broker via
+notice backers. Registry notice validation returns the existing record with all
+validated fields required and fresh owned arrays. Both TSN receivers retain that
+validated stored-registry type instead of discarding it and recovering fields with
+assertions. Metadata correspondence compares typed fields, not erased dictionaries. The semantic receiver owns missing/partial proofs in Broker via
 explicit external Revery escrow; preserve prior BADA evidence until publication.
 Hold concrete query batches and the actual dependency/state child before
 proof/Broker effects. Test exact family membership without bulk copies and check
