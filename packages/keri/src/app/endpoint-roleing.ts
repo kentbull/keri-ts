@@ -1,4 +1,4 @@
-import { Diger, Ilks, SerderKERI, Siger } from "cesr-ts";
+import { Diger, Ilks, SerderKERI, Siger, type Versionage } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { reply as replyEvent } from "../core/protocol-eventing.ts";
@@ -110,6 +110,7 @@ export function groupEndorseReply(
   hby: Habery,
   groupPre: string,
   serder: SerderKERI,
+  gvrsn?: Versionage,
 ): Uint8Array {
   const keys = groupEventKeys(hby, groupPre, serder);
   const sigers = signLocalGroupEvent(hby, serder, groupSigningMembers(hby, groupPre), keys);
@@ -124,6 +125,7 @@ export function groupEndorseReply(
     sigers,
     seal: { i: kever.prefixer, s: seqner, d: new Diger({ qb64: estSaid }) },
     pipelined: true,
+    gvrsn,
   });
 }
 

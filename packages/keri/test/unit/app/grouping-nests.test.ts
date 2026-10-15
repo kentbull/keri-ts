@@ -23,6 +23,7 @@ import {
 import { call, type Operation, run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { groupEndorseReply } from "../../../src/app/endpoint-roleing.ts";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
 import {
   loadMultisigHandlers,
@@ -37,10 +38,11 @@ import {
   prepareMultisigEventExn,
 } from "../../../src/app/grouping.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
-import { publishProposal } from "../../../src/app/multisig-workflows.ts";
+import { publishProposal, waitForOneApproval } from "../../../src/app/multisig-workflows.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
 import framing714 from "../../fixtures/multisig-framing-714.json" with { type: "json" };
@@ -150,6 +152,74 @@ Deno.test("multisig publication records its actual local proposal before deliver
         yield* runtime.reactor.processEscrowsOnce();
         assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
         assertEquals(notifier.list().length, 0);
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
+
+Deno.test("multisig approval honors signed child genus for KEL and endpoint replies", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, { mode: "local", notifier });
+      try {
+        runtime.poster.sendPreparedExchange = function*(_sender, args) {
+          return { serder: args.serder, deliveries: ["test"], queued: [] };
+        };
+        const [peer, paths] = yield* multisigInceptExn(
+          bob,
+          mids,
+          mids,
+          messagize(remote.serder, { sigers: remote.sigers, gvrsn: Vrsn_2_0 }),
+          undefined,
+          { pvrsn: Vrsn_1_0, childGvrsn: Vrsn_2_0 },
+        );
+        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(peer, { pipelined: false }), paths), {
+          local: true,
+        });
+        const result = yield* waitForOneApproval(left, runtime, {
+          pollTurns: 1,
+          pollBudgetMs: 1,
+          callbacks: {
+            approveProposal: () => true,
+            chooseGroupAlias: () => "group",
+            chooseRegistryName: () => "registry",
+          },
+        });
+        assertEquals(result?.accepted, true);
+        assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
+        yield* call(() => learn(right, local.hab));
+        const rpy = replyEvent("/end/role/add", { cid: local.hab.pre, role: "mailbox", eid: bob.pre }, {
+          pre: local.hab.pre,
+        });
+        const peerRpy = groupEndorseReply(right, remote.hab.pre, rpy, Vrsn_2_0);
+        const [rpyWrapper, rpyPaths] = yield* prepareMultisigEventExn(
+          bob.pre,
+          {
+            route: "/multisig/rpy",
+            attrs: { gid: local.hab.pre },
+          },
+          peerRpy,
+          { pvrsn: Vrsn_1_0, childGvrsn: Vrsn_2_0 },
+        );
+        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(rpyWrapper, { pipelined: false }), rpyPaths), {
+          local: true,
+        });
+        const replyResult = yield* waitForOneApproval(left, runtime, {
+          pollTurns: 1,
+          pollBudgetMs: 1,
+          callbacks: {
+            approveProposal: () => true,
+            chooseGroupAlias: () => "group",
+            chooseRegistryName: () => "registry",
+          },
+        });
+        assertEquals(replyResult?.accepted, true);
+        assertEquals(left.db.ends.get([local.hab.pre, "mailbox", bob.pre])?.allowed, true);
       } finally {
         yield* runtime.close();
       }
