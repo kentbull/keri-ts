@@ -1,19 +1,14 @@
-/** Internal local TEL acceptance; registry facades own instance naming and scheduling. */
+/** Shared TEL validation, accepted-state publication, anchoring and retry for local and foreign registries. */
 import {
   Diger,
   Ilks,
-  makeBlindState,
-  makeBoundState,
-  type MakeBoundStateOptions,
   NumberPrimitive,
   type Saider,
   SerderACDC,
 } from "cesr-ts";
 import { DatabaseNotOpenError, ValidationError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
-import { blindate, type BlindateOptions } from "./messaging.ts";
 import {
-  type RegistryDisclosure,
   type RegistryEvent,
   type RegistryEventValidation,
   validateRip,
@@ -21,7 +16,6 @@ import {
   verifyRegistryAnchor,
 } from "./regeventing.ts";
 import type { RegistryStore } from "./registering.ts";
-import { FailedSchemaValidationError, MissingSchemaError, validateSchema } from "./scheming.ts";
 
 /** Expected event outcomes; persistence, corruption and programming failures throw. */
 export type RegistryEventDecision =
@@ -30,19 +24,9 @@ export type RegistryEventDecision =
   | { kind: "reject"; reason: "ordinalRange" }
   | Extract<RegistryEventValidation, { kind: "reject" }>;
 
-/** Disclosure derivation and wire options; the engine alone selects the next ordinal and blinder. */
-export type RegistryBlindOptions =
-  & Omit<BlindateOptions, "sn">
-  & Pick<MakeBoundStateOptions, "raw" | "salt" | "tier" | "bsn" | "bd">
-  & { bound?: boolean };
-/** Grant serders and bare SAIDs share syntax checks; presentation construction does not authenticate grants. */
-export type RegistryPresentationTarget = string | { readonly said: string | null };
-/** A disclosure and its staged commitment, neither of which establishes anchored acceptance. */
-export type RegistryBlindResult = readonly [RegistryDisclosure, SerderACDC];
-
 /**
  * Borrow the issuer's accepted KEL and registry store; no keys or handles are acquired.
- * Event processing is internal until the registry facade is available.
+ * The local facade and foreign observer share this accepted-state engine.
  * Publication is atomic; binding this instance happens only after successful commit.
  */
 export class RegistryEventer {
@@ -53,93 +37,22 @@ export class RegistryEventer {
     public regk: string | null = null,
   ) {}
 
+  /** Validated accepted head metadata; local construction may inspect it without duplicating acceptance checks. */
+  get acceptedHeadEvent(): RegistryEvent | null {
+    return this.regk ? this.acceptedHead(this.regk) : null;
+  }
   /** Read the accepted head only after validating its body and ordinal marker. */
   get head(): Saider | null {
-    const event = this.regk ? this.acceptedHead(this.regk) : null;
+    const event = this.acceptedHeadEvent;
     return event ? this.store.head(event.regid) : null;
   }
   /** Accepted TEL ordinal, retaining -1n for a staged but unaccepted inception. */
   get sn(): bigint {
-    return this.regk ? this.acceptedHead(this.regk)?.sn ?? -1n : -1n;
+    return this.acceptedHeadEvent?.sn ?? -1n;
   }
   /** Return an accepted inception; a corrupt marker/body pair throws. */
   get regser(): SerderACDC | null {
     return this.regk ? this.acceptedAt(this.regk, 0) : null;
-  }
-
-  /** Validate credential membership and issuer before deriving its next blinded registry update. */
-  blind(acdc: SerderACDC, state: string, options: RegistryBlindOptions = {}): RegistryBlindResult {
-    if (!(acdc instanceof SerderACDC) || !acdc.verify()) {
-      throw new ValidationError("Registry blinding requires a self-verifying ACDC.");
-    }
-    if (acdc.regid !== this.regk) throw new ValidationError("Credential belongs to another registry.");
-    if (acdc.issuer !== this.issuer) throw new ValidationError("Credential belongs to another issuer.");
-    const schema = validateSchema(acdc, this.db);
-    if (schema.kind === "missing") throw new MissingSchemaError(schema.said);
-    if (schema.kind === "invalid") throw new FailedSchemaValidationError(schema.reason);
-    return this.blindTarget(acdc.said!, state, options);
-  }
-
-  /** Commit a grant SAID without requiring the grant's issuer to control this presentation registry. */
-  present(
-    grant: RegistryPresentationTarget,
-    state = "presented",
-    options: RegistryBlindOptions = {},
-  ): RegistryBlindResult {
-    const target = typeof grant === "string" ? grant : grant.said;
-    try {
-      new Diger({ qb64: target ?? "" });
-    } catch (cause) {
-      throw new ValidationError("Presentation target must be a valid grant SAID.", { cause });
-    }
-    return this.blindTarget(target!, state, options);
-  }
-
-  /** Empty target/state disclose a vacuous step; downstream verification retains the preceding binding. */
-  vacate(options: RegistryBlindOptions = {}): RegistryBlindResult {
-    return this.blindTarget("", "", options);
-  }
-
-  /** Derive and stage a validated target; presentation/vacuous callers own their target checks. */
-  protected blindTarget(target: string, state: string, options: RegistryBlindOptions): RegistryBlindResult {
-    const tip = this.effectiveFrontier();
-    if (!tip) throw new ValidationError("Registry must be anchored before updates.");
-    if ("blinder" in options) throw new ValidationError("Caller-supplied blinder overrides are unsupported.");
-    const sn = tip.sn + 1n;
-    if (sn > BigInt(Number.MAX_SAFE_INTEGER)) throw new RangeError("Unsafe registry update ordinal.");
-    const { raw, salt, tier, bound, bsn, bd, ...wire } = options;
-    const inputs = { raw, salt, tier, sn, acdc: target, state };
-    const blinder = bound ? makeBoundState({ ...inputs, bsn, bd }) : makeBlindState(inputs);
-    const serder = blindate(tip.regid, tip.said, blinder.d.nonce, { ...wire, sn });
-    const decision = this.processEvent(serder);
-    if (decision.kind === "reject") throw new ValidationError(`Registry update rejected: ${decision.reason}`);
-    return [blinder, serder];
-  }
-
-  /** Extend an accepted head through exactly one staged successor at each ordinal, without mutation. */
-  private effectiveFrontier(): RegistryEvent | null {
-    let tip = this.regk ? this.acceptedHead(this.regk) : null;
-    while (tip) {
-      const sn = tip.sn + 1n;
-      if (sn > BigInt(Number.MAX_SAFE_INTEGER)) return tip;
-      const saids = new Set<string>();
-      for (const escrow of [this.store.baser.maes, this.store.baser.ooes]) {
-        for (const [said] of escrow?.get(tip.regid, Number(sn)) ?? []) saids.add(said);
-      }
-      let successor: RegistryEvent | null = null;
-      for (const said of saids) {
-        const body = this.store.event(said);
-        if (!body) continue;
-        if (body.said !== said) throw new Error("Corrupt staged registry event.");
-        const result = validateUpdate(body, tip.regid);
-        if (result.kind !== "valid" || result.event.sn !== sn || result.event.prior !== tip.said) continue;
-        if (successor) throw new ValidationError("Registry has conflicting staged successors.");
-        successor = result.event;
-      }
-      if (!successor) return tip;
-      tip = successor;
-    }
-    return null;
   }
 
   /** Retry newly visible anchors, then advance the contiguous accepted chain. */
