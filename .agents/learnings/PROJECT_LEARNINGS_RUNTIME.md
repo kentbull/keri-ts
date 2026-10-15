@@ -294,8 +294,8 @@ sink and cleanup failures propagate unchanged, including foreign same-class erro
 Cue preparation/item refusal follows the same exact invocation rule; foreign
 interpretation, route, reserve and observer failures propagate. This does not
 admit all decoded/native preparation copies.
-Cue interpretation, routes, target preparation and finite witness snapshots share
-cueDeliveryBudget: 8 MiB wire, 24 MiB preparation, 1 MiB route. Direct reply combined
+Cue interpretation, target preparation and finite witness snapshots still share
+cueDeliveryBudget: 8 MiB wire, 24 MiB preparation; query routes still use 1 MiB. Direct reply combined
 floors derive from it; cue admission returns its charge instead of ledger-delta inspection.
 Admitted cue interpretation is synchronous: destination item admission precedes
 preparation, and atomic acceptance precedes ordinary source removal. Existing
@@ -313,9 +313,10 @@ continuations only after transfer. Earlier captured query batches use their own
 exact dispatch authorization and queued-only delivery, never a later frame or
 an old matching SAID cue. Network waits and joined fallback cleanup stay outside
 Reactor; capacity mappings require the actual invocation's created refusal.
-Cue route capture reserves a separate 1 MiB/4096-target allowance before endpoint
-resolution. Its independent owner retains metadata until joined delivery cleanup;
-configured floors include the live cue and interpretation credit.
+Cue routing passes the ordinary RawCesrRoute record directly into delivery.
+There is no route metadata reservation, target-count ceiling or release wrapper.
+Resolver failures propagate before source removal; the delivery cursor owns its
+actual replay iterator cleanup. Remaining cue/query accounting is scheduled for removal.
 
 Socket streamability requires a connection-owned parser, bounded handoff and
 joined shutdown; parser streaming alone is insufficient. Guard signing/routing/DB

@@ -8,5 +8,5 @@ export const cueDeliveryBudget = {
   wireBytes,
   preparationBytes,
   routeBytes,
-  preparationFloorBytes: wireBytes + preparationBytes + routeBytes,
+  preparationFloorBytes: wireBytes + preparationBytes,
 } as const;
