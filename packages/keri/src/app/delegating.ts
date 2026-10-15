@@ -14,6 +14,7 @@
  */
 import { Diger, type SerderKERI } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
+import type { QueryRequest } from "../core/cues.ts";
 import { ValidationError } from "../core/errors.ts";
 import { DELEGATE_MAILBOX_TOPIC, REPLAY_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { Schemes } from "../core/schemes.ts";
@@ -23,7 +24,6 @@ import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exch
 import { type Poster } from "./forwarding.ts";
 import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
-import type { QueryCoordinator } from "./querying.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { sendWitnessMessage } from "./witnessing.ts";
 
@@ -356,7 +356,7 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
  *   - `cdel.` for completed delegation workflows
  * - outbound correspondence is delegated to `Poster`
  * - delegation-specific anchor discovery stays explicit here and uses
- *   `QueryCoordinator` only as the queued query-delivery seam
+ *   a concrete query producer port; composition owns its consuming worker
  * - witness republication sends the resolved delegator chain directly to the
  *   delegate's witnesses so the flow stays readable against KERIpy
  *
@@ -371,7 +371,8 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
 export class Anchorer {
   readonly hby: Habery;
   readonly poster: Poster;
-  readonly querying: QueryCoordinator;
+  /** Query producer port; composition owns the consuming coordinator and its lifetime. */
+  readonly querying: { enqueue(request: QueryRequest): void };
   readonly services: RuntimeServices;
   readonly communicationHabPins = new Map<string, string>();
   readonly anchorQueryRetryPasses = new Map<string, number>();
@@ -380,7 +381,7 @@ export class Anchorer {
     hby: Habery,
     { poster, querying, services = defaultRuntimeServices }: {
       poster: Poster;
-      querying: QueryCoordinator;
+      querying: Anchorer["querying"];
       services?: RuntimeServices;
     },
   ) {
@@ -746,7 +747,7 @@ export class Anchorer {
       pre: delpre,
       route: "logs",
       q: { fn: "0", s: "0", a: eventAnchor(serder) },
-      hab: communicationHab,
+      signer: communicationHab.pre,
       wits: [witness],
     });
     // Mark that an immediate publication-time query was already sent so the
@@ -786,7 +787,7 @@ export class Anchorer {
         pre: delpre,
         route: "logs",
         q: { fn: "0", s: "0", a: eventAnchor(serder) },
-        hab: communicationHab,
+        signer: communicationHab.pre,
         wits: [witness],
       });
       this.anchorQueryRetryPasses.set(id, 0);
@@ -805,7 +806,7 @@ export class Anchorer {
       pre: delpre,
       route: "logs",
       q: { fn: "0", s: "0", a: eventAnchor(serder) },
-      hab: communicationHab,
+      signer: communicationHab.pre,
       wits: [witness],
     });
     this.anchorQueryRetryPasses.set(id, 0);

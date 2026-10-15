@@ -13,7 +13,14 @@ Kever decides, Kevery routes KEL/KEL-derived replies, Revery owns BADA/reply
 escrows, Oobiery owns introductions. Runtime and local Habery.kevery have distinct
 cue decks. Query cues and pending requests use one required KERIpy-shaped `q`
 body. Routed requests correlate logs/ksn/tels/tsn with their concrete filters and
-keep one required target in the envelope. Hab.query accepts that instruction plus
+keep one required target in the envelope. QueryRequest is the shared routed record;
+its optional signer names a local AID and src names the remote attester. Continuations
+and pending work retain identifiers, not Hab objects. QueryCoordinator resolves an
+explicit signer through its existing Habery; an unavailable selection stays pending
+rather than falling back to the configured/sole Hab. Hab interpretation defers cues
+selected for another signer to correspondence. Anchorer receives only the concrete
+QueryRequest enqueue port, not the consuming coordinator's control surface.
+Hab.query accepts that instruction plus
 its existing mailbox-topic form; raw protocol-eventing.query remains the open codec
 boundary. Do not restore a `query` alias, duplicate body target or arbitrary route/body
 bag. Schema/credential notices retain their separate KERIpy-shaped hint records.
@@ -40,10 +47,11 @@ not expose a resource policy. Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 QueryCoordinator composes a private pending-query Deck with only admission, head
 inspection, completion, rotation and scoped clear. It owns canonical query/witness
-metadata on Baser's exact policy before normalization/copies. Rotation retains the same owner; sent or
+metadata on Baser's exact policy before copies. Rotation retains the same owner; sent or
 transferred work releases only after consumption joins. clear() preserves an
 active head; close cancels/joins processing before clearing every pending owner.
-Borrowed Hab references remain accepted-state residency, outside this byte walk.
+Signer identifiers are ordinary retained metadata in the existing byte walk;
+component-owned configured Hab dependencies never enter queued work.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state. Mailbox query correlation uses its own exact-policy
 CueDeck (64 held slots by default); selected cues retain byte/item credit through

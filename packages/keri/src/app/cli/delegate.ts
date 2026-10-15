@@ -383,7 +383,7 @@ export function* performDelegationApproval(
       const querier = runtime.querying.watchSeqNo(
         serder.pre!,
         serder.sn ?? 0,
-        { hab },
+        { signer: hab.pre },
       );
       // No delegate witness exists to query. Process the local delegable
       // after the delegator has anchored approval; the delegate still

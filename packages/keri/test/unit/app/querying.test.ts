@@ -1,6 +1,8 @@
 import { call, resource, run, spawn, suspend } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import {
+  discardFrame,
+  parseBytes,
   ParserError,
   ResourceAdmissionError,
   ResourceLimitError,
@@ -18,9 +20,10 @@ import {
 import { queryCommand } from "../../../src/app/cli/query.ts";
 import { type CueSink } from "../../../src/app/cue-runtime.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
+import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { type AnchorQuerier, QueryCoordinator } from "../../../src/app/querying.ts";
 import { reserveCueBytes } from "../../../src/core/cue-admission.ts";
-import type { QueryCue, QueryInstruction, TelQueryCue } from "../../../src/core/cues.ts";
+import type { QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { type KeverEventEnvelope } from "../../../src/core/eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
@@ -45,6 +48,10 @@ void ({ route: "mbx", q: {} } satisfies Parameters<Hab["query"]>[2]);
 void ({ route: "logs", q: { sn: "1" } } satisfies QueryInstruction);
 // @ts-expect-error The route is authoritative; there is no redundant body route.
 void ({ route: "logs", q: { r: "logs" } } satisfies QueryInstruction);
+// @ts-expect-error Queued work identifies its signer instead of retaining a component.
+void ({ pre: "aid", route: "logs", q: {}, hab: {} } satisfies QueryRequest);
+// @ts-expect-error A schema notice is not a signed outbound request.
+void ({ kin: "query", signer: "aid", q: { r: "schema", said: "schema" } } satisfies QueryCue);
 // @ts-expect-error TEL recovery must identify its registry and credential.
 void ({ kin: "telquery", q: { i: "credential" } } satisfies TelQueryCue);
 // @ts-expect-error Anchor queries require the event digest, not an optional payload bag.
@@ -103,6 +110,22 @@ function captureSink(
       });
     },
   };
+}
+
+/** Assert the actual V1 query endorsement, whose signer is in attachments rather than the body. */
+async function assertQuerySigner(bytes: Uint8Array, selected: Hab): Promise<void> {
+  const frames = await parseBytes(bytes);
+  try {
+    assertEquals(frames.length, 1);
+    const query = queryEnvelopeFromDispatch(envelopeFromFrame(frames[0]));
+    assertEquals(query.source?.qb64, selected.pre);
+    assertExists(query.sigers);
+    assertEquals(query.sigers.length, 1);
+    const signature = query.sigers[0];
+    assert(selected.kever!.verfers[signature.index].verify(signature.raw, query.serder.raw));
+  } finally {
+    for (const frame of frames) await discardFrame(frame);
+  }
 }
 
 function seedControllerEndpoint(
@@ -210,6 +233,76 @@ Deno.test("Query coordinator turns incomplete query cues into outbound `logs` qu
         undefined,
       );
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("queued queries resolve the selected signer at consumption and never substitute an ambient identity", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const ambient = hby.makeHab("ambient"), selected = hby.makeHab("selected"), subject = hby.makeHab("subject");
+    const messages: Uint8Array[] = [];
+    const coordinator = new QueryCoordinator(hby, {
+      hab: ambient,
+      sink: {
+        *send(emission) {
+          messages.push(...emission.messages);
+        },
+      },
+    });
+    try {
+      coordinator.enqueue({ pre: subject.pre, signer: selected.pre, src: subject.pre, route: "logs", q: {} });
+      const pending = coordinator.pending.peekHead();
+      hby.habs.delete(selected.pre);
+      yield* coordinator.processPending();
+      assertEquals(messages, [], "an unavailable selected signer cannot fall back to the ambient Hab");
+      assertStrictEquals(coordinator.pending.peekHead(), pending, "unresolved work keeps its original identity");
+      hby.habs.set(selected.pre, selected);
+      yield* coordinator.processPending();
+      assertEquals(messages.length, 1);
+      yield* call(() => assertQuerySigner(messages[0], selected));
+      assertEquals(coordinator.pending.length, 0);
+      assertEquals(hby.db.resources.used.bytes, 0);
+    } finally {
+      yield* coordinator.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("routed query cues preserve an explicit signer across interpretation and pending admission", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const ambient = hby.makeHab("ambient"), selected = hby.makeHab("selected"), subject = hby.makeHab("subject");
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    try {
+      const cue = {
+        kin: "query",
+        pre: subject.pre,
+        signer: selected.pre,
+        src: subject.pre,
+        route: "logs",
+        q: {},
+      } satisfies QueryCue;
+      const messages: Uint8Array[] = [];
+      const sink: CueSink = {
+        *send(emission) {
+          messages.push(...emission.messages);
+        },
+      };
+      runtime.cues.push(cue);
+      yield* processRuntimeTurn(runtime, { hab: ambient, sink });
+      assertEquals(messages.length, 1);
+      yield* call(() => assertQuerySigner(messages[0], selected));
+      runtime.querying.configure({ hab: ambient, sink });
+      assertEquals(runtime.querying.enqueueCue(cue), true);
+      yield* runtime.querying.processPending();
+      assertEquals(messages.length, 2);
+      yield* call(() => assertQuerySigner(messages[1], selected));
+      assertEquals(runtime.resources.used.bytes, 0);
+    } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });
@@ -455,7 +548,7 @@ Deno.test("KeyStateNoticer finishes immediately once a saved key state matches l
         role: Roles.controller,
       });
 
-      runtime.querying.watchKeyState(subject.pre, { hab: requester });
+      runtime.querying.watchKeyState(subject.pre, { signer: requester.pre });
 
       const emissions: CueRecord[] = [];
       yield* processRuntimeTurn(runtime, {
@@ -533,7 +626,7 @@ Deno.test("KeyStateNoticer upgrades to a `logs` query when a saved key state is 
         role: Roles.controller,
       });
 
-      runtime.querying.watchKeyState(subject.pre, { hab: requester });
+      runtime.querying.watchKeyState(subject.pre, { signer: requester.pre });
 
       const emissions: CueRecord[] = [];
       const sink = captureSink(emissions);
@@ -624,12 +717,12 @@ Deno.test("SeqNoQuerier and AnchorQuerier complete only after the accepted seque
       runtime.cues.clear();
 
       const seq = runtime.querying.watchSeqNo(subject.pre, 1, {
-        hab: requester,
+        signer: requester.pre,
       });
       assertExists(subjectIcp.said);
       const requestedAnchor = { d: subjectIcp.said, s: "0", i: subject.pre };
       const expectedAnchor = { i: subject.pre, s: "0", d: subjectIcp.said };
-      const anchor = runtime.querying.watchAnchor(subject.pre, requestedAnchor, { hab: requester });
+      const anchor = runtime.querying.watchAnchor(subject.pre, requestedAnchor, { signer: requester.pre });
       requestedAnchor.d = requester.pre; // Caller mutation must not change queued wire or completion.
 
       const emissions: CueRecord[] = [];
@@ -858,7 +951,7 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       assertStrictEquals(refusal, observed);
       assertEquals([refusal.reason, copied, coordinator.pending.length], ["busy", false, 0]);
       occupied.reservation.release();
-      coordinator.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, hab });
+      coordinator.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, signer: hab.pre });
       coordinator.enqueueCue({ ...cue, pre: "unresolved", src: undefined });
       const retained = hby.db.resources.used.bytes;
       yield* coordinator.processPending(); // The default sink retires resolved input; unresolved metadata rotates.

@@ -30,7 +30,7 @@ import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { introduce, type Poster } from "../../../src/app/forwarding.ts";
 import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../src/app/habbing.ts";
-import type { QueryCoordinator } from "../../../src/app/querying.ts";
+import type { QueryRequest } from "../../../src/core/cues.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { fetchStoredTsgs } from "../../../src/core/routing.ts";
@@ -311,15 +311,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
           message: Uint8Array;
         }
       > = [];
-      const queuedQueries: Array<
-        {
-          pre: string;
-          route: string;
-          q: Record<string, unknown>;
-          hab: string | null;
-          wits?: string[];
-        }
-      > = [];
+      const queuedQueries: QueryRequest[] = [];
       const poster = {
         *sendExchange(
           hab: {
@@ -380,24 +372,10 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
         },
       } as unknown as Poster;
       const querying = {
-        enqueue(
-          request: {
-            pre: string;
-            route: string;
-            q: Record<string, unknown>;
-            hab?: { pre: string };
-            wits?: string[];
-          },
-        ) {
-          queuedQueries.push({
-            pre: request.pre,
-            route: request.route,
-            q: request.q,
-            hab: request.hab?.pre ?? null,
-            wits: request.wits,
-          });
+        enqueue(request: QueryRequest) {
+          queuedQueries.push(request);
         },
-      } as unknown as QueryCoordinator;
+      };
       const coordinator = new Anchorer(hby, { poster, querying });
 
       const started = coordinator.beginLatest(delegate.pre, 0, {
@@ -449,7 +427,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
           s: "0",
           a: { i: delegate.pre, s: "0", d: delegate.kever!.said! },
         },
-        hab: proxy.pre,
+        signer: proxy.pre,
         wits: [delegatorWitness.pre],
       }]);
 
@@ -524,7 +502,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
           enqueue() {
             return;
           },
-        } as unknown as QueryCoordinator;
+        };
         const coordinator = new Anchorer(hby, { poster, querying });
 
         coordinator.beginLatest(delegate.pre, 0, {
@@ -639,12 +617,12 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
         },
       } as unknown as Poster;
       const querying = {
-        watchAnchor() {
+        enqueue() {
           throw new Error(
             "delegated inception should not query without a proxy",
           );
         },
-      } as unknown as QueryCoordinator;
+      };
       const coordinator = new Anchorer(hby, { poster, querying });
 
       coordinator.beginLatest(delegate.pre, 0);
@@ -715,15 +693,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
       const sent: Array<
         { sender: string; recipient: string; message: Uint8Array }
       > = [];
-      const queuedQueries: Array<
-        {
-          pre: string;
-          route: string;
-          q: Record<string, unknown>;
-          hab: string | null;
-          wits?: string[];
-        }
-      > = [];
+      const queuedQueries: QueryRequest[] = [];
       const poster = {
         *sendExchange(
           hab: {
@@ -763,24 +733,10 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
         },
       } as unknown as Poster;
       const querying = {
-        enqueue(
-          request: {
-            pre: string;
-            route: string;
-            q: Record<string, unknown>;
-            hab?: { pre: string };
-            wits?: string[];
-          },
-        ) {
-          queuedQueries.push({
-            pre: request.pre,
-            route: request.route,
-            q: request.q,
-            hab: request.hab?.pre ?? null,
-            wits: request.wits,
-          });
+        enqueue(request: QueryRequest) {
+          queuedQueries.push(request);
         },
-      } as unknown as QueryCoordinator;
+      };
       const coordinator = new Anchorer(hby, { poster, querying });
 
       coordinator.beginLatest(delegate.pre, delegate.kever!.sn);
@@ -804,7 +760,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
             d: delegate.kever!.said!,
           },
         },
-        hab: delegate.pre,
+        signer: delegate.pre,
         wits: [delegatorWitness.pre],
       }]);
     } finally {

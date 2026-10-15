@@ -393,11 +393,11 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
               pre: remoteController.pre,
               route: "logs" as const,
               q: { s: "1", fn: "0" },
-              hab: sender,
+              signer: sender.pre,
               wits: [remoteWitness.pre],
             });
           const waiting = runtime.querying.watchSeqNo(remoteController.pre, 1, {
-            hab: sender,
+            signer: sender.pre,
             wits: [remoteWitness.pre],
           });
           yield* runtime.querying.processPending();
