@@ -49,7 +49,7 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
         pre: hab.pre,
         src: hab.pre,
         route: "ksn",
-        query: {},
+        q: {},
       });
       runtime.cues.push({
         kin: "stream",
@@ -487,7 +487,7 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
         },
       },
     });
-    const cue = { kin: "query" as const, pre: sender.pre, src: sender.pre, route: "logs", query: {} };
+    const cue = { kin: "query" as const, pre: sender.pre, src: sender.pre, route: "logs", q: {} };
     const route = () => {
       routes++;
       return {
@@ -625,7 +625,7 @@ Deno.test("cue delivery releases its guarded turn but retains owners until HTTP 
         },
       },
     });
-    runtime.cues.push({ kin: "query", pre: hab.pre, src: hab.pre, route: "logs" });
+    runtime.cues.push({ kin: "query", pre: hab.pre, src: hab.pre, route: "logs", q: {} });
     runtime.deliveries.enqueueCue(hab, runtime.cues, () => ({
       sender: hab.pre,
       recipient: hab.pre,

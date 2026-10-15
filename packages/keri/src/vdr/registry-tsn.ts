@@ -122,7 +122,7 @@ export class RegistryStateReceiver {
           pre: issuer,
           src: aid,
           route: typ === "registry-mae" ? "logs" : "tels",
-          query: typ === "registry-mae" ? { i: issuer } : { ri: regk, i: "" },
+          q: typ === "registry-mae" ? { i: issuer } : { ri: regk, i: "" },
         }]
         : [];
       this.rvy.cues.checkSpace(cues.length);

@@ -685,7 +685,7 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
         assertEquals(missing.status, 403, "an older authorized cue cannot override missing source state");
         yield* call(() => missing.text());
         assertEquals(
-          runtime.querying.pending.peekHead()?.query.s,
+          runtime.querying.pending.peekHead()?.q.s,
           "63",
           "HTTP preserves the exact missing-state query",
         );

@@ -315,7 +315,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
         {
           pre: string;
           route: string;
-          query: Record<string, unknown>;
+          q: Record<string, unknown>;
           hab: string | null;
           wits?: string[];
         }
@@ -384,7 +384,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
           request: {
             pre: string;
             route: string;
-            query: Record<string, unknown>;
+            q: Record<string, unknown>;
             hab?: { pre: string };
             wits?: string[];
           },
@@ -392,7 +392,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
           queuedQueries.push({
             pre: request.pre,
             route: request.route,
-            query: request.query,
+            q: request.q,
             hab: request.hab?.pre ?? null,
             wits: request.wits,
           });
@@ -444,7 +444,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
       assertEquals(queuedQueries, [{
         pre: delegator.pre,
         route: "logs",
-        query: {
+        q: {
           fn: "0",
           s: "0",
           a: { i: delegate.pre, s: "0", d: delegate.kever!.said! },
@@ -719,7 +719,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
         {
           pre: string;
           route: string;
-          query: Record<string, unknown>;
+          q: Record<string, unknown>;
           hab: string | null;
           wits?: string[];
         }
@@ -767,7 +767,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
           request: {
             pre: string;
             route: string;
-            query: Record<string, unknown>;
+            q: Record<string, unknown>;
             hab?: { pre: string };
             wits?: string[];
           },
@@ -775,7 +775,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
           queuedQueries.push({
             pre: request.pre,
             route: request.route,
-            query: request.query,
+            q: request.q,
             hab: request.hab?.pre ?? null,
             wits: request.wits,
           });
@@ -795,7 +795,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
       assertEquals(queuedQueries, [{
         pre: delegator.pre,
         route: "logs",
-        query: {
+        q: {
           fn: "0",
           s: "0",
           a: {

@@ -57,7 +57,7 @@ const ignoreSink: CueSink = {
 interface QueryRequest {
   pre: string;
   route: string;
-  query: Record<string, unknown>;
+  q: Record<string, unknown>;
   hab?: Hab;
   src?: string;
   wits?: string[];
@@ -173,13 +173,6 @@ interface QueryContinuation {
   tick(coordinator: QueryCoordinator): void;
 }
 
-/** Copy one portable query body before runtime adds or removes helper fields. */
-function cloneQueryBody(
-  query: Record<string, unknown>,
-): Record<string, unknown> {
-  return { ...query };
-}
-
 /**
  * Return the sole local habitat when exactly one exists.
  *
@@ -193,14 +186,9 @@ function soleHab(hby: Habery): Hab | null {
   return first.done || !habitats.next().done ? null : first.value;
 }
 
-/** Extract the raw portable query body from either `query` or legacy `q`. */
-function queryBodyFromCue(cue: QueryCue): Record<string, unknown> {
-  return cloneQueryBody(cue.query ?? cue.q ?? {});
-}
-
 /** Resolve the queried AID from cue-level or body-level portability hints. */
 function extractQueriedPrefix(cue: QueryCue): string | null {
-  const body = cue.query ?? cue.q ?? {};
+  const body = cue.q;
   const pre = cue.pre
     ?? (typeof body.pre === "string" ? body.pre : null)
     ?? (typeof body.i === "string" ? body.i : null);
@@ -216,7 +204,7 @@ function extractQueriedPrefix(cue: QueryCue): string | null {
  *   `Hab.query(...)`
  */
 function normalizeOutboundQuery(cue: QueryCue): Record<string, unknown> {
-  const body = queryBodyFromCue(cue);
+  const body = { ...cue.q };
   if (body.sn !== undefined && body.s === undefined) {
     body.s = body.sn;
   }
@@ -310,7 +298,7 @@ export class KeyStateNoticer implements QueryContinuation {
       coordinator.enqueue({
         pre: this.pre,
         route: "ksn",
-        query: { fn: "0", s: "0" },
+        q: { fn: "0", s: "0" },
         hab: this.hab,
         wits: this.wits,
       });
@@ -370,7 +358,7 @@ export class LogQuerier implements QueryContinuation {
       coordinator.enqueue({
         pre: this.pre,
         route: "logs",
-        query: { fn: "0", s: "0" },
+        q: { fn: "0", s: "0" },
         hab: this.hab,
         wits: this.wits,
       });
@@ -438,7 +426,7 @@ export class SeqNoQuerier implements QueryContinuation {
       coordinator.enqueue({
         pre: this.pre,
         route: "logs",
-        query: {
+        q: {
           fn: encodeHexOrdinal(this.fn),
           s: encodeHexOrdinal(this.targetSn),
         },
@@ -498,7 +486,7 @@ export class AnchorQuerier implements QueryContinuation {
       coordinator.enqueue({
         pre: this.pre,
         route: "logs",
-        query: { fn: "0", s: "0", a: { ...this.anchor } },
+        q: { fn: "0", s: "0", a: { ...this.anchor } },
         hab: this.hab,
         wits: this.wits,
       });
@@ -618,10 +606,10 @@ export class QueryCoordinator implements CueSink {
    */
   enqueue(request: QueryRequest): void {
     if (this.closed) throw new Error("Query coordinator is closed");
-    const { pre, route, query, src, wits } = request;
-    this.pending.admit({ kin: "query", pre, route, query, src, wits }, () => ({
+    const { pre, route, q, src, wits } = request;
+    this.pending.admit({ kin: "query", pre, route, q, src, wits }, () => ({
       ...request,
-      query: cloneQueryBody(query),
+      q: { ...q },
       wits: wits ? [...wits] : undefined,
     }));
   }
@@ -638,7 +626,7 @@ export class QueryCoordinator implements CueSink {
       return {
         pre,
         route: cue.route ?? "logs",
-        query: normalizeOutboundQuery(cue),
+        q: normalizeOutboundQuery(cue),
         src: cue.src,
         wits: cue.wits ? [...cue.wits] : undefined,
       };
@@ -740,7 +728,7 @@ export class QueryCoordinator implements CueSink {
                 kin: "query",
                 pre: request.pre,
                 route: request.route,
-                query: request.query,
+                q: request.q,
                 src: request.src,
                 wits: request.wits,
               };
@@ -888,7 +876,7 @@ export class QueryCoordinator implements CueSink {
       hab,
       pre,
       route: cue.route ?? "logs",
-      query: normalizeOutboundQuery(cue),
+      q: normalizeOutboundQuery(cue),
       src: cue.src,
       wits: cue.wits,
     });
@@ -912,14 +900,14 @@ export class QueryCoordinator implements CueSink {
       return null;
     }
 
-    const query = cloneQueryBody(request.query);
+    const query = { ...request.q };
     return {
       cue: {
         kin: "query",
         pre: request.pre,
         src,
         route: request.route,
-        query,
+        q: query,
         wits: request.wits ? [...request.wits] : undefined,
       },
       messages: [hab.query(request.pre, src, query, request.route)],

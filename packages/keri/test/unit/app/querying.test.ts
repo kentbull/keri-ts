@@ -18,8 +18,14 @@ import { type CueSink } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { QueryCoordinator } from "../../../src/app/querying.ts";
 import { reserveCueBytes } from "../../../src/core/cue-admission.ts";
+import type { QueryCue, TelQueryCue } from "../../../src/core/cues.ts";
 import { type KeverEventEnvelope } from "../../../src/core/eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
+
+// @ts-expect-error There is one query body; the legacy alias cannot coexist with q.
+void ({ kin: "query", q: {}, query: {} } satisfies QueryCue);
+// @ts-expect-error TEL recovery must identify its registry and credential.
+void ({ kin: "telquery", q: { i: "credential" } } satisfies TelQueryCue);
 
 function eventEnvelope(
   serder: SerderKERI,
@@ -602,13 +608,13 @@ Deno.test("query queues keep failed deliveries and defer newly appended work to 
       const hab = hby.makeHab("alice");
       seedControllerEndpoint(hby, hab.pre);
       const coordinator = new QueryCoordinator(hby, { hab, maxPending: 3, maxContinuations: 1 });
-      const request = { pre: hab.pre, src: hab.pre, route: "logs", query: {} };
+      const request = { pre: hab.pre, src: hab.pre, route: "logs", q: {} };
       coordinator.enqueue(request);
       coordinator.enqueue(request);
       coordinator.enqueue(request);
       assertThrows(() => coordinator.enqueue(request), ResourceLimitError);
       assertEquals(
-        coordinator.enqueueCue({ kin: "query" }),
+        coordinator.enqueueCue({ kin: "query", q: {} }),
         false,
         "Ineligible metadata never claims pending admission",
       );
@@ -665,7 +671,7 @@ Deno.test("query cancellation preserves its in-flight queue credit and permits t
       seedControllerEndpoint(hby, hab.pre);
       const entered = Promise.withResolvers<void>();
       const coordinator = new QueryCoordinator(hby, { hab, maxPending: 1 });
-      const request = { pre: hab.pre, src: hab.pre, route: "logs", query: {} };
+      const request = { pre: hab.pre, src: hab.pre, route: "logs", q: {} };
       coordinator.configure({
         hab,
         sink: {
@@ -712,7 +718,7 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       const hab = hby.makeHab("alice");
       seedControllerEndpoint(hby, hab.pre);
       const runtime = yield* createAgentRuntime(hby), coordinator = runtime.querying;
-      const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, route: "logs", query: {} };
+      const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, route: "logs", q: {} };
       assertThrows(() => reserveCueBytes(hby.db.resources, [cue], 64, undefined, { copies: 0 }), RangeError);
       const finite = new ResourcePolicy({ bytes: 25000 });
       let floor: unknown;
@@ -727,7 +733,7 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       let copied = false, observed: unknown;
       const guarded = {
         ...cue,
-        query: {
+        q: {
           get s() {
             copied = true;
             return "0";
@@ -741,7 +747,7 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       assertStrictEquals(refusal, observed);
       assertEquals([refusal.reason, copied, coordinator.pending.length], ["busy", false, 0]);
       occupied.reservation.release();
-      coordinator.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", query: {}, hab });
+      coordinator.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, hab });
       coordinator.enqueueCue({ ...cue, pre: "unresolved", src: undefined });
       const retained = hby.db.resources.used.bytes;
       yield* coordinator.processPending(runtime); // The default sink retires resolved input; unresolved metadata rotates.

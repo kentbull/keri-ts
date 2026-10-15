@@ -129,7 +129,7 @@ export class CredentialStateReceiver {
           pre: issuer,
           src: aid,
           route: typ === "credential-mae" ? "logs" : "tels",
-          query: typ === "credential-mae" ? { i: issuer } : { ri: regk, i: typ === "credential-mre" ? "" : vci },
+          q: typ === "credential-mae" ? { i: issuer } : { ri: regk, i: typ === "credential-mre" ? "" : vci },
         }]
         : [];
       this.rvy.cues.checkSpace(cues.length);
