@@ -7,16 +7,16 @@ import { prepareCueEmission } from "./cue-preparation.ts";
 import type { Hab } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
-/** Immediate source-head transfer; busy preserves it, ineligible uses existing interpretation/sink handling. */
-export type CueAdmission = "transferred" | "busy" | "ineligible";
+/** Immediate source-head transfer; ineligible records use the ordinary interpreter/sink path. */
+export type CueAdmission = "transferred" | "ineligible";
 
 /** Host-facing emissions and optional synchronous transfer of the guarded source head. */
 export interface CueSink {
-  /** Synchronous guarded admission only: no waiting, reentry or destructive fallback on capacity refusal. */
+  /** Synchronous publication under the guard; waiting belongs to delivery. */
   admitCue?(source: Deck<AgentCue>, interpreter: Hab | null): CueAdmission;
-  /** Admit source retention and one finite query before invoking its synchronous signing/route preparation. */
+  /** Prepare and publish one query synchronously before removing the source record. */
   admitQuery?(cue: QueryCue, prepare: () => CueEmission | null): CueAdmission;
-  /** Synchronous local transformation under admitted interpretation/output credit and the Reactor guard. */
+  /** Synchronous local transformation under the Reactor guard. */
   prepareEmission?(emission: CueEmission): CueEmission;
   /** Delivery of a prepared emission; all waits/cleanup run outside the guard. */
   sendPrepared?(emission: CueEmission): Operation<void>;
@@ -82,7 +82,7 @@ export function processCuesOnce(
         const result: { admission: CueAdmission; prepared: boolean } = { admission: "ineligible", prepared: false };
         yield* runtime.reactor.settle(undefined, {}, function*() {
           result.admission = sink.admitCue?.(runtime.cues, cueHab) ?? "ineligible";
-          if (result.admission === "transferred" || result.admission === "busy") return;
+          if (result.admission === "transferred") return;
           if (result.admission !== "ineligible") throw new TypeError("Invalid immediate cue admission");
           result.prepared = prepareCueEmission(
             cueHab,
@@ -94,7 +94,6 @@ export function processCuesOnce(
             (emission) => sink.prepareEmission?.(emission) ?? emission,
           );
         });
-        if (result.admission === "busy") return false;
         if (result.admission === "transferred") return true;
         if (!result.prepared) return false;
         if (emission) yield* (sink.sendPrepared ?? sink.send).call(sink, emission);

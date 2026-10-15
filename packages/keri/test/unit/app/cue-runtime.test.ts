@@ -411,12 +411,12 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
       assertEquals(runtime.deliveries.enqueueCue(sender, runtime.cues, route), { kind: "prepared" });
       const query = sender.query(sender.pre, sender.pre, { route: "logs" as const, q: {} });
       for (let index = 0; index < 9; index++) {
-        runtime.deliveries.enqueue(() => ({
+        runtime.deliveries.enqueue({
           url: "https://query.test/",
           body: query,
           bodyMode: "header",
           destination: sender.pre,
-        }));
+        });
       }
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
@@ -474,12 +474,12 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
         failed,
       );
-      runtime.deliveries.enqueue(() => ({
+      runtime.deliveries.enqueue({
         url: "https://query.test/",
         body: query,
         bodyMode: "header",
         destination: sender.pre,
-      }));
+      });
       const attempts = packets.first.length;
       assertStrictEquals(yield* call(() => assertRejects(() => run(() => runtime.deliveries.close()))), cleanupFailure);
       assertEquals([runtime.deliveries.hasPending, runtime.resources.used.bytes, returns], [false, 0, 1]);

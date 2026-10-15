@@ -1,10 +1,4 @@
-import {
-  concatBytes,
-  ResourceAdmissionError,
-  ResourceLimitError,
-  ResourcePolicy,
-  type ResourceReservation,
-} from "cesr-ts";
+import { concatBytes, type ResourceAdmissionError } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
 import type { AgentCue } from "../core/cues.ts";
@@ -25,12 +19,6 @@ import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
 import type { QueryReply } from "./query-replies.ts";
 import { converseCesrTcp } from "./tcp-conversation.ts";
-
-/** One local query queue attempt; only its own byte capacity refusal becomes a value. */
-type QueryDeliveryAdmission =
-  | { kind: "queued" }
-  | { kind: "ineligible" }
-  | { kind: "refuse"; error: ResourceAdmissionError };
 
 /**
  * Resolve the actual transport URL for one query destination AID.
@@ -82,31 +70,24 @@ interface QueryDelivery {
   destination: string;
 }
 
-// Query-request accounting remains a separate removal cut.
-const requestBytes = 8 * 1024 ** 2, routeBytes = 1024 ** 2, preparationBytes = 24 * 1024 ** 2;
-
-/** One shared item slot owns either query bytes, a lazy cue cursor or an exact failed packet. */
-type AdmittedDelivery =
-  | { kind: "query"; delivery: QueryDelivery; credit: ResourceReservation }
+/** One pending query record, delivery cursor or exact failed packet. */
+type PendingDelivery =
+  | { kind: "query"; delivery: QueryDelivery }
   | { kind: "cue"; delivery: CueDelivery }
   | { kind: "reply"; delivery: DirectReplyDelivery }
   | { kind: "target"; delivery: PreparedCesrTarget };
 
 /** Retire the actual obligations for this queue entry after joined transport cleanup. */
-function releaseDelivery(entry: AdmittedDelivery): void {
-  if (entry.kind === "query") {
-    entry.credit.release();
-  } else if (entry.kind === "cue") {
-    entry.delivery.release();
-  } else if (entry.kind === "reply") {
+function releaseDelivery(entry: PendingDelivery): void {
+  if (entry.kind === "cue" || entry.kind === "reply") {
     entry.delivery.release();
   }
 }
 
-/** Own query/cue delivery on one finite queue; network work executes outside guarded preparation. */
+/** Own query/cue delivery on an ordinary queue; network work executes outside guarded preparation. */
 export class RuntimeDeliveries {
   /** Pending concrete deliveries; each active transport manages its actual I/O. */
-  private readonly pending = new Deck<AdmittedDelivery>();
+  private readonly pending = new Deck<PendingDelivery>();
   /** Command-local and background drains cannot deliver the same head concurrently. */
   private draining = false;
   /** Active delivery cancellation and its joined completion belong to runtime shutdown. */
@@ -116,50 +97,10 @@ export class RuntimeDeliveries {
   /** Closed queues reject all later admissions. */
   private closed = false;
 
-  /** Borrow the same ledger as runtime parsing, crypto and HTTP reply ownership. */
-  constructor(private readonly resources = new ResourcePolicy()) {}
-
-  /** Admit prepared wire capacity; input records stay borrowed under their existing source ownership. */
-  enqueue(
-    prepare: () => QueryDelivery | undefined,
-  ): QueryDeliveryAdmission {
+  /** Append a prepared query record; signing and endpoint selection belong to the producer. */
+  enqueue(delivery: QueryDelivery): void {
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    const floor = requestBytes + routeBytes + preparationBytes;
-    if (floor > this.resources.limits.bytes) {
-      return {
-        kind: "refuse",
-        error: new ResourceAdmissionError("Query preparation exceeds shared byte capacity", "limit"),
-      };
-    }
-    let retained: ResourceReservation | undefined, preparation: ResourceReservation | undefined;
-    let queued = false;
-    try {
-      const credit = this.resources.reserve({ bytes: requestBytes + routeBytes });
-      if (credit.kind === "refuse") {
-        return { kind: "refuse", error: new ResourceAdmissionError("Query bytes are busy", credit.reason) };
-      }
-      retained = credit.reservation;
-      const temporary = this.resources.reserve({ bytes: preparationBytes });
-      if (temporary.kind === "refuse") {
-        return { kind: "refuse", error: new ResourceAdmissionError("Query preparation is busy", temporary.reason) };
-      }
-      preparation = temporary.reservation;
-      const delivery = prepare();
-      if (!delivery) return { kind: "ineligible" };
-      if (this.closed) throw new Error("Runtime deliveries are closed");
-      if (delivery.body.buffer.byteLength > requestBytes) {
-        throw new ResourceLimitError("Query request exceeds byte limit");
-      }
-      if (128 + 2 * (delivery.url.length + delivery.destination.length) > routeBytes) {
-        throw new ResourceLimitError("Query route metadata exceeds byte limit");
-      }
-      this.pending.push({ kind: "query", delivery, credit: retained });
-      queued = true;
-      return { kind: "queued" };
-    } finally {
-      preparation?.release();
-      if (!queued) retained?.release();
-    }
+    this.pending.push({ kind: "query", delivery });
   }
 
   /** Guarded interpretation and route resolution borrow prepared output synchronously. */
@@ -210,7 +151,6 @@ export class RuntimeDeliveries {
     reply: QueryReply,
     onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): ReadableStream<Uint8Array> | null {
-    if (runtime.resources !== this.resources) throw new RangeError("Wrong reply resource policy");
     if (this.closed) throw new Error("Runtime deliveries are closed");
     return DirectReplyDelivery.prepare(runtime, hab, reply, (delivery, open) => {
       const stream = open();
@@ -245,7 +185,7 @@ export class RuntimeDeliveries {
     return this.draining || !this.pending.empty;
   }
 
-  /** Join active transport before releasing retained cue, query and failed-packet owners. */
+  /** Join active transport before clearing query records and closing delivery iterators. */
   *close(): Operation<void> {
     this.closed = true;
     this.active?.abort();
@@ -294,9 +234,6 @@ export class RuntimeDeliveries {
         let done = true;
         if (entry.kind === "query") yield* call(() => postQueryMessage(runtime, entry.delivery, active));
         else {
-          if (runtime.resources !== self.resources) {
-            throw new RangeError("Cue delivery requires runtime's exact policy");
-          }
           if (entry.kind === "cue" || entry.kind === "reply") {
             // Preparation stays in the existing state turn; transport and joined cleanup stay outside it.
             const preparation: { result?: CueTargetPreparation } = {};
@@ -412,9 +349,6 @@ export function queryTransportSink(
       explicitWitness: emission.cue.wits?.includes(destination) ?? false,
     });
     if (!url) throw new ValidationError(`No endpoint URL found for query destination ${destination}.`);
-    if (128 + 2 * (url.length + destination.length) > routeBytes) {
-      throw new ResourceLimitError("Query route metadata exceeds byte limit");
-    }
     const messages = emission.messages[Symbol.iterator]();
     let message: Uint8Array | undefined, failed = false, failure: unknown;
     try {
@@ -431,9 +365,7 @@ export function queryTransportSink(
     }
     if (failed) throw failure;
     if (!message) return;
-    if (message.buffer.byteLength > requestBytes) throw new ResourceLimitError("Query request exceeds byte limit");
-    const intro = introduce(signer, destination, requestBytes - message.length);
-    if (intro.length + message.length > requestBytes) throw new ResourceLimitError("Query request exceeds byte limit");
+    const intro = introduce(signer, destination);
     return { url, body: concatBytes(intro, message), bodyMode: hby.cesrBodyMode, destination };
   };
   const sink: CueSink = {
@@ -452,17 +384,15 @@ export function queryTransportSink(
       return admission;
     },
     admitQuery(cue, prepare): CueAdmission {
-      const result = runtime.deliveries.enqueue(() => prepareDelivery(prepare()));
-      if (result.kind === "refuse") {
-        if (result.error.reason === "busy") return "busy";
-        throw result.error;
-      }
-      return result.kind === "queued" ? "transferred" : "ineligible";
+      const delivery = prepareDelivery(prepare());
+      if (!delivery) return "ineligible";
+      runtime.deliveries.enqueue(delivery);
+      return "transferred";
     },
     *send(emission: CueEmission): Operation<void> {
       if (emission.kind !== "wire" || emission.cue.kin !== "query") return;
-      const result = runtime.deliveries.enqueue(() => prepareDelivery(emission));
-      if (result.kind === "refuse") throw result.error;
+      const delivery = prepareDelivery(emission);
+      if (delivery) runtime.deliveries.enqueue(delivery);
     },
   };
   return sink;

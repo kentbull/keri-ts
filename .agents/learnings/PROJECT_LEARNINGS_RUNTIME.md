@@ -54,8 +54,8 @@ cleanup borrows emission and route data. All cue queues and correlated reply
 batches carry ordinary records. Only actual output/iterator resources need cleanup;
 do not wrap cue references in retain/release handles. Reply routes retire with queued delivery even when an HTTP borrower
 keeps emission bytes alive. Preparation returns
-prepared/empty records. Query request admission still has its separate byte-refusal
-result pending removal. Failed destination preparation preserves the source; foreign preparation
+prepared/empty records. Query publication returns transferred/ineligible; there is
+no application-capacity busy result. Failed destination preparation preserves the source; foreign preparation
 failures retain their exception identity. Strict preparation callers keep their
 throwing boundary. QueryCoordinator
 prepares/adopts pending queries synchronously over committed accepted state,
@@ -167,8 +167,12 @@ duplicate queries and dependency migration. No cue inspection, capacity, policy
 identity, prepared-batch or reference-owner layer remains. QueryReplies correlates
 ordinary batches; readiness callbacks preserve paired replies and cancellation
 returns uncaptured records to the background flow. Runtime shutdown joins output
-cleanup, clears records, then closes owned stores. Runtime query-request
-accounting still awaits removal and is not a pattern for new components.
+cleanup, clears records, then closes owned stores. RuntimeDeliveries accepts
+prepared QueryDelivery records directly, without a policy constructor, request/route
+quota, preparation callback, credit or refused-admission wrapper. Query transport
+prepares signing, introduction and endpoint selection before source removal.
+Forwarding/OOBI construction limits and ReplyStreams accounting remain separate
+removal work.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
 Complete-record ingress charges shared bytes before copying; queued and processing
@@ -345,8 +349,8 @@ captures at most two frozen ranges and wire settings with a borrowed Reger.
 Queue transfer does not open readers or traverse stores. Captures carry no cue
 credit. The backing stores must remain open while replay is consumed.
 Replay captures first-seen ranges, hydrates one finite event and releases cursors
-before transport suspension. Query credits remain charged through failed delivery;
-bounded passes drain only their initial work. Generic witness and signed-exchange
+before transport suspension. Failed delivery retains its ordinary query record;
+passes drain only their initial work. Generic witness and signed-exchange
 HTTP share serializer output; authorization survives content-type retry. Receipt
 responses are intentionally finite proofs.
 Witness delegation passes the runtime's services into generic sends. TCP finite/source adapters share one writer: admission precedes socket/factory
@@ -388,23 +392,13 @@ message acceptance. The job guard must be an earlier scope resource, not a bare
 finally flag: cancellation can enter parent finally while child cleanup still joins.
 Oobiery borrows Reactor's policy; GET handle credit precedes fetch and parser stream
 credit precedes body reads. Transient saturation uses the existing queued worker.
-OOBI producers publish directly to plain Decks after durable writes. Only admitted
-queues create preparation handles; keep their real credit through failure cleanup.
-OOBI queueing and multi-URL fanout stage all child records and admit exact ordered
-cue batches before queue/moobi writes; validate every URL before mutation. Admit
-parent resolved/failed cues before terminal/contact effects. Preserve ordinary
-Deck guards. Introductions hold concrete query batches and admit actual queued children
-before BADA/proof/queue effects; unverified replies retain existing escrow/query
-publication without a child. Keep plain reply evaluation and explicit writes in
-one synchronous owner turn; finally releases actual unpublished cue batches.
-Attempt queue metadata stays staged until result admission; current queue retry
-uses row presence, not attempt-date TTL. Finite results preserve the original row
-until terminal publication. CESR result credit is an earlier scope resource held
-before queue and streaming metadata
-and Reactor body reads through joined cleanup. Failure/cancellation releases only
-unpublished result credit; full retrieval retains the published owner and is not
-universal protocol acceptance. HTTP/schema/JSON results admit before terminal
-or schema writes, with the existing queued worker retrying transient refusal.
+OOBI producers stage and validate every child URL before durable queue/moobi
+writes, then publish ordinary cues. Introductions evaluate proof and queue changes
+in one synchronous owner turn; unverified replies retain their existing escrow
+and query effects. Queue retry uses row presence. CESR retrieval can preserve
+earlier independently accepted events while remaining unfinished or failing;
+retrieval completion never implies universal protocol acceptance. Remaining HTTP,
+parser and document policies are removal work, not a reason to restore cue owners.
 
 ## Mailbox
 

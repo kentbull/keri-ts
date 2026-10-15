@@ -177,7 +177,6 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
           assertEquals(cleanup.errors, [readFailure, cleanupFailure]);
           assertEquals(runtime.resources.used.bytes, 0, "both query failure paths release unpublished credit");
           runtime.cues.push(cue);
-          const sourceBytes = runtime.resources.used.bytes;
           runtime.querying.configure({ hab: sender, sink });
           const sign = sender.query, resolve = sender.endsFor;
           const signed: Uint8Array[] = [];
@@ -192,14 +191,6 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             return resolve.apply(this, args);
           };
           try {
-            for (let index = 0; index < 8; index++) {
-              runtime.deliveries.enqueue(() => ({
-                url: `http://127.0.0.1:${port}`,
-                body: query,
-                bodyMode: "header",
-                destination: remoteController.pre,
-              }));
-            }
             runtime.querying.enqueue({
               pre: remoteController.pre,
               src: remoteController.pre,
@@ -207,14 +198,6 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               q: {},
             });
             const pending = runtime.querying.pending.peekHead();
-            yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
-            yield* runtime.querying.processPending();
-            assertStrictEquals(runtime.cues.peekHead(), cue);
-            assertStrictEquals(runtime.querying.pending.peekHead(), pending);
-            assertEquals([signed.length, resolved], [0, 0], "item refusal precedes signing and route lookup");
-            yield* runtime.deliveries.process(runtime);
-            const pendingBytes = runtime.resources.used.bytes;
-            assertEquals(pendingBytes, sourceBytes, "only the source cue retains its existing credit");
             const foreign = new ResourceAdmissionError("foreign signing busy", "busy");
             sender.query = () => {
               throw foreign;
@@ -229,8 +212,8 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             assertStrictEquals(runtime.querying.pending.peekHead(), pending);
             assertEquals(
               runtime.resources.used.bytes,
-              pendingBytes,
-              "failed signing cannot retire source cue ownership",
+              0,
+              "failed signing publishes no delivery",
             );
             sender.query = function(...args) {
               const wire = sign.apply(this, args);
@@ -240,7 +223,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
             yield* runtime.querying.processPending();
             assertEquals([runtime.cues.empty, runtime.querying.pending.empty, signed.length], [true, true, 2]);
-            assertEquals(runtime.resources.used.bytes, 18 * 1024 ** 2, "two independent wire and route owners remain");
+            assertEquals(runtime.deliveries.hasPending, true, "both prepared query records await delivery");
             const captured = concatBytes(introduce(sender, remoteController.pre), signed[0]);
             sender.rotate();
             yield* runtime.reactor.process((signal) =>
@@ -457,8 +440,8 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             ),
             ["receipt", "keyStateSaved"].map((kin) => [kin, remoteController.pre, remoteController.kever!.said]),
           );
-          assertEquals(runtime.resources.used, { bytes: 3785, streams: 0, decryptions: 0 });
-          runtime.cues.clear(); // Only queued accepted output is released; leaked transport credit would remain.
+          assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+          runtime.cues.clear(); // Ordinary accepted output records carry no transport lease.
           assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
           yield* runtime.reactor.processEscrowsOnce();
         } finally {

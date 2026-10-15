@@ -202,7 +202,6 @@ Deno.test("Query coordinator turns incomplete query cues into outbound `logs` qu
       let signatures = 0;
       requester.query = (...args) => {
         signatures++;
-        assertEquals(runtime.resources.used.bytes >= 32 * 1024 ** 2, true, "replacement signing owns preparation");
         return query.apply(requester, args);
       };
       yield* processRuntimeTurn(runtime, {
