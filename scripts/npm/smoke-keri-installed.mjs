@@ -63,7 +63,7 @@ console.error("keri-ts/db exports:", Object.keys(db).slice(0, 12).sort().join(",
 const payloadRoot = await mkdtemp(join(tmpdir(), "keri-payload-smoke-"));
 const payloadStore = new db.PayloadStore(payloadRoot, 2);
 try {
-  const sink = await payloadStore.stage(3);
+  const sink = await payloadStore.stage();
   await sink.write(new Uint8Array([1, 2, 3]));
   const payload = await sink.finish();
   await payload.promote("essr.smoke");
@@ -72,7 +72,7 @@ try {
   for await (const chunk of reopened.open()) bytes.push(...chunk);
   assert(bytes.join(",") === "1,2,3", "npm payload file changed bytes during promotion");
   await reopened.discard();
-  const aborted = await payloadStore.stage(1);
+  const aborted = await payloadStore.stage();
   await aborted.write(new Uint8Array([4]));
   await aborted.abort();
   await aborted.abort();
