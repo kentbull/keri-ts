@@ -2,8 +2,6 @@
 import { b, Dater, Diger, NumberPrimitive, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { KeriDispatchEnvelope } from "../../../src/core/dispatch.ts";
-import { KramHandoff } from "../../../src/core/kram-handoff.ts";
 import { type KramExemption, KramPolicy, type KramWindows } from "../../../src/core/kram-policy.ts";
 import { KramPruner } from "../../../src/core/kram-pruning.ts";
 import { evaluateKramTime, inspectKramReplay, type KramTimeAuthentication } from "../../../src/core/kram-time.ts";
@@ -260,7 +258,6 @@ Deno.test("KRAM finite pruning matches frozen TTL cleanup and retains exact micr
         db.pmks.add(key, new Siger({ code: "A", raw: new Uint8Array(64), index: 0 }));
         db.pmsk.pin(key, [NumberPrimitive.fromNum(0n), new Diger({ qb64: body.said! })]);
         db.ptds.add(key, new Uint8Array([0xff, 0x00]));
-        db.kpnd.pin(key, b("private snapshot"));
         pass(new KramPruner(db, policy), clock(offset));
         assertEquals((family === "message" ? db.msgc.get(key) : db.tmsc.get(txkey)) !== null, keep);
         assertEquals([
@@ -268,8 +265,7 @@ Deno.test("KRAM finite pruning matches frozen TTL cleanup and retains exact micr
           !!db.pmks.get(key).length,
           db.pmsk.get(key) !== null,
           !!db.ptds.get(key).length,
-          db.kpnd.get(key) !== null,
-        ], Array(5).fill(keep));
+        ], Array(4).fill(keep));
         assertEquals(db.xdt.get(xid) !== null, family === "transaction" && keep);
         db.msgc.rem(key);
         db.tmsc.rem(txkey);
@@ -295,7 +291,7 @@ Deno.test("KRAM finite pruning matches frozen TTL cleanup and retains exact micr
   });
 });
 
-Deno.test("KRAM orphan scan restarts for insertion behind its checkpoint and excludes live handoff", async () => {
+Deno.test("KRAM orphan scan restarts for insertion behind its checkpoint", async () => {
   await run(function*() {
     const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
     try {
@@ -322,14 +318,6 @@ Deno.test("KRAM orphan scan restarts for insertion behind its checkpoint and exc
       for (let i = 0; i < 20 && !completed; i++) completed = pruner.prune(receipt, 1).passComplete;
       assertEquals(completed, true);
       assertEquals(db.xdt.get(xid) !== null, true, "intervening commit invalidates an orphan proof");
-      const handoff = new KramHandoff(db, policy);
-      yield* handoff.intake(
-        new KeriDispatchEnvelope({ serder: body, attachmentGroups: [], local: false }),
-        function*() {
-          assertEquals(pruner.prune("2026-10-13T12:20:00.000000+00:00", 1).kind, "busy");
-          assertEquals(db.tmsc.get(["aaa", xid, "inserted"]) !== null, true);
-        },
-      );
       db.tmsc.rem(["aaa", xid, "inserted"]);
       let complete = false;
       for (let i = 0; i < 30 && !complete; i++) complete = pruner.prune(receipt, 1).passComplete;
@@ -354,7 +342,6 @@ Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without
         new MsgCacheRecord({ mdt: body.stamp!, d: 1000, ml: 60000, pml: 60000, xl: 300000, pxl: 300000 }),
       );
       db.pmkm.pin(key, body);
-      db.kpnd.pin(key, b("owned wire"));
       db.msgc.sdb.getKeys = function(options) {
         const iterable = getKeys.call(this, options);
         return new Proxy(iterable, {
@@ -384,12 +371,10 @@ Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without
       assertEquals([
         db.msgc.get(key) !== null,
         db.pmkm.get(key) !== null,
-        db.kpnd.get(key) !== null,
-      ], [true, true, true]);
+      ], [true, true]);
       db.pmkm.rem = remove;
       assertEquals(pruner.prune(receipt, 1).removed, 1, "failed cleanup cannot advance the checkpoint");
-      assertEquals([db.msgc.get(key), db.pmkm.get(key), db.kpnd.get(key)], [
-        null,
+      assertEquals([db.msgc.get(key), db.pmkm.get(key)], [
         null,
         null,
       ]);

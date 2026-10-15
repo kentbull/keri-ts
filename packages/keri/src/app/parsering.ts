@@ -272,16 +272,15 @@ function* dispatchMessage(
     if (kevery.denyList.has(sender)) return { kind: "drop", reason: "deniedSender" };
     if (kevery.allowList.size && !kevery.allowList.has(sender)) return { kind: "drop", reason: "senderNotAllowed" };
   }
-  let decision: DispatchDecision = undefined;
-  const dispatch = function*(ready: KeriDispatchEnvelope, receiverTime?: string): Operation<void> {
-    decision = yield* dispatchReadyMessage(ready, revery, kevery, exchanger, vdr, mailboxAid, receiverTime);
-    if (consume) yield* consume(ready, decision);
-  };
-  const refusal = kevery.kramer ? yield* kevery.kramer.intake(envelope, dispatch) : yield* dispatch(envelope);
-  return refusal ?? decision;
+  const result = kevery.kramer?.intake(envelope);
+  if (result && result.kind !== "ready") return result;
+  const ready = result?.envelope ?? envelope;
+  const decision = yield* dispatchReadyMessage(ready, revery, kevery, exchanger, vdr, mailboxAid, result?.receiverTime);
+  if (consume) yield* consume(ready, decision);
+  return decision;
 }
 
-/** Delegate inside the ready callback; downstream processors verify their own proof owners. */
+/** Delegate accepted evidence; downstream processors verify their own proof owners. */
 function* dispatchReadyMessage(
   envelope: KeriDispatchEnvelope,
   revery: Revery,

@@ -723,21 +723,11 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
           yield* call(() => Promise.all(queryFrames.map(discardFrame)));
         }
         assertEquals(runtime.querying.hasPendingWork(), false);
-        const started = Promise.withResolvers<void>();
-        const held = yield* spawn(() =>
-          runtime.reactor.kevery.kramer!.intake(envelopeFromFrame(valid), function*() {
-            started.resolve();
-            yield* suspend();
-          })
-        );
-        try {
-          yield* call(() => started.promise);
-          const busy = yield* call(() => post(0));
-          assertEquals(busy.status, 403, "an older authorized cue cannot override live intake refusal");
-          yield* call(() => busy.text());
-        } finally {
-          yield* held.halt();
-        }
+        const accepted = runtime.reactor.kevery.kramer!.intake(envelopeFromFrame(valid));
+        assertEquals(accepted.kind, "ready");
+        const duplicate = yield* call(() => post(0));
+        assertEquals(duplicate.status, 403, "synchronous intake completes acceptance before later HTTP work");
+        yield* call(() => duplicate.text());
       } finally {
         yield* call(() => discardFrame(valid));
       }

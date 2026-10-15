@@ -1,56 +1,61 @@
 import type { CueQueueInput } from "./cue-publishing.ts";
-/** Optional receiver-owned KRAM intake composed from qualified policy, handoff and pruning. */
-import type { ResourcePolicy } from "cesr-ts";
-import type { Operation } from "effection";
+/** Optional receiver-owned KRAM intake composed from policy, atomic staging and pruning. */
 import type { Baser } from "../db/basing.ts";
-import { makeNowIso8601 } from "../time/mod.ts";
+import { makeNowIso8601, timestampMicros } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
-import type { Deck } from "./deck.ts";
+import { Deck } from "./deck.ts";
 import type { KeriDispatchEnvelope } from "./dispatch.ts";
-import { KramHandoff, type KramHandoffRefusal } from "./kram-handoff.ts";
 import { type KramConfig, KramPolicy } from "./kram-policy.ts";
 import { KramPruner, type KramPruneResult } from "./kram-pruning.ts";
+import { type KramStageRefusal, stageKram } from "./kram-staging.ts";
 
 /** Expected pending/refusal outcomes; cancellation, corruption and infrastructure failures throw. */
-export type KramRefusal = KramHandoffRefusal;
+export type KramRefusal = KramStageRefusal | { kind: "pending"; key: readonly string[] };
+/** Accepted input borrows the caller's frame and payload owners. */
+export type KramIntakeResult = KramRefusal | { kind: "ready"; envelope: KeriDispatchEnvelope; receiverTime?: string };
 /** Explicit receiver-owned cache and exemption configuration. */
 export type { KramConfig } from "./kram-policy.ts";
 
-/** Complete optional intake; void callbacks consume/adopt evidence before the owning scope ends. */
+/** Optional receiver intake returns ordinary decisions without owning parser input. */
 export class Kramer {
   /** Shared runtime cues, or the standalone caller's drainable receiver-state notifications. */
   readonly cues: CueQueueInput;
   private readonly policy: KramPolicy;
-  private readonly handoff: KramHandoff;
   private readonly pruner: KramPruner;
   private readonly now: () => number;
 
   constructor(
-    db: Baser,
-    { config = {}, cues, now = Date.now, resources = db.resources }: {
+    private readonly db: Baser,
+    { config = {}, cues = new Deck<AgentCue>(), now = Date.now }: {
       config?: KramConfig;
       cues?: CueQueueInput;
       now?: () => number;
-      resources?: ResourcePolicy;
     } = {},
   ) {
-    if (resources !== db.resources) throw new RangeError("Kramer must borrow its backing store's resource policy");
     this.now = now;
     this.policy = new KramPolicy(db, config, now);
-    this.handoff = new KramHandoff(db, this.policy, { cues, now, resources });
-    this.cues = this.handoff.cues;
+    this.cues = cues;
     this.pruner = new KramPruner(db, this.policy);
   }
 
-  /** Consume ready evidence before joined disposal; borrowed input remains caller-owned. */
-  intake(
-    envelope: KeriDispatchEnvelope,
-    consume: (ready: KeriDispatchEnvelope, receiverTime?: string) => Operation<void>,
-  ): Operation<void | KramRefusal> {
-    const policy = this.policy;
-    return this.handoff.intake(envelope, function*(ready, receiverTime) {
-      yield* consume(ready, policy.exempts(ready.serder) ? undefined : receiverTime);
-    });
+  /** Decide intake synchronously; the parser owns subsequent dispatch and disposal. */
+  intake(envelope: KeriDispatchEnvelope): KramIntakeResult {
+    this.policy.reconcile();
+    if (this.policy.exempts(envelope.serder)) return { kind: "ready", envelope };
+    const clock = this.now();
+    if (!Number.isSafeInteger(clock)) throw new Error("Invalid KRAM receiver clock");
+    const receipt = makeNowIso8601(new Date(clock));
+    if (timestampMicros(receipt) === null) throw new Error("Invalid KRAM receiver clock");
+    const result = stageKram(this.db, this.policy, envelope, receipt);
+    if (result.kind === "missing") {
+      this.cues.push({
+        kin: "query",
+        pre: result.sender,
+        route: "logs",
+        q: result.sn === null ? {} : { s: result.sn.toString(16) },
+      });
+    }
+    return result;
   }
 
   /** Reconfigure cache windows through the durable policy transition facility. */
@@ -58,7 +63,7 @@ export class Kramer {
     this.policy.change(caches, delay);
   }
 
-  /** Schedule one finite maintenance batch, deferring during active handoff ownership. */
+  /** Run one finite synchronous maintenance batch. */
   prune(maxRows = 128): KramPruneResult {
     const now = this.now();
     if (!Number.isSafeInteger(now)) throw new Error("Invalid KRAM receiver clock");

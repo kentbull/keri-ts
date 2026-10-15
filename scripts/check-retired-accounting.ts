@@ -3,7 +3,7 @@
  * Semantic review remains necessary for renamed mechanisms and new policy.
  */
 const retired =
-  /\b(?:CueByteReservation|CueByteAdmission|CueByteLimits|reserveCueBytes|admitCueBytes|Outboxer|DisabledOutboxer|OutboxerLike|createOutboxer|OutboxMessageRecord|OutboxTargetRecord|MailboxInbox|MailboxDelivery|MailboxAdmissionError|mailboxAdmission|KramReceipt|kramReceipt|kramReceiptTime|kready|resumingReady|FactorCredits|validateKramFactors)\b/;
+  /\b(?:CueByteReservation|CueByteAdmission|CueByteLimits|reserveCueBytes|admitCueBytes|Outboxer|DisabledOutboxer|OutboxerLike|createOutboxer|OutboxMessageRecord|OutboxTargetRecord|MailboxInbox|MailboxDelivery|MailboxAdmissionError|mailboxAdmission|KramReceipt|kramReceipt|kramReceiptTime|kready|resumingReady|FactorCredits|validateKramFactors|kpnd|KramHandoff|isKramHandoffActive|kramSnapshotIdentity|snapshotKram|storeKramSnapshot|removeKramSnapshot|withKramHydration|withKramSnapshot)\b/;
 const violations: string[] = [];
 
 async function inspect(directory: string): Promise<void> {

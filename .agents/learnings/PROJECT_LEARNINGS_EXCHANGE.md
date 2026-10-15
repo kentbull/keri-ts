@@ -170,11 +170,11 @@ Do not substitute Kever's index-sorted verifier: distinct encodings may share an
 index, so intake thresholds must use unique indices. Historical sender groups
 are diagnostic only; normalization borrows owners and leaves foreign proofs separate.
 
-KRAM staging publishes cache and partial factors atomically after async rechecks.
-Completion reconstructs evidence and removes partial factors/snapshots before
-consumption; the replay cache remains. No ready receipt or acknowledgement exists.
-Downstream failure cannot revive acceptance. Keep hydrated owners scoped through
-joined disposal until snapshot removal; callback results cannot retain them.
+KRAM staging checks and publishes cache/partial factors in one synchronous transaction.
+Completion reconstructs scalar evidence and removes partial factors before returning
+a ready decision; the replay cache remains. No private snapshot, hydration, busy
+permit, ready receipt or acknowledgement exists. Children and ESSR remain borrowed
+from the current parser input. Downstream failure cannot revive acceptance.
 Rotation clears partial ownership, retaining replay cache.
 KRAM factor merging preserves exact members without byte/item credits or a
 fixed signature-pool cap. Native decoding and authentication still reject bad evidence.
@@ -189,12 +189,11 @@ KRAM time plans are read-only: cached multi partials reuse original windows; rec
 time freezes on completion. Recheck plans atomically with current keys and replay
 state before publication so competing receipts cannot replace the first one.
 
-KRAM pruning closes read cursors before atomic cleanup and defers for live handoff
-owners. Finite orphan scans restart on committed database changes; unrelated writes
+KRAM pruning closes read cursors before atomic cleanup. Finite orphan scans restart on committed database changes; unrelated writes
 can postpone cleanup. Remove the shared opener only after the final participant.
 
-Optional runtime KRAM keeps the transport consumer inside scoped ready handoff;
-never return hydrated owners or authorize HTTP from an older cue after refusal.
+Optional runtime KRAM returns explicit intake decisions to parser dispatch;
+never authorize HTTP from an older cue after refusal. The parser owns payload disposal.
 Completed nonexempt intake passes receiverTime explicitly through dispatch.
 There is no receipt token or envelope WeakMap. Freeze the first exchange
 receiverTime through route proof escrow, retry and reopen; recheck publication
