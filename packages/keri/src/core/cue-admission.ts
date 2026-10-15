@@ -5,7 +5,6 @@ import {
   ResourceAdmissionError,
   ResourceLimitError,
   type ResourcePolicy,
-  type ResourceReservation,
   Serder,
 } from "cesr-ts";
 import { CapturedKelReplay } from "../db/kel-replay.ts";
@@ -147,74 +146,6 @@ function retainedBytes(cues: readonly AgentCue[], maxNodes: number): number {
   return bytes;
 }
 
-/** Concrete cue retention credit; the measured logical charge follows its owner. */
-export type CueByteReservation = ResourceReservation & { readonly bytes: number };
-/** Only this operation's own capacity refusal is a value; inspection/service failures still throw. */
-export type CueByteAdmission =
-  | { kind: "reserve"; reservation: CueByteReservation }
-  | { kind: "refuse"; error: ResourceAdmissionError };
-
-/** Logical coexistence policy shared by strict and outcome-based retention admission. */
-type CueByteLimits = { additionalBytes?: number; maxBytes?: number; copies?: number };
-
-/** Strict producer boundary; runtime admission callers consume admitCueBytes directly. */
-export function reserveCueBytes(
-  resources: ResourcePolicy,
-  cues: readonly AgentCue[],
-  maxNodes?: number,
-  onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
-  limits: CueByteLimits = {},
-): CueByteReservation {
-  const result = admitCueBytes(resources, cues, maxNodes, limits);
-  if (result.kind === "refuse") {
-    onAdmissionRefusal?.(result.error);
-    throw result.error;
-  }
-  return result.reservation;
-}
-
-/**
- * Reserve canonical retention before copying/interpreting; caller releases after joined consumption.
- * Optional copies is conservative coexistence allowance, not a count of physical/native allocations.
- */
-export function admitCueBytes(
-  resources: ResourcePolicy,
-  cues: readonly AgentCue[],
-  maxNodes = 65536,
-  limits: CueByteLimits = {},
-): CueByteAdmission {
-  if (!Number.isSafeInteger(maxNodes) || maxNodes < 1) throw new RangeError("Invalid cue inspection limit");
-  const { additionalBytes = 0, maxBytes = Number.MAX_SAFE_INTEGER, copies = 1 } = limits;
-  if (!Number.isSafeInteger(copies) || copies < 1) throw new RangeError("Invalid cue copy allowance");
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Invalid cue byte limit");
-  if (!Number.isSafeInteger(additionalBytes) || additionalBytes < 0) throw new RangeError("Invalid cue byte floor");
-  // Logical Set/descriptor/stack allowance precedes even the metadata walk.
-  const inspectionBytes = 128 * maxNodes + 16 * cues.length + 16384;
-  const inspection = resources.reserve({ bytes: inspectionBytes });
-  if (inspection.kind === "refuse") {
-    const refusal = new ResourceAdmissionError("Cue inspection admission refused", inspection.reason);
-    return { kind: "refuse", error: refusal };
-  }
-  try {
-    const measured = retainedBytes(cues, maxNodes);
-    const bytes = measured * copies;
-    if (!Number.isSafeInteger(bytes)) throw new RangeError("Unsafe cue copy allowance");
-    if (measured > maxBytes) throw new ResourceLimitError("Cue retention exceeds finite byte limit");
-    if (bytes > resources.limits.bytes - additionalBytes - (copies > 1 ? inspectionBytes : 0)) {
-      const refusal = new ResourceAdmissionError("Cue retention exceeds combined byte capacity", "limit");
-      return { kind: "refuse", error: refusal };
-    }
-    const retained = resources.reserve({ bytes });
-    if (retained.kind === "refuse") {
-      const refusal = new ResourceAdmissionError("Cue byte admission refused", retained.reason);
-      return { kind: "refuse", error: refusal };
-    }
-    return { kind: "reserve", reservation: { bytes, release: () => retained.reservation.release() } };
-  } finally {
-    inspection.reservation.release();
-  }
-}
-
 /**
  * AgentCue admission with one queue of owned handles. Held items include preparation,
  * queued cues and transferred/fanout handles. Pulling never returns their credit.
@@ -284,7 +215,33 @@ export class CueDeck implements CueQueue {
   ): PreparedCueBatch {
     this.checkSpace(cues.length, onAdmissionRefusal);
     if (!cues.length) throw new RangeError("Empty cue preparation");
-    const credit = reserveCueBytes(this.resources, cues, this.maxNodes, onAdmissionRefusal);
+    // Only this queue owns metadata inspection and retention admission.
+    const inspectionBytes = 128 * this.maxNodes + 16 * cues.length + 16384;
+    const inspection = this.resources.reserve({ bytes: inspectionBytes });
+    if (inspection.kind === "refuse") {
+      const refusal = new ResourceAdmissionError("Cue inspection admission refused", inspection.reason);
+      onAdmissionRefusal?.(refusal);
+      throw refusal;
+    }
+    let bytes: number;
+    let retained: ReturnType<ResourcePolicy["reserve"]>;
+    try {
+      bytes = retainedBytes(cues, this.maxNodes);
+      retained = bytes > this.resources.limits.bytes
+        ? { kind: "refuse", reason: "limit", resource: "bytes" }
+        : this.resources.reserve({ bytes });
+    } finally {
+      inspection.reservation.release();
+    }
+    if (retained.kind === "refuse") {
+      const refusal = new ResourceAdmissionError(
+        retained.reason === "limit" ? "Cue retention exceeds combined byte capacity" : "Cue byte admission refused",
+        retained.reason,
+      );
+      onAdmissionRefusal?.(refusal);
+      throw refusal;
+    }
+    const credit = retained.reservation;
     let values: AgentCue[];
     try {
       values = [...cues];
@@ -316,7 +273,7 @@ export class CueDeck implements CueQueue {
           duplicate.reservation.release();
           throw error;
         }
-      }, credit.bytes + (extra ? 128 : 0));
+      }, bytes + (extra ? 128 : 0));
       ownerDecks.set(owner, this);
       return owner;
     };
