@@ -1,6 +1,7 @@
 /** Synchronous admitted cue interpretation; destination owners provide retention and joined delivery. */
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type ResourceReservation } from "cesr-ts";
-import { CueDeck, type OwnedCue, reserveCueBytes } from "../core/cue-admission.ts";
+import { type OwnedCue, reserveCueBytes } from "../core/cue-admission.ts";
+import { cueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import type { Hab } from "./habbing.ts";
@@ -35,16 +36,17 @@ export function prepareCueEmission(
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   transformEmission?: (emission: CueEmission) => CueEmission,
 ): boolean {
-  const cue = cues.peekHead();
+  const source = cueReader(cues);
+  const cue = source.peekHead();
   if (!cue) return false;
-  if (cues instanceof CueDeck && cues.resourcePolicy !== resources) {
+  if (source.resourcePolicy && source.resourcePolicy !== resources) {
     throw new RangeError("Cue interpretation requires the source deck's exact policy");
   }
   const refuse: (error: ResourceAdmissionError) => never = (error) => {
     onAdmissionRefusal?.(error);
     throw error;
   };
-  const heldInput = cues instanceof CueDeck ? cues.headRetentionBytes() : 0;
+  const heldInput = source.headRetentionBytes();
   if (heldInput + wireBytes + preparationBytes > resources.limits.bytes) {
     refuse(new ResourceAdmissionError("Cue interpretation exceeds shared byte capacity", "limit"));
   }
@@ -54,7 +56,7 @@ export function prepareCueEmission(
   let published = false, live = true;
   let emission: CueEmission | undefined;
   try {
-    if (!(cues instanceof CueDeck)) {
+    if (!source.resourcePolicy) {
       const before = resources.used.bytes;
       input = reserveCueBytes(resources, [cue], undefined, onAdmissionRefusal);
       inputBytes = resources.used.bytes - before;
@@ -71,7 +73,7 @@ export function prepareCueEmission(
       refuse(new ResourceAdmissionError("Cue interpretation admission refused", temporary.reason));
     }
     preparation = temporary.reservation;
-    if (cues instanceof CueDeck) original = cues.takeOwned()!;
+    if (source.resourcePolicy) original = source.takeOwned()!;
     emission = hab ? hab.interpretCue(cue) : {
       cue,
       messages: [],
@@ -110,9 +112,9 @@ export function prepareCueEmission(
     };
     const accepted: unknown = accept(owner);
     if (accepted !== undefined) throw new TypeError("Cue acceptance must be synchronous and return void");
-    if (!(cues instanceof CueDeck)) {
-      if (cues.peekHead() !== cue) throw new Error("Cue head changed during acceptance");
-      cues.pull();
+    if (!source.resourcePolicy) {
+      if (source.peekHead() !== cue) throw new Error("Cue head changed during acceptance");
+      source.takeOwned()!.release();
     }
     published = true;
     return true;
@@ -122,7 +124,7 @@ export function prepareCueEmission(
       live = false;
       emission = undefined;
       try {
-        if (original && cues instanceof CueDeck) cues.requeue(original);
+        if (original) source.requeue(original);
       } finally {
         input?.release();
         output?.release();

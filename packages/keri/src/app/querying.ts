@@ -1,6 +1,7 @@
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
-import { CueDeck, reserveCueBytes } from "../core/cue-admission.ts";
+import { reserveCueBytes } from "../core/cue-admission.ts";
+import { cueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CueEmission, QueryCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
@@ -657,8 +658,7 @@ export class QueryCoordinator implements CueSink {
       });
       if (admission === "transferred") {
         if (runtime.cues.peekHead() !== cue) throw new Error("Query source changed during admission");
-        const original = runtime.cues instanceof CueDeck ? runtime.cues.takeOwned()! : undefined;
-        if (!original) runtime.cues.pull();
+        const original = cueReader(runtime.cues).takeOwned()!;
         try {
           this.observeCue(cue);
         } finally {

@@ -6,7 +6,8 @@ import {
   type ResourceReservation,
 } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import { CueDeck, reserveCueBytes } from "../core/cue-admission.ts";
+import { reserveCueBytes } from "../core/cue-admission.ts";
+import { cueReader } from "../core/cue-publishing.ts";
 import type { CueEmission, QueryCue } from "../core/cues.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
@@ -481,13 +482,13 @@ export function queryTransportSink(
       });
       if (admission === "transferred") {
         if (current.cues.peekHead() !== cue) throw new Error("Query source changed during admission");
-        if (current.cues instanceof CueDeck) current.cues.takeOwned()!.release();
-        else current.cues.pull();
+        cueReader(current.cues).takeOwned()!.release();
       }
       return admission;
     },
     admitQuery(cue, prepare): CueAdmission {
-      const source = runtime.cues instanceof CueDeck && runtime.cues.peekHead() === cue ? runtime.cues : undefined;
+      const reader = cueReader(runtime.cues);
+      const source = reader.resourcePolicy && reader.peekHead() === cue ? reader : undefined;
       if (source && source.resourcePolicy !== runtime.resources) throw new RangeError("Wrong query source policy");
       let refusal: ResourceAdmissionError | DeckFullError | undefined;
       try {
