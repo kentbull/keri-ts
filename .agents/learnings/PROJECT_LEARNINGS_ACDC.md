@@ -79,7 +79,9 @@ This deliberately differs from KERIpy 71438328, whose Registry delegates these
 constructors to its eventer: the TypeScript observer shares that engine, so local
 disclosure derivation stays with the local Registry without changing wire policy.
 V2 local blind validates its schema before deriving any commitment. Keep missing
-resource, invalid content, resource limits and infrastructure failures distinct.
+resource, invalid content and infrastructure failures distinct. Schema validation
+has no byte/value/depth/reference/resource-count quotas; identity, reference
+resolution and Draft 2020-12 correctness remain required.
 The static 71438328 schema profile is separately qualified; preserve frozen927
 commitments and legacy Schemer behavior. Validation consumes borrowed originals,
 compiles private copies and never fetches references. Content-bound shallow JSON
