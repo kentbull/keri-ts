@@ -94,7 +94,7 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
       }
 
       const runtime = yield* createAgentRuntime(providerHby, {
-        mode: "indirect",
+        enableMailboxStore: true,
       });
       const mailboxer = runtime.mailboxer;
       if (!mailboxer) {
@@ -217,9 +217,7 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
           if (!recipientHab) {
             throw new Error("Expected recipient habitat.");
           }
-          const recipientRuntime = yield* createAgentRuntime(recipientHby, {
-            mode: "local",
-          });
+          const recipientRuntime = yield* createAgentRuntime(recipientHby);
 
           try {
             ingestKeriBytes(recipientRuntime, storedMessage);

@@ -1,7 +1,7 @@
 import { ResourcePolicy } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assertEquals, assertRejects } from "jsr:@std/assert";
-import type { AgentRuntime, AgentRuntimeOptions } from "../../../src/app/agent-runtime.ts";
+import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
 import {
   type CommandContextDependencies,
   withAgentRuntime,
@@ -39,8 +39,8 @@ function fakeDependencies(events: string[], hby: Habery, runtime?: AgentRuntime)
       events.push(`setup:${name}`);
       return hby;
     },
-    createAgentRuntime: function*(_hby: Habery, options: AgentRuntimeOptions = {}): Operation<AgentRuntime> {
-      events.push(`runtime:${options.mode ?? "unset"}`);
+    createAgentRuntime: function*(_hby: Habery): Operation<AgentRuntime> {
+      events.push("runtime");
       return runtime ?? fakeRuntime(events);
     },
   };
@@ -203,7 +203,7 @@ Deno.test("cli context - withAgentRuntime closes runtime before hby", async () =
     )
   );
 
-  assertEquals(events, ["setup:store", "runtime:local", "use:runtime", "runtime.close", "hby.close"]);
+  assertEquals(events, ["setup:store", "runtime", "use:runtime", "runtime.close", "hby.close"]);
 });
 
 Deno.test("cli context - withHabAndAgentRuntime closes resources when callback throws", async () => {
@@ -228,7 +228,7 @@ Deno.test("cli context - withHabAndAgentRuntime closes resources when callback t
     "delegate failed",
   );
 
-  assertEquals(events, ["setup:store", "runtime:local", "use:Ealice", "runtime.close", "hby.close"]);
+  assertEquals(events, ["setup:store", "runtime", "use:Ealice", "runtime.close", "hby.close"]);
 });
 
 Deno.test("cli context - missing name is rejected before opening resources", async () => {
@@ -273,5 +273,5 @@ Deno.test("cli context - invalid alias is rejected and opened resources are clos
     "Alias missing is invalid",
   );
 
-  assertEquals(events, ["setup:store", "runtime:local", "runtime.close", "hby.close"]);
+  assertEquals(events, ["setup:store", "runtime", "runtime.close", "hby.close"]);
 });

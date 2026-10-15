@@ -204,7 +204,7 @@ async function seedMailboxHost(
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -391,7 +391,7 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
     anchorDelegatedHab(delegatedHby, delegator, delegated);
 
     const runtime = yield* createAgentRuntime(providerHby, {
-      mode: "indirect",
+      enableMailboxStore: true,
     });
     const hab = providerHby.habByName("relay");
     ingestKeriBytes(runtime, mailbox.makeLocScheme(url, mailbox.pre, "http"));
@@ -627,7 +627,7 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
     });
 
     const runtime = yield* createAgentRuntime(providerHby, {
-      mode: "indirect",
+      enableMailboxStore: true,
     });
     const hab = providerHby.habByName("relay");
     ingestKeriBytes(runtime, mailbox.makeLocScheme(url, mailbox.pre, "http"));
@@ -882,7 +882,7 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
     });
     const hab = providerHby.habByName("mbx");
     const runtime = yield* createAgentRuntime(providerHby, {
-      mode: "indirect",
+      enableMailboxStore: true,
     });
     const mailboxer = runtime.mailboxer;
     if (!mailboxer) {
@@ -1061,7 +1061,7 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
       });
       const hab = providerHby.habByName("mbx");
       const runtime = yield* createAgentRuntime(providerHby, {
-        mode: "indirect",
+        enableMailboxStore: true,
       });
       const mailboxer = runtime.mailboxer;
       if (!mailboxer) {
@@ -1234,7 +1234,7 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
     });
     const hab = providerHby.habByName("mbx");
     const runtime = yield* createAgentRuntime(providerHby, {
-      mode: "indirect",
+      enableMailboxStore: true,
     });
     const mailboxer = runtime.mailboxer;
     if (!mailboxer) {

@@ -20,7 +20,7 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
       resources: new ResourcePolicy({ streams: 2 }),
     });
     const peer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     let server: Deno.HttpServer<Deno.NetAddr> | undefined;
     const client = Deno.createHttpClient({});
     try {
@@ -106,7 +106,7 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
           skipConfig: true,
           skipSignator: true,
         });
-        const verifier = yield* createAgentRuntime(observer, { mode: "local" });
+        const verifier = yield* createAgentRuntime(observer);
         try {
           for (const message of hby.db.clonePreIter(witness.pre)) ingestKeriBytes(verifier, message);
           yield* processRuntimeTurn(verifier, { pollMailbox: false });

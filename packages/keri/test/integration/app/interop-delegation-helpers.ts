@@ -946,7 +946,7 @@ export async function pumpTufaRuntimeUntil(
     });
     try {
       const hab = store.alias ? hby.habByName(store.alias) ?? undefined : undefined;
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       try {
         const process = () =>
           processRuntimeUntil(runtime, () => done({ hby, runtime, hab }), {

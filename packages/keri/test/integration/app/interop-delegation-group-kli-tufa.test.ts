@@ -682,7 +682,7 @@ async function postTufaGroupDelegationRequest(args: {
       skipSignator: false,
     });
     try {
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       try {
         const member1 = hby.habByName(args.member1Alias);
         const member2 = hby.habByName(args.member2Alias);

@@ -67,7 +67,7 @@ export function* dwsResolverCommand(args: Record<string, unknown>): Operation<vo
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
   );
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+  const runtime = yield* createAgentRuntime(hby);
   try {
     yield* startServer(port, consoleLogger, runtime, {
       hostname: commandArgs.listenHost ?? "127.0.0.1",

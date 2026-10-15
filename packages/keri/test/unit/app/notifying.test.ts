@@ -299,7 +299,7 @@ Deno.test("AgentRuntime owns and closes the noter it opened", async () => {
     });
 
     try {
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       assertEquals(runtime.noter?.opened, true);
       assertEquals(runtime.notifier !== null, true);
       runtime.signaler!.push({}, "/owned");
@@ -307,14 +307,14 @@ Deno.test("AgentRuntime owns and closes the noter it opened", async () => {
       assertEquals(runtime.noter?.opened, false);
       assertEquals(runtime.signaler?.count(), 0);
       const scoped = yield* call(function*() {
-        const owned = yield* createAgentRuntime(hby, { mode: "local" });
+        const owned = yield* createAgentRuntime(hby);
         owned.signaler!.push({}, "/scope-owned");
         return owned.signaler!;
       });
       assertEquals(scoped.count(), 0);
       const borrowed = new Signaler();
       yield* call(function*() {
-        const other = yield* createAgentRuntime(hby, { mode: "local", signaler: borrowed });
+        const other = yield* createAgentRuntime(hby, { signaler: borrowed });
         borrowed.push({}, "/borrowed");
         yield* other.close();
         assertEquals(borrowed.count(), 1);

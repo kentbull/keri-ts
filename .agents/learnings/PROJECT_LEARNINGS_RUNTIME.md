@@ -13,8 +13,10 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
 
 ## Scopes and state
 
-One host/runtime serves a Habery or command invocation; hosted-AID selection is
-separate from listeners. Do not auto-host every Hab or expose signatory/AEID as a
+One host/runtime serves a Habery or command invocation. AgentMode and runtimeMode
+are removed: they only changed mailbox-store defaults, not the component model.
+Hosts choose enableMailboxStore explicitly or inject a borrowed Mailboxer; ordinary
+command runtimes omit provider storage. Hosted-AID selection stays separate from listeners. Do not auto-host every Hab or expose signatory/AEID as a
 normal identity. Endpoint-role support does not imply startup should seed that role.
 Use signed loc/scheme replies through Revery, never direct locs/lans writes.
 Alias config dt/curls is the bootstrap source; synthesize localhost only when both

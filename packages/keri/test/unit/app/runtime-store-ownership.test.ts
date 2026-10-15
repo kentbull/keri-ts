@@ -42,6 +42,9 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
   await run(function*() {
     const hby = yield* createHabery({ ...habitatOptions, skipSignator: false });
     try {
+      const command = yield* createAgentRuntime(hby);
+      assertEquals(command.mailboxer, null, "Command runtimes do not construct provider mailbox storage");
+      yield* command.close();
       const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       assertEquals(runtime.resources, hby.db.resources);
       assertEquals(runtime.reactor.resources, runtime.resources);
@@ -89,7 +92,14 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
   const mailboxer = await run(() => openMailboxerForHabery(hby));
   try {
     await run(function*() {
-      const runtime = yield* createAgentRuntime(hby, { acdc: { rgy }, vdr: { reger }, resources, noter, mailboxer });
+      const runtime = yield* createAgentRuntime(hby, {
+        acdc: { rgy },
+        vdr: { reger },
+        resources,
+        noter,
+        mailboxer,
+        enableMailboxStore: false,
+      });
       assertEquals(runtime.resources, resources);
       assertEquals(runtime.services.resources, resources);
       assertEquals(runtime.reactor.resources, resources);
@@ -203,6 +213,7 @@ Deno.test("runtime stores - readonly Habery acquires no default store", async ()
       const readonly = yield* createHabery({ ...options, readonly: true });
       try {
         const runtime = yield* createAgentRuntime(readonly);
+        assertEquals(runtime.mailboxer, null);
         assertEquals(runtime.acdc.rgy, undefined);
         assertEquals(runtime.vdr.reger, undefined);
         yield* runtime.close();
@@ -469,7 +480,7 @@ Deno.test("runtime stores - mailbox cleanup joins before stores and failure stil
   const failure = new Error("mailbox cleanup failed");
   try {
     await run(function*() {
-      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       const original = runtime.mailboxDirector.close.bind(runtime.mailboxDirector);
       runtime.mailboxDirector.close = async () => {
         await original();

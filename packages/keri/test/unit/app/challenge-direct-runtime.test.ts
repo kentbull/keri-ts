@@ -65,7 +65,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
         throw new Error("Expected bob habitat.");
       }
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       const runtimeTask = yield* spawn(function*() {
         yield* runAgentRuntime(runtime, { hab });
       });

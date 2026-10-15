@@ -134,7 +134,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     await run(function*() {
-      const runtime = yield* createAgentRuntime(left, { mode: "local", notifier });
+      const runtime = yield* createAgentRuntime(left, { notifier });
       try {
         let delivered: SerderKERI | undefined;
         // Only transmission is substituted; preparation, signing, intake and replay use real owners.
@@ -185,7 +185,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     await run(function*() {
-      const runtime = yield* createAgentRuntime(left, { mode: "local", notifier });
+      const runtime = yield* createAgentRuntime(left, { notifier });
       try {
         runtime.poster.sendPreparedExchange = function*(_sender, args) {
           if (args.serder.route === "/multisig/icp") {
@@ -973,7 +973,7 @@ for (const route of ["ixn", "vcp"] as const) {
           : { ixn: messagize(event.serder, { sigers: event.sigers, gvrsn: Vrsn_1_0 }) },
       });
       await run(function*() {
-        const runtime = yield* createAgentRuntime(left, { mode: "local", notifier });
+        const runtime = yield* createAgentRuntime(left, { notifier });
         try {
           runtime.poster.sendPreparedExchange = function*(_sender, args) {
             return { serder: args.serder, deliveries: ["test"], queued: [] };
@@ -1019,7 +1019,7 @@ Deno.test("multisig issuance missing its credential neither prompts nor accepts 
       embeds: { iss: issuance.raw, anc: messagize(anchor.serder, { sigers: anchor.sigers, gvrsn: Vrsn_1_0 }) },
     });
     await run(function*() {
-      const runtime = yield* createAgentRuntime(left, { mode: "local", notifier });
+      const runtime = yield* createAgentRuntime(left, { notifier });
       try {
         yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), paths), {
           local: true,
@@ -1055,8 +1055,8 @@ for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
       const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
       const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
       await run(function*() {
-        const runtime = yield* createAgentRuntime(left, { mode: "local", notifier });
-        const peerRuntime = yield* createAgentRuntime(right, { mode: "local" });
+        const runtime = yield* createAgentRuntime(left, { notifier });
+        const peerRuntime = yield* createAgentRuntime(right);
         try {
           yield* runtime.reactor.processBytes(
             messagize(local.serder, {

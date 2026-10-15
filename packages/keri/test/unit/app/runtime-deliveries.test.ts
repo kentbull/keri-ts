@@ -33,7 +33,7 @@ Deno.test("query transport prepares and queues wire without an application credi
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
     hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, wits: [hab.pre], route: "logs" as const, q: {} };
       const sink = queryTransportSink(runtime, hby, hab);

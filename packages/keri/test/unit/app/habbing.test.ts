@@ -544,7 +544,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
             url: `tcp://127.0.0.1:${(server.address() as { port: number }).port}`,
           });
           delegator.interact({ data: [{ i: witnessed.pre, s: "0", d: event.said }] });
-          const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+          const runtime = yield* createAgentRuntime(hby);
           try {
             runtime.poster.sendBytes = poster.sendBytes; // Reuse the fixture's delegator mailbox sink; witness TCP is real.
             runtime.delegating.beginLatest(witnessed.pre, 0, { communicationHab: proxy });
@@ -1028,7 +1028,7 @@ Deno.test("Habery rotateGroupHab preserves accepted member metadata while rotati
       name: `habery-group-pending-rot-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     const remoteHby = yield* createHabery({
       name: `habery-group-pending-rot-remote-${crypto.randomUUID()}`,
       temp: true,
@@ -1334,7 +1334,7 @@ Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues",
         nsith: "1",
         toad: 0,
       });
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
 
       assertStrictEquals(hab.kevery, hby.kevery);
       assertStrictEquals(hby.kevery.local, true);
@@ -2058,7 +2058,7 @@ Deno.test("Habery rotateGroupHab repeatedly replaces an inaccessible user with t
   await run(function*() {
     const hby = yield* createHabery({ name: `group-recovery-${crypto.randomUUID()}`, temp: true });
     const observer = yield* createHabery({ name: `group-recovery-observer-${crypto.randomUUID()}`, temp: true });
-    const runtime = yield* createAgentRuntime(observer, { mode: "local" });
+    const runtime = yield* createAgentRuntime(observer);
     try {
       const services = [hby.makeHab("service1"), hby.makeHab("service2"), hby.makeHab("service3")];
       const mids = services.map((member) => member.pre);

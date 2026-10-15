@@ -1,9 +1,14 @@
 # Payload storage and recovery plan
 
+The [accepted simplification](../PARITY_ROADMAP.md) governs architecture and takes precedence
+over conflicting older requirements here; existing protocol obligations remain.
+
 Owner: roadmap **5**, under [ADR-0013](../../adr/adr-0013-simple-component-flows.md).
 Remove storage accounting and unsupported delivery persistence. Existing payload
 and accepted-evidence foundations still need final composed qualification; this
-plan does not preserve their byte-credit architecture.
+plan does not preserve their byte-credit architecture. The accepted
+[buffered parser](../cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) removes parser-owned
+staging; this is a target decision, not a claim of completed implementation.
 
 ## Removal units
 
@@ -16,8 +21,9 @@ plan does not preserve their byte-credit architecture.
    Keep provider Mailboxer messages/topics and Baser `tops` polling cursors.
 4. Keep KERIpy partial-signature/factor escrows and replay/timeliness caches;
    remove accounting and downstream acknowledgement coupling around them.
-5. Preserve actual payload file/reference publication and joined cleanup. Remove
-   storage quota parameters and claims, not digest/size consistency or disposal.
+5. Retain actual payload file/reference publication and joined cleanup only for
+   demonstrated storage consumers. Delete parser-only sinks, stage registries and
+   reconstruction wrappers. Keep digest/size consistency and actual disposal.
 
 No old keri-ts API/data compatibility or new-to-old tests are required. Do not
 build export/recovery tools, dual writes or dormant readers for retired stores.

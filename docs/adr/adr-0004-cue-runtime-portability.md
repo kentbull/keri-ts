@@ -13,6 +13,11 @@
   - `packages/keri/src/app/cli/loc.ts`
   - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
 
+[ADR-0013](adr-0013-simple-component-flows.md) supersedes the lifecycle/scheduling
+instructions below. CueSink preparation hooks, generic delivery wrappers and
+separate command/host runtime driving remain removal work. Preserve concrete
+cue meanings and actual protocol/I/O obligations, not these coordination APIs.
+
 ## Context
 
 Gate E needs more than a shared `Deck<AgentCue>`. It needs cue handling to be a

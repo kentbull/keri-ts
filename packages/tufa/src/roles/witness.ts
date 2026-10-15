@@ -29,7 +29,6 @@ export function* runWitnessHost(
   }: WitnessHostOptions,
 ): Operation<void> {
   yield* runHostKernel(hby, {
-    runtimeMode: "both",
     enableMailboxStore: true,
     serviceHab,
     seedHabs: [serviceHab],

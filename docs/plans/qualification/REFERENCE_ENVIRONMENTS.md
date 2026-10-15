@@ -1,8 +1,8 @@
 # Reference environment qualification inventory
 
-Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
-application accounting and unsupported delivery durability, without old-version
-keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+Planning constraint: the [accepted simplification](../PARITY_ROADMAP.md) supersedes older
+architecture requirements. Concrete owners, one worker model and complete-enclosure
+buffering replace speculative frameworks; protocol correctness and real cleanup remain.
 
 Owner: [phase 7](QUALIFICATION_PLAN.md). Pins below are the observed continuation
 baseline, not proof of current execution. Re-verify each path and **actual imported

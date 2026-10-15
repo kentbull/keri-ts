@@ -1,5 +1,8 @@
 # Multisig plan
 
+The [accepted simplification](../PARITY_ROADMAP.md) governs architecture and takes precedence
+over conflicting older requirements here; existing protocol obligations remain.
+
 Owner: roadmap **3d**, delivered by #160–161. No duplicate implementation task
 is pending. See the [design](../../design-docs/exchange/MULTISIG.md) and
 [delivery evidence](../../reports/parity/DELIVERED_THROUGH_168.md).

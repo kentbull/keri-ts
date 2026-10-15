@@ -311,7 +311,7 @@ function* reconcileWitnessIdentity(
   hab: Hab,
   startup: WitnessStartupMaterial,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+  const runtime = yield* createAgentRuntime(hby);
   try {
     ingestKeriBytes(
       runtime,

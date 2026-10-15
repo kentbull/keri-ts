@@ -213,7 +213,7 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
           hby,
           rotateArgs.proxy,
         );
-        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby);
         try {
           runtime.delegating.beginLatest(hab.pre, hab.kever.sn, {
             communicationHab,

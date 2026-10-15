@@ -161,7 +161,7 @@ Deno.test("OOBI local state - transferable controller OOBI reply seal attachment
       });
       const pre = hab.pre;
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, pre, "http"));
       const endRole = hab.makeEndRole(pre, EndpointRoles.controller, true);
       ingestKeriBytes(runtime, endRole);
@@ -257,7 +257,7 @@ Deno.test("OOBI local state - non-transferable mailbox OOBI replies use reply ci
       });
       const pre = hab.pre;
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, pre, "http"));
       const endRole = hab.makeEndRole(pre, EndpointRoles.mailbox, true);
       ingestKeriBytes(runtime, endRole);
@@ -377,7 +377,7 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
         nsith: "1",
         toad: 0,
       });
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       const introducedUrl = `http://127.0.0.1:1234/oobi/${hab.pre}/controller`;
       const serder = new SerderKERI({
         sad: {

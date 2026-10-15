@@ -79,15 +79,6 @@ export function respondantCueSink(runtime: AgentRuntime, hab?: Hab | null): CueS
   };
 }
 
-/**
- * Shared runtime host mode.
- *
- * These modes describe where the same `AgentRuntime` bundle is being hosted,
- * not different implementations. Gate E uses `local` for command-hosted work
- * and `indirect` for the long-lived HTTP OOBI host.
- */
-export type AgentMode = "local" | "indirect" | "direct" | "both";
-
 export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
 export type { CueSink };
 
@@ -95,7 +86,7 @@ export type { CueSink };
  * Shared runtime composition root owned by one `Habery`.
  *
  * Ownership model:
- * - the root keeps only truly shared state: `hby`, host `mode`, and the shared
+ * - the root keeps only truly shared state: `hby` and the shared
  *   cue deck
  * - topic-local state belongs to the component that owns that flow
  * - `Reactor` owns parser ingress/routing/escrow work
@@ -110,15 +101,11 @@ export interface AgentRuntime {
   hby: Habery;
   /** Shared stream, byte and decryption credit; pass this same policy to hosted ESSR recipients. */
   readonly resources: ResourcePolicy;
-  mode: AgentMode;
   mailboxer: Mailboxer | null;
   noter: Noter | null;
   notifier: Notifier | null;
   signaler: Signaler | null;
-  /**
-   * Default cues retain shared byte/item credit through joined consumer cleanup.
-   * Consume with processCuesOnce or an owned transfer; naked pull cannot discard that credit.
-   */
+  /** Ordinary protocol facts, consumed by the composed cue workers. */
   cues: Deck<AgentCue>;
   /** Demand-driven input lifetime; protocol decisions stay with Reactor. */
   readonly intake: FrameIntake;
@@ -152,11 +139,11 @@ export interface AgentRuntime {
 export interface AgentRuntimeOptions {
   /** Must match the policy installed when opening Habery, including shared deployments. */
   resources?: ResourcePolicy;
-  mode?: AgentMode;
   mailboxer?: Mailboxer;
   noter?: Noter;
   signaler?: Signaler;
   notifier?: Notifier;
+  /** Construct a provider mailbox store. Omitted leaves it absent; injected mailboxer stays borrowed. */
   enableMailboxStore?: boolean;
   services?: Partial<RuntimeServices>;
   mailboxPollTransport?: MailboxPollTransport;
@@ -198,9 +185,8 @@ export interface RuntimeOobiTerminalState {
  * `tufa agent`.
  *
  * Construction rule:
- * - every host mode uses the same shared cue deck and the same component
- *   classes
- * - hosting style changes where the runtime is run, not what it is
+ * - hosts choose concrete optional stores and borrow supplied dependencies
+ * - the composition owns only stores it constructs
  */
 export function* createAgentRuntime(
   hby: Habery,
@@ -220,11 +206,9 @@ export function* createAgentRuntime(
   ) {
     throw new RangeError("AgentRuntime notification services require its exact Habery and Signaler");
   }
-  const mode = options.mode ?? "local";
   const services = resolveRuntimeServices({ ...options.services, resources });
-  const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
   const mailboxer = options.mailboxer
-    ?? (enableMailboxStore ? (yield* openRuntimeMailboxer(hby)) : null);
+    ?? (options.enableMailboxStore ? (yield* openRuntimeMailboxer(hby)) : null);
   const ownsMailboxer = options.mailboxer === undefined && mailboxer !== null;
   const ownsSignaler = injectedSignaler === undefined && hby.signator !== null;
   const signaler = injectedSignaler ?? (ownsSignaler
@@ -383,7 +367,6 @@ export function* createAgentRuntime(
   return {
     hby,
     resources,
-    mode,
     mailboxer,
     noter,
     notifier,

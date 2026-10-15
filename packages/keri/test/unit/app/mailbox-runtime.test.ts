@@ -360,7 +360,7 @@ async function seedMailboxHost(
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -408,7 +408,7 @@ async function seedHostedController(
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -613,7 +613,7 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
     });
 
     const runtime = yield* createAgentRuntime(providerHby, {
-      mode: "indirect",
+      enableMailboxStore: true,
     });
     const hab = providerHby.habByName("relay");
     ingestKeriBytes(

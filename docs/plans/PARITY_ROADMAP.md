@@ -1,7 +1,9 @@
 # KERIpy parity, removal and release roadmap
 
-Current direction (2026-10-15): remove application budgeting and unsupported
-delivery durability before remaining cleanup and release qualification. The
+Current direction (2026-10-15): concrete KERIpy-shaped runtime composition and
+complete-enclosure buffered parsing, alongside application-accounting and unsupported
+delivery-durability removal. These accepted targets remain to be implemented and
+qualified; recording them does not certify current source. The
 previous source checkpoint and resource guarantees are superseded, not proof of
 current completion. [ADR-0013](../adr/adr-0013-simple-component-flows.md) is normative.
 KERIpy reference: `7143832813cac6a394ab1faf9be83bb3372be87c`.
@@ -11,6 +13,34 @@ interop and release qualification remain incomplete. Parent-owned nested childre
 are never independently accepted GenericGroup siblings. Ordinary queues carry
 records; actual files, sockets, iterators and payloads retain explicit cleanup.
 Existing accepted-state APIs need no eviction redesign for this removal.
+
+## Accepted architecture; supersedes older preservation instructions
+
+- Plain cues and Decks; delete CueSink optional lifecycle, prepareCueEmission,
+  QueryReply admission callbacks and generic CueDelivery/RuntimeDeliveries wrappers.
+  Existing owners perform actual routing, signing and transmission.
+- Reactor has only justified protocol/connection responsibilities. Delete its
+  general execution gate; no replacement universal executor, mutex or callback bus.
+- Choose concrete dependencies at construction. Remove vague service bags and
+  repeated requireReger/Regery/Tevery/Verifier narrowing. No speculative DI layer.
+- CLI and hosts drive the same workers. Delete duplicate whole-runtime pumping,
+  forwarding-only facades without real consumers. AgentMode/runtimeMode are removed;
+  hosts choose provider mailbox construction explicitly.
+- Narrow public runtime exports to supported operations/data. Remove optional
+  hooks and wrappers; condense contracts, learnings and plans to current decisions.
+- One finite decoder shared by complete input and a small network input loop.
+  Wait for complete counted enclosures before entering them. Remove progressive
+  traversal, parser cursor, sink/EssrWriter staging and ordinary frame disposal.
+- Delete FrameIntake/TcpRead and custom parser/channel bridges. Host scopes own
+  real I/O cancellation/join. No ParseOptions/CursorOptions or socket mechanics
+  in higher layers. Keep framing, qualified evidence and real storage consumers.
+
+Memory and latency proportional to the enclosing group are accepted. No early
+GenericGroup delivery, constant-memory huge-group gate or dual-engine option.
+ADR-0012 now records this buffered decision. Older progressive directions are
+superseded; this does not
+reinstate ADR-0001 wholesale. Only a new explicit decision supported by a real
+workload can reverse this choice. Historical benchmarks are not authorization.
 
 ## Acceptance matrix
 
@@ -23,7 +53,7 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 | Protocol      | [Protocol owners][protocol-owners]                                        | Protocol semantics           |
 | Runtime       | [ESSR][essr], [retired accounting plan][resource], [transport][transport] | Installed artifacts          |
 | Storage       | [Adopted reads/recovery][storage]                                         | Actual store/cursor lifetime |
-| Qualification | [Reference pins][pins], [two observations][qualification]                 | Source closed; packed gate   |
+| Qualification | [Reference pins][pins], [full battery][qualification]                     | Source closed; packed gate   |
 | Release       | [Three packages][release]                                                 | Registry artifacts           |
 
 The [closeout report](../reports/parity/RUNTIME_PARITY_2026-10-14.md) is historical
@@ -42,14 +72,16 @@ preserving removed accounting or delivery guarantees.
    machinery. Keep KERIpy-supported escrows, caches, mailbox storage/cursors,
    accepted evidence, transactions and real cleanup. No old-version keri-ts API or
    data compatibility, migration/recovery readers, or new-to-old tests.
-3. Reconcile remaining explicit-contract and KERIpy-shaped worker cleanup. Preserve
-   wire framing and cryptographic checks; no replacement framework or no-op policy.
+3. Complete the accepted runtime and buffered-parser removals above, including
+   their transport callers, public API and documentation. Refactor real ownership
+   first; retain framing, cryptographic checks and transaction ordering. No
+   replacement framework, generic gate, no-op policy or compatibility layer.
 4. Establish live graduated-disclosure and KRAM interop in both directions,
    single-signature and multisig with witnesses and mailboxes. Existing frozen
    fixtures and legacy ACDC tests do not close this gate. `xip/pro/bar` reference
    processing stubs remain labeled; do not invent upstream support.
-5. Run the full maintained integration/e2e/interop inventory, final scale/lifecycle
-   observations and exact installed-package checks. Preserve participant topology.
+5. Run the full maintained integration/e2e/interop inventory, representative real-path/lifecycle
+   checks and exact installed-package checks. Preserve participant topology.
 6. Refresh the held version PR only after those gates pass; publish CESR, KERI and
    Tufa in dependency order and verify actual registry artifacts. No release yet.
 
@@ -76,8 +108,8 @@ exploratory probes may remain uncommitted with recorded evidence. Apply the same
 maintenance-value test to unit tests: choose the smallest meaningful regression,
 not implementation-mirroring assertions or new infrastructure by default.
 Preserve distinct protocol assertions and topology; delete redundant permutations.
-The qualification owner now limits production scale runs to 16/256 MiB once each;
-gigabyte runs, automatic repetitions and historical checkpoint reruns are deferred.
+Fixed-volume scale runs and early-enclosure delivery are no longer release gates.
+Use representative real traffic; retain meaningful protocol and cleanup evidence.
 
 Final reporting must classify **supported**, **unfinished**, **intentional
 divergence**, **reference stub**, and **unqualified** behavior separately.

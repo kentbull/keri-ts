@@ -150,7 +150,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     try {
       hby.ks.pinGbls("cesrBodyMode", initArgs.cesrBodyMode ?? "header");
       if (runtimeBootstrapNeeded(hby)) {
-        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby);
         try {
           yield* processRuntimeUntil(
             runtime,

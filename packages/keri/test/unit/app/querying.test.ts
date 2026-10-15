@@ -189,7 +189,7 @@ Deno.test("Query coordinator turns incomplete query cues into outbound `logs` qu
       });
       seedControllerEndpoint(hby, subject.pre);
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       runtime.cues.push({
         kin: "query",
         pre: subject.pre,
@@ -271,7 +271,7 @@ Deno.test("routed query cues preserve an explicit signer across interpretation a
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const ambient = hby.makeHab("ambient"), selected = hby.makeHab("selected"), subject = hby.makeHab("subject");
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const cue = {
         kin: "query",
@@ -309,7 +309,7 @@ Deno.test("Query coordinator keeps schema and credential notices notify-only eve
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const requester = hby.makeHab("requester"), subject = hby.makeHab("subject");
     seedControllerEndpoint(hby, subject.pre);
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       runtime.cues.push({ kin: "query", q: { r: "tels", pre: subject.pre } });
       runtime.cues.push({ kin: "query", q: { r: "schema", said: subject.pre } });
@@ -361,7 +361,7 @@ Deno.test("Query coordinator keeps incomplete queries notify-only when no honest
       });
       seedControllerEndpoint(hby, subject.pre);
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       runtime.cues.push({
         kin: "query",
         pre: subject.pre,
@@ -410,7 +410,7 @@ Deno.test("Query coordinator keeps incomplete queries notify-only when the targe
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       runtime.cues.push({
         kin: "query",
         pre: subject.pre,
@@ -467,7 +467,7 @@ Deno.test("Query coordinator emits mailbox-delivered queries when only a mailbox
       });
       seedMailboxEndpoint(hby, subject.pre, mailbox.pre);
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       runtime.cues.push({
         kin: "query",
         pre: subject.pre,
@@ -523,9 +523,7 @@ Deno.test("KeyStateNoticer finishes immediately once a saved key state matches l
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(requesterHby, {
-        mode: "local",
-      });
+      const runtime = yield* createAgentRuntime(requesterHby);
       const subjectIcp = subjectHby.db.getEvtSerder(
         subject.pre,
         subject.kever?.said ?? "",
@@ -601,9 +599,7 @@ Deno.test("KeyStateNoticer upgrades to a `logs` query when a saved key state is 
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(requesterHby, {
-        mode: "local",
-      });
+      const runtime = yield* createAgentRuntime(requesterHby);
       const subjectIcp = subjectHby.db.getEvtSerder(
         subject.pre,
         subject.kever?.said ?? "",
@@ -698,9 +694,7 @@ Deno.test("SeqNoQuerier and AnchorQuerier complete only after the accepted seque
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(requesterHby, {
-        mode: "local",
-      });
+      const runtime = yield* createAgentRuntime(requesterHby);
       const subjectIcp = subjectHby.db.getEvtSerder(
         subject.pre,
         subject.kever?.said ?? "",

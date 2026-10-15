@@ -29,7 +29,7 @@ export function* runIndirectHost(
   const hostedPrefixes = options.hostedPrefixes
     ?? seedHabs.map((hab) => hab.pre);
   yield* runHostKernel(hby, {
-    runtimeMode: "indirect",
+    enableMailboxStore: true,
     serviceHab: options.serviceHab,
     seedHabs,
     hostedPrefixes,

@@ -1,8 +1,8 @@
 # Exchange proofs and v2 admission plan
 
-Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
-application accounting and unsupported delivery durability, without old-version
-keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+Planning constraint: the [accepted simplification](../PARITY_ROADMAP.md) supersedes older
+architecture requirements. Concrete owners, one worker model and complete-enclosure
+buffering replace speculative frameworks; protocol correctness and real cleanup remain.
 
 Owner: roadmap **3f**, reusing proof work from **3e** (#162/165) and nested
 runtime consumers (#159–168). The [proof contract][proof] is implemented;

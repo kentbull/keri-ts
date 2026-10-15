@@ -38,8 +38,8 @@ export interface HostKernelHttpSpec {
 
 /** Package-internal host-kernel configuration for one long-lived role host. */
 export interface HostKernelSpec {
-  runtimeMode: "indirect" | "both" | "local";
-  enableMailboxStore?: boolean;
+  /** Whether this host constructs provider mailbox storage. */
+  enableMailboxStore: boolean;
   serviceHab: Hab;
   seedHabs?: readonly Hab[];
   hostedPrefixes?: readonly string[];
@@ -69,7 +69,6 @@ export function* runHostKernel(
   spec: HostKernelSpec,
 ): Operation<void> {
   const runtime = yield* createAgentRuntime(hby, {
-    mode: spec.runtimeMode,
     enableMailboxStore: spec.enableMailboxStore,
   });
   const seedHabs = spec.seedHabs ?? [spec.serviceHab];

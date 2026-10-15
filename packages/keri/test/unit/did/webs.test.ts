@@ -49,7 +49,7 @@ Deno.test("did/webs - pins DA schema from JSON resource and rebinds active alias
       name: `did-webs-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const hab = hby.makeHab("issuer", undefined, {
         transferable: true,
@@ -104,7 +104,7 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
         headDirPath,
         skipConfig: true,
       });
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       try {
         const hab = hby.makeHab(alias, undefined, {
           transferable: true,
@@ -133,7 +133,7 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
         headDirPath,
         skipConfig: true,
       });
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       try {
         const second = bindDesignatedAliases(runtime, {
           alias,
@@ -411,7 +411,7 @@ Deno.test("did/webs - keri.cesr replays controller KEL once and appends DA mater
       name: `did-webs-cesr-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const hab = hby.makeHab("issuer", undefined, {
         transferable: true,
@@ -531,7 +531,7 @@ Deno.test("did/webs - numeric thresholds project as conditionThreshold methods",
       name: `did-webs-numeric-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const hab = hby.makeHab("numeric", undefined, {
         transferable: true,
@@ -563,7 +563,7 @@ Deno.test("did/webs - flat weighted thresholds project with scaled integer weigh
       name: `did-webs-flat-weighted-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const hab = hby.makeHab("flat", undefined, {
         transferable: true,
@@ -598,7 +598,7 @@ Deno.test("did/webs - nested weighted thresholds project recursively without pat
       name: `did-webs-nested-weighted-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const hab = hby.makeHab("nested", undefined, {
         transferable: true,
@@ -641,7 +641,7 @@ Deno.test("did/webs - multi-clause weighted thresholds project as conditionAnd c
       name: `did-webs-multi-clause-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const hab = hby.makeHab("multi", undefined, {
         transferable: true,
@@ -702,7 +702,7 @@ Deno.test("did/webs - CLI generate writes artifacts under the DID path", async (
         headDirPath,
         skipConfig: true,
       });
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       let did = "";
       try {
         const hab = hby.makeHab("issuer", undefined, {
