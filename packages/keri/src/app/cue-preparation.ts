@@ -2,10 +2,10 @@ import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
 /** Synchronous admitted cue interpretation; destination owners provide retention and joined delivery. */
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type ResourceReservation } from "cesr-ts";
-import { type OwnedCue, reserveCueBytes } from "../core/cue-admission.ts";
+import { admitCueBytes, type CueByteReservation, type OwnedCue } from "../core/cue-admission.ts";
 import { cueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
-import type { Deck } from "../core/deck.ts";
+import type { DeckFullError } from "../core/deck.ts";
 import type { Hab } from "./habbing.ts";
 
 const { wireBytes, preparationBytes } = cueDeliveryBudget;
@@ -20,15 +20,13 @@ export interface PreparedCueEmission {
   release(): void;
 }
 
-/**
- * Caller preflights its existing destination item slot under the guard. Accept must
- * immediately and atomically retain this owner, or throw without publishing it;
- * async acceptance, source mutation and early release are forbidden. Optional local
- * transformation runs within preparation credit and the final finite output check.
- * Failed preparation leaves the original cue/credit
- * available for retry. Replay metadata stays borrowed and unopened, never collected.
- * This is logical copy/retention allowance, not a decoded/capture/native allocation bound.
- */
+/** Expected cue preparation refusal, including an accepting queue's occupied item slot. */
+export type CuePreparationRefusal = { kind: "refuse"; error: ResourceAdmissionError | DeckFullError };
+
+/** Synchronous source-head preparation outcome. */
+export type CuePreparationResult = { kind: "prepared" } | { kind: "empty" } | CuePreparationRefusal;
+
+/** Strict preparation boundary for callers whose policy is to fail on occupied capacity. */
 export function prepareCueEmission(
   hab: Hab | null,
   cues: CueQueueInput,
@@ -37,21 +35,44 @@ export function prepareCueEmission(
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   transformEmission?: (emission: CueEmission) => CueEmission,
 ): boolean {
+  const result = admitCueEmission(hab, cues, resources, accept, transformEmission);
+  if (result.kind === "refuse") {
+    if (result.error instanceof ResourceAdmissionError) onAdmissionRefusal?.(result.error);
+    throw result.error;
+  }
+  return result.kind === "prepared";
+}
+
+/**
+ * Caller preflights its existing destination item slot under the guard. Accept must
+ * immediately and atomically retain this owner, or refuse/throw without publishing it;
+ * async acceptance, source mutation and early release are forbidden. Optional local
+ * transformation runs within preparation credit and the final finite output check.
+ * Failed preparation leaves the original cue/credit
+ * available for retry. Replay metadata stays borrowed and unopened, never collected.
+ * This is logical copy/retention allowance, not a decoded/capture/native allocation bound.
+ */
+export function admitCueEmission(
+  hab: Hab | null,
+  cues: CueQueueInput,
+  resources: ResourcePolicy,
+  accept: (owner: PreparedCueEmission) => undefined | CuePreparationRefusal,
+  transformEmission?: (emission: CueEmission) => CueEmission,
+): CuePreparationResult {
   const source = cueReader(cues);
   const cue = source.peekHead();
-  if (!cue) return false;
+  if (!cue) return { kind: "empty" };
   if (source.resourcePolicy && source.resourcePolicy !== resources) {
     throw new RangeError("Cue interpretation requires the source deck's exact policy");
   }
-  const refuse: (error: ResourceAdmissionError) => never = (error) => {
-    onAdmissionRefusal?.(error);
-    throw error;
-  };
   const heldInput = source.headRetentionBytes();
   if (heldInput + wireBytes + preparationBytes > resources.limits.bytes) {
-    refuse(new ResourceAdmissionError("Cue interpretation exceeds shared byte capacity", "limit"));
+    return {
+      kind: "refuse",
+      error: new ResourceAdmissionError("Cue interpretation exceeds shared byte capacity", "limit"),
+    };
   }
-  let input: ReturnType<typeof reserveCueBytes> | undefined;
+  let input: CueByteReservation | undefined;
   let output: ResourceReservation | undefined;
   let preparation: ResourceReservation | undefined, original: OwnedCue | undefined;
   let inputBytes = heldInput;
@@ -59,19 +80,29 @@ export function prepareCueEmission(
   let emission: CueEmission | undefined;
   try {
     if (!source.resourcePolicy) {
-      input = reserveCueBytes(resources, [cue], undefined, onAdmissionRefusal);
+      const admission = admitCueBytes(resources, [cue]);
+      if (admission.kind === "refuse") return admission;
+      input = admission.reservation;
       inputBytes = input.bytes;
       // Synchronous inspection has no yield; classify this operation's own combined floor before contention.
       if (inputBytes + wireBytes + preparationBytes > resources.limits.bytes) {
-        refuse(new ResourceAdmissionError("Cue retention and interpretation exceed shared capacity", "limit"));
+        return {
+          kind: "refuse",
+          error: new ResourceAdmissionError("Cue retention and interpretation exceed shared capacity", "limit"),
+        };
       }
     }
     const retained = resources.reserve({ bytes: wireBytes });
-    if (retained.kind === "refuse") refuse(new ResourceAdmissionError("Cue output admission refused", retained.reason));
+    if (retained.kind === "refuse") {
+      return { kind: "refuse", error: new ResourceAdmissionError("Cue output admission refused", retained.reason) };
+    }
     output = retained.reservation;
     const temporary = resources.reserve({ bytes: preparationBytes });
     if (temporary.kind === "refuse") {
-      refuse(new ResourceAdmissionError("Cue interpretation admission refused", temporary.reason));
+      return {
+        kind: "refuse",
+        error: new ResourceAdmissionError("Cue interpretation admission refused", temporary.reason),
+      };
     }
     preparation = temporary.reservation;
     if (source.resourcePolicy) original = source.takeOwned()!;
@@ -111,14 +142,15 @@ export function prepareCueEmission(
         output!.release();
       },
     };
-    const accepted: unknown = accept(owner);
-    if (accepted !== undefined) throw new TypeError("Cue acceptance must be synchronous and return void");
+    const accepted = accept(owner);
+    if (accepted?.kind === "refuse") return accepted;
+    if (accepted !== undefined) throw new TypeError("Cue acceptance must be synchronous and return void or refusal");
     if (!source.resourcePolicy) {
       if (source.peekHead() !== cue) throw new Error("Cue head changed during acceptance");
       source.takeOwned()!.release();
     }
     published = true;
-    return true;
+    return { kind: "prepared" };
   } finally {
     preparation?.release();
     if (!published) {

@@ -2,8 +2,9 @@ import { ResourceAdmissionError } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { CueEmission, QueryCue } from "../core/cues.ts";
+import { DeckFullError } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
-import { prepareCueEmission, type PreparedCueEmission } from "./cue-preparation.ts";
+import { admitCueEmission, type CuePreparationResult, type PreparedCueEmission } from "./cue-preparation.ts";
 import type { Hab } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
@@ -89,38 +90,37 @@ export function processCuesOnce(
             owner?.release();
           }
         });
-        const result: { admission: CueAdmission } = { admission: "ineligible" };
-        let refused: { error: ResourceAdmissionError } | undefined;
-        try {
-          yield* runtime.reactor.settle(undefined, {}, function*() {
-            result.admission = sink.admitCue?.(runtime.cues, cueHab) ?? "ineligible";
-            if (result.admission === "transferred" || result.admission === "busy") return;
-            if (result.admission !== "ineligible") throw new TypeError("Invalid immediate cue admission");
-            prepareCueEmission(
-              cueHab,
-              runtime.cues,
-              runtime.resources,
-              (prepared) => {
-                owner = prepared;
-                return undefined;
-              },
-              (error) => {
-                refused = { error };
-                onAdmissionRefusal?.(error);
-              },
-              (emission) => sink.prepareEmission?.(emission) ?? emission,
-            );
-          });
-          if (result.admission === "busy") return false;
-          if (result.admission === "transferred") return true;
-          if (!owner) return false;
-          const emission = owner.emission;
-          if (emission) yield* (sink.sendPrepared ?? sink.send).call(sink, emission);
-          return true;
-        } catch (error) {
-          if (refused && refused.error === error && refused.error.reason === "busy") return false;
+        const result: { admission: CueAdmission; preparation: CuePreparationResult } = {
+          admission: "ineligible",
+          preparation: { kind: "empty" },
+        };
+        yield* runtime.reactor.settle(undefined, {}, function*() {
+          result.admission = sink.admitCue?.(runtime.cues, cueHab) ?? "ineligible";
+          if (result.admission === "transferred" || result.admission === "busy") return;
+          if (result.admission !== "ineligible") throw new TypeError("Invalid immediate cue admission");
+          result.preparation = admitCueEmission(
+            cueHab,
+            runtime.cues,
+            runtime.resources,
+            (prepared) => {
+              owner = prepared;
+              return undefined;
+            },
+            (emission) => sink.prepareEmission?.(emission) ?? emission,
+          );
+        });
+        if (result.preparation.kind === "refuse") {
+          const error = result.preparation.error;
+          if (error instanceof ResourceAdmissionError) onAdmissionRefusal?.(error);
+          if (error instanceof DeckFullError || error.reason === "busy") return false;
           throw error;
         }
+        if (result.admission === "busy") return false;
+        if (result.admission === "transferred") return true;
+        if (!owner) return false;
+        const emission = owner.emission;
+        if (emission) yield* (sink.sendPrepared ?? sink.send).call(sink, emission);
+        return true;
       });
       if (!more) break;
     }

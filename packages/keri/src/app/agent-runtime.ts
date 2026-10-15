@@ -1,4 +1,4 @@
-import { ResourceAdmissionError, type ResourcePolicy } from "cesr-ts";
+import type { ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
 import { CueDeck } from "../core/cue-admission.ts";
@@ -62,30 +62,25 @@ export function respondantCueSink(runtime: AgentRuntime, hab?: Hab | null): CueS
       const recipient = recipientForCue(cue), topic = topicForCue(cue);
       const sender = senderHabForCue(runtime.hby, cue, hab);
       if (!recipient || !topic || !sender) return "ineligible";
-      let refusal: ResourceAdmissionError | DeckFullError | undefined;
-      try {
-        const transferred = runtime.deliveries.enqueueCue(
-          interpreter,
-          source,
-          () =>
-            runtime.poster.findBytesRoute(sender, { recipient, topic }) ?? {
-              sender: sender.pre,
-              recipient,
-              topic,
-              bodyMode: runtime.hby.cesrBodyMode,
-              kind: "direct",
-              targets: [],
-            },
-          sender,
-          (error) => refusal = error,
-        );
-        return transferred ? "transferred" : "ineligible";
-      } catch (error) {
-        if (refusal && error === refusal && (refusal instanceof DeckFullError || refusal.reason === "busy")) {
-          return "busy";
-        }
-        throw error;
+      const transferred = runtime.deliveries.enqueueCue(
+        interpreter,
+        source,
+        () =>
+          runtime.poster.findBytesRoute(sender, { recipient, topic }) ?? {
+            sender: sender.pre,
+            recipient,
+            topic,
+            bodyMode: runtime.hby.cesrBodyMode,
+            kind: "direct",
+            targets: [],
+          },
+        sender,
+      );
+      if (transferred.kind === "refuse") {
+        if (transferred.error instanceof DeckFullError || transferred.error.reason === "busy") return "busy";
+        throw transferred.error;
       }
+      return transferred.kind === "prepared" ? "transferred" : "ineligible";
     },
     send: (emission) => runtime.respondant.sendWithHab(emission, hab),
   };
