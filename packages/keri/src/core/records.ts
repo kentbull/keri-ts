@@ -342,6 +342,12 @@ export class RegStateRecord extends RawRecord<RegStateRecordShape> implements Re
   }
 }
 
+/** Credential TSN KEL anchor: integer sequence and digest, unlike registry seals' hex sequence. */
+export interface CredentialKelAnchor {
+  s: number;
+  d: string;
+}
+
 export interface VcStateRecordShape {
   vn?: number[];
   i?: string;
@@ -349,7 +355,7 @@ export interface VcStateRecordShape {
   d?: string;
   ri?: string;
   ra?: Record<string, unknown>;
-  a?: Record<string, unknown>;
+  a?: CredentialKelAnchor;
   dt?: string;
   et?: string;
 }
@@ -362,7 +368,7 @@ export class VcStateRecord extends RawRecord<VcStateRecordShape> implements VcSt
   declare d?: string;
   declare ri?: string;
   declare ra?: Record<string, unknown>;
-  declare a?: Record<string, unknown>;
+  declare a?: CredentialKelAnchor;
   declare dt?: string;
   declare et?: string;
 
