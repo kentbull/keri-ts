@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: pr-stage-gate-${{ github.event.pull_request.number }}
@@ -51,64 +52,31 @@ jobs:
       run_unit: ${{ steps.scope.outputs.run_unit }}
       run_interop: ${{ steps.scope.outputs.run_interop }}
       run_package: ${{ steps.scope.outputs.run_package }}
+      unit_targets: ${{ steps.scope.outputs.unit_targets }}
+      interop_targets: ${{ steps.scope.outputs.interop_targets }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - name: select checks that can be affected
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: select checks from current PR scope
         id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           HEAD_REF: ${{ github.head_ref }}
           HEAD_AUTHOR: ${{ github.event.pull_request.user.login }}
+          SAME_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_METADATA: ${{ runner.temp }}/pr-scope.json
+          GH_TOKEN: ${{ github.token }}
         run: |
-          run_unit=false
-          run_interop=false
-          run_package=false
-
-          # The source PR already ran unit and interop gates. Version PRs only
-          # rewrite release metadata, so retain static and package validation.
-          if [[ "$HEAD_REF" == "changeset-release/master" && "$HEAD_AUTHOR" == "github-actions[bot]" ]]; then
-            echo "run_unit=false" >> "$GITHUB_OUTPUT"
-            echo "run_interop=false" >> "$GITHUB_OUTPUT"
-            echo "run_package=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          while IFS= read -r file; do
-            case "$file" in
-              .github/workflows/pr-stage-gate.yml|.github/actions/common-release-setup/*|deno.json|deno.lock|package.json|package-lock.json)
-                run_unit=true
-                run_interop=true
-                run_package=true
-                ;;
-              packages/*)
-                run_unit=true
-                run_package=true
-                ;;
-              scripts/ci/*|scripts/bench/*|packages/keri/scripts/setup_lmdb_v1.sh)
-                run_unit=true
-                ;;
-            esac
-
-            case "$file" in
-              packages/cesr/*|packages/keri/*|scripts/ci/*|.github/workflows/keri-extended-interop.yml)
-                run_interop=true
-                ;;
-            esac
-
-            case "$file" in
-              .github/workflows/npm-release.yml|scripts/npm/*|scripts/smoke-test-*|scripts/build-*)
-                run_package=true
-                ;;
-            esac
-          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-
-          echo "run_unit=$run_unit" >> "$GITHUB_OUTPUT"
-          echo "run_interop=$run_interop" >> "$GITHUB_OUTPUT"
-          echo "run_package=$run_package" >> "$GITHUB_OUTPUT"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > "$PR_METADATA"
+          deno run --allow-read --allow-write --allow-env --allow-run=git scripts/ci/pr-test-scope.ts
 
       - name: require release intent
         run: bash scripts/ci/check-changeset.sh "${{ github.event.pull_request.base.sha }}"
@@ -138,11 +106,13 @@ jobs:
             deno run -A scripts/ci/report-lmdb-runtime.ts
           fi
 
-      - name: run the maintained package and runtime suites once
+      - name: run selected unit suites
         shell: bash
+        env:
+          UNIT_TARGETS: ${{ needs.changeset-required.outputs.unit_targets }}
         run: |
           mkdir -p .test-timings
-          deno task test:unit 2>&1 | tee .test-timings/required.log
+          deno run -A scripts/ci/pr-test-scope.ts run-unit 2>&1 | tee .test-timings/required.log
 
       - name: retain required-suite timings
         if: ${{ always() }}
@@ -156,6 +126,11 @@ jobs:
   interop-parity:
     needs: changeset-required
     if: needs.changeset-required.outputs.run_interop == 'true'
+    name: interop (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.changeset-required.outputs.interop_targets) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -169,7 +144,9 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: |
+            3.13
+            ${{ env.PYTHON_VERSION }}
 
       - name: rebuild LMDB-js for KERI compatibility
         run: |
@@ -179,6 +156,7 @@ jobs:
           fi
 
       - name: check out pinned KERIpy table source
+        if: matrix.target == 'interop-parity'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kentbull/keripy
@@ -186,21 +164,24 @@ jobs:
           path: .cache/keripy-source
 
       - name: verify CESR tables against frozen table reference
+        if: matrix.target == 'interop-parity'
         env:
           KERIPY_PATH: ${{ github.workspace }}/.cache/keripy-source
         run: deno run -A packages/cesr/scripts/verify-tables.ts
 
-      - name: run representative KERIpy parity
+      - name: run selected KERIpy interop owner
         shell: bash
+        env:
+          INTEROP_TARGET: ${{ matrix.target }}
         run: |
           mkdir -p .test-timings
-          deno task test:interop 2>&1 | tee .test-timings/parity.log
+          deno run -A scripts/ci/run-keri-test-group.ts "$INTEROP_TARGET" 2>&1 | tee .test-timings/parity.log
 
       - name: retain parity timings and provenance
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: keri-interop-parity-timings-pr-${{ github.event.pull_request.number }}
+          name: keri-${{ matrix.target }}-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/
           if-no-files-found: ignore
           retention-days: 3

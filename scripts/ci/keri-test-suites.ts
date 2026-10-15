@@ -257,7 +257,7 @@ export const required = [
 ] as const;
 
 /** Maintained external matrices: full includes DID Webs but excludes endurance sweeps. */
-const interop = [
+export const interop = [
   "interop-parity",
   "interop-keystore-parity",
   "interop-keystore-storage",

@@ -44,6 +44,15 @@ non-README `.changeset/*.md` file. Use:
 Run `deno task changeset:check` before PR handoff. PR summaries must state
 whether the changeset is release-impacting or empty/no-release.
 
+## PR Validation Scope
+
+Use `docs/reference/PR_TEST_SCOPE.md` for PR-description CI controls. During this
+cleanup goal, validate the relevant units locally and record exact-head credit
+instead of duplicating them in CI. Select only applicable interop/package checks.
+Run the broad battery about every 12 implementation PRs and repair regressions
+before continuing. Static checks and changesets remain mandatory; final release
+qualification is never replaced by scoped PR checks.
+
 ## Learnings Policy
 
 Use a hierarchical memory model:
