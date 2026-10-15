@@ -257,7 +257,7 @@ export class PayloadArchive {
   private async own(payload: Payload, signal?: AbortSignal): Promise<FilePayload> {
     signal?.throwIfAborted();
     if (this.files.owns(payload) && !this.owners.get([payload.id])) return this.files.adopt(payload);
-    const sink = await this.files.stage(payload.size, signal);
+    const sink = await this.files.stage(signal);
     try {
       let size = 0;
       for await (const chunk of payload.open(signal)) {

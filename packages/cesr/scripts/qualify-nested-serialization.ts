@@ -16,7 +16,7 @@ if (!python) throw new Error("Pass the frozen KERIpy environment's Python execut
 const rows = [];
 /** Materialize only this small qualification corpus; production serializers expose open() streams. */
 async function emit(name: string, frame: CesrFrame, tree: unknown, options: SerializeOptions, essr?: string) {
-  const bytes = await collectPayload(framePayload(frame, options), 16384);
+  const bytes = await collectPayload(framePayload(frame, options));
   return { name, hex: Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(""), tree, essr };
 }
 for (const row of vectors.rows) {
@@ -57,7 +57,7 @@ for (const domain of ["txt", "bny"] as const) {
 const row = vectors.rows.find((row) => row.name === "child-genus-selector")!;
 for (const domain of ["txt", "bny"] as const) {
   const [frame] = await parseBytes(b(row.qb64));
-  const sink = new MemoryPayloadSink(16);
+  const sink = new MemoryPayloadSink();
   await sink.write(b("4BABYWJj4BABeHl6"));
   frame.nests![0].essr = essrPayload(await sink.finish(), 2, 6, frame.nests![0].gvrsn!);
   try {

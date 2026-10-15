@@ -18,7 +18,7 @@ async function expectedMessages(bytes: Uint8Array): Promise<Uint8Array[]> {
   for await (const frame of parse(chunkBytes(bytes))) {
     try {
       // HTTP joins the signed body with its counted attachment enclosure, without a stream-level GVC.
-      messages.push(concatBytes(frame.body.raw, await collectPayload(attachmentPayload(frame), 8 * 1024 * 1024)));
+      messages.push(concatBytes(frame.body.raw, await collectPayload(attachmentPayload(frame))));
     } finally {
       await frame.essr?.discard();
     }

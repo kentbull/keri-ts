@@ -50,7 +50,7 @@ async function scenario(test: (hby: Habery, sender: Hab) => Promise<void>): Prom
 
 /** Stage small independent Texters under one logical commitment, without a parser fixture. */
 async function payload(hby: Habery, parts = ["abc", "xyz"], gvrsn = Vrsn_1_0): Promise<EssrPayload> {
-  const sink = await (await hby.db.openPayloads()).files.stage(256);
+  const sink = await (await hby.db.openPayloads()).files.stage();
   let size = 0;
   for (const part of parts) {
     const texter = new Texter({ raw: b(part), code: MtrDex.Bytes_L0 });
@@ -92,7 +92,7 @@ Deno.test("exchange payload references survive request disposal and preserve rea
     await incoming.discard(); // A published same-store wire owner has been transferred.
     const stored = await hby.db.getEssr(serder.said!);
     assertExists(stored);
-    assertEquals(await collectPayload(stored.raw, 6), b("abcxyz"));
+    assertEquals(await collectPayload(stored.raw), b("abcxyz"));
     assertEquals([...hby.db.essrs.getIter([serder.said!])].map((item) => item.text), ["abc", "xyz"]);
     const reframed = await payload(hby, ["ab", "cxyz"]);
     assertEquals(
@@ -143,13 +143,13 @@ Deno.test("exchange escrow reopens owned wire and retains mailbox provenance on 
       yield* hby.db.close();
       yield* hby.db.reopen({ reuse: true });
     });
-    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw, 6), b("abcxyz"));
+    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw), b("abcxyz"));
     missing = false;
     await run(() => exchanger.processEscrows());
     assertEquals(seen, [sender.pre]);
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertExists(hby.db.exns.get([serder.said!]));
-    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw, 6), b("abcxyz"));
+    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw), b("abcxyz"));
   });
 });
 
@@ -192,7 +192,7 @@ Deno.test("exchange escrow retry preserves evidence when its stored payload read
     await run(() => exchanger.processEscrows());
     assertEquals(exchanger.complete(said), true);
     assertEquals(hby.db.epse.get([said]), null);
-    assertEquals(await collectPayload((await hby.db.getEssr(said))!.raw, 6), b("abcxyz"));
+    assertEquals(await collectPayload((await hby.db.getEssr(said))!.raw), b("abcxyz"));
   });
 });
 
@@ -252,7 +252,7 @@ Deno.test("exchange replay streams v1 and v2 ESSR into a fresh progressive parse
       for await (const frame of parse(exchanger.replay(serder.said!))) {
         frames++;
         assertEquals(frame.body.raw, serder.raw);
-        assertEquals(await collectPayload(frame.essr!.raw, 2), b(`v${gvrsn.major}`));
+        assertEquals(await collectPayload(frame.essr!.raw), b(`v${gvrsn.major}`));
         await frame.essr!.discard();
       }
       assertEquals(frames, 1);
@@ -276,7 +276,7 @@ Deno.test("exchange replay borrows bounded KERIpy ESSR rows without private meta
     for await (const frame of parse(exchanger.replay(serder.said!))) {
       frames++;
       assertEquals(frame.essr!.count, 2);
-      assertEquals(await collectPayload(frame.essr!.raw, 6), b("abcxyz"));
+      assertEquals(await collectPayload(frame.essr!.raw), b("abcxyz"));
       await frame.essr!.discard();
     }
     assertEquals(frames, 1);
@@ -301,7 +301,7 @@ Deno.test("exchange replay borrows bounded KERIpy ESSR rows without private meta
       assertEquals(chunk.buffer.byteLength <= 65536, true);
     }
     assertEquals(chunks > 1, true);
-    assertEquals(await collectPayload(split.raw, text.length), b(text));
+    assertEquals(await collectPayload(split.raw), b(text));
     await assertRejects(
       () => hby.db.getEssr(large.said!, undefined, { maxEssrBytes: text.length - 1 }),
       ResourceLimitError,
@@ -333,7 +333,7 @@ Deno.test("exchange imports preserve valid first fragments and reject corrupt re
     await supplied.discard();
     // Identical decoded bytes permit different fragmentation, but the first representation remains evidence.
     const original = hby.db.essrs.get([serder.said!]).map((texter) => texter.qb64).join("");
-    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.wire, original.length), b(original));
+    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.wire), b(original));
 
     const corrupt = message(sender, "uvwxyz");
     hby.db.epse.pin([corrupt.said!], corrupt);
@@ -381,7 +381,7 @@ Deno.test("exchange escrow retry imports KERIpy ESSR rows through ordinary publi
     assertExists(hby.db.exns.get([serder.said!]));
     assertEquals(hby.db.exchangeMeta.get([serder.said!])!.essr!.count, 2);
     // Retry snapshots borrowed rows and publishes through the same archive path.
-    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw, 6), b("abcxyz"));
+    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw), b("abcxyz"));
     assertEquals(hby.db.essrs.get([serder.said!]).map((texter) => texter.text), ["abc", "xyz"]);
   });
 });
@@ -393,20 +393,20 @@ Deno.test("plaintext references reopen the inner stream separately from cipherte
     const exchanger = new Exchanger(hby);
     await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: wire }));
     const archive = await hby.db.openPayloads();
-    const sink = await archive.files.stage(12);
+    const sink = await archive.files.stage();
     await sink.write(concatBytes(b("header"), b("inside")));
     const plaintext = await sink.finish();
     const saved = await hby.db.savePlaintext(serder.said!, plaintext, 6);
     await plaintext.discard();
-    assertEquals(await collectPayload(saved.body, 6), b("inside"));
+    assertEquals(await collectPayload(saved.body), b("inside"));
     // Reopening the database also closes/reopens the archive and reconstructs body metadata.
     await run(function*() {
       yield* hby.db.reopen();
     });
     const reopened = await hby.db.getPlaintext(serder.said!);
     assertExists(reopened);
-    assertEquals(await collectPayload(reopened.body, 6), b("inside"));
-    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw, 6), b("abcxyz"));
+    assertEquals(await collectPayload(reopened.body), b("inside"));
+    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw), b("abcxyz"));
     await assertRejects(() => hby.db.savePlaintext("unaccepted", reopened.plaintext, 6), Error, "unaccepted");
   });
 });
@@ -452,7 +452,7 @@ Deno.test("active exchange reads exclude escrow expiry and halt joins stage clea
     await reading;
     // Even expired wire remains owned while a different admission holds the runtime.
     await assertRejects(() => run(() => exchanger.processEscrows()), Error, "active admission");
-    assertEquals(await collectPayload((await hby.db.getEssr(expiring.said!))!.raw, 5), b("stale"));
+    assertEquals(await collectPayload((await hby.db.getEssr(expiring.said!))!.raw), b("stale"));
     await task.halt();
     assertEquals(closed, true);
     assertEquals(continued, false); // Joining cleanup must not resume the cancelled caller.
@@ -483,7 +483,7 @@ Deno.test("accepted ESSR decrypts, persists, and reopens as a progressive inner 
       modifiers: { src: sender.pre, dest: recipient.pre },
     })[0];
     const archive = await hby.db.openPayloads();
-    const sink = await archive.files.stage(2048);
+    const sink = await archive.files.stage();
     // Two Texters still carry one sealed-box ciphertext and one signed digest.
     for (const part of [cipher.subarray(0, 13), cipher.subarray(13)]) {
       await sink.write(new Texter({ raw: part, code: MtrDex.Bytes_L0 }).qb64b);
@@ -523,7 +523,7 @@ Deno.test("accepted ESSR decrypts, persists, and reopens as a progressive inner 
       assertEquals(frame.body.raw, inner.raw);
     }
     assertEquals(seen, 1);
-    assertEquals(await collectPayload((await hby.db.getEssr(outer.said!))!.raw, 4096), cipher);
+    assertEquals(await collectPayload((await hby.db.getEssr(outer.said!))!.raw), cipher);
   });
 });
 

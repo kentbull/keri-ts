@@ -42,7 +42,7 @@ Deno.test("nested serialization preserves admitted deep trees under the default 
     assertEquals(nodes(frame).length, depthVector.depth);
     for (const domain of ["txt", "bny"] as const) {
       // A child already has its BWA boundary; adding another wrapper would double the nesting depth.
-      const [roundtrip] = await parseBytes(await collectPayload(framePayload(frame, { domain }), 65536));
+      const [roundtrip] = await parseBytes(await collectPayload(framePayload(frame, { domain })));
       assertEquals(nodes(roundtrip).length, depthVector.depth);
       for (const node of nodes(roundtrip)) {
         assertEquals(node.body.raw, body);
@@ -63,7 +63,7 @@ Deno.test("nested serialization preserves signed trees, scoped genera and order 
       const [frame] = await parseBytes(encode(row.qb64));
       for (const domain of ["txt", "bny"] as const) {
         const output = framePayload(frame, { domain });
-        const bytes = await collectPayload(output, 16384);
+        const bytes = await collectPayload(output);
         assertEquals(bytes.length, output.size);
         const [roundtrip] = await parseBytes(bytes);
         assertEquals(summary(roundtrip), row.tree, row.name);
@@ -74,7 +74,7 @@ Deno.test("nested serialization preserves signed trees, scoped genera and order 
         const detached = concatBytes(
           domain === "txt" ? selector : decodeB64(t(selector)),
           body,
-          await collectPayload(attachmentPayload(frame, { domain }), 16384),
+          await collectPayload(attachmentPayload(frame, { domain })),
         );
         assertEquals(summary((await parseBytes(detached))[0]), row.tree, row.name);
       }
@@ -88,7 +88,7 @@ Deno.test("an explicit serialization genus normalizes every compatible descendan
   for (const major of [1, 2] as const) {
     for (const domain of ["txt", "bny"] as const) {
       const [roundtrip] = await parseBytes(
-        await collectPayload(framePayload(frame, { gvrsn: { major, minor: 0 }, domain }), 16384),
+        await collectPayload(framePayload(frame, { gvrsn: { major, minor: 0 }, domain })),
       );
       assertEquals(summary(roundtrip), row.tree);
       assertEquals(nodes(roundtrip).map((node) => node.gvrsn?.major), [major, major, major]);
@@ -99,7 +99,7 @@ Deno.test("an explicit serialization genus normalizes every compatible descendan
 Deno.test("nested children without evidence retain an explicit empty attachment counter", async () => {
   const [frame] = await parseBytes(b(vectors.rows[0].qb64));
   frame.nests![0].attachments = [];
-  const [roundtrip] = await parseBytes(await collectPayload(framePayload(frame), 16384));
+  const [roundtrip] = await parseBytes(await collectPayload(framePayload(frame)));
   assertEquals(roundtrip.nests![0].body.raw, frame.nests![0].body.raw);
   assertEquals(roundtrip.nests![0].attachments.length, 1);
   assertEquals(roundtrip.nests![0].attachments[0].items.length, 0);
@@ -111,7 +111,7 @@ Deno.test("nested ESSR serialization is lazy and reopenable without transferring
   let opens = 0;
   let discarded = 0;
   for (const node of nodes(frame)) {
-    const sink = new MemoryPayloadSink(16);
+    const sink = new MemoryPayloadSink();
     await sink.write(b("4BABYWJj4BABeHl6"));
     const owner = await sink.finish();
     node.essr = essrPayload(
@@ -139,7 +139,7 @@ Deno.test("nested ESSR serialization is lazy and reopenable without transferring
     assertEquals(opens, before);
     let previous: Uint8Array | undefined;
     for (let read = 0; read < 2; read++) {
-      const wire = await collectPayload(payload, 16384);
+      const wire = await collectPayload(payload);
       if (previous) assertEquals(wire, previous);
       previous = wire;
       const [roundtrip] = await parseBytes(wire);
@@ -147,7 +147,7 @@ Deno.test("nested ESSR serialization is lazy and reopenable without transferring
         assertEquals(summary(roundtrip), summary(frame));
         for (const node of nodes(roundtrip)) {
           assertEquals(node.essr?.count, 2);
-          assertEquals(t(await collectPayload(node.essr!.raw, 6)), "abcxyz");
+          assertEquals(t(await collectPayload(node.essr!.raw)), "abcxyz");
         }
       } finally {
         await discardFrame(roundtrip);

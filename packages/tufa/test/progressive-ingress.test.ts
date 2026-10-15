@@ -501,7 +501,7 @@ Deno.test("HTTP ESSR ownership survives a later truncated sibling and leaves no 
       assertEquals(response.status, 400);
       const stored = yield* call(() => hby.db.getEssr(first.serder.said!));
       assertExists(stored, yield* call(() => response.text()));
-      assertEquals(yield* call(() => collectPayload(stored.raw, 32)), b("first-payload"));
+      assertEquals(yield* call(() => collectPayload(stored.raw)), b("first-payload"));
       assertEquals(yield* call(() => hby.db.getEssr(second.serder.said!)), null);
       assertEquals(Array.from(Deno.readDirSync(join(hby.db.path!, "payloads", "objects"))).length, 1);
       assertEquals(Array.from(Deno.readDirSync(join(hby.db.path!, "payloads", "staging"))).length, 0);

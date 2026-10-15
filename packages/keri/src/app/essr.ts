@@ -160,7 +160,7 @@ export class EssrRecipient {
         if (error instanceof ParserError) return { kind: "reject", reason: "envelope" };
         throw error;
       }
-      const sealed = await collectPayload(ciphertext, this.maxMessageBytes, signal);
+      const sealed = await collectPayload(ciphertext, signal);
       if (!diger.verify(sealed)) return { kind: "reject", reason: "digest" };
       signal?.throwIfAborted();
       // The raw crypto boundary returns null only for authentication failure.
@@ -170,7 +170,7 @@ export class EssrRecipient {
       signal?.throwIfAborted();
       const offset = bodyOffset(plain, serder.pre);
       if (offset === null) return { kind: "reject", reason: "framing" };
-      const sink = await this.store.stage(plain.length, signal);
+      const sink = await this.store.stage(signal);
       try {
         for (let start = 0; start < plain.length; start += 65536) {
           await sink.write(plain.subarray(start, start + 65536));

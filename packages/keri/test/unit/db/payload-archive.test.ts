@@ -30,7 +30,7 @@ async function withArchive(test: (archive: PayloadArchive, db: LMDBer, root: str
 
 /** Split tiny fixture bytes across writes so publication also exercises bounded readers. */
 async function stage(store: PayloadStore, bytes = [1, 2, 3]): Promise<FilePayload> {
-  const sink = await store.stage(bytes.length);
+  const sink = await store.stage();
   await sink.write(new Uint8Array(bytes.slice(0, 1)));
   await sink.write(new Uint8Array(bytes.slice(1)));
   return await sink.finish();
@@ -44,7 +44,7 @@ Deno.test("payload archive publishes immutable references and revokes stale disp
       commits++;
     });
     await payload.discard(); // Publication owns the file; request cleanup cannot delete it.
-    assertEquals(await collectPayload(saved, 3), new Uint8Array([1, 2, 3]));
+    assertEquals(await collectPayload(saved), new Uint8Array([1, 2, 3]));
     await assertRejects(() => payload.promote("unused"), Error, "transferred");
     const duplicate = await stage(archive.files);
     await archive.publish("essr/said", duplicate, () => {
@@ -62,7 +62,7 @@ Deno.test("payload archive publishes immutable references and revokes stale disp
     assertThrows(() => archive.publish("essr/other", payload), Error, "closed");
     const reopened = await PayloadArchive.open(db, root);
     try {
-      assertEquals(await collectPayload((await reopened.get("essr/said"))!, 3), new Uint8Array([1, 2, 3]));
+      assertEquals(await collectPayload((await reopened.get("essr/said"))!), new Uint8Array([1, 2, 3]));
       await reopened.remove("essr/said");
       assertEquals(await reopened.get("essr/said"), null);
       assertEquals(await names(join(root, "objects")), []);
@@ -93,7 +93,7 @@ Deno.test("payload archive recovers orphan stages and rolled-back publication", 
     try {
       assertEquals(await names(join(root, "staging")), []);
       assertEquals(await names(join(root, "objects")), [retained.id]);
-      assertEquals(await collectPayload((await recovered.get("wire/retained"))!, 1), new Uint8Array([7]));
+      assertEquals(await collectPayload((await recovered.get("wire/retained"))!), new Uint8Array([7]));
       await assertRejects(
         () =>
           recovered.remove("wire/retained", () => {
@@ -118,9 +118,9 @@ Deno.test("payload archive borrows referenced local files across new and duplica
     // Equal-byte duplicate admission must not discard the other referenced object.
     await archive.publish("essr/second", borrowed);
     assertEquals((await names(join(root, "objects"))).sort(), ["essr.first", "essr.second"]);
-    assertEquals(await collectPayload((await archive.get("essr/first"))!, 3), new Uint8Array([1, 2, 3]));
+    assertEquals(await collectPayload((await archive.get("essr/first"))!), new Uint8Array([1, 2, 3]));
     await archive.remove("essr/first");
-    assertEquals(await collectPayload((await archive.get("essr/second"))!, 3), new Uint8Array([1, 2, 3]));
+    assertEquals(await collectPayload((await archive.get("essr/second"))!), new Uint8Array([1, 2, 3]));
   });
 });
 
@@ -130,8 +130,8 @@ Deno.test("payload archive copies foreign sources and fails closed on missing re
     const foreign = await stage(other);
     const saved = await archive.publish("wire/foreign", foreign);
     await foreign.discard(); // Foreign ownership is independent; the archive copied its bytes.
-    assertEquals(await collectPayload(saved, 3), new Uint8Array([1, 2, 3]));
-    const memory = new MemoryPayloadSink(2);
+    assertEquals(await collectPayload(saved), new Uint8Array([1, 2, 3]));
+    const memory = new MemoryPayloadSink();
     await memory.write(new Uint8Array([4, 5]));
     await archive.publish("plain/memory", await memory.finish());
     await assertRejects(() => PayloadArchive.open(db, join(root, ".")), Error, "already has an owner");
@@ -180,7 +180,7 @@ Deno.test("payload archive reserves admission before a synchronous commit callba
     });
     await nested;
     assertEquals(await archive.get("essr/first"), null);
-    assertEquals(await collectPayload((await archive.get("essr/second"))!, 3), new Uint8Array([1, 2, 3]));
+    assertEquals(await collectPayload((await archive.get("essr/second"))!), new Uint8Array([1, 2, 3]));
   });
 });
 
@@ -239,7 +239,7 @@ Deno.test("payload archive cancellation aborts a pending source and joins staged
       Error,
       "request cancelled",
     );
-    assertEquals(await collectPayload(unclaimed, 3), new Uint8Array([1, 2, 3]));
+    assertEquals(await collectPayload(unclaimed), new Uint8Array([1, 2, 3]));
     await unclaimed.discard();
     await archive.close();
   });
@@ -252,7 +252,7 @@ Deno.test("payload archive keeps ciphertext and plaintext owners distinct under 
     assertEquals((await names(join(root, "objects"))).sort(), ["essr.same", "plain.same"]);
     await archive.remove("essr/same");
     // Equal bytes do not merge independent lifetimes or require hidden reference counts.
-    assertEquals(await collectPayload((await archive.get("plain/same"))!, 3), new Uint8Array([1, 2, 3]));
+    assertEquals(await collectPayload((await archive.get("plain/same"))!), new Uint8Array([1, 2, 3]));
     for (const key of ["wire//said", "/said", "wire/", "wire.said"]) {
       assertThrows(() => archive.remove(key), TypeError, "Invalid payload reference key");
     }
@@ -273,6 +273,6 @@ Deno.test("payload archive retries a rolled-back finalized identity without reop
     assertEquals(await names(join(root, "objects")), ["essr.retry"]);
     // Only the unreferenced failed object can be reclaimed for this immutable key.
     await archive.publish("essr/retry", await stage(archive.files, [9]));
-    assertEquals(await collectPayload((await archive.get("essr/retry"))!, 1), new Uint8Array([9]));
+    assertEquals(await collectPayload((await archive.get("essr/retry"))!), new Uint8Array([9]));
   });
 });

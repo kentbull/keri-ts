@@ -77,8 +77,11 @@ payloads and Baser topic cursors remain separate protocol stores.
 
 ## Payload ownership
 
-PayloadStore uses awaited Deno operations and private stages; finish transfers an
-owner. Adopt transfers mutation ownership while preserving borrowed readers, so
+PayloadStore.stage(signal) uses awaited Deno operations and private stages; finish
+transfers an owner. No stage quota or before-write byte ceiling exists. Actual file
+lengths, payload declarations and digest consistency remain validated by their
+consuming owners. Fsync/close, concurrent-write rejection and joined abort cleanup
+remain independent of accounting. Adopt transfers mutation ownership while preserving borrowed readers, so
 stale cleanup cannot delete published content. Use scoped identities such as
 essr.SAID/plain.SAID; UUIDs belong only to temporary admission/staging. These owner
 names are not independent byte hashes.

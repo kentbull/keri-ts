@@ -29,7 +29,7 @@ Deno.test("streaming benchmark corpus has legal counts and stable item bytes in 
           for (const [index, frame] of frames.entries()) {
             assertExists(frame.essr);
             assertEquals(frame.essr.count, 1);
-            const raw = await collectPayload(frame.essr.raw, 256);
+            const raw = await collectPayload(frame.essr.raw);
             assertEquals(new DataView(raw.buffer, raw.byteOffset, 8).getBigUint64(0), BigInt(index));
             // Verify ordering first, then normalize the ID for the common digest oracle.
             for (let i = 0; i < 8; i++) raw[i] = i;

@@ -61,3 +61,8 @@ qualified ordinal/framing rules and current proof reconstruction. General bounde
 helpers and before-copy callbacks are removed. Nested/ESSR hydration, payload/parser
 and mailbox output accounting still require removal; do not reintroduce row/replay
 ceilings to coordinate those later cuts.
+
+Payload collectors and memory/file stages no longer accept quotas. Keep exact
+Payload.size validation, truncated/overlong source failures and actual file/reader
+ownership. Parser and ESSR crypto/tree accounting still require removal; do not
+restore sink policy arguments as a bridge for those later cuts.

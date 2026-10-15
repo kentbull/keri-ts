@@ -64,7 +64,7 @@ Deno.test("frame serialization normalizes both genera/domains and preserves inne
           for (const domain of ["txt", "bny"] as const) {
             // Only one admitted frame is collected here; production consumers iterate open().
             const output = framePayload(frame, { gvrsn: expected.gvrsn, domain });
-            const roundtrip = await read(await collectPayload(output, 4096));
+            const roundtrip = await read(await collectPayload(output));
             try {
               assertEquals(roundtrip.body.raw, b(json));
               assertEquals(roundtrip.attachments.length, 1);
@@ -75,7 +75,7 @@ Deno.test("frame serialization normalizes both genera/domains and preserves inne
               );
               assertExists(roundtrip.essr);
               assertEquals(roundtrip.essr.count, 2);
-              assertEquals(await collectPayload(roundtrip.essr.raw, 6), b("abcxyz"));
+              assertEquals(await collectPayload(roundtrip.essr.raw), b("abcxyz"));
             } finally {
               await roundtrip.essr?.discard();
             }
@@ -99,7 +99,7 @@ Deno.test("flattened wrapper-local genera serialize as one legal attachment genu
   try {
     for (const domain of ["txt", "bny"] as const) {
       const output = attachmentPayload(frame, { gvrsn: two.gvrsn, domain });
-      const bytes = await collectPayload(output, 4096);
+      const bytes = await collectPayload(output);
       // Exact bytes prove no hidden selectors and unchanged inner signature qualification.
       const expected = two.wrap("AttachmentGroup", two.group + two.group + two.essr);
       assertEquals(bytes, domain === "txt" ? b(expected) : decodeB64(expected));
@@ -163,12 +163,12 @@ Deno.test("detached HTTP attachments use body-inferred enclosure genus before on
   try {
     const payload = attachmentPayload(frame, { gvrsn: two.gvrsn, enclosingGvrsn: one.gvrsn });
     const expected = one.wrap("AttachmentGroup", t(Counter.makeGVC(two.gvrsn)) + two.group + two.essr);
-    assertEquals(await collectPayload(payload, 4096), b(expected));
+    assertEquals(await collectPayload(payload), b(expected));
     const roundtrip = await read(concatBytes(b(json), b(expected)));
     try {
       assertEquals(roundtrip.attachments[0].version, two.gvrsn);
       assertExists(roundtrip.essr);
-      assertEquals(await collectPayload(roundtrip.essr.raw, 6), b("abcxyz"));
+      assertEquals(await collectPayload(roundtrip.essr.raw), b("abcxyz"));
     } finally {
       await roundtrip.essr?.discard();
     }

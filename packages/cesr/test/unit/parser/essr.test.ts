@@ -55,16 +55,16 @@ async function* chunks(bytes: Uint8Array, size = 31): AsyncGenerator<Uint8Array>
   for (let offset = 0; offset < bytes.length; offset += size) yield bytes.slice(offset, offset + size);
 }
 
-/** Observe ownership boundaries while retaining a real bounded in-memory sink. */
+/** Observe ownership boundaries while retaining a real in-memory sink. */
 function tracking() {
   // Count successful ownership transfers observed by the test.
   let finished = 0;
   // Count parser cleanup calls for unfinished stages.
   let aborted = 0;
-  // Wrap a real bounded sink so lifetime assertions exercise production storage semantics.
-  const factory = (limit: number, signal?: AbortSignal): PayloadSink => {
+  // Wrap a real sink so lifetime assertions exercise production storage semantics.
+  const factory = (signal?: AbortSignal): PayloadSink => {
     // Real memory storage keeps the probe faithful to awaited writes and ownership transfer.
-    const sink = new MemoryPayloadSink(limit, signal);
+    const sink = new MemoryPayloadSink(signal);
     return {
       /** Preserve the actual sink's copying and backpressure contract. */
       write: (bytes) => sink.write(bytes),
@@ -109,9 +109,9 @@ Deno.test("ESSR wire classification excludes custom staging and joined cleanup f
     const failure = await assertRejects(() =>
       parse(chunks(b(input)), {
         classifyWireErrors: true,
-        payloadSink(limit, signal) {
+        payloadSink(signal) {
           if (phase === "factory") throw external;
-          const sink = new MemoryPayloadSink(limit, signal);
+          const sink = new MemoryPayloadSink(signal);
           return {
             write(bytes) {
               if (phase === "write") throw external;
@@ -189,12 +189,12 @@ Deno.test("ESSR streams mixed Texter lengths in both genera/domains and reopens 
       assertEquals(frame.attachments.map((group) => group.name), ["ControllerIdxSigs"]);
       assertEquals(essr.gvrsn, v.gvrsn); // Explicit stream genus wins over the JSON protocol version.
       assertEquals(essr.count, raw.length);
-      assertEquals(await collectPayload(essr.wire, wire.length), b(wire));
-      assertEquals(await collectPayload(essr.raw, 50000), concatBytes(...raw));
-      assertEquals(await collectPayload(essr.raw, 50000), concatBytes(...raw));
+      assertEquals(await collectPayload(essr.wire), b(wire));
+      assertEquals(await collectPayload(essr.raw), concatBytes(...raw));
+      assertEquals(await collectPayload(essr.raw), concatBytes(...raw));
       assertEquals((await parser.next()).done, true);
       await essr.discard();
-      await assertRejects(() => collectPayload(essr.raw, 50000), Error, "discarded");
+      await assertRejects(() => collectPayload(essr.raw), Error, "discarded");
     }
   }
 });
@@ -224,9 +224,9 @@ Deno.test("shared ESSR stages refuse before sink acquisition and retain credit w
     {
       ...options,
       onAdmissionRefusal: (error) => refusal = error,
-      payloadSink(limit, signal) {
+      payloadSink(signal) {
         sinks++;
-        return observed.factory(limit, signal);
+        return observed.factory(signal);
       },
     },
   );
@@ -289,7 +289,7 @@ Deno.test("shared ESSR stages refuse before sink acquisition and retain credit w
   assertEquals(resources.used.bytes, 0);
   const retry = parse(chunks(wire), options);
   const accepted = (await retry.next()).value!;
-  assertEquals(await collectPayload(accepted.essr!.raw, 3), b("abc"));
+  assertEquals(await collectPayload(accepted.essr!.raw), b("abc"));
   await discardFrame(accepted);
   assertEquals(resources.used.bytes, retained, "suspended parser retains the complete tree allowance");
   await retry.return(undefined);
@@ -308,8 +308,8 @@ Deno.test("ESSR headers survive every source split and small and big codes prese
       // Header and payload starts are exercised byte by byte in one pass.
       for await (const frame of parse(chunks(bytes, 1))) {
         assertExists(frame.essr);
-        assertEquals(await collectPayload(frame.essr.wire, 32), b(wire));
-        assertEquals(await collectPayload(frame.essr.raw, 8), b("abcxy"));
+        assertEquals(await collectPayload(frame.essr.wire), b(wire));
+        assertEquals(await collectPayload(frame.essr.raw), b("abcxy"));
         await frame.essr.discard();
       }
     }
@@ -389,7 +389,7 @@ Deno.test("delivered ESSR survives a later sibling error while undelivered stage
   await assertRejects(() => parser.next(), DeserializeError);
   assertEquals(observed.finished, 1);
   assertEquals(observed.aborted, 1);
-  assertEquals(await collectPayload(first.essr.raw, 3), b("abc"));
+  assertEquals(await collectPayload(first.essr.raw), b("abc"));
   await first.essr.discard();
 });
 
@@ -414,10 +414,10 @@ Deno.test("awaited ESSR sink writes stop source pulls until credit returns", asy
   }
   // One parser invocation owns every stage until its public frame yield.
   const parser = parse(source(), {
-    /** Provide an awaited write gate while retaining real bounded payload storage. */
-    payloadSink(limit) {
+    /** Provide an awaited write gate while retaining real payload storage. */
+    payloadSink() {
       // Real memory storage keeps the probe faithful to awaited writes and ownership transfer.
-      const sink = new MemoryPayloadSink(limit);
+      const sink = new MemoryPayloadSink();
       return {
         /** Hold sink credit until the test explicitly releases it. */
         async write(bytes) {
@@ -440,7 +440,7 @@ Deno.test("awaited ESSR sink writes stop source pulls until credit returns", asy
   // Capture the delivery boundary separately from subsequent stream completion.
   const first = (await pending).value!;
   assertExists(first.essr);
-  assertEquals(await collectPayload(first.essr.raw, 3), b("abc"));
+  assertEquals(await collectPayload(first.essr.raw), b("abc"));
   await first.essr.discard();
   await parser.return(undefined);
 });
@@ -493,9 +493,9 @@ Deno.test("sink failure aborts staged ESSR and binary lead padding remains stric
   // One parser invocation owns every stage until its public frame yield.
   const parser = parse(chunks(b(v.selector + v.body + v.essr("4BABYWJj", 1))), {
     /** Fail before storage accepts bytes so parser abandonment remains observable. */
-    payloadSink(limit, signal) {
+    payloadSink(signal) {
       // Real memory storage keeps the probe faithful to awaited writes and ownership transfer.
-      const sink = observed.factory(limit, signal);
+      const sink = observed.factory(signal);
       return { ...sink, write: () => Promise.reject(new Error("disk full")) };
     },
   });
@@ -529,7 +529,7 @@ Deno.test("attachment wrapper selectors restore genus and empty leaves obey a me
         CtrDexV1.ControllerIdxSigs,
         CtrDexV2.ControllerIdxSigs,
       ]);
-      assertEquals(await collectPayload(frame.essr.raw, 6), b("abcxyz"));
+      assertEquals(await collectPayload(frame.essr.raw), b("abcxyz"));
       await frame.essr.discard();
     }
   }
@@ -555,7 +555,7 @@ Deno.test("ESSR Effection scope preserves delivered ownership and aborts pending
   });
   // Scope teardown must not revoke storage already handed to the caller.
   assertExists(delivered.essr);
-  assertEquals(await collectPayload(delivered.essr.raw, 3), b("abc"));
+  assertEquals(await collectPayload(delivered.essr.raw), b("abc"));
   await delivered.essr.discard();
 
   const writing = Promise.withResolvers<void>();
@@ -565,8 +565,8 @@ Deno.test("ESSR Effection scope preserves delivered ownership and aborts pending
   const task = run(function*() {
     const channel = yield* toEffectionFrames(() => chunks(wire), {
       resources,
-      payloadSink(limit, signal) {
-        const sink = new MemoryPayloadSink(limit, signal);
+      payloadSink(signal) {
+        const sink = new MemoryPayloadSink(signal);
         return {
           /** Hold a real staging write until scope cancellation reaches the sink. */
           async write(bytes) {

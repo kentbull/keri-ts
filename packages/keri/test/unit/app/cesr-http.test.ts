@@ -229,7 +229,7 @@ Deno.test("CESR HTTP - header mode splits a multi-message stream into KERIpy-sty
   const parts = [];
   for (const frame of await parseBytes(stream)) {
     // HTTP attachment serialization restores the counted boundary flattened by parsing.
-    parts.push(concatBytes(frame.body.raw, await collectPayload(attachmentPayload(frame), 8192)));
+    parts.push(concatBytes(frame.body.raw, await collectPayload(attachmentPayload(frame))));
   }
   assertEquals(parts, [reply, query]);
 });

@@ -382,7 +382,7 @@ export function* prepareMultisigEventExn(
         throw new Error("Multisig proposal requires one supported direct child.");
       }
       const serder = multisigExnBody(sender, captured, child.body, options);
-      return [serder, await collectPayload(nestedPayload(child, Vrsn_2_0), 8 * 1024 ** 2, signal)] as const;
+      return [serder, await collectPayload(nestedPayload(child, Vrsn_2_0), signal)] as const;
     } catch (error) {
       errors.push(error);
       throw error;
@@ -547,7 +547,7 @@ export class Multiplexor {
   /** Reopen original evidence through the exchange replay owner; cancellation joins all temporary files. */
   private *replayApproved(said: string): Operation<void> {
     const channel = yield* toEffectionFrames((signal) => this.replay.replay(said, signal), {
-      payloadSink: async (limit, signal) => (await this.hby.db.openPayloads(signal)).files.stage(limit, signal),
+      payloadSink: async (signal) => (await this.hby.db.openPayloads(signal)).files.stage(signal),
     });
     for (const frame of yield* each(channel.frames)) {
       try {

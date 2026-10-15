@@ -149,7 +149,7 @@ Deno.test("CESR egress waits for each request and disposes each delivered payloa
       const bytes = new Uint8Array(await new Response(init!.body).arrayBuffer());
       const frame = await read(bytes);
       try {
-        assertEquals(await collectPayload(frame.essr!.raw, 6), b("abcxyz"));
+        assertEquals(await collectPayload(frame.essr!.raw), b("abcxyz"));
       } finally {
         await frame.essr?.discard();
       }
@@ -204,9 +204,9 @@ Deno.test("CESR egress waits for each request and disposes each delivered payloa
       services: transport,
       parse: {
         /** Count ownership releases, retaining the real bounded sink implementation. */
-        payloadSink(limit, signal) {
+        payloadSink(signal) {
           // This observer does not alter how the sink admits, stores, or opens payload bytes.
-          const sink = new MemoryPayloadSink(limit, signal);
+          const sink = new MemoryPayloadSink(signal);
           return {
             /** Delegate admission and storage to the real sink. */
             write: (chunk) => sink.write(chunk),
@@ -241,7 +241,7 @@ Deno.test("CESR egress waits for each request and disposes each delivered payloa
   assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
 });
 
-Deno.test("CESR header egress normalizes binary attachments and bounds the header", async () => {
+Deno.test("CESR header egress normalizes binary attachments for HTTP", async () => {
   // The source is binary v2 while the detached JSON body independently declares protocol v1.
   const wire = decodeB64(t(fixture()));
   let requests = 0;
@@ -252,7 +252,7 @@ Deno.test("CESR header egress normalizes binary attachments and bounds the heade
     const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
     const frame = await read(concatBytes(body, b(header)));
     try {
-      assertEquals(await collectPayload(frame.essr!.raw, 6), b("abcxyz"));
+      assertEquals(await collectPayload(frame.essr!.raw), b("abcxyz"));
       requests++;
     } finally {
       await frame.essr?.discard();
@@ -262,17 +262,6 @@ Deno.test("CESR header egress normalizes binary attachments and bounds the heade
   await run(function*() {
     yield* postCesr("https://peer.test/", (signal) => chunkBytes(wire, { signal }), { services: transport });
   });
-  await assertRejects(
-    () =>
-      run(function*() {
-        yield* postCesr("https://peer.test/", (signal) => chunkBytes(wire, { signal }), {
-          services: transport,
-          maxHeaderBytes: 4,
-        });
-      }),
-    RangeError,
-    "Payload exceeds collection limit",
-  );
   assertEquals(requests, 1);
 });
 
@@ -741,7 +730,7 @@ Deno.test("TCP frame output admits before serialization and borrows nested owner
         assertEquals(actual.gvrsn, expected.gvrsn);
         assertEquals(actual.attachments.map((group) => group.raw), expected.attachments.map((group) => group.raw));
       }
-      assertEquals(await collectPayload(roundtrip.nests![0].essr!.raw, 6), b("abcxyz"));
+      assertEquals(await collectPayload(roundtrip.nests![0].essr!.raw), b("abcxyz"));
     } finally {
       await discardFrame(roundtrip);
     }

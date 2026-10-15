@@ -586,7 +586,7 @@ Deno.test("nested multisig builders and public normalization preserve all four r
           { ...options, stamp: serder.ked!.dt as string },
         );
         assertEquals(direct.raw, serder.raw);
-        assertEquals(await collectPayload(nestedPayload(child, Vrsn_2_0), 8192), nested);
+        assertEquals(await collectPayload(nestedPayload(child, Vrsn_2_0)), nested);
         // This assertion reads the generic on-wire SAD only; typed proposal input stays authoritative above.
         assertEquals((serder.a as Record<string, unknown>)[serder.route!.split("/").at(-1)!], body.said);
         assertEquals(mux.verify(serder, [child]), true);
@@ -700,7 +700,7 @@ Deno.test("cancelled nested multisig publication releases its stage without reco
   await participants(async (left, _right, alice, bob, notifier) => {
     const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
     const wire = b("4BABYWJj");
-    const sink = new MemoryPayloadSink(wire.length);
+    const sink = new MemoryPayloadSink();
     await sink.write(wire);
     const payload = essrPayload(await sink.finish(), 1, 3, Vrsn_2_0);
     let entered!: () => void;
@@ -786,7 +786,7 @@ Deno.test("approved nested rotation interaction and reply use child verification
 Deno.test("multisig body construction borrows a parsed child without reading or authenticating its evidence", async () => {
   await participants(async (_left, _right, alice, bob) => {
     const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
-    const sink = new MemoryPayloadSink(8);
+    const sink = new MemoryPayloadSink();
     await sink.write(b("4BABYWJj"));
     const owner = await sink.finish();
     let readable = false;
@@ -844,31 +844,31 @@ Deno.test("multisig body construction borrows a parsed child without reading or 
         "child kind",
       );
       readable = true;
-      const nested = await collectPayload(borrowed, 8192);
+      const nested = await collectPayload(borrowed);
       assertEquals(reads, 1);
       // A borrowed serializer never disposes the frame; a second read remains valid.
-      assertEquals(await collectPayload(borrowed, 8192), nested);
-      const wire = await collectPayload(framePayload(child), 8192);
+      assertEquals(await collectPayload(borrowed), nested);
+      const wire = await collectPayload(framePayload(child));
       const [prepared, preparedNested] = await run(() =>
         prepareMultisigEventExn(bob.pre, request, wire, { ...options, pvrsn: Vrsn_2_0 })
       );
       assertEquals(prepared.raw, parent.raw);
       assertEquals(preparedNested, nested);
-      assertEquals(await collectPayload(owner, 8), b("4BABYWJj"));
+      assertEquals(await collectPayload(owner), b("4BABYWJj"));
     } finally {
       await discardFrame(child);
     }
-    await assertRejects(() => collectPayload(owner, 8), Error, "discarded");
+    await assertRejects(() => collectPayload(owner), Error, "discarded");
   });
 });
 
 Deno.test("multisig byte preparation aborts payload reads and joins disposal before cancellation returns", async () => {
   await participants(async (_left, _right, alice, bob) => {
     const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
-    const sink = new MemoryPayloadSink(8);
+    const sink = new MemoryPayloadSink();
     await sink.write(b("4BABYWJj"));
     child.essr = essrPayload(await sink.finish(), 1, 3, child.gvrsn!);
-    const wire = await collectPayload(framePayload(child), 8192);
+    const wire = await collectPayload(framePayload(child));
     await discardFrame(child);
     const finish = MemoryPayloadSink.prototype.finish;
     const owners: OwnedPayload[] = [];
@@ -939,7 +939,7 @@ Deno.test("multisig byte preparation aborts payload reads and joins disposal bef
       assertEquals(discarded, 1);
       assertEquals(continued, false);
       assertEquals(owners.length, 1);
-      await assertRejects(() => collectPayload(owners[0], 8), Error, "discarded");
+      await assertRejects(() => collectPayload(owners[0]), Error, "discarded");
     } finally {
       release();
       await task.halt();

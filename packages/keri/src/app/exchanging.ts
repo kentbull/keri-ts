@@ -392,7 +392,7 @@ export class Exchanger {
         const archive = await this.hby.db.openPayloads(signal);
         let wire = incoming.wire;
         if (!archive.files.owns(wire)) {
-          const sink = await archive.files.stage(wire.size, signal);
+          const sink = await archive.files.stage(signal);
           try {
             let copied = 0;
             for await (const chunk of wire.open(signal)) {

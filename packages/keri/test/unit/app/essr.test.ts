@@ -132,14 +132,14 @@ Deno.test("ESSR recipient decrypts accepted SCS content before staging and prese
     const said = await accept(hby, sender, recipient, cipher);
     const receiver = new EssrRecipient(recipient, store, 4096, policy);
     const result = accepted(await run(() => receiver.decrypt(said, fragmentsPayload(cipher))));
-    assertEquals(await collectPayload(result.plaintext, 4096), plain);
-    assertEquals(await collectPayload(result.body, 4096), body);
+    assertEquals(await collectPayload(result.plaintext), plain);
+    assertEquals(await collectPayload(result.body), body);
     assertEquals(hby.db.essrs.get([said])[0].raw, cipher);
     await result.plaintext.promote(`plain.${said}`);
     // The view reopens the owning file, so it survives promotion without a RAM copy.
-    assertEquals(await collectPayload(result.body, 4096), body);
+    assertEquals(await collectPayload(result.body), body);
     await result.plaintext.discard();
-    await assertRejects(() => collectPayload(result.body, 4096), Error, "removed");
+    await assertRejects(() => collectPayload(result.body), Error, "removed");
   });
 });
 
@@ -391,8 +391,8 @@ Deno.test("recipient cancellation disposes a finished plaintext file before resu
     /** Pause only the handoff after real filesystem finish has transferred its stage. */
     class HandoffStore extends PayloadStore {
       /** Real writes and fsync finish precede a cancellation-controlled cleanup gate. */
-      override async stage(maxBytes: number, signal?: AbortSignal): Promise<FilePayloadSink> {
-        const sink = await super.stage(maxBytes, signal);
+      override async stage(signal?: AbortSignal): Promise<FilePayloadSink> {
+        const sink = await super.stage(signal);
         return {
           write: (chunk) => sink.write(chunk),
           finish: () => sink.finish(),
@@ -476,9 +476,9 @@ Deno.test("ESSR propagates staging failures and disposes finished but untransfer
     class FailingStore extends PayloadStore {
       point: "stage" | "write" | "finish" | "abort" | undefined;
       /** The same recipient must release its reservation after each failed storage step. */
-      override async stage(maxBytes: number, signal?: AbortSignal): Promise<FilePayloadSink> {
+      override async stage(signal?: AbortSignal): Promise<FilePayloadSink> {
         if (this.point === "stage") throw failure;
-        const sink = await super.stage(maxBytes, signal);
+        const sink = await super.stage(signal);
         const point = this.point;
         return {
           /** Preserve partial-file cleanup on failed writes. */
