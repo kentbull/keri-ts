@@ -65,6 +65,11 @@ initiation likewise records each recipient-specific wrapper before delivery and
 returns those actual proposal identities. Preserve first-notice behavior or retries
 can republish approval unnecessarily.
 
+V2 IPEX construction and verification share IPEX_V2_PREDECESSORS in protocol-exchanging;
+v1 retains its distinct prior-route rule (grant follows agree, not apply).
+Closed IPEX verbs and their guard belong to the protocol module; version-specific
+predecessor policies remain distinct. Application-defined IPEX payload fields
+match KERIpy extension semantics, while disclosure modifiers use a named dp field.
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
 proof; metadata offers withhold issuer proofs but still validate carried schemas.
 Grant order is issuer authentication, own schemas, edge pins, then presentation.
