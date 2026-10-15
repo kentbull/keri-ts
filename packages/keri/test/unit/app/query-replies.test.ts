@@ -8,6 +8,30 @@ import { ReplyStreams } from "../../../src/app/reply-streams.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue, ReplayCue, ReplyCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
+import { state as registryState, vcstate as credentialState } from "../../../src/core/protocol-vdr-eventing.ts";
+
+/** Complete owned TSN records exercise the actual reply contract and pair lifetime. */
+function tsnPair(querySaid: string, dest = "recipient", src?: string): [ReplyCue, ReplyCue] {
+  return [
+    {
+      kin: "reply",
+      querySaid,
+      dest,
+      src,
+      route: "/tsn/registry",
+      data: registryState("issuer", "registry", 0, "registry", "vcp"),
+    },
+    {
+      kin: "reply",
+      querySaid,
+      dest,
+      src,
+      route: "/tsn/credential",
+      data: credentialState("credential", "credential-event", 0, "registry", "iss", { s: 0, d: "anchor" }),
+    },
+  ];
+}
 
 Deno.test("query reply reservations isolate interleaved results from the background cue deck", () => {
   const replies = new QueryReplies(3);
@@ -55,9 +79,8 @@ Deno.test("query reply reservations bound pending requests and release cancellat
 Deno.test("admitted TSN pairs retain fanout credit until response cleanup", async () => {
   const resources = new ResourcePolicy(), cues = new CueDeck(resources, 8, 64), replies = new QueryReplies(2);
   const first = replies.reserve("tsn"), duplicate = replies.reserve("tsn");
-  const registry: ReplyCue = { kin: "reply", querySaid: "tsn", route: "/tsn/registry", data: { i: "registry" } };
-  const credential: ReplyCue = { kin: "reply", querySaid: "tsn", route: "/tsn/credential", data: { i: "credential" } };
-  const background: ReplyCue = { kin: "reply", route: "/background", data: {} };
+  const [registry, credential] = tsnPair("tsn");
+  const background: ReplyCue = { kin: "reply", serder: replyEvent("/background", {}) };
   cues.extend([background, registry, credential, credential]);
   replies.capture(cues);
   assertEquals([...cues], [background]);
@@ -88,7 +111,7 @@ Deno.test("admitted TSN pairs retain fanout credit until response cleanup", asyn
 Deno.test("query fanout refusal keeps the original admitted cue for a later capture", () => {
   const resources = new ResourcePolicy(), cues = new CueDeck(resources, 1, 64), replies = new QueryReplies(2);
   const first = replies.reserve("tsn"), duplicate = replies.reserve("tsn");
-  const cue: ReplyCue = { kin: "reply", querySaid: "tsn", route: "/tsn/registry", data: {} };
+  const [cue] = tsnPair("tsn");
   cues.push(cue);
   assertThrows(() => replies.capture(cues), ResourceLimitError);
   assertEquals(first.takeAll(), undefined);
@@ -149,14 +172,7 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       return interpret(cue);
     };
     const replies = new QueryReplies(1), slot = replies.reserve("tsn"), cues = new CueDeck(runtime.resources, 8, 64);
-    const pair: ReplyCue[] = ["registry", "credential"].map((kind) => ({
-      kin: "reply",
-      querySaid: "tsn",
-      route: `/tsn/${kind}`,
-      data: { i: kind },
-      src: sender.pre,
-      dest: recipient.pre,
-    }));
+    const pair = tsnPair("tsn", recipient.pre, sender.pre);
     try {
       yield* runtime.reactor.processBytes(recipient.makeEndRole(recipient.pre, "controller", true));
       yield* runtime.reactor.processBytes(recipient.makeLocScheme("https://peer.test/", recipient.pre, "https"));
@@ -285,14 +301,7 @@ Deno.test("queued replies preserve atomic slots without borrowing an HTTP respon
       return interpret(cue);
     };
     const replies = new QueryReplies(1), slot = replies.reserve("tsn"), cues = new CueDeck(runtime.resources, 8, 64);
-    const pair: ReplyCue[] = ["registry", "credential"].map((kind) => ({
-      kin: "reply",
-      querySaid: "tsn",
-      route: `/tsn/${kind}`,
-      data: { i: kind },
-      src: sender.pre,
-      dest: recipient.pre,
-    }));
+    const pair = tsnPair("tsn", recipient.pre, sender.pre);
     try {
       yield* runtime.reactor.processBytes(recipient.makeEndRole(recipient.pre, "controller", true));
       yield* runtime.reactor.processBytes(recipient.makeLocScheme("https://peer.test/", recipient.pre, "https"));
@@ -320,7 +329,8 @@ Deno.test("queued replies preserve atomic slots without borrowing an HTTP respon
       assertEquals([interpretations, runtime.resources.used.bytes], [preparedCount, 0]);
 
       const absent = replies.reserve("tsn");
-      cues.append({ ...pair[0], dest: undefined });
+      // Unaddressed prebuilt replies remain valid for local/direct interpretation; TSN data requires a destination.
+      cues.append({ kin: "reply", querySaid: "tsn", serder: replyEvent("/background", {}) });
       replies.capture(cues);
       assertEquals(runtime.deliveries.enqueueReply(runtime, sender, absent), true);
       absent.close();

@@ -430,7 +430,6 @@ export class Kevery {
         return acceptQuery([{
           kin: "reply",
           querySaid: envelope.serder.said ?? undefined,
-          route: "/ksn",
           serder: replyEvent(`/ksn/${src}`, kever.state().asDict()),
           src,
           dest,

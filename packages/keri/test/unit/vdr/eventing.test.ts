@@ -493,7 +493,7 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
           ["/tsn/registry", issuer.pre, serder.said!],
           ["/tsn/credential", issuer.pre, serder.said!],
         ]);
-        const { dt, ...registry } = result.replies[0].data!;
+        const { dt, ...registry } = result.replies[0].data.asDict();
         assertEquals(typeof dt, "string");
         assertEquals(registry, {
           vn: [1, 0],
@@ -506,7 +506,7 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
           b: [],
           c: [TraitDex.NoBackers],
         });
-        assertEquals(result.replies[1]!.data, {
+        assertEquals(result.replies[1]!.data.asDict(), {
           vn: [1, 0],
           i: credential.said,
           s: "0",
@@ -517,7 +517,7 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
           dt: iss.ked!.dt,
           et: "iss",
         });
-        result.replies[0].data!.b = ["foreign"];
+        result.replies[0].data.b = ["foreign"];
         assertEquals(tvy.tevers.get(vcp.pre!)!.baks, [], "Replies are detached record data");
       } finally {
         yield* call(() => discardFrame(frame));

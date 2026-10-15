@@ -134,8 +134,11 @@ lookup uses i/d and carries omitted s through raw state. projectRegistrySeal
 projects only those known fields; it does not imply full TSN semantic acceptance.
 The receiver still requires an empty or complete authenticated registry seal.
 Credential notice decoding narrows unknown fields into an owned required record;
-its seal type distinguishes empty from complete. Producers retain required outer
-fields without running raw TEL state through stricter TSN validation. Compare
+its seal type distinguishes empty from complete. Registry and credential builders
+retain required outer fields through Tever and TSN cue production; serialized
+maps are made only at the wire boundary. Keep registry-first/credential-second
+tuple types and fresh owned state arrays. Do not run raw TEL state through the
+stricter TSN validation merely to obtain a type. Compare
 known fields and reuse the checked timestamp, without asserted hydration or
 non-null recovery. Event kinds must be actual strings: String coercion can route
 a signed array-valued kind into dependency escrow before correspondence checks.

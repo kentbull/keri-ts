@@ -382,7 +382,7 @@ export function state(
     cnfg?: string[];
     version?: Versionage;
   } = {},
-): RegStateRecord {
+): Required<RegStateRecord> {
   if (sn < 0) {
     throw new ValidationError(`Negative sn = ${sn} in key state.`);
   }
@@ -395,7 +395,8 @@ export function state(
   }
   const actualToad = toad
     ?? (actualWits.length === 0 ? 0 : Math.max(1, Math.ceil(actualWits.length / 2)));
-  return new RegStateRecord(
+  return Object.assign(
+    new RegStateRecord(),
     {
       vn: [resolveVersion(version).major, resolveVersion(version).minor],
       i: ri,
@@ -407,7 +408,7 @@ export function state(
       bt: actualToad.toString(16),
       b: actualWits,
       c: cloneStrings(cnfg),
-    } satisfies RegStateRecordShape,
+    } satisfies Required<RegStateRecordShape>,
   );
 }
 

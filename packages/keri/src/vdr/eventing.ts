@@ -361,7 +361,7 @@ export class Tever {
   }
 
   /** Current registry transaction-state record. */
-  state(): RegStateRecord {
+  state(): ReturnType<typeof registryState> {
     const said = okSaid(this.serder);
     const cnfg: string[] = this.noBackers ? [TraitDex.NoBackers] : [];
     if (this.estOnly) {

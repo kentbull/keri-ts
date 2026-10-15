@@ -1256,8 +1256,8 @@ export class Hab {
           cue,
           messages: [
             cue.serder ? this.endorse(cue.serder) : this.reply(
-              ["/tsn/registry", "/tsn/credential"].includes(cue.route) ? `${cue.route}/${this.pre}` : cue.route,
-              cue.data ?? {},
+              `${cue.route}/${this.pre}`,
+              cue.data.asDict(),
             ),
           ],
           kind: "wire",
