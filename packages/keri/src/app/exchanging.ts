@@ -37,7 +37,7 @@ import { ValidationError } from "../core/errors.ts";
 import { type ExchangeFactors, type MissingExchangeState, verifyExchangeProofs } from "../core/exchange-proofing.ts";
 import { Kever } from "../core/kever.ts";
 import { type KramReceipt, kramReceiptTime } from "../core/kraming.ts";
-import { exchange as exchangeMessage, nestedIpexRoute, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
+import { exchange as exchangeMessage, supportsNestedExchange } from "../core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
 import {
@@ -474,9 +474,7 @@ export class Exchanger {
     }
     if (
       (args.nests?.length || retainedNests)
-      && (args.serder.pvrsn.major < 2 || !handler?.acceptsNests
-        || (args.serder.route !== "/fwd" && !nestedMultisigIlks(args.serder.route ?? "")
-          && !nestedIpexRoute(args.serder.route ?? "")))
+      && (!handler?.acceptsNests || !supportsNestedExchange(args.serder.route ?? "", args.serder.pvrsn.major))
     ) {
       return reject("Nested exchange route is not implemented.");
     }

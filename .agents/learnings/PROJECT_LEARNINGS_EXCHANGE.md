@@ -65,6 +65,9 @@ initiation likewise records each recipient-specific wrapper before delivery and
 returns those actual proposal identities. Preserve first-notice behavior or retries
 can republish approval unnecessarily.
 
+Normalization and Exchanger share supportsNestedExchange for the structural v2
+route gate. Handler opt-in, route-local child validation and independent proofs
+remain required; IPEX handler support derives from the same nestedIpexRoute rule.
 V2 IPEX construction and verification share IPEX_V2_PREDECESSORS in protocol-exchanging;
 v1 retains its distinct prior-route rule (grant follows agree, not apply).
 Closed IPEX verbs and their guard belong to the protocol module; version-specific

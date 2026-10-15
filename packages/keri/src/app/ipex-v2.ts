@@ -1,4 +1,4 @@
-import { IPEX_V2_PREDECESSORS, type IpexVerb, isIpexVerb } from "../core/protocol-exchanging.ts";
+import { IPEX_V2_PREDECESSORS, type IpexVerb, isIpexVerb, nestedIpexRoute } from "../core/protocol-exchanging.ts";
 /** V2 IPEX route policy; v1 routing remains independently registered. */
 import {
   type CesrFrame,
@@ -74,7 +74,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       throw new RangeError("IPEX maxRegistryEvents must be a positive safe integer.");
     }
     this.acceptsMissingEvidence = resource === "/ipex/grant";
-    this.acceptsNests = resource === "/ipex/grant" || resource === "/ipex/offer";
+    this.acceptsNests = nestedIpexRoute(resource);
   }
 
   /** Select only fresh foreign grant evidence, preferring a seal to the same AID's signatures. */
