@@ -436,7 +436,7 @@ for (const remoteFirst of [false, true]) {
         const attrs = { gid: local.hab.pre, smids: mids, rmids: mids };
         const approval = proposal(alice, "/multisig/icp", own, attrs);
         const offered = proposal(bob, "/multisig/icp", other, attrs);
-        let exchanger = new Exchanger(left, { resources });
+        let exchanger = new Exchanger(left);
         loadMultisigHandlers(left, exchanger, { notifier });
         const first = remoteFirst ? offered : approval;
         assertEquals((await run(() => exchanger.processEvent(first))).kind, "accept");
@@ -446,7 +446,7 @@ for (const remoteFirst of [false, true]) {
         await run(function*() {
           yield* left.db.reopen();
         });
-        exchanger = new Exchanger(left, { resources });
+        exchanger = new Exchanger(left);
         loadMultisigHandlers(left, exchanger, { notifier });
         if (!remoteFirst) {
           const wrong = bob.mgr.sign(b("different child"), {

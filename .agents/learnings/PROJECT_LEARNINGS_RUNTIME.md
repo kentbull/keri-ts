@@ -172,9 +172,10 @@ prepared QueryDelivery records directly, without a policy constructor, request/r
 quota, preparation callback, credit or refused-admission wrapper. Query transport
 prepares signing, introduction and endpoint selection before source removal.
 Forwarding/OOBI and KEL replay output have no size, descriptor, proof-row or
-delegation-depth policies. TEL replay and other storage accounting remain removal work.
-ESSR requires the host's policy and holds crypto credit until I/O and
-untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
+delegation-depth policies. TEL replay likewise uses ordinary storage reads.
+ESSR recipients depend only on the hosted key owner and payload store. They have
+no crypto/message/concurrency accounting. Authentication, exact size and framing,
+joined I/O and untransferred plaintext disposal remain independent requirements.
 Complete-record ingress charges shared bytes before copying; queued and processing
 owners retain local capacity and the lease through retry and joined cancellation.
 clearIngress releases only queued owners and invalidates late retries. Runtime

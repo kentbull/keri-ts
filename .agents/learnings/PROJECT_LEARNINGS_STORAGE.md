@@ -99,46 +99,29 @@ validity. Valid new evidence cannot silently bless corrupt retained evidence.
 
 enst rows preserve child substreams. Private unique-admission stages replace rows
 atomically with accepted/escrow state; failed replacement preserves prior rows.
-Fresh children remain hydrated, reopened children own temporary ESSR files, and
-remaining tree credit diminishes across rows. Cancellation claims/disposes every
-untransferred descendant.
+Fresh children remain hydrated; reopened children own temporary ESSR files.
+Cancellation claims/disposes every untransferred descendant.
 
 Opaque pathed evidence uses byte-preserving insertion-ordered storage. UTF-8
 replacement can merge different binary members; never decode wire just to obtain
 a storage or deduplication key. `Baser.ptds` retains raw bytes through reopen.
 
-KRAM factor helpers stage rows inside the caller's transaction; validate the full
-stored union before commit. Hydration shares 4096-item/8 MiB credits across the
-incoming and durable union, compares qualified bytes, and keeps sender pmks
-separate from foreign proof groups. Known foreign last references freeze receipt
-coordinates; unresolved markers survive reopen without retaining their signatures.
-Factor cleanup excludes cache, accepted exchange and snapshot/handoff ownership.
+KRAM factor helpers stage rows inside the caller's transaction and validate the
+stored union before commit. Compare qualified bytes and keep sender pmks separate
+from foreign proof groups. Known last references freeze receipt coordinates;
+unresolved markers survive reopen without retaining their signatures. Private
+ready/snapshot/handoff storage and factor accounting are removed. Partial factors
+and accepted/replay state remain protocol-owned.
 
-Private KRAM `kpnd.` snapshots retain complete nested/ESSR wire until downstream
-consumption. Scalar factors hydrate independently; snapshot parent attachments do
-not reconstruct authentication inputs. Incoming trees stay borrowed; reopened
-file owners remain Effection-scoped. Cancellation joins serialization/parser work
-before disposal, and scope exit attempts every descendant owner. Parent/child
-storage does not accept either message or publish ordinary exchange wire.
-Explicit-credit snapshot identity/publication facilities admit native copies before
-allocation and retain serialization credit through joined cleanup and publication.
-Register passive credit before abortable leaves; a plain finally can release it
-while cancelled source cleanup still runs. Runtime KRAM borrows the same ledger as
-Exchanger. Hydration releases row/cursor credit only after parser closure; actual
-frame credit stays through scoped callback disposal without wrapping FilePayload.
+## Nested evidence and actual ownership
 
-## Open boundary
-
-Nested wire reads use the pinned native size preflight before owned row copies;
-active writers stay borrowed and ordinary reads share one explicit snapshot.
-Exchanger borrows runtime credit before nested row/serialization copies and holds
-it through joined admission/replay cleanup; reopened parser credits stay on actual
-frame owners. Keep both owned row copies charged. Direct DB helpers need a caller
-scope. Other LMDB APIs and parent-factor reads still allocate before checks; fixed native
-scratch and mapped residency remain separate overhead, so this is no RSS bound.
-[Resource phase 4](../../docs/plans/runtime/RESOURCE_POLICY_PLAN.md) and
-[storage phase 5](../../docs/plans/db/STORAGE_RECOVERY_PLAN.md) jointly own closure.
-See the [payload contract](../../docs/design-docs/db/PAYLOAD_STORAGE.md).
+Nested storage uses ordinary owned native row copies with no preflight billing,
+parent-tree budget or storage-copy reservation. Key cursors close before suspension;
+publication stays inside its caller's transaction. Reopened frames are claimed
+before cardinality checks and disposed after handler/replay completion or failure.
+ESSR rows retain their actual insertion order, qualified framing and exact
+size/count metadata without storage quotas. Parser-internal accounting and
+runtime composition policy remain separate removal work.
 
 Stored reply reconstruction uses the typed reply store, 714 key-ordered groups
 and exactly one optional cigar. The shared serializer owns framing; do not duplicate

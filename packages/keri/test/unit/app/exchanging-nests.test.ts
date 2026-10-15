@@ -13,15 +13,12 @@ import {
   parse,
   parseBytes,
   Prefixer,
-  ResourceAdmissionError,
-  ResourceLimitError,
-  ResourcePolicy,
   type SerderKERI,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import depthVector from "../../../../cesr/test/fixtures/nested-depth.json" with { type: "json" };
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
@@ -35,8 +32,7 @@ import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../../src/core/protocol-serialization.ts";
-import { chargeNests, discardNests, loadNests, publishNests, stageNests } from "../../../src/db/exchange-nests.ts";
-import { NESTED_COPY_RESERVATION_BYTES } from "../../../src/db/exchange-nests.ts";
+import { discardNests, loadNests, publishNests, stageNests } from "../../../src/db/exchange-nests.ts";
 
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 
@@ -128,11 +124,6 @@ Deno.test("nested forwarding stores and replays a reference-qualified deep tree 
     }
   });
 });
-
-/** Independent aggregate credits permit bounded imported rows without private metadata. */
-function budget() {
-  return { bytes: 8 * 1024 ** 2, groups: 4096, nodes: 255, essrBytes: 8 * 1024 ** 2, essrItems: 16384 };
-}
 
 /** Attach repeated qualified ciphertext fragments to prove exact wire retention inside enst. */
 async function attachEssr(frame: CesrFrame): Promise<Uint8Array> {
@@ -250,7 +241,7 @@ Deno.test("nested forward escrows missing sender state then reopens and retries 
     assertExists(hby.db.exns.get([input.serder.said!]));
     assertEquals(hby.db.epse.get([input.serder.said!]), null);
     assertEquals([...director.topicIter(recipient.pre, "/nested")].length, 1);
-    const loaded = await loadNests(hby.db, input.serder.said!, budget());
+    const loaded = await loadNests(hby.db, input.serder.said!);
     assertEquals(await collectPayload(loaded[0].essr!.wire), b("4BABYWJj4BABYWJj4BABeHl6"));
     await discardNests(loaded);
   });
@@ -271,7 +262,7 @@ Deno.test("forwarder carries invalid child signatures; recipient withholds accep
   });
 });
 
-Deno.test("imported nested rows retain Python insertion order and dedup with aggregate credits", async () => {
+Deno.test("imported nested rows retain Python insertion order and dedup", async () => {
   await scenario(async (hby, sender) => {
     const first = await child(sender, "first");
     const second = await child(sender, "second");
@@ -284,15 +275,10 @@ Deno.test("imported nested rows retain Python insertion order and dedup with agg
     hby.db.env!.transactionSync(() => publishNests(hby.db, owner.said!, owner.said!));
     assertEquals(hby.db.enst.get([owner.said!]).length, 2);
     assertEquals(hby.db.exchangeMeta.get([owner.said!]), null);
-    const loaded = await loadNests(hby.db, owner.said!, budget());
+    const loaded = await loadNests(hby.db, owner.said!);
     await assertTree(loaded[0], first);
     await assertTree(loaded[1], second);
     await discardNests(loaded);
-    await assertRejects(() => loadNests(hby.db, owner.said!, { ...budget(), nodes: 1 }));
-    await assertRejects(() => loadNests(hby.db, owner.said!, { ...budget(), essrItems: 3 }));
-    const used = budget();
-    chargeNests([first], used);
-    await assertRejects(() => loadNests(hby.db, owner.said!, { ...budget(), bytes: budget().bytes - used.bytes }));
     await discardFrame(first);
     await discardFrame(second);
     assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
@@ -322,7 +308,6 @@ Deno.test("cancelling nested publication joins readers and preserves a concurren
             );
             yield b("");
           } finally {
-            assertEquals(exchanger.resources.used.bytes, NESTED_COPY_RESERVATION_BYTES);
             closed = true;
           }
         },
@@ -335,11 +320,9 @@ Deno.test("cancelling nested publication joins readers and preserves a concurren
       continued = true;
     });
     await reading;
-    assertEquals(exchanger.resources.used.bytes, NESTED_COPY_RESERVATION_BYTES);
     // A second exchanger sharing the Baser publishes the same parent with its own independent stage key.
     const concurrent = new Exchanger(hby, {
       handlers: [new ForwardHandler(_director)],
-      resources: exchanger.resources,
     });
     const completed = { ...nest, essr: original };
     assertEquals((await run(() => concurrent.processEvent({ ...input, nests: [completed] }))).kind, "accept");
@@ -347,7 +330,6 @@ Deno.test("cancelling nested publication joins readers and preserves a concurren
     await task.halt();
     assertEquals(closed, true);
     assertEquals(continued, false);
-    assertEquals(exchanger.resources.used.bytes, 0);
     assertEquals(hby.db.enst.get([input.serder.said!]), retained);
     assertExists(hby.db.exns.get([input.serder.said!]));
     assertEquals(hby.db.epse.get([input.serder.said!]), null);
@@ -356,54 +338,8 @@ Deno.test("cancelling nested publication joins readers and preserves a concurren
   });
 });
 
-Deno.test("shared nested admission refuses before serialization and guarded row copying", async () => {
-  await scenario(async (hby, sender, recipient, provider, director, exchanger) => {
-    const nest = await child(sender, "admission");
-    await attachEssr(nest);
-    const input = forward(sender, recipient, provider, nest);
-    const original = nest.essr!.wire.open;
-    let opened = 0, copied = 0;
-    nest.essr!.wire.open = function(signal) {
-      opened++;
-      return original.call(this, signal);
-    };
-    const read = hby.db.getVal;
-    hby.db.getVal = function(...args) {
-      copied++;
-      return read.apply(this, args);
-    };
-    const resources = new ResourcePolicy({ bytes: NESTED_COPY_RESERVATION_BYTES - 1 });
-    const refused = new Exchanger(hby, { handlers: [new ForwardHandler(director)], resources });
-    try {
-      const failure = await assertRejects(() => run(() => refused.processEvent(input)), ResourceAdmissionError);
-      assertEquals(failure.reason, "limit");
-      assertEquals([opened, copied], [0, 0]);
-      assertEquals(resources.used.bytes, 0);
-      assertEquals(hby.db.enst.get([input.serder.said!]), []);
-      assertEquals(hby.db.exns.get([input.serder.said!]), null);
-      assertEquals(Array.from(hby.db.enstStaging.sdb.getKeys()).length, 0);
-      assertExists(nest.essr); // Failed admission leaves borrowed input ownership intact.
-      const occupied = exchanger.resources.reserve({ bytes: 200 * 1024 ** 2 });
-      if (occupied.kind !== "reserve") throw new Error("Test credit unavailable");
-      const busy = await assertRejects(() => run(() => exchanger.processEvent(input)), ResourceAdmissionError);
-      assertEquals(busy.reason, "busy");
-      assertEquals([opened, copied], [0, 0]);
-      occupied.reservation.release();
-      assertEquals((await run(() => exchanger.processEvent(input))).kind, "accept");
-      assertEquals(exchanger.resources.used.bytes, 0);
-      copied = 0;
-      await assertRejects(() => refused.replay(input.serder.said!).next(), ResourceAdmissionError);
-      assertEquals(copied, 0);
-      assertEquals(resources.used.bytes, 0);
-    } finally {
-      hby.db.getVal = read;
-      await discardFrame(nest);
-    }
-  });
-});
-
-Deno.test("shared nested replay retains copy and frame credit until payload disposal joins", async () => {
-  await scenario(async (hby, sender, recipient, provider, director, exchanger) => {
+Deno.test("nested replay joins payload disposal and propagates cleanup failure", async () => {
+  await scenario(async (hby, sender, recipient, provider, _director, exchanger) => {
     const nest = await child(sender, "replay-owner");
     await attachEssr(nest);
     const input = forward(sender, recipient, provider, nest);
@@ -423,7 +359,7 @@ Deno.test("shared nested replay retains copy and frame credit until payload disp
       const finish = sink.finish.bind(sink);
       sink.finish = async () => {
         const owner = await finish();
-        assertEquals(archive.files.owns(owner), true); // Credit never wraps away adoptable FilePayload identity.
+        assertEquals(archive.files.owns(owner), true); // Reopened payloads keep their adoptable FilePayload identity.
         const discard = owner.discard.bind(owner);
         owner.discard = async () => {
           startDisposal();
@@ -435,30 +371,20 @@ Deno.test("shared nested replay retains copy and frame credit until payload disp
       };
       return sink;
     };
-    const resources = new ResourcePolicy({ bytes: 160 * 1024 ** 2 });
-    const reader = new Exchanger(hby, { resources });
-    const competing = new Exchanger(hby, { handlers: [new ForwardHandler(director)], resources });
+    const reader = new Exchanger(hby);
     const replay = reader.replay(input.serder.said!);
     try {
       assertEquals((await replay.next()).done, false);
-      const held = resources.used.bytes;
-      assertEquals(held > NESTED_COPY_RESERVATION_BYTES, true);
-      const busy = await assertRejects(() => run(() => competing.processEvent(input)), ResourceAdmissionError);
-      assertEquals(busy.reason, "busy");
       const closing = replay.return(undefined);
       await disposing;
-      assertEquals(resources.used.bytes, held);
       finishDisposal();
       await closing;
-      assertEquals(resources.used.bytes, 0);
       await replay.return(undefined);
-      assertEquals(resources.used.bytes, 0);
       assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
       failDisposal = true;
       const failing = reader.replay(input.serder.said!);
       assertEquals((await failing.next()).done, false);
       await assertRejects(() => failing.return(undefined), AggregateError, "Nested payload cleanup failed");
-      assertEquals(resources.used.bytes, 0);
       assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
     } finally {
       finishDisposal();
@@ -598,7 +524,7 @@ Deno.test("EXN pending publication joins nested cleanup and avoids duplicate cue
       const nest = await child(sender, `pending-${exit}`);
       await attachEssr(nest);
       const original = nest.essr!;
-      const resources = new ResourcePolicy(), cues = new Deck<AgentCue>();
+      const cues = new Deck<AgentCue>();
       const handlers = [{
         resource: "/fwd",
         acceptsNests: true,
@@ -609,13 +535,12 @@ Deno.test("EXN pending publication joins nested cleanup and avoids duplicate cue
           throw new Error("Pending exchange cannot dispatch");
         },
       }];
-      const exchanger = new Exchanger(hby, { resources, cues, handlers });
+      const exchanger = new Exchanger(hby, { cues, handlers });
       let entered!: () => void, finishRead!: () => void, cleanupEntered!: () => void, release!: () => void;
       const reading = new Promise<void>((resolve) => entered = resolve);
       const proceed = new Promise<void>((resolve) => finishRead = resolve);
       const cleaning = new Promise<void>((resolve) => cleanupEntered = resolve);
       const cleanup = new Promise<void>((resolve) => release = resolve);
-      let held = 0;
       nest.essr = {
         ...original,
         wire: {
@@ -623,8 +548,6 @@ Deno.test("EXN pending publication joins nested cleanup and avoids duplicate cue
           /** Hold a real serializer reader so cancellation must join its cleanup. */
           async *open(signal) {
             try {
-              held = resources.used.bytes;
-              assertEquals(held >= NESTED_COPY_RESERVATION_BYTES, true);
               entered();
               await Promise.race([
                 proceed,
@@ -636,7 +559,6 @@ Deno.test("EXN pending publication joins nested cleanup and avoids duplicate cue
             } finally {
               cleanupEntered();
               await cleanup;
-              assertEquals(resources.used.bytes >= held, true);
             }
           },
         },
@@ -653,20 +575,17 @@ Deno.test("EXN pending publication joins nested cleanup and avoids duplicate cue
         const halting = task.halt().then(() => joined = true);
         await cleaning;
         assertEquals(joined, false);
-        assertEquals(resources.used.bytes, held);
         release();
         await halting;
-        assertEquals(resources.used.bytes, 0);
         assertEquals(hby.db.epse.get([said]), null);
         assertEquals(hby.db.exchangeMeta.get([said]), null);
         assertEquals(Array.from(hby.db.enstStaging.sdb.getKeys()).length, 0);
         assertEquals((await run(() => exchanger.processEvent(completed))).kind, "escrow");
         assertEquals(cues.pull(), { kin: "proof", said });
         assertExists(hby.db.epse.get([said]));
-        assertEquals(resources.used.bytes, 0);
       } else {
         const otherCues = new Deck<AgentCue>();
-        const other = new Exchanger(hby, { resources, cues: otherCues, handlers });
+        const other = new Exchanger(hby, { cues: otherCues, handlers });
         assertEquals((await run(() => other.processEvent(completed))).kind, "escrow");
         const retained = hby.db.enst.get([said]), date = hby.db.epsd.get([said])!.dts;
         const meta = hby.db.exchangeMeta.get([said]);
@@ -680,7 +599,6 @@ Deno.test("EXN pending publication joins nested cleanup and avoids duplicate cue
         assertEquals(Array.from(hby.db.enstStaging.sdb.getKeys()).length, 0);
         assertEquals(cues.length, 0);
         assertEquals(otherCues.pull(), { kin: "proof", said });
-        assertEquals(resources.used.bytes, 0);
       }
       await original.discard();
     }

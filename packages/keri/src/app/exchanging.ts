@@ -13,9 +13,6 @@ import {
   framePayload,
   NumberPrimitive,
   Prefixer,
-  ResourceAdmissionError,
-  ResourcePolicy,
-  type ResourceReservation,
   Saider,
   type SealEvent,
   type SealSource,
@@ -37,12 +34,9 @@ import { exchange as exchangeMessage, supportsNestedExchange } from "../core/pro
 import { messageAttachmentGroups, serializeMessage } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
 import {
-  chargeNests,
   discardNests,
   hasNests,
   loadNests,
-  type NestBudget,
-  NESTED_COPY_RESERVATION_BYTES,
   publishNests,
   stageNests,
 } from "../db/exchange-nests.ts";
@@ -153,7 +147,7 @@ export interface ExchangeRouteHandler {
   }): void | Operation<void>;
 }
 
-/** One signed exchange and its bounded attachment views at runtime admission. */
+/** One signed exchange and its attachment views at runtime admission. */
 export interface ExchangeInput {
   /** Signed exchange body, including any ESSR byte commitment. */
   serder: SerderKERI;
@@ -169,7 +163,7 @@ export interface ExchangeInput {
   sscs?: readonly SealSource[];
   /** Explicit anchoring AID and historical source coordinates. */
   sourceSeals?: readonly SealEvent[];
-  /** Ordinary bounded pathed attachments. */
+  /** Ordinary pathed attachments. */
   ptds?: readonly PathedMaterialGroup[];
   /** Caller-owned wire; successful publication transfers local file ownership. */
   essr?: EssrPayload;
@@ -218,42 +212,24 @@ export class Exchanger {
   readonly cues: Deck<AgentCue>;
   readonly routes = new Map<string, ExchangeRouteHandler>();
   private readonly versionedRoutes = new Map<string, Map<number, ExchangeRouteHandler>>();
-  /** At most one active admission; the runtime owns bounded waiting and backpressure. */
+  /** Serialize admissions so payload recovery cannot race this owner's unfinished publication. */
   private processing = false;
-  /** Borrow the runtime ledger; standalone defaults do not establish a process-wide bound. */
-  readonly resources: ResourcePolicy;
-  /** Finite decoded-byte limit, independent of total stream length. */
-  private readonly maxEssrBytes: number;
-  /** Finite token count, including empty Texters. */
-  private readonly maxEssrItems: number;
   /** Borrow the runtime clock for escrow deadlines and retries. */
   private readonly now: () => number;
 
-  /** Bind route handlers and explicit per-message resource budgets to one habitat database. */
+  /** Bind route handlers, cues and the escrow clock to one habitat database. */
   constructor(
     hby: Habery,
     {
       handlers = [],
       cues,
-      maxEssrBytes = 8 * 1024 ** 2,
-      maxEssrItems = 16384,
-      resources = new ResourcePolicy(),
       now = Date.now,
     }: {
       handlers?: readonly ExchangeRouteHandler[];
       cues?: Deck<AgentCue>;
-      maxEssrBytes?: number;
-      maxEssrItems?: number;
-      resources?: ResourcePolicy;
       now?: () => number;
     } = {},
   ) {
-    for (const limit of [maxEssrBytes, maxEssrItems, 4 * Math.ceil(maxEssrBytes / 3) + 12 * maxEssrItems]) {
-      if (!Number.isSafeInteger(limit) || limit < 0) throw new RangeError("Invalid exchange ESSR limit");
-    }
-    this.resources = resources;
-    this.maxEssrBytes = maxEssrBytes;
-    this.maxEssrItems = maxEssrItems;
     this.now = now;
     this.hby = hby;
     this.cues = cues ?? new Deck();
@@ -320,18 +296,9 @@ export class Exchanger {
     let evidenceStarted = false;
     let nestStage: string | undefined;
     let reopenedNests: CesrFrame[] = [];
-    let copyCredit: ResourceReservation | undefined;
     let nests: readonly CesrFrame[] = args.nests ?? [];
     // Resources unwind in reverse order: I/O, payload cleanup, then admission release.
     yield* this.admission();
-    // This owner predates payload cleanup and I/O, so cancellation releases it last.
-    yield* resource(function*(provide: Provide<void>) {
-      try {
-        yield* provide(undefined);
-      } finally {
-        copyCredit?.release();
-      }
-    });
     yield* resource(function*(this: Exchanger, provide: Provide<void>) {
       try {
         yield* provide(undefined);
@@ -370,19 +337,17 @@ export class Exchanger {
       throw new Error("Invalid exchange receiver time");
     }
     const receiverTime = priorReceipt ?? incomingReceipt;
-    const retained = yield* abortable((signal) =>
-      this.hby.db.getEssr(said, signal, { maxEssrBytes: this.maxEssrBytes, maxEssrItems: this.maxEssrItems })
-    );
+    const retained = yield* abortable((signal) => this.hby.db.getEssr(said, signal));
     const existing = previous?.essr ? retained : null;
     let essr = args.essr ?? retained ?? undefined;
     if (essr) {
       if (
-        !Number.isSafeInteger(essr.count) || essr.count < 0 || essr.count > this.maxEssrItems
-        || !Number.isSafeInteger(essr.raw.size) || essr.raw.size < 0 || essr.raw.size > this.maxEssrBytes
+        !Number.isSafeInteger(essr.count) || essr.count < 0
+        || !Number.isSafeInteger(essr.raw.size) || essr.raw.size < 0
         || !Number.isSafeInteger(essr.wire.size) || essr.wire.size < 0
         || essr.wire.size > 4 * Math.ceil(essr.raw.size / 3) + 12 * essr.count
       ) {
-        return reject("Exchange ESSR exceeds admission limits.");
+        return reject("Invalid exchange ESSR extent.");
       }
     }
     if (args.essr || (retained && !existing)) {
@@ -462,7 +427,6 @@ export class Exchanger {
     const attachments = normalizeAttachments(args.ptds ?? []);
     let retainedNests = hasNests(this.hby.db, said);
     if (args.nests?.length || retainedNests) {
-      copyCredit = this.reserveNestedCopies();
       // Recover only nested work; ordinary flat exchanges need no file archive.
       yield* abortable((signal) => this.hby.db.openPayloads(signal));
       retainedNests = hasNests(this.hby.db, said);
@@ -473,22 +437,13 @@ export class Exchanger {
     ) {
       return reject("Nested exchange route is not implemented.");
     }
-    if (args.nests?.length) {
-      try {
-        chargeNests(args.nests, this.nestBudget({ ...args, ...resolved }, essr));
-      } catch (error) {
-        return reject(error instanceof Error ? error.message : String(error));
-      }
-    }
     if (retainedNests && !args.nests?.length) {
       // Signature-only retries reopen the durable evidence; fresh parsed children stay hydrated.
       yield* abortable(async (signal) => {
         reopenedNests = await loadNests(
           this.hby.db,
           said,
-          this.nestBudget({ ...args, ...resolved }, essr),
           signal,
-          this.resources,
         );
       });
       nests = reopenedNests;
@@ -567,8 +522,8 @@ export class Exchanger {
       }
       stored = yield* abortable(async (signal) => {
         if (!retained) {
-          // Populate new KERIpy evidence one bounded Texter at a time.
-          for await (const texter of essrTexters(wire, this.maxEssrBytes, signal)) {
+          // Populate new KERIpy evidence one Texter at a time.
+          for await (const texter of essrTexters(wire, signal)) {
             this.hby.db.essrs.add([said], texter);
           }
         }
@@ -578,10 +533,7 @@ export class Exchanger {
           commit,
           signal,
         );
-        return (await this.hby.db.getEssr(said, signal, {
-          maxEssrBytes: this.maxEssrBytes,
-          maxEssrItems: this.maxEssrItems,
-        }))!;
+        return (await this.hby.db.getEssr(said, signal))!;
       });
     } else {
       yield* abortable(async (signal) => {
@@ -684,36 +636,12 @@ export class Exchanger {
     }
   }
 
-  /** Share parent metadata and ESSR credit across all retained child rows. */
-  private nestBudget(
-    args: ExchangeInput,
-    essr?: EssrPayload | null,
-    prepared?: readonly AttachmentGroup[],
-  ): NestBudget {
-    const groups = prepared ?? messageAttachmentGroups({
-      tsgs: args.tsgs,
-      cigars: args.cigars,
-      sourceSeals: args.sourceSeals,
-      pathed: (args.ptds ?? []).map((group) => group.raw),
-    }, resolveAttachmentGvrsn(args.serder));
-    return {
-      bytes: 8 * 1024 ** 2 - args.serder.raw.length - groups.reduce((size, group) => size + group.raw.length, 0),
-      groups: 4096 - groups.length,
-      nodes: 255,
-      essrBytes: this.maxEssrBytes - (essr?.raw.size ?? 0),
-      essrItems: this.maxEssrItems - (essr?.count ?? 0),
-    };
-  }
-
   /** Stream accepted evidence; reopened child ESSR stages survive until output cancellation or completion. */
   async *replay(said: string, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
     signal?.throwIfAborted();
     const serder = this.hby.db.exns.get([said]);
     if (!serder) throw new ValidationError("Cannot replay an unaccepted exchange.");
-    const essr = await this.hby.db.getEssr(said, signal, {
-      maxEssrBytes: this.maxEssrBytes,
-      maxEssrItems: this.maxEssrItems,
-    });
+    const essr = await this.hby.db.getEssr(said, signal);
     const gvrsn = resolveAttachmentGvrsn(serder, essr?.gvrsn);
     const args = {
       serder,
@@ -732,12 +660,11 @@ export class Exchanger {
     ) throw new ValidationError("Invalid stored exchange authentication or evidence.");
     const evidence = { ...verified, pathed: args.ptds.map((group) => group.raw) };
     const nested = hasNests(this.hby.db, said);
-    const credit = nested ? this.reserveNestedCopies() : undefined;
     let nests: CesrFrame[] = [];
     try {
       const groups = nested ? messageAttachmentGroups(evidence, gvrsn) : [];
       nests = nested
-        ? await loadNests(this.hby.db, said, this.nestBudget(args, essr, groups), signal, this.resources)
+        ? await loadNests(this.hby.db, said, signal)
         : [];
       if (nests.length) {
         // Reuse the stored Serder and hydrated endorsements; the shared encoder builds real leaf groups.
@@ -754,21 +681,8 @@ export class Exchanger {
         if (essr) yield* essrChunks(essr, { gvrsn, signal });
       }
     } finally {
-      try {
-        await discardNests(nests);
-      } finally {
-        credit?.release();
-      }
+      await discardNests(nests);
     }
-  }
-
-  /** Admit cooperating nested copies before materializing the first row or serializer. */
-  private reserveNestedCopies(): ResourceReservation {
-    const decision = this.resources.reserve({ bytes: NESTED_COPY_RESERVATION_BYTES });
-    if (decision.kind === "refuse") {
-      throw new ResourceAdmissionError(`Nested storage admission refused: ${decision.reason}`, decision.reason);
-    }
-    return decision.reservation;
   }
 
   /** Return true once the named exchange SAID is durably stored as accepted. */

@@ -6,7 +6,6 @@ import {
   concatBytes,
   Dater,
   Diger,
-  type EssrOptions,
   type EssrPayload,
   essrPayload,
   Ilks,
@@ -316,27 +315,14 @@ export class Baser {
     }
   }
 
-  /** Reopen private wire or borrow bounded KERIpy rows when no private metadata exists. */
+  /** Reopen private wire or borrow KERIpy rows when no private metadata exists. */
   async getEssr(
     said: string,
     signal?: AbortSignal,
-    { maxEssrBytes = 8 * 1024 ** 2, maxEssrItems = 16384 }: Pick<
-      EssrOptions,
-      "maxEssrBytes" | "maxEssrItems"
-    > = {},
   ): Promise<EssrPayload | null> {
     signal?.throwIfAborted();
-    for (const limit of [maxEssrBytes, maxEssrItems]) {
-      if (!Number.isSafeInteger(limit) || limit < 0) throw new RangeError("Invalid stored ESSR limit");
-    }
-    if (!Number.isSafeInteger(4 * Math.ceil(maxEssrBytes / 3) + 12 * maxEssrItems)) {
-      throw new RangeError("Stored ESSR wire limit exceeds safe integer range");
-    }
     const metadata = this.exchangeMeta.get([said])?.essr;
-    if (!metadata) return this.borrowEssr(said, maxEssrBytes, maxEssrItems, signal);
-    if (metadata.count > maxEssrItems || metadata.size > maxEssrBytes) {
-      throw new ResourceLimitError("Stored ESSR exceeds admission limits");
-    }
+    if (!metadata) return this.borrowEssr(said, signal);
     const wire = await (await this.openPayloads(signal)).get(`essr/${said}`, signal);
     if (!wire) throw new Error("Exchange ESSR reference is missing");
     return essrPayload(
@@ -354,19 +340,19 @@ export class Baser {
   }
 
   /** Preserve the insertion order and deduplication already represented by KERIpy rows. */
-  private borrowEssr(said: string, maxBytes: number, maxItems: number, signal?: AbortSignal): EssrPayload | null {
+  private borrowEssr(said: string, signal?: AbortSignal): EssrPayload | null {
     if (!this.exns.get([said]) && !this.epse.get([said]) && !this.hasSchemaEscrow(said)) return null;
     let count = 0;
     let size = 0;
     let wireSize = 0;
-    for (const texter of this.essrRows(said, maxBytes, maxItems, signal)) {
+    for (const texter of this.essrRows(said, signal)) {
       count++;
       size += texter.raw.length;
       wireSize += texter.qb64.length;
     }
     if (!count) return null;
     /** Revisit current rows without retaining tokens or an item-size manifest. */
-    const rows = (signal?: AbortSignal) => this.essrRows(said, maxBytes, maxItems, signal);
+    const rows = (signal?: AbortSignal) => this.essrRows(said, signal);
     return essrPayload(
       {
         size: wireSize,
@@ -389,24 +375,16 @@ export class Baser {
     ); // The wire table records no original frame genus.
   }
 
-  /** Admit stored token size/count before hydration; never assemble a complete ESSR message. */
-  private *essrRows(said: string, maxBytes: number, maxItems: number, signal?: AbortSignal): Generator<Texter> {
-    let count = 0;
-    let size = 0;
+  /** Decode stored tokens in insertion order without assembling a complete ESSR message. */
+  private *essrRows(said: string, signal?: AbortSignal): Generator<Texter> {
     signal?.throwIfAborted();
-    // Scan keys first so neither an over-count row nor an adjacent owner reads a value.
+    // Check the key prefix before reading so an adjacent owner is never hydrated.
     for (const key of this.essrs.sdb.getKeys({ start: suffix(b(said), 0) })) {
       signal?.throwIfAborted();
       if (t(unsuffix(key)[0]) !== said) break;
-      if (++count > maxItems) throw new ResourceLimitError("Stored ESSR exceeds admission limits");
       const wire = this.essrs.sdb.get(key);
       if (!wire) throw new Error("Stored ESSR row disappeared during traversal");
-      if (wire.length > 4 * Math.ceil((maxBytes - size) / 3) + 12) {
-        throw new ResourceLimitError("Stored ESSR exceeds admission limits");
-      }
       const texter = new Texter({ qb64b: wire });
-      size += texter.raw.length;
-      if (size > maxBytes) throw new ResourceLimitError("Stored ESSR exceeds admission limits");
       if (texter.qb64.length !== wire.length) throw new Error("Stored ESSR row has trailing bytes");
       yield texter;
     }

@@ -26,7 +26,9 @@ existing escrow. Signature/dependency cues follow actual new escrow insertion.
 Ordinary Decks carry records without reservation, inspection or retained-byte credit.
 Authentication queries deduplicate coordinates in input order; already published
 queries remain available after later verification or rejection. Nested staging
-and joined payload cleanup remain real resource lifetimes. Determine whether to
+and joined payload cleanup remain real resource lifetimes. Exchanger and stored
+ESSR/nested helpers have no policy, tree/copy budget or token/byte quota. The local
+admission guard protects publication/recovery ordering; preserve it independently. Determine whether to
 publish a pending cue from the escrow write result, not a pre-I/O membership plan.
 An incomplete duplicate remains pending without replacing accepted rows or rerunning
 handling; `complete(said)` reports durable acceptance, not the current attempt.
@@ -54,7 +56,7 @@ verified EXN sender identifies the responder; payload i is only existing wire
 projection and cannot select the reps/chas identity.
 
 V2 forwarding binds exactly one child to signed `a.evt`. The recipient authenticates
-its signatures. Children survive bounded enst storage, retry and replay; verified
+its signatures. Children survive enst storage, retry and replay; verified
 duplicates replace child evidence atomically and rerun the handler.
 
 V2 multisig supports icp/rot/ixn/rpy commitments and local membership. Child-SAID
