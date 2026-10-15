@@ -44,8 +44,10 @@ TEL replay preflights body rows before copies and reads native dupsort signature
 incrementally, checking its ceiling before payload retention. Each native duplicate
 is finite (LMDB's 511-byte maximum); ordinary standalone hydration, native scratch
 and mapped residency remain separate qualification limits.
-Finite KEL replay preflights event bodies before owned copies; HTTP source credit
-must cover reconstruction before iterator acquisition, not only yielded bytes.
+KEL replay captures immutable identity/ordinal horizons without event bytes or
+open cursors. It has no message/depth ceiling or copy accounting. Cycle detection,
+ordinal validity, current proof reads and cursor closure remain correctness rules.
+cloneEvtMsg calculates actual framing lengths once; it has no retain/admit wrapper.
 Witness GET no-SN captures target-only FEL ranges; SN captures KEL/FEL horizons
 and seeks physical duplicate proems without rescanning buckets or holding a
 cursor across hydration. Deleted earlier duplicates do not shift the checkpoint.
@@ -135,10 +137,11 @@ scratch and mapped residency remain separate overhead, so this is no RSS bound.
 [storage phase 5](../../docs/plans/db/STORAGE_RECOVERY_PLAN.md) jointly own closure.
 See the [payload contract](../../docs/design-docs/db/PAYLOAD_STORAGE.md).
 
-Stored reply body preflight, retained proof-row ceilings and final wire-size
-admission are separate from native proof-row decoding/copy admission. Stored
-reply reconstruction uses 714 key-ordered groups and exactly one optional cigar;
-source construction does not authenticate those proofs for the receiver.
+Stored reply reconstruction uses the typed reply store, 714 key-ordered groups
+and exactly one optional cigar. The shared serializer owns framing; do not duplicate
+its counter-size rules for speculative admission. Missing bodies stay empty and
+invalid keys, missing authenticators and storage errors propagate. Reconstruction
+does not authenticate those proofs for the receiver.
 
 [db]: ../../docs/design-docs/db/db-architecture.md
 

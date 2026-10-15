@@ -377,15 +377,12 @@ so joined factory cleanup cannot resume the provider with an untransferred value
 
 ## Replay output ownership
 
-KEL `replay` cues and `CueEmission.messages` are reopenable iterables of complete,
-finite messages. `Baser.replay` captures prefix/first-seen ranges, including at
-most 32 delegators by default, and releases each LMDB cursor before yielding an
-event. Its default 8 MiB event limit is admission policy, not a KERI wire limit.
-Later accepted events do not extend a captured replay; stored proofs are read
-when that replay is consumed. Its frozen `CapturedKelReplay` exposes only captured
-ranges and the message ceiling; the Baser stays borrowed and must remain open.
-Queue transfer and fanout carry ordinary references, opening no event iterator.
-Other replay sources and capture-time allocations remain separate admission work.
+KEL `replay` cues and `CueEmission.messages` are reopenable iterables of complete
+messages. Baser captures prefix/first-seen ranges without a depth or message size
+policy and closes each cursor before yielding an event. Cyclic delegation chains
+still fail. Later accepted events do not extend a captured replay; current proofs
+are read on consumption. Frozen ranges expose the captured horizons while Baser
+stays borrowed and open. Queue transfer and fanout open no event iterator.
 
 `ReplyStreams` owns live HTTP readers without application accounting or configured
 concurrency/event/chunk limits. Each pull yields one source message without an
@@ -400,12 +397,10 @@ No background task or whole-replay array is needed for these synchronous databas
 leaves it available for retry. Concurrent drains cannot send the same head, and newly appended work
 waits for the next bounded pass.
 
-Finite `cloneEvtMsg` body reads use native row-size preflight before owned
-materialization. Evidence fragments are admitted before retaining each attachment
-and allocating the final event buffer. These storage construction limits remain
-separate removal work; ReplyStreams does not select or reserve them. Aggregate
-replay length is not collected or capped. Other finite callers of `cloneEvtMsg`
-without a limit retain their existing allocation behavior.
+`cloneEvtMsg` reads the event normally, reconstructs stored signatures/seals/
+receipts and first-seen metadata, then calculates the actual framed extent for one
+final allocation. Counters, quadlet alignment and attachment genus remain protocol
+rules. There is no replay byte ceiling or per-fragment retain/admit wrapper.
 
 ## Witness source intake
 
@@ -424,8 +419,8 @@ bounded connection admission and joined parser/socket shutdown.
 `ReplyStreams.openNonEmpty` primes one nonempty message and returns null only
 after empty-source cleanup. Acquisition/cleanup failures propagate. Primed bytes
 remain in the reader until consumption, cancellation or runtime close, including
-failed stream publication. Ordinary `open` keeps its first-pull behavior. Source
-construction limits in OOBI/storage are independent remaining removal work.
+failed stream publication. Ordinary `open` keeps its first-pull behavior. OOBI and KEL replay
+sources have no response preparation policy.
 
 Witness `GET /query?typ=kel` returns a lazy source through shared ReplyStreams.
 Without `sn`, capture contains only the target's FEL extent, never delegator logs.
@@ -434,10 +429,10 @@ horizons. Each duplicate is sought by its physical insertion proem, so deleted
 earlier rows do not shift the checkpoint and buckets are not rescanned. Later accepted duplicates at an old sequence are excluded by their
 new FEL ordinals; existing index/proof metadata is consumed at read time, not
 frozen as a proof snapshot. Each cursor closes before finite event hydration/yield.
-The source retains its independent storage construction defaults, with no response
-policy passed down. Reader cleanup runs through EOF/cancel/runtime close; no
-transfer-sized event array is retained. Remaining source-limit failures map to 413;
-later read failures error the response stream.
+No response or storage size policy is passed down. Reader cleanup runs through
+EOF/cancel/runtime close; no transfer-sized event array is retained. Unsupported
+numeric representation remains distinct from size policy. Later read failures
+error the response stream.
 Existing missing-selector/SN 400, unknown-target 200-empty and TEL 501 remain.
 SN reconstruction propagates failures; no-SN uses the existing corrupt-record skip
 path, whose broad proof-reconstruction catch still requires phase 5 qualification.
@@ -605,12 +600,10 @@ Provider connections and per-request topics now share finite runtime admission.
 Configured remote-worker counts and retained query cues still need their own
 handle/metadata boundary; these leases do not bound accepted configuration/state.
 
-Stored endpoint reply reconstruction uses configurable local defaults of 8 MiB
-per message and 4096 scanned proof rows. The native reply body is preflighted
-before copying; proof retention and exact counter-framed output size are checked
-before growth/final serialization. These limits are not protocol invalidity or a
-shared memory bound. Missing body returns empty; corruption and I/O failures
-propagate. Native proof-row decoding/copy pre-admission remains phase 5.
+Stored endpoint reply reconstruction reads through the typed reply store. It has
+no byte/proof-row limits or parallel counter-size estimator. Missing bodies return
+empty; invalid keys, absent authenticators, corruption and I/O failures propagate.
+The shared serializer validates and frames the actual proof groups.
 
 Reconstruction follows actual 714 `Hab.loadEndRole`/`loadLocScheme` and `fetchTsgs`:
 all transferable groups retain canonical prefix/SN/digest order and stored seals,
@@ -623,8 +616,8 @@ aggregate counter, widening v1 ordinals and preserving v2 qualified ordinals.
 The caller's attachment genus floor remains explicit and the body may raise it.
 Independent actual-helper observations verified 64 imported 714 modules, group
 order `[0,1]`, v1 `-VBn-FAC` / v2 `-CBn-XBm` tails, one/two-cigar selection and
-missing-authenticator failure. Lazy OOBI selection and finite forwarding collection
-remain subsequent S2 units.
+missing-authenticator failure. Lazy OOBI selection and finite forwarding collectors keep their existing
+message order and introduction suppression without application size limits.
 
 Generic WitnessReceiptor submission prefers HTTP receipt endpoints, with TCP-only
 fallback through the existing same-socket conversation engine (`local=true`).

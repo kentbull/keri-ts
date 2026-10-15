@@ -171,7 +171,8 @@ cleanup, clears records, then closes owned stores. RuntimeDeliveries accepts
 prepared QueryDelivery records directly, without a policy constructor, request/route
 quota, preparation callback, credit or refused-admission wrapper. Query transport
 prepares signing, introduction and endpoint selection before source removal.
-Forwarding/OOBI and storage replay construction limits remain separate removal work.
+Forwarding/OOBI and KEL replay output have no size, descriptor, proof-row or
+delegation-depth policies. TEL replay and other storage accounting remain removal work.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
 Complete-record ingress charges shared bytes before copying; queued and processing
@@ -185,9 +186,11 @@ without splitting/copying it. Nonempty detection primes one nonempty message;
 empty sources close before returning null. Iterator/disposer failures propagate,
 including acquisition failure and cancellation before the first pull.
 OOBI serving captures endpoint/delegation descriptors, closes metadata cursors
-before hydration, and borrows Hab/store through cleanup. Its descriptor/proof
-ceilings and finite forwarding introduction limits are transitional accounting
-to remove, not a requirement to preserve or widen.
+before hydration, and borrows Hab/store through cleanup. Filters snapshot at
+iterator acquisition; accepted FEL horizons exclude later events. Delegated
+readiness and missing-parent-chain behavior remain independent of size policy.
+Finite forwarding collectors preserve KERIpy introduction suppression, message
+order and signed framing without input/output byte limits or metadata formulas.
 RuntimeDeliveries owns the existing finite query queue; retained cue adoption
 uses this same owner rather than adding a parallel queue. Query producers run
 after synchronous signing and route preparation. Queued requests survive failure/retry;

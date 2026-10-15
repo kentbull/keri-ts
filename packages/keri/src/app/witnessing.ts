@@ -615,7 +615,6 @@ export function witnessReceiptGet(
 export function witnessQueryGet(
   serviceHab: Hab,
   query: { typ?: string | null; pre?: string | null; sn?: number | null },
-  maxMessageBytes = 8 * 1024 ** 2,
 ): WitnessQueryGetResult {
   const typ = query.typ ?? null;
   if (!typ) {
@@ -650,7 +649,7 @@ export function witnessQueryGet(
     return {
       kind: "accepted",
       status: 200,
-      messages: serviceHab.db.witnessReplay(pre, query.sn ?? null, maxMessageBytes) ?? [],
+      messages: serviceHab.db.witnessReplay(pre, query.sn ?? null) ?? [],
     };
   }
 

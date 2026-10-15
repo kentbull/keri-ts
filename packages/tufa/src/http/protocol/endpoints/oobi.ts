@@ -1,4 +1,4 @@
-import { ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
+import { ResourceLimitError } from "cesr-ts";
 import { type AgentRuntime, endpointBasePath, fetchEndpointUrls, type Hab, preferredUrl, Roles } from "keri-ts/runtime";
 import { textResponse } from "../responses.ts";
 import type { OobiRouteRequest, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
@@ -113,9 +113,6 @@ export function handleOobiRoute(
       hab.replyToOobiMessages(aid, request.role, request.eid ? [request.eid] : []),
     );
   } catch (error) {
-    if (error instanceof ResourceAdmissionError) {
-      return textResponse(error.message, error.reason === "busy" ? 503 : 413);
-    }
     if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
     throw error;
   }

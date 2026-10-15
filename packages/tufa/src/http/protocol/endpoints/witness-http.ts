@@ -1,4 +1,4 @@
-import { ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
+import { ResourceLimitError } from "cesr-ts";
 import { run } from "effection";
 import {
   type AgentRuntime,
@@ -118,7 +118,6 @@ export function handleWitnessQueryGet(
     }
     return textResponse(result.message, result.status);
   } catch (error) {
-    if (error instanceof ResourceAdmissionError && error.reason === "busy") return textResponse(error.message, 503);
     if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
     throw error;
   }

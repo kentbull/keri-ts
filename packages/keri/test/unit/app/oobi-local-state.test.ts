@@ -6,7 +6,6 @@ import {
   Diger,
   parseBytes,
   Prefixer,
-  ResourceLimitError,
   Seqner,
   SerderKERI,
   Vrsn_2_0,
@@ -179,43 +178,25 @@ Deno.test("OOBI local state - transferable controller OOBI reply seal attachment
       const said = hby.db.eans.get([pre, EndpointRoles.controller, pre])!.qb64;
       const expected = endRole;
       assertEquals(hab.loadEndRole(pre, pre, EndpointRoles.controller), expected);
-      assertEquals(loadStoredReply(hby.db, said, { maxMessageBytes: expected.length }), expected);
-      assertThrows(() => loadStoredReply(hby.db, said, { maxMessageBytes: expected.length - 1 }), ResourceLimitError);
-      assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: 0 }), ResourceLimitError);
-      const native = hby.db.rpys.sdb as unknown as { getBinary(key: Uint8Array): Uint8Array | undefined };
-      const binary = native.getBinary;
-      native.getBinary = () => {
-        throw new Error("oversized stored reply was copied");
-      };
-      try {
-        assertThrows(() => loadStoredReply(hby.db, said, { maxMessageBytes: 1 }), ResourceLimitError);
-      } finally {
-        native.getBinary = binary;
-      }
-      const read = hby.db.getValBounded, fault = new Error("reply storage failed");
-      hby.db.getValBounded = function(...args) {
-        if (args[0] === this.rpys.sdb) throw fault;
-        return read.apply(this, args);
+      assertEquals(loadStoredReply(hby.db, said), expected);
+      const read = hby.db.rpys.get, fault = new Error("reply storage failed");
+      hby.db.rpys.get = () => {
+        throw fault;
       };
       try {
         assertEquals(assertThrows(() => loadStoredReply(hby.db, said)), fault);
       } finally {
-        hby.db.getValBounded = read;
+        hby.db.rpys.get = read;
       }
       const bare = new SerderKERI({ raw: hab.makeLocScheme("http://127.0.0.1:1", pre, "http") });
       hby.db.rpys.pin([bare.said!], bare);
       assertThrows(() => loadStoredReply(hby.db, bare.said!), ValidationError, "Missing attached signatures");
       assertEquals(loadStoredReply(hby.db, "missing").length, 0);
-      assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: -1 }), RangeError);
       const newer = reply("/loc/scheme", { eid: pre, scheme: "http", url: hostUrl }, { pre, pvrsn: Vrsn_2_0 });
       const v2Wire = hab.endorse(newer);
       hby.db.rpys.pin([newer.said!], newer);
       hby.db.ssgs.pin([newer.said!, pre, "0".repeat(32), pre], hab.sign(newer.raw, true));
-      assertEquals(loadStoredReply(hby.db, newer.said!, { maxMessageBytes: v2Wire.length }), v2Wire);
-      assertThrows(
-        () => loadStoredReply(hby.db, newer.said!, { maxMessageBytes: v2Wire.length - 1 }),
-        ResourceLimitError,
-      );
+      assertEquals(loadStoredReply(hby.db, newer.said!), v2Wire);
       hab.rotate();
       const oldReply = hby.db.rpys.get([said])!;
       hby.db.ssgs.pin([said, pre, hab.kever!.sn.toString(16), hab.kever!.said], hab.sign(oldReply.raw, true));
@@ -228,17 +209,12 @@ Deno.test("OOBI local state - transferable controller OOBI reply seal attachment
         secondWire.slice(oldReply.raw.length + 8),
       );
       assertEquals(loadStoredReply(hby.db, said), both);
-      assertEquals(loadStoredReply(hby.db, said, { maxMessageBytes: both.length }), both);
-      assertThrows(() => loadStoredReply(hby.db, said, { maxMessageBytes: both.length - 1 }), ResourceLimitError);
-      assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: 1 }), ResourceLimitError);
       const extra = hby.makeHab("supplemental", undefined, { transferable: false });
       const cigar = extra.sign(oldReply.raw, false)[0];
       hby.db.scgs.add([said], [extra.kever!.verfers[0], cigar]);
       const withCigar = loadStoredReply(hby.db, said);
       assertEquals(textDecoder.decode(withCigar.slice(oldReply.raw.length, oldReply.raw.length + 8)), "-VCJ-FAC");
       assertStringIncludes(textDecoder.decode(withCigar), `-CAB${extra.pre}${cigar.qb64}`);
-      assertEquals(loadStoredReply(hby.db, said, { maxMessageBytes: withCigar.length }), withCigar);
-      assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: 2 }), ResourceLimitError);
       // Compact durable SN keys are storage fixtures for ordering, not accepted establishment evidence.
       for (const snh of ["10", "2", "02"]) {
         hby.db.ssgs.pin([said, pre, snh, hab.kever!.said], hab.sign(oldReply.raw, true));
@@ -296,9 +272,7 @@ Deno.test("OOBI local state - non-transferable mailbox OOBI replies use reply ci
       const said = hby.db.eans.get([pre, EndpointRoles.mailbox, pre])!.qb64;
       const expected = endRole;
       assertEquals(hab.loadEndRole(pre, pre, EndpointRoles.mailbox), expected);
-      assertEquals(loadStoredReply(hby.db, said, { maxMessageBytes: expected.length, maxProofRows: 1 }), expected);
-      assertThrows(() => loadStoredReply(hby.db, said, { maxMessageBytes: expected.length - 1 }), ResourceLimitError);
-      assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: 0 }), ResourceLimitError);
+      assertEquals(loadStoredReply(hby.db, said), expected);
       // Additional stored couple exercises the actual 714 exactly-one-cigar rule.
       const other = hby.makeHab("other", undefined, { transferable: false });
       const serder = hby.db.rpys.get([said])!;
@@ -306,11 +280,10 @@ Deno.test("OOBI local state - non-transferable mailbox OOBI replies use reply ci
       hby.db.scgs.add([said], [other.kever!.verfers[0], cigar]);
       // Actual 714 omits ambiguous cigar multiplicity; no remaining authenticator is an output failure.
       assertThrows(
-        () => loadStoredReply(hby.db, said, { maxProofRows: 2 }),
+        () => loadStoredReply(hby.db, said),
         ValidationError,
         "Missing attached signatures",
       );
-      assertThrows(() => loadStoredReply(hby.db, said, { maxProofRows: 1 }), ResourceLimitError);
     } finally {
       yield* hby.close();
     }

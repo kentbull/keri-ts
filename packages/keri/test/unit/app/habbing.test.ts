@@ -18,7 +18,6 @@ import {
   CtrDexV2,
   Diger,
   parseCounterFromText,
-  ResourceLimitError,
   SerderKERI,
   Siger,
   smell,
@@ -826,10 +825,10 @@ Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approve
         ...hby.db.cloneDelegation(delegate.kever!),
         delegate.replyEndRole(delegate.pre),
       );
-      assertEquals(introduce(delegate, delegator.pre, introduction.length), introduction);
-      const read = hby.db.getValBounded;
-      const fault = new Error("event hydration must follow metadata admission");
-      hby.db.getValBounded = () => {
+      assertEquals(introduce(delegate, delegator.pre), introduction);
+      const read = hby.db.getEvt;
+      const fault = new Error("event hydration follows metadata capture");
+      hby.db.getEvt = () => {
         throw fault;
       };
       let selectorReads = 0;
@@ -846,14 +845,11 @@ Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approve
         },
       });
       const source = delegate.replyToOobiMessages(delegate.pre, undefined, selectors);
-      assertEquals(selectorReads, 0); // Input is borrowed until admitted acquisition.
+      assertEquals(selectorReads, 0); // Input is borrowed until iterator acquisition.
 
-      assertThrows(() => [...delegate.replyToOobiMessages(delegate.pre, undefined, [], {
-        maxDescriptors: 0,
-      })], ResourceLimitError);
       assertThrows(() => [...source], Error, fault.message);
       assertEquals(selectorReads, 1);
-      hby.db.getValBounded = read;
+      hby.db.getEvt = read;
 
       const iterator = source[Symbol.iterator]();
       assertEquals(selectorReads, 2); // Acquisition, before its first next(), captures the filter.
@@ -863,9 +859,9 @@ Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approve
       const remainder = [...{ [Symbol.iterator]: () => iterator }];
       assertEquals([...concatBytes(first.value, ...remainder)], [...approved]);
       const replayRange = hby.db.replayRange;
-      hby.db.replayRange = function*(range, limit) {
+      hby.db.replayRange = function*(range) {
         if (range[0] !== delegate.pre) return; // Durable anchor exists, but no readable parent chain.
-        yield* replayRange.call(this, range, limit);
+        yield* replayRange.call(this, range);
       };
       assertEquals([...delegate.replyToOobiMessages(delegate.pre)], []);
       hby.db.replayRange = replayRange;
