@@ -45,6 +45,8 @@ import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
+import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
+import { Reger } from "../../../src/db/reger.ts";
 import framing714 from "../../fixtures/multisig-framing-714.json" with { type: "json" };
 
 // @ts-expect-error Inception derives gid from its child instead of accepting a second identity.
@@ -159,7 +161,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
   });
 });
 
-Deno.test("multisig approval honors signed child genus for KEL and endpoint replies", async () => {
+Deno.test("multisig approval honors signed child genus for KEL, replies and registry anchors", async () => {
   await participants(async (left, right, alice, bob, notifier) => {
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
@@ -220,6 +222,33 @@ Deno.test("multisig approval honors signed child genus for KEL and endpoint repl
         });
         assertEquals(replyResult?.accepted, true);
         assertEquals(left.db.ends.get([local.hab.pre, "mailbox", bob.pre])?.allowed, true);
+        const registry = inceptRegistry(local.hab.pre, { cnfg: ["NB"] });
+        const anchor = right.interactGroupHab("group", mids, {
+          data: [{ i: registry.pre, s: "0", d: registry.said }],
+        });
+        const [vcpWrapper, vcpPaths] = exchange("/multisig/vcp", {
+          gid: local.hab.pre,
+          cgvrsn: [2, 0],
+        }, {
+          sender: bob.pre,
+          embeds: { vcp: registry.raw, anc: messagize(anchor.serder, { sigers: anchor.sigers, gvrsn: Vrsn_2_0 }) },
+        });
+        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(vcpWrapper, { pipelined: false }), vcpPaths), {
+          local: true,
+        });
+        const registryResult = yield* waitForOneApproval(left, runtime, {
+          pollTurns: 1,
+          pollBudgetMs: 1,
+          callbacks: {
+            approveProposal: () => true,
+            chooseGroupAlias: () => "group",
+            chooseRegistryName: () => "registry",
+          },
+        });
+        assertEquals(registryResult?.accepted, true);
+        assertEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
+        assertInstanceOf(runtime.vdr.reger, Reger);
+        assertEquals(runtime.vdr.reger.tels.getOn(registry.pre!, 0)?.qb64, registry.said);
       } finally {
         yield* runtime.close();
       }
