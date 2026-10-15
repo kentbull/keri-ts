@@ -550,8 +550,8 @@ export class Multiplexor {
       const child = nests[0];
       const signed = payload[route.slice(route.lastIndexOf("/") + 1)];
       if (
-        typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "") ||
-        !(child.body instanceof SerderKERI) || child.nests?.length
+        typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "")
+        || !(child.body instanceof SerderKERI) || child.nests?.length
       ) {
         return { ok: false, said, reason: "Invalid multisig child kind, descendants, or signed SAID." };
       }
