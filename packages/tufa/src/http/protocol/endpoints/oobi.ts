@@ -110,9 +110,7 @@ export function handleOobiRoute(
   let body: ReadableStream<Uint8Array> | null;
   try {
     body = runtime.replyStreams.openNonEmpty(
-      hab.replyToOobiMessages(aid, request.role, request.eid ? [request.eid] : [], {
-        maxMessageBytes: runtime.replyStreams.messageByteLimit,
-      }),
+      hab.replyToOobiMessages(aid, request.role, request.eid ? [request.eid] : []),
     );
   } catch (error) {
     if (error instanceof ResourceAdmissionError) {

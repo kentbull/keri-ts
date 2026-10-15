@@ -197,12 +197,9 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       unblock();
       yield* closing;
       yield* delivery;
-      assertEquals(
-        [runtime.deliveries.hasPending, runtime.resources.used.bytes > 0],
-        [false, true],
-        "Joined queued cleanup still borrows the unread response wire",
-      );
-      yield* call(() => unread.cancel());
+      assertEquals(runtime.deliveries.hasPending, false);
+      const unreadWire = yield* call(() => new Response(unread).arrayBuffer());
+      assertEquals(unreadWire.byteLength > 0, true, "Queued cleanup leaves the independent response readable");
       assertEquals(runtime.resources.used.bytes, 0);
     } finally {
       unblock();

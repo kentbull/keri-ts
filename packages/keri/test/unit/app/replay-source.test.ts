@@ -1,4 +1,4 @@
-import { b, Dater, ResourceLimitError, ResourcePolicy, SerderKERI } from "cesr-ts";
+import { b, Dater, ResourceLimitError, SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -32,20 +32,19 @@ Deno.test("witness GET captures target FEL or KEL duplicate order without retain
         return said;
       };
       const fork = storeFork("captured");
-      const resources = new ResourcePolicy(), replies = new ReplyStreams({}, resources);
+      const replies = new ReplyStreams();
       const read = hby.db.getValBounded;
       hby.db.getValBounded = () => {
-        throw new Error("event hydration before response admission");
+        throw new Error("event hydration before HTTP pull");
       };
       let ordered: Iterable<Uint8Array>, fel: Iterable<Uint8Array>, body: ReadableStream<Uint8Array>;
       try {
-        const bySequence = witnessQueryGet(hab, { typ: "kel", pre: hab.pre, sn: 1 }, replies.messageByteLimit);
-        const byFirstSeen = witnessQueryGet(hab, { typ: "kel", pre: hab.pre }, replies.messageByteLimit);
+        const bySequence = witnessQueryGet(hab, { typ: "kel", pre: hab.pre, sn: 1 });
+        const byFirstSeen = witnessQueryGet(hab, { typ: "kel", pre: hab.pre });
         if (bySequence.kind !== "accepted" || byFirstSeen.kind !== "accepted") throw new Error("Expected capture");
         ordered = bySequence.messages;
         fel = byFirstSeen.messages;
         body = replies.open(ordered);
-        assertEquals(resources.used.streams, 1);
       } finally {
         hby.db.getValBounded = read;
       }
@@ -78,7 +77,6 @@ Deno.test("witness GET captures target FEL or KEL duplicate order without retain
         assertEquals(cursors, 0);
         yield* call(() => reader.cancel());
         reader.releaseLock();
-        assertEquals(resources.used.bytes, 0);
         const native = hby.db.evts.sdb as unknown as { getBinary(key: Uint8Array): Uint8Array | undefined };
         const binary = native.getBinary;
         native.getBinary = () => {
