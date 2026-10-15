@@ -14,6 +14,9 @@ Deno.test("db/core lmdber lifecycle - reopen preserves data and close clears env
     assertEquals(yield* lmdber.reopen({ temp: true }), true);
     assert(lmdber.opened);
     assertEquals(lmdber.getVer(), "1.0.0");
+    assertEquals(lmdber.inWriteTransaction, false);
+    lmdber.env!.transactionSync(() => assertEquals(lmdber.inWriteTransaction, true));
+    assertEquals(lmdber.inWriteTransaction, false);
 
     const stories = lmdber.openDB("stories.", false);
     lmdber.setVal(stories, b("story.alpha"), b("first draft"));
@@ -23,6 +26,7 @@ Deno.test("db/core lmdber lifecycle - reopen preserves data and close clears env
     assertEquals(lmdber.env, null);
     assertEquals(lmdber.opened, false);
     assertThrows(() => lmdber.getVer(), DatabaseNotOpenError);
+    assertThrows(() => lmdber.inWriteTransaction, DatabaseNotOpenError);
 
     assertEquals(yield* lmdber.reopen({ temp: true }), true);
     assert(lmdber.opened);

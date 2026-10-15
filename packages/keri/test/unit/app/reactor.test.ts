@@ -53,7 +53,7 @@ Deno.test("app/reactor - query parsing normalizes transferable last-establishmen
       assertExists(seen);
       seen = null;
       // Queued complete records finish independently of the open stream.
-      reactor.ingest(hab.query(hab.pre, hab.pre, {}, "ksn"));
+      reactor.ingest(hab.query(hab.pre, hab.pre, { route: "ksn", q: {} }));
       yield* reactor.processOnce();
 
       if (!seen) {
@@ -324,7 +324,7 @@ Deno.test("app/reactor - query parsing keeps non-transferable endorsements as ru
         seen = envelope;
       }) as typeof reactor.kevery.processQuery;
 
-      reactor.ingest(hab.query(hab.pre, hab.pre, {}, "ksn"));
+      reactor.ingest(hab.query(hab.pre, hab.pre, { route: "ksn", q: {} }));
       yield* reactor.processOnce();
 
       if (!seen) {
@@ -536,7 +536,7 @@ Deno.test("app/reactor - malformed and unsupported queries do not throw, and uns
       yield* reactor.processOnce();
       assertEquals(standaloneCues(reactor.kevery.cues).pull(), undefined);
 
-      reactor.ingest(hab.query(hab.pre, hab.pre, {}, "bogus"));
+      reactor.ingest(hab.endorse(makeQuerySerder("bogus", { i: hab.pre, src: hab.pre })));
       yield* reactor.processOnce();
 
       const cue = standaloneCues(reactor.kevery.cues).pull();

@@ -4,9 +4,11 @@ import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "j
 import { once } from "node:events";
 import { createConnection, createServer, type Socket } from "node:net";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { FrameIntake } from "../../../src/app/frame-intake.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { socketBytes } from "../../../src/app/socket-source.ts";
+import { streamCesrTcpConversation } from "../../../src/app/tcp-conversation.ts";
 import { sendCesrTcp, streamCesrTcp, writeCesrTcpSocket } from "../../../src/app/tcp-egress.ts";
 import { Receiptor, sendWitnessMessage, WitnessReceiptor } from "../../../src/app/witnessing.ts";
 
@@ -470,7 +472,13 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
     try {
       yield* call(() => new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)));
       const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
-      const options = { replies: { runtime }, connectTimeoutMs: 1000, drainTimeoutMs: 40 };
+      // The connection owns its intake and borrows only the protocol processor from the host.
+      const replies = {
+        services: runtime.services,
+        intake: new FrameIntake(runtime.resources, undefined, 1),
+        reactor: runtime.reactor,
+      };
+      const options = { replies, connectTimeoutMs: 1000, drainTimeoutMs: 40 };
       const occupied = runtime.resources.reserve({ streams: 1 });
       if (occupied.kind !== "reserve") throw new Error("Expected free capacity");
       try {
@@ -479,13 +487,13 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
           yield Uint8Array.of(9);
         };
         const busy = yield* call(() =>
-          assertRejects(() => run(() => streamCesrTcp(url, source, options)), ResourceAdmissionError)
+          assertRejects(() => run(() => streamCesrTcpConversation(url, source, options)), ResourceAdmissionError)
         );
         assertEquals(busy.reason, "busy");
         const limit = yield* call(() =>
           assertRejects(() =>
             run(() =>
-              streamCesrTcp(url, source, {
+              streamCesrTcpConversation(url, source, {
                 ...options,
                 maxChunkBytes: runtime.resources.limits.bytes,
               })
@@ -496,7 +504,7 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
           assertRejects(
             () =>
               run(() =>
-                streamCesrTcp(url, source, {
+                streamCesrTcpConversation(url, source, {
                   ...options,
                   services: { ...runtime.services },
                 })
@@ -533,10 +541,10 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
           }
         };
         const task = run(function*() {
-          const result = yield* streamCesrTcp(url, source, {
+          const result = yield* streamCesrTcpConversation(url, source, {
             ...options,
             replies: {
-              runtime,
+              ...replies,
               consume: function*() {
                 assertEquals(receiving.db.getKever(sender.pre)?.sn, expectedSn);
                 verified.resolve();
@@ -899,5 +907,61 @@ Deno.test("TCP output rejects oversized backing, freezes drain deadline and perm
   } finally {
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+Deno.test("TCP duplex consumes bounded raw bytes without a protocol runtime", async () => {
+  const resources = new ResourcePolicy({ streams: 2, bytes: 4 * 1024 ** 2 });
+  const services = { ...defaultRuntimeServices, resources };
+  const reply = Uint8Array.of(3, 4, 5);
+  let connected = false, prepared = false, closed = false;
+  const incoming: number[] = [], outgoing: number[] = [];
+  const server = createServer({ allowHalfOpen: true }, (socket) => {
+    connected = true;
+    socket.on("data", (chunk) => outgoing.push(...chunk));
+    socket.once("end", () => socket.end(reply));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const result = await run(() =>
+      streamCesrTcp(
+        `tcp://127.0.0.1:${(server.address() as { port: number }).port}`,
+        async function*() {
+          assertEquals(prepared, true);
+          yield Uint8Array.of(1, 2);
+        },
+        {
+          services,
+          maxChunkBytes: 4,
+          read: {
+            maxChunkBytes: 4,
+            maxBufferedBytes: 8,
+            open(source, signal) {
+              return resource(function*(provide) {
+                assertEquals(connected, false, "consumer setup precedes socket acquisition");
+                const credit = resources.reserve({ streams: 1, bytes: 12 });
+                if (credit.kind !== "reserve") throw new Error("Expected input capacity");
+                prepared = true;
+                try {
+                  yield* provide(call(async () => {
+                    for await (const bytes of source(signal)) incoming.push(...bytes);
+                  }));
+                } finally {
+                  closed = true;
+                  credit.reservation.release();
+                }
+              });
+            },
+          },
+        },
+      )
+    );
+    assertEquals(result, { kind: "transmitted", bytes: 2 });
+    assertEquals(incoming, [...reply]);
+    assertEquals(outgoing, [1, 2]);
+    assertEquals(closed, true);
+    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

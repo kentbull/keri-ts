@@ -577,6 +577,11 @@ export function receipt(
   });
 }
 
+/**
+ * Build a raw query envelope. This codec boundary accepts extension routes and
+ * protocol payloads, including malformed-input test vectors; built-in signed
+ * application queries use QueryInstruction at Hab.query instead.
+ */
 export function query(
   route = "",
   queryData: Record<string, unknown> = {},
