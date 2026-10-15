@@ -14,7 +14,7 @@ import {
   keepEscrow,
   logEscrowDecision,
 } from "./kever-decisions.ts";
-import type { EndpointRecord, LocationRecord } from "./records.ts";
+import { EndpointRecord, LocationRecord } from "./records.ts";
 import { isRole } from "./roles.ts";
 
 /** Live reply outcome for one reply that was accepted this pass. */
@@ -899,8 +899,8 @@ export class BasicReplyRouteHandler {
     allowed: boolean,
   ): void {
     this.db.eans.pin(keys, saider);
-    const existing = this.db.ends.get(keys) ?? {} as EndpointRecord;
-    this.db.ends.pin(keys, { ...existing, allowed });
+    const existing = this.db.ends.get(keys);
+    this.db.ends.pin(keys, new EndpointRecord({ ...existing?.asDict(), allowed }));
   }
 
   /**
@@ -912,8 +912,8 @@ export class BasicReplyRouteHandler {
    */
   updateLoc(keys: [string, string], saider: Diger, url: string): void {
     this.db.lans.pin(keys, saider);
-    const existing = this.db.locs.get(keys) ?? {} as LocationRecord;
-    this.db.locs.pin(keys, { ...existing, url });
+    const existing = this.db.locs.get(keys);
+    this.db.locs.pin(keys, new LocationRecord({ ...existing?.asDict(), url }));
   }
 
   /**
@@ -930,7 +930,6 @@ export class BasicReplyRouteHandler {
     serder: SerderKERI;
     diger: Diger;
     route: string;
-    action?: string;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
@@ -945,14 +944,13 @@ export class BasicReplyRouteHandler {
       );
     }
 
-    const data = args.serder.ked?.a as Record<string, unknown> | undefined;
-    const cid = typeof data?.cid === "string"
-      ? new Prefixer({ qb64: data.cid }).qb64
-      : null;
-    const role = typeof data?.role === "string" ? data.role : null;
-    const eid = typeof data?.eid === "string"
-      ? new Prefixer({ qb64: data.eid }).qb64
-      : null;
+    const data = args.serder.ked?.a;
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new ValidationError("Missing one of cid/role/eid in /end/role reply.");
+    }
+    const cid = "cid" in data && typeof data.cid === "string" ? new Prefixer({ qb64: data.cid }).qb64 : null;
+    const role = "role" in data && typeof data.role === "string" ? data.role : null;
+    const eid = "eid" in data && typeof data.eid === "string" ? new Prefixer({ qb64: data.eid }).qb64 : null;
     if (!cid || !role || !eid) {
       throw new ValidationError(
         "Missing one of cid/role/eid in /end/role reply.",
@@ -1009,12 +1007,13 @@ export class BasicReplyRouteHandler {
         `Unsupported route=${args.route} in reply message.`,
       );
     }
-    const data = args.serder.ked?.a as Record<string, unknown> | undefined;
-    const eid = typeof data?.eid === "string"
-      ? new Prefixer({ qb64: data.eid }).qb64
-      : null;
-    const scheme = typeof data?.scheme === "string" ? data.scheme : null;
-    const url = typeof data?.url === "string" ? data.url : null;
+    const data = args.serder.ked?.a;
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new ValidationError("Missing one of eid/scheme/url in /loc/scheme reply.");
+    }
+    const eid = "eid" in data && typeof data.eid === "string" ? new Prefixer({ qb64: data.eid }).qb64 : null;
+    const scheme = "scheme" in data && typeof data.scheme === "string" ? data.scheme : null;
+    const url = "url" in data && typeof data.url === "string" ? data.url : null;
     if (!eid || !scheme || url === null) {
       throw new ValidationError(
         "Missing one of eid/scheme/url in /loc/scheme reply.",
