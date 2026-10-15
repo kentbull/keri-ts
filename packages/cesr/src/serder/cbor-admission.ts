@@ -13,7 +13,7 @@ export function admitCbor(raw: Uint8Array, budget: DecodedBodyBudget): boolean {
     throw new RangeError("Decoded credit must be a non-negative safe integer");
   }
   budget.admitStage?.(64);
-  let remaining = budget.decodedBytes, offset = 0, pending = 1, shortString = 0;
+  let remaining = budget.decodedBytes, offset = 0, pending = 1;
   let indefinite = false, tagged = false, boundaryFailure = false;
   while (offset < raw.length) {
     const token = raw[offset++], major = token >> 5, additional = token & 31;
@@ -56,7 +56,6 @@ export function admitCbor(raw: Uint8Array, budget: DecodedBodyBudget): boolean {
       } else if (major === 3) {
         charge += 2 * size;
         payload = size;
-        shortString = Math.max(shortString, Math.min(size, 64));
       } else if (major === 6) {
         admitTag(size);
         tagged = true;
@@ -77,7 +76,7 @@ export function admitCbor(raw: Uint8Array, budget: DecodedBodyBudget): boolean {
     }
     offset += payload;
   }
-  const working = cborWorkspaceBytes(raw.length, shortString);
+  const working = cborWorkspaceBytes(raw.length);
   budget.admitStage?.(working);
   budget.admitStage?.(budget.decodedBytes - remaining);
   budget.decodedBytes = remaining;

@@ -624,8 +624,14 @@ Deno.test("JSON and CBOR descendants share decoded credit through refusal, suspe
   const wrap = (raw: Uint8Array) => v.group("NonNativeBodyGroup", new Texter({ raw, code: "4B" }).qb64);
   const child = v.group("BodyWithAttachmentGroup", wrap(cborBody));
   const wire = v.group("BodyWithAttachmentGroup", wrap(encode(jsonBody)) + child);
-  // JSON charge406; CBOR scanner64 +working938 +base decoded502.
-  const held = 512 + 406 + 64 + 938 + 502;
+  const measured = new ResourcePolicy();
+  const measuring = parse(chunks(encode(wire)), { resources: measured, maxFrameBytes: 512 });
+  const sample = (await measuring.next()).value!;
+  const held = measured.used.bytes;
+  assert(held > 512, "decoded parent and child retain credit beyond the wire allowance");
+  await discardFrame(sample);
+  await measuring.return(undefined);
+  assertEquals(measured.used.bytes, 0);
   class TrackingPolicy extends ResourcePolicy {
     reserved = 0;
     released = 0;
