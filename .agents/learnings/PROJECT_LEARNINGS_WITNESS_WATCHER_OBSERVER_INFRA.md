@@ -42,7 +42,8 @@ protocol scenarios and participant topology; no lock or new installer is needed.
 
 PR scope uses the [existing suite owners](../../scripts/ci/keri-test-suites.ts)
 and [description controls](../../docs/reference/PR_TEST_SCOPE.md). Exact-head local
-unit credit avoids duplicate CI execution; selected interop/package checks retain
+unit credit avoids duplicate CI execution. Draft promotion does not rerun an
+unchanged head; source pushes do. Selected interop/package checks retain
 their real assertions and topology. A skipped lane is not execution evidence.
 Periodic broad checks catch cross-feature regressions; full release qualification
 still includes the maintained manual/endurance gates.
