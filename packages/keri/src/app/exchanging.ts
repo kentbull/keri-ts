@@ -27,7 +27,8 @@ import {
 } from "cesr-ts";
 import { call, type Operation, type Provide, resource } from "npm:effection@^3.6.0";
 import { resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
-import { CueDeck, type PreparedCueBatch } from "../core/cue-admission.ts";
+import type { PreparedCueBatch } from "../core/cue-admission.ts";
+import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { PathedMaterialGroup, TransIdxSigGroup, type TransLastIdxSigGroup } from "../core/dispatch.ts";
@@ -222,6 +223,7 @@ export type ExchangeDecision =
 export class Exchanger {
   readonly hby: Habery;
   readonly cues: Deck<AgentCue>;
+  private readonly publisher: CuePublisher;
   readonly routes = new Map<string, ExchangeRouteHandler>();
   private readonly versionedRoutes = new Map<string, Map<number, ExchangeRouteHandler>>();
   /** At most one active admission; the runtime owns bounded waiting and backpressure. */
@@ -263,6 +265,7 @@ export class Exchanger {
     this.now = now;
     this.hby = hby;
     this.cues = cues ?? new Deck();
+    this.publisher = cuePublisher(this.cues);
     for (const handler of handlers) {
       this.addHandler(handler);
     }
@@ -528,7 +531,7 @@ export class Exchanger {
     // An already accepted exchange cannot be downgraded by an incomplete duplicate.
     if (pending && this.complete(said)) return pending;
     // This exact plan precedes private nested staging and durable evidence/archive publication.
-    const owned = pending && this.cues instanceof CueDeck;
+    const owned = pending && this.publisher.resourcePolicy;
     const newPending = () => {
       if (this.complete(said)) return false;
       if (missingSchema === undefined) return this.hby.db.epse.get([said]) === null;
@@ -553,7 +556,7 @@ export class Exchanger {
       }
       if (needsProof) cues.push({ kin: "proof", said });
       if (missingSchema) cues.push({ kin: "query", q: { r: "schema", said: missingSchema } });
-      if (cues.length) pendingCues = (this.cues as CueDeck).prepare(cues);
+      if (cues.length) pendingCues = this.publisher.prepare(cues);
     }
     /** A different Exchanger may share the store; never apply a stale async membership plan. */
     const checkPending = () => {
@@ -1003,7 +1006,7 @@ export class Exchanger {
 
   /** Match _cueMissingKeyState's coordinate deduplication within this invocation. */
   private cueMissingStates(missing: readonly MissingExchangeState[]): void {
-    if (this.cues instanceof CueDeck) {
+    if (this.publisher.resourcePolicy) {
       if (!missing.length) return;
       // Canonical coordinates contain fixed qualified prefixes and safe ordinals. Account
       // Map/key/query scratch before constructing it, separately from the retained batch.
@@ -1025,7 +1028,7 @@ export class Exchanger {
         for (const { pre, sn } of unique.values()) {
           cues.push({ kin: "query", pre, q: { r: "logs", pre, ...(sn === null ? {} : { sn: sn.toString(16) }) } });
         }
-        batch = this.cues.prepare(cues);
+        batch = this.publisher.prepare(cues);
         batch.publish();
       } finally {
         try {

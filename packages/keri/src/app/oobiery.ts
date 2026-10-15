@@ -1,6 +1,7 @@
 import { type Cigar, Diger, Ilks, Prefixer, ResourceAdmissionError, SerderKERI } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import { CueDeck, type PreparedCueBatch } from "../core/cue-admission.ts";
+import type { PreparedCueBatch } from "../core/cue-admission.ts";
+import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue, OobiResolvedCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
@@ -65,6 +66,7 @@ export class Oobiery {
   readonly hby: Habery;
   readonly reactor: Reactor;
   readonly cues: Deck<AgentCue>;
+  private readonly publisher: CuePublisher;
   readonly services: RuntimeServices;
   private active = false;
 
@@ -73,6 +75,7 @@ export class Oobiery {
     this.hby = hby;
     this.reactor = reactor;
     this.cues = cues ?? new Deck();
+    this.publisher = cuePublisher(this.cues);
     // The Reactor owns admission; injected clock/HTTP services borrow its exact ledger.
     this.services = resolveRuntimeServices({ ...services, resources: reactor.resources });
   }
@@ -94,11 +97,10 @@ export class Oobiery {
     const meta = parseOobiUrl(url, alias);
     const kind = queueKindFor(url), record = this.queuedRecord(meta);
     const cues: AgentCue[] = [{ kin: "oobiQueued", url, alias: meta.alias }];
-    const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    const batch = this.publisher.prepare(cues);
     try {
       this.pinQueueStore(kind, url, record);
-      if (batch) batch.publish();
-      else this.cues.extend(cues);
+      batch.publish();
     } finally {
       batch?.release();
     }
@@ -279,12 +281,11 @@ export class Oobiery {
       this.cues.checkSpace();
       const result = { ...queuedRecord, date: new Date().toISOString(), state: `http-${response.status}` };
       const cues: AgentCue[] = [{ kin: "oobiFailed", url, reason: `HTTP ${response.status}` }];
-      const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+      const batch = this.publisher.prepare(cues);
       try {
         this.remQueueStore(kind, url);
         this.hby.db.eoobi.pin(url, result);
-        if (batch) batch.publish();
-        else this.cues.extend(cues);
+        batch.publish();
       } finally {
         batch?.release();
       }
@@ -372,10 +373,10 @@ export class Oobiery {
 
   /** Keep prospective CESR result credit until all later body/parser owners join cleanup. */
   private *holdResolvedOobi(cue: OobiResolvedCue): Operation<PreparedCueBatch | undefined> {
-    const deck = this.cues;
-    if (!(deck instanceof CueDeck)) return undefined;
+    if (!this.publisher.resourcePolicy) return undefined;
+    const publisher = this.publisher;
     return yield* resource<PreparedCueBatch>(function*(provide) {
-      const batch = deck.prepare([cue]);
+      const batch = publisher.prepare([cue]);
       try {
         yield* provide(batch);
       } finally {
@@ -407,13 +408,12 @@ export class Oobiery {
     this.cues.checkSpace();
     const result = { ...record, date: new Date().toISOString(), state: "resolved" };
     const cues: AgentCue[] = [{ kin: "oobiResolved", url }];
-    const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    const batch = this.publisher.prepare(cues);
     try {
       this.hby.db.schema.pin(schemer.said, schemer);
       this.hby.db.coobi.rem(url);
       this.hby.db.roobi.pin(url, result);
-      if (batch) batch.publish();
-      else this.cues.extend(cues);
+      batch.publish();
     } finally {
       batch?.release();
     }
@@ -479,13 +479,12 @@ export class Oobiery {
     });
     const cues: AgentCue[] = children.map(({ url, meta }) => ({ kin: "oobiQueued", url, alias: meta.alias }));
     const parent = { ...record, cid, date: new Date().toISOString(), state: "pending-multi-oobi", urls };
-    const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    const batch = this.publisher.prepare(cues);
     try {
       for (const child of children) this.pinQueueStore(child.kind, child.url, child.record);
       this.hby.db.coobi.rem(url);
       this.hby.db.moobi.pin(url, parent);
-      if (batch) batch.publish();
-      else this.cues.extend(cues);
+      batch.publish();
     } finally {
       batch?.release();
     }
@@ -514,7 +513,7 @@ export class Oobiery {
         role: record.role ?? undefined,
         eid: record.eid ?? undefined,
       }];
-    const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    const batch = this.publisher.prepare(cues);
     try {
       this.hby.db.moobi.rem(url);
       if (failed) this.hby.db.eoobi.pin(url, result);
@@ -522,8 +521,7 @@ export class Oobiery {
         this.hby.db.roobi.pin(url, result);
         persistResolvedContact(this.hby, record.cid ?? null, { alias: record.oobialias, oobi: url });
       }
-      if (batch) batch.publish();
-      else this.cues.extend(cues);
+      batch.publish();
     } finally {
       batch?.release();
     }
@@ -538,12 +536,11 @@ export class Oobiery {
     this.cues.checkSpace();
     const result = { ...record, date: new Date().toISOString(), state };
     const cues: AgentCue[] = [{ kin: "oobiFailed", url, reason: state }];
-    const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    const batch = this.publisher.prepare(cues);
     try {
       this.hby.db.coobi.rem(url);
       this.hby.db.eoobi.pin(url, result);
-      if (batch) batch.publish();
-      else this.cues.extend(cues);
+      batch.publish();
     } finally {
       batch?.release();
     }
@@ -610,7 +607,7 @@ export class Oobiery {
       );
     }
 
-    if (!(this.cues instanceof CueDeck)) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
+    if (!(this.publisher.resourcePolicy)) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
     const proof = this.reactor.revery.prepareReply({
       serder: args.serder,
       saider: args.diger,
@@ -638,13 +635,12 @@ export class Oobiery {
       };
       const cues: AgentCue[] = [{ kin: "oobiQueued", url: oobi }];
       this.cues.checkSpace(cues.length);
-      const batch = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+      const batch = this.publisher.prepare(cues);
       try {
         proof.applyProofs();
         this.pinQueueStore(kind, oobi, record);
         proof.publishQueries();
-        if (batch) batch.publish();
-        else this.cues.extend(cues);
+        batch.publish();
         return acceptReplyDecision();
       } finally {
         batch?.release();
