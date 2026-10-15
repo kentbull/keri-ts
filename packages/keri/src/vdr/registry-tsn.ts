@@ -17,7 +17,7 @@ import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
 import type { Tevery } from "./eventing.ts";
 
 /** Require the entire qualified prefix, not a valid prefix followed by untrusted suffix bytes. */
-export function qualifiedPrefix(value: unknown): boolean {
+export function qualifiedPrefix(value: unknown): value is string {
   try {
     return typeof value === "string" && new Prefixer({ qb64: value }).qb64 === value;
   } catch {
@@ -25,26 +25,47 @@ export function qualifiedPrefix(value: unknown): boolean {
   }
 }
 
-/** Validate remote fields only; no storage/infrastructure failure is caught here. */
-export function registryRecord(data: unknown): RegStateRecord | null {
+/** Validate unknown notice fields and return the existing record with every field required. */
+export function registryRecord(data: unknown): Required<RegStateRecord> | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
-  const row = data as Record<string, unknown>;
   if (
-    Object.keys(row).some((key) => !["vn", "i", "s", "d", "ii", "dt", "et", "bt", "b", "c"].includes(key))
-    || typeof row.s !== "string" || !/^[0-9a-f]{1,14}$/i.test(row.s)
-    || BigInt(`0x${row.s}`) > BigInt(Number.MAX_SAFE_INTEGER)
-    || typeof row.bt !== "string" || !/^[0-9a-f]{1,14}$/i.test(row.bt) || !["vcp", "vrt"].includes(String(row.et))
-    || timestampMicros(row.dt) === null || !Array.isArray(row.vn) || row.vn.length !== 2
-    || row.vn.some((part) => !Number.isSafeInteger(part) || part < 0)
-    || !Array.isArray(row.b) || !Array.isArray(row.c) || row.c.some((item) => typeof item !== "string")
+    Object.keys(data).some((key) => !["vn", "i", "s", "d", "ii", "dt", "et", "bt", "b", "c"].includes(key))
+    || !("i" in data) || !qualifiedPrefix(data.i) || !("ii" in data) || !qualifiedPrefix(data.ii)
+    || !("s" in data) || typeof data.s !== "string" || !/^[0-9a-f]{1,14}$/i.test(data.s)
+    || BigInt(`0x${data.s}`) > BigInt(Number.MAX_SAFE_INTEGER)
+    || !("bt" in data) || typeof data.bt !== "string" || !/^[0-9a-f]{1,14}$/i.test(data.bt)
+    || !("et" in data) || (data.et !== "vcp" && data.et !== "vrt")
+    || !("dt" in data) || typeof data.dt !== "string" || timestampMicros(data.dt) === null
+    || !("vn" in data) || !Array.isArray(data.vn) || data.vn.length !== 2
+    || !("b" in data) || !Array.isArray(data.b) || !("c" in data) || !Array.isArray(data.c)
+    || !("d" in data) || typeof data.d !== "string"
+  ) return null;
+  // Array.isArray erases item types; narrow untrusted elements before constructing owned projections.
+  const version: unknown[] = data.vn, backers: unknown[] = data.b, config: unknown[] = data.c;
+  const [major, minor] = version;
+  if (
+    typeof major !== "number" || !Number.isSafeInteger(major) || major < 0
+    || typeof minor !== "number" || !Number.isSafeInteger(minor) || minor < 0
+    || !backers.every(qualifiedPrefix) || !config.every((item) => typeof item === "string")
   ) return null;
   try {
-    if (![row.i, row.ii, ...row.b].every(qualifiedPrefix)) return null;
-    if (new Diger({ qb64: row.d as string }).qb64 !== row.d) return null;
-    return RegStateRecord.fromDict(row);
+    if (new Diger({ qb64: data.d }).qb64 !== data.d) return null;
   } catch {
     return null;
   }
+  // Keep required-field types while constructing the existing record; these arrays are fresh owned copies.
+  return Object.assign(new RegStateRecord(), {
+    vn: [major, minor],
+    i: data.i,
+    s: data.s,
+    d: data.d,
+    ii: data.ii,
+    dt: data.dt,
+    et: data.et,
+    bt: data.bt,
+    b: [...backers],
+    c: [...config],
+  });
 }
 
 /** Dependency buckets owned by the registry notice receiver. */
@@ -67,13 +88,15 @@ export class RegistryStateReceiver {
   /** Called by Revery's SAID-checked route or typed Broker retry. */
   processReply({ serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs): RegistryReplyDecision {
     const record = registryRecord(serder.ked?.a);
+    const stamp = serder.ked?.dt;
     if (
-      !record || !qualifiedPrefix(aid) || timestampMicros(serder.ked?.dt) === null || route !== `/tsn/registry/${aid}`
+      !record || !qualifiedPrefix(aid) || typeof stamp !== "string" || timestampMicros(stamp) === null
+      || route !== `/tsn/registry/${aid}`
       || serder.said !== diger.qb64 || !serder.verify()
     ) {
       return unverifiedReplyDecision("Invalid registry transaction-state notice.");
     }
-    const regk = record.i!, issuer = record.ii!, sn = Number.parseInt(record.s!, 16);
+    const regk = record.i, issuer = record.ii, sn = Number.parseInt(record.s, 16);
     const previous = this.tvy.reger.txnsb.current([regk, aid]);
     const disposeIncoming = () => {
       if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(diger);
@@ -82,9 +105,10 @@ export class RegistryStateReceiver {
       disposeIncoming();
       return unverifiedReplyDecision(reason);
     };
-    const stored = this.tvy.reger.states.get(regk);
-    if (stored && !registryRecord(stored.asDict())) throw new Error("Corrupt stored registry state.");
-    if (stored && (stored.ii !== issuer || BigInt(`0x${stored.s!}`) > BigInt(sn))) {
+    const saved = this.tvy.reger.states.get(regk);
+    const stored = saved ? registryRecord(saved.asDict()) : null;
+    if (saved && !stored) throw new Error("Corrupt stored registry state.");
+    if (stored && (stored.ii !== issuer || BigInt(`0x${stored.s}`) > BigInt(sn))) {
       return reject("Mismatched issuer or stale registry state.");
     }
     const kever = this.tvy.db.getKever(issuer, { refresh: true });
@@ -111,7 +135,7 @@ export class RegistryStateReceiver {
           aid,
           serder,
           diger,
-          dater: new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) }),
+          dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
           cigars,
           tsgs,
         });
@@ -136,7 +160,7 @@ export class RegistryStateReceiver {
       for (const watcher of habitat.watchers ?? []) watchers.add(watcher);
     }
     const trusted = aid === issuer || watchers.has(aid)
-      || (!!stored && (stored.c?.includes(TraitDex.NoBackers) ? kever.wits : stored.b ?? []).includes(aid));
+      || (!!stored && (stored.c.includes(TraitDex.NoBackers) ? kever.wits : stored.b).includes(aid));
     if (!trusted && stored) return reject("Untrusted registry state attester.");
     if (previous && (!this.tvy.db.sdts.get([previous.qb64]) || !this.tvy.db.rpys.get([previous.qb64]))) {
       throw new Error("Corrupt prior registry reply evidence.");
@@ -171,13 +195,11 @@ export class RegistryStateReceiver {
       }
       if (!trusted || accepted.qb64 !== record.d) return reject("Registry state does not match accepted TEL.");
       // Receiver-generated record time is descriptive; configuration and state fields must agree.
-      const { dt: _incomingTime, ...incoming } = record.asDict();
-      const { dt: _storedTime, ...current } = stored.asDict();
-      const fields = ["vn", "i", "s", "d", "ii", "et", "bt", "b", "c"];
-      if (fields.some((key) => JSON.stringify(incoming[key]) !== JSON.stringify(current[key]))) {
+      const fields = ["vn", "i", "s", "d", "ii", "et", "bt", "b", "c"] as const;
+      if (fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(stored[key]))) {
         return reject("Registry state metadata mismatch.");
       }
-      const dater = new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) });
+      const dater = new Dater({ qb64: encodeDateTimeToDater(stamp) });
       const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
       this.rvy.cues.checkSpace(cues.length);
       const child = this.publisher.prepare(cues);

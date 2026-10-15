@@ -596,6 +596,9 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
         const malformed of [
           notice({ ...state, i: `${vcp.pre}suffix` }),
           notice({ ...state, s: "20000000000001" }),
+          notice({ ...state, vn: [1, "0"] }),
+          notice({ ...state, b: [1] }),
+          notice({ ...state, c: [1] }),
           reply(`/tsn/registry/${issuer.pre}suffix`, state, { pre: issuer.pre }),
         ]
       ) yield* runtime.reactor.processBytes(issuer.endorse(malformed));
