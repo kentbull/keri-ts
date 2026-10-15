@@ -54,8 +54,8 @@ cleanup borrows emission and route data. All cue queues and correlated reply
 batches carry ordinary records. Only actual output/iterator resources need cleanup;
 do not wrap cue references in retain/release handles. Reply routes retire with queued delivery even when an HTTP borrower
 keeps emission bytes alive. Preparation returns
-prepared/empty/refuse records, and the composition root consumes delivery refusals
-directly. A refused destination restores source ownership; foreign preparation
+prepared/empty records. Query request admission still has its separate byte-refusal
+result pending removal. Failed destination preparation preserves the source; foreign preparation
 failures retain their exception identity. Strict preparation callers keep their
 throwing boundary. QueryCoordinator
 prepares/adopts pending queries synchronously over committed accepted state,
@@ -167,7 +167,7 @@ duplicate queries and dependency migration. No cue inspection, capacity, policy
 identity, prepared-batch or reference-owner layer remains. QueryReplies correlates
 ordinary batches; readiness callbacks preserve paired replies and cancellation
 returns uncaptured records to the background flow. Runtime shutdown joins output
-cleanup, clears records, then closes owned stores. Runtime delivery query/output
+cleanup, clears records, then closes owned stores. Runtime query-request
 accounting still awaits removal and is not a pattern for new components.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
@@ -273,24 +273,18 @@ sink and cleanup failures propagate unchanged, including foreign same-class erro
 Cue preparation/item refusal follows the same exact invocation rule; foreign
 interpretation, route, reserve and observer failures propagate. This does not
 admit all decoded/native preparation copies.
-Cue interpretation and finite witness snapshots still share
-cueDeliveryBudget: 8 MiB wire, 24 MiB preparation; query routes still use 1 MiB. Direct reply combined
-floors derive from it; this remaining output accounting is scheduled for removal.
-Cue interpretation is synchronous: successful destination preparation precedes
-ordinary source removal. Lazy replay stays unopened until consumption. Output
-resources release after joined consumption. This facility alone is not reliable
-handoff by itself. Custom runtime cue drains now prepare one input/output owner per
-short turn and await the sink outside the guard; register that owner before sink
-resources so cancellation joins child cleanup before release. Initial pass count
-and eligible immediate transfer/busy semantics stay bounded. QueryCoordinator
-transforms under the same preparation/output check and sends without repeating
-observation/signing. Standalone custom wire preparation retains caller-owned bounds; pending metadata is unbounded.
-Generic HTTP drains reuse that owner with invocation-local service-habitat/sink
-selection. Transfer stream/query metadata before source removal; observe query
-continuations only after transfer. Earlier captured query batches use their own
-exact dispatch authorization and queued-only delivery, never a later frame or
-an old matching SAID cue. Network waits and joined fallback cleanup stay outside
-Reactor; capacity mappings require the actual invocation's created refusal.
+Cue interpretation synchronously publishes an ordinary emission before source
+removal. Preparation failure leaves the cue available; replay stays unopened.
+There is no prepared-emission owner, fixed wire/preparation floor or output quota.
+Custom drains pass the emission to their sink outside the guard, relying on the
+sink's actual reader/payload cleanup. Drains process their initial cue extent;
+records that produce no emission do not stop later records in that pass.
+QueryCoordinator transforms once and sends without repeating observation/signing.
+Generic HTTP drains use invocation-local habitat/sink selection. Earlier captured
+query batches retain their dispatch authorization, rather than borrowing a later
+frame. DirectReplyDelivery holds actual CueDelivery cursors; HTTP responses and
+queued deliveries independently iterate the same prepared emission records.
+Queue-only reply preparation has no unused admission-refusal observer.
 Cue routing passes the ordinary RawCesrRoute record directly into delivery.
 There is no route metadata reservation, target-count ceiling or release wrapper.
 Target preparation likewise returns an ordinary PreparedCesrTarget, without
@@ -306,11 +300,10 @@ wait for queue space under the guard or remove a cue before successful transfer.
 Witness source intake uses one scoped Reactor parser and borrows prepared emissions
 through joined callback cleanup outside the guard. The existing delivery batch
 holds its queue and callback halves; neither re-signs or releases the other early.
-Finite wrappers pre-admit a local 8 MiB snapshot ceiling and captured cue-count
-limit, copy replay.messages, and return caller-owned arrays after joined input
-cleanup; the source path collects no aggregate. Source intake shares the Reactor parser with its finite wrapper; consume
-emissions individually under the guarded frame lifetime, with independently admitted
-ownership for retained work. Finite receipt delivery suppression stays explicit.
+Finite wrappers copy each message into caller-owned arrays and close the real
+source iterator before returning, including early failure. They impose no output
+byte quota. The streaming source path consumes emissions individually and collects
+no aggregate. Finite receipt delivery suppression stays explicit.
 Genuine receive EOF, transmit failure and remote acceptance are separate facts.
 Explicit duplex preserves default routing; half-close drain deadlines cannot be
 extended by activity. The [transport plan](../../docs/plans/runtime/TRANSPORT_PLAN.md)

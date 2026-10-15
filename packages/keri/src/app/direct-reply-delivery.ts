@@ -1,22 +1,17 @@
-import { cueDeliveryBudget } from "./cue-budget.ts";
-/** One interpreted reply batch owned by delivery and a borrowed HTTP/witness consumer until both close. */
+/** Prepare reply records once for independent queued delivery and HTTP readers. */
 import { ResourceAdmissionError } from "cesr-ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
-import { Deck } from "../core/deck.ts";
+import type { Deck } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { CueDelivery, type CueTargetPreparation } from "./cue-delivery.ts";
-import { prepareCueEmission, type PreparedCueEmission } from "./cue-preparation.ts";
+import { prepareCueEmission } from "./cue-preparation.ts";
 import type { Poster, RawCesrRoute } from "./forwarding.ts";
 import type { Hab } from "./habbing.ts";
 import type { QueryReply } from "./query-replies.ts";
 
-/** Queue-only or two-consumer reply lifetime; consumers cannot retain bytes after cleanup. */
+/** Ordered delivery cursors; each HTTP reader independently consumes the same emission records. */
 export class DirectReplyDelivery {
   private index = 0;
-  private borrowDone = false;
-  private deliveryDone = false;
-  private published = false;
-  private readonly owners: PreparedCueEmission[] = [];
   private readonly deliveries: CueDelivery[] = [];
 
   /** All acquisition/publication is synchronous under the guard; no replay reader opens here. */
@@ -36,53 +31,34 @@ export class DirectReplyDelivery {
     hab: Hab,
     reply: QueryReply,
     accept: (delivery: DirectReplyDelivery) => void,
-    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): boolean {
     let transferred = false;
     this.prepareBatch(runtime, hab, reply, undefined, (delivery) => {
       accept(delivery);
       transferred = true;
-    }, onAdmissionRefusal);
+    });
     return transferred;
   }
 
-  /** Share one admitted cue between queued targets and a scoped witness consumer; neither reinterprets it. */
+  /** Interpret one cue for queued targets and the witness callback without signing twice. */
   static prepareCue(
     runtime: AgentRuntime,
     hab: Hab,
     cues: Deck<AgentCue>,
     resolve: (emission: CueEmission) => RawCesrRoute | null,
-    accept: (delivery: DirectReplyDelivery, borrow: PreparedCueEmission) => void,
-    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
+    accept: (delivery: DirectReplyDelivery, emission: CueEmission | undefined) => void,
   ): boolean {
     const batch = new DirectReplyDelivery();
-    const prepared = prepareCueEmission(hab, cues, runtime.resources, (owner) => {
-      batch.owners.push(owner);
-      if (owner.emission?.kind === "wire") {
-        const route = resolve(owner.emission);
+    return prepareCueEmission(hab, cues, (emission) => {
+      if (emission?.kind === "wire") {
+        const route = resolve(emission);
         if (route?.targets.length) {
-          batch.deliveries.push(new CueDelivery(owner.emission, runtime.hby.habs.get(route.sender) ?? hab, route));
+          batch.deliveries.push(new CueDelivery(emission, runtime.hby.habs.get(route.sender) ?? hab, route));
         }
       }
-      let live = true;
-      accept(batch, {
-        get emission() {
-          if (!live) throw new Error("Witness cue borrow is released");
-          return owner.emission;
-        },
-        retainedBytes: owner.retainedBytes,
-        resourcePolicy: owner.resourcePolicy,
-        release() {
-          if (!live) return;
-          live = false;
-          batch.closeBorrow();
-        },
-      });
+      accept(batch, emission);
       return undefined;
-    }, onAdmissionRefusal);
-    batch.published = prepared;
-    batch.finish([]);
-    return prepared;
+    });
   }
 
   /** One atomic wire preparation serves either queue-only delivery or the existing two consumers. */
@@ -95,68 +71,38 @@ export class DirectReplyDelivery {
     onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): ReadableStream<Uint8Array> | null {
     const batch = new DirectReplyDelivery();
-    batch.borrowDone = !publish;
-    const responseBytes = publish ? runtime.replyStreams.preparationByteFloor : 0;
     let stream: ReadableStream<Uint8Array> | null = null;
     reply.admit((cues) => {
-      const preparationBytes = responseBytes + cues.length * cueDeliveryBudget.preparationFloorBytes;
-      if (preparationBytes > runtime.resources.limits.bytes) {
-        const refusal = new ResourceAdmissionError("Direct reply preparation exceeds shared byte capacity", "limit");
-        onAdmissionRefusal?.(refusal);
-        throw refusal;
+      const emissions: CueEmission[] = [];
+      for (const cue of cues) {
+        const emission = hab.interpretCue(cue);
+        if (emission?.kind !== "wire") throw new RangeError("Direct reply requires wire");
+        emissions.push(emission);
+        const sender = ("src" in cue && cue.src ? runtime.hby.habs.get(cue.src) : undefined) ?? hab;
+        const route = "dest" in cue && cue.dest
+          ? runtime.poster.findBytesRoute(sender, {
+            recipient: cue.dest,
+            recipientIsPrefix: true,
+            topic: cue.kin === "replay" ? "/replay" : "/reply",
+          })
+          : null;
+        if (route?.targets.length) batch.deliveries.push(new CueDelivery(emission, sender, route));
       }
-      let response: ReturnType<AgentRuntime["replyStreams"]["prepare"]> | undefined;
-      try {
-        // One synchronous combined preflight guarantees all internal acquisitions before signing.
-        const combined = runtime.resources.reserve({
-          streams: publish ? 1 : 0,
-          bytes: preparationBytes,
-        });
-        if (combined.kind === "refuse") {
-          const refusal = new ResourceAdmissionError("Direct reply preparation refused", combined.reason);
-          onAdmissionRefusal?.(refusal);
-          throw refusal;
+      if (publish) {
+        const response = runtime.replyStreams.prepare(onAdmissionRefusal);
+        try {
+          stream = publish(batch, () =>
+            response.open({
+              *[Symbol.iterator]() {
+                for (const emission of emissions) yield* emission.messages;
+              },
+            }));
+        } finally {
+          response.release();
         }
-        combined.reservation.release();
-        if (publish) response = runtime.replyStreams.prepare(onAdmissionRefusal);
-        const prepare = (index: number): void => {
-          if (index === cues.length) {
-            if (publish) {
-              stream = publish(batch, () =>
-                response!.open({
-                  *[Symbol.iterator]() {
-                    for (const owner of batch.owners) yield* owner.emission!.messages;
-                  },
-                }, () => batch.closeBorrow()));
-            } else enqueue!(batch);
-            batch.published = true;
-            return;
-          }
-          prepareCueEmission(hab, new Deck<AgentCue>([cues[index]]), runtime.resources, (owner) => {
-            if (owner.emission?.kind !== "wire") throw new RangeError("Direct reply requires wire");
-            batch.owners.push(owner);
-            const cue = owner.emission.cue;
-            const sender = ("src" in cue && cue.src ? runtime.hby.habs.get(cue.src) : undefined) ?? hab;
-            const route = "dest" in cue && cue.dest
-              ? runtime.poster.findBytesRoute(sender, {
-                recipient: cue.dest,
-                recipientIsPrefix: true,
-                topic: cue.kin === "replay" ? "/replay" : "/reply",
-              })
-              : null;
-            if (route?.targets.length) batch.deliveries.push(new CueDelivery(owner.emission, sender, route));
-            prepare(index + 1);
-            return undefined;
-          }, onAdmissionRefusal);
-        };
-        prepare(0);
-      } finally {
-        response?.release();
-      }
+      } else enqueue!(batch);
       return undefined;
     });
-    // Queue-only no-target cleanup must wait until every nested preparation and the reply slot transfer finish.
-    batch.finish([]);
     return stream;
   }
 
@@ -186,29 +132,13 @@ export class DirectReplyDelivery {
     this.deliveries[this.index].retireTarget();
   }
 
-  /** Queue cleanup joins network before marking its half complete; attempt every independent owner. */
+  /** Close every real delivery iterator; repeated cleanup is harmless. */
   release(): void {
-    if (this.deliveryDone) return;
-    this.deliveryDone = true;
-    const cleanups = this.deliveries.map((delivery) => () => delivery.release());
-    this.deliveries.length = 0;
-    this.finish(cleanups);
-  }
-  private closeBorrow(): void {
-    this.borrowDone = true;
-    if (this.published) this.finish([]);
-  }
-  private finish(cleanups: (() => void)[]): void {
-    if (this.published && this.borrowDone && this.deliveryDone) {
-      cleanups.push(
-        ...this.owners.map((owner) => () => owner.release()),
-      );
-      this.owners.length = 0;
-    }
+    const deliveries = this.deliveries.splice(0);
     const errors: unknown[] = [];
-    for (const cleanup of cleanups) {
+    for (const delivery of deliveries) {
       try {
-        cleanup();
+        delivery.release();
       } catch (error) {
         if (!errors.includes(error)) errors.push(error);
       }

@@ -146,18 +146,6 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       cues.extend(pair);
       replies.capture(cues);
       const retained = runtime.resources.used.bytes;
-      const occupied = runtime.resources.reserve({ streams: 2 });
-      if (occupied.kind !== "reserve") throw new Error("Expected receive slots");
-      assertEquals(
-        assertThrows(() => runtime.deliveries.openReply(runtime, sender, slot), ResourceAdmissionError).reason,
-        "busy",
-      );
-      occupied.reservation.release();
-      assertEquals([interpretations, runtime.deliveries.hasPending, runtime.resources.used.bytes], [
-        0,
-        false,
-        retained,
-      ]);
       failPrepare = true;
       assertStrictEquals(assertThrows(() => runtime.deliveries.openReply(runtime, sender, slot)), preparation);
       assertEquals(
@@ -171,7 +159,7 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       slot.close();
       const preparedCount = interpretations;
       const wire = yield* call(async () => new Uint8Array(await new Response(response).arrayBuffer()));
-      assertEquals(runtime.resources.used.bytes > 0, true, "HTTP EOF cannot release the queued borrow");
+      assertEquals(runtime.deliveries.hasPending, true, "HTTP EOF leaves the independent queued delivery available");
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
         failure,

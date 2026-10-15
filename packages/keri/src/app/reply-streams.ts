@@ -57,7 +57,7 @@ export class ReplyStreams {
 
   /** Admit a synchronous direct-reply preparation before signing; open transfers, release abandons. */
   prepare(onAdmissionRefusal?: (error: ResourceAdmissionError) => void): {
-    open(messages: Iterable<Uint8Array>, dispose: () => void): ReadableStream<Uint8Array>;
+    open(messages: Iterable<Uint8Array>, dispose?: () => void): ReadableStream<Uint8Array>;
     release(): void;
   } {
     if (this.closed) throw new Error("Reply streams are closed");

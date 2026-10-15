@@ -1,10 +1,10 @@
-import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
+import { ResourceAdmissionError } from "cesr-ts";
 import { call, resource, run, spawn, suspend } from "effection";
-import { assertEquals, assertObjectMatch, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { CueDelivery } from "../../../src/app/cue-delivery.ts";
-import { admitCueEmission, prepareCueEmission, type PreparedCueEmission } from "../../../src/app/cue-preparation.ts";
+import { prepareCueEmission } from "../../../src/app/cue-preparation.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
@@ -141,12 +141,6 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
 
       // The real default runtime owns both normal sends and cancellation through QueryCoordinator.
       const active = runtime;
-      const head = active.cues.peekHead(), before = active.resources.used.bytes;
-      const occupied = active.resources.reserve({ bytes: active.resources.limits.bytes - before });
-      if (occupied.kind !== "reserve") throw new Error("Expected remaining credit");
-      yield* processRuntimeTurn(active, { sink });
-      assertStrictEquals(active.cues.peekHead(), head, "busy preparation preserves the source head");
-      occupied.reservation.release();
       yield* processRuntimeTurn(active, { sink });
       active.cues.extend([
         { kin: "stream", serder: event, pre: hab.pre, src: hab.pre, topics: { logs: 0 } },
@@ -154,21 +148,18 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
       ]);
       const started = Promise.withResolvers<void>(), cleanup = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
-      let held = 0;
       const draining = yield* spawn(() =>
         processRuntimeTurn(active, {
           sink: {
             *send(emission) {
               assertEquals(emission.kind, "transport");
-              held = active.resources.used.bytes;
-              assertEquals(held > before, true);
               yield* resource<void>(function*(provide) {
                 try {
                   yield* provide();
                 } finally {
                   cleanup.resolve();
                   yield* call(() => release.promise);
-                  assertEquals(active.resources.used.bytes, held, "sink cleanup still owns input/output");
+                  assertEquals(emission.kind, "transport", "emission remains available through joined cleanup");
                 }
               });
               started.resolve();
@@ -182,7 +173,6 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
       yield* active.reactor.settle();
       const halting = yield* spawn(() => draining.halt());
       yield* call(() => cleanup.promise);
-      assertEquals(active.resources.used.bytes, held);
       release.resolve();
       yield* halting;
       assertEquals(active.cues.length, 1);
@@ -207,7 +197,7 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
           "foreign sink failure",
         )
       );
-      assertEquals(active.resources.used.bytes, 0, "failed sink releases its transferred owner");
+      assertEquals(active.resources.used.bytes, 0, "failed sink leaves no pending output");
     } finally {
       yield* hby.close();
     }
@@ -220,169 +210,63 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
   ]);
 });
 
-Deno.test("cue interpretation admits before transfer and retains evidence through joined cleanup", async () => {
+Deno.test("cue interpretation publishes synchronously, preserves failures and leaves replay lazy", async () => {
   await run(function*() {
-    const hby = yield* createHabery({ name: `cue-preparation-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
       const hab = hby.makeHab("interpreter");
       const cue: AgentCue = {
         kin: "reply",
         serder: replyEvent("/loc/scheme", { eid: hab.pre, scheme: "http", url: "http://localhost" }),
       };
-      const resources = new ResourcePolicy();
-      const ordinary = new Deck([cue]);
-      const expected = hab.interpretCue(cue)!;
-      const fault = new Error("destination admission failed");
+      const cues = new Deck([cue]);
+      const fault = new Error("publication failed");
+      const interpret = hab.interpretCue;
+      hab.interpretCue = () => {
+        throw fault;
+      };
+      assertStrictEquals(assertThrows(() => prepareCueEmission(hab, cues, () => undefined)), fault);
+      assertStrictEquals(cues.peekHead(), cue);
+      hab.interpretCue = interpret;
       assertStrictEquals(
         assertThrows(() =>
-          prepareCueEmission(hab, ordinary, resources, () => {
+          prepareCueEmission(hab, cues, () => {
             throw fault;
           })
         ),
         fault,
       );
-      assertStrictEquals(ordinary.peekHead(), cue);
-      assertEquals(resources.used.bytes, 0);
-      const occupied = resources.reserve({ bytes: resources.limits.bytes });
-      if (occupied.kind !== "reserve") throw new Error("Expected free credit");
-      const interpret = hab.interpretCue;
-      let calls = 0;
-      hab.interpretCue = (input) => {
-        calls++;
-        return interpret.call(hab, input);
-      };
-      try {
-        const busy = admitCueEmission(hab, ordinary, resources, () => undefined);
-        if (busy.kind !== "refuse") throw new Error("Expected byte capacity refusal");
-        assertObjectMatch(busy, { kind: "refuse", error: { reason: "busy" } });
-        const limit = assertThrows(
-          () => prepareCueEmission(hab, ordinary, new ResourcePolicy({ bytes: 1 }), () => undefined),
-          ResourceAdmissionError,
-        );
-        assertEquals(limit.reason, "limit");
-        assertEquals(calls, 0);
-        assertStrictEquals(ordinary.peekHead(), cue);
-      } finally {
-        occupied.reservation.release();
-      }
-      assertThrows(() =>
-        prepareCueEmission(null, ordinary, resources, () => undefined, undefined, (emission) => ({
-          ...emission,
-          messages: [new Uint8Array(9 * 1024 ** 2)],
-          kind: "wire",
-        })), ResourceLimitError);
-      assertStrictEquals(ordinary.peekHead(), cue);
-      assertEquals(resources.used.bytes, 0, "transformed output remains subject to finite wire admission");
-      const plainPolicy = new ResourcePolicy({ bytes: 32 * 1024 ** 2 });
-      const plainDeck = new Deck<AgentCue>([cue]);
-      let plainOwner: PreparedCueEmission | undefined;
+      assertStrictEquals(cues.peekHead(), cue);
       assertEquals(
-        prepareCueEmission(hab, plainDeck, plainPolicy, (owner) => {
-          plainOwner = owner;
+        prepareCueEmission(hab, cues, (emission) => {
+          assertStrictEquals(cues.peekHead(), cue, "publication precedes removal");
+          assertEquals(emission?.kind, "wire");
+          return undefined;
         }),
         true,
-        "borrowed input needs no additional metadata credit",
       );
-      assertEquals(plainDeck.empty, true);
-      plainOwner!.release();
-      assertEquals(plainPolicy.used.bytes, 0);
-      {
-        const deck = ordinary;
-        const retained = resources.used.bytes;
-        const currentInterpretation = hab.interpretCue;
-        hab.interpretCue = () => {
-          throw fault;
-        };
-        assertStrictEquals(assertThrows(() => prepareCueEmission(hab, deck, resources, () => undefined)), fault);
-        hab.interpretCue = currentInterpretation;
-        assertStrictEquals(deck.peekHead(), cue);
-        assertEquals(resources.used.bytes, retained);
-        assertStrictEquals(
-          assertThrows(() =>
-            prepareCueEmission(hab, deck, resources, () => {
-              throw fault;
-            })
-          ),
-          fault,
-        );
-        assertStrictEquals(deck.peekHead(), cue);
-        assertEquals(resources.used.bytes, retained, "failed transfer preserves source credit");
-        const refusal = { kind: "refuse" as const, error: new ResourceAdmissionError("destination busy", "busy") };
-        assertStrictEquals(admitCueEmission(hab, deck, resources, () => refusal), refusal);
-        assertStrictEquals(deck.peekHead(), cue);
-        assertEquals(resources.used.bytes, retained, "expected refusal restores source ownership too");
-        let owner!: PreparedCueEmission;
-        prepareCueEmission(hab, deck, resources, (prepared) => {
-          owner = prepared;
-          return undefined;
-        });
-        assertEquals(deck.length, 0);
-        assertEquals(owner.emission?.kind, expected.kind);
-        assertEquals(resources.used.bytes >= 8 * 1024 ** 2, true);
-        deck.push(cue);
-        deck.pull();
-        const ready = Promise.withResolvers<void>(),
-          returning = Promise.withResolvers<void>(),
-          release = Promise.withResolvers<void>();
-        const consuming = run(function*() {
-          yield* resource<void>(function*(provide) {
-            try {
-              yield* provide();
-            } finally {
-              owner.release();
-            }
-          });
-          yield* resource<void>(function*(provide) {
-            try {
-              yield* provide();
-            } finally {
-              returning.resolve();
-              yield* call(() => release.promise);
-            }
-          });
-          ready.resolve();
-          yield* suspend();
-        });
-        try {
-          yield* call(() => ready.promise);
-          let joined = false;
-          const halted = consuming.halt().then(() => joined = true);
-          yield* call(() => returning.promise);
-          assertEquals(joined, false);
-          assertEquals(resources.used.bytes >= 8 * 1024 ** 2, true);
-          release.resolve();
-          yield* call(() => halted);
-          assertEquals(resources.used.bytes, 0);
-        } finally {
-          release.resolve();
-          yield* call(() => consuming.halt());
-        }
-        owner.release();
-        assertThrows(() => owner.emission, Error, "released");
-      }
-      const replay = new Deck<AgentCue>([{ kin: "replay", messages: [Uint8Array.of(1)] }]);
-      const messages = replay.peekHead()!.kin === "replay"
-        ? (replay.peekHead() as Extract<AgentCue, { kin: "replay" }>).messages
-        : [];
-      const iterator = messages[Symbol.iterator];
+      assertEquals(cues.empty, true);
+      assertEquals(
+        prepareCueEmission(hab, cues, () => {
+          throw new Error("empty source published");
+        }),
+        false,
+      );
+
+      const wire = new Uint8Array(9 * 1024 ** 2);
+      const messages = [wire];
       messages[Symbol.iterator] = () => {
-        throw new Error("replay opened during admission");
+        throw new Error("replay opened during preparation");
       };
-      try {
-        prepareCueEmission(hab, replay, resources, (owner) => {
-          assertStrictEquals(owner.emission!.messages, messages);
-          queueMicrotask(() => owner.release());
+      const replay = new Deck<AgentCue>([{ kin: "replay", messages }]);
+      assertEquals(
+        prepareCueEmission(hab, replay, (emission) => {
+          assertStrictEquals(emission!.messages, messages);
           return undefined;
-        });
-        yield* call(() => Promise.resolve());
-      } finally {
-        messages[Symbol.iterator] = iterator;
-      }
-      assertEquals(resources.used.bytes, 0);
-      const oversized = new Deck<AgentCue>([{ kin: "replay", messages: [new Uint8Array(8 * 1024 ** 2 + 1)] }]);
-      assertThrows(() => prepareCueEmission(hab, oversized, resources, () => undefined), ResourceLimitError);
-      assertEquals(oversized.length, 1);
-      assertEquals(resources.used.bytes, 0);
+        }),
+        true,
+      );
+      assertEquals(replay.empty, true);
     } finally {
       yield* hby.close(true);
     }
@@ -482,7 +366,7 @@ Deno.test("cue target preparation accepts wire views without backing quotas and 
   });
 });
 
-Deno.test("runtime cue delivery retains exact failed wire while admitted fanout and query owners progress", async () => {
+Deno.test("runtime cue delivery retains exact failed wire while other recipients and queries progress", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), second = hby.makeHab("second"), third = hby.makeHab("third");
@@ -545,7 +429,7 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
         failed,
       );
-      assertEquals(runtime.resources.used.bytes, retained, "foreign busy retains the prepared cue owner");
+      assertEquals(runtime.resources.used.bytes, retained, "foreign failure preserves pending delivery");
       assertEquals(preparationTurns, previousTurns, "an exact packet retry cannot recapture protocol reply cues");
       injected = false;
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 9, pending: true });

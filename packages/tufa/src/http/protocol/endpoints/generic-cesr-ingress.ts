@@ -271,7 +271,7 @@ function* ingest(
                 const first = habitats.next();
                 const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
                 if (hab && query!.authorized) {
-                  runtime.deliveries.enqueueReply(runtime, hab, previous, onAdmissionRefusal);
+                  runtime.deliveries.enqueueReply(runtime, hab, previous);
                 }
               } finally {
                 previous.close();
@@ -308,9 +308,9 @@ function* ingest(
             }
           });
           if (route.kind === "witnessLocalIngress") {
-            yield* drainWitnessCues(runtime, route.witnessHab, runtime.cues, { onAdmissionRefusal });
+            yield* drainWitnessCues(runtime, route.witnessHab, runtime.cues);
           } else {
-            yield* drainRuntimeCues(runtime, context.policy.serviceHab, runtime.cues, onAdmissionRefusal);
+            yield* drainRuntimeCues(runtime, context.policy.serviceHab, runtime.cues);
           }
         });
         yield* each.next();
