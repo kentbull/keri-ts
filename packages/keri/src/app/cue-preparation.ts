@@ -3,9 +3,8 @@ import { cueDeliveryBudget } from "./cue-budget.ts";
 /** Synchronous admitted cue interpretation; destination owners provide retention and joined delivery. */
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type ResourceReservation } from "cesr-ts";
 import { admitCueBytes, type CueByteReservation, type OwnedCue } from "../core/cue-admission.ts";
-import { cueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
-import type { DeckFullError } from "../core/deck.ts";
+import { Deck, type DeckFullError } from "../core/deck.ts";
 import type { Hab } from "./habbing.ts";
 
 const { wireBytes, preparationBytes } = cueDeliveryBudget;
@@ -59,13 +58,13 @@ export function admitCueEmission(
   accept: (owner: PreparedCueEmission) => undefined | CuePreparationRefusal,
   transformEmission?: (emission: CueEmission) => CueEmission,
 ): CuePreparationResult {
-  const source = cueReader(cues);
+  const source = cues, owned = source instanceof Deck ? undefined : source;
   const cue = source.peekHead();
   if (!cue) return { kind: "empty" };
-  if (source.resourcePolicy && source.resourcePolicy !== resources) {
+  if (owned && owned.resourcePolicy !== resources) {
     throw new RangeError("Cue interpretation requires the source deck's exact policy");
   }
-  const heldInput = source.headRetentionBytes();
+  const heldInput = owned?.headRetentionBytes() ?? 0;
   if (heldInput + wireBytes + preparationBytes > resources.limits.bytes) {
     return {
       kind: "refuse",
@@ -79,7 +78,7 @@ export function admitCueEmission(
   let published = false, live = true;
   let emission: CueEmission | undefined;
   try {
-    if (!source.resourcePolicy) {
+    if (!owned) {
       const admission = admitCueBytes(resources, [cue]);
       if (admission.kind === "refuse") return admission;
       input = admission.reservation;
@@ -105,7 +104,7 @@ export function admitCueEmission(
       };
     }
     preparation = temporary.reservation;
-    if (source.resourcePolicy) original = source.takeOwned()!;
+    if (owned) original = owned.takeOwned()!;
     emission = hab ? hab.interpretCue(cue) : {
       cue,
       messages: [],
@@ -145,9 +144,9 @@ export function admitCueEmission(
     const accepted = accept(owner);
     if (accepted?.kind === "refuse") return accepted;
     if (accepted !== undefined) throw new TypeError("Cue acceptance must be synchronous and return void or refusal");
-    if (!source.resourcePolicy) {
+    if (source instanceof Deck) {
       if (source.peekHead() !== cue) throw new Error("Cue head changed during acceptance");
-      source.takeOwned()!.release();
+      source.pull();
     }
     published = true;
     return { kind: "prepared" };
@@ -157,7 +156,7 @@ export function admitCueEmission(
       live = false;
       emission = undefined;
       try {
-        if (original) source.requeue(original);
+        if (original) owned!.requeue(original);
       } finally {
         input?.release();
         output?.release();

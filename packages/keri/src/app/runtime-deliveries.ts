@@ -8,7 +8,6 @@ import {
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { admitCueBytes } from "../core/cue-admission.ts";
 import type { CueQueueInput } from "../core/cue-publishing.ts";
-import { cueReader } from "../core/cue-publishing.ts";
 import type { CueEmission, QueryCue } from "../core/cues.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
@@ -524,13 +523,14 @@ export function queryTransportSink(
       });
       if (admission === "transferred") {
         if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
-        cueReader(source).takeOwned()!.release();
+        if (source instanceof Deck) source.pull();
+        else source.takeOwned()!.release();
       }
       return admission;
     },
     admitQuery(cue, prepare): CueAdmission {
-      const reader = cueReader(runtime.cues);
-      const source = reader.resourcePolicy && reader.peekHead() === cue ? reader : undefined;
+      const reader = runtime.cues;
+      const source = !(reader instanceof Deck) && reader.peekHead() === cue ? reader : undefined;
       if (source && source.resourcePolicy !== runtime.resources) throw new RangeError("Wrong query source policy");
       const result = runtime.deliveries.enqueue(
         () => prepareDelivery(prepare()),

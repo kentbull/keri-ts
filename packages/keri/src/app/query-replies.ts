@@ -1,9 +1,9 @@
 import { ResourceLimitError } from "cesr-ts";
 import type { OwnedCue } from "../core/cue-admission.ts";
 import type { CueQueueInput } from "../core/cue-publishing.ts";
-import { cuePublisher, cueReader } from "../core/cue-publishing.ts";
+import { cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue, ReceiptCue, ReplayCue, ReplyCue, WitnessCue } from "../core/cues.ts";
-import type { Deck } from "../core/deck.ts";
+import { Deck } from "../core/deck.ts";
 
 /** One request's direct proof/reply. Duplicate requests may share immutable evidence. */
 type DirectReply = ReplayCue | ReplyCue | ReceiptCue | WitnessCue;
@@ -131,14 +131,12 @@ export class QueryReplies {
 
   /** Capture at most a complementary TSN or receipt/witness pair; transfer/fanout credit before publishing slot references. */
   capture(cues: CueQueueInput): void {
-    const source = cueReader(cues), publisher = cuePublisher(cues);
+    const source = cues, publisher = cuePublisher(cues);
     const count = source.length, queued: OwnedCue[] = [];
     try {
       for (let i = 0; i < count; i++) {
-        const handle = source.takeOwned()!;
-        const cue = handle.cue;
-        const owner = source.resourcePolicy ? handle : undefined;
-        if (!owner) handle.release();
+        const owner = source instanceof Deck ? undefined : source.takeOwned()!;
+        const cue = source instanceof Deck ? source.pull()! : owner!.cue;
         const group = (cue.kin === "replay" || cue.kin === "reply") && cue.querySaid
           ? this.active.get(`query:${cue.querySaid}`)
           : (cue.kin === "receipt" || cue.kin === "witness")
@@ -177,7 +175,7 @@ export class QueryReplies {
         if (owner && !targets.length) owner.release();
       }
     } finally {
-      for (const owner of queued.reverse()) source.requeue(owner);
+      if (!(source instanceof Deck)) for (const owner of queued.reverse()) source.requeue(owner);
     }
   }
 }

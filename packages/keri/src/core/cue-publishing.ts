@@ -1,5 +1,5 @@
 import type { ResourcePolicy } from "cesr-ts";
-import { OwnedCue, type PreparedCueBatch } from "./cue-admission.ts";
+import type { OwnedCue, PreparedCueBatch } from "./cue-admission.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 
@@ -13,8 +13,9 @@ export interface CuePublisher {
   prepare(cues: readonly AgentCue[]): PreparedCueBatch;
 }
 
-/** Legal queue operations shared by standalone and admitted cue sources; removal transfers ownership. */
+/** Admitted queue operations; removal transfers actual retained ownership. */
 export interface CueQueue extends CuePublisher, CueReader, Iterable<AgentCue> {
+  readonly resourcePolicy: ResourcePolicy;
   capacity: number;
   readonly empty: boolean;
   checkSpace(count?: number): void;
@@ -51,8 +52,8 @@ export function cuePublisher(queue: CueQueueInput): CuePublisher {
 export interface CueReader {
   /** Queued references only; active transferred handles are not queued. */
   readonly length: number;
-  /** Existing source credit, absent for a standalone caller-owned queue. */
-  readonly resourcePolicy: ResourcePolicy | undefined;
+  /** Policy backing the actual retained cue credit. Plain Decks are read directly. */
+  readonly resourcePolicy: ResourcePolicy;
   /** Borrow the next cue without changing its queue or ownership. */
   peekHead(): AgentCue | undefined;
   /** Retained source credit available to downstream combined admission. */
@@ -61,30 +62,4 @@ export interface CueReader {
   takeOwned(): OwnedCue | undefined;
   /** Restore unconsumed work without a new admission. */
   requeue(owner: OwnedCue): void;
-}
-
-/** A standalone caller-owned cue has no queue byte credit; this handle controls only its borrowed reference. */
-function borrowedCue(cue: AgentCue): OwnedCue {
-  return new OwnedCue(cue, () => {}, () => borrowedCue(cue), 0);
-}
-
-/** Adapt the existing source; owned queues transfer existing credit and plain queues retain caller-owned accounting. */
-export function cueReader(queue: CueQueueInput): CueReader {
-  if (!(queue instanceof Deck)) return queue;
-  return {
-    get length() {
-      return queue.length;
-    },
-    resourcePolicy: undefined,
-    peekHead: () => queue.peekHead(),
-    headRetentionBytes: () => 0,
-    takeOwned() {
-      const cue = queue.pull();
-      return cue ? borrowedCue(cue) : undefined;
-    },
-    requeue(owner) {
-      queue.prepend(owner.cue);
-      owner.release();
-    },
-  };
 }

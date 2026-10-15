@@ -41,7 +41,9 @@ retirement, and does not discover runtime services or execute transport. The
 delivery queue applies joined transport outcomes and owns failed-packet transfer. Cursor/packet
 cleanup borrows emission and route data; the queue retains actual source/route
 owners, and reply batches retain shared emission ownership. No fake no-op owner
-is needed. Reply routes retire with queued delivery even when an HTTP borrower
+is needed. Plain Deck readers pull ordinary cue references directly; admitted
+sources transfer real OwnedCue handles. Do not normalize borrowed references
+into no-op cleanup/retain handles. Reply routes retire with queued delivery even when an HTTP borrower
 keeps emission bytes alive. Preparation returns
 prepared/empty/refuse records, and the composition root consumes delivery refusals
 directly. A refused destination restores source ownership; foreign preparation
