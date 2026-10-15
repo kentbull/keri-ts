@@ -78,6 +78,11 @@ derive signed a.cgvrsn from childGvrsn. Omit it when the body declares its genus
 the versions agree. Canonical 714 icp/rot/ixn/rpy vectors compare complete unsigned
 bodies and supplemental wire; KERIpy's separate parent endorsement is not part of
 our builder output. Receiving approval workflows still need their own genus audit.
+Endpoint-role proposal publication constructs its one known gid/rpy envelope at
+the workflow owner; a one-caller helper accepting arbitrary payload/embed maps
+adds no boundary. Decoded endpoint-reply attributes narrow unknown cid/role/eid
+before acceptance lookup. These local cuts do not close the generic approval
+payload or child-genus contracts.
 
 Pure multisig/IPEX body builders take parsed Serders synchronously. Byte convenience
 operations own cancellable parseBytes, finite nested-wire collection and finally
