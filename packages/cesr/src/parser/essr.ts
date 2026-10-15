@@ -241,19 +241,17 @@ export function essrFactory(
   };
 }
 
-/** Rehydrate one explicitly bounded Texter at a time for per-item consumers. */
+/** Rehydrate one Texter at a time for per-item consumers. */
 export async function* essrTexters(
   essr: EssrPayload,
-  maxItemBytes: number,
   signal?: AbortSignal,
 ): AsyncGenerator<Texter> {
-  if (!Number.isSafeInteger(maxItemBytes) || maxItemBytes < 0) throw new RangeError("Invalid ESSR item limit");
   const input = new Cursor(essr.wire.open(signal), { signal });
   let decoded = 0;
   try {
     for (let item = 0; item < essr.count; item++) {
       const token = await header(input, "txt");
-      if (token.rawSize > maxItemBytes || token.rawSize > essr.raw.size - decoded) {
+      if (token.rawSize > essr.raw.size - decoded) {
         throw new DeserializeError("ESSR Texter exceeds declared payload size.");
       }
       const length = token.text.length + token.count * 4;

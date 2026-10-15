@@ -100,7 +100,7 @@ remain separate from private file references and retain their protocol schema.
 
 `Baser.getEssr` also reads KERIpy-origin exchanges that have `.essrs` rows but no
 private metadata. It borrows their stored insertion order and deduplication,
-admits finite byte/item limits, and reopens bounded chunks without retaining a
+and reopens chunks without byte/item quotas or retaining a
 token list. Replay stays read-only; escrow retry snapshots the borrowed bytes and
 uses normal archive publication. Imported rows and any supplied duplicate must
 both match the signed commitment; valid duplicate fragmentation preserves the
@@ -122,41 +122,20 @@ only that admission's candidate bucket. Exclusive archive startup clears abandon
 private stages and public rows without accepted/escrow ownership; Python-origin
 owned rows require no private metadata.
 
-Nested staging comparisons, publication and hydration admit each stored row
-against diminishing 24 MiB aggregate wire credit before its owned backing copies.
-The pinned lmdb-js 3.5.3 NAPI hook reads size without growing an insufficient
-native target; supported binary, uncompressed, unversioned rows then copy under
-that same transaction. Active writers are borrowed, while ordinary reads hold
-an explicit snapshot. A synchronous pre-copy callback can reserve shared credit
-for a found, ceiling-admitted row before its owned copies; the caller releases
-after its last use. Unsupported bindings/modes fail closed. Publication still
-belongs to the caller's transaction, so an over-limit suffix preserves earlier
-public evidence on rollback; loading disposes previously hydrated descendants.
+Nested staging comparisons, publication and hydration read one physical row at a
+time through ordinary owned native copies. Key cursors close before suspension.
+Publication belongs to the caller's transaction, so a write failure rolls back to
+the previous public evidence. Loading requires exactly one child per row and
+claims each reopened frame before checking cardinality; later-row corruption
+therefore disposes all previously hydrated descendants.
 
-Exchanger borrows the runtime ResourcePolicy. Nested admission and replay reserve
-104 MiB + 64 KiB before serializer construction or row copying: two 24 MiB owned
-row copies, 24 MiB qualification, 24 MiB collected output, 8 MiB cursor backing
-and one 64 KiB reader chunk. This conservative allowance stays held through joined
-staging/descendant disposal, even on cancellation or cleanup failure. Reopened
-parsers additionally charge ordinary wire (capped by each row's stored extent)
-and each finite ESSR stage through their existing frame owners. FilePayload identity
-and adoption remain intact. Route handlers borrow hydrated descendants through
-handler completion; retaining additional copies afterward requires independent
-credit. Busy/limit refusal precedes copying and does not establish message
-invalidity; no automatic retry or waiter is introduced.
-
-Native pre-existing scratch (initially 16 MiB) and LMDB mapped residency remain
-separate, uncharged overhead. Other read paths can grow scratch or allocate whole
-rows; parent-factor reads, strings/native copies and final RSS
-qualification remain open. Direct DB helpers require the caller's resource scope.
-Standalone Exchanger defaults are finite but independent ledgers do not bound a
-process. The 256 MiB default admits existing nested multisig and IPEX with shared
-input frame owners, including 73 MiB reserved ingress/crypto coexistence in IPEX.
-Remaining parent-tree credit still accounts for Texter-expanded ordinary bodies,
-attachment groups, descendant nodes and ESSR bytes/items before acceptance:
-8 MiB ordinary metadata, 8 MiB/16,384 ESSR bytes/items, 256 nodes and depth 64.
-Reads release key cursors before suspension and stage ESSR in files, without
-retaining a second array of complete ciphertext fragments.
+Exchanger has no resource policy, recursive tree budget or storage-copy reservation.
+Nested loading supplies cancellation and a file-backed payload sink to the parser;
+parser-internal quotas and frame credit remain separate removal work. Route
+handlers borrow hydrated descendants through handler completion. Actual payload
+owners survive until joined admission/replay cleanup, including cancellation and
+cleanup failure. The admission guard protects unfinished publication and archive
+recovery, not hypothetical capacity.
 
 Fresh parsed children remain hydrated through verification and handler execution.
 Escrow retry and replay reopen stored child frames; their temporary ESSR stages
@@ -170,4 +149,5 @@ recipient. No recursive dispatch occurs at the forwarder.
 KRAM ready/partial snapshots and their copy-admission helpers are removed.
 KERIpy-supported partial factors, replay caches and actual accepted payload
 ownership remain distinct. Ordinary database row reads have no byte ceiling or
-before-copy callback; nested parser/collection quotas are remaining removal work.
+before-copy callback. ESSR storage and recipient crypto have no byte/item or
+concurrency quotas; parser-internal accounting remains removal work.

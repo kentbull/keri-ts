@@ -58,11 +58,11 @@ qualification remain mandatory.
 KEL/TEL replay and stored endpoint-reply output no longer carry accounting options.
 Keep immutable replay horizons, cursor closure, delegation-cycle detection,
 qualified ordinal/framing rules and current proof reconstruction. General bounded-row
-helpers and before-copy callbacks are removed. Nested/ESSR hydration, payload/parser
-and mailbox output accounting still require removal; do not reintroduce row/replay
+helpers and before-copy callbacks are removed. Parser and mailbox output accounting still require removal; do not reintroduce row/replay
 ceilings to coordinate those later cuts.
 
 Payload collectors and memory/file stages no longer accept quotas. Keep exact
 Payload.size validation, truncated/overlong source failures and actual file/reader
-ownership. Parser and ESSR crypto/tree accounting still require removal; do not
-restore sink policy arguments as a bridge for those later cuts.
+ownership. Nested/ESSR aggregate budgets, storage caps and recipient crypto/concurrency
+quotas are removed. Parser-internal accounting still requires removal; do not
+restore storage/sink policy arguments as a bridge for that later cut.

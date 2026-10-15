@@ -1,4 +1,4 @@
-/** Bounded KERIpy enst. wire storage; temporary reopened ESSR owners belong to the caller. */
+/** KERIpy enst. wire storage; temporary reopened ESSR owners belong to the caller. */
 import {
   b,
   type CesrFrame,
@@ -7,61 +7,12 @@ import {
   discardFrame,
   nestedPayload,
   parse,
-  ResourceLimitError,
-  type ResourcePolicy,
   t,
   Vrsn_2_0,
 } from "cesr-ts";
 import type { Baser } from "./basing.ts";
 import { suffix, unsuffix } from "./core/keys.ts";
 import type { IoSetSuber } from "./subing.ts";
-
-/** Finite LMDB wire-copy ceiling across one parent; this is not a transfer buffer allowance. */
-export const MAX_NESTED_WIRE_BYTES = 24 * 1024 ** 2;
-
-/** Two owned row copies, qualification and collection, cursor backing and one reader chunk. */
-export const NESTED_COPY_RESERVATION_BYTES = 4 * MAX_NESTED_WIRE_BYTES + 8 * 1024 ** 2 + 65536;
-
-/** Remaining parent-tree credit, shared across every independently stored child row. */
-export interface NestBudget {
-  /** Remaining resident body and ordinary attachment bytes across the parent tree. */
-  bytes: number;
-  /** Remaining ordinary leaf groups across every child row. */
-  groups: number;
-  /** Remaining message nodes after reserving the parent. */
-  nodes: number;
-  /** Remaining decoded ESSR bytes, separate from ordinary metadata. */
-  essrBytes: number;
-  /** Remaining Texter items, including empty fragments. */
-  essrItems: number;
-}
-
-/** Charge hydrated metadata and descendants before accepting a manually supplied or reopened tree. */
-export function chargeNests(nests: readonly CesrFrame[], budget: NestBudget, depth = 1): void {
-  if (depth > 64) throw new ResourceLimitError("Exchange nested tree exceeds depth limit");
-  for (const frame of nests) {
-    budget.nodes--;
-    // Non-native child bodies are qualified Texters on wire; account that finite hydration conservatively.
-    budget.bytes -= frame.body.kind === "CESR" ? frame.body.raw.length : 4 * Math.ceil(frame.body.raw.length / 3) + 16;
-    budget.groups -= frame.attachments.length;
-    for (const group of frame.attachments) budget.bytes -= group.raw.length;
-    if (frame.essr) {
-      const { count, raw, wire } = frame.essr;
-      if (
-        [count, raw.size, wire.size].some((value) => !Number.isSafeInteger(value) || value < 0)
-        || wire.size > 4 * Math.ceil(raw.size / 3) + 12 * count
-      ) {
-        throw new RangeError("Invalid nested ESSR extent");
-      }
-    }
-    budget.essrBytes -= frame.essr?.raw.size ?? 0;
-    budget.essrItems -= frame.essr?.count ?? 0;
-    if (Object.values(budget).some((value) => !Number.isSafeInteger(value) || value < 0)) {
-      throw new ResourceLimitError("Exchange nested tree exceeds aggregate admission limits");
-    }
-    if (frame.nests?.length) chargeNests(frame.nests, budget, depth + 1);
-  }
-}
 
 /** Read one physical row and close the LMDB key cursor before any caller suspension. */
 function nextRow(
@@ -97,7 +48,7 @@ function sameWire(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 /**
- * Prepare replacement rows one bounded child wire at a time in private staging.
+ * Prepare replacement rows one child wire at a time in private staging.
  * The caller supplies a unique admission key and removes that bucket on every exit; accepted evidence is untouched.
  */
 export async function stageNests(
@@ -153,26 +104,19 @@ async function* rowSource(wire: Uint8Array, signal?: AbortSignal): AsyncGenerato
 }
 
 /**
- * Hydrate stored substreams with diminishing parent-tree credit and file-backed ESSR staging.
+ * Hydrate stored substreams with file-backed ESSR staging owned by the caller.
  * No private metadata is required, so unchanged Python-origin rows reopen through the same path.
  */
 export async function loadNests(
   db: Baser,
   said: string,
-  budget: NestBudget,
   signal?: AbortSignal,
-  resources?: ResourcePolicy,
 ): Promise<CesrFrame[]> {
   const nests: CesrFrame[] = [];
   let ordinal = 0;
   try {
     for (;;) {
       signal?.throwIfAborted();
-      // Check node credit before hydrating the next row, including malicious imported buckets.
-      if (budget.nodes < 1) {
-        if (hasNests(db, said, ordinal)) throw new ResourceLimitError("Stored nested tree exceeds node limit");
-        break;
-      }
       const row = nextRow(db, db.enst, said, ordinal);
       if (!row) break;
       ordinal = row.next;
@@ -181,23 +125,12 @@ export async function loadNests(
       for await (
         const frame of parse(rowSource(row.wire, signal), {
           signal,
-          resources,
-          maxChunkBytes: 65536,
-          maxBufferedBytes: 8 * 1024 ** 2,
-          // One row's admitted ordinary wire cannot exceed its stored extent.
-          maxFrameBytes: Math.max(1, Math.min(budget.bytes, row.wire.length)),
-          maxAttachmentGroups: budget.groups,
-          maxTreeNodes: budget.nodes,
-          maxEssrBytes: budget.essrBytes,
-          maxEssrItems: budget.essrItems,
-          maxDepth: 63,
           payloadSink: (stageSignal) => archive.files.stage(stageSignal),
         })
       ) {
-        // Claim every owner before cardinality/accounting checks; never parse another row with reset credit.
+        // Claim every owner before checking cardinality so failures dispose all reopened files.
         nests.push(frame);
         if (++count > 1) throw new Error("Stored nested row must contain exactly one child substream");
-        chargeNests([frame], budget);
       }
       if (count !== 1) throw new Error("Stored nested row must contain exactly one child substream");
     }

@@ -11,8 +11,6 @@ import {
   NumberPrimitive,
   parse,
   Prefixer,
-  ResourceLimitError,
-  ResourcePolicy,
   type SerderKERI,
   Texter,
   Vrsn_1_0,
@@ -165,8 +163,8 @@ Deno.test("exchange escrow retry preserves evidence when its stored payload read
     for (const siger of group.sigers) hby.db.esigs.add([said, group.pre, group.snh, group.said], siger);
     const failure = new Deno.errors.PermissionDenied("stored ESSR reader cannot open its file");
     const getEssr = hby.db.getEssr;
-    hby.db.getEssr = async (said, signal, limits) => {
-      const stored = await getEssr.call(hby.db, said, signal, limits);
+    hby.db.getEssr = async (said, signal) => {
+      const stored = await getEssr.call(hby.db, said, signal);
       if (!stored) return null;
       return {
         ...stored,
@@ -281,9 +279,6 @@ Deno.test("exchange replay borrows bounded KERIpy ESSR rows without private meta
     }
     assertEquals(frames, 1);
     assertEquals(hby.db.exchangeMeta.get([serder.said!]), null); // Replay does not introduce a second publication path.
-    for (const limits of [{ maxEssrBytes: 5 }, { maxEssrItems: 1 }]) {
-      await assertRejects(() => hby.db.getEssr(serder.said!, undefined, limits), ResourceLimitError);
-    }
     // Borrowing and disposing the view never transfers ownership of KERIpy rows.
     const borrowed = (await hby.db.getEssr(serder.said!))!;
     for await (const chunk of borrowed.wire.open()) assertEquals(chunk.buffer.byteLength <= 65536, true);
@@ -302,10 +297,6 @@ Deno.test("exchange replay borrows bounded KERIpy ESSR rows without private meta
     }
     assertEquals(chunks > 1, true);
     assertEquals(await collectPayload(split.raw), b(text));
-    await assertRejects(
-      () => hby.db.getEssr(large.said!, undefined, { maxEssrBytes: text.length - 1 }),
-      ResourceLimitError,
-    );
     await split.discard();
   });
 });
@@ -497,9 +488,7 @@ Deno.test("accepted ESSR decrypts, persists, and reopens as a progressive inner 
     );
     await incoming.discard();
     const retained = await hby.db.getEssr(outer.said!);
-    const decision = await run(() =>
-      new EssrRecipient(recipient, archive.files, 4096, new ResourcePolicy()).decrypt(outer.said!, retained!.raw)
-    );
+    const decision = await run(() => new EssrRecipient(recipient, archive.files).decrypt(outer.said!, retained!.raw));
     switch (decision.kind) {
       case "accept":
         break;

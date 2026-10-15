@@ -5,13 +5,9 @@ emitted by KERIpy `StreamPoster` at commit
 `7143832813cac6a394ab1faf9be83bb3372be87c`. That reference implements the sender;
 this module is a new receiver integration, not a port of an upstream receiver.
 
-Construct one service for an explicitly hosted `Hab`, its `PayloadStore`, a
-finite ciphertext byte limit, the host's shared `ResourcePolicy`, and an optional
-per-recipient concurrency limit (default one). Every recipient in the host must
-borrow that same policy. Its default permits one active decryption across instances. Excess concurrent work is rejected immediately rather than
-retained in a queue. Aggregate transfer size can exceed the message limit: the
-limit applies to one logical sealed message, potentially split across several
-Texters.
+Construct one service for an explicitly hosted `Hab` and its `PayloadStore`.
+It has no message/concurrency quotas, shared policy or decryption reservations.
+A logical sealed message may span several Texters.
 
 Run `yield* recipient.decrypt(said, ciphertext, signal)` after `Exchanger` accepts
 the exchange. It is an Effection operation that aborts pending reads and joins
@@ -24,17 +20,16 @@ file cleanup before cancellation completes. Handle its `EssrDecision` exhaustive
 
 **`refuse`**
 
-- Meaning: Admission policy: `busy`, `limit`, or `unaccepted`
-- Ownership / caller responsibility: No plaintext; capacity may later clear, size remains inadmissible under the same policy, and processing requires durable exchange acceptance
+- Meaning: Prerequisite missing: `unaccepted`
+- Ownership / caller responsibility: No plaintext; processing requires durable exchange acceptance
 
 **`reject`**
 
 - Meaning: Verification failed: `envelope`, `digest`, `decrypt`, or `framing`
 - Ownership / caller responsibility: No plaintext; do not interpret this as queued work
 
-There is no automatic retry or queue. `EssrError` is removed. A declared size
-above the ceiling refuses admission; a size below the sealed-box overhead is a
-malformed envelope. Both stop before ciphertext reads/allocation. Invalid
+There is no automatic retry or queue. A size below the 48-byte sealed-box
+overhead is a malformed envelope and stops before ciphertext reads. Invalid
 `Payload.size` metadata or dishonest reader lengths throw `RangeError`, following
 the payload contract. Cancellation and unexpected I/O, storage, invariant, or
 programming failures propagate as exceptions, never ordinary decisions.
@@ -66,7 +61,7 @@ reopens the file in bounded chunks and retains no full plaintext byte array.
 Promoting the owner preserves the view; discarding it invalidates the view.
 The caller must publish or discard the owner after processing. The recipient
 releases every untransferred file, including when sink cleanup fails after
-finish, and releases its reservation once. Scope cancellation joins input and
+finish. Scope cancellation joins input and
 file cleanup before returning.
 `Baser.savePlaintext(said, plaintext, plaintext.size - body.size, signal)` publishes
 its file and inner-stream offset; `getPlaintext(said)` reopens both views.
@@ -77,16 +72,7 @@ values with plaintext or pointers. Relays and replay consumers need not invoke
 recipient decryption. Transport route wiring selects whether to invoke this
 recipient operation for a hosted habitat.
 
-Before reading ciphertext, admission reserves one shared decryption slot and
-`max(64 MiB, 8 × ciphertext size)` bytes. This is the approved initial conservative
-crypto credit, not a measurement of native copies. Oversized configuration and
-busy capacity remain distinct refusals. The reservation is held through input
-cleanup and disposal of any untransferred plaintext, then released once. Successful
-file ownership transfer releases crypto credit; subsequent file reads belong to
-the consumer's admission boundary.
-
-Streams, queues, storage copies and file-reader ownership still require integration
-through the [shared-resource phase](../../plans/runtime/RESOURCE_POLICY_PLAN.md).
-This recipient integration alone does not establish a runtime-wide memory bound.
-Clearing the owned plaintext buffer after writing is not a claim that the runtime
-or crypto backend erases every copy.
+The crypto backend still requires complete sealed and plaintext buffers. Clearing
+the owned plaintext buffer after writing does not claim that the runtime or crypto
+backend erases every copy. File readers and sinks retain actual lifecycle and
+cancellation responsibilities without synthetic accounting.

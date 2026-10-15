@@ -47,7 +47,6 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
       assertEquals(runtime.reactor.resources, runtime.resources);
       assertEquals(runtime.services.resources, runtime.resources);
       assertEquals(runtime.delegating.services, runtime.services);
-      assertEquals(runtime.reactor.exchanger.resources, runtime.resources);
       assertEquals(runtime.resources.limits.streams, 8);
       registry = runtime.acdc.rgy!.baser;
       reger = runtime.vdr.reger as Reger;
