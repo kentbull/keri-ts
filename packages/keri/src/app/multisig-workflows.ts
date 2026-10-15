@@ -59,6 +59,17 @@ export type MultisigVdrRoute = typeof MULTISIG_VCP_ROUTE | typeof MULTISIG_ISS_R
 export type MultisigRpyRoute = typeof MULTISIG_RPY_ROUTE;
 export type MultisigProposalRoute = MultisigKelRoute | MultisigVdrRoute | MultisigRpyRoute;
 
+/** Decoded child and membership fields consumed by KEL approval policy; child proofs are verified during intake. */
+type KelApproval =
+  | {
+    route: typeof MULTISIG_ICP_ROUTE | typeof MULTISIG_ROT_ROUTE;
+    event: SerderKERI;
+    group: string;
+    smids: string[];
+    rmids: string[];
+  }
+  | { route: typeof MULTISIG_IXN_ROUTE; event: SerderKERI; group: string; smids: string[] };
+
 export interface ApprovalResult {
   route: MultisigProposalRoute;
   said: string;
@@ -399,17 +410,18 @@ function* approveKelProposal(
   if (!wrapperSaid) {
     return null;
   }
-  const payload = payloadSection(exn.ked ?? {});
-  const label = route === MULTISIG_ICP_ROUTE ? "icp" : route === MULTISIG_ROT_ROUTE ? "rot" : "ixn";
-  const embeddedSad = embeddedSection(exn.ked ?? {})?.[label];
-  if (!isRecord(embeddedSad)) {
+  const proposal = kelApproval(exn, route);
+  if (!proposal) {
     return null;
   }
-  const serder = new SerderKERI({ sad: embeddedSad });
+  const { event: serder, group: groupPre, smids } = proposal;
   const embeddedSaid = serder.said;
-  const groupPre = groupPrefixFromProposal(route, payload, serder);
-  const members = proposalMembers(route, payload);
-  const member = route === MULTISIG_IXN_ROUTE ? localGroupMember(hby, groupPre) : findLocalMember(hby, members);
+  const members = proposal.route === MULTISIG_IXN_ROUTE
+    ? smids
+    : uniqueMembers([...smids, ...proposal.rmids]);
+  const member = proposal.route === MULTISIG_IXN_ROUTE
+    ? localGroupMember(hby, groupPre)
+    : findLocalMember(hby, members);
   if (!member) {
     throw new ValidationError(`No local member found for multisig proposal ${wrapperSaid}.`);
   }
@@ -418,26 +430,35 @@ function* approveKelProposal(
     return null;
   }
 
-  if (route === MULTISIG_ICP_ROUTE || (route === MULTISIG_ROT_ROUTE && !hby.habs.has(groupPre))) {
-    const smids = stringArrayField(payload, "smids");
-    const rmids = stringArrayField(payload, "rmids");
+  if (proposal.route === MULTISIG_ICP_ROUTE || (proposal.route === MULTISIG_ROT_ROUTE && !hby.habs.has(groupPre))) {
+    const rmids = proposal.rmids;
     const alias = options.callbacks.chooseGroupAlias(groupPre);
     hby.joinGroupHab(groupPre, alias, member, smids, rmids.length > 0 ? rmids : smids);
   }
 
   const keys = groupEventKeys(hby, groupPre, serder);
-  const smids = route === MULTISIG_IXN_ROUTE ? stringArrayField(payload, "smids") : proposalSigningMembers(payload);
   const sigers = signLocalGroupEvent(hby, serder, smids, keys);
   // Keep the attachment set open until the peer signatures are appended.
   const localMessage = messagize(serder, { sigers, pipelined: false });
+  const label = kelProposalLabel(proposal.route);
   const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, label);
   yield* runtime.reactor.processBytes(concatBytes(localMessage, peerAttachment), { local: true });
   yield* runtime.reactor.processEscrowsOnce();
 
-  const deliveries = yield* publishProposal(runtime, member, members, route, label, payload, localMessage);
+  // Preserve the existing wire re-publication until its producer contract is narrowed;
+  // approval policy uses only the decoded proposal above, never these raw attributes.
+  const deliveries = yield* publishProposal(
+    runtime,
+    member,
+    members,
+    proposal.route,
+    label,
+    payloadSection(exn.ked ?? {}),
+    localMessage,
+  );
   const accepted = eventAccepted(hby, serder);
-  if (accepted && (route === MULTISIG_ICP_ROUTE || route === MULTISIG_ROT_ROUTE)) {
-    const rmids = stringArrayField(payload, "rmids");
+  if (accepted && proposal.route !== MULTISIG_IXN_ROUTE) {
+    const rmids = proposal.rmids;
     hby.commitGroupHabMembers(groupPre, smids, rmids.length > 0 ? rmids : smids);
   }
 
@@ -510,26 +531,28 @@ function* approveVdrProposal(
   return { route, said: wrapperSaid, embedded: embeddedSaid, group: groupPre, accepted, deliveries };
 }
 
-function groupPrefixFromProposal(
-  route: MultisigKelRoute,
-  payload: Record<string, unknown>,
-  serder: SerderKERI,
-): string {
-  if (route === MULTISIG_ICP_ROUTE) {
-    return requireText(serder.pre ?? undefined, "Group prefix");
-  }
-  return requireText(stringField(payload, "gid") || serder.pre || undefined, "Group prefix");
+/** The supported route determines its one named KEL child. */
+function kelProposalLabel(route: MultisigKelRoute): "icp" | "rot" | "ixn" {
+  return route === MULTISIG_ICP_ROUTE ? "icp" : route === MULTISIG_ROT_ROUTE ? "rot" : "ixn";
 }
 
-function proposalMembers(route: MultisigKelRoute, payload: Record<string, unknown>): string[] {
-  if (route === MULTISIG_IXN_ROUTE) {
-    return stringArrayField(payload, "smids");
-  }
-  return uniqueMembers([...stringArrayField(payload, "smids"), ...stringArrayField(payload, "rmids")]);
-}
-
-function proposalSigningMembers(payload: Record<string, unknown>): string[] {
-  return stringArrayField(payload, "smids");
+/** Decode the fields used by approval, preserving existing missing-embed and member-list behavior. */
+function kelApproval(exn: SerderKERI, route: MultisigKelRoute): KelApproval | null {
+  const embedded = embeddedSection(exn.ked ?? {})?.[kelProposalLabel(route)];
+  if (!isRecord(embedded)) return null;
+  const event = new SerderKERI({ sad: embedded });
+  const attrs: unknown = exn.ked?.a;
+  const payload = isRecord(attrs) ? attrs : {};
+  const group = requireText(
+    route === MULTISIG_ICP_ROUTE
+      ? event.pre ?? undefined
+      : (typeof payload.gid === "string" ? payload.gid : "") || event.pre || undefined,
+    "Group prefix",
+  );
+  const smids = stringArrayField(payload, "smids");
+  return route === MULTISIG_IXN_ROUTE
+    ? { route, event, group, smids }
+    : { route, event, group, smids, rmids: stringArrayField(payload, "rmids") };
 }
 
 function approveRegistryIncept(
