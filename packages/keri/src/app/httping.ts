@@ -112,15 +112,15 @@ function* fetchResponseHandleInternal(
     const clearTimer = () => {
       if (timeoutId !== undefined) services.clock.clearTimeout(timeoutId);
     };
-    let pending: Promise<Response> | undefined;
-    let deliveredFailure: { error: unknown } | undefined;
     try {
-      pending = services.http.fetch(url, { ...init, signal: controller.signal });
       let response: Response;
       try {
-        response = yield* call(() => pending!);
+        const owner = yield* ownHttpResponse(
+          () => services.http.fetch(url, { ...init, signal: controller.signal }),
+          controller,
+        );
+        response = yield* owner.response();
       } catch (error) {
-        deliveredFailure = { error };
         if (nullOnAbort && timedOut && error === controller.signal.reason) {
           clearTimer();
           yield* provide(null);
@@ -132,6 +132,37 @@ function* fetchResponseHandleInternal(
       yield* provide({ response, controller });
     } finally {
       clearTimer();
+    }
+  });
+}
+
+/** A scoped pending response; awaiting headers leaves cleanup with its earlier lifetime owner. */
+export interface HttpResponseOwner {
+  /** Await headers while preserving the identity of an already propagated request failure. */
+  response(): Operation<Response>;
+}
+
+/** Own one pending fetch and its returned body; protocol callers own request construction and upload policy. */
+export function ownHttpResponse(
+  fetch: () => Promise<Response>,
+  controller: AbortController,
+): Operation<HttpResponseOwner> {
+  return resource<HttpResponseOwner>(function*(provide) {
+    let pending: Promise<Response> | undefined;
+    let deliveredFailure: { error: unknown } | undefined;
+    try {
+      pending = fetch();
+      yield* provide({
+        *response() {
+          try {
+            return yield* call(() => pending!);
+          } catch (error) {
+            deliveredFailure = { error };
+            throw error;
+          }
+        },
+      });
+    } finally {
       controller.abort();
       if (pending) {
         yield* call(async () => {
@@ -140,7 +171,7 @@ function* fetchResponseHandleInternal(
           try {
             response = await pending!;
           } catch (error) {
-            // Only this controller's abort or the already-propagated identical failure is consumed.
+            // Consume only this controller's abort or the identical failure already propagated.
             if (error === controller.signal.reason || (deliveredFailure && error === deliveredFailure.error)) return;
             throw error;
           }
@@ -148,8 +179,6 @@ function* fetchResponseHandleInternal(
             try {
               await response.body.cancel();
             } catch (error) {
-              // Fetch may already have errored the body with this controller's exact abort reason.
-              // Foreign AbortErrors and cleanup failures still propagate, even during cancellation.
               if (error !== controller.signal.reason) throw error;
             }
           }
