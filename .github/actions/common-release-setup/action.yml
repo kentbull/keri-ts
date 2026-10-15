@@ -37,6 +37,13 @@ runs:
       with:
         deno-version: ${{ env.DENO_VERSION }}
 
+    - name: identify native cache platform
+      id: native-platform
+      shell: bash
+      run: |
+        PLATFORM=$(printf '%s\n%s\n' "${ImageOS:-$(uname -s)}" "$(c++ --version)" | shasum -a 256 | cut -d ' ' -f 1)
+        echo "fingerprint=$PLATFORM" >> "$GITHUB_OUTPUT"
+
     - name: restore Deno dependency cache
       id: deps-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -44,9 +51,9 @@ runs:
         path: |
           ${{ env.DENO_DIR }}
           node_modules
-        key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-${{ hashFiles('packages/keri/scripts/setup_lmdb_v1.sh', 'deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}${{ inputs.cache-key-extra != '' && format('-{0}', inputs.cache-key-extra) || '' }}
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.native-platform.outputs.fingerprint }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-${{ hashFiles('packages/keri/scripts/setup_lmdb_v1.sh', 'packages/keri/scripts/lmdb/**', 'scripts/ci/report-lmdb-runtime.ts', 'deno.lock', 'deno.json', 'dprint.json', 'package.json', 'package-lock.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}${{ inputs.cache-key-extra != '' && format('-{0}', inputs.cache-key-extra) || '' }}
         restore-keys: |
-          ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-
+          ${{ runner.os }}-${{ runner.arch }}-${{ steps.native-platform.outputs.fingerprint }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-
 
     - name: install deterministic workspace dependencies
       if: steps.deps-cache.outputs.cache-hit != 'true'
