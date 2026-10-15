@@ -19,8 +19,11 @@ Kevery builds finalized first-seen/date, clone and acceptance cues before accept
 writes, and holds concrete CueDeck batches before duplicate/escrow effects too.
 Baser logging checks the prospective FEL tail before writes. Kevery.processEvent
 owns one native writer through decision, cue admission and durable effects, then
-publishes live state/cues after commit. Explicit decide/apply and already nested
-writer callers retain caller-owned commit/publication ordering. Group-prefix
+publishes live state/cues after commit. Plain EventMetadata carries log coordinates,
+cues and accepted cache state; it has no executable decision lifecycle. The owner
+explicitly sequences writes and publication and releases actual cue capacity.
+Explicit applyDecision and nested-writer processing still have a known pre-commit
+publication gap, tracked for a separate ownership fix. Group-prefix
 publication follows admission. Default event escrow promotion uses the same
 owning writer, including bucket movement/removal before post-commit publication;
 same-bucket retries do not rewrite rows or emit additional cues.
