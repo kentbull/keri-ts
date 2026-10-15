@@ -38,9 +38,9 @@ import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type Kind, Kinds, Protocols, Vrsn_1_0, Vrsn_2_0 } from "../tables/versions.ts";
 import type { Protocol } from "../tables/versions.ts";
-import type { BodyDecodeContext } from "./body-admission.ts";
-import { decodeJson } from "./json-admission.ts";
-import { decodeAdmittedMsgpack } from "./msgpack-admission.ts";
+import type { BodyDecodeContext } from "./codec-context.ts";
+import { decodeJson } from "./json.ts";
+import { decodeAdmittedMsgpack } from "./msgpack.ts";
 import { dumpCesrNativeSad, parseCesrNativeKed, reapCesrNativeBody } from "./native.ts";
 import { smell, versify } from "./smell.ts";
 
