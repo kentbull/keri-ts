@@ -252,6 +252,11 @@ with the deck/consumer. Keep evaluation, admission and writes in one synchronous
 owner turn with immutable borrowed proof material; suspension can stale BADA state.
 No executable reply plan or synthetic plan lifecycle is needed.
 
+Endpoint role/location handlers own one Baser transaction for evaluation, proof
+replacement and pointer/projection writes. They publish held queries only after
+commit and refuse caller-owned writers. Failed replacement rolls back all those
+rows and releases the unpublished batch; this is not a cross-environment guarantee.
+
 Kevery /ksn holds that query batch while admitting its actual keyStateSaved child
 before accepted reply/proof or key-state writes, on shared or distinct decks.
 Semantic invalidity cannot publish a new unaccepted proof. Unverified replies

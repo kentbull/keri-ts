@@ -96,6 +96,10 @@ Escrow replay decisions carry kind/reason and optional diagnostic text only.
 Keep useful failure/identity detail in messages; retry/purge policy uses typed
 reasons, never diagnostic fields or parsed messages.
 Resource refusals propagate through RPE replay without deleting its durable row.
+Endpoint reply handlers derive their store from Revery. Each owns evaluation,
+proof replacement and authorization/location pointer/projection writes in one
+transaction, then publishes queries. Refuse caller-owned writers before effects;
+a failed replacement preserves prior proof and releases unpublished cue credit.
 KSN publication holds its concrete query batch while admitting the
 actual keyStateSaved child on Kevery's deck, including distinct local decks.
 Validate semantic correspondence before applying new proofs. Unverified replies
