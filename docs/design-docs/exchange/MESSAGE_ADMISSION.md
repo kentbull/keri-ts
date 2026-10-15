@@ -156,7 +156,9 @@ sender establishment and replay state. On threshold completion it reconstructs
 evidence and removes partial factors and snapshots before downstream consumption.
 The cache remains as the replay marker, matching KERIpy removal-before-delivery.
 Same-index signature variants retain their encoding while thresholds count unique
-indices. Rotation clears stale partials without removing the replay cache.
+indices. Factor merging has no application byte/item quota or fixed signature-pool
+cap; decoded row validity and signature verification remain required. Rotation
+clears stale partials without removing the replay cache.
 
 `KramHandoff` keeps its local busy scope through staging, consumption and joined
 hydration disposal. No ready receipt store or downstream acknowledgement exists.

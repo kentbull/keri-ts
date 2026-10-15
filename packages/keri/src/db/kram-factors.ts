@@ -7,10 +7,8 @@ import {
   Diger,
   FirstSeen,
   NumberPrimitive,
-  ResourceLimitError,
   SealEvent,
   SealKind,
-  SealSource,
   TypeMedia,
 } from "cesr-ts";
 import {
@@ -25,30 +23,12 @@ import type { Baser } from "./basing.ts";
 function number(value: TransIdxSigGroup["seqner"]): NumberPrimitive {
   return NumberPrimitive.fromNum(value instanceof NumberPrimitive ? value.num : value.sn);
 }
-/** Shared finite credits count exact qualified bytes across every factor family. */
-interface FactorCredits {
-  items: number;
-  bytes: number;
-}
 /** Qualified tuple encoding is self-delimiting; opaque wire uses lossless byte code units. */
 function identity(value: unknown): string {
   if (value instanceof Uint8Array) return byteString(value);
   if (Array.isArray(value)) return value.map(identity).join("");
   if (value && typeof value === "object" && "qb64" in value && typeof value.qb64 === "string") return value.qb64;
   throw new Error("Unexpected KRAM stored factor");
-}
-/** Measure without encoding opaque bytes or allocating concatenated tuple strings. */
-function extent(value: unknown): number {
-  if (value instanceof Uint8Array) return value.byteLength;
-  if (Array.isArray(value)) return value.reduce((size, item) => size + extent(item), 0);
-  if (value && typeof value === "object" && "qb64" in value && typeof value.qb64 === "string") return value.qb64.length;
-  throw new Error("Unexpected KRAM stored factor");
-}
-/** Reject finite factor limits without catching corruption or infrastructure failures. */
-function charge(credits: FactorCredits, value: unknown): void {
-  if (--credits.items < 0 || (credits.bytes -= extent(value)) < 0) {
-    throw new ResourceLimitError("KRAM partial evidence exceeds finite limits");
-  }
 }
 /** Enumerate tables consistently for validation and owned-factor cleanup. */
 function tables(db: Baser) {
@@ -68,20 +48,13 @@ function tables(db: Baser) {
     db.tmqs,
   ];
 }
-/** Validate staged durable rows before the caller's transaction commits; errors must roll back it. */
-export function validateKramFactors(db: Baser, key: readonly string[]): void {
-  const credits = { items: 4096, bytes: 8 * 1024 ** 2 };
-  for (const table of tables(db)) for (const value of table.getIter(key)) charge(credits, value);
-}
-/** Merge exact members in first-receipt order while charging the complete durable/incoming union. */
-function merge<T>(saved: Iterable<T>, incoming: Iterable<T>, credits: FactorCredits): T[] {
+/** Merge exact members in first-receipt order. */
+function merge<T>(saved: Iterable<T>, incoming: Iterable<T>): T[] {
   const result: T[] = [], seen = new Set<string>();
   for (const source of [saved, incoming]) {
     for (const value of source) {
-      if (extent(value) > 8 * 1024 ** 2) throw new ResourceLimitError("KRAM partial evidence exceeds finite limits");
       const id = identity(value);
       if (seen.has(id)) continue;
-      charge(credits, value);
       seen.add(id);
       result.push(value);
     }
@@ -96,7 +69,7 @@ function* signatureTuples(groups: readonly TransIdxSigGroup[]) {
     }
   }
 }
-/** Stage factors in the caller's transaction; validateKramFactors must run before commit.
+/** Stage factors in the caller's transaction.
  * Sender body, establishment seal and verified pmks pool remain caller-owned.
  */
 export function storeKramFactors(db: Baser, key: readonly string[], envelope: KeriDispatchEnvelope): void {
@@ -162,44 +135,38 @@ export function rehydrateKramFactors(
   ) {
     throw new Error("KRAM partial body mismatch");
   }
-  const credits = { items: 4096, bytes: 8 * 1024 ** 2 };
   const grouped = new Map<string, TransIdxSigGroup>();
-  for (const [pre, num, dig, sig] of merge(db.tsgs.getIter(key), signatureTuples(envelope.tsgs), credits)) {
+  for (const [pre, num, dig, sig] of merge(db.tsgs.getIter(key), signatureTuples(envelope.tsgs))) {
     const group = new TransIdxSigGroup(pre, num, dig, [sig]);
     const previous = grouped.get(group.routeKey);
     if (previous) previous.sigers.push(sig);
     else grouped.set(group.routeKey, group);
   }
-  for (const seal of envelope.sscs) charge(credits, SealSource.toTuple(seal));
-  // Incoming last groups remain separate, awaiting receipt-time normalization by their owner.
-  for (const group of envelope.ssgs) for (const sig of group.sigers) charge(credits, [group.prefixer, sig]);
   return new KeriDispatchEnvelope({
     ...envelope,
     attachmentGroups: [...envelope.attachmentGroups],
-    sigers: merge(db.pmks.getIter(key), envelope.sigers, credits).sort((a, b) => a.index - b.index),
+    sigers: merge(db.pmks.getIter(key), envelope.sigers).sort((a, b) => a.index - b.index),
     tsgs: [...grouped.values()],
-    unresolvedLast: merge(db.ulgs.getIter(key), envelope.unresolvedLast, credits),
+    unresolvedLast: merge(db.ulgs.getIter(key), envelope.unresolvedLast),
     cigars: merge(
       db.cigs.getIter(key),
       envelope.cigars.map((c) => {
         if (!c.verfer) throw new Error("KRAM cigar has no verifier context");
         return [c.verfer, c] as const;
       }),
-      credits,
     )
       .map(([verfer, cigar]) => new Cigar(cigar, verfer)),
     trqs: merge(
       db.trqs.getIter(key),
       envelope.trqs.map((v) => [v.prefixer, number(v.seqner), v.diger, v.siger] as const),
-      credits,
     )
       .map(TransReceiptQuadruple.fromTuple),
-    ssts: merge(db.ssts.getIter(key), envelope.ssts.map(SealEvent.toTuple), credits).map(SealEvent.fromTuple),
-    frcs: merge(db.frcs.getIter(key), envelope.frcs.map(FirstSeen.toTuple), credits).map(FirstSeen.fromTuple),
-    tdcs: merge(db.tdcs.getIter(key), envelope.tdcs.map(SealKind.toTuple), credits).map(SealKind.fromTuple),
-    ptds: merge(db.ptds.getIter(key), envelope.ptds.map((v) => v.raw), credits).map(PathedMaterialGroup.fromRaw),
-    bsqs: merge(db.bsqs.getIter(key), envelope.bsqs.map(BlindState.toTuple), credits).map(BlindState.fromTuple),
-    bsss: merge(db.bsss.getIter(key), envelope.bsss.map(BoundState.toTuple), credits).map(BoundState.fromTuple),
-    tmqs: merge(db.tmqs.getIter(key), envelope.tmqs.map(TypeMedia.toTuple), credits).map(TypeMedia.fromTuple),
+    ssts: merge(db.ssts.getIter(key), envelope.ssts.map(SealEvent.toTuple)).map(SealEvent.fromTuple),
+    frcs: merge(db.frcs.getIter(key), envelope.frcs.map(FirstSeen.toTuple)).map(FirstSeen.fromTuple),
+    tdcs: merge(db.tdcs.getIter(key), envelope.tdcs.map(SealKind.toTuple)).map(SealKind.fromTuple),
+    ptds: merge(db.ptds.getIter(key), envelope.ptds.map((v) => v.raw)).map(PathedMaterialGroup.fromRaw),
+    bsqs: merge(db.bsqs.getIter(key), envelope.bsqs.map(BlindState.toTuple)).map(BlindState.fromTuple),
+    bsss: merge(db.bsss.getIter(key), envelope.bsss.map(BoundState.toTuple)).map(BoundState.fromTuple),
+    tmqs: merge(db.tmqs.getIter(key), envelope.tmqs.map(TypeMedia.toTuple)).map(TypeMedia.fromTuple),
   });
 }
