@@ -20,7 +20,7 @@ import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
-import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
+import { CueDelivery, type CueTargetPreparation, type OwnedCueTarget } from "./cue-delivery.ts";
 import { admitCueEmission, type CuePreparationResult, type PreparedCueEmission } from "./cue-preparation.ts";
 import { admitCueRoute } from "./cue-route.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
@@ -355,9 +355,28 @@ export class RuntimeDeliveries {
             throw new RangeError("Cue delivery requires runtime's exact policy");
           }
           if (entry.kind === "cue") {
-            done = (yield* call(() =>
-              entry.delivery.step(runtime, active.signal, (target) => self.retainFailed(target))
-            )) === "done";
+            // Preparation stays in the existing state turn; transport and joined cleanup stay outside it.
+            const preparation: { result: CueTargetPreparation } = { result: { kind: "pending" } };
+            if (entry.delivery.needsPreparation) {
+              yield* runtime.reactor.settle(undefined, {}, function*() {
+                preparation.result = entry.delivery.prepareTarget(runtime.poster, self.resources);
+              });
+            } else {
+              preparation.result = entry.delivery.prepareTarget(runtime.poster, self.resources);
+            }
+            const next = preparation.result;
+            done = next.kind === "done";
+            if (next.kind === "target") {
+              const outcome = yield* call(() =>
+                attemptPreparedCesrTarget(next.owner.target, runtime.services, active.signal, runtime)
+              );
+              if (outcome === "complete") {
+                active.signal.throwIfAborted();
+                entry.delivery.retireTarget("sent");
+              } else if (outcome === "refused" && self.retainFailed(next.owner)) {
+                entry.delivery.retireTarget("retained");
+              }
+            }
           } else {
             done = (yield* call(() =>
               attemptPreparedCesrTarget(entry.delivery.target, runtime.services, active.signal, runtime)
