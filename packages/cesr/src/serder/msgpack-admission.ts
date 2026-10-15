@@ -4,9 +4,6 @@ import { ResourceLimitError } from "../core/errors.ts";
 import type { DecodedBodyBudget } from "./body-admission.ts";
 import { msgpackWorkspaceBytes } from "./codec-workspace.ts";
 
-const nativeDecode = Decoder.prototype.decode;
-const nativeTextDecode = TextDecoder.prototype.decode;
-const NativeArray = Array;
 const standard = new ExtensionCodec();
 const standardDecode = standard.decode.bind(standard);
 const standardEncode = standard.tryToEncode.bind(standard);
@@ -23,14 +20,12 @@ export function decodeAdmittedMsgpack(
   onFailure?: (error: unknown) => void,
 ): Record<string, unknown> {
   const decoder = new Decoder({ extensionCodec: codec, keyDecoder: null });
-  const decode = decoder.decode;
   let value: unknown;
   try {
-    value = decode.call(decoder, raw);
+    value = decoder.decode(raw);
   } catch (error) {
     if (
-      decode !== nativeDecode || TextDecoder.prototype.decode !== nativeTextDecode || Array !== NativeArray
-      || !(error instanceof DecodeError || (boundaryFailure && error instanceof RangeError))
+      !(error instanceof DecodeError || (boundaryFailure && error instanceof RangeError))
     ) {
       onFailure?.(error);
       throw error;

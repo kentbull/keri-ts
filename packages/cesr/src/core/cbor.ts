@@ -138,8 +138,6 @@ export function decodeKeriCbor(raw: Uint8Array): unknown {
 }
 
 const nativeDecode = Decoder.prototype.decode;
-const nativeTextDecode = TextDecoder.prototype.decode;
-const NativeArray = Array;
 // Private fixed bytes never reach an injected decode method or tag callback.
 const resetSource = Uint8Array.of(0xf6);
 Object.defineProperty(resetSource, "dataView", { value: new DataView(resetSource.buffer) });
@@ -213,8 +211,7 @@ export function decodeAdmittedKeriCbor(
   } catch (error) {
     if (resetFailed) throw error;
     if (
-      !boundaryFailure || decode !== nativeDecode || TextDecoder.prototype.decode !== nativeTextDecode
-      || Array !== NativeArray || !(error instanceof Error)
+      !boundaryFailure || !(error instanceof Error)
     ) {
       onFailure?.(error);
       throw error;
