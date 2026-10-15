@@ -68,6 +68,10 @@ The current head remains until send/transfer succeeds; failed or cancelled sends
 retry it, unresolved records rotate, and new work waits for the next finite pass.
 Close cancels/joins active consumption before clearing. Actual wire/source owners
 retain their separate admission and joined cleanup; this is not a shared memory bound.
+Query delivery borrows its input record without recursively estimating or reserving
+its metadata again. Existing held source credit still participates in the combined
+capacity check to distinguish impossible work from temporary contention. The
+prepared wire ceiling is checked after construction; it is not an input-allocation bound.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state. Without explicit mailbox routes, poll every eligible witness
 mailbox in stable order through the existing per-endpoint workers. A logs reply is stored at the

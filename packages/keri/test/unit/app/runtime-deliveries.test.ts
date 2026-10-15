@@ -3,7 +3,7 @@ import { assertEquals, assertObjectMatch, assertRejects, assertThrows } from "js
 import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { RuntimeDeliveries } from "../../../src/app/runtime-deliveries.ts";
+import { queryTransportSink, RuntimeDeliveries } from "../../../src/app/runtime-deliveries.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
 Deno.test("query delivery admission retains accepted requests on queue overflow and delivery failure", async () => {
@@ -50,21 +50,19 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
   const tooSmall = new RuntimeDeliveries(new ResourcePolicy({ bytes: shared.limits.bytes - 1 }));
   assertObjectMatch(tooSmall.enqueue(prepare), { kind: "refuse", error: { reason: "limit" } });
   assertEquals(prepared, false);
-  const cue = { kin: "query" as const, pre: "aid", src: "aid", route: "logs" as const, q: {} };
-  const emptyFloor = new RuntimeDeliveries(new ResourcePolicy({ bytes: 33 * 1024 ** 2 }));
-  assertObjectMatch(emptyFloor.enqueue(prepare, cue), { kind: "refuse", error: { reason: "limit" } });
-  assertEquals(prepared, false, "combined source retention floor refuses before signing");
   assertObjectMatch(
-    new RuntimeDeliveries(new ResourcePolicy({ bytes: 40 * 1024 ** 2 })).enqueue(prepare, cue, 8 * 1024 ** 2),
+    new RuntimeDeliveries(new ResourcePolicy({ bytes: 40 * 1024 ** 2 })).enqueue(prepare, 8 * 1024 ** 2),
     { kind: "refuse", error: { reason: "limit" } },
   );
   assertEquals(prepared, false, "existing owned source credit cannot become irreducible busy");
-  assertThrows(() =>
-    new RuntimeDeliveries(resources).enqueue(prepare, {
-      ...cue,
-      q: { s: "x".repeat(4 * 1024 ** 2 + 1) },
-    }), ResourceLimitError);
-  assertEquals(prepared, false, "finite input ceiling refuses before query serialization");
+  const oversized = new RuntimeDeliveries(resources);
+  assertThrows(
+    () => oversized.enqueue(() => ({ ...request, body: new Uint8Array(8 * 1024 ** 2 + 1) })),
+    ResourceLimitError,
+    "Query request exceeds byte limit",
+  );
+  assertEquals(oversized.hasPending, false, "oversized wire is never queued");
+  assertEquals(resources.used.bytes, 0, "oversized wire releases preparation and retained credit");
   await run(() => first.close());
   assertThrows(
     () =>
@@ -78,6 +76,28 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
   second.enqueue(prepare);
   await run(() => second.close());
   assertEquals(shared.used.bytes, 0);
+});
+
+Deno.test("query transport admits prepared wire without charging its borrowed cue twice", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("sender");
+    hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const occupied = runtime.resources.reserve({ bytes: runtime.resources.limits.bytes - 33 * 1024 ** 2 });
+    if (occupied.kind !== "reserve") throw new Error("Expected available fixture capacity");
+    try {
+      const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, wits: [hab.pre], route: "logs" as const, q: {} };
+      const sink = queryTransportSink(runtime, hby, hab);
+      assertEquals(sink.admitQuery!(cue, () => hab.interpretCue(cue) ?? null), "transferred");
+      assertEquals(runtime.deliveries.hasPending, true);
+    } finally {
+      occupied.reservation.release();
+      yield* runtime.close();
+      assertEquals(runtime.resources.used.bytes, 0);
+      yield* hby.close(true);
+    }
+  });
 });
 
 Deno.test("runtime query shutdown joins a pending response read before closing stores", async () => {
