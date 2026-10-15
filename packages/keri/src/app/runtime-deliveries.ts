@@ -19,6 +19,7 @@ import { Schemes } from "../core/schemes.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
+import { cueDeliveryBudget } from "./cue-budget.ts";
 import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
 import { prepareCueEmission, type PreparedCueEmission } from "./cue-preparation.ts";
 import { prepareCueRoute } from "./cue-route.ts";
@@ -81,9 +82,7 @@ interface QueryDelivery {
   destination: string;
 }
 
-const requestBytes = 8 * 1024 * 1024, routeBytes = 1024 ** 2;
-// Query wire, retained introduction events and their joined introduction may coexist during preparation.
-const preparationBytes = 3 * requestBytes;
+const { wireBytes: requestBytes, routeBytes, preparationBytes } = cueDeliveryBudget;
 
 /** One shared item slot owns either query bytes, a lazy cue cursor or an exact failed packet. */
 type AdmittedDelivery =

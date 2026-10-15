@@ -1,4 +1,5 @@
 import type { CueQueueInput } from "../core/cue-publishing.ts";
+import { cueDeliveryBudget } from "./cue-budget.ts";
 /**
  * Witness host and controller-side receipting helpers.
  *
@@ -304,7 +305,7 @@ function finiteWitnessEmissions(
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): Operation<CueEmission[]> {
   return call(function*() {
-    const maxBytes = 8 * 1024 ** 2, maxItems = runtime.cues.capacity;
+    const maxBytes = cueDeliveryBudget.wireBytes, maxItems = runtime.cues.capacity;
     yield* resource<void>(function*(provide) {
       const admitted = runtime.resources.reserve({ bytes: maxBytes });
       if (admitted.kind === "refuse") {
