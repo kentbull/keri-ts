@@ -30,6 +30,11 @@
   256 bytes per nonempty container/extension and one raw copy, not private field/pool counts.
   CBOR uses a 4 KiB fixed workspace allowance and one raw copy; actual global reset
   and allocating-extension preflight remain required. Tight policies may refuse earlier.
+  Arbitrary JS-global/prototype/private-decoder mutation is unsupported, not an
+  error-provenance contract. Keep actual pre-decode guards and supplied-interface
+  failure tests; do not enumerate private fields or count injected getter reads.
+  The CBOR retention regression uses explicit V8 collection to verify successful
+  and malformed source backing is collectible; it fails if the actual reset is omitted.
   The body parser consults one codec syntax contract;
   only locally created intrinsic refusals permit opaque fallback for admitted codecs.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each

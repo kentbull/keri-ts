@@ -48,8 +48,10 @@ native heap bound. Declaration and decoded retention charges remain separate.
 The admitted decoder disables shared key caching and uses a private standard
 codec (timestamp/ExtData), excluding mutable global custom extensions. Codec syntax
 remains authoritative; only locally marked intrinsic failures permit opaque MGPK.
-Preflight-complete unexpected RangeErrors preserve identity. Arbitrary global JS
-mutations/custom extension allocations are outside this private codec boundary.
+Preflight-complete unexpected RangeErrors preserve identity. Arbitrary mutation of JavaScript globals, codec prototypes or private decoder
+fields is unsupported; it is not a failure-provenance contract. Supplied source,
+sink and resource-policy failures still preserve their own identity. Custom
+extension allocations are outside this private codec boundary.
 This leaves native, standalone/storage/cache and native residency gates open.
 
 CBOR-A admits base token allocations before the shared codec: declared definite
@@ -70,6 +72,8 @@ admission is not all-tag allocation closure.
 CBOR-B1 resets message-bearing decoder globals before helper return: an outermost
 captured native decode of private fixed CBOR null clears strings, packed values,
 source, structures and references and replaces DataView backing with one byte.
+A real collection regression verifies source backing is collectible after both
+successful and malformed decode; it fails when this reset is omitted.
 The private Decoder configures only two booleans, without instance structures or
 shared-value tables; map mode is restored after malformed forced-map operands.
 The admitted path includes scope and reset scratch in its fixed workspace

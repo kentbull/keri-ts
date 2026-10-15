@@ -1,5 +1,4 @@
 import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
-import { Decoder as CborDecoder } from "cbor-x/decode";
 import { encode as encodeDefaultCbor } from "cbor-x/encode";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { decodeKeriCbor, encodeKeriCbor } from "../../src/core/cbor.ts";
@@ -248,36 +247,17 @@ Deno.test("cbor contract - JSON, MGPK, and CBOR all round-trip the same plain ob
   assertPlainObjectListShape(cborDecoded);
 });
 
-Deno.test("cbor scope resets through the native leaf once after nested helper decoding", () => {
-  const native = CborDecoder.prototype.decode;
-  let calls = 0, leafReads = 0, receiver: CborDecoder | undefined;
-  CborDecoder.prototype.decode = function(...args) {
-    calls++;
-    if (!receiver) {
-      receiver = this;
-      assertEquals(Object.keys(this).sort(), ["mapsAsObjects", "useRecords"]);
-      Object.defineProperty(this, "sharedValues", {
-        configurable: true,
-        get: () => {
-          leafReads++;
-          return undefined;
-        },
-      });
-    }
-    const value = native.apply(this, args);
-    if (calls === 1) assertEquals(decodeKeriCbor(Uint8Array.of(1)), 1);
-    return value;
-  };
-  try {
-    assertEquals(decodeKeriCbor(encodeKeriCbor({ a: "retained" })), { a: "retained" });
-    assertEquals([calls, leafReads], [2, 3]); // Two payload calls, one outermost native reset.
-  } finally {
-    CborDecoder.prototype.decode = native;
-    if (receiver) Reflect.deleteProperty(receiver, "sharedValues");
-  }
-});
-
 Deno.test("cbor scope restores default map shapes after a malformed forced-map operand", () => {
   decodeKeriCbor(Uint8Array.of(0xd9, 1, 3, 1)); // Native259 sets mapsAsObjects=false even for scalar input.
   assertEquals(decodeKeriCbor(encodeKeriCbor({ a: { b: 1 } })), { a: { b: 1 } });
+});
+
+Deno.test("cbor scope releases actual source backing after successful and malformed decode", async () => {
+  const probe = new URL("../fixtures/cbor-retention.ts", import.meta.url);
+  const result = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", "--v8-flags=--expose-gc", probe.href],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
 });
