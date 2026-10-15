@@ -44,6 +44,8 @@ HTTP/TCP prepared attempts consume the sender's joined expected-refusal result d
 strict source/frame APIs keep their throwing contract. Each sender owns its parser
 refusal bridge; prepared delivery does not observe exception identities. TCP uses
 one connection owner for strict and attempt APIs, including duplex reply cleanup.
+Transport refusal observers are removed. Attempt helpers remain internal to their
+modules, while the runtime package exposes the supported strict sender APIs.
 Fetch teardown joins pending rejection as well as late response cleanup. Timeout
 null recognizes only its controller's exact reason; foreign same-class AbortErrors
 and I/O failures propagate without repeating an already-reported object.
@@ -199,10 +201,9 @@ route and preparation admission; captured signature/routing survive later change
 Busy preserves the raw or continuation head, and unresolved/custom sinks keep
 notify semantics. Actual continuation drains receive their owning runtime for
 a short guarded preparation turn. Request-local HTTP/witness owners still need adoption.
-Actual HTTP and source/tree/output admission refusal observation is invocation-local;
-source/fetch/sink/cleanup and external observer failures retain original identity.
-Prepared target attempts return local complete/refused/busy only after joined
-cleanup, matching observed engine-created errors rather than foreign classes.
+Prepared HTTP/TCP target attempts return local complete/refused/busy only after
+joined cleanup, consuming the sender's own capacity/HTTP results. Source, fetch,
+sink and cleanup failures propagate unchanged, including foreign same-class errors.
 Cue preparation/item refusal follows the same exact invocation rule; foreign
 interpretation, route, reserve and observer failures propagate. This does not
 admit all decoded/native preparation copies.

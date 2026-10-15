@@ -35,8 +35,6 @@ export interface TcpSendOptions {
   signal?: AbortSignal;
   /** Owning runtime's shared admission and clock. */
   services?: RuntimeServices;
-  /** Invocation-local observation of engine-created capacity refusal; foreign failures remain unclassified. */
-  onAdmissionRefusal?: (error: ResourceAdmissionError) => void;
 }
 
 /** Producer observes abort, yields immutable bounded backing, and joins cleanup on return. */
@@ -351,7 +349,6 @@ function attemptWriteTcp(
             || services.resources.limits.bytes < outputBytes + RX_CHUNK + RX_BUFFER)
         ) {
           const error = new ResourceAdmissionError("TCP conversation exceeds configured capacity", "limit");
-          options.onAdmissionRefusal?.(error);
           return { kind: "refuse", error };
         }
         const admission = yield* resource<ResourceDecision>(function*(provide) {
@@ -367,7 +364,6 @@ function attemptWriteTcp(
             `TCP output admission refused: ${admission.reason}`,
             admission.reason,
           );
-          options.onAdmissionRefusal?.(error);
           return { kind: "refuse", error };
         }
         const receiver = new AbortController();
@@ -382,7 +378,6 @@ function attemptWriteTcp(
           maxBufferedBytes: RX_BUFFER,
           classifyWireErrors: true,
           onAdmissionRefusal(error) {
-            options.onAdmissionRefusal?.(error);
             receiveRefusal = error;
           },
         }));
