@@ -272,20 +272,6 @@ Deno.test("CLI - init command honors custom head directory", async () => {
   assertExists(Deno.statSync(`${headDirPath}/keri/db/${name}`));
 });
 
-Deno.test("CLI - init --outboxer creates the Tufa outbox sidecar", async () => {
-  const name = `outbox-init-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  await run(() =>
-    initCommand({
-      name,
-      headDirPath,
-      nopasscode: true,
-      outboxer: true,
-    })
-  );
-  assertExists(Deno.statSync(`${headDirPath}/keri/obx/${name}`));
-});
-
 Deno.test("CLI - init stores the configured CESR body mode", async () => {
   const name = `cesr-mode-init-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
@@ -310,31 +296,6 @@ Deno.test("CLI - init stores the configured CESR body mode", async () => {
       yield* hby.close();
     }
   });
-});
-
-Deno.test("CLI - setupHby rejects --outboxer when init did not enable it", async () => {
-  const name = `outbox-disabled-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  await run(() =>
-    initCommand({
-      name,
-      headDirPath,
-      nopasscode: true,
-    })
-  );
-
-  await assertOperationThrows(
-    (function*() {
-      const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
-        readonly: true,
-        skipConfig: true,
-        skipSignator: true,
-        outboxer: true,
-      });
-      yield* hby.close();
-    })(),
-    "Outboxer is not enabled for this keystore",
-  );
 });
 
 Deno.test("CLI - setupHby defaults CESR body mode to header when no mode is configured", async () => {

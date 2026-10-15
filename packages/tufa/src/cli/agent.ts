@@ -24,7 +24,6 @@ interface AgentArgs {
   configFile?: string;
   passcode?: string;
   compat?: boolean;
-  outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
   schemas?: string[];
   schemaDirs?: string[];
@@ -142,7 +141,6 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
     configFile: args.configFile as string | undefined,
     passcode: args.passcode as string | undefined,
     compat: args.compat as boolean | undefined,
-    outboxer: args.outboxer as boolean | undefined,
     cesrBodyMode: normalizeCesrBodyMode(
       args.cesrBodyMode as string | undefined,
     ),
@@ -182,7 +180,6 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
       cf,
       skipConfig: false,
       skipSignator: false,
-      outboxer: agentArgs.outboxer ?? false,
       cesrBodyMode: agentArgs.cesrBodyMode,
     },
   );

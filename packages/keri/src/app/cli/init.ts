@@ -38,8 +38,6 @@ interface InitArgs {
   aeid?: string;
   /** Qualified base64 private-signing key (seed) for the aeid from which the private decryption key may be derived */
   seed?: string;
-  /** Enable the Tufa-only durable outbox sidecar for this keystore. */
-  outboxer?: boolean;
   /** Transport form for outbound CESR HTTP requests. */
   cesrBodyMode?: CesrBodyMode;
 }
@@ -63,7 +61,6 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     nopasscode: args.nopasscode as boolean | undefined,
     aeid: args.aeid as string | undefined,
     seed: args.seed as string | undefined,
-    outboxer: args.outboxer as boolean | undefined,
     cesrBodyMode: normalizeCesrBodyMode(
       args.cesrBodyMode as string | undefined,
     ),
@@ -125,7 +122,6 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
         aeid: initArgs.aeid,
         seed: initArgs.seed,
         salt: initArgs.salt,
-        outboxer: initArgs.outboxer ? "create" : "disabled",
         cesrBodyMode: initArgs.cesrBodyMode,
       });
     } catch (error) {
@@ -147,15 +143,11 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
         aeid: initArgs.aeid,
         seed: initArgs.seed,
         salt: initArgs.salt,
-        outboxer: initArgs.outboxer ? "create" : "disabled",
         cesrBodyMode: initArgs.cesrBodyMode,
       });
     }
 
     try {
-      if (initArgs.outboxer) {
-        hby.ks.pinGbls("outboxer", "1");
-      }
       hby.ks.pinGbls("cesrBodyMode", initArgs.cesrBodyMode ?? "header");
       if (runtimeBootstrapNeeded(hby)) {
         const runtime = yield* createAgentRuntime(hby, { mode: "local" });

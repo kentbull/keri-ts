@@ -4,7 +4,6 @@ import { createConfiger } from "../../../src/app/configing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Baser } from "../../../src/db/basing.ts";
 import { Keeper } from "../../../src/db/keeping.ts";
-import { Outboxer } from "../../../src/db/outboxing.ts";
 
 Deno.test("failed encrypted Habery acquisition closes actual Baser and Keeper before returning", async () => {
   const directory = Deno.makeTempDirSync({ prefix: "habery-acquisition-" });
@@ -128,41 +127,6 @@ Deno.test("cancelled Habery Baser acquisition closes the Baser that has not retu
     assertEquals(captured!.opened, false, "cancelled child factory must close its unreturned native handle");
   } finally {
     Baser.prototype.reopen = original;
-    await task.halt();
-    if (captured?.opened) await run(() => captured!.close());
-    Deno.removeSync(directory, { recursive: true });
-  }
-});
-
-Deno.test("cancelled Habery Outboxer acquisition closes the Outboxer that has not returned to its caller", async () => {
-  const directory = Deno.makeTempDirSync({ prefix: "habery-cancel-" });
-  const original = Outboxer.prototype.reopen;
-  let captured: Outboxer | undefined;
-  let entered!: () => void;
-  const acquired = new Promise<void>((resolve) => entered = resolve);
-  Outboxer.prototype.reopen = function*(args) {
-    const opened = yield* original.call(this, args);
-    captured = this;
-    entered();
-    yield* action<void>(() => () => {});
-    return opened;
-  };
-  const task = run(() =>
-    createHabery({
-      name: "cancelled",
-      headDirPath: directory,
-      skipConfig: true,
-      skipSignator: true,
-      outboxer: "create",
-    })
-  );
-  try {
-    await acquired;
-    assertEquals(captured!.opened, true);
-    await task.halt();
-    assertEquals(captured!.opened, false, "cancelled child factory must close its unreturned native handle");
-  } finally {
-    Outboxer.prototype.reopen = original;
     await task.halt();
     if (captured?.opened) await run(() => captured!.close());
     Deno.removeSync(directory, { recursive: true });

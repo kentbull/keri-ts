@@ -68,7 +68,6 @@ export function registerMailboxCmds(
       )
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
-      .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
       .option(
         "--multisig-mode <mode>",
         "Group mailbox mode: propose or complete",
@@ -89,7 +88,6 @@ export function registerMailboxCmds(
         mailbox: options.mailbox,
         base: options.base,
         compat: options.compat || false,
-        outboxer: options.outboxer || false,
         multisigMode: options.multisigMode,
         cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
@@ -110,7 +108,6 @@ export function registerMailboxCmds(
       )
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
-      .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
       .option(
         "--cesr-body-mode <mode>",
         "CESR HTTP transport mode: header (default) or body",
@@ -131,7 +128,6 @@ export function registerMailboxCmds(
         mailbox: options.mailbox,
         base: options.base,
         compat: options.compat || false,
-        outboxer: options.outboxer || false,
         cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
@@ -147,7 +143,6 @@ export function registerMailboxCmds(
       .requiredOption("-a, --alias <alias>", "Local identifier alias")
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
-      .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
       .option(
         "--cesr-body-mode <mode>",
         "CESR HTTP transport mode: header (default) or body",
@@ -167,7 +162,6 @@ export function registerMailboxCmds(
         alias: options.alias,
         base: options.base,
         compat: options.compat || false,
-        outboxer: options.outboxer || false,
         cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
@@ -186,7 +180,6 @@ export function registerMailboxCmds(
       .requiredOption("-i, --index <index>", "Next consumed topic index")
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
-      .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
       .option(
         "--cesr-body-mode <mode>",
         "CESR HTTP transport mode: header (default) or body",
@@ -209,7 +202,6 @@ export function registerMailboxCmds(
         index: options.index ? Number(options.index) : undefined,
         base: options.base,
         compat: options.compat || false,
-        outboxer: options.outboxer || false,
         cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
@@ -227,7 +219,6 @@ export function registerMailboxCmds(
       .option("-V, --verbose", "Print full mailbox event bodies")
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
-      .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
       .option(
         "--cesr-body-mode <mode>",
         "CESR HTTP transport mode: header (default) or body",
@@ -249,7 +240,6 @@ export function registerMailboxCmds(
         verbose: options.verbose || false,
         base: options.base,
         compat: options.compat || false,
-        outboxer: options.outboxer || false,
         cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,

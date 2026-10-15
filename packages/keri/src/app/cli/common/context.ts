@@ -23,7 +23,6 @@ export interface CommandHaberyOptions {
   readonly?: boolean;
   skipConfig?: boolean;
   skipSignator?: boolean;
-  outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
   /**
    * Internal lifecycle seam for focused helper tests and specialized adapters.
