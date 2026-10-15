@@ -256,6 +256,7 @@ function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
 export function eventReplayMessage(
   hby: Habery,
   serder: SerderKERI,
+  gvrsn: Versionage = Vrsn_1_0,
 ): Uint8Array {
   const pre = serder.pre;
   const said = serder.said;
@@ -270,7 +271,7 @@ export function eventReplayMessage(
       `Missing first-seen ordinal for accepted event ${pre}:${said}.`,
     );
   }
-  return hby.db.cloneEvtMsg(pre, fn, said);
+  return hby.db.cloneEvtMsg(pre, fn, said, Infinity, gvrsn);
 }
 
 /**
@@ -307,6 +308,7 @@ export function acceptedEventReplayMessage(
   hby: Habery,
   pre: string,
   sn: number,
+  gvrsn: Versionage = Vrsn_1_0,
 ): { serder: SerderKERI; message: Uint8Array } {
   const said = hby.db.kels.getLast(pre, sn);
   if (!said) {
@@ -320,7 +322,7 @@ export function acceptedEventReplayMessage(
       `Missing accepted event body for ${pre}:${said}.`,
     );
   }
-  return { serder, message: eventReplayMessage(hby, serder) };
+  return { serder, message: eventReplayMessage(hby, serder, gvrsn) };
 }
 
 /**

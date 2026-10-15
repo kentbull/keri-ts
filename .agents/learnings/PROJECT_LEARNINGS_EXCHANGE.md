@@ -190,7 +190,12 @@ Group IPEX approval derives its child, stored proof and genus from the wrapper.
 Partial signing receives proof bytes directly; it does not look them up through
 a wrapper ID. Prefix parser input with the resolved genus, serialize local
 signatures in that genus, and publish its signed replay hint. CLI group grants
-use the same genus for credential attachments, partial signatures and intake.
+use the same genus for credential attachments, partial signatures and intake. Grant artifacts carry
+body-first bytes and explicit attachment genus; parser selectors belong only at
+intake, never inside embedded bytes. Apply the requested genus to ACDC, TEL and
+KEL proofs. Stored legacy grants require the receiver's configured child genus:
+a V1 outer envelope can preserve V2 child proofs, so its body cannot determine
+child framing. Holder polling and verifier runs expose this through `--gvrsn`.
 
 Reply approval publishes only its group identity through the event builder. VDR
 publication correlates registry/issuance routes with their required named children

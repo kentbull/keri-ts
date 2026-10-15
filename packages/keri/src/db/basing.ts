@@ -27,6 +27,7 @@ import {
   Texter,
   Verfer,
   Verser,
+  type Versionage,
   Vrsn_1_0,
 } from "cesr-ts";
 import { join } from "jsr:@std/path";
@@ -1661,6 +1662,7 @@ export class Baser {
     fn: number,
     said: string,
     maxBytes = Infinity,
+    requestedGenus: Versionage = Vrsn_1_0,
   ): Uint8Array {
     if (maxBytes !== Infinity && (!Number.isSafeInteger(maxBytes) || maxBytes < 1)) {
       throw new RangeError("Replay byte limit must be a positive safe integer");
@@ -1671,11 +1673,18 @@ export class Baser {
       ? this.getEvt(dgkey)
       : this.getValBounded(this.evtsRaw, dgkey, maxBytes);
     if (stored === null) throw new DatabaseOperationError(`Missing event body for ${pre}:${said}`);
-    return this.cloneStoredEvtMsg(pre, fn, said, stored, maxBytes);
+    return this.cloneStoredEvtMsg(pre, fn, said, stored, maxBytes, requestedGenus);
   }
 
   /** Reconstruct admitted body bytes without reopening their native row. */
-  private cloneStoredEvtMsg(pre: string, fn: number, said: string, stored: Uint8Array, maxBytes: number): Uint8Array {
+  private cloneStoredEvtMsg(
+    pre: string,
+    fn: number,
+    said: string,
+    stored: Uint8Array,
+    maxBytes: number,
+    requestedGenus: Versionage = Vrsn_1_0,
+  ): Uint8Array {
     const dgkey = dgKey(pre, said);
     if (stored.length > maxBytes) throw new ResourceLimitError("Replay message exceeds byte limit");
     // Preserve SerderSuber's validation so corrupt records retain clonePreIter's skip behavior.
@@ -1683,7 +1692,7 @@ export class Baser {
     const serder = new SerderKERI({ raw: stored });
     const raw = serder.raw;
     // Preserve body bytes; its declared protocol/genus sets the minimum lawful attachment genus.
-    const gvrsn = resolveAttachmentGvrsn(serder);
+    const gvrsn = resolveAttachmentGvrsn(serder, requestedGenus);
     let size = 0;
     /** Admit each qualified fragment before retaining it or allocating the complete replay. */
     const retain = (part: Uint8Array): Uint8Array => {

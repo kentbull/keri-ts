@@ -402,9 +402,9 @@ function grantPathedMaterials(
   artifacts: ReturnType<typeof credentialPresentationArtifacts>,
 ): Uint8Array[] {
   return [
-    pathedMaterial("anc", artifacts.anc),
-    pathedMaterial("iss", artifacts.iss),
-    pathedMaterial("acdc", artifacts.acdc),
+    pathedMaterial("anc", artifacts.anc.wire),
+    pathedMaterial("iss", artifacts.iss.wire),
+    pathedMaterial("acdc", artifacts.acdc.wire),
   ];
 }
 

@@ -1,4 +1,6 @@
+import type { Versionage } from "cesr-ts";
 import { action, type Operation } from "npm:effection@^3.6.0";
+import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Reger } from "../../db/reger.ts";
 import { createVerifierCueBaser } from "../../db/verifier-cueing.ts";
@@ -13,6 +15,7 @@ interface VerifierRunArgs {
   passcode?: string;
   compat?: boolean;
   hook?: string;
+  gvrsn?: Versionage;
   config?: string;
   once?: boolean;
   intervalMs?: number;
@@ -27,6 +30,7 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
     passcode: args.passcode as string | undefined,
     compat: args.compat as boolean | undefined,
     hook: args.hook as string | undefined,
+    gvrsn: parseGvrsn(args.gvrsn),
     config: args.config as string | undefined,
     once: args.once as boolean | undefined,
     intervalMs: numberArg(args.intervalMs, 1000),
@@ -61,6 +65,7 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
           cues: runtime.cues,
           services: runtime.services,
           hook,
+          gvrsn: runArgs.gvrsn,
           timeoutMs: runArgs.timeoutMs,
           validators: validatorsFromVerifierConfig(config),
           requireKnownSchemas: isRecord(config) && config.requireKnownSchemas === true,

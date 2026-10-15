@@ -11,7 +11,7 @@ import type { CueQueueInput } from "../core/cue-publishing.ts";
  * `Notifier` rows are intentionally not consumed here; they remain operator
  * visibility, matching the roadmap contract.
  */
-import { Dater, Ilks, Prefixer, SerderACDC } from "cesr-ts";
+import { Dater, Ilks, Prefixer, SerderACDC, type Versionage, Vrsn_1_0 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import type { OwnedCue } from "../core/cue-admission.ts";
 import { cuePublisher, type CueReader, cueReader } from "../core/cue-publishing.ts";
@@ -68,6 +68,8 @@ export interface VerifierAgentOptions {
   cues: CueQueueInput;
   services: RuntimeServices;
   hook: string;
+  /** Attachment genus of grant children, independent of legacy EXN framing. */
+  gvrsn?: Versionage;
   timeoutMs?: number;
   validators?: Record<string, VerifierBusinessValidator>;
   requireKnownSchemas?: boolean;
@@ -82,6 +84,7 @@ export class VerifierAgent {
   readonly cues: CueQueueInput;
   readonly services: RuntimeServices;
   readonly hook: string;
+  readonly gvrsn: Versionage;
   readonly timeoutMs: number;
   readonly validators: Record<string, VerifierBusinessValidator>;
   readonly requireKnownSchemas: boolean;
@@ -94,6 +97,7 @@ export class VerifierAgent {
     this.cues = options.cues;
     this.services = options.services;
     this.hook = options.hook;
+    this.gvrsn = options.gvrsn ?? Vrsn_1_0;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.validators = { ...(options.validators ?? {}) };
     this.requireKnownSchemas = options.requireKnownSchemas ?? false;
@@ -138,7 +142,7 @@ export class VerifierAgent {
         continue;
       }
 
-      const artifacts = storedGrantArtifacts(this.hby, grant);
+      const artifacts = storedGrantArtifacts(this.hby, grant, this.gvrsn);
       yield* processCredentialPresentationArtifacts(this.reactor, artifacts);
       const creder = this.reger.creds.get([credentialSaid]);
       if (!creder) {
