@@ -80,7 +80,7 @@ interface RawMessage {
 }
 
 export interface MultisigBuilderOptions {
-  /** Explicit attachment genus for a v1 child carried under a v2 wrapper. */
+  /** Explicit attachment genus when a legacy child body does not declare it. */
   childGvrsn?: Versionage;
   stamp?: string;
   date?: string;
@@ -320,9 +320,9 @@ export function multisigExnBody(
 }
 
 /**
- * Own finite byte-input preparation: parse once, construct the body, consume wire, dispose.
+ * Own finite byte-input preparation, construction, wire consumption and disposal.
  * The v1 pathed path retains its established encoding; v2 delegates parsing to parseBytes
- * and borrows the resulting child only until nestedPayload has been fully consumed.
+ * once and borrows the resulting child only until nestedPayload has been fully consumed.
  * No lazy owner escapes. Effection cancellation aborts reads and joins finally cleanup.
  * Sending v2 requires enclosing these bytes and the parent's signatures together.
  */
@@ -338,9 +338,15 @@ export function* prepareMultisigEventExn(
   const version = options.pvrsn ?? options.version ?? Vrsn_1_0;
   const field = route.slice(route.lastIndexOf("/") + 1);
   if (version.major === 1) {
+    const child = new SerderKERI({ raw: wire });
+    const genus = options.childGvrsn ?? child.gvrsn ?? child.pvrsn;
+    // KERIpy replays a legacy embed using this signed hint when body and attachment versions differ.
+    const hint = !child.gvrsn && (genus.major !== child.pvrsn.major || genus.minor !== child.pvrsn.minor)
+      ? { cgvrsn: [genus.major, genus.minor] }
+      : {};
     const payload = route === MULTISIG_ICP_ROUTE
-      ? { gid: requireString(new SerderKERI({ raw: wire }).pre, "group inception prefix"), ...attrs }
-      : attrs;
+      ? { gid: requireString(child.pre, "group inception prefix"), ...attrs, ...hint }
+      : { ...attrs, ...hint };
     return exchange(route, payload, { ...options, sender, embeds: { [field]: wire } });
   }
   return yield* abortable(async (signal) => {

@@ -17,6 +17,7 @@ import {
   ResourcePolicy,
   SerderKERI,
   Siger,
+  Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
@@ -40,6 +41,7 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
+import framing714 from "../../fixtures/multisig-framing-714.json" with { type: "json" };
 
 // @ts-expect-error Inception derives gid from its child instead of accepting a second identity.
 void ({ route: "/multisig/icp", attrs: { gid: "group", smids: [], rmids: [] } } satisfies MultisigEventProposal);
@@ -287,6 +289,33 @@ Deno.test("nested multisig builders and public normalization preserve all four r
       }
     }
   });
+});
+
+Deno.test("v1 multisig wrappers match canonical KERIpy for v2 child attachments", async () => {
+  const cases: Array<[MultisigEventProposal, typeof framing714.cases.icp]> = [
+    [{ route: "/multisig/icp", attrs: { smids: framing714.members, rmids: framing714.members } }, framing714.cases.icp],
+    [{
+      route: "/multisig/rot",
+      attrs: { gid: framing714.group, smids: framing714.members, rmids: framing714.members },
+    }, framing714.cases.rot],
+    [{ route: "/multisig/ixn", attrs: { gid: framing714.group, smids: framing714.members } }, framing714.cases.ixn],
+    [{ route: "/multisig/rpy", attrs: { gid: framing714.group } }, framing714.cases.rpy],
+    [
+      { route: "/multisig/icp", attrs: { smids: framing714.members, rmids: framing714.members } },
+      framing714.cases.intrinsic,
+    ],
+  ];
+  for (const [request, vector] of cases) {
+    const [parent, supplemental] = await run(() =>
+      prepareMultisigEventExn(framing714.sender, request, b(vector.child), {
+        pvrsn: Vrsn_1_0,
+        childGvrsn: Vrsn_2_0,
+        stamp: framing714.stamp,
+      })
+    );
+    assertEquals(parent.raw, b(vector.parent), request.route);
+    assertEquals(supplemental, b(vector.supplemental), request.route);
+  }
 });
 
 Deno.test("nested multisig sender escrow survives reopen and rejects invalid commitments on retry", async () => {
