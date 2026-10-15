@@ -35,14 +35,17 @@ function credentialRecord(data: unknown): VcStateRecord | null {
     || !row.a || typeof row.a !== "object" || Array.isArray(row.a)
     || !row.ra || typeof row.ra !== "object" || Array.isArray(row.ra)
   ) return null;
-  const a = row.a, ra = row.ra as Record<string, unknown>;
+  const a = row.a, ra = row.ra;
   if (
     Object.keys(a).length !== 2 || !("s" in a) || typeof a.s !== "number"
     || !Number.isSafeInteger(a.s) || a.s < 0 || !("d" in a)
   ) return null;
-  if (Object.keys(ra).length && (Object.keys(ra).length !== 3 || !qualifiedPrefix(ra.i) || !ordinal(ra.s))) return null;
+  if (
+    Object.keys(ra).length && (Object.keys(ra).length !== 3 || !("i" in ra) || !qualifiedPrefix(ra.i)
+      || !("s" in ra) || !ordinal(ra.s) || !("d" in ra))
+  ) return null;
   try {
-    for (const digest of [row.i, row.d, a.d, ...(Object.keys(ra).length ? [ra.d] : [])]) {
+    for (const digest of [row.i, row.d, a.d, ...(Object.keys(ra).length && "d" in ra ? [ra.d] : [])]) {
       if (typeof digest !== "string" || new Diger({ qb64: digest }).qb64 !== digest) return null;
     }
     return VcStateRecord.fromDict(row);
@@ -129,7 +132,7 @@ export class CredentialStateReceiver {
         child?.release();
       }
     };
-    const regsn = record.ra!.s === undefined ? 0 : Number.parseInt(record.ra!.s as string, 16);
+    const regsn = record.ra!.s === undefined ? 0 : Number.parseInt(record.ra!.s, 16);
     if (!stored || Number.parseInt(stored.s, 16) < regsn) return escrow("credential-mre", true);
     const tever = new Tever({ db: this.tvy.db, reger: this.tvy.reger, rsr: stored });
     if (
@@ -185,7 +188,7 @@ export class CredentialStateReceiver {
       if (
         accepted.qb64 !== record.d || fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(current[key]))
         || (["s", "d"] as const).some((key) => record.a![key] !== current.a![key])
-        || ["i", "s", "d"].some((key) => record.ra![key] !== current.ra![key])
+        || (["i", "s", "d"] as const).some((key) => record.ra![key] !== current.ra![key])
       ) return reject("Credential state does not match current accepted TEL and anchors.");
       const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
       this.rvy.cues.checkSpace(cues.length);

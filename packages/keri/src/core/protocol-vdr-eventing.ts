@@ -22,6 +22,7 @@ import { ValidationError } from "./errors.ts";
 import { query as coreQuery } from "./protocol-eventing.ts";
 import {
   type CredentialKelAnchor,
+  type RegistrySealFields,
   RegStateRecord,
   type RegStateRecordShape,
   VcStateRecord,
@@ -50,15 +51,14 @@ function cloneStrings(values?: readonly string[]): string[] {
   return [...(values ?? [])];
 }
 
-/** Project a typed or plain event seal into the SAD dictionary shape used by VDR events. */
-function cloneSealDict(seal?: Record<string, unknown> | SealEvent): Record<string, unknown> {
-  if (!seal) {
+/** Project known seal fields from raw state or CESR primitives; partial legacy state is not semantic acceptance. */
+export function projectRegistrySeal(seal: unknown): Partial<RegistrySealFields> {
+  if (!seal || typeof seal !== "object" || Array.isArray(seal)) {
     return {};
   }
-  const record = seal as Record<string, unknown>;
-  const prefix = record.i;
-  const sequence = record.s;
-  const digest = record.d;
+  const prefix = "i" in seal ? seal.i : undefined;
+  const sequence = "s" in seal ? seal.s : undefined;
+  const digest = "d" in seal ? seal.d : undefined;
   return {
     ...((typeof prefix === "string")
       ? { i: prefix }
@@ -423,7 +423,7 @@ export function vcstate(
     dts,
     version,
   }: {
-    ra?: Record<string, unknown> | SealEvent;
+    ra?: Partial<RegistrySealFields> | SealEvent;
     dts?: string;
     version?: Versionage;
   } = {},
@@ -442,7 +442,7 @@ export function vcstate(
       s: sn.toString(16),
       d: said,
       ri,
-      ra: cloneSealDict(ra),
+      ra: projectRegistrySeal(ra),
       a: { ...anchor },
       dt: dts ?? makeNowIso8601(),
       et: eilk,

@@ -124,7 +124,11 @@ proof/Broker effects. Test exact family membership without bulk copies and check
 the insertion invariant before publishing. Semantic rejected plans remain unapplied.
 CredentialKelAnchor carries required integer `s` and digest `d` through the
 credential-state builder, stored record and comparison. Registry/event seal `s`
-is hex text; do not erase or conflate those two ordinal representations.
+is hex text; do not erase or conflate those two ordinal representations. Raw
+registry seals reuse CESR's finite SAD fields with Partial: current KERIpy/TS TEL
+lookup uses i/d and carries omitted s through raw state. projectRegistrySeal
+projects only those known fields; it does not imply full TSN semantic acceptance.
+The receiver still requires an empty or complete authenticated registry seal.
 TEL recovery must preserve credential `i` separately from the queried issuer.
 TSN cue-to-wire routes require the signing attester suffix; actual 714 emits bare
 routes. HTTP pair capture and success do not replace independent receiver proofs.
