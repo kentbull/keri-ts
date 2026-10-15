@@ -28,6 +28,8 @@
   Declaration preflight, codec workspace policy and intrinsic syntax provenance are
   separate responsibilities. MessagePack workspace uses an 8 KiB fixed allowance,
   256 bytes per nonempty container/extension and one raw copy, not private field/pool counts.
+  CBOR uses a 4 KiB fixed workspace allowance and one raw copy; actual global reset
+  and allocating-extension preflight remain required. Tight policies may refuse earlier.
   The body parser consults one codec syntax contract;
   only locally created intrinsic refusals permit opaque fallback for admitted codecs.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each

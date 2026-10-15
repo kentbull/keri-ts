@@ -56,9 +56,10 @@ CBOR-A admits base token allocations before the shared codec: declared definite
 array slots/map pairs, string upper bounds, binary/possible typed-array views and
 copy bytes, and Tag/Date records. Flat O(1) inspection overcharges trailing tokens
 and potential indefinite map/Set/root-Map projection entries (reference plus two fields); existing
-indefinite arrays/maps and tag/default shapes remain codec-owned. Pinned short
-string scalar-unit work, source DataView field, context and possible raw copy are
-admitted with root lifetime. Untagged scanner-known decoder boundaries and locally
+indefinite arrays/maps and tag/default shapes remain codec-owned. A logical
+4 KiB fixed workspace allowance plus one raw copy conservatively rounds up the
+audited decode/scope/reset scratch, held through root cleanup. It does not count
+private fields or string-unit arrays; tight configurations can refuse earlier. Untagged scanner-known decoder boundaries and locally
 created root-map validation errors permit opaque fallback. Complete-input unsupported
 simple values, codec semantic failures and tag failures preserve identity; their malformed-error classification
 is unqualified in this base-token unit. CBOR-B
@@ -71,8 +72,8 @@ captured native decode of private fixed CBOR null clears strings, packed values,
 source, structures and references and replaces DataView backing with one byte.
 The private Decoder configures only two booleans, without instance structures or
 shared-value tables; map mode is restored after malformed forced-map operands.
-The admitted path reserves an additional scope64/callback96/reset-array64 working
-charge. Nested helpers defer reset until outermost completion. Reset bypasses
+The admitted path includes scope and reset scratch in its fixed workspace
+allowance. Nested helpers defer reset until outermost completion. Reset bypasses
 injected payload methods; cleanup failures are foreign, and concurrent primary
 and cleanup failures retain identity inside AggregateError. Core standalone
 helpers also reset, but their allocations remain unadmitted. Injected tables/

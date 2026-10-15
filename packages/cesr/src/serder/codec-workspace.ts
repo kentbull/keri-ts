@@ -8,8 +8,11 @@ export function msgpackWorkspaceBytes(rawBytes: number, containers: number, exte
   return 8192 + 256 * (containers + extensions) + rawBytes;
 }
 
-/** Pinned CBOR workspace policy; actual message-global reset remains the decoder scope's responsibility. */
-export function cborWorkspaceBytes(rawBytes: number, shortString: number): number {
-  // Scalar-unit strings, source DataView, uint64/Date scratch, scope/callback/reset and raw copy.
-  return 64 + 16 + 64 + 26 * shortString + 64 + 2 * 16 + 8 + rawBytes + 64 + 96 + 64;
+/**
+ * Logical CBOR decode allowance: 4 KiB fixed scratch and one raw copy,
+ * conservatively covering the audited scope, short-string and reset workspace.
+ * Declaration/decoded charges and actual message-global reset stay independent.
+ */
+export function cborWorkspaceBytes(rawBytes: number): number {
+  return 4096 + rawBytes;
 }
