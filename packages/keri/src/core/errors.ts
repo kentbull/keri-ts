@@ -1,15 +1,16 @@
 /**
  * Base application error for `keri-ts` app/db infrastructure.
  *
- * Use subclasses to communicate the failure domain while optionally attaching
- * structured maintainer-facing context for logging or debugging.
+ * Use subclasses for the failure domain, messages for diagnostics, and standard
+ * Error.cause only for an actual underlying failure. Foreign thrown values stay
+ * opaque; domain processing never inspects them for instructions.
  */
 export class AppError extends Error {
   constructor(
     message: string,
-    public readonly context?: Record<string, unknown>,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = new.target.name;
   }
 }

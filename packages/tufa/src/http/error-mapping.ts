@@ -1,4 +1,4 @@
-import { AppError, DatabaseError, PathError, ValidationError } from "keri-ts/runtime";
+import { ValidationError } from "keri-ts/runtime";
 import type { Context, Hono } from "npm:hono@^4.7.11";
 import { applyTufaCorsHeaders } from "./policy.ts";
 import type { TufaHttpAppPolicy } from "./policy.ts";
@@ -13,7 +13,7 @@ export function mapTufaHttpError(
     return textResponse(error.message, 400);
   }
 
-  logUnhandledHttpError(error, policy);
+  policy.logger.error("Unhandled HTTP app error", error);
   return textResponse("Internal Server Error", 500);
 }
 
@@ -27,19 +27,4 @@ export function installTufaHttpErrorHandling(
     applyTufaCorsHeaders(response.headers, policy.cors);
     return response;
   });
-}
-
-function logUnhandledHttpError(
-  error: unknown,
-  policy: TufaHttpAppPolicy,
-): void {
-  if (error instanceof PathError || error instanceof DatabaseError) {
-    policy.logger.error("Unhandled HTTP app error", error, error.context);
-    return;
-  }
-  if (error instanceof AppError) {
-    policy.logger.error("Unhandled HTTP app error", error, error.context);
-    return;
-  }
-  policy.logger.error("Unhandled HTTP app error", error);
 }

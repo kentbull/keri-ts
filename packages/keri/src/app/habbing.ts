@@ -406,10 +406,8 @@ export class Hab {
       local: true,
     });
     if (decision.kind !== "accept") {
-      throw new ValidationError(
-        `Local event ${serder.said ?? "<unknown>"} was not accepted.`,
-        { decision },
-      );
+      const detail = decision.kind === "duplicate" ? decision.duplicate : decision.message;
+      throw new ValidationError(`Local event ${serder.said ?? "<unknown>"} was not accepted: ${detail}`);
     }
     const kever = this.db.getKever(this.pre);
     if (!kever) {
