@@ -295,12 +295,12 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
 
   registerKeriCliCommand(
     addHabOption(
-      addStoreOptions(
+      addGvrsnOption(addStoreOptions(
         ipex.command("poll")
           .description("Poll configured credential mailboxes once")
           .option("--poll-turns <count>", "Maximum bounded mailbox polling turns", (value: string) => Number(value))
           .option("--poll-budget-ms <ms>", "Per-turn mailbox polling budget", (value: string) => Number(value)),
-      ),
+      )),
     ),
     dispatch,
     "ipex.poll",
@@ -330,7 +330,7 @@ function registerVerifierCmds(program: Command, dispatch: CommandDispatch): void
   const verifier = program.command("verifier").description("Verifier agent operations");
 
   registerKeriCliCommand(
-    addStoreOptions(
+    addGvrsnOption(addStoreOptions(
       verifier.command("run")
         .description("Process verifier grants, revocations, and webhook delivery")
         .requiredOption("--hook <url>", "Webhook URL")
@@ -338,7 +338,7 @@ function registerVerifierCmds(program: Command, dispatch: CommandDispatch): void
         .option("--once", "Process one bounded verifier turn", false)
         .option("--interval-ms <ms>", "Loop interval in milliseconds")
         .option("--timeout-ms <ms>", "Escrow timeout in milliseconds"),
-    ),
+    )),
     dispatch,
     "verifier.run",
     "verifierRunCommand",

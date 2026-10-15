@@ -10,7 +10,7 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import type { Operation } from "effection";
-import { exchange, IPEX_V2_PREDECESSORS } from "../core/protocol-exchanging.ts";
+import { exchange, IPEX_V2_PREDECESSORS, isIpexVerb } from "../core/protocol-exchanging.ts";
 import { abortable } from "./abortable.ts";
 import { type DisclosurePlan, validDisclosurePlan } from "./ipex-graph.ts";
 import type { IpexBuilderOptions, IpexMessage, IpexRoute } from "./ipexing.ts";
@@ -23,6 +23,7 @@ export interface IpexV2BodyOptions extends Omit<IpexBuilderOptions, "version" | 
   prior?: SerderKERI;
   plan?: DisclosurePlan;
   anchor?: boolean;
+  /** KERIpy apply/offer/grant permit application-defined payload fields; named protocol inputs stay reserved. */
   attrs?: Record<string, unknown>;
 }
 const nodeIlks = new Set([null, "acm", "ace", "act", "acg"]);
@@ -40,7 +41,7 @@ export function ipexExnBody(
   options: IpexV2BodyOptions,
 ): SerderKERI {
   const verb = route.slice("/ipex/".length);
-  if (route !== `/ipex/${verb}` || (verb !== "apply" && !Object.hasOwn(IPEX_V2_PREDECESSORS, verb))) {
+  if (route !== `/ipex/${verb}` || !isIpexVerb(verb)) {
     throw new Error("Unsupported IPEX route.");
   }
   if (nodes.length && verb !== "offer" && verb !== "grant") {
@@ -56,7 +57,7 @@ export function ipexExnBody(
   if (prior) {
     if (
       prior.pvrsn.major !== 2 || verb === "apply"
-      || !IPEX_V2_PREDECESSORS[verb]?.some((v) => prior.route === `/ipex/${v}`)
+      || !IPEX_V2_PREDECESSORS[verb].some((v) => prior.route === `/ipex/${v}`)
     ) {
       throw new Error("Unsupported IPEX prior route.");
     }
@@ -106,7 +107,7 @@ export function ipexExnBody(
       ]];
     } else throw new Error("A grant with multiple nodes requires an explicit disclosure plan.");
   }
-  const modifiers: Record<string, unknown> = {};
+  const modifiers: { dp?: DisclosurePlan[] } = {};
   if (["apply", "offer", "agree", "grant"].includes(verb)) {
     if (!validDisclosurePlan(plan)) throw new Error("IPEX requires a valid disclosure plan.");
     modifiers.dp = [structuredClone(plan)];

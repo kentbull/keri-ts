@@ -30,8 +30,12 @@ import { Deck, DeckFullError } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { QueryEnvelope } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
-import { state as registryState, vcstate as credentialState } from "../core/protocol-vdr-eventing.ts";
-import { RegStateRecord, VcStateRecord } from "../core/records.ts";
+import {
+  projectRegistrySeal,
+  state as registryState,
+  vcstate as credentialState,
+} from "../core/protocol-vdr-eventing.ts";
+import { RegStateRecord } from "../core/records.ts";
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
@@ -240,8 +244,9 @@ function stringListField(
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? [...value] : [];
 }
 
-function sealRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+/** Leave untrusted fields unknown until each lookup checks the fields it consumes. */
+function sealRecord(value: unknown): object | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
 }
 
 function digestForTel(reger: Reger, pre: string, sn: number): Diger | null {
@@ -356,7 +361,7 @@ export class Tever {
   }
 
   /** Current registry transaction-state record. */
-  state(): RegStateRecord {
+  state(): ReturnType<typeof registryState> {
     const said = okSaid(this.serder);
     const cnfg: string[] = this.noBackers ? [TraitDex.NoBackers] : [];
     if (this.estOnly) {
@@ -373,7 +378,7 @@ export class Tever {
   }
 
   /** Current credential transaction-state record for one credential SAID. */
-  vcState(vci: string): VcStateRecord | null {
+  vcState(vci: string): ReturnType<typeof credentialState> | null {
     const digs = [...this.reger.tels.getAllItemIter(vci)]
       .sort((left, right) => left[1] - right[1])
       .map(([, , dig]) => dig);
@@ -394,7 +399,7 @@ export class Tever {
     const [number, diger] = anchor;
     const eilk = this.noBackers ? (digs.length === 1 ? Ilks.iss : Ilks.rev) : (digs.length === 1 ? Ilks.bis : Ilks.brv);
     const ked = okKed(serder);
-    const ra = this.noBackers ? {} : sealRecord(ked.ra) ?? {};
+    const ra = this.noBackers ? {} : projectRegistrySeal(ked.ra);
     return credentialState(
       vci,
       said,
@@ -795,9 +800,9 @@ export class Tever {
       return false;
     }
     const seal = sealRecord(seals[0]);
-    return seal?.i === serder.pre
-      && seal?.s === serder.snh
-      && seal?.d === serder.said;
+    return !!seal && "i" in seal && seal.i === serder.pre
+      && "s" in seal && seal.s === serder.snh
+      && "d" in seal && seal.d === serder.said;
   }
 
   /** Retain partial-witness evidence with its qualified source ordinal. */
@@ -853,8 +858,8 @@ export class Tever {
     | Extract<TelProcessDecision, { kind: "reject" }>
   {
     const ra = sealRecord(ked.ra);
-    const regi = typeof ra?.i === "string" ? ra.i : null;
-    const regd = typeof ra?.d === "string" ? ra.d : null;
+    const regi = ra && "i" in ra && typeof ra.i === "string" ? ra.i : null;
+    const regd = ra && "d" in ra && typeof ra.d === "string" ? ra.d : null;
     if (!regi || !regd || regi !== this.prefixer.qb64) {
       return reject("Backer TEL event registry anchor mismatch.", serder, this.regk);
     }
@@ -1029,10 +1034,12 @@ export class Tevery {
     if (serder.route !== "tels") return { kind: "drop", reason: "unsupportedRoute" };
     const dest = source?.qb64 ?? cigars?.[0]?.verfer?.qb64;
     if (!dest) return { kind: "drop", reason: "missingAuthentication" };
-    const query = serder.ked?.q as Record<string, unknown> | undefined;
+    const query = serder.ked?.q;
     if (
-      !query || typeof query.ri !== "string" || !query.ri || typeof query.src !== "string" || !query.src
-      || typeof query.i !== "string"
+      !query || typeof query !== "object" || Array.isArray(query)
+      || !("ri" in query) || typeof query.ri !== "string" || !query.ri
+      || !("src" in query) || typeof query.src !== "string" || !query.src
+      || !("i" in query) || typeof query.i !== "string"
     ) return { kind: "drop", reason: "invalidQuery" };
     const management = this.reger.replay(query.ri, { gvrsn: Vrsn_2_0, genusify: true });
     const credential = query.i ? this.reger.replay(query.i, { gvrsn: Vrsn_2_0, genusify: true }) : null;
@@ -1120,7 +1127,7 @@ export class Tevery {
       case Ilks.bis:
       case Ilks.brv: {
         const ra = sealRecord(okKed(serder).ra);
-        const regk = typeof ra?.i === "string" ? ra.i : null;
+        const regk = ra && "i" in ra && typeof ra.i === "string" ? ra.i : null;
         if (!regk) {
           throw new ValidationError("Backer TEL event missing ra.i.");
         }

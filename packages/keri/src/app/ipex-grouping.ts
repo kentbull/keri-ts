@@ -8,6 +8,7 @@
 import {
   type Cigar,
   concatBytes,
+  Counter,
   Diger,
   makePather,
   Prefixer,
@@ -26,7 +27,7 @@ import { serializeMessage } from "../core/protocol-exchanging.ts";
 import { Reger } from "../db/reger.ts";
 import { type AgentRuntime, processMailboxTurn } from "./agent-runtime.ts";
 import { groupSigningMembers, localGroupMember } from "./group-members.ts";
-import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigPathedAttachment } from "./grouping.ts";
+import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigChild, multisigChildGenusAttrs } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import {
   credentialPresentationArtifacts,
@@ -61,9 +62,11 @@ export function* approveMultisigIpex(
   hby: Habery,
   runtime: AgentRuntime,
   wrapper: SerderKERI,
-  embedded: SerderKERI,
   options: MultisigIpexApprovalOptions = {},
 ): Operation<MultisigIpexApprovalResult> {
+  const child = multisigChild(hby, wrapper, "exn");
+  if (!child) throw new ValidationError("Multisig IPEX approval requires an embedded child.");
+  const { event: embedded, attachment: peerAttachment, genus } = child;
   const group = embedded.pre;
   const embeddedSaid = embedded.said;
   const wrapperSaid = wrapper.said;
@@ -75,18 +78,19 @@ export function* approveMultisigIpex(
   if (!groupHab) {
     throw new ValidationError(`Local group ${group} is missing member signing state.`);
   }
-  const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, "exn");
   if (peerAttachment.length > 0) {
     yield* runtime.reactor.processBytes(
-      concatBytes(embedded.raw, peerAttachment),
+      concatBytes(Counter.makeGVC(genus), embedded.raw, peerAttachment),
       { local: true },
     );
     yield* runtime.reactor.processEscrowsOnce();
   }
-  const approved = groupIpexPartial(hby, groupHab, embedded, wrapperSaid);
-  yield* runtime.reactor.processBytes(approved, { local: true });
+  const approved = groupIpexPartial(hby, groupHab, embedded, peerAttachment, genus);
+  yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), approved), { local: true });
   yield* runtime.reactor.processEscrowsOnce();
-  const deliveries = options.publish ? yield* publishGroupIpexProposal(runtime, groupHab, approved) : [];
+  const deliveries = options.publish
+    ? yield* publishGroupIpexProposal(runtime, groupHab, approved, undefined, genus)
+    : [];
   if (
     (options.sendLead ?? true)
     && hby.db.exns.get([embeddedSaid])?.said === embeddedSaid
@@ -109,13 +113,13 @@ export function* approveMultisigIpex(
   };
 }
 
-/** Build the locally signed group IPEX partial stream. */
+/** Sign a group IPEX body and append the supplied proof bytes in the selected attachment genus. */
 export function groupIpexPartial(
   hby: Habery,
   groupHab: Hab,
   embedded: SerderKERI,
-  wrapperSaid?: string,
   attachments: Uint8Array = new Uint8Array(),
+  gvrsn: Versionage = Vrsn_1_0,
 ): Uint8Array {
   const group = groupHab.pre;
   const groupRecord = hby.db.getHab(group);
@@ -149,14 +153,10 @@ export function groupIpexPartial(
     new Diger({ qb64: estSaid }),
     sigers,
   );
-  const message = concatBytes(
-    serializeMessage(embedded, { tsgs: [tsg], pipelined: false }),
+  return concatBytes(
+    serializeMessage(embedded, { tsgs: [tsg], pipelined: false, gvrsn }),
     attachments,
   );
-  if (!wrapperSaid) {
-    return message;
-  }
-  return concatBytes(message, multisigPathedAttachment(hby, wrapperSaid, "exn"));
 }
 
 /** Publish one group IPEX proposal to remote signing members. */
@@ -165,8 +165,12 @@ export function* publishGroupIpexProposal(
   groupHab: Hab,
   embedded: Uint8Array,
   delivery?: IpexDeliveryPreference,
+  childGvrsn?: Versionage,
 ): Operation<string[]> {
   const member = localGroupMember(runtime.hby, groupHab.pre);
+  const child = new SerderKERI({ raw: embedded });
+  const genus = child.gvrsn ?? childGvrsn ?? child.pvrsn;
+  const payload = { gid: groupHab.pre, ...multisigChildGenusAttrs(child, genus) };
   const deliveries: string[] = [];
   for (const recipient of groupSigningMembers(runtime.hby, groupHab.pre)) {
     if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
@@ -175,7 +179,7 @@ export function* publishGroupIpexProposal(
     const result = yield* runtime.poster.sendExchange(member, {
       recipient,
       route: MULTISIG_EXN_ROUTE,
-      payload: { gid: groupHab.pre },
+      payload,
       embeds: { exn: embedded },
       topic: "multisig",
       delivery,
@@ -227,8 +231,7 @@ export function* approveStoredMultisigIpexWrappers(
     if (!embeddedSad || embeddedSad.d !== embeddedSaid) {
       continue;
     }
-    const embedded = new SerderKERI({ sad: embeddedSad });
-    yield* approveMultisigIpex(hby, runtime, wrapper, embedded, {
+    yield* approveMultisigIpex(hby, runtime, wrapper, {
       publish: false,
       sendLead: false,
     });
@@ -399,9 +402,9 @@ function grantPathedMaterials(
   artifacts: ReturnType<typeof credentialPresentationArtifacts>,
 ): Uint8Array[] {
   return [
-    pathedMaterial("anc", artifacts.anc),
-    pathedMaterial("iss", artifacts.iss),
-    pathedMaterial("acdc", artifacts.acdc),
+    pathedMaterial("anc", artifacts.anc.wire),
+    pathedMaterial("iss", artifacts.iss.wire),
+    pathedMaterial("acdc", artifacts.acdc.wire),
   ];
 }
 

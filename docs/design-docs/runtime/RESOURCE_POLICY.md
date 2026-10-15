@@ -243,20 +243,27 @@ pins preserve same-call aggregation, while externalEscrow leaves pending evidenc
 with its semantic owner. Resource refusal during RPE replay cannot delete the row.
 Ordinary Deck retains its existing conservative reply count guard.
 
-Revery.prepareReply exposes a caller-owned PreparedReply with an immutable
-decision and one-shot applyProofs/publishQueries/release operations. Keep the
-entire use in one synchronous guarded turn; suspending can invalidate evaluated
-BADA state. Borrowed proofs remain immutable until application/release, and
-application drops their retained references. Release clears unpublished query
-credit; published query ownership stays with the deck/consumer.
+Revery.decideReply returns a plain ReplyPlan: typed outcome, required accepted
+proof, pending escrow writes and query records. Transferable proof requires its
+complete establishment group; non-transferable proof carries a cigar. The caller
+holds the actual query batch and invokes Revery.writeReply after semantic cue
+admission. Finally releases unpublished batch credit; published ownership stays
+with the deck/consumer. Keep evaluation, admission and writes in one synchronous
+owner turn with immutable borrowed proof material; suspension can stale BADA state.
+No executable reply plan or synthetic plan lifecycle is needed.
 
-Kevery /ksn holds that preparation while admitting its actual keyStateSaved child
+Endpoint role/location handlers own one Baser transaction for evaluation, proof
+replacement and pointer/projection writes. They publish held queries only after
+commit and refuse caller-owned writers. Failed replacement rolls back all those
+rows and releases the unpublished batch; this is not a cross-environment guarantee.
+
+Kevery /ksn holds that query batch while admitting its actual keyStateSaved child
 before accepted reply/proof or key-state writes, on shared or distinct decks.
 Semantic invalidity cannot publish a new unaccepted proof. Unverified replies
 still apply their existing escrow/query effects without a state child. Exceptions
 after writes release unpublished query/child credit and do not imply DB rollback.
 
-Registry and credential TSN hold PreparedReply query ownership and admit exact new dependency
+Registry and credential TSN hold concrete query batches and admit exact new dependency
 query or txnStateSaved child before proof/Broker effects. Exact family membership
 prevents duplicate query credit; insertion must match the synchronous prediction
 before publication. Pending Broker proofs and prior accepted BADA evidence retain
@@ -279,7 +286,7 @@ batch before any child queue or parent moobi mutation. Parent completion admits
 its actual resolved/failed result before terminal/contact writes. Ordinary Deck
 keeps its existing count guards. Resource refusal cannot leave partial fanout or
 publish terminal/contact effects; unexpected write faults release unpublished
-credit without DB rollback. Introductions hold PreparedReply query ownership and
+credit without DB rollback. Introductions hold concrete query batches and
 admit the actual oobiQueued child before BADA/proof/queue effects on shared or
 distinct decks. Unverified introductions still apply existing escrow/query effects
 without a queued child. Keep the entire preparation in one synchronous guarded
@@ -322,8 +329,10 @@ hydration disposal and checked acknowledgement. Missing-state cues use the exist
 Deck append seam, which performs admission when a CueDeck is injected. The local
 handoff guard remains separate from deployment capacity and adds no queue or retry.
 
-QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
-owners before Runtime enables this deck. This does not promise durable cue recovery.
+QueryReplies fanout, mailbox correlation and delivery consumers transfer actual
+owners. Pending query records and continuations use ordinary unbounded metadata
+storage without byte reservations; their coordinator joins active consumption
+before clearing. This does not promise a shared memory bound or durable cue recovery.
 
 Internal DID alias-ID capture holds `4 * maxMetadataBytes + 64 * maxIds + 1024`
 bytes from the exact runtime policy before native duplicate iteration. Defaults

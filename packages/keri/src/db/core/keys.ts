@@ -119,7 +119,6 @@ export function splitKey(
   if (splitAt <= 0 || splitAt + sepStr.length >= keyStr.length) {
     throw new ValidationError(
       `Key must split into exactly 2 parts at rightmost separator`,
-      { key: keyStr, separator: sepStr },
     );
   }
 
@@ -219,7 +218,6 @@ export function unsuffix(
   if (lastSepIndex === -1) {
     throw new DatabaseKeyError(
       `No separator found in iokey`,
-      { key: iokeyStr, separator: sepStr },
     );
   }
 

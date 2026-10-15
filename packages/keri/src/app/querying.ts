@@ -1,20 +1,12 @@
-import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy } from "cesr-ts";
+import { type SealEvent } from "cesr-ts";
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
-import { admitCueBytes } from "../core/cue-admission.ts";
-import { cueReader } from "../core/cue-publishing.ts";
-import type { AgentCue, CueEmission, QueryCue } from "../core/cues.ts";
-import { Deck, DeckFullError } from "../core/deck.ts";
+import { type CueQueueInput, cueReader } from "../core/cue-publishing.ts";
+import type { AgentCue, CueEmission, QueryCue, QueryInstruction, QueryRequest } from "../core/cues.ts";
+import { Deck } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
-import type { AgentRuntime } from "./agent-runtime.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
-
-/** Metadata admission precedes normalization/copying; foreign callback/service failures still throw. */
-type PendingQueryAdmission =
-  | { kind: "queued" }
-  | { kind: "ineligible" }
-  | { kind: "refuse"; error: ResourceAdmissionError | DeckFullError };
 
 /**
  * Query/reply correspondence helpers for the Gate E runtime.
@@ -53,105 +45,16 @@ const ignoreSink: CueSink = {
   },
 };
 
-/**
- * One queued query request awaiting honest habitat/attester resolution.
- *
- * These requests are intentionally portable: the coordinator may defer them
- * across runtime turns until enough local knowledge exists to emit a real wire
- * query without guessing.
- */
-interface QueryRequest {
-  pre: string;
-  route: string;
-  query: Record<string, unknown>;
-  hab?: Hab;
-  src?: string;
-  wits?: string[];
-}
-
-/** One pending record retains canonical metadata; its Hab is an accepted-state borrow, outside the byte walk. */
-interface PendingQuery extends QueryRequest {
-  release(): void;
-}
-
-/**
- * Own admitted metadata until completion/clear/joined shutdown. Top-level query and witness lists
- * are copied; nested query values remain aliases and must stay immutable throughout queue/consumer lifetime.
- */
-class PendingQueries {
-  private readonly queued: Deck<PendingQuery>;
-  private active?: PendingQuery;
-  constructor(private readonly resources: ResourcePolicy, capacity: number) {
-    this.queued = new Deck(undefined, capacity);
-  }
-  get capacity(): number {
-    return this.queued.capacity;
-  }
-  get length(): number {
-    return this.queued.length;
-  }
-  get empty(): boolean {
-    return this.queued.empty;
-  }
-  peekHead(): PendingQuery | undefined {
-    return this.queued.peekHead();
-  }
-  /** Admit before normalization/witness copies; ineligible preparation never acknowledges queueing. */
-  admit(cue: QueryCue, prepare: () => QueryRequest | undefined): PendingQueryAdmission {
-    if (this.capacity < 1) throw new ResourceLimitError("Query batch exceeds item capacity");
-    if (this.length === this.capacity) {
-      return { kind: "refuse", error: new DeckFullError("Pending query slots are occupied") };
-    }
-    const credit = admitCueBytes(this.resources, [cue], undefined, { copies: 3 });
-    if (credit.kind === "refuse") return credit;
-    const input = credit.reservation;
-    let published = false;
-    try {
-      const request = prepare();
-      if (!request) return { kind: "ineligible" };
-      let live = true;
-      this.queued.append({
-        ...request,
-        release() {
-          if (!live) return;
-          live = false;
-          input.release();
-        },
-      });
-      published = true;
-      return { kind: "queued" };
-    } finally {
-      if (!published) {
-        input.release();
-      }
-    }
-  }
-  /** Protect the selected head while preparation/consumption may suspend. */
-  holdHead(): void {
-    this.active = this.peekHead();
-  }
-  releaseHead(): void {
-    this.active = undefined;
-  }
-  complete(): void {
-    const request = this.queued.pull();
-    this.active = undefined;
-    request?.release();
-  }
-  /** Unresolved work rotates without giving up or reacquiring its slot/metadata credit. */
-  rotate(): void {
-    const request = this.queued.pull();
-    this.active = undefined;
-    if (request) this.queued.append(request);
-  }
-  /** Preserve an active head until its consumer joins; clear only independently queued ownership. */
-  clear(): void {
-    const count = this.length;
-    for (let index = 0; index < count; index++) {
-      const request = this.queued.pull()!;
-      if (request === this.active) this.queued.append(request);
-      else request.release();
-    }
+/** Copy only the owned query-body level without erasing its route/payload relationship. */
+function copyQuery(instruction: QueryInstruction): QueryInstruction {
+  switch (instruction.route) {
+    case "logs":
+      return { route: "logs", q: { ...instruction.q } };
+    case "ksn":
+      return { route: "ksn", q: { ...instruction.q } };
+    case "tels":
+    case "tsn":
+      return { route: instruction.route, q: { ...instruction.q } };
   }
 }
 
@@ -169,13 +72,6 @@ interface QueryContinuation {
   tick(coordinator: QueryCoordinator): void;
 }
 
-/** Copy one portable query body before runtime adds or removes helper fields. */
-function cloneQueryBody(
-  query: Record<string, unknown>,
-): Record<string, unknown> {
-  return { ...query };
-}
-
 /**
  * Return the sole local habitat when exactly one exists.
  *
@@ -187,42 +83,6 @@ function soleHab(hby: Habery): Hab | null {
   const habitats = hby.habs.values();
   const first = habitats.next();
   return first.done || !habitats.next().done ? null : first.value;
-}
-
-/** Extract the raw portable query body from either `query` or legacy `q`. */
-function queryBodyFromCue(cue: QueryCue): Record<string, unknown> {
-  return cloneQueryBody(cue.query ?? cue.q ?? {});
-}
-
-/** Resolve the queried AID from cue-level or body-level portability hints. */
-function extractQueriedPrefix(cue: QueryCue): string | null {
-  const body = cue.query ?? cue.q ?? {};
-  const pre = cue.pre
-    ?? (typeof body.pre === "string" ? body.pre : null)
-    ?? (typeof body.i === "string" ? body.i : null);
-  return typeof pre === "string" && pre.length > 0 ? pre : null;
-}
-
-/**
- * Normalize one `QueryCue` body into the actual KERI `qry.q` payload.
- *
- * KERIpy correspondence:
- * - cue producers often use `pre` and `sn` as local portability hints
- * - wire queries still need the canonical `i` and `s` fields supplied by
- *   `Hab.query(...)`
- */
-function normalizeOutboundQuery(cue: QueryCue): Record<string, unknown> {
-  const body = queryBodyFromCue(cue);
-  if (body.sn !== undefined && body.s === undefined) {
-    body.s = body.sn;
-  }
-  if (body.anchor !== undefined && body.a === undefined) {
-    body.a = body.anchor;
-  }
-  delete body.pre;
-  delete body.src;
-  if (cue.route !== "tels" && cue.route !== "tsn") delete body.i;
-  return body;
 }
 
 /** Parse one hex sequence number field from key-state/query payloads. */
@@ -237,12 +97,6 @@ function parseHexOrdinal(value: unknown): number | null {
 /** Encode one non-negative sequence number in KERI hex-ordinal form. */
 function encodeHexOrdinal(num: number): string {
   return Math.max(0, num).toString(16);
-}
-
-/** Pick the deterministic first sorted candidate from a role endpoint set. */
-function firstSorted(values: Iterable<string>): string | null {
-  const sorted = [...values].sort();
-  return sorted[0] ?? null;
 }
 
 /**
@@ -261,7 +115,7 @@ function firstSorted(values: Iterable<string>): string | null {
  */
 export class KeyStateNoticer implements QueryContinuation {
   readonly pre: string;
-  readonly hab?: Hab;
+  readonly signer?: string;
   readonly wits?: string[];
   done = false;
   private queried = false;
@@ -269,10 +123,10 @@ export class KeyStateNoticer implements QueryContinuation {
 
   constructor(
     pre: string,
-    { hab, wits }: { hab?: Hab; wits?: string[] } = {},
+    { signer, wits }: { signer?: string; wits?: string[] } = {},
   ) {
     this.pre = pre;
-    this.hab = hab;
+    this.signer = signer;
     this.wits = wits ? [...wits] : undefined;
   }
 
@@ -288,7 +142,7 @@ export class KeyStateNoticer implements QueryContinuation {
     if (local.sn < remoteSn) {
       if (!this.logQuerier || this.logQuerier.targetSn < remoteSn) {
         this.logQuerier = new LogQuerier(this.pre, remoteSn, {
-          hab: this.hab,
+          signer: this.signer,
           wits: this.wits,
         });
       }
@@ -306,8 +160,8 @@ export class KeyStateNoticer implements QueryContinuation {
       coordinator.enqueue({
         pre: this.pre,
         route: "ksn",
-        query: { fn: "0", s: "0" },
-        hab: this.hab,
+        q: { fn: "0", s: "0" },
+        signer: this.signer,
         wits: this.wits,
       });
       this.queried = true;
@@ -338,7 +192,7 @@ export class KeyStateNoticer implements QueryContinuation {
 export class LogQuerier implements QueryContinuation {
   readonly pre: string;
   readonly targetSn: number;
-  readonly hab?: Hab;
+  readonly signer?: string;
   readonly wits?: string[];
   done = false;
   private queried = false;
@@ -346,11 +200,11 @@ export class LogQuerier implements QueryContinuation {
   constructor(
     pre: string,
     targetSn: number,
-    { hab, wits }: { hab?: Hab; wits?: string[] } = {},
+    { signer, wits }: { signer?: string; wits?: string[] } = {},
   ) {
     this.pre = pre;
     this.targetSn = targetSn;
-    this.hab = hab;
+    this.signer = signer;
     this.wits = wits ? [...wits] : undefined;
   }
 
@@ -366,8 +220,8 @@ export class LogQuerier implements QueryContinuation {
       coordinator.enqueue({
         pre: this.pre,
         route: "logs",
-        query: { fn: "0", s: "0" },
-        hab: this.hab,
+        q: { fn: "0", s: "0" },
+        signer: this.signer,
         wits: this.wits,
       });
       this.queried = true;
@@ -397,7 +251,7 @@ export class SeqNoQuerier implements QueryContinuation {
   readonly pre: string;
   readonly targetSn: number;
   readonly fn: number;
-  readonly hab?: Hab;
+  readonly signer?: string;
   readonly wits?: string[];
   done = false;
   private queried = false;
@@ -407,18 +261,18 @@ export class SeqNoQuerier implements QueryContinuation {
     targetSn: number,
     {
       fn = 0,
-      hab,
+      signer,
       wits,
     }: {
       fn?: number;
-      hab?: Hab;
+      signer?: string;
       wits?: string[];
     } = {},
   ) {
     this.pre = pre;
     this.targetSn = targetSn;
     this.fn = fn;
-    this.hab = hab;
+    this.signer = signer;
     this.wits = wits ? [...wits] : undefined;
   }
 
@@ -434,11 +288,11 @@ export class SeqNoQuerier implements QueryContinuation {
       coordinator.enqueue({
         pre: this.pre,
         route: "logs",
-        query: {
+        q: {
           fn: encodeHexOrdinal(this.fn),
           s: encodeHexOrdinal(this.targetSn),
         },
-        hab: this.hab,
+        signer: this.signer,
         wits: this.wits,
       });
       this.queried = true;
@@ -465,20 +319,20 @@ export class SeqNoQuerier implements QueryContinuation {
  */
 export class AnchorQuerier implements QueryContinuation {
   readonly pre: string;
-  readonly anchor: Record<string, unknown>;
-  readonly hab?: Hab;
+  readonly anchor: ReturnType<typeof SealEvent.toSad>;
+  readonly signer?: string;
   readonly wits?: string[];
   done = false;
   private queried = false;
 
   constructor(
     pre: string,
-    anchor: Record<string, unknown>,
-    { hab, wits }: { hab?: Hab; wits?: string[] } = {},
+    anchor: AnchorQuerier["anchor"],
+    { signer, wits }: { signer?: string; wits?: string[] } = {},
   ) {
     this.pre = pre;
-    this.anchor = { ...anchor };
-    this.hab = hab;
+    this.anchor = { i: anchor.i, s: anchor.s, d: anchor.d };
+    this.signer = signer;
     this.wits = wits ? [...wits] : undefined;
   }
 
@@ -487,25 +341,26 @@ export class AnchorQuerier implements QueryContinuation {
   }
 
   tick(coordinator: QueryCoordinator): void {
-    if (this.done) {
+    if (this.done) return;
+    if (coordinator.hby.db.fetchLastSealingEventByEventSeal(this.pre, this.anchor)) {
+      this.done = true;
       return;
     }
-    if (!this.queried) {
+    if (this.queried) return;
+    // A retired witness may never learn the seal. Ask every current candidate once.
+    // With no endpoints, retain one ordinary request for deferred resolution.
+    const attesters = coordinator.attestersFor(this.pre, { signer: this.signer, wits: this.wits });
+    for (const src of attesters.length ? attesters : [undefined]) {
       coordinator.enqueue({
         pre: this.pre,
         route: "logs",
-        query: { fn: "0", s: "0", a: { ...this.anchor } },
-        hab: this.hab,
+        q: { fn: "0", s: "0", a: { ...this.anchor } },
+        signer: this.signer,
+        src,
         wits: this.wits,
       });
-      this.queried = true;
     }
-
-    if (
-      coordinator.hby.db.fetchLastSealingEventByEventSeal(this.pre, this.anchor)
-    ) {
-      this.done = true;
-    }
+    this.queried = true;
   }
 }
 
@@ -520,10 +375,11 @@ export class AnchorQuerier implements QueryContinuation {
  */
 export class QueryCoordinator implements CueSink {
   readonly hby: Habery;
-  /** Pending requests retain their queue credit until delivery completes. */
-  readonly pending: PendingQueries;
-  /** Maximum retained continuation records, independent of pending wire requests. */
-  private readonly maxContinuations: number;
+  private readonly requests = new Deck<QueryRequest>();
+  /** Inspect deferred work without exposing queue mutation outside its owner. */
+  get pending(): Pick<Deck<QueryRequest>, "length" | "empty" | "peekHead"> {
+    return this.requests;
+  }
   /** Prevent a cue consumer and the background worker from sending the same head concurrently. */
   private processing = false;
   private closed = false;
@@ -537,22 +393,8 @@ export class QueryCoordinator implements CueSink {
 
   constructor(
     hby: Habery,
-    { sink = ignoreSink, hab = null, maxPending = 1024, maxContinuations = 1024 }: {
-      sink?: CueSink;
-      hab?: Hab | null;
-      /** Maximum unresolved or in-flight query records. */
-      maxPending?: number;
-      /** Maximum active query continuations. */
-      maxContinuations?: number;
-    } = {},
+    { sink = ignoreSink, hab = null }: { sink?: CueSink; hab?: Hab | null } = {},
   ) {
-    for (const limit of [maxPending, maxContinuations]) {
-      if (!Number.isSafeInteger(limit) || limit < 1) {
-        throw new RangeError("Query limits must be positive safe integers");
-      }
-    }
-    this.pending = new PendingQueries(hby.db.resources, maxPending);
-    this.maxContinuations = maxContinuations;
     this.hby = hby;
     this.sink = sink;
     this.hab = hab;
@@ -570,9 +412,9 @@ export class QueryCoordinator implements CueSink {
   /** Register one persistent key-state continuation. */
   watchKeyState(
     pre: string,
-    options: { hab?: Hab; wits?: string[] } = {},
+    options: { signer?: string; wits?: string[] } = {},
   ): KeyStateNoticer {
-    this.admitContinuation();
+    this.compactContinuations();
     const noticer = new KeyStateNoticer(pre, options);
     this.continuations.push(noticer);
     return noticer;
@@ -582,9 +424,9 @@ export class QueryCoordinator implements CueSink {
   watchSeqNo(
     pre: string,
     sn: number,
-    options: { fn?: number; hab?: Hab; wits?: string[] } = {},
+    options: { fn?: number; signer?: string; wits?: string[] } = {},
   ): SeqNoQuerier {
-    this.admitContinuation();
+    this.compactContinuations();
     const querier = new SeqNoQuerier(pre, sn, options);
     this.continuations.push(querier);
     return querier;
@@ -593,10 +435,10 @@ export class QueryCoordinator implements CueSink {
   /** Register one persistent logs-until-anchor continuation. */
   watchAnchor(
     pre: string,
-    anchor: Record<string, unknown>,
-    options: { hab?: Hab; wits?: string[] } = {},
+    anchor: AnchorQuerier["anchor"],
+    options: { signer?: string; wits?: string[] } = {},
   ): AnchorQuerier {
-    this.admitContinuation();
+    this.compactContinuations();
     const querier = new AnchorQuerier(pre, anchor, options);
     this.continuations.push(querier);
     return querier;
@@ -605,51 +447,34 @@ export class QueryCoordinator implements CueSink {
   /** Return true while continuations or unsent queries are still pending. */
   hasPendingWork(): boolean {
     this.compactContinuations();
-    return !this.pending.empty || this.continuations.length > 0;
+    return !this.requests.empty || this.continuations.length > 0;
   }
 
   /**
    * Queue for later resolution/delivery: copy the top level/witness list only.
-   * Nested query values remain borrowed immutable data until consumption or clear/close retires the record.
+   * Nested query values remain borrowed immutable data until consumption or joined close retires the record.
    */
   enqueue(request: QueryRequest): void {
     if (this.closed) throw new Error("Query coordinator is closed");
-    const { pre, route, query, src, wits } = request;
-    const result = this.pending.admit({ kin: "query", pre, route, query, src, wits }, () => ({
+    this.requests.append({
       ...request,
-      query: cloneQueryBody(query),
-      wits: wits ? [...wits] : undefined,
-    }));
-    if (result.kind === "refuse") throw result.error;
+      ...copyQuery(request),
+      wits: request.wits ? [...request.wits] : undefined,
+    });
   }
 
-  /** Retain a portable recovery cue using the normal field normalization and bounded pending queue. */
-  enqueueCue(
-    cue: QueryCue,
-    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
-  ): boolean {
+  /** Retain routed work only; unresolved schema/credential notices have no outbound query instruction. */
+  enqueueCue(cue: QueryCue): boolean {
     if (this.closed) throw new Error("Query coordinator is closed");
-    const pre = extractQueriedPrefix(cue);
-    if (!pre) return false;
-    const result = this.pending.admit(cue, () => {
-      return {
-        pre,
-        route: cue.route ?? "logs",
-        query: normalizeOutboundQuery(cue),
-        src: cue.src,
-        wits: cue.wits ? [...cue.wits] : undefined,
-      };
-    });
-    if (result.kind === "refuse") {
-      onAdmissionRefusal?.(result.error);
-      throw result.error;
-    }
-    return result.kind === "queued";
+    if (!cue.route || !cue.pre) return false;
+    const { kin: _, ...request } = cue;
+    this.enqueue(request);
+    return true;
   }
 
   /** Observe a source cue only after the downstream owner has atomically retained eligible delivery. */
-  admitCue(runtime: AgentRuntime, interpreter: Hab | null, sink: CueSink = this.sink): CueAdmission {
-    const cue = runtime.cues.peekHead();
+  admitCue(source: CueQueueInput, interpreter: Hab | null, sink: CueSink = this.sink): CueAdmission {
+    const cue = source.peekHead();
     let admission: CueAdmission;
     if (cue?.kin === "query" && sink.admitQuery) {
       admission = sink.admitQuery(cue, () => {
@@ -657,8 +482,8 @@ export class QueryCoordinator implements CueSink {
         return emission?.kind === "wire" ? emission : this.transientQueryEmission(cue, interpreter ?? undefined);
       });
       if (admission === "transferred") {
-        if (runtime.cues.peekHead() !== cue) throw new Error("Query source changed during admission");
-        const original = cueReader(runtime.cues).takeOwned()!;
+        if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
+        const original = cueReader(source).takeOwned()!;
         try {
           this.observeCue(cue);
         } finally {
@@ -666,7 +491,7 @@ export class QueryCoordinator implements CueSink {
         }
         return "transferred";
       }
-    } else admission = sink.admitCue?.(runtime, interpreter) ?? "ineligible";
+    } else admission = sink.admitCue?.(source, interpreter) ?? "ineligible";
     if (admission !== "transferred" && admission !== "busy" && admission !== "ineligible") {
       throw new TypeError("Invalid query source admission");
     }
@@ -703,17 +528,16 @@ export class QueryCoordinator implements CueSink {
    * This is the Effection analogue of the KERIpy query/noticer doers: inspect
    * local state, emit any initial or follow-on queries that can honestly be
    * constructed, and retain unresolved work for later turns.
-   * Runtime callers prepare signing in a short guarded turn. Admitted transport sinks also
-   * retain wire ownership; canonical pending metadata stays charged on the Baser policy.
+   * Preparation/admission are synchronous owner operations over committed accepted state.
+   * Admitted sinks retain wire ownership; no network wait occurs while signing or borrowing state.
+   * Plain pending records have no byte reservations or configured queue caps.
    * Standalone/custom wire preparation retains caller-owned bounds.
    */
-  processPending(runtime?: AgentRuntime): Operation<void> {
+  processPending(): Operation<void> {
     // deno-lint-ignore no-this-alias -- The isolated generator owns one complete drain pass.
     const self = this;
     return call(function*() {
       if (self.processing || self.closed) return;
-      if (self.sink.admitQuery && !runtime) throw new RangeError("Admitted queries require their owning runtime");
-      if (runtime && runtime.querying !== self) throw new RangeError("Wrong query coordinator runtime");
       self.processing = true;
       let finish!: () => void;
       self.joined = new Promise<void>((resolve) => finish = resolve);
@@ -721,7 +545,6 @@ export class QueryCoordinator implements CueSink {
         try {
           yield* provide();
         } finally {
-          self.pending.releaseHead();
           self.active = undefined;
           self.processing = false;
           self.joined = undefined;
@@ -732,49 +555,32 @@ export class QueryCoordinator implements CueSink {
       const task = yield* spawn(function*() {
         try {
           self.tickContinuations();
-          const count = self.pending.length;
+          const count = self.requests.length;
           for (let index = 0; index < count; index++) {
-            const request = self.pending.peekHead();
+            const request = self.requests.peekHead();
             if (!request) break;
-            self.pending.holdHead();
             if (self.sink.admitQuery) {
-              const cue: QueryCue = {
-                kin: "query",
-                pre: request.pre,
-                route: request.route,
-                query: request.query,
-                src: request.src,
-                wits: request.wits,
-              };
-              const admit = () => self.sink.admitQuery!(cue, () => self.wireEmissionForRequest(request));
-              const result: { admission: CueAdmission } = { admission: "ineligible" };
-              yield* runtime!.reactor.settle(undefined, {}, function*() {
-                result.admission = admit();
-              });
-              const admission = result.admission;
+              const cue: QueryCue = { kin: "query", ...request };
+              const admission = self.sink.admitQuery(cue, () => self.wireEmissionForRequest(request));
               if (admission === "busy") break;
               if (admission === "transferred") {
-                self.pending.complete();
+                self.requests.pull();
                 continue;
               }
               if (admission !== "ineligible") throw new TypeError("Invalid query admission");
-              self.pending.rotate();
+              self.requests.pull();
+              self.requests.append(request);
               continue;
             }
-            const prepared: { emission?: CueEmission | null } = {};
-            if (runtime) {
-              yield* runtime.reactor.settle(undefined, {}, function*() {
-                prepared.emission = self.wireEmissionForRequest(request);
-              });
-            } else prepared.emission = self.wireEmissionForRequest(request);
-            const emission = prepared.emission;
+            const emission = self.wireEmissionForRequest(request);
             if (emission) {
-              // Keep the head and its capacity reservation while the transport can suspend or fail.
+              // Keep the head while transport can suspend or fail.
               yield* self.sink.send(emission);
-              self.pending.complete();
+              self.requests.pull();
             } else {
-              // Unresolved work rotates without releasing capacity across an asynchronous boundary.
-              self.pending.rotate();
+              // Defer unresolved work to the next pass.
+              self.requests.pull();
+              self.requests.append(request);
             }
           }
           self.tickContinuations();
@@ -795,7 +601,7 @@ export class QueryCoordinator implements CueSink {
     });
   }
 
-  /** Stop active processing and join its children before releasing queued metadata. Do not reenter from its sink. */
+  /** Stop active processing and join its children before clearing pending requests. Do not reenter from its sink. */
   *close(): Operation<void> {
     this.closed = true;
     const failures: unknown[] = [];
@@ -814,16 +620,16 @@ export class QueryCoordinator implements CueSink {
     } catch (error) {
       if (!failures.includes(error)) failures.push(error);
     }
-    this.pending.clear();
+    this.requests.clear();
     this.stopping = undefined;
     if (failures.length === 1) throw failures[0];
     if (failures.length) throw new AggregateError(failures, "Query coordinator cleanup failed");
   }
 
   /** Continuous background query worker for long-lived runtime hosts. */
-  *queryDo(runtime?: AgentRuntime): Operation<never> {
+  *queryDo(): Operation<never> {
     while (true) {
-      yield* this.processPending(runtime);
+      yield* this.processPending();
       yield* runtimeTurn();
     }
   }
@@ -832,45 +638,23 @@ export class QueryCoordinator implements CueSink {
    * Resolve the habitat that is allowed to sign the outbound query.
    *
    * Resolution order:
-   * - request-specific habitat
+   * - explicitly selected local signer (unavailable means unresolved, never fallback)
    * - runtime-configured habitat
    * - sole local habitat
    */
-  private configuredHab(requestHab?: Hab): Hab | null {
-    return requestHab ?? this.hab ?? soleHab(this.hby);
+  private configuredHab(signer?: string): Hab | null {
+    return signer === undefined ? this.hab ?? soleHab(this.hby) : this.hby.habs.get(signer) ?? null;
   }
 
   /** Observe retained cue evidence after its immediate destination transfer. */
   observeCue(cue: AgentCue): void {
-    for (const continuation of this.continuations) {
-      try {
-        continuation.observe(cue, this);
-      } catch (error) {
-        // Each continuation still records this durable notice; only its retryable enqueue waits for capacity.
-        if (!(error instanceof DeckFullError)) throw error;
-      }
-    }
+    for (const continuation of this.continuations) continuation.observe(cue, this);
     this.compactContinuations();
   }
 
   private tickContinuations(): void {
-    for (const continuation of this.continuations) {
-      try {
-        continuation.tick(this);
-      } catch (error) {
-        if (error instanceof DeckFullError) break;
-        throw error;
-      }
-    }
+    for (const continuation of this.continuations) continuation.tick(this);
     this.compactContinuations();
-  }
-
-  /** Reclaim completed watchers before reserving another bounded continuation record. */
-  private admitContinuation(): void {
-    this.compactContinuations();
-    if (this.continuations.length >= this.maxContinuations) {
-      throw new ResourceLimitError("Too many query continuations");
-    }
   }
 
   private compactContinuations(): void {
@@ -882,15 +666,11 @@ export class QueryCoordinator implements CueSink {
    * runtime can honestly resolve its queried prefix.
    */
   private transientQueryEmission(cue: QueryCue, hab?: Hab): CueEmission | null {
-    const pre = extractQueriedPrefix(cue);
-    if (!pre) {
-      return null;
-    }
+    if (!cue.route || !cue.pre) return null;
     return this.wireEmissionForRequest({
-      hab,
-      pre,
-      route: cue.route ?? "logs",
-      query: normalizeOutboundQuery(cue),
+      signer: cue.signer ?? hab?.pre,
+      pre: cue.pre,
+      ...copyQuery(cue),
       src: cue.src,
       wits: cue.wits,
     });
@@ -903,41 +683,43 @@ export class QueryCoordinator implements CueSink {
    * defer the request rather than manufacture a query from guesswork.
    */
   private wireEmissionForRequest(request: QueryRequest): CueEmission | null {
-    const hab = this.configuredHab(request.hab);
+    const hab = this.configuredHab(request.signer);
     if (!hab) {
       return null;
     }
 
     const src = request.src
-      ?? this.resolveAttester(hab, request.pre, request.wits);
+      ?? this.attestersFor(request.pre, { signer: hab.pre, wits: request.wits })[0];
     if (!src) {
       return null;
     }
 
-    const query = cloneQueryBody(request.query);
+    const instruction = copyQuery(request);
     return {
       cue: {
         kin: "query",
         pre: request.pre,
+        ...(request.signer === undefined ? {} : { signer: request.signer }),
         src,
-        route: request.route,
-        query,
+        ...instruction,
         wits: request.wits ? [...request.wits] : undefined,
       },
-      messages: [hab.query(request.pre, src, query, request.route)],
+      messages: [hab.query(request.pre, src, instruction)],
       kind: "wire",
     };
   }
 
-  private resolveAttester(
-    hab: Hab,
+  /** Return eligible attester IDs in role priority; explicit witness overrides retain caller order. */
+  attestersFor(
     pre: string,
-    wits?: string[],
-  ): string | null {
+    { signer, wits }: { signer?: string; wits?: string[] } = {},
+  ): string[] {
     if (wits && wits.length > 0) {
       // Explicit watcher/witness overrides outrank endpoint-role lookup.
-      return wits[0] ?? null;
+      return [...wits];
     }
+    const hab = this.configuredHab(signer);
+    if (!hab) return [];
 
     const ends = hab.endsFor(pre);
     for (const role of QUERY_ROLE_PRIORITY) {
@@ -945,14 +727,9 @@ export class QueryCoordinator implements CueSink {
       if (!roleEnds) {
         continue;
       }
-      // Pick the first sorted endpoint deterministically instead of randomly.
-      // This is a deliberate `keri-ts` divergence from KERIpy's more variable
-      // witness/controller selection because deterministic choice makes
-      // interop tests and maintainer reasoning much easier.
-      const eid = firstSorted(Object.keys(roleEnds));
-      if (eid) {
-        return eid;
-      }
+      // Keep stable candidate order; ordinary requests still select the first ID.
+      const eids = Object.keys(roleEnds).sort();
+      if (eids.length > 0) return eids;
     }
 
     if (
@@ -961,9 +738,9 @@ export class QueryCoordinator implements CueSink {
     ) {
       // Mailbox-only topologies still query the controller AID itself; the
       // mailbox role affects delivery transport, not the attester identity.
-      return pre;
+      return [pre];
     }
 
-    return null;
+    return [];
   }
 }
