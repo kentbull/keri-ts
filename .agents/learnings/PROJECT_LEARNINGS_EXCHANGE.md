@@ -52,8 +52,13 @@ duplicates replace child evidence atomically and rerun the handler.
 
 V2 multisig supports icp/rot/ixn/rpy commitments and local membership. Child-SAID
 approval precedes ordinary KEL/reply processing. Local-first approval borrows parsed
-frames; remote-first approval reopens evidence. CLI proposal/join remains v1.
-Preserve first-notice behavior or retries can republish approval unnecessarily.
+frames; remote-first approval reopens evidence. V1 approval replays stored pathed
+child proofs through the same KEL/reply owners in either arrival order, including
+after database reopen. Decode signed cgvrsn before parsing; explicit child genus
+wins, and a hint applies only to a child with attachments. Parent signatures never
+supply missing child proofs. CLI proposal/join remains v1; its local publication
+registration is still unfinished. Preserve first-notice behavior or retries can
+republish approval unnecessarily.
 
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
 proof; metadata offers withhold issuer proofs but still validate carried schemas.
