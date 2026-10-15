@@ -509,11 +509,10 @@ export function* multisigRpyCommand(
 
     console.log(JSON.stringify({
       route: result.route,
-      said: result.said,
+      proposals: result.proposals,
       group: result.group,
       accepted,
       deliveries: result.deliveries,
-      attachmentBytes: result.attachmentBytes,
     }));
   });
 }
