@@ -47,7 +47,6 @@ import {
   rehydrateKramFactors,
   removeKramFactors,
   storeKramFactors,
-  validateKramFactors,
 } from "../../../src/db/kram-factors.ts";
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 import replayVectors from "../../fixtures/replay-927.json" with { type: "json" };
@@ -323,7 +322,6 @@ Deno.test("db/basing - partial factors preserve independent owners, qualified tu
         db.pmks.add(keys, sender);
         db.pmsk.pin(keys, [ordinal, new Diger({ qb64: alice.kever!.lastEst.d })]);
         storeKramFactors(db, keys, envelope);
-        validateKramFactors(db, keys);
       });
       assertEquals(db.pmks.get(keys).map((s) => s.qb64), [sender.qb64]);
       assertEquals(db.tsgs.get(keys).length, 1);
@@ -407,58 +405,27 @@ Deno.test("db/basing - partial factors preserve independent owners, qualified tu
   });
 });
 
-Deno.test("db/basing - partial factor limits bound the union and transaction refusal preserves rows", async () => {
+Deno.test("db/basing - factor union deduplicates exact members and propagates corrupt rows", async () => {
   await run(function*() {
-    const db = yield* createBaser({ name: `factor-limits-${crypto.randomUUID()}`, temp: true });
+    const db = yield* createBaser({ name: `factor-union-${crypto.randomUUID()}`, temp: true });
     try {
       const body = incept([Signer.random().verfer.qb64]);
       const key = [body.pre!, body.said!];
       const empty = new KeriDispatchEnvelope({ serder: body, attachmentGroups: [], local: false });
-      const rows = Array.from({ length: 4096 }, (_, i) => new Uint8Array([i >> 8, i & 255]));
+      const rows = [new Uint8Array([1]), new Uint8Array([2])];
       db.ptds.put(key, rows);
-      validateKramFactors(db, key);
-      assertEquals(
-        rehydrateKramFactors(
-          db,
-          key,
-          new KeriDispatchEnvelope({ ...empty, attachmentGroups: [], ptds: [PathedMaterialGroup.fromRaw(rows[0])] }),
-        ).ptds.length,
-        4096,
+      const union = rehydrateKramFactors(
+        db,
+        key,
+        new KeriDispatchEnvelope({
+          ...empty,
+          attachmentGroups: [],
+          ptds: [PathedMaterialGroup.fromRaw(rows[0]), PathedMaterialGroup.fromRaw(new Uint8Array([3]))],
+        }),
       );
-      const sig = new Siger({ raw: new Uint8Array(64), code: "A", index: 0 });
-      assertThrows(
-        () =>
-          rehydrateKramFactors(db, key, new KeriDispatchEnvelope({ ...empty, attachmentGroups: [], sigers: [sig] })),
-        ResourceLimitError,
-      );
-      assertThrows(() =>
-        db.env!.transactionSync(() => {
-          db.pmks.add(key, sig);
-          validateKramFactors(db, key);
-        }), ResourceLimitError);
-      assertEquals(db.pmks.get(key), []);
-      assertEquals(db.ptds.cnt(key), 4096);
-      db.ptds.pin(key, [new Uint8Array(8 * 1024 ** 2)]);
-      validateKramFactors(db, key);
-      assertThrows(() =>
-        db.env!.transactionSync(() => {
-          db.pmks.add(key, sig);
-          validateKramFactors(db, key);
-        }), ResourceLimitError);
-      assertThrows(
-        () =>
-          rehydrateKramFactors(db, key, new KeriDispatchEnvelope({ ...empty, attachmentGroups: [], sigers: [sig] })),
-        ResourceLimitError,
-      );
-      assertEquals(db.pmks.get(key), []);
-      assertEquals(db.ptds.get(key)[0].length, 8 * 1024 ** 2);
-      db.ptds.pin(key, [new Uint8Array(8 * 1024 ** 2 + 1)]);
-      assertThrows(() => validateKramFactors(db, key), ResourceLimitError);
-      db.ptds.rem(key);
-      // Corrupt qualified rows remain parser/invariant failures, not resource refusals.
+      assertEquals(union.ptds.map((item) => item.raw), [...rows, new Uint8Array([3])]);
       db.cigs.sdb.putSync(b(`${key.join(".")}.${"0".repeat(32)}`), b("!"));
-      assertEquals(assertThrows(() => validateKramFactors(db, key)) instanceof ResourceLimitError, false);
-      assertEquals(assertThrows(() => rehydrateKramFactors(db, key, empty)) instanceof ResourceLimitError, false);
+      assertThrows(() => rehydrateKramFactors(db, key, empty));
     } finally {
       yield* db.close(true);
     }

@@ -176,6 +176,8 @@ consumption; the replay cache remains. No ready receipt or acknowledgement exist
 Downstream failure cannot revive acceptance. Keep hydrated owners scoped through
 joined disposal until snapshot removal; callback results cannot retain them.
 Rotation clears partial ownership, retaining replay cache.
+KRAM factor merging preserves exact members without byte/item credits or a
+fixed signature-pool cap. Native decoding and authentication still reject bad evidence.
 Only a fresh foreign last group known at receipt clears its earlier unresolved
 marker; later KEL recovery alone cannot reinterpret unknown saved signatures.
 

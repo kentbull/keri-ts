@@ -4,13 +4,12 @@ import {
   Diger,
   NumberPrimitive,
   type Prefixer,
-  ResourceLimitError,
   type ResourcePolicy,
   type Siger,
 } from "cesr-ts";
 import type { Operation } from "effection";
 import type { Baser } from "../db/basing.ts";
-import { rehydrateKramFactors, removeKramFactors, storeKramFactors, validateKramFactors } from "../db/kram-factors.ts";
+import { rehydrateKramFactors, removeKramFactors, storeKramFactors } from "../db/kram-factors.ts";
 import {
   kramSnapshotIdentity,
   removeKramSnapshot,
@@ -102,7 +101,6 @@ function candidate(
   const saved: Siger[] = [];
   if (inspection.partial) {
     for (const sig of db.pmks.getIter(key)) {
-      if (saved.length >= 4096) throw new ResourceLimitError("KRAM signature pool exceeds finite limits");
       saved.push(sig);
     }
   }
@@ -221,7 +219,6 @@ export function* stageKram<T>(
         storeKramFactors(db, key, factors);
         // Only a fresh receipt-known last group supersedes its previous unknown marker.
         for (const prefix of resolvedLast) db.ulgs.rem(key, prefix);
-        validateKramFactors(db, key);
         storeKramSnapshot(db, key, snapshot);
         const delivery = rehydrateKramFactors(db, key, fresh.envelope);
         if (fresh.multi) {
