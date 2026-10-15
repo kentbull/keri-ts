@@ -313,7 +313,7 @@ handle pool or runtime admission guarantee; handle accounting remains in the
 progressive storage/resource follow-ons.
 
 1. DB open/close/reopen flows are safe and idempotent.
-   `createBaser`, `createKeeper`, and `createOutboxer` retain ownership until
+   `createBaser` and `createKeeper` retain ownership until
    returning the opened store; failed or cancelled acquisition closes the
    unreturned handle without clearing durable data. `createHabery` similarly
    closes already-acquired owned resources if later setup fails. Supplied

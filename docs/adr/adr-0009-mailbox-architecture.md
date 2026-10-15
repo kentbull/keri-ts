@@ -41,7 +41,6 @@ KERIpy spreads that behavior across several cooperating pieces:
   explicit cue/runtime bridges instead of HIO doers
 - mailbox add/remove flows are implemented through the long-lived `tufa agent`
   host plus `POST /mailboxes`
-- `keri-ts` adds an optional sender-side `Outboxer` for durable retry
 - `keri-ts` supports an optional CESR "body" mode for Tufa-to-Tufa mailbox
   traffic, while KERIpy interop remains centered on the body-plus-header wire
   contract
@@ -117,8 +116,7 @@ and the `POST /mailboxes` mental model across both KERIpy and `keri-ts`, see
    endpoints.
 4. If no mailbox exists, `Poster` falls back to direct controller or agent
    delivery.
-5. In `keri-ts`, optional sender retry state is stored in `Outboxer` when a
-   mailbox-target delivery fails.
+5. Failed mailbox sends are reported to the caller; there is no durable retry store.
 
 ### Forwarding (`/fwd`) Mechanics
 
@@ -263,12 +261,6 @@ These are not stored in `Mailboxer` because they describe polling progress, not
 provider-side stored messages. This durable cursor state remains habery-owned
 through `Baser`.
 
-### Current `keri-ts` Difference
-
-`keri-ts` also has `Outboxer`, which is not a KERIpy mailbox databaser. It is a
-Tufa-only additive sender-side retry store and is documented separately in
-Appendix A.
-
 ## Mailbox Admin And Authorization
 
 Mailbox add and remove are remote admin workflows, not local toggles.
@@ -298,7 +290,6 @@ Mailbox add and remove are remote admin workflows, not local toggles.
 3. On success:
    - local state is updated
    - future mailbox-targeted sends stop using that mailbox
-   - `Outboxer` cancels pending deliveries for that mailbox when enabled
 
 ### Authorization Boundary
 
@@ -373,52 +364,11 @@ or weighted selection policy.
 
 - mailbox-provider migration or redirect forwarding
 - priority routing between multiple mailboxes
-- treating `Outboxer` as part of KERIpy parity
+- adding sender retry durability without a separately approved design
 - replacing normal parser or exchanger ingestion with mailbox-specific side
   channels
 
-## Appendix A: Outboxer
-
-`Outboxer` exists because `keri-ts` wants an optional sender-side durability
-layer for mailbox-target deliveries that fail while the sender is offline or
-disconnected.
-
-### Why It Exists
-
-- KERIpy mailbox semantics are recipient-side
-- senders may still benefit from a local retry queue when a mailbox post cannot
-  be completed
-- that retry concern is operationally useful in Tufa, but it is not part of the
-  KERIpy mailbox storage model
-
-### Why It Is Separate From Mailboxer
-
-`Mailboxer` stores provider-side inbound mailbox traffic for recipients.
-
-`Outboxer` stores sender-side retry state:
-
-- raw outbound message by logical message SAID
-- logical message metadata
-- per-mailbox-target delivery status
-
-If these are merged, maintainers lose the mental model boundary between inbox
-storage and sender retry.
-
-### Enablement Rules
-
-- `Outboxer` is optional and Tufa-only
-- it is created when the keystore is initialized with `tufa init --outboxer`
-- later commands opt into using it with `--outboxer`
-
-### Compatibility Rule
-
-KERIpy-compatible stores do not require or assume `Outboxer`.
-
-When `keri-ts` opens a KERIpy store in compat mode, mailbox parity work must not
-depend on `Outboxer` existing. This keeps the Tufa-local retry model from
-polluting the KERIpy mental model or interop expectations.
-
-## Appendix B: Maintainer Debugging
+## Appendix: Maintainer Debugging
 
 Use `tufa db dump` selectively. The goal is to inspect the domain that owns the
 state you care about, not to dump everything.
@@ -433,17 +383,12 @@ Common mental model:
   - list mailbox provider-side stores
 - `mailboxer.<subdb>`
   - inspect `mailboxer.tpcs` or `mailboxer.msgs`
-- `outboxer`
-  - list sender retry stores when the sidecar is enabled
-- `outboxer.<subdb>`
-  - inspect `outboxer.items`, `outboxer.tgts`, or `outboxer.msgs`
 
 Operational rule:
 
 - inspect `baser.ends` to understand authorization truth
 - inspect `baser.tops` to understand remote poll cursor state
 - inspect `mailboxer.*` to understand provider-side stored mailbox traffic
-- inspect `outboxer.*` only when debugging the Tufa-only retry sidecar
 
 If mailbox storage looks correct but `mbx` queries still hang, inspect the cue
 bridge next. The common failure mode is not missing stored data; it is broken

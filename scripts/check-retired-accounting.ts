@@ -2,7 +2,8 @@
  * Expand this list with each completed family; it is not proof of full removal.
  * Semantic review remains necessary for renamed mechanisms and new policy.
  */
-const retired = /\b(?:CueByteReservation|CueByteAdmission|CueByteLimits|reserveCueBytes|admitCueBytes)\b/;
+const retired =
+  /\b(?:CueByteReservation|CueByteAdmission|CueByteLimits|reserveCueBytes|admitCueBytes|Outboxer|DisabledOutboxer|OutboxerLike|createOutboxer|OutboxMessageRecord|OutboxTargetRecord)\b/;
 const violations: string[] = [];
 
 async function inspect(directory: string): Promise<void> {
@@ -13,7 +14,7 @@ async function inspect(directory: string): Promise<void> {
     } else if (entry.isFile && /\.(?:ts|js)$/.test(path)) {
       const lines = (await Deno.readTextFile(path)).split("\n");
       lines.forEach((line, index) => {
-        if (retired.test(line)) violations.push(`${path}:${index + 1}: retired accounting API`);
+        if (retired.test(line)) violations.push(`${path}:${index + 1}: retired API`);
       });
     }
   }
