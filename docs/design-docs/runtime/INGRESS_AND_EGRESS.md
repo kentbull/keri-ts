@@ -387,9 +387,10 @@ ranges and the message ceiling; the Baser stays borrowed and must remain open.
 Queue transfer and fanout carry ordinary references, opening no event iterator.
 Other replay sources and capture-time allocations remain separate admission work.
 
-`ReplyStreams` owns up to eight live HTTP replies by default. Each pull copies at
-most 64 KiB from one event; transport cancellation or runtime closure releases
-the iterator and event. The response lifetime is independent of ingress: Deno's
+`ReplyStreams` owns live HTTP readers without application accounting or configured
+concurrency/event/chunk limits. Each pull yields one source message without an
+output copy; native stream demand controls advancement. Transport cancellation
+or runtime closure closes the iterator and optional disposer. The response lifetime is independent of ingress: Deno's
 legacy request signal aborts when its handler returns. If request cancellation wins
 before response transfer, ingress joins its task then cancels the published body
 outside status mapping; foreign source/fetch/cleanup failures remain failures.
@@ -401,13 +402,10 @@ waits for the next bounded pass.
 
 Finite `cloneEvtMsg` body reads use native row-size preflight before owned
 materialization. Evidence fragments are admitted before retaining each attachment
-and allocating the final event buffer. HTTP replay reserves eight event-size
-allowances plus one output chunk before iterator acquisition, covering cooperating
-native/body/decoded/proof/reconstruction copies through source cleanup. This is
-conservative policy requiring final memory qualification, not an exact RSS ceiling.
-Aggregate replay length is not collected or capped; ordinary single-event bytes
-and concurrent HTTP replies remain independently bounded. Other finite callers
-of `cloneEvtMsg` without a limit retain their existing allocation behavior.
+and allocating the final event buffer. These storage construction limits remain
+separate removal work; ReplyStreams does not select or reserve them. Aggregate
+replay length is not collected or capped. Other finite callers of `cloneEvtMsg`
+without a limit retain their existing allocation behavior.
 
 ## Witness source intake
 
@@ -423,13 +421,11 @@ bounded connection admission and joined parser/socket shutdown.
 
 ## Witness and exchange output
 
-`ReplyStreams.openNonEmpty` reserves the ordinary response owner before priming
-one bounded nonempty event. It returns null only after empty-source cleanup;
-cleanup/acquisition failures propagate. Primed bytes remain inside that same
-owner through transport consumption, cancellation or runtime close, including
-failed stream publication. No external peek wrapper or second stream slot is
-required. Ordinary `open` retains its first-pull behavior. This prerequisite
-does not itself port OOBI producers or qualify their pre-yield allocations.
+`ReplyStreams.openNonEmpty` primes one nonempty message and returns null only
+after empty-source cleanup. Acquisition/cleanup failures propagate. Primed bytes
+remain in the reader until consumption, cancellation or runtime close, including
+failed stream publication. Ordinary `open` keeps its first-pull behavior. Source
+construction limits in OOBI/storage are independent remaining removal work.
 
 Witness `GET /query?typ=kel` returns a lazy source through shared ReplyStreams.
 Without `sn`, capture contains only the target's FEL extent, never delegator logs.
@@ -438,10 +434,10 @@ horizons. Each duplicate is sought by its physical insertion proem, so deleted
 earlier rows do not shift the checkpoint and buckets are not rescanned. Later accepted duplicates at an old sequence are excluded by their
 new FEL ordinals; existing index/proof metadata is consumed at read time, not
 frozen as a proof snapshot. Each cursor closes before finite event hydration/yield.
-The source uses the response's configured message ceiling for native body preflight.
-Response credit precedes iterator acquisition and remains through EOF/cancel/runtime
-close; no transfer-sized event array is retained. Pre-header busy refusal is 503,
-configured-limit refusal 413; later read failures error the response stream.
+The source retains its independent storage construction defaults, with no response
+policy passed down. Reader cleanup runs through EOF/cancel/runtime close; no
+transfer-sized event array is retained. Remaining source-limit failures map to 413;
+later read failures error the response stream.
 Existing missing-selector/SN 400, unknown-target 200-empty and TEL 501 remain.
 SN reconstruction propagates failures; no-SN uses the existing corrupt-record skip
 path, whose broad proof-reconstruction catch still requires phase 5 qualification.

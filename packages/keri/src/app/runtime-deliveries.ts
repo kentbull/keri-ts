@@ -1,4 +1,4 @@
-import { concatBytes, type ResourceAdmissionError } from "cesr-ts";
+import { concatBytes } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
 import type { AgentCue } from "../core/cues.ts";
@@ -149,7 +149,6 @@ export class RuntimeDeliveries {
     runtime: AgentRuntime,
     hab: Hab,
     reply: QueryReply,
-    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): ReadableStream<Uint8Array> | null {
     if (this.closed) throw new Error("Runtime deliveries are closed");
     return DirectReplyDelivery.prepare(runtime, hab, reply, (delivery, open) => {
@@ -157,7 +156,7 @@ export class RuntimeDeliveries {
       if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
       else delivery.release();
       return stream;
-    }, onAdmissionRefusal);
+    });
   }
 
   /** Atomically retain an earlier query reply without opening a request-local response stream. */

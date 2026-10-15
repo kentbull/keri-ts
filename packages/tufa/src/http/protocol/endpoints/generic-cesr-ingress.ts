@@ -122,7 +122,6 @@ function* deferredDirectQueryResponse(
   serder: SerderKERI,
   reply: QueryReply,
   publish: (response: Response) => void,
-  onAdmissionRefusal: (error: ResourceAdmissionError) => void,
 ): Operation<Response | null> {
   const runtime = context.runtime!;
   const expires = Date.now() + DIRECT_QUERY_RESPONSE_WAIT_MS;
@@ -133,7 +132,7 @@ function* deferredDirectQueryResponse(
       const first = habitats.next();
       const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
       if (hab) {
-        const stream = runtime.deliveries.openReply(runtime, hab, reply, onAdmissionRefusal);
+        const stream = runtime.deliveries.openReply(runtime, hab, reply);
         if (stream) {
           response = new Response(stream, {
             status: 200,
@@ -325,7 +324,7 @@ function* ingest(
       return response;
     }
     return query.reply
-      ? (yield* deferredDirectQueryResponse(context, query.serder, query.reply, publish, onAdmissionRefusal))
+      ? (yield* deferredDirectQueryResponse(context, query.serder, query.reply, publish))
         ?? jsonNoContentResponse()
       : jsonNoContentResponse();
   } finally {

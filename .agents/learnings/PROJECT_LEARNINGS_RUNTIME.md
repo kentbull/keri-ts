@@ -171,28 +171,27 @@ cleanup, clears records, then closes owned stores. RuntimeDeliveries accepts
 prepared QueryDelivery records directly, without a policy constructor, request/route
 quota, preparation callback, credit or refused-admission wrapper. Query transport
 prepares signing, introduction and endpoint selection before source removal.
-Forwarding/OOBI construction limits and ReplyStreams accounting remain separate
-removal work.
+Forwarding/OOBI and storage replay construction limits remain separate removal work.
 ESSR requires the host's policy and holds crypto credit until I/O and
 untransferred-owner disposal join. Busy and configured-limit refusals do not establish message invalidity.
 Complete-record ingress charges shared bytes before copying; queued and processing
 owners retain local capacity and the lease through retry and joined cancellation.
 clearIngress releases only queued owners and invalidates late retries. Runtime
 close/scope exit clears queued leases without releasing active processing early.
-Lazy HTTP replay reserves shared stream/event/chunk credit before opening its
-iterator and returns it only after source cleanup. Busy HTTP admission returns 503;
-configured size refusal remains 413. Neither creates retry scheduling.
-Nonempty response detection primes one bounded event under that same owner;
-empty sources close before returning null and runtime close drops primed bytes.
-OOBI serving captures bounded endpoint/delegation descriptors only after admission,
-closes metadata cursors before hydration, and borrows Hab/store through cleanup.
-Fresh preparation caps are conservative; native metadata/proof allocation remains open.
-Finite forwarding introductions must cap before retaining messages, including
-ordinary wrapper defaults; a lazy source alone does not qualify bulk transport.
+ReplyStreams tracks actual lazy HTTP readers until EOF, cancellation or runtime
+shutdown before database closure. It has no policy, stream/event/chunk cap,
+preparation permit or synthetic credit. Each native pull yields one source message
+without splitting/copying it. Nonempty detection primes one nonempty message;
+empty sources close before returning null. Iterator/disposer failures propagate,
+including acquisition failure and cancellation before the first pull.
+OOBI serving captures endpoint/delegation descriptors, closes metadata cursors
+before hydration, and borrows Hab/store through cleanup. Its descriptor/proof
+ceilings and finite forwarding introduction limits are transitional accounting
+to remove, not a requirement to preserve or widen.
 RuntimeDeliveries owns the existing finite query queue; retained cue adoption
 uses this same owner rather than adding a parallel queue. Query producers run
-only after preparation/request admission. Queued requests retain
-credit through failure/retry; shutdown releases an active head after transport cleanup joins.
+after synchronous signing and route preparation. Queued requests survive failure/retry;
+shutdown closes an active head after transport cleanup joins.
 Runtime HTTP services must carry the runtime's exact policy. Frame requests acquire
 stream/copy credit before serialization or fetch and release it after joined cleanup;
 source-driven output holds one stream/cursor owner across parsing and HTTP, with

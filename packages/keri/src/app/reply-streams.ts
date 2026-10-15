@@ -1,107 +1,17 @@
-import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
-
-/** Finite response admission policy, separate from the total number of events in a replay. */
-export interface ReplyStreamLimits {
-  /** Maximum live HTTP replies owned by one runtime; default eight. */
-  maxStreams?: number;
-  /** Largest complete event cloned from storage; default 8 MiB. */
-  maxMessageBytes?: number;
-  /** Largest output allocation passed to the HTTP transport; default 64 KiB. */
-  maxChunkBytes?: number;
-}
-
 /** Own lazy HTTP replay readers until EOF, transport cancellation, or runtime shutdown. */
 export class ReplyStreams {
   /** Closing readers do not retain their replay source or its current event. */
   private readonly readers = new Set<(reason?: unknown) => void>();
-  /** Shutdown permanently closes this runtime's response admission. */
+  /** Shutdown permanently closes this runtime's response creation. */
   private closed = false;
-  private prepared = 0;
-  /** Finite concurrent response metadata admission. */
-  private readonly maxStreams: number;
-  /** Finite materialized event admission; replay aggregates remain unbounded in length. */
-  private readonly maxMessageBytes: number;
-  /** Independent byte credit supplied by each HTTP pull. */
-  private readonly maxChunkBytes: number;
-
-  /** Conservative credit for native/body/decoded/proof/reconstruction copies and one outgoing chunk. */
-  private readonly reservationBytes: number;
-
-  /** Validate all limits before any response can acquire a storage reader. */
-  constructor(
-    { maxStreams = 8, maxMessageBytes = 8 * 1024 * 1024, maxChunkBytes = 64 * 1024 }: ReplyStreamLimits = {},
-    private readonly resources = new ResourcePolicy(),
-  ) {
-    for (const limit of [maxStreams, maxMessageBytes, maxChunkBytes]) {
-      if (!Number.isSafeInteger(limit) || limit < 1) {
-        throw new RangeError("Reply limits must be positive safe integers");
-      }
-    }
-    this.maxStreams = maxStreams;
-    this.maxMessageBytes = maxMessageBytes;
-    this.maxChunkBytes = maxChunkBytes;
-    // Reserve before iterator acquisition: next() may reconstruct an event before yielding its final bytes.
-    this.reservationBytes = 8 * maxMessageBytes + maxChunkBytes;
-    if (!Number.isSafeInteger(this.reservationBytes)) throw new RangeError("Reply reservation exceeds safe range");
-  }
-
-  /** Source producers use this same captured ceiling for native preflight before hydration. */
-  get messageByteLimit(): number {
-    return this.maxMessageBytes;
-  }
-
-  /** Captured byte floor for combined direct-reply preparation admission. */
-  get preparationByteFloor(): number {
-    return this.reservationBytes;
-  }
-
-  /** Admit a synchronous direct-reply preparation before signing; open transfers, release abandons. */
-  prepare(onAdmissionRefusal?: (error: ResourceAdmissionError) => void): {
-    open(messages: Iterable<Uint8Array>, dispose?: () => void): ReadableStream<Uint8Array>;
-    release(): void;
-  } {
-    if (this.closed) throw new Error("Reply streams are closed");
-    if (this.readers.size + this.prepared >= this.maxStreams) {
-      throw new ResourceAdmissionError("Too many active HTTP replies", "busy");
-    }
-    const admitted = this.resources.reserve({ streams: 1, bytes: this.reservationBytes });
-    if (admitted.kind === "refuse") {
-      const refusal = new ResourceAdmissionError("Reply preparation admission refused", admitted.reason);
-      onAdmissionRefusal?.(refusal);
-      throw refusal;
-    }
-    this.prepared++;
-    let live = true;
-    const release = () => {
-      if (!live) return;
-      live = false;
-      this.prepared--;
-      admitted.reservation.release();
-    };
-    return {
-      release,
-      open: (messages, dispose) => {
-        if (!live) throw new Error("Reply preparation is released");
-        live = false;
-        this.prepared--;
-        try {
-          return this.openChecked(messages, dispose, false, admitted)!;
-        } catch (error) {
-          admitted.reservation.release();
-          throw error;
-        }
-      },
-    };
-  }
-
   /** Borrow a reopenable source without advancing until HTTP requests bytes.
-   * Transfer the optional disposer through source closure, including admission/acquisition refusal.
+   * Transfer the optional disposer through source closure, including acquisition failure.
    */
   open(messages: Iterable<Uint8Array>, dispose?: () => void): ReadableStream<Uint8Array> {
     return this.openChecked(messages, dispose, false)!;
   }
 
-  /** Admit before priming one finite message; empty output closes ownership for a caller's 404 decision. */
+  /** Prime one message; empty output closes ownership for a caller's 404 decision. */
   openNonEmpty(messages: Iterable<Uint8Array>, dispose?: () => void): ReadableStream<Uint8Array> | null {
     return this.openChecked(messages, dispose, true);
   }
@@ -111,7 +21,6 @@ export class ReplyStreams {
     messages: Iterable<Uint8Array>,
     dispose: (() => void) | undefined,
     requireContent: boolean,
-    admitted?: Extract<ReturnType<ResourcePolicy["reserve"]>, { kind: "reserve" }>,
   ): ReadableStream<Uint8Array> | null {
     const release = () => {
       const owned = dispose;
@@ -119,7 +28,7 @@ export class ReplyStreams {
       owned?.();
     };
     try {
-      return this.openOwned(messages, release, requireContent, admitted);
+      return this.openOwned(messages, release, requireContent);
     } catch (error) {
       try {
         release();
@@ -130,38 +39,25 @@ export class ReplyStreams {
     }
   }
 
-  /** Keep transferred cue credit through iterator cleanup, including cancellation before the first pull. */
+  /** Keep the optional disposer through iterator cleanup, including cancellation before the first pull. */
   private openOwned(
     messages: Iterable<Uint8Array>,
     release: () => void,
     requireContent: boolean,
-    admitted?: Extract<ReturnType<ResourcePolicy["reserve"]>, { kind: "reserve" }>,
   ): ReadableStream<Uint8Array> | null {
     if (this.closed) throw new Error("Reply streams are closed");
-    if (!admitted && this.readers.size + this.prepared >= this.maxStreams) {
-      throw new ResourceAdmissionError("Too many active HTTP replies", "busy");
-    }
-    const credit = admitted ?? this.resources.reserve({ streams: 1, bytes: this.reservationBytes });
-    if (credit.kind === "refuse") {
-      throw new ResourceAdmissionError(`Reply ${credit.resource} admission refused: ${credit.reason}`, credit.reason);
-    }
     let iterator: Iterator<Uint8Array> | undefined;
     let current: Uint8Array | undefined;
-    let offset = 0;
-    /** Retain at most one admitted event, ignoring empty source values without acquiring another owner. */
+    /** Retain at most one event, ignoring empty source values without acquiring another owner. */
     const advance = (): boolean => {
       while (!current && iterator) {
         const next = iterator.next();
         if (next.done) return false;
-        if (next.value.buffer.byteLength > this.maxMessageBytes) {
-          throw new ResourceLimitError("Replay message exceeds byte limit");
-        }
         if (next.value.length > 0) current = next.value;
-        offset = 0;
       }
       return current !== undefined;
     };
-    /** Unpublished acquisition/empty-result cleanup runs before response credit returns. */
+    /** Close unpublished iterators and their disposer before returning or throwing. */
     const closeUnpublished = (primary?: { error: unknown }) => {
       const errors = primary ? [primary.error] : [];
       const owned = iterator;
@@ -177,7 +73,6 @@ export class ReplyStreams {
       } catch (error) {
         if (!errors.includes(error)) errors.push(error);
       }
-      credit.reservation.release();
       if (errors.length > 1) throw new AggregateError(errors, "Reply acquisition cleanup failed");
       if (errors.length) throw errors[0];
     };
@@ -214,7 +109,6 @@ export class ReplyStreams {
       } catch (error) {
         failures.push(error);
       }
-      credit.reservation.release();
       if (failures.length) {
         const error = failures.length === 1 && reason === undefined
           ? failures[0]
@@ -238,11 +132,8 @@ export class ReplyStreams {
               return;
             }
             if (!current) return;
-            // Copy the outgoing extent so a retained transport chunk cannot pin the entire event buffer.
-            const end = Math.min(current.length, offset + this.maxChunkBytes);
-            controller.enqueue(current.slice(offset, end));
-            offset = end;
-            if (offset === current.length) current = undefined;
+            controller.enqueue(current);
+            current = undefined;
           } catch (error) {
             close(error);
           }

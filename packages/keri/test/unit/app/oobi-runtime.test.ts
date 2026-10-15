@@ -1,6 +1,6 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertStringIncludes } from "jsr:@std/assert";
-import { Diger, Prefixer, ResourcePolicy, SerderKERI } from "../../../../cesr/mod.ts";
+import { Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import {
@@ -98,7 +98,6 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
-      resources: new ResourcePolicy({ streams: 2 }),
       skipConfig: true,
     });
     try {
@@ -129,17 +128,7 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
       yield* processRuntimeTurn(runtime, { hab });
       const handler = createProtocolHandler(runtime);
       const request = new Request(`${url}/oobi/${pre}/agent/${pre}`);
-      const occupied = [runtime.replyStreams.open([]), runtime.replyStreams.open([])];
       const read = hby.db.getValBounded;
-      hby.db.getValBounded = () => {
-        throw new Error("busy response must not hydrate");
-      };
-      try {
-        assertEquals((yield* call(() => handler(request))).status, 503);
-      } finally {
-        hby.db.getValBounded = read;
-        for (const body of occupied) yield* call(() => body.cancel());
-      }
       let hydrations = 0;
       hby.db.getValBounded = function(...args) {
         hydrations++;
@@ -150,10 +139,8 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
         assertEquals(response.status, 200);
         assertEquals(response.headers.get("KERI-AID"), pre);
         assertEquals(hydrations, 1); // Primed KEL only; stored replies remain lazy.
-        assertEquals(runtime.resources.used.streams, 1);
         yield* call(() => response.body!.cancel());
         assertEquals(hydrations, 1);
-        assertEquals(runtime.resources.used.streams, 0);
       } finally {
         hby.db.getValBounded = read;
       }

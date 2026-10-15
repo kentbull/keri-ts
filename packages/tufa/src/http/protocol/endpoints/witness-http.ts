@@ -109,7 +109,7 @@ export function handleWitnessQueryGet(
       typ: context.url.searchParams.get("typ"),
       pre: context.url.searchParams.get("pre"),
       sn: Number.isNaN(sn ?? Number.NaN) ? null : sn,
-    }, runtime.replyStreams.messageByteLimit);
+    });
     if (result.kind === "accepted") {
       return new Response(runtime.replyStreams.open(result.messages), {
         status: result.status,

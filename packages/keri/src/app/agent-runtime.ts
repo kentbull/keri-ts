@@ -42,7 +42,7 @@ import { noterOptionsForHabery, Notifier } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { type AcdcRuntimeServices, Reactor, type VdrRuntimeServices } from "./reactor.ts";
-import { type ReplyStreamLimits, ReplyStreams } from "./reply-streams.ts";
+import { ReplyStreams } from "./reply-streams.ts";
 import { recipientForCue, Respondant, senderHabForCue, topicForCue } from "./respondant.ts";
 import { RuntimeDeliveries } from "./runtime-deliveries.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
@@ -160,8 +160,6 @@ export interface AgentRuntimeOptions {
   enableMailboxStore?: boolean;
   services?: Partial<RuntimeServices>;
   mailboxPollTransport?: MailboxPollTransport;
-  /** Finite reply concurrency/event/chunk admission, independent of replay length. */
-  replyLimits?: ReplyStreamLimits;
   mailboxStreamLimits?: MailboxStreamLimits;
   vdr?: VdrRuntimeServices;
   /** An injected v2 manager and its backing store remain caller-owned. */
@@ -286,7 +284,7 @@ export function* createAgentRuntime(
   }
   // Reverse scope teardown joins borrowed output evidence before its backing stores close.
   const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
-    const streams = new ReplyStreams(options.replyLimits, resources);
+    const streams = new ReplyStreams();
     try {
       yield* provide(streams);
     } finally {

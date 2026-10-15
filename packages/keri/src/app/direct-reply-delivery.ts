@@ -1,5 +1,4 @@
 /** Prepare reply records once for independent queued delivery and HTTP readers. */
-import { ResourceAdmissionError } from "cesr-ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
@@ -20,12 +19,11 @@ export class DirectReplyDelivery {
     hab: Hab,
     reply: QueryReply,
     publish: (delivery: DirectReplyDelivery, open: () => ReadableStream<Uint8Array>) => ReadableStream<Uint8Array>,
-    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): ReadableStream<Uint8Array> | null {
-    return this.prepareBatch(runtime, hab, reply, publish, undefined, onAdmissionRefusal);
+    return this.prepareBatch(runtime, hab, reply, publish);
   }
 
-  /** Transfer an earlier query batch to delivery only, without reserving an HTTP response permit. */
+  /** Transfer an earlier query batch to delivery only, without opening an HTTP response reader. */
   static prepareQueued(
     runtime: AgentRuntime,
     hab: Hab,
@@ -68,7 +66,6 @@ export class DirectReplyDelivery {
     reply: QueryReply,
     publish?: (delivery: DirectReplyDelivery, open: () => ReadableStream<Uint8Array>) => ReadableStream<Uint8Array>,
     enqueue?: (delivery: DirectReplyDelivery) => void,
-    onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
   ): ReadableStream<Uint8Array> | null {
     const batch = new DirectReplyDelivery();
     let stream: ReadableStream<Uint8Array> | null = null;
@@ -89,17 +86,12 @@ export class DirectReplyDelivery {
         if (route?.targets.length) batch.deliveries.push(new CueDelivery(emission, sender, route));
       }
       if (publish) {
-        const response = runtime.replyStreams.prepare(onAdmissionRefusal);
-        try {
-          stream = publish(batch, () =>
-            response.open({
-              *[Symbol.iterator]() {
-                for (const emission of emissions) yield* emission.messages;
-              },
-            }));
-        } finally {
-          response.release();
-        }
+        stream = publish(batch, () =>
+          runtime.replyStreams.open({
+            *[Symbol.iterator]() {
+              for (const emission of emissions) yield* emission.messages;
+            },
+          }));
       } else enqueue!(batch);
       return undefined;
     });
