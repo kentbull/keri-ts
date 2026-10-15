@@ -39,6 +39,8 @@ export function cuePublisher(queue: Deck<AgentCue>): CuePublisher {
 
 /** Consumers transfer cue handles without depending on the producer or general deque mutation API. */
 export interface CueReader {
+  /** Queued references only; active transferred handles are not queued. */
+  readonly length: number;
   /** Existing source credit, absent for a standalone caller-owned queue. */
   readonly resourcePolicy: ResourcePolicy | undefined;
   /** Borrow the next cue without changing its queue or ownership. */
@@ -60,6 +62,9 @@ function borrowedCue(cue: AgentCue): OwnedCue {
 export function cueReader(queue: Deck<AgentCue>): CueReader {
   if (queue instanceof CueDeck) return queue;
   return {
+    get length() {
+      return queue.length;
+    },
     resourcePolicy: undefined,
     peekHead: () => queue.peekHead(),
     headRetentionBytes: () => 0,
