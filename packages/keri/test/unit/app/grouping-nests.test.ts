@@ -107,6 +107,69 @@ async function participants(
   });
 }
 
+for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
+  for (const remoteFirst of [false, true]) {
+    Deno.test(`v1 multisig replays genus ${genus.major} children after approval (${remoteFirst ? "remote" : "local"} first)`, async () => {
+      await participants(async (left, right, alice, bob, notifier) => {
+        const mids = [alice.pre, bob.pre];
+        const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+        const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+        assertEquals(local.serder.raw, remote.serder.raw);
+        let exchanger = new Exchanger(left);
+        loadMultisigHandlers(left, exchanger, { notifier });
+        async function submit(sender: Hab, wire: Uint8Array) {
+          const [wrapper, paths] = await run(() =>
+            multisigInceptExn(sender, mids, mids, wire, undefined, {
+              pvrsn: Vrsn_1_0,
+              childGvrsn: genus,
+            })
+          );
+          const message = concatBytes(sender.endorse(wrapper, { pipelined: false }), paths);
+          for (const frame of await parseBytes(message)) {
+            try {
+              const decision = await run(() =>
+                dispatchEnvelope(envelopeFromFrame(frame, true), left.rvy, left.kevery, exchanger)
+              );
+              assertEquals(decision?.kind, "accept");
+            } finally {
+              await discardFrame(frame);
+            }
+          }
+        }
+        const own = messagize(local.serder, { sigers: local.sigers, gvrsn: genus });
+        const other = messagize(remote.serder, { sigers: remote.sigers, gvrsn: genus });
+        await submit(remoteFirst ? bob : alice, remoteFirst ? other : own);
+        assertEquals(left.db.getKever(local.hab.pre), null);
+        assertEquals(notifier.list().length, remoteFirst ? 1 : 0);
+        await run(() => left.db.reopen());
+        exchanger = new Exchanger(left);
+        loadMultisigHandlers(left, exchanger, { notifier });
+        if (!remoteFirst) {
+          const wrong = bob.mgr.sign(b("different child"), {
+            pubs: [bob.kever!.verfers[0].qb64],
+            indices: [1],
+            indexed: true,
+          });
+          await submit(bob, messagize(remote.serder, { sigers: wrong, gvrsn: genus }));
+          left.kevery.processEscrows();
+          assertEquals(left.db.getKever(local.hab.pre), null);
+          assertEquals(left.db.getSigs(local.hab.pre, local.serder.said!).map((s) => new Siger({ qb64: s }).index), [
+            0,
+          ]);
+        }
+        await submit(remoteFirst ? alice : bob, remoteFirst ? own : other);
+        left.kevery.processEscrows();
+        assertEquals(
+          left.db.getSigs(local.hab.pre, local.serder.said!).map((s) => new Siger({ qb64: s }).index).sort(),
+          [0, 1],
+        );
+        assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
+        assertEquals(notifier.list().length, remoteFirst ? 1 : 0);
+      });
+    });
+  }
+}
+
 for (const remoteFirst of [false, true]) {
   Deno.test(`nested multisig merges real child signatures after approval (${remoteFirst ? "remote" : "local"} first)`, async () => {
     await participants(async (left, right, alice, bob, notifier) => {

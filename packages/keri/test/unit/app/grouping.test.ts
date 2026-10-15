@@ -132,6 +132,14 @@ Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote s
 
       const notifier = new Notifier(hby, { noter });
       const mux = new Multiplexor(hby, { notifier });
+      for (const hint of [["2", 0], [2], [3, 0], [2, -1], [2, 4096]]) {
+        const [invalid] = exchangeMessage(MULTISIG_EXN_ROUTE, { gid: group.pre, cgvrsn: hint }, {
+          sender: remote.pre,
+          embeds: { exn: grant.raw },
+        });
+        assertEquals((yield* mux.add(invalid)).kind, "reject");
+      }
+      assertEquals(notifier.list().length, 0);
       const decision = yield* mux.add(wrapped);
       const embeddedSaid = (wrapped.ked?.e as Record<string, unknown>).d as string;
 

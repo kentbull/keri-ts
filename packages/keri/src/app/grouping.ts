@@ -30,6 +30,7 @@ import { Kevery } from "../core/eventing.ts";
 import { exchange, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { abortable } from "./abortable.ts";
+import { chunkBytes } from "./byte-source.ts";
 import { Exchanger, type ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
@@ -470,14 +471,15 @@ export class Multiplexor {
     const firstSubmission = existing.length === 0;
     const submitters = this.hby.db.maids.get([embeddedSaid]);
     if (!this.isLocalHab(sender)) {
-      if (serder.pvrsn.major === 2 && submitters.some((submitter) => this.isLocalHab(submitter.qb64))) {
+      if (submitters.some((submitter) => this.isLocalHab(submitter.qb64))) {
         // The parent is durable, but approval never lends its signatures to the child.
-        yield* this.processApproved(nests);
+        if (serder.pvrsn.major === 1) yield* this.processLegacyApproved(serder);
+        else yield* this.processApproved(nests);
       } else if (serder.pvrsn.major === 2 || firstSubmission) {
         // Legacy approval polling consumes its first notice; repeated v1 notices would re-propose it.
         this.notifier?.add(firstSubmission ? { r: route, d: said } : { r: route, d: said, e: embeddedSaid });
       }
-    } else if (serder.pvrsn.major === 2 && submitters.some((submitter) => !this.isLocalHab(submitter.qb64))) {
+    } else if (submitters.some((submitter) => !this.isLocalHab(submitter.qb64))) {
       // Remote evidence can precede approval. Replay one durable wrapper at a time after reopen.
       for (const prior of existing) yield* call(() => this.replayApproved(prior.qb64));
     }
@@ -507,6 +509,31 @@ export class Multiplexor {
     }
   }
 
+  /** Replay v1 children with their own stored proofs and signed attachment genus, as KERIpy does. */
+  private *processLegacyApproved(wrapper: SerderKERI): Operation<void> {
+    const embeds = embeddedSection(wrapper.ked!);
+    for (const [label, sad] of Object.entries(embeds ?? {})) {
+      if (!isRecord(sad)) continue;
+      const child = new SerderKERI({ sad });
+      const attachment = multisigPathedAttachment(this.hby, wrapper.said!, label);
+      const hint = attachment.length ? childGenusHint(wrapper.ked!.a) : undefined;
+      const genus = child.gvrsn ?? hint ?? child.pvrsn;
+      const channel = yield* toEffectionFrames(async function*(signal) {
+        for (const bytes of [Counter.makeGVC(genus), child.raw, attachment]) {
+          yield* chunkBytes(bytes, { signal });
+        }
+      });
+      for (const frame of yield* each(channel.frames)) {
+        try {
+          yield* dispatchEnvelope(envelopeFromFrame(frame, true), this.rvy, this.kvy);
+        } finally {
+          yield* call(() => discardFrame(frame));
+        }
+        yield* each.next();
+      }
+    }
+  }
+
   /** Reopen original evidence through the exchange replay owner; cancellation joins all temporary files. */
   private *replayApproved(said: string): Operation<void> {
     const channel = yield* toEffectionFrames((signal) => this.replay.replay(said, signal), {
@@ -516,7 +543,8 @@ export class Multiplexor {
       try {
         const serder = frame.body as SerderKERI;
         if (!this.verify(serder, frame.nests)) throw new Error("Stored multisig proposal failed revalidation.");
-        yield* this.processApproved(frame.nests ?? []);
+        if (serder.pvrsn.major === 1) yield* this.processLegacyApproved(serder);
+        else yield* this.processApproved(frame.nests ?? []);
       } finally {
         yield* call(() => discardFrame(frame));
       }
@@ -540,6 +568,9 @@ export class Multiplexor {
       const embed = embeddedSection(ked);
       if (!embed || typeof embed.d !== "string" || !embed.d || nests.length) {
         return { ok: false, said, reason: "Missing multisig embedded SAID or unexpected v1 nesting." };
+      }
+      if (childGenusHint(ked.a) === null) {
+        return { ok: false, said, reason: "Invalid multisig child attachment genus." };
       }
       embeddedSaid = embed.d;
     } else {
@@ -684,6 +715,18 @@ function embeddedSection(ked: Record<string, unknown>): Record<string, unknown> 
   }
   const attrs = payloadSection(ked);
   return isRecord(attrs.e) && typeof attrs.e.d === "string" ? attrs.e : null;
+}
+
+/** Decode the signed legacy child-genus hint before it can select attachment parsing. */
+function childGenusHint(attrs: unknown): Versionage | null | undefined {
+  if (!isRecord(attrs) || attrs.cgvrsn === undefined) return undefined;
+  const hint = attrs.cgvrsn;
+  if (
+    !Array.isArray(hint) || hint.length !== 2
+    || (hint[0] !== 1 && hint[0] !== 2)
+    || typeof hint[1] !== "number" || !Number.isInteger(hint[1]) || hint[1] < 0 || hint[1] > 4095
+  ) return null;
+  return { major: hint[0], minor: hint[1] };
 }
 
 function payloadSection(ked: Record<string, unknown>): Record<string, unknown> {
