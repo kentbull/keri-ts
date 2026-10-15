@@ -47,6 +47,7 @@ export * from "../app/runtime-turn.ts";
 export * from "../app/schema-resolving.ts";
 export * from "../app/signaling.ts";
 export * from "../app/socket-source.ts";
+export * from "../app/tcp-conversation.ts";
 export * from "../app/tcp-egress.ts";
 export * from "../app/verifier-agent.ts";
 export * from "../app/verifying.ts";
