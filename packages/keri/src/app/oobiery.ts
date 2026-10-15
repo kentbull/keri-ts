@@ -609,7 +609,7 @@ export class Oobiery {
     }
 
     if (!(this.publisher.resourcePolicy)) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
-    const proof = this.reactor.revery.prepareReply({
+    const proof = this.reactor.revery.decideReply({
       serder: args.serder,
       saider: args.diger,
       route: args.route,
@@ -618,10 +618,12 @@ export class Oobiery {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
+    this.reactor.revery.cues.checkSpace(proof.cues.length);
+    const queries = proof.cues.length ? cuePublisher(this.reactor.revery.cues).prepare(proof.cues) : undefined;
     try {
-      if (proof.decision.kind === "unverified") {
-        proof.applyProofs();
-        proof.publishQueries();
+      if (proof.kind === "unverified") {
+        this.reactor.revery.writeReply(proof);
+        queries?.publish();
         return unverifiedReplyDecision(`Unverified introduction reply ${args.serder.said ?? "<unknown>"}.`);
       }
       const meta = parseOobiUrl(oobi), kind = queueKindFor(oobi);
@@ -638,16 +640,16 @@ export class Oobiery {
       this.cues.checkSpace(cues.length);
       const batch = this.publisher.prepare(cues);
       try {
-        proof.applyProofs();
+        this.reactor.revery.writeReply(proof);
         this.pinQueueStore(kind, oobi, record);
-        proof.publishQueries();
+        queries?.publish();
         batch.publish();
         return acceptReplyDecision();
       } finally {
         batch?.release();
       }
     } finally {
-      proof.release();
+      queries?.release();
     }
   }
 }

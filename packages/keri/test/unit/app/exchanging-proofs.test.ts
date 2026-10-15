@@ -377,7 +377,8 @@ Deno.test("EXN missing sender seals escrow only for opted routes and deliver val
       assertEquals(exchanger.cues.toArray(), [{
         kin: "query",
         pre: alice.pre,
-        q: { r: "logs", pre: alice.pre, sn: seal.s.num.toString(16) },
+        route: "logs",
+        q: { s: seal.s.num.toString(16) },
       }]);
       if (acceptsSscs) {
         assertExists(hby.db.epse.get([serder.said!]));
@@ -439,10 +440,9 @@ Deno.test("EXN strict supplemental state failures query without persistence or r
       assertEquals(exchanger.cues.toArray(), [{
         kin: "query",
         pre: bob.pre,
+        route: "logs",
         q: {
-          r: "logs",
-          pre: bob.pre,
-          ...(factor === "last" ? {} : { sn: (factor === "seal" ? seal.s.num : group.sn).toString(16) }),
+          ...(factor === "last" ? {} : { s: (factor === "seal" ? seal.s.num : group.sn).toString(16) }),
         },
       }]);
       hby.db.evts.pin([bob.pre, event.said!], event);
@@ -462,7 +462,7 @@ Deno.test("EXN strict supplemental state failures query without persistence or r
           "reject",
         );
         assertUnstored(hby, serder.said!);
-        assertEquals(exchanger.cues.toArray(), [{ kin: "query", pre: bob.pre, q: { r: "logs", pre: bob.pre } }]);
+        assertEquals(exchanger.cues.toArray(), [{ kin: "query", pre: bob.pre, route: "logs", q: {} }]);
       }
     }
   });
@@ -505,7 +505,7 @@ Deno.test("EXN optional unresolved extras query once and expose missing state on
       "accept",
     );
     assertEquals([selected, handled], [1, 1]);
-    assertEquals(exchanger.cues.toArray(), [{ kin: "query", pre: bob.pre, q: { r: "logs", pre: bob.pre } }]);
+    assertEquals(exchanger.cues.toArray(), [{ kin: "query", pre: bob.pre, route: "logs", q: {} }]);
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertEquals([...hby.db.esigs.getTopItemIter([serder.said!, ""])].length, 1);
     assertEquals(hby.db.eidx.get([bob.pre]), []);
@@ -517,7 +517,7 @@ Deno.test("EXN optional unresolved extras query once and expose missing state on
       "accept",
     );
     assertEquals([selected, handled], [1, 2]);
-    assertEquals(exchanger.cues.toArray(), [{ kin: "query", pre: bob.pre, q: { r: "logs", pre: bob.pre } }]);
+    assertEquals(exchanger.cues.toArray(), [{ kin: "query", pre: bob.pre, route: "logs", q: {} }]);
   });
 });
 
@@ -552,7 +552,8 @@ Deno.test("EXN sender query cues follow new escrow rows and incomplete duplicate
     assertEquals(exchanger.cues.toArray(), [{
       kin: "query",
       pre: alice.pre,
-      q: { r: "logs", pre: alice.pre, sn: sender.sn.toString(16) },
+      route: "logs",
+      q: { s: sender.sn.toString(16) },
     }]);
     assertExists(hby.db.epse.get([serder.said!]));
     assertEquals([...hby.db.esigs.getTopItemIter([serder.said!, ""])].length, 2);
@@ -573,7 +574,8 @@ Deno.test("EXN sender query cues follow new escrow rows and incomplete duplicate
     assertEquals(exchanger.cues.toArray(), [{
       kin: "query",
       pre: bob.pre,
-      q: { r: "logs", pre: bob.pre, sn: supplemental.sn.toString(16) },
+      route: "logs",
+      q: { s: supplemental.sn.toString(16) },
     }]);
     exchanger.cues.clear();
     hby.db.evts.pin([bob.pre, supplemental.said], foreignEvent);
@@ -591,7 +593,8 @@ Deno.test("EXN sender query cues follow new escrow rows and incomplete duplicate
     assertEquals(exchanger.cues.toArray(), [{
       kin: "query",
       pre: bob.pre,
-      q: { r: "logs", pre: bob.pre, sn: supplemental.sn.toString(16) },
+      route: "logs",
+      q: { s: supplemental.sn.toString(16) },
     }]);
     assertEquals(handled, 1);
     assertEquals(exchanger.complete(serder.said!), true);
@@ -615,11 +618,12 @@ Deno.test("EXN authentication queries admit one ordered coordinate batch before 
         );
         const prefix = factor === "source" ? alice.pre : bob.pre;
         const queries: AgentCue[] = factor === "last"
-          ? [other.pre, bob.pre].map((pre) => ({ kin: "query", pre, q: { r: "logs", pre } }))
+          ? [other.pre, bob.pre].map((pre) => ({ kin: "query", pre, route: "logs", q: {} }))
           : [100n, 99n].map((sn) => ({
             kin: "query",
             pre: prefix,
-            q: { r: "logs", pre: prefix, sn: sn.toString(16) },
+            route: "logs",
+            q: { s: sn.toString(16) },
           }));
         const input = {
           serder,
@@ -728,6 +732,6 @@ Deno.test("EXN authentication queries admit one ordered coordinate batch before 
         ),
       DeckFullError,
     );
-    assertEquals(ordinary.toArray(), [{ kin: "query", pre: other.pre, q: { r: "logs", pre: other.pre } }]);
+    assertEquals(ordinary.toArray(), [{ kin: "query", pre: other.pre, route: "logs", q: {} }]);
   });
 });

@@ -49,3 +49,24 @@ JSON/CBOR/MGPK acceptance/storage/replay evidence is recorded in the
 [multisig plan](../../plans/exchange/MULTISIG_PLAN.md). The
 [proof contract](EXCHANGE_PROOFS.md) and [storage contract](../db/PAYLOAD_STORAGE.md)
 govern authentication and durability; full runtime qualification remains open.
+
+## Event proposal input contract
+
+The icp/rot/ixn/rpy builders share MultisigEventProposal through byte preparation
+and synchronous body construction. Each route has its actual attributes: inception
+requires signing/rotation members and derives gid from the child; rotation carries
+gid and both lists; interaction carries gid and signing members; reply carries gid.
+The child supplies its commitment. No open metadata slot or second child identity
+is accepted. Attribute values remain immutable borrows through byte preparation;
+the route selection is captured before parser suspension. Existing v1/v2 bytes,
+child-kind checks and frame disposal remain separate from this input contract.
+Other route builders and inbound membership/codec contracts are separate concerns.
+
+For a v1 outer proposal carrying a legacy child body with another attachment
+genus, childGvrsn supplies the signed a.cgvrsn hint that KERIpy uses during replay.
+The builder derives it; it is not an arbitrary caller attribute. Intrinsic child
+genus or matching body/attachment versions need no hint. Frozen canonical-714
+vectors cover all four routes and the intrinsic-genus omission case, comparing
+complete parent bytes and supplemental bytes after removing KERIpy's separately
+owned parent endorsement. This proves encoding parity, not complete bidirectional
+approval interoperability; the receiving workflow remains a separate audit.

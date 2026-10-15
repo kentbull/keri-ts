@@ -1,11 +1,12 @@
 import { Dater, Diger, SerderKERI, TraitDex } from "cesr-ts";
+import type { PreparedCueBatch } from "../core/cue-admission.ts";
 import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
-import { VcStateRecord } from "../core/records.ts";
+import { type RegistrySealFields, VcStateRecord } from "../core/records.ts";
 import {
   acceptReplyDecision,
-  type PreparedReply,
+  type ReplyPlan,
   type ReplyProcessDecision,
   Revery,
   unverifiedReplyDecision,
@@ -22,30 +23,69 @@ function ordinal(value: unknown): value is string {
     && BigInt(`0x${value}`) <= BigInt(Number.MAX_SAFE_INTEGER);
 }
 
-/** Validate only the untrusted notice, including its independently carried anchor commitments. */
-function credentialRecord(data: unknown): VcStateRecord | null {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
-  const row = data as Record<string, unknown>;
-  if (
-    Object.keys(row).some((key) => !["vn", "i", "s", "d", "ri", "ra", "a", "dt", "et"].includes(key))
-    || !ordinal(row.s) || !["iss", "bis", "rev", "brv"].includes(String(row.et))
-    || !qualifiedPrefix(row.ri) || timestampMicros(row.dt) === null
-    || !Array.isArray(row.vn) || row.vn.length !== 2 || row.vn.some((n) => !Number.isSafeInteger(n) || n < 0)
-    || !row.a || typeof row.a !== "object" || Array.isArray(row.a)
-    || !row.ra || typeof row.ra !== "object" || Array.isArray(row.ra)
-  ) return null;
-  const a = row.a as Record<string, unknown>, ra = row.ra as Record<string, unknown>;
-  if (Object.keys(a).length !== 2 || !Number.isSafeInteger(a.s) || Number(a.s) < 0) return null;
-  if (Object.keys(ra).length && (Object.keys(ra).length !== 3 || !qualifiedPrefix(ra.i) || !ordinal(ra.s))) return null;
+/** Require the full qualified digest rather than accepting trailing bytes. */
+function qualifiedDigest(value: unknown): value is string {
   try {
-    for (const digest of [row.i, row.d, a.d, ...(Object.keys(ra).length ? [ra.d] : [])]) {
-      if (typeof digest !== "string" || new Diger({ qb64: digest }).qb64 !== digest) return null;
-    }
-    return VcStateRecord.fromDict(row);
+    return typeof value === "string" && new Diger({ qb64: value }).qb64 === value;
   } catch {
-    return null;
+    return false;
   }
 }
+
+/** Accepted notice seals are either absent or complete, unlike raw TEL projections. */
+type CredentialNotice = Required<VcStateRecord> & {
+  ra: RegistrySealFields | { i?: never; s?: never; d?: never };
+};
+
+/** Validate unknown fields and construct an owned record without erasing its guarantees. */
+function credentialRecord(data: unknown): CredentialNotice | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  if (
+    Object.keys(data).some((key) => !["vn", "i", "s", "d", "ri", "ra", "a", "dt", "et"].includes(key))
+    || !("s" in data) || !ordinal(data.s)
+    || !("et" in data) || (data.et !== "iss" && data.et !== "bis" && data.et !== "rev" && data.et !== "brv")
+    || !("ri" in data) || !qualifiedPrefix(data.ri)
+    || !("dt" in data) || typeof data.dt !== "string" || timestampMicros(data.dt) === null
+    || !("i" in data) || !qualifiedDigest(data.i) || !("d" in data) || !qualifiedDigest(data.d)
+    || !("vn" in data) || !Array.isArray(data.vn) || data.vn.length !== 2
+    || !("a" in data) || !data.a || typeof data.a !== "object" || Array.isArray(data.a)
+    || !("ra" in data) || !data.ra || typeof data.ra !== "object" || Array.isArray(data.ra)
+  ) return null;
+  const version: unknown[] = data.vn;
+  const [major, minor] = version;
+  const a = data.a, rawSeal = data.ra;
+  if (
+    typeof major !== "number" || !Number.isSafeInteger(major) || major < 0
+    || typeof minor !== "number" || !Number.isSafeInteger(minor) || minor < 0
+    || Object.keys(a).length !== 2 || !("s" in a) || typeof a.s !== "number"
+    || !Number.isSafeInteger(a.s) || a.s < 0 || !("d" in a) || !qualifiedDigest(a.d)
+  ) return null;
+  let ra: CredentialNotice["ra"] = {};
+  if (Object.keys(rawSeal).length) {
+    if (
+      Object.keys(rawSeal).length !== 3 || !("i" in rawSeal) || !qualifiedPrefix(rawSeal.i)
+      || !("s" in rawSeal) || !ordinal(rawSeal.s) || !("d" in rawSeal) || !qualifiedDigest(rawSeal.d)
+    ) return null;
+    ra = { i: rawSeal.i, s: rawSeal.s, d: rawSeal.d };
+  }
+  return Object.assign(new VcStateRecord(), {
+    vn: [major, minor],
+    i: data.i,
+    s: data.s,
+    d: data.d,
+    ri: data.ri,
+    ra,
+    a: { s: a.s, d: a.d },
+    dt: data.dt,
+    et: data.et,
+  });
+}
+
+/** Dependency buckets owned by the credential notice receiver. */
+type CredentialEscrowFamily = "credential-mre" | "credential-mae" | "credential-ooo";
+
+/** Credential outcomes retain the receiver's exact dependency family. */
+export type CredentialReplyDecision = ReplyProcessDecision<CredentialEscrowFamily>;
 
 /** Credential TSN admission owns its attester proof, registry dependency and current TEL commitment.
  * Accepted configuration supplies trust; Broker owns pending proofs outside legacy Revery escrow.
@@ -59,62 +99,71 @@ export class CredentialStateReceiver {
   }
 
   /** Revery's canonical route and Broker retries use the same current-state checks. */
-  processReply({ serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs): ReplyProcessDecision {
-    const refuse = (reason: string, escrow?: string) => unverifiedReplyDecision(reason, { escrow });
+  processReply({ serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs): CredentialReplyDecision {
     const record = credentialRecord(serder.ked?.a);
+    const stamp = serder.ked?.dt;
     if (
-      !record || !qualifiedPrefix(aid) || timestampMicros(serder.ked?.dt) === null
+      !record || !qualifiedPrefix(aid) || typeof stamp !== "string" || timestampMicros(stamp) === null
       || route !== `/tsn/credential/${aid}` || serder.said !== diger.qb64 || !serder.verify()
-    ) return refuse("Invalid credential transaction-state notice.");
-    const vci = record.i!, regk = record.ri!, sn = Number.parseInt(record.s!, 16);
+    ) return unverifiedReplyDecision("Invalid credential transaction-state notice.");
+    const vci = record.i, regk = record.ri, sn = Number.parseInt(record.s, 16);
     const previous = this.tvy.reger.txnsb.current([vci, aid]);
     const disposeIncoming = () => {
       if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(diger);
     };
     const reject = (reason: string) => {
       disposeIncoming();
-      return refuse(reason);
+      return unverifiedReplyDecision(reason);
     };
-    const stored = this.tvy.reger.states.get(regk);
-    if (stored && !registryRecord(stored.asDict())) throw new Error("Corrupt stored registry state.");
+    const saved = this.tvy.reger.states.get(regk);
+    const stored = saved ? registryRecord(saved.asDict()) : null;
+    if (saved && !stored) throw new Error("Corrupt stored registry state.");
     const issuer = stored?.ii ?? aid;
     this.publisher.preflight(1);
-    const escrow = (typ: string, query: boolean, proof?: PreparedReply) => {
+    let queries: PreparedCueBatch | undefined;
+    const escrow = (typ: CredentialEscrowFamily, query: boolean, proof?: ReplyPlan): CredentialReplyDecision => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, vci, aid, diger);
-      const cues: AgentCue[] = isNew && query
-        ? [{
+      const cues: AgentCue[] = !isNew || !query
+        ? []
+        : typ === "credential-mae"
+        ? [{ kin: "query", pre: issuer, src: aid, route: "logs", q: {} }]
+        : [{
           kin: "query",
           pre: issuer,
           src: aid,
-          route: typ === "credential-mae" ? "logs" : "tels",
-          query: typ === "credential-mae" ? { i: issuer } : { ri: regk, i: typ === "credential-mre" ? "" : vci },
-        }]
-        : [];
+          route: "tels",
+          q: { ri: regk, i: typ === "credential-mre" ? "" : vci },
+        }];
       this.rvy.cues.checkSpace(cues.length);
       const child = cues.length ? this.publisher.prepare(cues) : undefined;
       try {
-        proof?.applyProofs();
+        if (proof) this.rvy.writeReply(proof);
         const added = this.tvy.reger.txnsb.escrowStateNotice({
           typ,
           pre: vci,
           aid,
           serder,
           diger,
-          dater: new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) }),
+          dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
           cigars,
           tsgs,
         });
         if (added !== isNew) throw new Error("Credential escrow membership changed before publication");
         disposeIncoming();
-        proof?.publishQueries();
+        queries?.publish();
         child?.publish();
-        return refuse("Credential state dependency unavailable.", typ);
+        return {
+          kind: "unverified",
+          reason: "dependencyPending",
+          family: typ,
+          message: "Credential state dependency unavailable.",
+        };
       } finally {
         child?.release();
       }
     };
-    const regsn = record.ra!.s === undefined ? 0 : Number.parseInt(record.ra!.s as string, 16);
-    if (!stored || Number.parseInt(stored.s!, 16) < regsn) return escrow("credential-mre", true);
+    const regsn = record.ra.s === undefined ? 0 : Number.parseInt(record.ra.s, 16);
+    if (!stored || Number.parseInt(stored.s, 16) < regsn) return escrow("credential-mre", true);
     const tever = new Tever({ db: this.tvy.db, reger: this.tvy.reger, rsr: stored });
     if (
       !tever.serder.verify() || tever.serder.said !== stored.d
@@ -128,14 +177,14 @@ export class CredentialStateReceiver {
     }
     if (
       aid !== issuer && !watchers.has(aid)
-      && !(stored.c!.includes(TraitDex.NoBackers) ? kever.wits : stored.b!).includes(aid)
+      && !(stored.c.includes(TraitDex.NoBackers) ? kever.wits : stored.b).includes(aid)
     ) {
       return reject("Untrusted credential state attester.");
     }
     if (previous && (!this.tvy.db.sdts.get([previous.qb64]) || !this.tvy.db.rpys.get([previous.qb64]))) {
       throw new Error("Corrupt prior credential reply evidence.");
     }
-    const proof = this.rvy.prepareReply({
+    const proof = this.rvy.decideReply({
       serder,
       saider: diger,
       route,
@@ -146,11 +195,13 @@ export class CredentialStateReceiver {
       retainPrevious: true,
       externalEscrow: true,
     });
+    this.rvy.cues.checkSpace(proof.cues.length);
+    queries = proof.cues.length ? this.publisher.prepare(proof.cues) : undefined;
     try {
-      if (proof.decision.kind !== "accept") {
-        if (proof.decision.context?.pending) return escrow("credential-mae", false, proof);
-        proof.applyProofs();
-        proof.publishQueries();
+      if (proof.kind !== "accept") {
+        if (proof.reason === "proofPending") return escrow("credential-mae", false, proof);
+        this.rvy.writeReply(proof);
+        queries?.publish();
         return reject("Unverified credential state attester.");
       }
       const accepted = this.tvy.reger.tels.getOn(vci, sn);
@@ -166,29 +217,29 @@ export class CredentialStateReceiver {
       const fields = ["vn", "i", "s", "d", "ri", "dt", "et"] as const;
       if (
         accepted.qb64 !== record.d || fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(current[key]))
-        || ["s", "d"].some((key) => record.a![key] !== current.a![key])
-        || ["i", "s", "d"].some((key) => record.ra![key] !== current.ra![key])
+        || (["s", "d"] as const).some((key) => record.a[key] !== current.a[key])
+        || (["i", "s", "d"] as const).some((key) => record.ra[key] !== current.ra[key])
       ) return reject("Credential state does not match current accepted TEL and anchors.");
       const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
       this.rvy.cues.checkSpace(cues.length);
       const child = this.publisher.prepare(cues);
       try {
-        proof.applyProofs();
+        this.rvy.writeReply(proof);
         this.tvy.reger.txnsb.updateReply(
           aid,
           serder,
           diger,
-          new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) }),
+          new Dater({ qb64: encodeDateTimeToDater(stamp) }),
         );
         if (previous?.qb64 !== diger.qb64) this.rvy.removeReply(previous);
-        proof.publishQueries();
+        queries?.publish();
         child?.publish();
         return acceptReplyDecision();
       } finally {
         child?.release();
       }
     } finally {
-      proof.release();
+      queries?.release();
     }
   }
 
@@ -198,7 +249,9 @@ export class CredentialStateReceiver {
       this.tvy.reger.txnsb.retryStateNotices(typ, (args) => {
         const decision = this.processReply(args);
         if (decision.kind === "accept") return acceptEscrow();
-        return decision.context?.escrow === typ ? keepEscrow("recoverableError") : dropEscrow("processingError");
+        return decision.reason === "dependencyPending" && decision.family === typ
+          ? keepEscrow("recoverableError")
+          : dropEscrow("processingError");
       });
     }
   }

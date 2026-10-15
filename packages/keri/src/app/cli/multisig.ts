@@ -183,19 +183,14 @@ export function* multisigInceptCommand(
       delpre: options.delpre,
       data: options.data ?? [],
     });
-    const payload = {
-      gid: created.hab.pre,
-      smids,
-      rmids,
-      ...(options.delpre ? { delegator: options.delpre } : {}),
-    };
     const deliveries = yield* publishProposal(
       runtime,
       member,
       uniqueMembers([...smids, ...rmids]),
-      MULTISIG_ICP_ROUTE,
-      "icp",
-      payload,
+      {
+        route: MULTISIG_ICP_ROUTE,
+        attrs: { smids, rmids, ...(options.delpre ? { delegator: options.delpre } : {}) },
+      },
       created.message,
     );
 
@@ -327,14 +322,11 @@ export function* multisigInteractCommand(
   yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
     const created = hby.interactGroupHab(group, undefined, { data });
     const smids = groupSigningMembers(hby, created.hab.pre);
-    const payload = { gid: created.hab.pre, smids };
     const deliveries = yield* publishProposal(
       runtime,
       localGroupMember(hby, created.hab.pre),
       smids,
-      MULTISIG_IXN_ROUTE,
-      "ixn",
-      payload,
+      { route: MULTISIG_IXN_ROUTE, attrs: { gid: created.hab.pre, smids } },
       created.message,
     );
     const accepted = yield* waitForGroupAcceptance(
@@ -415,14 +407,11 @@ export function* multisigRotateCommand(
     );
     const smids = commandArgs.smids?.length ? commandArgs.smids : groupSigningMembers(hby, rotated.hab.pre);
     const rmids = commandArgs.rmids?.length ? commandArgs.rmids : smids;
-    const payload = { gid: rotated.hab.pre, smids, rmids };
     const deliveries = yield* publishProposal(
       runtime,
       localGroupMember(hby, rotated.hab.pre),
       uniqueMembers([...smids, ...rmids]),
-      MULTISIG_ROT_ROUTE,
-      "rot",
-      payload,
+      { route: MULTISIG_ROT_ROUTE, attrs: { gid: rotated.hab.pre, smids, rmids } },
       rotated.message,
     );
     const accepted = yield* waitForGroupAcceptance(
@@ -509,11 +498,10 @@ export function* multisigRpyCommand(
 
     console.log(JSON.stringify({
       route: result.route,
-      said: result.said,
+      proposals: result.proposals,
       group: result.group,
       accepted,
       deliveries: result.deliveries,
-      attachmentBytes: result.attachmentBytes,
     }));
   });
 }

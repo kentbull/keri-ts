@@ -365,9 +365,10 @@ export class Keeper {
       return true;
     } catch (error) {
       this.logger.error(`Failed to open Keeper sub-databases: ${error}`);
-      throw new DatabaseOperationError("Failed to open Keeper sub-databases", {
-        cause: error instanceof Error ? error.message : String(error),
-      });
+      throw new DatabaseOperationError(
+        "Failed to open Keeper sub-databases",
+        { cause: error },
+      );
     }
   }
 

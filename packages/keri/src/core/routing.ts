@@ -1,9 +1,10 @@
 import { Cigar, Dater, Diger, Prefixer, ResourceLimitError, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
+import type { PreparedCueBatch } from "./cue-admission.ts";
 import type { CueQueueInput } from "./cue-publishing.ts";
 import { type CuePublisher, cuePublisher } from "./cue-publishing.ts";
-import type { AgentCue } from "./cues.ts";
+import type { QueryCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
@@ -14,7 +15,7 @@ import {
   keepEscrow,
   logEscrowDecision,
 } from "./kever-decisions.ts";
-import type { EndpointRecord, LocationRecord } from "./records.ts";
+import { EndpointRecord, LocationRecord } from "./records.ts";
 import { isRole } from "./roles.ts";
 
 /** Live reply outcome for one reply that was accepted this pass. */
@@ -22,38 +23,61 @@ export interface ReplyAccept {
   kind: "accept";
 }
 
-/** Live reply outcome for one well-formed reply that is not yet accepted. */
+/** Unaccepted proof; proofPending hands recoverable evidence back to the caller. */
 export interface ReplyUnverified {
   kind: "unverified";
+  reason: "notAccepted" | "proofPending";
   message: string;
-  context?: Record<string, unknown>;
 }
 
-/** Typed live reply result used instead of exception-shaped control flow. */
-export type ReplyProcessDecision = ReplyAccept | ReplyUnverified;
+/** Proof verification cannot choose a semantic receiver's dependency family. */
+export type ReplyProofDecision = ReplyAccept | ReplyUnverified;
 
 /**
- * Caller-owned reply preparation for one synchronous guarded turn. Do not suspend
- * between preparation and application: the evaluated BADA state must stay current.
- * Borrowed proof material remains immutable until application or release.
+ * Route handlers own their closed escrow-family types. The shared dispatcher
+ * transports the family name without importing higher-level receiver policy.
  */
-export interface PreparedReply {
-  readonly decision: Readonly<ReplyProcessDecision>;
-  /** Apply accepted/escrow proof effects once, after all semantic cue admission succeeds. */
-  applyProofs(): void;
-  /** Publish admitted queries after proof and semantic publication. */
-  publishQueries(): void;
-  /** Release unpublished query credit and borrowed proof references; idempotent after publication. */
-  release(): void;
-}
+export type ReplyProcessDecision<Family extends string = string> =
+  | ReplyProofDecision
+  | {
+    kind: "unverified";
+    reason: "dependencyPending";
+    family: Family;
+    message: string;
+  };
 
-/** Finite proof writes and concrete query cues discovered without changing BADA or escrow state. */
-interface ReplyAcceptancePlan {
-  decision: ReplyProcessDecision;
-  accepted?: Parameters<Revery["updateReply"]>[0];
-  escrows: Array<Parameters<Revery["escrowReply"]>[0]>;
-  cues: AgentCue[];
-}
+/** Verified reply material has either one cigar or a complete transferable signer group. */
+export type ReplyProof =
+  & {
+    serder: SerderKERI;
+    saider: Diger;
+    dater: Dater;
+  }
+  & (
+    | { kind: "nontransferable"; cigar: Cigar }
+    | {
+      kind: "transferable";
+      prefixer: Prefixer;
+      seqner: DispatchOrdinal;
+      diger: Diger;
+      sigers: Siger[];
+    }
+  );
+
+/**
+ * Plain proof effects and queries discovered without writes or cue ownership.
+ * Consume in the same synchronous owner turn; do not suspend or mutate borrowed
+ * proof material between evaluation and persistence.
+ */
+export type ReplyPlan =
+  & {
+    escrows: ReadonlyArray<Parameters<Revery["escrowReply"]>[0]>;
+    cues: readonly QueryCue[];
+  }
+  & (
+    | (ReplyAccept & { accepted: ReplyProof; previous: Diger | null })
+    | ReplyUnverified
+  );
 
 /** Builder for one accepted live reply decision. */
 export function acceptReplyDecision(): ReplyAccept {
@@ -63,9 +87,26 @@ export function acceptReplyDecision(): ReplyAccept {
 /** Builder for one unverified live reply decision. */
 export function unverifiedReplyDecision(
   message: string,
-  context?: Record<string, unknown>,
 ): ReplyUnverified {
-  return { kind: "unverified", message, context };
+  return { kind: "unverified", reason: "notAccepted", message };
+}
+
+/** Validate a reflective route result before it enters typed reply processing. */
+function isReplyDecision(value: unknown): value is ReplyProcessDecision {
+  if (!value || typeof value !== "object") return false;
+  if (!("kind" in value)) return false;
+  if (value.kind === "accept") return true;
+  if (value.kind !== "unverified" || !("message" in value) || typeof value.message !== "string") return false;
+  if (!("reason" in value)) return false;
+  switch (value.reason) {
+    case "notAccepted":
+    case "proofPending":
+      return true;
+    case "dependencyPending":
+      return "family" in value && typeof value.family === "string";
+    default:
+      return false;
+  }
 }
 
 /** Return true when a reply signer has usable threshold material for its key set. */
@@ -295,20 +336,17 @@ export class Router {
           );
         }
       }
-      const decision = fn.call(candidate.resource, {
+      const decision: unknown = fn.call(candidate.resource, {
         ...args,
         route,
         ...params,
       });
-      if (
-        !decision || typeof decision !== "object"
-        || (decision.kind !== "accept" && decision.kind !== "unverified")
-      ) {
+      if (!isReplyDecision(decision)) {
         throw new ValidationError(
           `Reply route ${route} did not return a valid reply decision.`,
         );
       }
-      return decision as ReplyProcessDecision;
+      return decision;
     }
 
     throw new ValidationError(
@@ -442,70 +480,37 @@ export class Revery {
     externalEscrow?: boolean;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
-  }): ReplyProcessDecision {
-    const prepared = this.prepareReply(args);
+  }): ReplyProofDecision {
+    const plan = this.decideReply(args);
+    this.cues.checkSpace(plan.cues.length);
+    const queries = plan.cues.length ? this.publisher.prepare(plan.cues) : undefined;
     try {
-      prepared.applyProofs();
-      prepared.publishQueries();
-      return prepared.decision;
+      this.writeReply(plan);
+      queries?.publish();
+      if (plan.kind === "accept") return acceptReplyDecision();
+      return { kind: plan.kind, reason: plan.reason, message: plan.message };
     } finally {
-      prepared.release();
+      queries?.release();
     }
   }
 
-  /** Hold prospective query ownership while the semantic caller admits its own publication. */
-  prepareReply(args: Parameters<Revery["acceptReply"]>[0]): PreparedReply {
-    this.publisher.preflight((args.tsgs?.length ?? 0) + 1);
-    let plan: ReplyAcceptancePlan | undefined = this.evaluateReply(args);
-    let previous = args.retainPrevious ? null : args.osaider ?? null;
-    let queries = plan.cues;
-    const decision = plan.decision;
-    if (decision.kind === "unverified" && decision.context) Object.freeze(decision.context);
-    Object.freeze(decision);
-    this.cues.checkSpace(queries.length);
-    const batch = queries.length ? this.publisher.prepare(queries) : undefined;
-    let phase: "prepared" | "applying" | "applied" | "published" | "released" = "prepared";
-    return Object.freeze({
-      decision,
-      applyProofs: () => {
-        const proofs = plan;
-        if (phase !== "prepared" || !proofs) throw new Error("Reply preparation is no longer applicable");
-        phase = "applying";
-        try {
-          for (const escrow of proofs.escrows) this.escrowReply(escrow);
-          if (proofs.accepted) {
-            this.updateReply(proofs.accepted);
-            this.removeReply(previous);
-          }
-          phase = "applied";
-        } finally {
-          plan = undefined;
-          previous = null;
-        }
-      },
-      publishQueries: () => {
-        if (phase !== "applied") throw new Error("Reply queries require successful proof application");
-        batch?.publish();
-        phase = "published";
-        queries = [];
-      },
-      release: () => {
-        batch?.release();
-        plan = undefined;
-        previous = null;
-        queries = [];
-        phase = "released";
-      },
-    });
+  /** Persist a plain plan after the caller has admitted all prospective cues. */
+  writeReply(plan: ReplyPlan): void {
+    for (const escrow of plan.escrows) this.escrowReply(escrow);
+    if (plan.kind === "accept") {
+      this.updateReply(plan.accepted);
+      this.removeReply(plan.previous);
+    }
   }
 
   /** Evaluate ordered proof groups with a virtual escrow view before any durable reply effects. */
-  private evaluateReply(args: Parameters<Revery["acceptReply"]>[0]): ReplyAcceptancePlan {
+  decideReply(args: Parameters<Revery["acceptReply"]>[0]): ReplyPlan {
+    this.publisher.preflight((args.tsgs?.length ?? 0) + 1);
     if ((args.tsgs?.length ?? 0) > this.maxReplyGroups || (args.cigars?.length ?? 0) > this.maxReplyGroups) {
       throw new ResourceLimitError("Reply proof groups exceed configured work limit");
     }
-    const escrows: ReplyAcceptancePlan["escrows"] = [];
-    const cues: AgentCue[] = [];
+    const escrows: Array<Parameters<Revery["escrowReply"]>[0]> = [];
+    const cues: QueryCue[] = [];
     // Same-call groups see the last staged pin exactly as they previously saw the durable write.
     const staged = new Map<string, Parameters<Revery["escrowReply"]>[0]>();
     const groupKey = (pre: string, snh: string, said: string) => `${pre}.${snh}.${said}`;
@@ -538,10 +543,11 @@ export class Revery {
       }
 
       return {
-        decision: acceptReplyDecision(),
+        kind: "accept",
+        previous: args.retainPrevious ? null : args.osaider ?? null,
         escrows,
         cues,
-        accepted: { serder: args.serder, saider: args.saider, dater, cigar },
+        accepted: { kind: "nontransferable", serder: args.serder, saider: args.saider, dater, cigar },
       };
     }
 
@@ -574,7 +580,7 @@ export class Revery {
           sigers: [...tsg.sigers],
         });
         this.cues.checkSpace(cues.length + 1);
-        cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
+        cues.push({ kin: "query", pre: tsg.pre, route: "logs", q: {} });
         continue;
       }
 
@@ -636,10 +642,12 @@ export class Revery {
 
       if (tholder.satisfy([...seen])) {
         return {
-          decision: acceptReplyDecision(),
+          kind: "accept",
+          previous: args.retainPrevious ? null : args.osaider ?? null,
           escrows,
           cues,
           accepted: {
+            kind: "transferable",
             serder: args.serder,
             saider: args.saider,
             dater,
@@ -666,10 +674,9 @@ export class Revery {
     return {
       escrows,
       cues,
-      decision: unverifiedReplyDecision(
-        `Reply ${args.saider.qb64} at route ${args.route} was not accepted.`,
-        { said: args.saider.qb64, route: args.route, aid: args.aid, ...(args.externalEscrow ? { pending } : {}) },
-      ),
+      kind: "unverified",
+      reason: args.externalEscrow && pending ? "proofPending" : "notAccepted",
+      message: `Reply ${args.saider.qb64} at route ${args.route} was not accepted.`,
     };
   }
 
@@ -682,28 +689,16 @@ export class Revery {
    * - `scgs.` for stored verfer+cigar tuples
    * - `ssgs.` for transferable signature groups
    */
-  updateReply(args: {
-    serder: SerderKERI;
-    saider: Diger;
-    dater: Dater;
-    cigar?: Cigar;
-    prefixer?: Prefixer;
-    seqner?: DispatchOrdinal;
-    diger?: Diger;
-    sigers?: Siger[];
-  }): void {
+  updateReply(args: ReplyProof): void {
     const said = args.saider.qb64;
     this.db.sdts.pin([said], args.dater);
     this.db.rpys.pin([said], args.serder);
-    if (args.cigar) {
+    if (args.kind === "nontransferable") {
       this.db.scgs.pin([said], [[
         requireReplyCigarVerfer(args.cigar),
         args.cigar,
       ]]);
-    }
-    if (
-      args.prefixer && args.seqner !== undefined && args.diger && args.sigers
-    ) {
+    } else {
       this.db.ssgs.pin(
         [
           said,
@@ -835,41 +830,26 @@ export class Revery {
     const serder = this.db.rpys.get([diger.qb64]);
     const tsgs = fetchStoredTsgs(this.db, diger.qb64);
     if (!dater || !serder || tsgs.length === 0) {
-      return dropEscrow("missingEscrowArtifact", {
-        message: `Missing escrow artifacts at said=${diger.qb64} for reply replay.`,
-        context: {
-          said: diger.qb64,
-          hasDater: !!dater,
-          hasSerder: !!serder,
-          tsgCount: tsgs.length,
-        },
-      });
+      return dropEscrow(
+        "missingEscrowArtifact",
+        `Missing reply escrow artifacts at said=${diger.qb64}: dater=${!!dater}, serder=${!!serder}, tsgs=${tsgs.length}.`,
+      );
     }
     if (Date.now() - new Date(dater.dts).getTime() > Revery.TimeoutRPE) {
-      return dropEscrow("stale", {
-        message: `Stale reply escrow at route = ${serder.route ?? "<unknown>"}.`,
-        context: { said: diger.qb64, route: serder.route },
-      });
+      return dropEscrow("stale", `Stale reply escrow at said=${diger.qb64}, route=${serder.route ?? "<unknown>"}.`);
     }
     try {
       const decision = this.processReply({ serder, tsgs });
       if (decision.kind === "unverified") {
-        return keepEscrow("unverifiedReply", {
-          message: decision.message,
-          context: {
-            said: diger.qb64,
-            route: serder.route,
-            ...(decision.context ?? {}),
-          },
-        });
+        return keepEscrow("unverifiedReply", `${decision.message} (said=${diger.qb64}, route=${serder.route})`);
       }
       return acceptEscrow();
     } catch (error) {
       if (error instanceof ResourceLimitError) throw error;
-      return dropEscrow("processingError", {
-        message: error instanceof Error ? error.message : String(error),
-        context: { said: diger.qb64, route: serder.route },
-      });
+      return dropEscrow(
+        "processingError",
+        `${error instanceof Error ? error.message : String(error)} (said=${diger.qb64}, route=${serder.route})`,
+      );
     }
   }
 }
@@ -883,14 +863,8 @@ export class Revery {
  *   `Kevery` port is complete
  */
 export class BasicReplyRouteHandler {
-  readonly db: Baser;
-  readonly rvy: Revery;
-
   /** Create one reply-route handler bound to one reply verifier and database. */
-  constructor(db: Baser, rvy: Revery) {
-    this.db = db;
-    this.rvy = rvy;
-  }
+  constructor(readonly rvy: Revery) {}
 
   /**
    * Register the Gate E reply routes handled by this bootstrap handler.
@@ -919,9 +893,9 @@ export class BasicReplyRouteHandler {
     saider: Diger,
     allowed: boolean,
   ): void {
-    this.db.eans.pin(keys, saider);
-    const existing = this.db.ends.get(keys) ?? {} as EndpointRecord;
-    this.db.ends.pin(keys, { ...existing, allowed });
+    this.rvy.db.eans.pin(keys, saider);
+    const existing = this.rvy.db.ends.get(keys);
+    this.rvy.db.ends.pin(keys, new EndpointRecord({ ...existing?.asDict(), allowed }));
   }
 
   /**
@@ -932,9 +906,9 @@ export class BasicReplyRouteHandler {
    * - `locs.` stores the latest URL projection by endpoint and scheme
    */
   updateLoc(keys: [string, string], saider: Diger, url: string): void {
-    this.db.lans.pin(keys, saider);
-    const existing = this.db.locs.get(keys) ?? {} as LocationRecord;
-    this.db.locs.pin(keys, { ...existing, url });
+    this.rvy.db.lans.pin(keys, saider);
+    const existing = this.rvy.db.locs.get(keys);
+    this.rvy.db.locs.pin(keys, new LocationRecord({ ...existing?.asDict(), url }));
   }
 
   /**
@@ -944,14 +918,13 @@ export class BasicReplyRouteHandler {
    * - validates route/body shape
    * - derives the BADA route base `/end/role`
    * - applies same-SAID idempotence before acceptance
-   * - delegates signature/staleness logic to `Revery.acceptReply`
-   * - updates `eans.` and `ends.` on success
+   * - evaluates proof and updates proof/`eans.`/`ends.` in its own transaction
+   * - publishes queries only after that commit; caller-owned writers are refused
    */
   processReplyEndRole(args: {
     serder: SerderKERI;
     diger: Diger;
     route: string;
-    action?: string;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
@@ -966,14 +939,13 @@ export class BasicReplyRouteHandler {
       );
     }
 
-    const data = args.serder.ked?.a as Record<string, unknown> | undefined;
-    const cid = typeof data?.cid === "string"
-      ? new Prefixer({ qb64: data.cid }).qb64
-      : null;
-    const role = typeof data?.role === "string" ? data.role : null;
-    const eid = typeof data?.eid === "string"
-      ? new Prefixer({ qb64: data.eid }).qb64
-      : null;
+    const data = args.serder.ked?.a;
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new ValidationError("Missing one of cid/role/eid in /end/role reply.");
+    }
+    const cid = "cid" in data && typeof data.cid === "string" ? new Prefixer({ qb64: data.cid }).qb64 : null;
+    const role = "role" in data && typeof data.role === "string" ? data.role : null;
+    const eid = "eid" in data && typeof data.eid === "string" ? new Prefixer({ qb64: data.eid }).qb64 : null;
     if (!cid || !role || !eid) {
       throw new ValidationError(
         "Missing one of cid/role/eid in /end/role reply.",
@@ -984,28 +956,37 @@ export class BasicReplyRouteHandler {
     }
 
     const keys: [string, string, string] = [cid, role, eid];
-    let osaider = this.db.eans.get(keys);
-    if (osaider && osaider.qb64 === args.diger.qb64) {
-      osaider = null;
+    if (this.rvy.db.inWriteTransaction) {
+      throw new Error("Endpoint handler must own the reply transaction; process replies outside caller-owned writers");
     }
-    const decision = this.rvy.acceptReply({
-      serder: args.serder,
-      saider: args.diger,
-      route: "/end/role",
-      aid: cid,
-      osaider,
-      cigars: args.cigars,
-      tsgs: args.tsgs,
-    });
-    if (decision.kind === "unverified") {
-      return unverifiedReplyDecision(
-        `Unverified end role reply = ${args.serder.said} role = ${role}`,
-        { role, cid, eid, route: args.route },
-      );
+    let queries: PreparedCueBatch | undefined;
+    try {
+      const decision = this.rvy.db.env!.transactionSync(() => {
+        let osaider = this.rvy.db.eans.get(keys);
+        if (osaider?.qb64 === args.diger.qb64) osaider = null;
+        const plan = this.rvy.decideReply({
+          serder: args.serder,
+          saider: args.diger,
+          route: "/end/role",
+          aid: cid,
+          osaider,
+          cigars: args.cigars,
+          tsgs: args.tsgs,
+        });
+        this.rvy.cues.checkSpace(plan.cues.length);
+        queries = plan.cues.length ? cuePublisher(this.rvy.cues).prepare(plan.cues) : undefined;
+        this.rvy.writeReply(plan);
+        if (plan.kind === "unverified") {
+          return unverifiedReplyDecision(`Unverified end role reply = ${args.serder.said} role = ${role}`);
+        }
+        this.updateEnd(keys, args.diger, allowed);
+        return acceptReplyDecision();
+      });
+      queries?.publish();
+      return decision;
+    } finally {
+      queries?.release();
     }
-
-    this.updateEnd(keys, args.diger, allowed);
-    return acceptReplyDecision();
   }
 
   /**
@@ -1016,8 +997,8 @@ export class BasicReplyRouteHandler {
    * - same-SAID replay is treated as idempotent, not stale
    * - URL/scheme consistency is validated before reply acceptance
    *
-   * On success this updates `lans.` and `locs.` with the accepted location
-   * projection for the endpoint.
+   * Proof, `lans.` and `locs.` commit together in this owner's transaction;
+   * query publication follows commit. Caller-owned writers are refused.
    */
   processReplyLocScheme(args: {
     serder: SerderKERI;
@@ -1031,12 +1012,13 @@ export class BasicReplyRouteHandler {
         `Unsupported route=${args.route} in reply message.`,
       );
     }
-    const data = args.serder.ked?.a as Record<string, unknown> | undefined;
-    const eid = typeof data?.eid === "string"
-      ? new Prefixer({ qb64: data.eid }).qb64
-      : null;
-    const scheme = typeof data?.scheme === "string" ? data.scheme : null;
-    const url = typeof data?.url === "string" ? data.url : null;
+    const data = args.serder.ked?.a;
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new ValidationError("Missing one of eid/scheme/url in /loc/scheme reply.");
+    }
+    const eid = "eid" in data && typeof data.eid === "string" ? new Prefixer({ qb64: data.eid }).qb64 : null;
+    const scheme = "scheme" in data && typeof data.scheme === "string" ? data.scheme : null;
+    const url = "url" in data && typeof data.url === "string" ? data.url : null;
     if (!eid || !scheme || url === null) {
       throw new ValidationError(
         "Missing one of eid/scheme/url in /loc/scheme reply.",
@@ -1052,27 +1034,36 @@ export class BasicReplyRouteHandler {
     }
 
     const keys: [string, string] = [eid, scheme];
-    let osaider = this.db.lans.get(keys);
-    if (osaider && osaider.qb64 === args.diger.qb64) {
-      osaider = null;
+    if (this.rvy.db.inWriteTransaction) {
+      throw new Error("Endpoint handler must own the reply transaction; process replies outside caller-owned writers");
     }
-    const decision = this.rvy.acceptReply({
-      serder: args.serder,
-      saider: args.diger,
-      route: "/loc/scheme",
-      aid: eid,
-      osaider,
-      cigars: args.cigars,
-      tsgs: args.tsgs,
-    });
-    if (decision.kind === "unverified") {
-      return unverifiedReplyDecision(
-        `Unverified loc scheme reply URL=${url} SAID=${args.serder.said}`,
-        { eid, scheme, url, route: args.route },
-      );
+    let queries: PreparedCueBatch | undefined;
+    try {
+      const decision = this.rvy.db.env!.transactionSync(() => {
+        let osaider = this.rvy.db.lans.get(keys);
+        if (osaider?.qb64 === args.diger.qb64) osaider = null;
+        const plan = this.rvy.decideReply({
+          serder: args.serder,
+          saider: args.diger,
+          route: "/loc/scheme",
+          aid: eid,
+          osaider,
+          cigars: args.cigars,
+          tsgs: args.tsgs,
+        });
+        this.rvy.cues.checkSpace(plan.cues.length);
+        queries = plan.cues.length ? cuePublisher(this.rvy.cues).prepare(plan.cues) : undefined;
+        this.rvy.writeReply(plan);
+        if (plan.kind === "unverified") {
+          return unverifiedReplyDecision(`Unverified loc scheme reply URL=${url} SAID=${args.serder.said}`);
+        }
+        this.updateLoc(keys, args.diger, url);
+        return acceptReplyDecision();
+      });
+      queries?.publish();
+      return decision;
+    } finally {
+      queries?.release();
     }
-
-    this.updateLoc(keys, args.diger, url);
-    return acceptReplyDecision();
   }
 }

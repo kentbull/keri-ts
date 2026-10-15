@@ -75,6 +75,9 @@ verifying the preceding effective binding. Blinded updates reuse the staged fron
 Registry owns local blind/present/vacate construction and staged-frontier selection.
 RegistryEventer shares validation, acceptance, anchoring and retries with observers,
 exposing validated head metadata rather than local construction methods.
+This deliberately differs from KERIpy 71438328, whose Registry delegates these
+constructors to its eventer: the TypeScript observer shares that engine, so local
+disclosure derivation stays with the local Registry without changing wire policy.
 V2 local blind validates its schema before deriving any commitment. Keep missing
 resource, invalid content, resource limits and infrastructure failures distinct.
 The static 71438328 schema profile is separately qualified; preserve frozen927

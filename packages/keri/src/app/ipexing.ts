@@ -11,7 +11,7 @@
  */
 import type { Kind, SerderKERI, Versionage } from "cesr-ts";
 import type { RegistryStore } from "../acdc/registering.ts";
-import { exchange } from "../core/protocol-exchanging.ts";
+import { exchange, type IpexVerb, isIpexVerb } from "../core/protocol-exchanging.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { IpexV2Handler } from "./ipex-v2.ts";
@@ -36,7 +36,7 @@ export const IPEX_ROUTES = [
 ] as const;
 
 export type IpexRoute = typeof IPEX_ROUTES[number];
-export type IpexVerb = "apply" | "offer" | "agree" | "grant" | "admit" | "spurn";
+export type { IpexVerb } from "../core/protocol-exchanging.ts";
 
 /** Previous-route policy from KERIpy `PreviousRoutes`. */
 export const PREVIOUS_IPEX_ROUTES: ReadonlyMap<IpexVerb, readonly IpexVerb[]> = new Map([
@@ -326,15 +326,6 @@ function ipexVerbForRoute(route: string): IpexVerb | null {
   }
   const verb = parts[2];
   return isIpexVerb(verb) ? verb : null;
-}
-
-function isIpexVerb(value: string): value is IpexVerb {
-  return value === "apply"
-    || value === "offer"
-    || value === "agree"
-    || value === "grant"
-    || value === "admit"
-    || value === "spurn";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
