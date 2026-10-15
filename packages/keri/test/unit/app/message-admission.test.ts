@@ -236,7 +236,7 @@ Deno.test("optional KRAM retires acceptance before downstream failure", async ()
       const fail = function*(ready?: import("../../../src/core/dispatch.ts").KeriDispatchEnvelope) {
         assertEquals(ready!.sigers.map((sig) => sig.index), [0, 1]);
         assertEquals(hby.db.pmkm.get(key), null, "partial state is retired before consumption");
-        assertEquals(runtime.reactor.kevery.kramer!.prune().kind, "busy");
+        assertEquals(runtime.reactor.kevery.kramer!.prune().kind, "pruned");
         throw failure;
       };
       yield* call(() =>

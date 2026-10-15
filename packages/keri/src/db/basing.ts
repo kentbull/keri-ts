@@ -507,7 +507,6 @@ export class Baser {
   public msgc!: Komer<MsgCacheRecord>; // KRAM message-cache records.
   public xdt!: CesrSuber<Dater>; // Shared KRAM exchange opener time keyed by XID.
   public tmsc!: Komer<TxnMsgCacheRecord>; // KRAM transactioned message-cache records.
-  public kpnd!: BytesSuber; // Private KRAM parent snapshots, never accepted wire publication.
   public ulgs!: CesrIoSetSuber<Prefixer>; // Foreign last references unresolved at original receipt.
   public cigs!: CatCesrIoSetSuber<VerferCigarCouple>; // Independently owned foreign cigar proofs.
   public pmkm!: SerderSuber<SerderKERI>; // KRAM partially signed multi-key messages.
@@ -1138,7 +1137,6 @@ export class Baser {
         },
       );
 
-      this.kpnd = new BytesSuber(this.lmdber, { subkey: "kpnd." });
       this.ulgs = new CesrIoSetSuber<Prefixer>(this.lmdber, { subkey: "ulgs.", ctor: Prefixer });
       this.cigs = new CatCesrIoSetSuber<VerferCigarCouple>(this.lmdber, { subkey: "cigs.", ctor: [Verfer, Cigar] });
 

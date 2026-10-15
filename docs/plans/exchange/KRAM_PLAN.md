@@ -8,7 +8,7 @@ Owner: roadmap **3f**, within [exchange admission](EXCHANGE_ADMISSION_PLAN.md).
 K1–K10 are implemented. They cover
 storage, microsecond time, policy, source/signature normalization, durable partial
 staging and cache pruning. The added ready/snapshot acknowledgement handoff
-is a removal target, not KERIpy parity. The donor [#172][snapshot] remains
+has been removed; synchronous intake returns ordinary decisions. The donor [#172][snapshot] remains
 recoverable evidence, not a merge target.
 
 ## Implemented boundaries requiring composed qualification
@@ -61,7 +61,7 @@ supported partial/restart behavior without an added ready snapshot or downstream
 acknowledgement. Children remain independently unaccepted. Cancellation joins real
 reads and disposal; downstream failure must follow KERIpy acceptance semantics.
 
-Remove kready./kpnd., ready-resume paths, factor/copy credits, body/item quotas and
+Keep kready./kpnd., ready-resume paths and factor/copy credits deleted. Remove remaining body/item quotas and
 policy arguments. Keep verified distinct signatures, sender establishment state,
 foreign attachment factors and KERIpy replay/timeliness caches and pruning.
 No old-version data migration or compatibility tests. Optional intake retains

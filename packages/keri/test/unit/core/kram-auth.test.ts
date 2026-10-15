@@ -3,19 +3,14 @@ import {
   b,
   Diger,
   discardFrame,
-  type EssrPayload,
-  essrPayload,
-  MemoryPayloadSink,
   NumberPrimitive,
   parseBytes,
   Prefixer,
-  ResourcePolicy,
   SerderKERI,
   Siger,
-  Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { KeriDispatchEnvelope, TransLastIdxSigGroup } from "../../../src/core/dispatch.ts";
@@ -23,9 +18,7 @@ import { authenticateKramSource } from "../../../src/core/kram-auth.ts";
 import { KramPolicy } from "../../../src/core/kram-policy.ts";
 import { verifyKramSignatures } from "../../../src/core/kram-signatures.ts";
 import { stageKram } from "../../../src/core/kram-staging.ts";
-import { CacheTypeRecord } from "../../../src/core/records.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import { removeKramFactors } from "../../../src/db/kram-factors.ts";
 import signatureFixture from "../../fixtures/kram-signatures-927.json" with { type: "json" };
 import fixture from "../../fixtures/kram-source-auth-927.json" with { type: "json" };
 
@@ -213,7 +206,6 @@ Deno.test("KRAM staging atomically pools frozen proofs, retires accepted partial
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const receipt = "2026-10-13T12:00:02.000000+00:00", later = "2026-10-13T12:00:03.000000+00:00";
-    const resources = new ResourcePolicy();
     const policy = new KramPolicy(hby.db, {
       enabled: true,
       caches: { "~": [1000, 3000, 10000, 60000, 3000, 10000, 60000] },
@@ -228,10 +220,6 @@ Deno.test("KRAM staging atomically pools frozen proofs, retires accepted partial
         attachmentGroups: [],
         local: false,
       });
-    let owner: EssrPayload | undefined;
-    const unexpected = function*() {
-      throw new Error("pending invoked consumer");
-    };
     /** Accept actual fixture KEL wire and join its frame owner before staging. */
     const acceptKel = function*(wire: string) {
       const [frame] = yield* call(() => parseBytes(b(wire)));
@@ -251,14 +239,14 @@ Deno.test("KRAM staging atomically pools frozen proofs, retires accepted partial
         sigers: [new Siger({ qb64: proofs.prior0 })],
       });
       const priorKey = [prior.serder.pre!, prior.serder.said!];
-      assertEquals(yield* stageKram(hby.db, policy, resources, prior, receipt, unexpected), {
+      assertEquals(stageKram(hby.db, policy, prior, receipt), {
         kind: "pending",
         key: priorKey,
       });
       for (const wire of [...fixture.kel.slice(1), ...signatureFixture.kel.filter((_, i) => i !== 1)]) {
         yield* acceptKel(wire);
       }
-      assertEquals(yield* stageKram(hby.db, policy, resources, prior, later, unexpected), {
+      assertEquals(stageKram(hby.db, policy, prior, later), {
         kind: "drop",
         reason: "replay",
       });
@@ -276,12 +264,12 @@ Deno.test("KRAM staging atomically pools frozen proofs, retires accepted partial
         nests: [child],
         ssgs: [last],
       });
-      assertEquals(yield* stageKram(hby.db, policy, resources, first, receipt, unexpected), { kind: "pending", key });
+      assertEquals(stageKram(hby.db, policy, first, receipt), { kind: "pending", key });
       assertEquals(hby.db.pmks.get(key).map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only]);
       assertExists(hby.db.pmkm.get(key), "same-index variants remain partial");
       assertEquals(hby.db.ulgs.get(key).map((prefix) => prefix.qb64), [foreign]);
       yield* acceptKel(signatureFixture.kel[1]);
-      assertEquals(yield* stageKram(hby.db, policy, resources, input(["sender0"]), later, unexpected), {
+      assertEquals(stageKram(hby.db, policy, input(["sender0"]), later), {
         kind: "pending",
         key,
       });
@@ -290,68 +278,32 @@ Deno.test("KRAM staging atomically pools frozen proofs, retires accepted partial
         [foreign],
         "KEL recovery alone preserves unknown proof",
       );
-      const snapshot = hby.db.kpnd.get(key);
-      assertExists(snapshot);
       const repeat = new KeriDispatchEnvelope({
         ...input(["sender0"]),
         attachmentGroups: [],
         ssts: [{ i: new Prefixer({ qb64: foreign }), s: NumberPrimitive.fromNum(0n), d: new Diger({ qb64: foreign }) }],
         ssgs: [last],
       });
-      assertEquals(yield* stageKram(hby.db, policy, resources, repeat, later, unexpected), { kind: "pending", key });
+      assertEquals(stageKram(hby.db, policy, repeat, later), { kind: "pending", key });
       assertEquals(hby.db.ssts.get(key).map(([prefix]) => prefix.qb64), [foreign]);
       assertEquals(hby.db.ulgs.get(key), [], "fresh known-last receipt clears the earlier marker");
-      assertEquals(hby.db.kpnd.get(key), snapshot, "retry preserves independent saved child");
-      const ready = yield* stageKram(
-        hby.db,
-        policy,
-        resources,
-        input(["sender1"]),
-        later,
-        function*(envelope, stagedKey, clock) {
-          assertEquals(stagedKey, key);
-          assertEquals(clock, later);
-          assertEquals(envelope.sigers.map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only, proofs.sender1]);
-          assertEquals(envelope.nests[0].body.raw, child.body.raw);
-          assertEquals(envelope.ssts.map((triple) => triple.i.qb64), [foreign]);
-          assertEquals(envelope.unresolvedLast, []);
-          assertEquals(envelope.tsgs.filter((group) => group.pre === foreign).map((group) => [group.sn, group.said]), [[
-            0n,
-            foreign,
-          ]]);
-          assertEquals(
-            hby.db.msgc.get([child.body.pre!, child.body.said!]),
-            null,
-            "parent admission never admits child",
-          );
-          assertEquals(hby.db.pmkm.get(key), null, "acceptance retires partials before consumption");
-          return "consumed";
-        },
+      const ready = stageKram(hby.db, policy, input(["sender1"]), later);
+      assertEquals(ready.kind, "ready");
+      if (ready.kind !== "ready") throw new Error("threshold not satisfied");
+      assertEquals(ready.key, key);
+      assertEquals(ready.receiverTime, later);
+      assertEquals(ready.envelope.sigers.map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only, proofs.sender1]);
+      assertEquals(ready.envelope.nests, [], "partial receipts do not persist child frames");
+      assertEquals(ready.envelope.ssts.map((triple) => triple.i.qb64), [foreign]);
+      assertEquals(ready.envelope.unresolvedLast, []);
+      assertEquals(
+        ready.envelope.tsgs.filter((group) => group.pre === foreign).map((group) => [group.sn, group.said]),
+        [[0n, foreign]],
       );
-      assertEquals(ready, { kind: "ready", key, receiverTime: later, value: "consumed" });
-      const sink = new MemoryPayloadSink(8);
-      yield* call(() => sink.write(b("4BABYWJj")));
-      owner = essrPayload(yield* call(() => sink.finish()), 1, 3, Vrsn_2_0);
-      const wire = owner.wire;
+      assertEquals(hby.db.msgc.get([child.body.pre!, child.body.said!]), null, "parent intake never admits child");
+      assertEquals(hby.db.pmkm.get(key), null, "acceptance retires partials before returning");
       yield* call(() => hby.db.reopen());
-      assertEquals(yield* stageKram(hby.db, policy, resources, input(["sender1"]), later, unexpected), {
-        kind: "drop",
-        reason: "replay",
-      });
-      hby.db.msgc.rem(key);
-      const failConsumer = function*() {
-        throw new Error("handoff failed");
-      };
-      yield* call(() =>
-        assertRejects(
-          () => run(() => stageKram(hby.db, policy, resources, input(["sender0", "sender1"]), receipt, failConsumer)),
-          Error,
-          "handoff failed",
-        )
-      );
-      assertEquals(hby.db.pmkm.get(key), null);
-      assertExists(hby.db.msgc.get(key));
-      assertEquals(yield* stageKram(hby.db, policy, resources, first, later, unexpected), {
+      assertEquals(stageKram(hby.db, policy, input(["sender1"]), later), {
         kind: "drop",
         reason: "replay",
       });
@@ -368,13 +320,7 @@ Deno.test("KRAM staging atomically pools frozen proofs, retires accepted partial
           attachmentGroups: [],
           nests: [child],
         });
-        yield* call(() =>
-          assertRejects(
-            () => run(() => stageKram(hby.db, policy, resources, complete, receipt, unexpected)),
-            Error,
-            "partial cleanup failed",
-          )
-        );
+        assertThrows(() => stageKram(hby.db, policy, complete, receipt), Error, "partial cleanup failed");
       } finally {
         hby.db.pmkm.rem = remove;
       }
@@ -383,35 +329,8 @@ Deno.test("KRAM staging atomically pools frozen proofs, retires accepted partial
         hby.db.pmkm.get(key),
         hby.db.pmsk.get(key),
         hby.db.pmks.get(key),
-        hby.db.kpnd.get(key),
-      ], [null, null, null, [], null]);
-      // A real serializer read changes current policy before the transaction rechecks admission.
-      const original = hby.db.ctyp.get("~")!;
-      const changed = new KeriDispatchEnvelope({
-        ...input(["sender0", "sender1"]),
-        attachmentGroups: [],
-        essr: {
-          ...owner,
-          wire: {
-            size: wire.size,
-            async *open(signal?: AbortSignal) {
-              hby.db.ctyp.pin("~", new CacheTypeRecord({ d: 0, sl: 1, ll: 1, xl: 1, psl: 1, pll: 1, pxl: 1 }));
-              yield* wire.open(signal);
-            },
-          },
-        },
-      });
-      try {
-        assertEquals(yield* stageKram(hby.db, policy, resources, changed, later, unexpected), {
-          kind: "drop",
-          reason: "timeliness",
-        });
-        assertEquals([hby.db.msgc.get(key), hby.db.pmkm.get(key), hby.db.kpnd.get(key)], [null, null, null]);
-      } finally {
-        hby.db.ctyp.pin("~", original);
-      }
+      ], [null, null, null, []]);
     } finally {
-      if (owner) yield* call(() => owner!.discard());
       yield* hby.close(true);
     }
   });

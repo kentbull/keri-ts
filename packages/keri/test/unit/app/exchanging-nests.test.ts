@@ -1,32 +1,28 @@
-import { standaloneCues } from "../../private-access.ts";
 /** Real forwarding admission, durable child evidence, and ownership at failure/replay boundaries. */
 import {
   b,
   bytesEqual,
   type CesrFrame,
   collectPayload,
-  concatBytes,
   Dater,
   Diger,
   discardFrame,
-  type EssrPayload,
   essrPayload,
   framePayload,
   MemoryPayloadSink,
   nestedPayload,
-  NumberPrimitive,
   parse,
   parseBytes,
   Prefixer,
   ResourceAdmissionError,
   ResourceLimitError,
   ResourcePolicy,
-  SerderKERI,
+  type SerderKERI,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run, suspend } from "effection";
-import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { call, run } from "effection";
+import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import depthVector from "../../../../cesr/test/fixtures/nested-depth.json" with { type: "json" };
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
@@ -37,22 +33,13 @@ import { openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import { DeckFullError } from "../../../src/core/deck.ts";
-import { KeriDispatchEnvelope, TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { isKramHandoffActive, KramHandoff } from "../../../src/core/kram-handoff.ts";
-import { KramPolicy } from "../../../src/core/kram-policy.ts";
+import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../../src/core/protocol-serialization.ts";
 import { suffix } from "../../../src/db/core/keys.ts";
 import { chargeNests, discardNests, loadNests, publishNests, stageNests } from "../../../src/db/exchange-nests.ts";
 import { MAX_NESTED_WIRE_BYTES, NESTED_COPY_RESERVATION_BYTES } from "../../../src/db/exchange-nests.ts";
-import {
-  kramSnapshotIdentity,
-  removeKramSnapshot,
-  snapshotKram,
-  storeKramSnapshot,
-  withKramHydration,
-  withKramSnapshot,
-} from "../../../src/db/kram-snapshots.ts";
+
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 
 /** Share a real habitat and authorized witness mailbox across each independent scenario. */
@@ -611,631 +598,7 @@ Deno.test("nested recovery removes abandoned staging and unowned wire, retaining
   });
 });
 
-Deno.test("private KRAM snapshots reopen scalar factors and independent children without accepting wire", async () => {
-  await scenario(async (hby, sender, recipient, provider) => {
-    const nest = await child(sender, "partial-child");
-    const input = forward(sender, recipient, provider, nest);
-    const [parent] = await parseBytes(
-      serializeMessage(input.serder, { tsgs: input.tsgs, gvrsn: Vrsn_2_0, genusify: true }),
-    );
-    parent.nests = [nest];
-    const originalWire = await attachEssr(parent), childWire = await attachEssr(nest);
-    const incoming = envelopeFromFrame(parent), key = [sender.pre, parent.body.said!];
-    const snapshot = await run(() => snapshotKram(incoming));
-    assertExists(snapshot);
-    const resources = new ResourcePolicy();
-    assertEquals(
-      await run(() =>
-        withKramSnapshot(incoming, resources, (wire) => {
-          assertEquals(resources.used.bytes, 2 * MAX_NESTED_WIRE_BYTES);
-          assertEquals(wire, snapshot);
-          hby.db.env!.transactionSync(() => storeKramSnapshot(hby.db, key, wire));
-          return "published";
-        })
-      ),
-      "published",
-    );
-    assertEquals(resources.used.bytes, 0);
-    await assertRejects(
-      () =>
-        run(() =>
-          withKramSnapshot(incoming, resources, (wire) => {
-            hby.db.env!.transactionSync(() => {
-              hby.db.kpnd.pin(key, wire!.slice(0, -4));
-              throw new Error("snapshot publication unavailable");
-            });
-          })
-        ),
-      Error,
-      "snapshot publication unavailable",
-    );
-    assertEquals(resources.used.bytes, 0);
-    assertEquals(hby.db.kpnd.get(key), snapshot, "failed transaction preserves durable wire");
-    const native = hby.db.kpnd.sdb, copy = native.getBinary;
-    let copies = 0;
-    native.getBinary = function(...args) {
-      copies++;
-      return copy.apply(this, args);
-    };
-    try {
-      const unavailable = new ResourcePolicy({ bytes: 0 });
-      assertEquals(kramSnapshotIdentity(hby.db, ["absent"], unavailable), null);
-      assertThrows(() => kramSnapshotIdentity(hby.db, key, unavailable), ResourceAdmissionError);
-      assertEquals(copies, 0, "shared refusal precedes private-row owned copies");
-      await assertRejects(
-        () => run(() => withKramHydration(hby.db, key, incoming, unavailable, function*() {})),
-        ResourceAdmissionError,
-      );
-      assertEquals(copies, 0, "hydration admission precedes both owned row copies");
-      hby.db.kpnd.pin(key, new Uint8Array(MAX_NESTED_WIRE_BYTES + 1));
-      const corrupt = assertThrows(() => kramSnapshotIdentity(hby.db, key, unavailable), Error, "Oversized stored");
-      assertEquals(corrupt instanceof ResourceLimitError, false);
-      assertEquals(copies, 0, "corrupt extent fails before copies and shared admission");
-      hby.db.kpnd.pin(key, snapshot);
-      const digest = new Diger({ raw: Diger.digest(snapshot, "E"), code: "E" }).qb64;
-      assertEquals(kramSnapshotIdentity(hby.db, key, resources), digest);
-      hby.db.env!.transactionSync(() => assertEquals(kramSnapshotIdentity(hby.db, key, resources), digest));
-      assertEquals(resources.used.bytes, 0);
-      native.getBinary = () => {
-        throw new Error("private row unavailable");
-      };
-      assertThrows(() => kramSnapshotIdentity(hby.db, key, resources), Error, "private row unavailable");
-      assertEquals(resources.used.bytes, 0);
-    } finally {
-      native.getBinary = copy;
-    }
-    hby.db.env!.transactionSync(() => {
-      hby.db.pmkm.pin(key, input.serder);
-      hby.db.pmks.put(key, input.tsgs![0].sigers);
-      storeKramSnapshot(hby.db, key, snapshot);
-    });
-    const retry = new KeriDispatchEnvelope({ serder: input.serder, attachmentGroups: [], local: false });
-    assertEquals(await run(() => snapshotKram(retry)), undefined);
-    storeKramSnapshot(hby.db, key, undefined);
-    assertEquals(hby.db.kpnd.get(key), snapshot);
-    await discardFrame(parent);
-    await run(() => hby.db.reopen());
-    const archive = await hby.db.openPayloads();
-    let owned!: EssrPayload;
-    await run(() =>
-      withKramHydration(hby.db, key, retry, resources, function*(restored) {
-        assertEquals(restored.sigers.map((sig) => sig.qb64), input.tsgs![0].sigers.map((sig) => sig.qb64));
-        assertEquals(restored.tsgs, [], "snapshot parent signatures are not reconstructed into scalar factors");
-        assertEquals(restored.nests[0].body.raw, nest.body.raw);
-        assertEquals(restored.nests[0].attachments, nest.attachments);
-        assertEquals(yield* call(() => collectPayload(restored.nests[0].essr!.wire, 1024)), childWire);
-        owned = restored.essr!;
-        assertEquals(archive.files.owns(owned.wire), true);
-        assertEquals(yield* call(() => collectPayload(owned.wire, 1024)), originalWire);
-        assertEquals(yield* call(() => collectPayload(owned.raw, 1024)), b("abcabcxyz"));
-        assertEquals(hby.db.exns.get([parent.body.said!]), null);
-        assertEquals(hby.db.exns.get([nest.body.said!]), null);
-        assertEquals(hby.db.enst.get([parent.body.said!]), []);
-      })
-    );
-    assertEquals(resources.used.bytes, 0, "row, cursor and actual owner credit all joined");
-    await assertRejects(() => collectPayload(owned.wire, 1024));
-    for (const failConsumer of [false, true]) {
-      let disposals = 0;
-      const failure = await assertRejects(
-        () =>
-          run(() =>
-            withKramHydration(hby.db, key, retry, resources, function*(restored) {
-              const discard = restored.essr!.discard.bind(restored.essr);
-              restored.essr!.discard = async () => {
-                disposals++;
-                await discard();
-                throw new Error("owner disposal fault");
-              };
-              if (failConsumer) throw new Error("consumer fault");
-            })
-          ),
-        AggregateError,
-      );
-      assertEquals(disposals, 1);
-      assertEquals(resources.used.bytes, 0, "consumer/disposal failure still releases frame credit");
-      if (failConsumer) assertEquals((failure.cause as Error).message, "consumer fault");
-      assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
-    }
-    const fresh = await child(sender, "fresh");
-    await attachEssr(fresh);
-    const freshInput = new KeriDispatchEnvelope({ ...retry, attachmentGroups: [], nests: [fresh], essr: fresh.essr });
-    await run(() =>
-      withKramHydration(hby.db, key, freshInput, resources, function*(restored) {
-        assertStrictEquals(restored.nests, freshInput.nests);
-        assertStrictEquals(restored.essr, freshInput.essr);
-      })
-    );
-    assertEquals(await collectPayload(fresh.essr!.wire, 1024), childWire);
-    await discardFrame(fresh);
-    for (const bad of [concatBytes(snapshot, snapshot), snapshot.slice(0, -4)]) {
-      storeKramSnapshot(hby.db, key, bad);
-      await assertRejects(() => run(() => withKramHydration(hby.db, key, retry, resources, function*() {})));
-      assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
-    }
-    storeKramSnapshot(hby.db, key, snapshot);
-    await assertRejects(
-      () =>
-        run(() =>
-          withKramHydration(
-            hby.db,
-            key,
-            new KeriDispatchEnvelope({
-              ...retry,
-              attachmentGroups: [],
-              serder: exchange("/different", {}, { sender: sender.pre, pvrsn: Vrsn_2_0 })[0],
-            }),
-            resources,
-            function*() {},
-          )
-        ),
-      Error,
-      "body mismatch",
-    );
-    assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
-    assertThrows(() => storeKramSnapshot(hby.db, key, new Uint8Array(MAX_NESTED_WIRE_BYTES + 1)), ResourceLimitError);
-    assertEquals(hby.db.kpnd.get(key), snapshot);
-    await assertRejects(() =>
-      run(() =>
-        snapshotKram(
-          new KeriDispatchEnvelope({
-            ...incoming,
-            attachmentGroups: Array(4097).fill(incoming.attachmentGroups[0]),
-          }),
-        )
-      ), ResourceLimitError);
-    await assertRejects(() =>
-      run(() =>
-        snapshotKram(
-          new KeriDispatchEnvelope({
-            ...incoming,
-            attachmentGroups: [],
-            essr: { ...incoming.essr!, count: 16385 },
-          }),
-        )
-      ), ResourceLimitError);
-    const invalid = { ...incoming.essr!, count: NaN };
-    await assertRejects(() =>
-      run(() =>
-        withKramSnapshot(
-          new KeriDispatchEnvelope({ ...incoming, attachmentGroups: [], essr: invalid }),
-          new ResourcePolicy({ bytes: 0 }),
-          () => {
-            throw new Error("invalid extent cannot publish");
-          },
-        )
-      ), RangeError);
-    for (const nested of [false, true]) {
-      await assertRejects(() =>
-        run(() =>
-          snapshotKram(
-            new KeriDispatchEnvelope({
-              ...incoming,
-              attachmentGroups: [],
-              essr: nested ? undefined : invalid,
-              nests: nested ? [{ ...nest, essr: invalid }] : [],
-            }),
-          )
-        ), RangeError);
-    }
-    removeKramSnapshot(hby.db, key);
-    assertEquals(hby.db.kpnd.get(key), null);
-    assertExists(hby.db.pmkm.get(key));
-  });
-});
-
-Deno.test("KRAM snapshot cancellation joins serialization and every scoped owner before returning", async () => {
-  await scenario(async (hby, sender, recipient, provider) => {
-    const nest = await child(sender, "cancel-private");
-    const wire = await attachEssr(nest), owner = nest.essr!;
-    const input = forward(sender, recipient, provider, nest);
-    const incoming = new KeriDispatchEnvelope({
-      serder: input.serder,
-      nests: input.nests,
-      attachmentGroups: [],
-      local: false,
-    });
-    const key = [sender.pre, input.serder.said!];
-    let entered!: () => void, abort!: () => void, release!: () => void;
-    const reading = new Promise<void>((resolve) => entered = resolve);
-    const aborted = new Promise<void>((resolve) => abort = resolve);
-    const cleanup = new Promise<void>((resolve) => release = resolve);
-    let closed = false, published = false;
-    nest.essr = {
-      ...owner,
-      wire: {
-        size: owner.wire.size,
-        /** Gate a real serializer read and its cleanup across cancellation. */
-        async *open(signal) {
-          entered();
-          try {
-            await new Promise<void>((resolve) =>
-              signal!.addEventListener("abort", () => {
-                abort();
-                resolve();
-              }, { once: true })
-            );
-            signal!.throwIfAborted();
-            yield b("");
-          } finally {
-            await cleanup;
-            closed = true;
-          }
-        },
-      },
-    };
-    const resources = new ResourcePolicy();
-    const task = run(() =>
-      withKramSnapshot(incoming, resources, (snapshot) => {
-        storeKramSnapshot(hby.db, key, snapshot);
-        published = true;
-      })
-    );
-    await reading;
-    assertEquals(resources.used.bytes, 2 * MAX_NESTED_WIRE_BYTES);
-    let halted = false;
-    const halting = task.halt().then(() => halted = true);
-    await aborted;
-    assertEquals([halted, closed, published], [false, false, false]);
-    assertEquals(resources.used.bytes, 2 * MAX_NESTED_WIRE_BYTES);
-    release();
-    await halting;
-    assertEquals([closed, published], [true, false]);
-    assertEquals(resources.used.bytes, 0);
-    assertEquals(hby.db.kpnd.get(key), null);
-    assertEquals(await collectPayload(owner.wire, 1024), wire, "serialization borrows incoming owners");
-    nest.essr = owner;
-    storeKramSnapshot(hby.db, key, await run(() => snapshotKram(incoming)));
-    let hydrated!: () => void, discarding!: () => void, dispose!: () => void;
-    const ready = new Promise<void>((resolve) => hydrated = resolve);
-    const disposing = new Promise<void>((resolve) => discarding = resolve);
-    const disposed = new Promise<void>((resolve) => dispose = resolve);
-    const retry = new KeriDispatchEnvelope({ serder: input.serder, attachmentGroups: [], local: false });
-    const consumer = run(() =>
-      withKramHydration(hby.db, key, retry, resources, function*(restored) {
-        const reopened = restored.nests[0].essr!, discard = reopened.discard.bind(reopened);
-        reopened.discard = async () => {
-          discarding();
-          await disposed;
-          await discard();
-        };
-        hydrated();
-        yield* suspend();
-      })
-    );
-    await ready;
-    const held = resources.used.bytes;
-    assertEquals(held > 0 && held < 2 * MAX_NESTED_WIRE_BYTES, true);
-    let joined = false;
-    const stopping = consumer.halt().then(() => joined = true);
-    await disposing;
-    assertEquals(joined, false);
-    assertEquals(resources.used.bytes, held, "actual owner holds frame credit through joined disposal");
-    assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 1);
-    dispose();
-    await stopping;
-    assertEquals(resources.used.bytes, 0);
-    assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
-    assertExists(hby.db.kpnd.get(key), "scope exit does not consume durable pending wire");
-    await discardFrame(nest);
-  });
-});
-
-Deno.test("cancelling private KRAM hydration joins parser writes and deletes unfinished owned files", async () => {
-  await scenario(async (hby, sender, recipient, provider) => {
-    const resources = new ResourcePolicy();
-    const nest = await child(sender, "cancel-parse");
-    await attachEssr(nest);
-    const input = forward(sender, recipient, provider, nest), key = [sender.pre, input.serder.said!];
-    const incoming = new KeriDispatchEnvelope({
-      serder: input.serder,
-      nests: input.nests,
-      attachmentGroups: [],
-      local: false,
-    });
-    storeKramSnapshot(hby.db, key, await run(() => snapshotKram(incoming)));
-    const files = (await hby.db.openPayloads()).files, stage = files.stage.bind(files);
-    let writing!: () => void, aborted!: () => void, release!: () => void;
-    const entered = new Promise<void>((resolve) => writing = resolve);
-    const stopped = new Promise<void>((resolve) => aborted = resolve);
-    const cleanup = new Promise<void>((resolve) => release = resolve);
-    let closed = false, continued = false;
-    /** Block an actual private file sink write while the parser owns its unfinished stage. */
-    files.stage = async (limit, signal) => {
-      const sink = await stage(limit, signal);
-      sink.write = async () => {
-        writing();
-        try {
-          await new Promise<void>((resolve) =>
-            signal!.addEventListener("abort", () => {
-              aborted();
-              resolve();
-            }, { once: true })
-          );
-          signal!.throwIfAborted();
-        } finally {
-          await cleanup;
-          closed = true;
-        }
-      };
-      return sink;
-    };
-    const retry = new KeriDispatchEnvelope({ serder: input.serder, attachmentGroups: [], local: false });
-    const task = run(function*() {
-      yield* withKramHydration(hby.db, key, retry, resources, function*() {});
-      continued = true;
-    });
-    try {
-      await entered;
-      const held = resources.used.bytes;
-      let halted = false;
-      const halting = task.halt().then(() => halted = true);
-      await stopped;
-      assertEquals([halted, closed, continued], [false, false, false]);
-      assertEquals(resources.used.bytes, held, "cancellation still owns native copies and cursor backing");
-      assertEquals(held >= 2 * MAX_NESTED_WIRE_BYTES + 8 * 1024 ** 2 + 65536, true);
-      release();
-      await halting;
-      assertEquals([closed, continued], [true, false]);
-      assertEquals(resources.used.bytes, 0, "parser/source join precedes row/cursor credit release");
-      assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
-      assertExists(hby.db.kpnd.get(key));
-      assertEquals(await collectPayload(nest.essr!.raw, 1024), b("abcabcxyz"));
-    } finally {
-      release();
-      await task.halt();
-      files.stage = stage;
-      await discardFrame(nest);
-    }
-  });
-});
-
-Deno.test("KRAM acceptance retires partials before consumer failure and rejects replay after reopen", async () => {
-  await scenario(async (hby, sender, recipient, provider) => {
-    const nest = await child(sender, "retry-handoff");
-    const wire = await attachEssr(nest), borrowed = nest.essr!;
-    const input = forward(sender, recipient, provider, nest);
-    const incoming = new KeriDispatchEnvelope({
-      serder: input.serder,
-      tsgs: [...input.tsgs!],
-      nests: [nest],
-      attachmentGroups: [],
-      local: false,
-    });
-    const key = [sender.pre, input.serder.said!];
-    let clock = Date.parse(input.serder.sad!.dt as string), deliveries = 0;
-    const policy = new KramPolicy(hby.db, {
-      enabled: true,
-      caches: { "~": [1000, 10000, 10000, 10000, 10000, 10000, 10000] },
-    });
-    let handoff = new KramHandoff(hby.db, policy, { now: () => clock });
-    assertStrictEquals(handoff.resources, hby.db.resources);
-    assertThrows(() => new KramHandoff(hby.db, policy, { resources: new ResourcePolicy() }), RangeError);
-    const sn = 2n ** 53n + 1n;
-    assertEquals(
-      await run(() =>
-        handoff.intake(
-          new KeriDispatchEnvelope({
-            ...incoming,
-            attachmentGroups: [],
-            sscs: [{ s: NumberPrimitive.fromNum(sn), d: new Diger({ qb64: sender.pre }) }],
-          }),
-          function*() {
-            throw new Error("missing state cannot fall back to signatures");
-          },
-        )
-      ),
-      { kind: "missing", sender: sender.pre, sn },
-    );
-    assertEquals(standaloneCues(handoff.cues).pull(), {
-      kin: "query",
-      pre: sender.pre,
-      route: "logs",
-      q: { s: sn.toString(16) },
-    });
-    assertEquals(hby.db.pmkm.get(key), null);
-    await assertRejects(
-      () =>
-        run(() =>
-          handoff.intake(incoming, function*(_ready, receipt) {
-            deliveries++;
-            assertEquals(hby.db.pmkm.get(key), null);
-            throw new Error("delivery fault");
-          })
-        ),
-      Error,
-      "delivery fault",
-    );
-    assertEquals([handoff.busy, hby.db.pmkm.get(key), hby.db.kpnd.get(key)], [false, null, null]);
-    assertEquals(await collectPayload(borrowed.wire, 1024), wire, "fresh child remains borrowed");
-    await discardFrame(nest);
-    await run(() => hby.db.reopen());
-    clock += 500;
-    handoff = new KramHandoff(hby.db, new KramPolicy(hby.db, { enabled: true }), { now: () => clock });
-    const retry = new KeriDispatchEnvelope({ ...incoming, attachmentGroups: [], nests: [] });
-    assertEquals(
-      await run(() =>
-        handoff.intake(retry, function*() {
-          deliveries++;
-        })
-      ),
-      {
-        kind: "drop",
-        reason: "replay",
-      },
-    );
-    assertEquals(deliveries, 1, "consumer failure does not revive accepted input");
-    assertEquals(hby.db.pmks.get(key), []);
-    assertExists(hby.db.msgc.get(key), "acceptance retains the replay cache");
-    assertEquals(hby.db.exns.get([input.serder.said!]), null);
-    assertEquals(hby.db.exns.get([nest.body.said!]), null, "parent delivery never accepts its child");
-    assertThrows(() => Deno.readDirSync(`${hby.db.path}/payloads/staging`), Deno.errors.NotFound);
-  });
-});
-
-Deno.test("KRAM handoff cancellation holds capacity until serialization and hydration disposal join", async () => {
-  await scenario(async (hby, sender, recipient, provider) => {
-    const nest = await child(sender, "cancel-handoff");
-    const wire = await attachEssr(nest), owner = nest.essr!;
-    const input = forward(sender, recipient, provider, nest);
-    const incoming = new KeriDispatchEnvelope({
-      serder: input.serder,
-      tsgs: [...input.tsgs!],
-      nests: [nest],
-      attachmentGroups: [],
-      local: false,
-    });
-    const key = [sender.pre, input.serder.said!];
-    const policy = new KramPolicy(hby.db, {
-      enabled: true,
-      caches: { "~": [1000, 10000, 10000, 10000, 10000, 10000, 10000] },
-    });
-    const handoff = new KramHandoff(hby.db, policy, { now: () => Date.parse(input.serder.sad!.dt as string) });
-    let enter!: () => void, abort!: () => void, release!: () => void;
-    const reading = new Promise<void>((resolve) => enter = resolve);
-    const aborted = new Promise<void>((resolve) => abort = resolve);
-    const cleanup = new Promise<void>((resolve) => release = resolve);
-    let readsClosed = false, consumed = false;
-    nest.essr = {
-      ...owner,
-      wire: {
-        size: owner.wire.size,
-        async *open(signal) {
-          enter();
-          try {
-            await new Promise<void>((resolve) =>
-              signal!.addEventListener("abort", () => {
-                abort();
-                resolve();
-              }, { once: true })
-            );
-            signal!.throwIfAborted();
-            yield b("");
-          } finally {
-            await cleanup;
-            readsClosed = true;
-          }
-        },
-      },
-    };
-    const writer = run(function*() {
-      yield* handoff.intake(incoming, function*() {
-        consumed = true;
-      });
-      consumed = true;
-    });
-    await reading;
-    let joined = false;
-    const stopping = writer.halt().then(() => joined = true);
-    await aborted;
-    const retainedCredit = hby.db.resources.used.bytes;
-    assertEquals(retainedCredit >= incoming.serder.raw.byteLength, true);
-    assertEquals([handoff.busy, joined, readsClosed, consumed], [true, false, false, false]);
-    assertEquals(isKramHandoffActive(hby.db), true);
-    assertEquals(
-      await run(() =>
-        handoff.intake(incoming, function*() {
-          consumed = true;
-        })
-      ),
-      { kind: "drop", reason: "busy" },
-    );
-    assertEquals(hby.db.pmkm.get(key), null);
-    assertEquals(hby.db.resources.used.bytes, retainedCredit, "halt retains all copy credit while reads are closing");
-    release();
-    await stopping;
-    assertEquals(hby.db.resources.used.bytes, 0, "joined source cleanup releases snapshot credit");
-    assertEquals([handoff.busy, readsClosed, consumed], [false, true, false]);
-    assertEquals(isKramHandoffActive(hby.db), false);
-    assertEquals(await collectPayload(owner.wire, 1024), wire);
-    nest.essr = owner;
-    // Seed a private partial snapshot to exercise joined hydration disposal independently of ready retries.
-    await run(() =>
-      withKramSnapshot(incoming, hby.db.resources, (wire) => {
-        hby.db.env!.transactionSync(() => storeKramSnapshot(hby.db, key, wire));
-      })
-    );
-    await discardFrame(nest);
-    const retry = new KeriDispatchEnvelope({ ...incoming, attachmentGroups: [], nests: [] });
-    let hydrated!: () => void, discarding!: () => void, dispose!: () => void, disposals = 0;
-    const ready = new Promise<void>((resolve) => hydrated = resolve);
-    const disposing = new Promise<void>((resolve) => discarding = resolve);
-    const disposed = new Promise<void>((resolve) => dispose = resolve);
-    const consumer = run(function*() {
-      yield* handoff.intake(retry, function*(restored) {
-        const reopened = restored.nests[0].essr!, discard = reopened.discard.bind(reopened);
-        reopened.discard = async () => {
-          disposals++;
-          discarding();
-          await disposed;
-          await discard();
-        };
-        hydrated();
-        yield* suspend();
-      });
-      consumed = true;
-    });
-    await ready;
-    joined = false;
-    const halting = consumer.halt().then(() => joined = true);
-    await disposing;
-    assertEquals([handoff.busy, joined, consumed, disposals], [true, false, false, 1]);
-    assertEquals(hby.db.pmkm.get(key), null);
-    assertEquals(await run(() => handoff.intake(retry, function*() {})), { kind: "drop", reason: "busy" });
-    const exempt = new KramHandoff(hby.db, new KramPolicy(hby.db));
-    let otherEntered!: () => void;
-    const otherReady = new Promise<void>((resolve) => otherEntered = resolve);
-    const other = run(() =>
-      exempt.intake(retry, function*() {
-        otherEntered();
-        yield* suspend();
-      })
-    );
-    await otherReady;
-    dispose();
-    await halting;
-    assertEquals([handoff.busy, consumed, disposals], [false, false, 1]);
-    assertEquals(isKramHandoffActive(hby.db), true, "one released scope cannot clear another owner's exclusion");
-    await other.halt();
-    assertEquals(isKramHandoffActive(hby.db), false);
-    assertEquals(hby.db.pmkm.get(key), null, "cancellation cannot revive accepted partials");
-    assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
-    assertEquals(
-      await run(() =>
-        handoff.intake(retry, function*() {
-          return "retry";
-        })
-      ),
-      { kind: "drop", reason: "replay" },
-    );
-    assertEquals(handoff.busy, false);
-    assertEquals(
-      await run(() =>
-        exempt.intake(retry, function*(ready) {
-          assertStrictEquals(ready, retry, "exempt input remains borrowed");
-          assertEquals(exempt.busy, true);
-          return yield* exempt.intake(retry, function*() {
-            throw new Error("busy consumer");
-          });
-        })
-      ),
-      { kind: "drop", reason: "busy" },
-    );
-    await assertRejects(
-      () =>
-        run(() =>
-          exempt.intake(retry, function*() {
-            throw new ResourceLimitError("consumer resource fault");
-          })
-        ),
-      ResourceLimitError,
-      "consumer resource fault",
-    );
-    assertEquals(exempt.busy, false);
-  });
-});
-
-Deno.test("optional runtime KRAM forwards reopened nested evidence without accepting its child", async () => {
+Deno.test("optional runtime KRAM pools proofs across reopen and forwards current children", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender", undefined, { icount: 3, isith: "2", ncount: 3, nsith: "2" });
@@ -1245,9 +608,6 @@ Deno.test("optional runtime KRAM forwards reopened nested evidence without accep
       enableMailboxStore: true,
       kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
     });
-    const cryptoCredit = runtime.resources.reserve({ bytes: 64 * 1024 ** 2, decryptions: 1 });
-    assertEquals(cryptoCredit.kind, "reserve");
-    if (cryptoCredit.kind !== "reserve") throw new Error("default crypto allowance");
     const nest = yield* call(() => child(sender, "independent"));
     const wire = yield* call(() => attachEssr(nest)), input = forward(sender, recipient, provider, nest);
     const original = input.tsgs![0], key = [sender.pre, input.serder.said!];
@@ -1267,23 +627,27 @@ Deno.test("optional runtime KRAM forwards reopened nested evidence without accep
       );
       yield* runtime.reactor.processBytes(first, { mailboxAid: provider.pre });
       assertEquals([hby.db.exns.get(input.serder.said!), hby.db.exns.get(nest.body.said!)], [null, null]);
-      assertExists(hby.db.kpnd.get(key));
-      assertEquals(runtime.resources.used.bytes, 64 * 1024 ** 2, "pending KRAM stages release temporary credit");
+      assertExists(hby.db.pmkm.get(key));
       yield* hby.db.reopen();
       const [retry] = yield* call(() =>
-        parseBytes(serializeMessage(input.serder, { tsgs: [group(1)], gvrsn: Vrsn_2_0, genusify: true }))
+        collectPayload(
+          framePayload({
+            body: input.serder,
+            attachments: messageAttachmentGroups({ tsgs: [group(1)] }, Vrsn_2_0),
+            nests: [nest],
+            gvrsn: Vrsn_2_0,
+          }),
+          8192,
+        ).then(parseBytes)
       );
-      const returned = yield* runtime.reactor.settle(retry, { mailboxAid: provider.pre }, function*(ready) {
-        assertEquals(runtime.resources.used.bytes > 64 * 1024 ** 2, true, "KRAM shares runtime owner credit");
+      yield* runtime.reactor.settle(retry, { mailboxAid: provider.pre }, function*(ready) {
         assertEquals(ready!.nests[0].body.raw, nest.body.raw);
         assertEquals(yield* call(() => collectPayload(ready!.nests[0].essr!.wire, 1024)), wire);
         assertEquals(hby.db.pmkm.get(key), null, "acceptance retires partial state before transport callback");
         assertEquals(hby.db.exns.get(nest.body.said!), null);
       });
-      assertEquals(runtime.resources.used.bytes, 64 * 1024 ** 2, "hydrated credit releases after consumption");
-      assertEquals(returned!.nests.length, 0, "hydrated descendants never escape the ready callback");
       assertExists(hby.db.exns.get(input.serder.said!));
-      assertEquals([hby.db.pmkm.get(key), hby.db.kpnd.get(key)], [null, null]);
+      assertEquals(hby.db.pmkm.get(key), null);
       const saved = [...runtime.mailboxDirector.topicIter(recipient.pre, "/nested")];
       assertEquals(saved.length, 1);
       yield* runtime.reactor.processBytes(saved[0].msg);
@@ -1293,7 +657,6 @@ Deno.test("optional runtime KRAM forwards reopened nested evidence without accep
         "recipient separately authenticates the child's own signatures",
       );
     } finally {
-      cryptoCredit.reservation.release();
       yield* call(() => discardFrame(nest));
       yield* runtime.close();
       yield* hby.close(true);

@@ -1,17 +1,15 @@
-/** Internal finite cache maintenance; each synchronous batch excludes live handoff owners. */
+/** Internal finite cache maintenance; each batch releases read cursors before writes. */
 import { b } from "cesr-ts";
 import type { Baser } from "../db/basing.ts";
 import { removeKramFactors } from "../db/kram-factors.ts";
-import { removeKramSnapshot } from "../db/kram-snapshots.ts";
 import { timestampMicros } from "../time/mod.ts";
-import { isKramHandoffActive } from "./kram-handoff.ts";
 import type { KramPolicy } from "./kram-policy.ts";
 import { kramCacheValues } from "./kram-time.ts";
 import { TxnMsgCacheRecord } from "./records.ts";
 
 /** Counts scan steps across all families; tail/empty family probes use constant additional work. */
 export interface KramPruneResult {
-  kind: "pruned" | "busy";
+  kind: "pruned";
   visited: number;
   removed: number;
   openers: number;
@@ -91,7 +89,6 @@ export class KramPruner {
     if (when === null) throw new Error("Invalid KRAM pruning receiver clock");
     if (!Number.isSafeInteger(maxRows) || maxRows < 1) throw new RangeError("Invalid KRAM pruning batch");
     const result: KramPruneResult = { kind: "pruned", visited: 0, removed: 0, openers: 0, passComplete: false };
-    if (isKramHandoffActive(this.db)) return { ...result, kind: "busy" };
     const env = this.db.env;
     if (!env) throw new Error("KRAM pruning database is closed");
     if (this.env !== env) {
@@ -110,14 +107,12 @@ export class KramPruner {
           continue;
         }
         const keys = this.keys(physical, this.phase + 2), table = this.phase ? this.db.tmsc : this.db.msgc;
-        if (isKramHandoffActive(this.db)) return { ...result, kind: "busy" };
         env.transactionSync(() => {
           const record = table.get(keys);
           if (!record || !this.expired(record, when)) return;
           table.rem(keys);
           const partial = [keys[0], keys.at(-1)!];
           removeKramFactors(this.db, partial);
-          removeKramSnapshot(this.db, partial);
           result.removed++;
         });
         scan.start = this.after(physical);
@@ -153,7 +148,6 @@ export class KramPruner {
         if (keys[1] !== candidate.xid) continue;
       } else {
         result.visited++;
-        if (isKramHandoffActive(this.db)) return { ...result, kind: "busy" };
         const removed = env.transactionSync(() => {
           if (candidate.version !== this.version()) return false;
           if (this.db.xdt.rem(candidate.xid)) result.openers++;

@@ -137,9 +137,8 @@ Internal KRAM time plans preserve inclusive microsecond admission/lifetime windo
 XIP own-SAID openers, sender-local/shared XID precedence and original cached windows.
 Completed replay is refused before source queries; multi-key partials remain resumable.
 Transaction `rdt` records receiver-observed completion time, distinct from message
-`mdt`, and remains frozen on ready handoff retries. Plans publish no state: intake
-must atomically recheck policy, current keys, caches and durable readiness before
-publishing cache/opener/receipt, partial factors and snapshot together.
+`mdt`. Plans publish no state: synchronous intake checks current keys and replay
+state and publishes cache/opener/receipt and partial factors in one transaction.
 
 Internal `verifyKramSignatures` normalizes sender triples/last groups on cloned
 factor arrays, verifies only current sender factors and returns the borrowed
@@ -153,36 +152,33 @@ and do not change existing parser/v1 normalization.
 
 Internal `stageKram` publishes cache and partial factors atomically after rechecking
 sender establishment and replay state. On threshold completion it reconstructs
-evidence and removes partial factors and snapshots before downstream consumption.
+evidence and removes partial factors before returning the ready decision.
 The cache remains as the replay marker, matching KERIpy removal-before-delivery.
 Same-index signature variants retain their encoding while thresholds count unique
 indices. Factor merging has no application byte/item quota or fixed signature-pool
 cap; decoded row validity and signature verification remain required. Rotation
 clears stale partials without removing the replay cache.
 
-`KramHandoff` keeps its local busy scope through staging, consumption and joined
-hydration disposal. No ready receipt store or downstream acknowledgement exists.
-Consumer and disposal errors propagate; they cannot revive accepted input. Actual
-hydration owners still require the callback scope until snapshot removal. Callback
-results must not retain borrowed frame/payload owners. Active scopes exclude
-synchronous pruning through final cleanup; this is resource lifetime, not durable
-application delivery.
+`Kramer.intake` returns an ordinary synchronous ready/pending/refusal decision.
+There is no private snapshot store, hydration scope, callback permit, ready receipt
+store or downstream acknowledgement. Scalar partial proofs persist; nested frames
+and ESSR payloads come only from the current input. The parser owns their lifetime
+through dispatch and joined disposal. Downstream failure cannot revive acceptance.
 
 Internal `KramPruner` advances finite MSGC/TMSC/opener passes with no read cursor
 held across writes. Stored pruning windows retain inclusive microsecond cutoffs;
-expired idle rows atomically release factors, private snapshot.
-Live handoff scopes sharing a Baser defer pruning. Shared XDT disappears only
+expired rows atomically release partial factors. Shared XDT disappears only
 after a bounded global TMSC scan proves no participant remains. Committed writes
 restart that proof and reopen resets checkpoints; unrelated writes can postpone
 orphan cleanup, favoring safety over progress. Rows inserted behind cache cursors
-are visited next pass. This is maintenance exclusion, not a shared runtime budget.
+are visited next pass. Intake and pruning are synchronous transactions with no cross-call ownership.
 
-Optional `createAgentRuntime({ kram })` composes the qualified policy, handoff and
+Optional `createAgentRuntime({ kram })` composes the policy, intake and
 finite pruner using the trusted services clock. Configuration must cover admitted
 message types. V2 sender policy precedes all intake effects; v1 paths stay separate.
-The ready transport consumer runs inside handoff before joined disposal and ack.
-Callback results are void; Reactor returns only its original borrowed input. HTTP
-refuses current pending, missing, busy and replay outcomes despite older cues.
+The parser dispatches the ready envelope before joined disposal of its input.
+Reactor returns only its original borrowed input. HTTP refuses current pending,
+missing and replay outcomes despite older cues.
 HTTP recovery queries enter the bounded coordinator and drain on ordinary host turns.
 No automatic ESSR decryption or child dispatch is enabled. Disclosed IPEX
 presentation registries use the retained trusted receipt; hidden and unfinished
