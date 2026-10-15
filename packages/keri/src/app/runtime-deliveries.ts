@@ -18,11 +18,11 @@ import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
-import { CueDelivery, type CueTargetPreparation, type OwnedCueTarget } from "./cue-delivery.ts";
+import { CueDelivery, type CueTargetPreparation } from "./cue-delivery.ts";
 import { admitCueEmission, type CuePreparationResult, type PreparedCueEmission } from "./cue-preparation.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import { DirectReplyDelivery } from "./direct-reply-delivery.ts";
-import { attemptPreparedCesrTarget, introduce, type RawCesrRoute } from "./forwarding.ts";
+import { attemptPreparedCesrTarget, introduce, type PreparedCesrTarget, type RawCesrRoute } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
@@ -92,7 +92,7 @@ type AdmittedDelivery =
   | { kind: "query"; delivery: QueryDelivery; credit: ResourceReservation }
   | { kind: "cue"; delivery: CueDelivery; source: PreparedCueEmission }
   | { kind: "reply"; delivery: DirectReplyDelivery }
-  | { kind: "target"; delivery: OwnedCueTarget };
+  | { kind: "target"; delivery: PreparedCesrTarget };
 
 /** Retire the actual obligations for this queue entry after joined transport cleanup. */
 function releaseDelivery(entry: AdmittedDelivery): void {
@@ -109,7 +109,7 @@ function releaseDelivery(entry: AdmittedDelivery): void {
     }
     if (errors.length === 1) throw errors[0];
     if (errors.length) throw new AggregateError(errors, "Cue delivery cleanup failed");
-  } else {
+  } else if (entry.kind === "reply") {
     entry.delivery.release();
   }
 }
@@ -286,8 +286,8 @@ export class RuntimeDeliveries {
     }, onAdmissionRefusal);
   }
 
-  /** A failed independent packet retains the same lease; no target advances if the queue cannot accept it. */
-  private retainFailed(target: OwnedCueTarget): boolean {
+  /** A failed packet remains an ordinary record; no target advances if the queue cannot accept it. */
+  private retainFailed(target: PreparedCesrTarget): boolean {
     if (this.closed) return false;
     try {
       this.pending.checkSpace();
@@ -358,30 +358,30 @@ export class RuntimeDeliveries {
           }
           if (entry.kind === "cue" || entry.kind === "reply") {
             // Preparation stays in the existing state turn; transport and joined cleanup stay outside it.
-            const preparation: { result: CueTargetPreparation } = { result: { kind: "pending" } };
+            const preparation: { result?: CueTargetPreparation } = {};
             if (entry.delivery.needsPreparation) {
               yield* runtime.reactor.settle(undefined, {}, function*() {
-                preparation.result = entry.delivery.prepareTarget(runtime.poster, self.resources);
+                preparation.result = entry.delivery.prepareTarget(runtime.poster);
               });
             } else {
-              preparation.result = entry.delivery.prepareTarget(runtime.poster, self.resources);
+              preparation.result = entry.delivery.prepareTarget(runtime.poster);
             }
-            const next = preparation.result;
+            const next = preparation.result!;
             done = next.kind === "done";
             if (next.kind === "target") {
               const outcome = yield* call(() =>
-                attemptPreparedCesrTarget(next.owner.target, runtime.services, active.signal, runtime)
+                attemptPreparedCesrTarget(next.target, runtime.services, active.signal, runtime)
               );
               if (outcome === "complete") {
                 active.signal.throwIfAborted();
-                entry.delivery.retireTarget("sent");
-              } else if (outcome === "refused" && self.retainFailed(next.owner)) {
-                entry.delivery.retireTarget("retained");
+                entry.delivery.retireTarget();
+              } else if (outcome === "refused" && self.retainFailed(next.target)) {
+                entry.delivery.retireTarget();
               }
             }
           } else {
             done = (yield* call(() =>
-              attemptPreparedCesrTarget(entry.delivery.target, runtime.services, active.signal, runtime)
+              attemptPreparedCesrTarget(entry.delivery, runtime.services, active.signal, runtime)
             )) === "complete";
           }
         }

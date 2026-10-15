@@ -1,7 +1,7 @@
 import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
 /** One interpreted reply batch owned by delivery and a borrowed HTTP/witness consumer until both close. */
-import { ResourceAdmissionError, type ResourcePolicy } from "cesr-ts";
+import { ResourceAdmissionError } from "cesr-ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
@@ -173,10 +173,10 @@ export class DirectReplyDelivery {
   }
 
   /** Prepare one target per pass, preserving bounded sibling fairness across reply cues. */
-  prepareTarget(poster: Poster, resources: ResourcePolicy): CueTargetPreparation {
+  prepareTarget(poster: Poster): CueTargetPreparation {
     const current = this.deliveries[this.index];
     if (!current) return { kind: "done" };
-    const result = current.prepareTarget(poster, resources);
+    const result = current.prepareTarget(poster);
     if (result.kind === "done") {
       this.index++;
       return { kind: "more" };
@@ -185,8 +185,8 @@ export class DirectReplyDelivery {
   }
 
   /** Apply the queue owner's completed transmission or failed-packet transfer to the current cue. */
-  retireTarget(outcome: "sent" | "retained"): void {
-    this.deliveries[this.index].retireTarget(outcome);
+  retireTarget(): void {
+    this.deliveries[this.index].retireTarget();
   }
 
   /** Queue cleanup joins network before marking its half complete; attempt every independent owner. */

@@ -463,28 +463,21 @@ export class Poster {
     return null;
   }
 
-  /** Guarded preparation; an explicit finite cap copies direct wire for independently credited retention. */
+  /** Prepare a target using the supplied wire and selected endpoint. */
   prepareBytesTarget(
     hab: Hab,
     route: RawCesrRoute,
     index: number,
     message: Uint8Array,
-    maxBytes?: number,
   ): PreparedCesrTarget {
-    if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
-      throw new RangeError("Invalid cue target byte limit");
-    }
-    if (maxBytes !== undefined && message.buffer.byteLength > maxBytes) {
-      throw new ResourceLimitError("Cue target backing exceeds limit");
-    }
     if (hab.pre !== route.sender) throw new Error("CESR route belongs to another sender");
     const endpoint = route.targets[index];
     if (!Number.isSafeInteger(index) || !endpoint) throw new RangeError("Invalid CESR delivery target");
     if (route.kind !== "direct") {
-      const forwarded = this.prepareForwardedTarget(hab, route.recipient, route.topic, message, endpoint, maxBytes);
+      const forwarded = this.prepareForwardedTarget(hab, route.recipient, route.topic, message, endpoint);
       return forwarded.kind === "http" ? { ...forwarded, bodyMode: route.bodyMode } : forwarded;
     }
-    return remoteCesrTarget(endpoint, maxBytes === undefined ? message : message.slice(), route.bodyMode);
+    return remoteCesrTarget(endpoint, message, route.bodyMode);
   }
 
   /**
