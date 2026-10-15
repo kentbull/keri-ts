@@ -1,5 +1,5 @@
 import { call, run, spawn } from "effection";
-import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertObjectMatch, assertRejects, assertThrows } from "jsr:@std/assert";
 import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -16,7 +16,7 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
     destination: "aid",
   };
   for (let index = 0; index < 8; index++) queue.enqueue(() => request);
-  assertThrows(() => queue.enqueue(() => request), Error, "Deck capacity");
+  assertObjectMatch(queue.enqueue(() => request), { kind: "refuse", error: { message: "Deck capacity exceeded" } });
   assertEquals(resources.used.bytes, 72 * 1024 * 1024);
   assertEquals(queue.hasPending, true);
   await run(() => queue.close());
@@ -44,25 +44,23 @@ Deno.test("query delivery admission retains accepted requests on queue overflow 
     prepared = true;
     return request;
   };
-  assertEquals(assertThrows(() => second.enqueue(prepare), ResourceAdmissionError).reason, "busy");
+  assertObjectMatch(second.enqueue(prepare), { kind: "refuse", error: { reason: "busy" } });
   assertEquals(prepared, false, "shared refusal precedes source acquisition or concatenation");
   assertEquals(shared.used.bytes, 9 * 1024 * 1024);
   const tooSmall = new RuntimeDeliveries(new ResourcePolicy({ bytes: shared.limits.bytes - 1 }));
-  assertEquals(assertThrows(() => tooSmall.enqueue(prepare), ResourceAdmissionError).reason, "limit");
+  assertObjectMatch(tooSmall.enqueue(prepare), { kind: "refuse", error: { reason: "limit" } });
   assertEquals(prepared, false);
   const cue = { kin: "query" as const, pre: "aid", src: "aid", query: {} };
   const emptyFloor = new RuntimeDeliveries(new ResourcePolicy({ bytes: 33 * 1024 ** 2 }));
-  assertEquals(assertThrows(() => emptyFloor.enqueue(prepare, undefined, cue), ResourceAdmissionError).reason, "limit");
+  assertObjectMatch(emptyFloor.enqueue(prepare, cue), { kind: "refuse", error: { reason: "limit" } });
   assertEquals(prepared, false, "combined source retention floor refuses before signing");
-  assertEquals(
-    assertThrows(() =>
-      new RuntimeDeliveries(new ResourcePolicy({ bytes: 40 * 1024 ** 2 }))
-        .enqueue(prepare, undefined, cue, 8 * 1024 ** 2), ResourceAdmissionError).reason,
-    "limit",
+  assertObjectMatch(
+    new RuntimeDeliveries(new ResourcePolicy({ bytes: 40 * 1024 ** 2 })).enqueue(prepare, cue, 8 * 1024 ** 2),
+    { kind: "refuse", error: { reason: "limit" } },
   );
   assertEquals(prepared, false, "existing owned source credit cannot become irreducible busy");
   assertThrows(() =>
-    new RuntimeDeliveries(resources).enqueue(prepare, undefined, {
+    new RuntimeDeliveries(resources).enqueue(prepare, {
       ...cue,
       query: { q: "x".repeat(4 * 1024 ** 2 + 1) },
     }), ResourceLimitError);

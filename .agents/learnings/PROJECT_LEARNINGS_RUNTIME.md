@@ -103,6 +103,9 @@ Cue byte admission returns only its own expected capacity refusal; strict protoc
 producers keep reserveCueBytes, while runtime queues consume admitCueBytes directly.
 Pending query metadata admission returns queued/ineligible/refuse before copying;
 its queue has no refusal observer or disabled inherited methods.
+Query delivery enqueue likewise returns queued/ineligible/refuse; the query sink
+maps its own busy result directly and never observes exception identities. Foreign
+preparation/service/cleanup failures still throw, preserving the original head.
 CueReader exposes only borrowing, transfer, and requeue; interpreting a plain
 queue still admits its input separately and removes it only after acceptance.
 CueDeck composes one Deck<OwnedCue>; it has no raw-cue mirror or destructive unowned removal API.
