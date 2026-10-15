@@ -1,5 +1,16 @@
 # Exchange learnings
 
+## Removal precedence (2026-10-15)
+
+[ADR-0013](../../docs/adr/adr-0013-simple-component-flows.md) now requires removal
+of all application budgeting and unsupported outbox, mailbox consumer-ack and
+KRAM ready/snapshot durability. Any descriptions below of credits, reservations,
+capacity admission or those delivery guarantees describe transitional code, not
+instructions to preserve it. Remove those passages with their owning code rounds.
+Preserve independent wire/crypto/transaction correctness and actual cleanup.
+Only a minimal private socket constraint justified by production evidence may
+remain; no parser, domain, storage, runtime or CLI accounting exception exists.
+
 ## Proof and persistence boundaries
 
 Exchanger separates sender authentication, supplemental selection and route
