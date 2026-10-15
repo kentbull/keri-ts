@@ -19,14 +19,7 @@ export type RegistryObserverDecision =
  * Parsed evidence stays borrowed. This installs no automatic parser or runtime route.
  */
 export class RegistryObserver {
-  private readonly maxEvents: number;
-
-  constructor(readonly db: Baser, readonly store: RegistryStore, { maxEvents = 16384 }: { maxEvents?: number } = {}) {
-    if (!Number.isSafeInteger(maxEvents) || maxEvents < 1) {
-      throw new RangeError("Registry maxEvents must be positive and safe.");
-    }
-    this.maxEvents = maxEvents;
-  }
+  constructor(readonly db: Baser, readonly store: RegistryStore) {}
 
   /** Stage parsed events before inception, otherwise delegate ordinary validation and acceptance. */
   processEvent(serder: SerderACDC): RegistryObserverDecision {
@@ -40,7 +33,7 @@ export class RegistryObserver {
       if (!(error instanceof ParserError) || error instanceof ResourceLimitError) throw error;
       return { kind: "reject", reason: "registry" };
     }
-    this.checkOrdinal(event.sn);
+    if (event.sn > BigInt(Number.MAX_SAFE_INTEGER)) return { kind: "reject", reason: "ordinalRange" };
     let engine = this.engine(event.regid);
     if (engine && !(engine instanceof RegistryEventer)) return engine;
     if (event.ilk === Ilks.rip) {
@@ -48,7 +41,6 @@ export class RegistryObserver {
       engine ??= new RegistryEventer(this.db, event.issuer, this.store, event.regid);
     }
     if (engine) {
-      this.checkStored(event.regid, engine);
       return engine.processEvent(serder);
     }
     // Issuer/anchor discovery is impossible until RIP arrives; the existing anchor escrow owns this body.
@@ -65,7 +57,6 @@ export class RegistryObserver {
   processEscrows(regid: string): void {
     const engine = this.engine(regid);
     if (!(engine instanceof RegistryEventer)) return;
-    this.checkStored(regid, engine);
     engine.processEscrows();
   }
 
@@ -87,21 +78,5 @@ export class RegistryObserver {
       throw new Error("Corrupt observer registry inception.");
     }
     return new RegistryEventer(this.db, result.event.issuer, this.store, regid);
-  }
-
-  /** Bound chain length before processing; this does not bound queued rows, scans or native allocation. */
-  private checkOrdinal(sn: bigint): void {
-    if (sn >= BigInt(this.maxEvents)) throw new ResourceLimitError("Registry evidence exceeds configured event limit.");
-  }
-
-  /** A tighter observer must not advance previously staged rows beyond its own finite ceiling. */
-  private checkStored(regid: string, engine: RegistryEventer): void {
-    this.checkOrdinal(engine.sn);
-    for (const escrow of [this.store.baser.maes, this.store.baser.ooes]) {
-      for (const [, sn] of escrow?.getTopItemIter(regid) ?? []) {
-        if (!Number.isSafeInteger(sn) || sn < 0) throw new RangeError("Unsafe observer escrow ordinal.");
-        this.checkOrdinal(BigInt(sn));
-      }
-    }
   }
 }

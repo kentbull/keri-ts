@@ -6,7 +6,6 @@ import {
   discardFrame,
   NumberPrimitive,
   parseBytes,
-  ResourceLimitError,
   SerderACDC,
 } from "cesr-ts";
 import { call, run } from "effection";
@@ -129,15 +128,13 @@ Deno.test("named registry acquisition closes its owned store when alias loading 
   }
 });
 
-Deno.test("public registry intake preserves accepted prefixes across missing anchors, limits and reopen", async () => {
+Deno.test("public registry intake preserves accepted prefixes across missing anchors and reopen", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
-    const limitedBaser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
-    const store = new RegistryStore(baser), limitedStore = new RegistryStore(limitedBaser);
+    const store = new RegistryStore(baser);
     const observer = new RegistryObserver(hby.db, store);
-    const limited = new RegistryObserver(hby.db, limitedStore, { maxEvents: 1 });
     const issuer = source.makeHab("issuer"), rip = regcept(issuer.pre);
     const issued = blindate(rip.said!, rip.said!, fixture.disclosures.issued.d);
     try {
@@ -168,16 +165,22 @@ Deno.test("public registry intake preserves accepted prefixes across missing anc
       assertEquals(store.seqEvent(rip.said!, 1)!.raw, issued.raw);
       for (const event of [issued, issued]) assertEquals(observer.processEvent(event).kind, "duplicate");
       assertEquals([...baser.tels.getTopItemIter(rip.said!)].length, 2);
-      assertThrows(() => limited.processEvent(issued), ResourceLimitError, "event limit");
-      assertEquals([limitedStore.head(rip.said!), limitedStore.event(issued.said!)], [null, null]);
-      assertEquals(limited.processEvent(rip).kind, "accept");
-      assertEquals(limitedStore.head(rip.said!)!.qb64, rip.said);
       const bad = blindate(rip.said!, rip.said!, fixture.disclosures.issued.d, { sn: 2 });
       assertEquals(observer.processEvent(bad), { kind: "reject", reason: "prior" });
       assertEquals(store.event(bad.said!), null);
       assertEquals(store.head(rip.said!)!.qb64, issued.said);
+      const distant = blindate(rip.said!, issued.said!, fixture.disclosures.issued.d, { sn: 16384 });
+      assertEquals(observer.processEvent(distant).kind, "escrow", "missing evidence, not an event-count quota");
+      assertEquals(store.head(rip.said!)!.qb64, issued.said);
+      const unknown = new SerderACDC({ raw: b(fixture.bodies.rip) }).said!;
+      for (const regid of [rip.said!, unknown]) {
+        const huge = blindate(regid, regid, fixture.disclosures.issued.d, {
+          sn: BigInt(Number.MAX_SAFE_INTEGER) + 1n,
+        });
+        assertEquals(observer.processEvent(huge), { kind: "reject", reason: "ordinalRange" });
+        assertEquals(store.event(huge.said!), null, "unsafe ordinals cannot reach pre-inception staging");
+      }
     } finally {
-      yield* limitedBaser.close(true);
       yield* baser.close(true);
       yield* source.close(true);
       yield* hby.close(true);

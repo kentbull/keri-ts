@@ -57,8 +57,6 @@ export interface IpexHandlerOptions {
   notifier?: Notifier | null;
   /** Optional accepted v2 observer evidence, owned by the caller/runtime. */
   registry?: RegistryStore | null;
-  /** Finite accepted-chain collection ceiling, including inception; not a shared runtime budget. */
-  maxRegistryEvents?: number;
 }
 
 export interface IpexBuilderOptions {
@@ -163,7 +161,7 @@ export function loadIpexHandlers(
   for (const route of IPEX_ROUTES) {
     exchanger.addHandler(new IpexHandler(route, hby, options.notifier ?? null));
     exchanger.addHandler(
-      new IpexV2Handler(route, hby, options.notifier ?? null, options.registry ?? null, options.maxRegistryEvents),
+      new IpexV2Handler(route, hby, options.notifier ?? null, options.registry ?? null),
     );
   }
 }

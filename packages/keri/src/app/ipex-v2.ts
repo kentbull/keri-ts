@@ -68,11 +68,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     private readonly hby: Habery,
     private readonly notifier: Notifier | null = null,
     private readonly registry: RegistryStore | null = null,
-    private readonly maxRegistryEvents = 16384,
   ) {
-    if (!Number.isSafeInteger(maxRegistryEvents) || maxRegistryEvents < 1) {
-      throw new RangeError("IPEX maxRegistryEvents must be a positive safe integer.");
-    }
     this.acceptsMissingEvidence = resource === "/ipex/grant";
     this.acceptsNests = nestedIpexRoute(resource);
   }
@@ -295,9 +291,8 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       throw new DatabaseOperationError("Accepted registry evidence has a missing or corrupt head/inception.");
     }
     const last = BigInt(`0x${head.sad.n}`);
-    // Check credit before collecting any updates or converting the ordinal to the storage number API.
-    if (last >= BigInt(this.maxRegistryEvents)) {
-      throw new ResourceLimitError("IPEX registry evidence exceeds configured event limit.");
+    if (last > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new DatabaseOperationError("Accepted registry ordinal exceeds exact storage representation.");
     }
     if (validateRip(rip).kind !== "valid" || rip.said !== regid || store.seqSaider(regid, 0)?.qb64 !== regid) {
       throw new DatabaseOperationError("Accepted registry inception is inconsistent.");

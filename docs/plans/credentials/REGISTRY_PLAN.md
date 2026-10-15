@@ -68,10 +68,10 @@ host-resolution path and is not an indefinitely blocking port requirement.
    accepted-chain assembly and IPEX receipt cutoffs through actual runtime owners.
    Include missing/out-of-order events, duplicate/competing successors, reseals,
    earliest anchors, dependency retry, close/reopen and durable replay.
-2. Qualify legacy v1, v2 and #168 store readback without path/table/owner collisions.
-   Preserve `evts/ancs/tels/heads/maes/ooes`, physical `heds.`, local `regs.`,
-   ordinal widths, insertion/deduplication order, markers and aliases. Reads must
-   not rewrite, migrate or discard records. A migration needs separate review.
+2. Qualify current v1/v2 protocol stores without path/table/owner collisions.
+   Preserve current ordinal precision, insertion/deduplication order, accepted
+   markers and aliases. Remove old #168-layout compatibility tests and lazy-table
+   machinery added solely for that layout; no migration or old-data reader.
 3. Preserve `LMDB_DATA_V1=true`; LMDB format, body protocol and attachment genus
    are independent. Use disposable stores and one live V1 owner per path/process.
    Compare Python→TS and TS→Python where the reference actually supports the path.

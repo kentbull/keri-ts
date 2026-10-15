@@ -177,9 +177,9 @@ updates before inception stage body/anchor-escrow rows, never accepted markers;
 the stored, self-validating inception supplies issuer identity after reopen.
 `processEscrows(regid)` explicitly retries one registry through ordinary engine
 anchoring and ordering. Its full tuple/witness policy deliberately exceeds
-digest-only `vet` evidence. A finite ordinal ceiling bounds accepted chain length
-and prevents tighter configurations from replaying oversized staged rows; it
-does not bound escrow counts, scans, native allocation or total runtime memory.
+digest-only `vet` evidence. There is no application event-count ceiling. Incoming
+ordinals retain bigint precision until checked conversion at the numeric storage
+boundary, including events staged before inception.
 Each accepted event commits independently, preserving a prefix if a later event
 fails. Corrupt stored inception/accepted state and datastore failures propagate.
 

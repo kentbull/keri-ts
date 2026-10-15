@@ -46,8 +46,9 @@ RegistryObserver intake owns per-event engine publication, without bulk import. 
 Disclosed issuer/target/rd, blinded/bound state and historical cutoff are separate
 checks. Shared time/mod.ts parsing retains exact microseconds and requires an explicit
 RFC3339 zone; cutoff selection includes events exactly at the supplied timestamp.
-IPEX borrows RegistryStore and checks its finite chain ceiling before collecting
-accepted updates; an existing head with missing accepted rows is corruption.
+IPEX borrows RegistryStore and collects accepted updates without an event quota.
+Ordinals must remain exactly representable by the numeric storage API; an existing
+head with missing accepted rows is corruption.
 Supplied chain authentication does not prove global freshness. IPEX
 presentation cutoffs require receiver-observed KRAM time, still pending.
 Share parsed rip/bup field validation across observer and local processing, but
