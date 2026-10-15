@@ -109,7 +109,9 @@ before acceptance lookup. These local cuts do not close the generic approval
 payload or child-genus contracts.
 
 KEL approval decodes its named child, group and member lists before local member
-selection, joining or signing. Interaction does not carry rotation members.
+selection, joining or signing. Bind the selected group to the KEL child prefix or
+VDR anchor prefix before prompting: shared participants do not make group identities
+interchangeable. A mismatched wrapper must not authorize another group's event. Interaction does not carry rotation members.
 Existing raw attribute re-publication remains at the wire boundary pending its
 own producer-contract cut; it must not become an input to approval policy again.
 Multisig publication prepares and endorses its recipient-specific EXN at the
