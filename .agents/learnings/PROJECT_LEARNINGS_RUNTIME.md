@@ -74,9 +74,11 @@ HTTP response/request bodies propagate cleanup failure instead of discarding it.
 CESR request teardown may error an unread successful native response body.
 Suppress only the intentional controller's exact abort reason from body cancellation;
 foreign AbortErrors and cleanup failures still propagate after shared credit releases.
-HTTP prepared attempts consume the sender's joined expected-refusal result directly;
-strict source/frame APIs keep their throwing contract. The sender owns its parser
-refusal bridge; transport callers do not observe exception identities for HTTP.
+HTTP/TCP prepared attempts consume the sender's joined expected-refusal result directly;
+strict source/frame APIs keep their throwing contract. HTTP owns its parser refusal
+bridge; TCP's application conversation owns parser admission while byte egress
+returns only its own capacity refusals. Prepared delivery does not observe exception
+identities. Strict and attempt APIs share the same connection and cleanup owners.
 Fetch teardown joins pending rejection as well as late response cleanup. Timeout
 null recognizes only its controller's exact reason; foreign same-class AbortErrors
 and I/O failures propagate without repeating an already-reported object.

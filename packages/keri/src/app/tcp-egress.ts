@@ -1,5 +1,11 @@
 /** One owned TCP writer shared by finite values and pull-driven sources. */
-import { type CesrFrame, framePayload, ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
+import {
+  type CesrFrame,
+  framePayload,
+  ResourceAdmissionError,
+  type ResourceDecision,
+  ResourceLimitError,
+} from "cesr-ts";
 import { createConnection, type Socket } from "node:net";
 import { call, type Operation, resource, type Task } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
@@ -52,14 +58,26 @@ export interface TcpRead {
   open(source: (signal: AbortSignal) => AsyncIterable<Uint8Array>, signal: AbortSignal): Operation<Operation<void>>;
 }
 
+/** Expected capacity refusal from this transport invocation, after owned cleanup joins. */
+export type TcpAttempt = TcpTransmission | { kind: "refuse"; error: ResourceAdmissionError };
+
 /** Send one already resident value; its owner remains borrowed until joined completion. */
 export function sendCesrTcp(
   url: string,
   bytes: Uint8Array,
   options: TcpSendOptions = {},
 ): Operation<TcpTransmission> {
+  return completedTcp(attemptSendCesrTcp(url, bytes, options));
+}
+
+/** Finite attempt shares the byte transport owner without acquiring protocol components. */
+export function attemptSendCesrTcp(
+  url: string,
+  bytes: Uint8Array,
+  options: TcpSendOptions = {},
+): Operation<TcpAttempt> {
   const cap = Math.min(positive(options.maxChunkBytes ?? 65536, "maxChunkBytes"), Math.max(1, bytes.length));
-  return writeTcp(url, (signal) => chunkBytes(bytes, { signal, maxChunkBytes: cap }), {
+  return attemptWriteTcp(url, (signal) => chunkBytes(bytes, { signal, maxChunkBytes: cap }), {
     ...options,
     maxChunkBytes: cap,
   }, bytes.buffer.byteLength);
@@ -252,17 +270,34 @@ async function writeBorrowedSource(
   return bytes;
 }
 
-/** Shared connection/source/write owner; no direction, queue or parser is duplicated by adapters. */
+/** Preserve strict streaming/frame APIs over the same connection owner. */
 function writeTcp(
   url: string,
   factory: TcpSourceFactory,
   options: TcpSendOptions,
   retainedBytes: number,
 ): Operation<TcpTransmission> {
-  return call(function*() {
-    const refuse: (error: ResourceAdmissionError) => never = (error) => {
+  return completedTcp(attemptWriteTcp(url, factory, options, retainedBytes));
+}
+
+/** Refusals become exceptions only after the attempt joins its owned cleanup. */
+function* completedTcp(attempt: Operation<TcpAttempt>): Operation<TcpTransmission> {
+  const result = yield* attempt;
+  if (result.kind === "refuse") throw result.error;
+  return result;
+}
+
+/** Shared connection/source/write owner; no direction, queue or parser is duplicated by adapters. */
+function attemptWriteTcp(
+  url: string,
+  factory: TcpSourceFactory,
+  options: TcpSendOptions,
+  retainedBytes: number,
+): Operation<TcpAttempt> {
+  return call(function*(): Operation<TcpAttempt> {
+    const refuse = (error: ResourceAdmissionError): Extract<TcpAttempt, { kind: "refuse" }> => {
       options.onAdmissionRefusal?.(error);
-      throw error;
+      return { kind: "refuse", error };
     };
     const parsed = new URL(url), port = Number(parsed.port);
     if (parsed.protocol !== "tcp:" || !Number.isInteger(port) || port < 1 || port > 65535) {
@@ -288,19 +323,19 @@ function writeTcp(
       read && (services.resources.limits.streams < 2
         || services.resources.limits.bytes < outputBytes + read.maxChunkBytes + read.maxBufferedBytes)
     ) {
-      refuse(new ResourceAdmissionError("TCP duplex exceeds configured capacity", "limit"));
+      return refuse(new ResourceAdmissionError("TCP duplex exceeds configured capacity", "limit"));
     }
-    yield* resource<void>(function*(provide) {
+    const credit = yield* resource<ResourceDecision>(function*(provide) {
       const admission = services.resources.reserve({ streams: 1, bytes: outputBytes });
-      if (admission.kind === "refuse") {
-        refuse(new ResourceAdmissionError(`TCP output admission refused: ${admission.reason}`, admission.reason));
-      }
       try {
-        yield* provide();
+        yield* provide(admission);
       } finally {
-        admission.reservation.release();
+        if (admission.kind === "reserve") admission.reservation.release();
       }
     });
+    if (credit.kind === "refuse") {
+      return refuse(new ResourceAdmissionError(`TCP output admission refused: ${credit.reason}`, credit.reason));
+    }
     const receiver = new AbortController();
     let connectedSocket: Socket | undefined;
     // Consumer setup owns RX admission before connect; its byte source remains lazy until the returned task runs.

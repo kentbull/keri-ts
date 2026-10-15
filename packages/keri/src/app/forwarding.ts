@@ -65,8 +65,8 @@ import type { OobiReplyLimits } from "./oobi-replies.ts";
 import { Organizer } from "./organizing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
-import { converseCesrTcp, type TcpReplyReceiver } from "./tcp-conversation.ts";
-import { sendCesrTcp } from "./tcp-egress.ts";
+import { attemptConverseCesrTcp, converseCesrTcp, type TcpReplyReceiver } from "./tcp-conversation.ts";
+import { attemptSendCesrTcp, sendCesrTcp } from "./tcp-egress.ts";
 
 /** Delivery preference accepted by CLI and runtime exchange send helpers. */
 export type ExchangeDeliveryPreference = "auto" | "direct" | "indirect";
@@ -173,29 +173,21 @@ export function* attemptPreparedCesrTarget(
     if (result.error.reason === "busy") return "busy";
     throw result.error;
   }
-  let observed: CesrHttpRefusal | ResourceAdmissionError | undefined;
-  try {
-    yield* call(() =>
-      sendPreparedCesrTarget(
-        target,
-        services,
-        signal,
-        (error) => observed = error,
-        (error) => observed = error,
-        receiver,
-      )
-    );
+  if (target.kind === "stored") {
     signal?.throwIfAborted();
     return "complete";
-  } catch (error) {
-    if (!observed || error !== observed) throw error;
-    signal?.throwIfAborted();
-    if (error instanceof ResourceAdmissionError) {
-      if (error.reason === "busy") return "busy";
-      throw error;
-    }
-    return "refused";
   }
+  const result = receiver
+    ? yield* attemptConverseCesrTcp(target.url, target.message, {
+      services,
+      signal,
+      replies: { ...receiver, local: true },
+    })
+    : yield* attemptSendCesrTcp(target.url, target.message, { services, signal });
+  signal?.throwIfAborted();
+  if (result.kind !== "refuse") return "complete";
+  if (result.error.reason === "busy") return "busy";
+  throw result.error;
 }
 
 interface PosterOptions {
