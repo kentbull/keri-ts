@@ -72,12 +72,25 @@ interface PendingQuery extends QueryRequest {
  * Own admitted metadata until completion/clear/joined shutdown. Top-level query and witness lists
  * are copied; nested query values remain aliases and must stay immutable throughout queue/consumer lifetime.
  */
-class PendingQueries extends Deck<PendingQuery> {
+class PendingQueries {
+  private readonly queued: Deck<PendingQuery>;
   private active?: PendingQuery;
   constructor(private readonly resources: ResourcePolicy, capacity: number) {
-    super(undefined, capacity);
+    this.queued = new Deck(undefined, capacity);
   }
-  override checkSpace(count = 1, onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void): void {
+  get capacity(): number {
+    return this.queued.capacity;
+  }
+  get length(): number {
+    return this.queued.length;
+  }
+  get empty(): boolean {
+    return this.queued.empty;
+  }
+  peekHead(): PendingQuery | undefined {
+    return this.queued.peekHead();
+  }
+  checkSpace(count = 1, onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void): void {
     if (!Number.isSafeInteger(count) || count < 0) throw new RangeError("Invalid query admission count");
     if (count > this.capacity) throw new ResourceLimitError("Query batch exceeds item capacity");
     if (count > this.capacity - this.length) {
@@ -101,7 +114,7 @@ class PendingQueries extends Deck<PendingQuery> {
       const request = prepare();
       if (!request) return false;
       let live = true;
-      super.append({
+      this.queued.append({
         ...request,
         release() {
           if (!live) return;
@@ -117,21 +130,6 @@ class PendingQueries extends Deck<PendingQuery> {
       }
     }
   }
-  override append(_request: PendingQuery): number {
-    throw new Error("Use query coordinator admission");
-  }
-  override prepend(_request: PendingQuery): number {
-    throw new Error("Use query coordinator admission");
-  }
-  override extend(_requests: Iterable<PendingQuery>): number {
-    throw new Error("Use query coordinator admission");
-  }
-  override pull(): PendingQuery | undefined {
-    throw new Error("Pending query ownership requires completion or rotation");
-  }
-  override pop(): PendingQuery | undefined {
-    throw new Error("Pending query ownership requires completion or rotation");
-  }
   /** Protect the selected head while preparation/consumption may suspend. */
   holdHead(): void {
     this.active = this.peekHead();
@@ -140,22 +138,22 @@ class PendingQueries extends Deck<PendingQuery> {
     this.active = undefined;
   }
   complete(): void {
-    const request = super.pull();
+    const request = this.queued.pull();
     this.active = undefined;
     request?.release();
   }
   /** Unresolved work rotates without giving up or reacquiring its slot/metadata credit. */
   rotate(): void {
-    const request = super.pull();
+    const request = this.queued.pull();
     this.active = undefined;
-    if (request) super.append(request);
+    if (request) this.queued.append(request);
   }
   /** Preserve an active head until its consumer joins; clear only independently queued ownership. */
-  override clear(): void {
+  clear(): void {
     const count = this.length;
     for (let index = 0; index < count; index++) {
-      const request = super.pull()!;
-      if (request === this.active) super.append(request);
+      const request = this.queued.pull()!;
+      if (request === this.active) this.queued.append(request);
       else request.release();
     }
   }
