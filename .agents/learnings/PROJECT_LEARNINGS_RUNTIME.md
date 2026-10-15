@@ -154,8 +154,9 @@ AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
 Protocol producers use their queues directly: plain Decks carry records; admitted
 queues reserve actual retention before effects and publish after the owning writes.
-Cue byte admission returns only its own expected capacity refusal; strict protocol
-producers keep reserveCueBytes, while runtime queues consume admitCueBytes directly.
+CueDeck owns its remaining metadata inspection and retention admission directly;
+there is no generic cue-byte reservation/result API or configurable copy allowance.
+This existing accounting policy remains under audit, not justified by its tests.
 Runtime delivery admission returns queued/ineligible/refuse before wire preparation;
 its query sink consumes that result directly. QueryCoordinator retains plain Deck
 records without restoring removed metadata reservations or queue caps.
