@@ -79,10 +79,11 @@ The four multisig event builders carry one MultisigEventProposal with correlated
 icp/rot/ixn/rpy attributes through byte preparation and synchronous body building.
 Inception derives gid from its child; callers supply member lists, not another gid
 or child commitment. Do not reconstruct typed input from an erased serialized SAD.
-Local KEL publication reuses this proposal and preparation contract, including the
-resolved recipient. Derive labels and inception gid at the grouping owner; do not
-accept a second CLI label or group identity. Approval re-publication remains a
-private raw-wire boundary pending its own inbound contract cut. Other
+Local KEL publication and approval re-publication reuse this proposal and preparation
+contract, including the resolved recipient. Derive labels and inception gid at the
+grouping owner; do not accept a second CLI label or group identity. Decode known
+member/delegator fields before approval, and publish only those fields. Derive the
+signed genus hint from the actual local attachment genus, not copied peer attributes. Other
 multisig/TEL/business routes retain their separate builders. Inbound
 membership decodes unknown attributes into join, rotate or participate requests
 before consulting local habitats. Preserve optional-list filtering, rotation's
@@ -112,8 +113,9 @@ KEL approval decodes its named child, group and member lists before local member
 selection, joining or signing. Bind the selected group to the KEL child prefix or
 VDR anchor prefix before prompting: shared participants do not make group identities
 interchangeable. A mismatched wrapper must not authorize another group's event. Interaction does not carry rotation members.
-Existing raw attribute re-publication remains at the wire boundary pending its
-own producer-contract cut; it must not become an input to approval policy again.
+The same decoded proposal drives approval and KEL re-publication; unknown peer
+attributes are not endorsed into a fresh local wrapper. RPY/VDR publication input
+contracts remain separate follow-up work.
 Multisig publication prepares and endorses its recipient-specific EXN at the
 workflow owner. Poster borrows that exact body and wire for delivery and durable
 retry; its optional TCP dependency is the reply receiver contract. Preparation

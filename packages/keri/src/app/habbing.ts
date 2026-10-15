@@ -1717,8 +1717,8 @@ export class Habery {
     pre: string,
     group: string,
     mhab: Hab,
-    smids: string[],
-    rmids?: string[],
+    smids: readonly string[],
+    rmids?: readonly string[],
     ns?: string,
   ): Hab {
     if (!pre) {
