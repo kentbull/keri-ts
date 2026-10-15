@@ -181,7 +181,7 @@ function* registerAndSendProposal(
     message,
     topic: MULTISIG_TOPIC,
   });
-  return [...result.deliveries, ...result.queued];
+  return [...result.deliveries];
 }
 
 /** Poll until a specific group KEL event is accepted or attempts expire. */
@@ -447,9 +447,7 @@ function* approveKelProposal(
   const { event: serder, group: groupPre, proposal } = approval;
   const { smids } = proposal.attrs;
   const embeddedSaid = serder.said;
-  const members = proposal.route === MULTISIG_IXN_ROUTE
-    ? smids
-    : uniqueMembers([...smids, ...proposal.attrs.rmids]);
+  const members = proposal.route === MULTISIG_IXN_ROUTE ? smids : uniqueMembers([...smids, ...proposal.attrs.rmids]);
   const member = proposal.route === MULTISIG_IXN_ROUTE
     ? localGroupMember(hby, groupPre)
     : findLocalMember(hby, members);

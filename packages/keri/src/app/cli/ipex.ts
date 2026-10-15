@@ -7,10 +7,7 @@ import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
 import { Reger } from "../../db/reger.ts";
 import { type AgentRuntime, processMailboxTurn } from "../agent-runtime.ts";
 import { fileBytes } from "../byte-source.ts";
-import {
-  isLocalGroupHab,
-  localGroupMember,
-} from "../group-members.ts";
+import { isLocalGroupHab, localGroupMember } from "../group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import {
@@ -92,7 +89,7 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
       topic: CREDENTIAL_MAILBOX_TOPIC,
       delivery: ipexArgs.delivery,
     });
-    console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries, queued: result.queued }));
+    console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries }));
   });
 }
 
@@ -113,7 +110,7 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
       topic: CREDENTIAL_MAILBOX_TOPIC,
       delivery: ipexArgs.delivery,
     });
-    console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries, queued: result.queued }));
+    console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries }));
   });
 }
 
@@ -402,7 +399,7 @@ function* sendPriorResponse(
       topic: CREDENTIAL_MAILBOX_TOPIC,
       delivery: ipexArgs.delivery,
     });
-    console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries, queued: result.queued }));
+    console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries }));
   });
 }
 

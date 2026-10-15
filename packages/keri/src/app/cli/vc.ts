@@ -238,7 +238,6 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
       tel: result.tel,
       status: result.status,
       deliveries: result.deliveries,
-      queued: result.queued,
     }));
   });
 }

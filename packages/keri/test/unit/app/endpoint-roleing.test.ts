@@ -27,7 +27,6 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
   await run(function*() {
     const hby = yield* createHabery({
       name: `endpoint-role-propose-${crypto.randomUUID()}`,
-      outboxer: "create",
       temp: true,
       skipConfig: true,
     });
@@ -62,15 +61,8 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
         assertEquals(runtime.reactor.exchanger.complete(args.serder.said!), true);
         assertEquals(hby.db.exns.get([args.serder.said!])?.raw, args.serder.raw);
         sent.push({ recipient: args.recipient, said: args.serder.said! });
-        // Shared mailbox failure must retain separate recipient routing in the real outbox.
-        runtime.poster.outboxer.queueMessage(args.serder.said!, args.message, {
-          sender: member.pre,
-          recipient: args.recipient,
-          topic: args.topic,
-          createdAt: new Date().toISOString(),
-        }, ["shared-mailbox"]);
         sends++;
-        return { serder: args.serder, deliveries: [], queued: ["outbox:shared-mailbox"] };
+        return { serder: args.serder, deliveries: ["https://mailbox.test/"] };
       };
 
       const result = yield* proposeGroupEndpointRole(runtime, group, {
@@ -84,12 +76,8 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       assertEquals(result.group, group.pre);
       assertEquals(result.proposals, sent);
       assertEquals(new Set(sent.map((proposal) => proposal.said)).size, 2);
-      assertEquals(result.deliveries, ["outbox:shared-mailbox", "outbox:shared-mailbox"]);
+      assertEquals(result.deliveries, ["https://mailbox.test/", "https://mailbox.test/"]);
       assertEquals(sends, 2);
-      assertEquals(
-        [...runtime.poster.outboxer.iterPending()].map((item) => item.message.recipient).sort(),
-        [remote.pre, other.pre].sort(),
-      );
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

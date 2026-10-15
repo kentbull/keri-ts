@@ -191,7 +191,6 @@ export interface RuntimePendingState {
   multiPending: boolean;
   authQueued: boolean;
   authInFlight: boolean;
-  outboxPending: boolean;
   delegationPending: boolean;
   /** True when query continuations or deferred correspondence requests remain. */
   queriesPending: boolean;
@@ -657,7 +656,6 @@ export function* processRuntimeTurn(
   yield* runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
   yield* runtime.authenticator.processOnce();
-  yield* runtime.poster.processPending(runtime);
   yield* runtime.delegating.processAllOnce(runtime);
   runtime.signaler?.processOnce();
   if (options.pollMailbox ?? true) {
@@ -691,7 +689,6 @@ export function runtimePendingState(
     multiPending: runtime.hby.db.moobi.cnt() > 0,
     authQueued: runtime.hby.db.woobi.cnt() > 0,
     authInFlight: runtime.hby.db.mfa.cnt() > 0,
-    outboxPending: runtime.poster.hasPendingWork(),
     delegationPending: runtime.hby.db.dpwe.cnt() > 0
       || runtime.hby.db.dune.cnt() > 0
       || runtime.hby.db.dpub.cnt() > 0,
@@ -705,7 +702,7 @@ export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   const state = runtimePendingState(runtime);
   return state.ingress || state.cues || state.replyEscrow
     || state.oobiQueued || state.oobiInFlight || state.multiPending
-    || state.authQueued || state.authInFlight || state.outboxPending
+    || state.authQueued || state.authInFlight
     || state.delegationPending
     || state.queriesPending
     || state.deliveriesPending;
@@ -858,12 +855,6 @@ export function* runAgentRuntime(
         }),
       ]
       : []),
-    yield* spawn(function*() {
-      while (true) {
-        yield* runtime.poster.processPending(runtime);
-        yield* runtimeTurn();
-      }
-    }),
     yield* spawn(function*() {
       yield* runtime.mailboxPoller.pollDo((batch) => settleMailboxPollBatch(runtime, batch));
     }),
