@@ -1,13 +1,11 @@
-/** Pinned MessagePack decoder workspace policy, separate from declaration preflight and decoded retention. */
-export function msgpackWorkspaceBytes(
-  rawBytes: number,
-  states: number,
-  extensions: number,
-  shortString: number,
-): number {
-  // 3.1.3 Decoder fields, pooled container states, short-string units and timestamp scratch.
-  return 64 + 18 * 16 + 64 + 2 * 16 + 64 + 64 + 64 + 26 * shortString
-    + 64 + 2 * 16 + states * (64 + 7 * 16 + 16) + extensions * (64 + 2 * 16 + 2 * 8 + 64) + rawBytes;
+/**
+ * Logical MessagePack decode allowance: 8 KiB fixed scratch, 256 bytes per
+ * nonempty container and per extension, and one raw copy. This conservative policy
+ * covers the audited decoder without counting its private fields or pool layout.
+ * It is not a native heap bound; declaration and decoded-tree charges stay separate.
+ */
+export function msgpackWorkspaceBytes(rawBytes: number, containers: number, extensions: number): number {
+  return 8192 + 256 * (containers + extensions) + rawBytes;
 }
 
 /** Pinned CBOR workspace policy; actual message-global reset remains the decoder scope's responsibility. */

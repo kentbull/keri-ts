@@ -54,7 +54,7 @@ export function admitMsgpack(raw: Uint8Array, budget: DecodedBodyBudget): boolea
   }
   budget.admitStage?.(64); // Constant scalar scanner workspace precedes inspection.
   let remaining = budget.decodedBytes;
-  let pending = 1, offset = 0, states = 0, extensions = 0, shortString = 0, shortage = false;
+  let pending = 1, offset = 0, containers = 0, extensions = 0, shortage = false;
   while (offset < raw.length && pending > 0) {
     const token = raw[offset++];
     let width = 0, size = 0, payload = 0, charge = 16;
@@ -97,11 +97,10 @@ export function admitMsgpack(raw: Uint8Array, budget: DecodedBodyBudget): boolea
     for (let index = 0; index < width; index++) size = size * 256 + raw[offset++];
     if (kind === "array" || kind === "map") {
       charge += 64 + size * (kind === "array" ? 16 : 48);
-      if (size > 0) states++;
+      if (size > 0) containers++;
     } else if (kind === "string") {
       charge += 2 * size;
       payload = size;
-      shortString = Math.max(shortString, Math.min(size, 200));
     } else if (kind === "binary") {
       charge += 64 + size;
       payload = size;
@@ -120,7 +119,7 @@ export function admitMsgpack(raw: Uint8Array, budget: DecodedBodyBudget): boolea
     }
     offset += payload;
   }
-  const working = msgpackWorkspaceBytes(raw.length, states, extensions, shortString);
+  const working = msgpackWorkspaceBytes(raw.length, containers, extensions);
   const charge = budget.decodedBytes - remaining;
   if (!Number.isSafeInteger(working)) throw new ResourceLimitError("MGPK working extent exceeds safe accounting");
   budget.admitStage?.(working);
