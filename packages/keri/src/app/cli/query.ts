@@ -135,14 +135,14 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
           prefix,
           anchor,
           {
-            hab,
+            signer: hab.pre,
           },
         );
         watchDone = () => querier.done;
       } else {
         console.log("Checking for updates...");
         const noticer = runtime.querying.watchKeyState(prefix, {
-          hab,
+          signer: hab.pre,
         });
         watchDone = () => noticer.done;
       }

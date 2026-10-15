@@ -123,6 +123,27 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             bodies,
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteController.pre), query))),
           );
+          const selected = hby.makeHab("selected");
+          const selectedQuery = selected.query(remoteController.pre, remoteController.pre, { route: "logs", q: {} });
+          const beforeSelected = bodies.length;
+          yield* sink.send({
+            kind: "wire",
+            cue: {
+              kin: "query",
+              pre: remoteController.pre,
+              src: remoteController.pre,
+              signer: selected.pre,
+              route: "logs",
+              q: {},
+            },
+            messages: [selectedQuery],
+          });
+          yield* runtime.deliveries.process(runtime);
+          assertEquals(
+            bodies.slice(beforeSelected),
+            yield* call(() => expectedMessages(concatBytes(introduce(selected, remoteController.pre), selectedQuery))),
+            "the introduction must authenticate the selected query signer, not the ambient Hab",
+          );
           const cue = {
             kin: "query" as const,
             pre: remoteController.pre,
@@ -393,11 +414,11 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
               pre: remoteController.pre,
               route: "logs" as const,
               q: { s: "1", fn: "0" },
-              hab: sender,
+              signer: sender.pre,
               wits: [remoteWitness.pre],
             });
           const waiting = runtime.querying.watchSeqNo(remoteController.pre, 1, {
-            hab: sender,
+            signer: sender.pre,
             wits: [remoteWitness.pre],
           });
           yield* runtime.querying.processPending();

@@ -2,7 +2,7 @@ import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type S
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
 import { reserveCueBytes } from "../core/cue-admission.ts";
 import { type CueQueueInput, cueReader } from "../core/cue-publishing.ts";
-import type { AgentCue, CueEmission, QueryCue, QueryInstruction } from "../core/cues.ts";
+import type { AgentCue, CueEmission, QueryCue, QueryInstruction, QueryRequest } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
@@ -46,21 +46,7 @@ const ignoreSink: CueSink = {
   },
 };
 
-/**
- * One queued query request awaiting honest habitat/attester resolution.
- *
- * These requests are intentionally portable: the coordinator may defer them
- * across runtime turns until enough local knowledge exists to emit a real wire
- * query without guessing.
- */
-type QueryRequest = QueryInstruction & {
-  pre: string;
-  hab?: Hab;
-  src?: string;
-  wits?: string[];
-};
-
-/** One pending record retains canonical metadata; its Hab is an accepted-state borrow, outside the byte walk. */
+/** One pending record retains plain query metadata and its existing admission lifetime. */
 type PendingQuery = QueryRequest & { release(): void };
 
 /** Copy only the owned query-body level without erasing its route/payload relationship. */
@@ -107,7 +93,7 @@ class PendingQueries {
       throw refusal;
     }
   }
-  /** Admit before normalization/witness copies; undefined preparation is ineligible, not a queued acknowledgment. */
+  /** Admit before query/witness copies; undefined preparation is ineligible, not a queued acknowledgment. */
   admit(
     cue: QueryCue,
     prepare: () => QueryRequest | undefined,
@@ -224,7 +210,7 @@ function encodeHexOrdinal(num: number): string {
  */
 export class KeyStateNoticer implements QueryContinuation {
   readonly pre: string;
-  readonly hab?: Hab;
+  readonly signer?: string;
   readonly wits?: string[];
   done = false;
   private queried = false;
@@ -232,10 +218,10 @@ export class KeyStateNoticer implements QueryContinuation {
 
   constructor(
     pre: string,
-    { hab, wits }: { hab?: Hab; wits?: string[] } = {},
+    { signer, wits }: { signer?: string; wits?: string[] } = {},
   ) {
     this.pre = pre;
-    this.hab = hab;
+    this.signer = signer;
     this.wits = wits ? [...wits] : undefined;
   }
 
@@ -251,7 +237,7 @@ export class KeyStateNoticer implements QueryContinuation {
     if (local.sn < remoteSn) {
       if (!this.logQuerier || this.logQuerier.targetSn < remoteSn) {
         this.logQuerier = new LogQuerier(this.pre, remoteSn, {
-          hab: this.hab,
+          signer: this.signer,
           wits: this.wits,
         });
       }
@@ -270,7 +256,7 @@ export class KeyStateNoticer implements QueryContinuation {
         pre: this.pre,
         route: "ksn",
         q: { fn: "0", s: "0" },
-        hab: this.hab,
+        signer: this.signer,
         wits: this.wits,
       });
       this.queried = true;
@@ -301,7 +287,7 @@ export class KeyStateNoticer implements QueryContinuation {
 export class LogQuerier implements QueryContinuation {
   readonly pre: string;
   readonly targetSn: number;
-  readonly hab?: Hab;
+  readonly signer?: string;
   readonly wits?: string[];
   done = false;
   private queried = false;
@@ -309,11 +295,11 @@ export class LogQuerier implements QueryContinuation {
   constructor(
     pre: string,
     targetSn: number,
-    { hab, wits }: { hab?: Hab; wits?: string[] } = {},
+    { signer, wits }: { signer?: string; wits?: string[] } = {},
   ) {
     this.pre = pre;
     this.targetSn = targetSn;
-    this.hab = hab;
+    this.signer = signer;
     this.wits = wits ? [...wits] : undefined;
   }
 
@@ -330,7 +316,7 @@ export class LogQuerier implements QueryContinuation {
         pre: this.pre,
         route: "logs",
         q: { fn: "0", s: "0" },
-        hab: this.hab,
+        signer: this.signer,
         wits: this.wits,
       });
       this.queried = true;
@@ -360,7 +346,7 @@ export class SeqNoQuerier implements QueryContinuation {
   readonly pre: string;
   readonly targetSn: number;
   readonly fn: number;
-  readonly hab?: Hab;
+  readonly signer?: string;
   readonly wits?: string[];
   done = false;
   private queried = false;
@@ -370,18 +356,18 @@ export class SeqNoQuerier implements QueryContinuation {
     targetSn: number,
     {
       fn = 0,
-      hab,
+      signer,
       wits,
     }: {
       fn?: number;
-      hab?: Hab;
+      signer?: string;
       wits?: string[];
     } = {},
   ) {
     this.pre = pre;
     this.targetSn = targetSn;
     this.fn = fn;
-    this.hab = hab;
+    this.signer = signer;
     this.wits = wits ? [...wits] : undefined;
   }
 
@@ -401,7 +387,7 @@ export class SeqNoQuerier implements QueryContinuation {
           fn: encodeHexOrdinal(this.fn),
           s: encodeHexOrdinal(this.targetSn),
         },
-        hab: this.hab,
+        signer: this.signer,
         wits: this.wits,
       });
       this.queried = true;
@@ -429,7 +415,7 @@ export class SeqNoQuerier implements QueryContinuation {
 export class AnchorQuerier implements QueryContinuation {
   readonly pre: string;
   readonly anchor: ReturnType<typeof SealEvent.toSad>;
-  readonly hab?: Hab;
+  readonly signer?: string;
   readonly wits?: string[];
   done = false;
   private queued = 0;
@@ -438,11 +424,11 @@ export class AnchorQuerier implements QueryContinuation {
   constructor(
     pre: string,
     anchor: AnchorQuerier["anchor"],
-    { hab, wits }: { hab?: Hab; wits?: string[] } = {},
+    { signer, wits }: { signer?: string; wits?: string[] } = {},
   ) {
     this.pre = pre;
     this.anchor = { i: anchor.i, s: anchor.s, d: anchor.d };
-    this.hab = hab;
+    this.signer = signer;
     this.wits = wits ? [...wits] : undefined;
   }
 
@@ -456,7 +442,7 @@ export class AnchorQuerier implements QueryContinuation {
       this.done = true;
       return;
     }
-    this.attesters ??= coordinator.attestersFor(this.pre, { hab: this.hab, wits: this.wits });
+    this.attesters ??= coordinator.attestersFor(this.pre, { signer: this.signer, wits: this.wits });
     // A retired witness may never learn the seal. Ask each known candidate once;
     // preserve the next index when the existing queue refuses a later candidate.
     // With no current endpoints, retain the ordinary deferred-resolution request.
@@ -465,7 +451,7 @@ export class AnchorQuerier implements QueryContinuation {
         pre: this.pre,
         route: "logs",
         q: { fn: "0", s: "0", a: { ...this.anchor } },
-        hab: this.hab,
+        signer: this.signer,
         src: this.attesters[this.queued],
         wits: this.wits,
       });
@@ -534,7 +520,7 @@ export class QueryCoordinator implements CueSink {
   /** Register one persistent key-state continuation. */
   watchKeyState(
     pre: string,
-    options: { hab?: Hab; wits?: string[] } = {},
+    options: { signer?: string; wits?: string[] } = {},
   ): KeyStateNoticer {
     this.admitContinuation();
     const noticer = new KeyStateNoticer(pre, options);
@@ -546,7 +532,7 @@ export class QueryCoordinator implements CueSink {
   watchSeqNo(
     pre: string,
     sn: number,
-    options: { fn?: number; hab?: Hab; wits?: string[] } = {},
+    options: { fn?: number; signer?: string; wits?: string[] } = {},
   ): SeqNoQuerier {
     this.admitContinuation();
     const querier = new SeqNoQuerier(pre, sn, options);
@@ -558,7 +544,7 @@ export class QueryCoordinator implements CueSink {
   watchAnchor(
     pre: string,
     anchor: AnchorQuerier["anchor"],
-    options: { hab?: Hab; wits?: string[] } = {},
+    options: { signer?: string; wits?: string[] } = {},
   ): AnchorQuerier {
     this.admitContinuation();
     const querier = new AnchorQuerier(pre, anchor, options);
@@ -578,8 +564,7 @@ export class QueryCoordinator implements CueSink {
    */
   enqueue(request: QueryRequest): void {
     if (this.closed) throw new Error("Query coordinator is closed");
-    const { hab: _, ...cue } = request;
-    this.pending.admit({ kin: "query", ...cue }, () => ({
+    this.pending.admit({ kin: "query", ...request }, () => ({
       ...request,
       ...copyQuery(request),
       wits: request.wits ? [...request.wits] : undefined,
@@ -596,6 +581,7 @@ export class QueryCoordinator implements CueSink {
     return this.pending.admit(cue, () => ({
       pre: cue.pre,
       ...copyQuery(cue),
+      signer: cue.signer,
       src: cue.src,
       wits: cue.wits ? [...cue.wits] : undefined,
     }), onAdmissionRefusal);
@@ -691,7 +677,7 @@ export class QueryCoordinator implements CueSink {
             if (!request) break;
             self.pending.holdHead();
             if (self.sink.admitQuery) {
-              const { hab: _, release: __, ...query } = request;
+              const { release: _, ...query } = request;
               const cue: QueryCue = { kin: "query", ...query };
               const admission = self.sink.admitQuery(cue, () => self.wireEmissionForRequest(request));
               if (admission === "busy") break;
@@ -768,12 +754,12 @@ export class QueryCoordinator implements CueSink {
    * Resolve the habitat that is allowed to sign the outbound query.
    *
    * Resolution order:
-   * - request-specific habitat
+   * - explicitly selected local signer (unavailable means unresolved, never fallback)
    * - runtime-configured habitat
    * - sole local habitat
    */
-  private configuredHab(requestHab?: Hab): Hab | null {
-    return requestHab ?? this.hab ?? soleHab(this.hby);
+  private configuredHab(signer?: string): Hab | null {
+    return signer === undefined ? this.hab ?? soleHab(this.hby) : this.hby.habs.get(signer) ?? null;
   }
 
   /** Observe retained cue evidence after its immediate destination transfer. */
@@ -820,7 +806,7 @@ export class QueryCoordinator implements CueSink {
   private transientQueryEmission(cue: QueryCue, hab?: Hab): CueEmission | null {
     if (!cue.route || !cue.pre) return null;
     return this.wireEmissionForRequest({
-      hab,
+      signer: cue.signer ?? hab?.pre,
       pre: cue.pre,
       ...copyQuery(cue),
       src: cue.src,
@@ -835,13 +821,13 @@ export class QueryCoordinator implements CueSink {
    * defer the request rather than manufacture a query from guesswork.
    */
   private wireEmissionForRequest(request: QueryRequest): CueEmission | null {
-    const hab = this.configuredHab(request.hab);
+    const hab = this.configuredHab(request.signer);
     if (!hab) {
       return null;
     }
 
     const src = request.src
-      ?? this.attestersFor(request.pre, { hab, wits: request.wits })[0];
+      ?? this.attestersFor(request.pre, { signer: hab.pre, wits: request.wits })[0];
     if (!src) {
       return null;
     }
@@ -851,6 +837,7 @@ export class QueryCoordinator implements CueSink {
       cue: {
         kin: "query",
         pre: request.pre,
+        ...(request.signer === undefined ? {} : { signer: request.signer }),
         src,
         ...instruction,
         wits: request.wits ? [...request.wits] : undefined,
@@ -863,16 +850,16 @@ export class QueryCoordinator implements CueSink {
   /** Return eligible attester IDs in role priority; explicit witness overrides retain caller order. */
   attestersFor(
     pre: string,
-    { hab, wits }: { hab?: Hab; wits?: string[] } = {},
+    { signer, wits }: { signer?: string; wits?: string[] } = {},
   ): string[] {
     if (wits && wits.length > 0) {
       // Explicit watcher/witness overrides outrank endpoint-role lookup.
       return [...wits];
     }
-    const signer = this.configuredHab(hab);
-    if (!signer) return [];
+    const hab = this.configuredHab(signer);
+    if (!hab) return [];
 
-    const ends = signer.endsFor(pre);
+    const ends = hab.endsFor(pre);
     for (const role of QUERY_ROLE_PRIORITY) {
       const roleEnds = ends[role];
       if (!roleEnds) {

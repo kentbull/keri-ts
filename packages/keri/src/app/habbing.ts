@@ -1263,7 +1263,7 @@ export class Hab {
           kind: "wire",
         };
       case "query": {
-        if (cue.route && cue.pre && cue.src) {
+        if (cue.route && cue.pre && cue.src && (cue.signer === undefined || cue.signer === this.pre)) {
           return {
             cue,
             messages: [this.query(cue.pre, cue.src, cue)],

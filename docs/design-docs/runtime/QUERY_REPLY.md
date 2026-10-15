@@ -141,12 +141,25 @@ their existing producer behavior and remain distinct from accepted TSN validatio
 one required `q` body, as KERIpy does; there is no `query` alias or precedence rule.
 Routed work requires `pre` and a concrete `route`: logs accepts sequence/FEL/anchor
 filters, ksn accepts sequence/FEL filters, and tels/tsn require registry and credential
-identifiers. The target appears once in the envelope. Hab.query accepts the same
+identifiers. The target appears once in the envelope. QueryRequest shares this
+routed record with QueryCue; signer is the local AID, while src is the remote
+attester. Continuations and pending work carry identifiers, not Hab references.
+The existing coordinator resolves an explicit selection through Habery at signing;
+an unavailable selection remains unresolved and never falls back to another Hab.
+A Hab interpreting a cue selected for another signer leaves it to correspondence.
+Anchorer receives only a QueryRequest enqueue port; composition owns the consuming
+coordinator and its lifetime. KERIpy 714 normally resolves its queued src through
+Habery, but also permits a Hab override. This queue uses an identifier in both
+cases; the explicit signer name distinguishes it from our existing remote-attester
+src field. Delivery uses that same selected signer for its introduction and
+endpoint lookup. Without explicit mailbox routes, poll all eligible witness
+mailboxes: a reply lives at the witness that answered. The existing per-endpoint
+workers provide concurrency; no new scheduler is needed. Hab.query accepts the same
 instruction, or the existing mbx topic-cursor form. The raw query constructor remains
 an open codec boundary for extension routes and malformed-input vectors.
 
 Continuation-owned pending requests use the same field. Copy the top level at the
-existing ownership boundaries before normalization or signing; preserve nested
+existing ownership boundaries before signing; preserve nested
 immutable borrows and joined retry/cancellation lifetimes.
 
 TEL recovery notifications carry concrete `q.ri` and `q.i` fields, with `q.issr`

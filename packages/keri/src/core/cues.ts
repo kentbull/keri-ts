@@ -39,12 +39,21 @@ export type QueryInstruction =
   | { route: "ksn"; q: Pick<KelQueryFields, "fn" | "s"> & { a?: never } }
   | { route: "tels" | "tsn"; q: Pick<TelQueryCue["q"], "ri" | "i"> };
 
+/** Deferred query work names its local signer and remote attester; it never borrows a Hab. */
+export type QueryRequest = QueryInstruction & {
+  pre: string;
+  signer?: string;
+  src?: string;
+  wits?: string[];
+};
+
 /** Routed query work or an unresolved schema/credential-recovery notice, matching KERIpy cue records. */
 export type QueryCue =
-  | ({ kin: "query"; pre: string; src?: string; wits?: string[] } & QueryInstruction)
+  | ({ kin: "query" } & QueryRequest)
   | {
     kin: "query";
     pre?: never;
+    signer?: never;
     src?: never;
     route?: never;
     wits?: never;

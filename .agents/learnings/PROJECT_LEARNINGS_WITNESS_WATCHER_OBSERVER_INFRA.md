@@ -19,6 +19,10 @@ Track children before readiness waits and report their output on startup failure
 Probe OOBIs, not nonexistent health endpoints; resolve both controller and witness
 OOBIs. Proved controller/witness combinations do not imply untested KLI replacement
 or arbitrary topology. The six-witness soak is manual, outside merge CI.
+A default KLI inception may poll before the witness knows its KEL. The pinned
+KERIpy Poller reconnects after 30 seconds and retries one second later; its outer
+command deadline must include that cycle. Preserve authorization and full receipt
+assertions rather than treating the arrival order as a different topology.
 
 Verify Python interpreter, revision and actually imported modules. Console entry
 exit status matters: python -m can ignore main's return. Explicitly select body
