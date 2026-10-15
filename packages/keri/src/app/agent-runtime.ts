@@ -669,11 +669,11 @@ export function* processRuntimeTurn(
     yield* processMailboxTurn(runtime, { hab: options.hab });
   }
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
-  yield* runtime.querying.processPending(runtime);
+  yield* runtime.querying.processPending();
   yield* runtime.reactor.processEscrowsOnce();
   yield* runtime.delegating.processAllOnce(runtime);
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
-  yield* runtime.querying.processPending(runtime);
+  yield* runtime.querying.processPending();
   yield* runtime.deliveries.process(runtime);
 }
 
@@ -879,7 +879,7 @@ export function* runAgentRuntime(
       }
     }),
     yield* spawn(function*() {
-      yield* runtime.querying.queryDo(runtime);
+      yield* runtime.querying.queryDo();
     }),
   ];
   try {

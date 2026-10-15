@@ -5,7 +5,6 @@ import { type CueQueueInput, cueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CueEmission, QueryCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
-import type { AgentRuntime } from "./agent-runtime.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -689,17 +688,16 @@ export class QueryCoordinator implements CueSink {
    * This is the Effection analogue of the KERIpy query/noticer doers: inspect
    * local state, emit any initial or follow-on queries that can honestly be
    * constructed, and retain unresolved work for later turns.
-   * Runtime callers prepare signing in a short guarded turn. Admitted transport sinks also
-   * retain wire ownership; canonical pending metadata stays charged on the Baser policy.
+   * Preparation/admission are synchronous owner operations over committed accepted state.
+   * Admitted sinks retain wire ownership; no network wait occurs while signing or borrowing state.
+   * Canonical pending metadata stays charged on the Baser policy.
    * Standalone/custom wire preparation retains caller-owned bounds.
    */
-  processPending(runtime?: AgentRuntime): Operation<void> {
+  processPending(): Operation<void> {
     // deno-lint-ignore no-this-alias -- The isolated generator owns one complete drain pass.
     const self = this;
     return call(function*() {
       if (self.processing || self.closed) return;
-      if (self.sink.admitQuery && !runtime) throw new RangeError("Admitted queries require their owning runtime");
-      if (runtime && runtime.querying !== self) throw new RangeError("Wrong query coordinator runtime");
       self.processing = true;
       let finish!: () => void;
       self.joined = new Promise<void>((resolve) => finish = resolve);
@@ -732,12 +730,7 @@ export class QueryCoordinator implements CueSink {
                 src: request.src,
                 wits: request.wits,
               };
-              const admit = () => self.sink.admitQuery!(cue, () => self.wireEmissionForRequest(request));
-              const result: { admission: CueAdmission } = { admission: "ineligible" };
-              yield* runtime!.reactor.settle(undefined, {}, function*() {
-                result.admission = admit();
-              });
-              const admission = result.admission;
+              const admission = self.sink.admitQuery(cue, () => self.wireEmissionForRequest(request));
               if (admission === "busy") break;
               if (admission === "transferred") {
                 self.pending.complete();
@@ -747,13 +740,7 @@ export class QueryCoordinator implements CueSink {
               self.pending.rotate();
               continue;
             }
-            const prepared: { emission?: CueEmission | null } = {};
-            if (runtime) {
-              yield* runtime.reactor.settle(undefined, {}, function*() {
-                prepared.emission = self.wireEmissionForRequest(request);
-              });
-            } else prepared.emission = self.wireEmissionForRequest(request);
-            const emission = prepared.emission;
+            const emission = self.wireEmissionForRequest(request);
             if (emission) {
               // Keep the head and its capacity reservation while the transport can suspend or fail.
               yield* self.sink.send(emission);
@@ -807,9 +794,9 @@ export class QueryCoordinator implements CueSink {
   }
 
   /** Continuous background query worker for long-lived runtime hosts. */
-  *queryDo(runtime?: AgentRuntime): Operation<never> {
+  *queryDo(): Operation<never> {
     while (true) {
-      yield* this.processPending(runtime);
+      yield* this.processPending();
       yield* runtimeTurn();
     }
   }
