@@ -3228,7 +3228,7 @@ Deno.test("Kevery accepts superseding delegated recovery when the newer delegati
         "accept",
       );
 
-      const decision = kvy.processEvent({
+      const envelope = {
         serder: drt2,
         sigers: signRotation(drt2, secondRotationSigner.signer.seed),
         wigers: [],
@@ -3236,7 +3236,36 @@ Deno.test("Kevery accepts superseding delegated recovery when the newer delegati
         sscs: [sourceSealFor(drt2Anchor)],
         ssts: [],
         local: false,
-      });
+        eager: true,
+      };
+      const originalKey = dgKey(delegate.pre, drt1.said!);
+      for (const hint of [null, sourceSealFor(dipAnchor)]) {
+        if (hint) remote.db.aess.pin(originalKey, [hint.s, hint.d]);
+        else remote.db.aess.rem(originalKey);
+        assertEquals(kvy.decideEvent(envelope).kind, "accept");
+        assertEquals(
+          remote.db.aess.get(originalKey)?.map((value) => value.qb64) ?? null,
+          hint ? [hint.s.qb64, hint.d.qb64] : null,
+          "a delegation decision must not repair or drop the original hint",
+        );
+      }
+      remote.db.aess.rem(originalKey);
+      const capacity = kvy.cues.capacity;
+      kvy.cues.capacity = kvy.cues.length;
+      assertThrows(() => kvy.processEvent(envelope), DeckFullError);
+      assertEquals(remote.db.aess.get(originalKey), null, "cue refusal leaves delegation hints untouched");
+      assertEquals(remote.db.getKever(delegate.pre)?.said, drt1.said);
+      kvy.cues.capacity = capacity;
+      const failure = new Error("delegated state write failed");
+      const written = remote.db.pinState.bind(remote.db);
+      withPatchedMethod(remote.db, "pinState", (pre, state) => {
+        if (pre === delegate.pre && state.d === drt2.said) throw failure;
+        return written(pre, state);
+      }, () => assertEquals(assertThrows(() => kvy.processEvent(envelope)), failure));
+      assertEquals(remote.db.aess.get(originalKey), null, "failed acceptance rolls back hint repair too");
+      assertEquals(remote.db.getKever(delegate.pre)?.said, drt1.said);
+      const decision = kvy.processEvent(envelope);
+      assertEquals(remote.db.aess.get(originalKey)?.[1].qb64, drt1Anchor.said);
 
       assertEquals(decision.kind, "accept");
       assertEquals(remote.db.getKever(delegate.pre)?.sn, 1);

@@ -284,7 +284,10 @@ export class Kevery {
         }
         const decision = this.decideEvent(envelope);
         // A still-pending replay keeps its existing row and emits no additional cues.
-        if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) return decision;
+        if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) {
+          this.writeSourceSealRepairs(decision);
+          return decision;
+        }
         prepared = this.prepareDecision(decision);
         prepared?.write();
         if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
@@ -952,7 +955,10 @@ export class Kevery {
       ("cues" in decision ? decision.cues?.length ?? 0 : 0)
         + (decision.kind === "accept" ? 4 : decision.kind === "duplicate" ? 1 : 0),
     );
-    if (decision.kind === "reject") return;
+    if (decision.kind === "reject") {
+      if (!decision.sourceSealRepairs?.length) return;
+      return { write: () => this.writeSourceSealRepairs(decision), publish() {}, release() {} };
+    }
     if (decision.kind === "accept") {
       const kever = this.kevers.get(decision.transition.pre);
       const target = !kever || decision.transition.mode === "create"
@@ -971,6 +977,7 @@ export class Kevery {
       const prepared = this.publisher.prepare(cues);
       return {
         write: () => {
+          this.writeSourceSealRepairs(decision);
           this.db.writeKelEventLog(transition.log, logged, target.delegated);
           this.db.pinState(transition.pre, transition.state);
           this.db.udes.rem(dgKey(transition.pre, transition.said));
@@ -1001,6 +1008,7 @@ export class Kevery {
     const prepared = cues.length ? this.publisher.prepare(cues) : undefined;
     return {
       write: () => {
+        this.writeSourceSealRepairs(decision);
         if (decision.kind === "escrow") this.persistEscrowInstruction(decision.instruction);
         else if (decision.log && kever && logged) this.db.writeKelEventLog(decision.log, logged, kever.delegated);
       },
@@ -1009,6 +1017,15 @@ export class Kevery {
       },
       release: () => prepared?.release(),
     };
+  }
+
+  /** Apply concrete delegation-hint discoveries only under the processing owner's write phase. */
+  private writeSourceSealRepairs(decision: KeverDecision): void {
+    for (const { pre, said, sourceSeal } of decision.sourceSealRepairs ?? []) {
+      const key = dgKey(pre, said);
+      if (sourceSeal) this.db.aess.pin(key, [sourceSeal.s, sourceSeal.d]);
+      else this.db.aess.rem(key);
+    }
   }
 
   /** Describe a clone-order anomaly; storage metadata does not publish protocol work. */

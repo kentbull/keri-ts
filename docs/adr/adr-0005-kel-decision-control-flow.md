@@ -68,6 +68,15 @@ prepareKelEventLog/writeKelEventLog. It receives verified event material and the
 processing owner's delegated fact. Clone-order notification policy stays with
 Kevery; the storage seam neither decides validity nor publishes cues.
 
+Delegation lookup discoveries travel as concrete `sourceSealRepairs` in the
+attachment/event decision. Kever reads existing hints and sees earlier repairs
+within that evaluation, but does not write `aess`. Kevery applies discovered
+repairs in its existing write phase after cue admission; a same-bucket escrow
+retry may still repair its hint without rewriting the escrow or publishing cues.
+This preserves KERIpy's `fetchDelegatingEvent` recovery behavior while respecting
+the TypeScript decide/apply boundary. No generic effect language or transaction
+hook system is involved. The internal lookup is no longer a public Kever API.
+
 Kever's constructors and evaluation input have no cue-queue dependency. Any
 follow-up cue descriptions are returned in decisions or log preparation; the
 processing orchestrator controls acceptance, persistence and publication. This
