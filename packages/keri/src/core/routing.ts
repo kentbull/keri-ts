@@ -1,6 +1,7 @@
 import { Cigar, Dater, Diger, Prefixer, ResourceLimitError, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
+import type { PreparedCueBatch } from "./cue-admission.ts";
 import type { CueQueueInput } from "./cue-publishing.ts";
 import { type CuePublisher, cuePublisher } from "./cue-publishing.ts";
 import type { QueryCue } from "./cues.ts";
@@ -14,7 +15,7 @@ import {
   keepEscrow,
   logEscrowDecision,
 } from "./kever-decisions.ts";
-import type { EndpointRecord, LocationRecord } from "./records.ts";
+import { EndpointRecord, LocationRecord } from "./records.ts";
 import { isRole } from "./roles.ts";
 
 /** Live reply outcome for one reply that was accepted this pass. */
@@ -862,14 +863,8 @@ export class Revery {
  *   `Kevery` port is complete
  */
 export class BasicReplyRouteHandler {
-  readonly db: Baser;
-  readonly rvy: Revery;
-
   /** Create one reply-route handler bound to one reply verifier and database. */
-  constructor(db: Baser, rvy: Revery) {
-    this.db = db;
-    this.rvy = rvy;
-  }
+  constructor(readonly rvy: Revery) {}
 
   /**
    * Register the Gate E reply routes handled by this bootstrap handler.
@@ -898,9 +893,9 @@ export class BasicReplyRouteHandler {
     saider: Diger,
     allowed: boolean,
   ): void {
-    this.db.eans.pin(keys, saider);
-    const existing = this.db.ends.get(keys) ?? {} as EndpointRecord;
-    this.db.ends.pin(keys, { ...existing, allowed });
+    this.rvy.db.eans.pin(keys, saider);
+    const existing = this.rvy.db.ends.get(keys);
+    this.rvy.db.ends.pin(keys, new EndpointRecord({ ...existing?.asDict(), allowed }));
   }
 
   /**
@@ -911,9 +906,9 @@ export class BasicReplyRouteHandler {
    * - `locs.` stores the latest URL projection by endpoint and scheme
    */
   updateLoc(keys: [string, string], saider: Diger, url: string): void {
-    this.db.lans.pin(keys, saider);
-    const existing = this.db.locs.get(keys) ?? {} as LocationRecord;
-    this.db.locs.pin(keys, { ...existing, url });
+    this.rvy.db.lans.pin(keys, saider);
+    const existing = this.rvy.db.locs.get(keys);
+    this.rvy.db.locs.pin(keys, new LocationRecord({ ...existing?.asDict(), url }));
   }
 
   /**
@@ -923,14 +918,13 @@ export class BasicReplyRouteHandler {
    * - validates route/body shape
    * - derives the BADA route base `/end/role`
    * - applies same-SAID idempotence before acceptance
-   * - delegates signature/staleness logic to `Revery.acceptReply`
-   * - updates `eans.` and `ends.` on success
+   * - evaluates proof and updates proof/`eans.`/`ends.` in its own transaction
+   * - publishes queries only after that commit; caller-owned writers are refused
    */
   processReplyEndRole(args: {
     serder: SerderKERI;
     diger: Diger;
     route: string;
-    action?: string;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
@@ -945,14 +939,13 @@ export class BasicReplyRouteHandler {
       );
     }
 
-    const data = args.serder.ked?.a as Record<string, unknown> | undefined;
-    const cid = typeof data?.cid === "string"
-      ? new Prefixer({ qb64: data.cid }).qb64
-      : null;
-    const role = typeof data?.role === "string" ? data.role : null;
-    const eid = typeof data?.eid === "string"
-      ? new Prefixer({ qb64: data.eid }).qb64
-      : null;
+    const data = args.serder.ked?.a;
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new ValidationError("Missing one of cid/role/eid in /end/role reply.");
+    }
+    const cid = "cid" in data && typeof data.cid === "string" ? new Prefixer({ qb64: data.cid }).qb64 : null;
+    const role = "role" in data && typeof data.role === "string" ? data.role : null;
+    const eid = "eid" in data && typeof data.eid === "string" ? new Prefixer({ qb64: data.eid }).qb64 : null;
     if (!cid || !role || !eid) {
       throw new ValidationError(
         "Missing one of cid/role/eid in /end/role reply.",
@@ -963,27 +956,37 @@ export class BasicReplyRouteHandler {
     }
 
     const keys: [string, string, string] = [cid, role, eid];
-    let osaider = this.db.eans.get(keys);
-    if (osaider && osaider.qb64 === args.diger.qb64) {
-      osaider = null;
+    if (this.rvy.db.inWriteTransaction) {
+      throw new Error("Endpoint handler must own the reply transaction; process replies outside caller-owned writers");
     }
-    const decision = this.rvy.acceptReply({
-      serder: args.serder,
-      saider: args.diger,
-      route: "/end/role",
-      aid: cid,
-      osaider,
-      cigars: args.cigars,
-      tsgs: args.tsgs,
-    });
-    if (decision.kind === "unverified") {
-      return unverifiedReplyDecision(
-        `Unverified end role reply = ${args.serder.said} role = ${role}`,
-      );
+    let queries: PreparedCueBatch | undefined;
+    try {
+      const decision = this.rvy.db.env!.transactionSync(() => {
+        let osaider = this.rvy.db.eans.get(keys);
+        if (osaider?.qb64 === args.diger.qb64) osaider = null;
+        const plan = this.rvy.decideReply({
+          serder: args.serder,
+          saider: args.diger,
+          route: "/end/role",
+          aid: cid,
+          osaider,
+          cigars: args.cigars,
+          tsgs: args.tsgs,
+        });
+        this.rvy.cues.checkSpace(plan.cues.length);
+        queries = plan.cues.length ? cuePublisher(this.rvy.cues).prepare(plan.cues) : undefined;
+        this.rvy.writeReply(plan);
+        if (plan.kind === "unverified") {
+          return unverifiedReplyDecision(`Unverified end role reply = ${args.serder.said} role = ${role}`);
+        }
+        this.updateEnd(keys, args.diger, allowed);
+        return acceptReplyDecision();
+      });
+      queries?.publish();
+      return decision;
+    } finally {
+      queries?.release();
     }
-
-    this.updateEnd(keys, args.diger, allowed);
-    return acceptReplyDecision();
   }
 
   /**
@@ -994,8 +997,8 @@ export class BasicReplyRouteHandler {
    * - same-SAID replay is treated as idempotent, not stale
    * - URL/scheme consistency is validated before reply acceptance
    *
-   * On success this updates `lans.` and `locs.` with the accepted location
-   * projection for the endpoint.
+   * Proof, `lans.` and `locs.` commit together in this owner's transaction;
+   * query publication follows commit. Caller-owned writers are refused.
    */
   processReplyLocScheme(args: {
     serder: SerderKERI;
@@ -1009,12 +1012,13 @@ export class BasicReplyRouteHandler {
         `Unsupported route=${args.route} in reply message.`,
       );
     }
-    const data = args.serder.ked?.a as Record<string, unknown> | undefined;
-    const eid = typeof data?.eid === "string"
-      ? new Prefixer({ qb64: data.eid }).qb64
-      : null;
-    const scheme = typeof data?.scheme === "string" ? data.scheme : null;
-    const url = typeof data?.url === "string" ? data.url : null;
+    const data = args.serder.ked?.a;
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new ValidationError("Missing one of eid/scheme/url in /loc/scheme reply.");
+    }
+    const eid = "eid" in data && typeof data.eid === "string" ? new Prefixer({ qb64: data.eid }).qb64 : null;
+    const scheme = "scheme" in data && typeof data.scheme === "string" ? data.scheme : null;
+    const url = "url" in data && typeof data.url === "string" ? data.url : null;
     if (!eid || !scheme || url === null) {
       throw new ValidationError(
         "Missing one of eid/scheme/url in /loc/scheme reply.",
@@ -1030,26 +1034,36 @@ export class BasicReplyRouteHandler {
     }
 
     const keys: [string, string] = [eid, scheme];
-    let osaider = this.db.lans.get(keys);
-    if (osaider && osaider.qb64 === args.diger.qb64) {
-      osaider = null;
+    if (this.rvy.db.inWriteTransaction) {
+      throw new Error("Endpoint handler must own the reply transaction; process replies outside caller-owned writers");
     }
-    const decision = this.rvy.acceptReply({
-      serder: args.serder,
-      saider: args.diger,
-      route: "/loc/scheme",
-      aid: eid,
-      osaider,
-      cigars: args.cigars,
-      tsgs: args.tsgs,
-    });
-    if (decision.kind === "unverified") {
-      return unverifiedReplyDecision(
-        `Unverified loc scheme reply URL=${url} SAID=${args.serder.said}`,
-      );
+    let queries: PreparedCueBatch | undefined;
+    try {
+      const decision = this.rvy.db.env!.transactionSync(() => {
+        let osaider = this.rvy.db.lans.get(keys);
+        if (osaider?.qb64 === args.diger.qb64) osaider = null;
+        const plan = this.rvy.decideReply({
+          serder: args.serder,
+          saider: args.diger,
+          route: "/loc/scheme",
+          aid: eid,
+          osaider,
+          cigars: args.cigars,
+          tsgs: args.tsgs,
+        });
+        this.rvy.cues.checkSpace(plan.cues.length);
+        queries = plan.cues.length ? cuePublisher(this.rvy.cues).prepare(plan.cues) : undefined;
+        this.rvy.writeReply(plan);
+        if (plan.kind === "unverified") {
+          return unverifiedReplyDecision(`Unverified loc scheme reply URL=${url} SAID=${args.serder.said}`);
+        }
+        this.updateLoc(keys, args.diger, url);
+        return acceptReplyDecision();
+      });
+      queries?.publish();
+      return decision;
+    } finally {
+      queries?.release();
     }
-
-    this.updateLoc(keys, args.diger, url);
-    return acceptReplyDecision();
   }
 }

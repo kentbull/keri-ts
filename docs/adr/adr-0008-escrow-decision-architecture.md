@@ -73,6 +73,12 @@ message. Do not attach open diagnostic context bags or inspect messages to choos
 retry/purge behavior. The replay site can include useful identity and failure
 detail in its message; logging consumes that message directly.
 
+Endpoint reply acceptance is one transaction owned by its semantic route handler:
+proof/escrow writes, superseded proof removal and endpoint pointer/projection writes
+commit together. Admit concrete queries before writes and publish after commit.
+Refuse caller-owned writers rather than treating a nested return as a commit.
+This rule does not imply atomicity across independent Baser/Reger environments.
+
 This does not prohibit exceptions. It prohibits using exceptions as the primary
 representation for normal expected remote-processing branches.
 

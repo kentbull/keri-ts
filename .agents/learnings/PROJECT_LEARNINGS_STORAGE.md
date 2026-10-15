@@ -1,5 +1,9 @@
 # Storage learnings
 
+LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
+use that boolean to distinguish owning a commit from borrowing a caller's writer;
+do not cast the native environment or infer commit completion from a nested return.
+
 ## Database truth
 
 Baser owns accepted KEL row layout and prospective first-seen metadata. Its

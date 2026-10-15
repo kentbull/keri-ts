@@ -588,6 +588,11 @@ export class Baser {
     return this.lmdber.env;
   }
 
+  /** Report an active caller writer without exposing native transaction internals. */
+  get inWriteTransaction(): boolean {
+    return this.lmdber.inWriteTransaction;
+  }
+
   /** Admit one physical binary row before its owned copy; native scratch remains separate. */
   getValBounded(table: Database<BinVal, BinKey>, key: Uint8Array, maxBytes: number): Uint8Array | null {
     return this.lmdber.getValBounded(table, key, maxBytes);

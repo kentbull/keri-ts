@@ -279,7 +279,7 @@ export class Kevery {
     escrow?: EventEscrowEntry,
   ): KeverDecision | null {
     const env = this.db.env!;
-    if ((env as unknown as { env: { writeTxn?: unknown } }).env.writeTxn) {
+    if (this.db.inWriteTransaction) {
       throw new Error("Kevery must own the KEL transaction; process events outside caller-owned writers");
     }
     let metadata: EventMetadata | undefined;

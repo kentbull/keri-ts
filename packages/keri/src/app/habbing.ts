@@ -1468,7 +1468,7 @@ export class Habery {
       lax: false,
       local: true,
     });
-    this.replyRoutes = new BasicReplyRouteHandler(this.db, this.rvy);
+    this.replyRoutes = new BasicReplyRouteHandler(this.rvy);
     this.replyRoutes.registerReplyRoutes(this.rtr);
     this.kevery = new Kevery(this.db, {
       cues: localCues,

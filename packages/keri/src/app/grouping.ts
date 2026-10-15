@@ -409,7 +409,7 @@ export class Multiplexor {
     this.notifier = notifier ?? null;
     const router = new Router();
     this.rvy = new Revery(hby.db, { rtr: router });
-    new BasicReplyRouteHandler(hby.db, this.rvy).registerReplyRoutes(router);
+    new BasicReplyRouteHandler(this.rvy).registerReplyRoutes(router);
     this.kvy = new Kevery(hby.db, { lax: false, local: false, rvy: this.rvy });
     this.kvy.registerReplyRoutes(router);
     this.replay = new Exchanger(hby);

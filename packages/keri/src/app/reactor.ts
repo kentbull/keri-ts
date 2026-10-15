@@ -159,7 +159,7 @@ export class Reactor {
     this.ingress = new Deck();
     this.router = new Router();
     this.revery = new Revery(hby.db, { rtr: this.router, cues: this.cues });
-    this.replyRoutes = new BasicReplyRouteHandler(hby.db, this.revery);
+    this.replyRoutes = new BasicReplyRouteHandler(this.revery);
     this.replyRoutes.registerReplyRoutes(this.router);
     const kramer = kram ? new Kramer(hby.db, { config: kram, cues: this.cues, now, resources }) : undefined;
     this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery, messagePolicy, kramer });
