@@ -40,6 +40,13 @@ Endpoint-role state is accepted reply state, not startup configuration.
 - `app/endpoint-roleing.ts` owns reusable group endpoint-role proposal helpers.
 - `tufa ends add` and `tufa mailbox add --multisig-mode` share the group reply
   proposal path.
+- Proposal results and CLI JSON report `proposals: [{ recipient, said }]` for the
+  actual signed exchanges recorded locally and sent or queued for each recipient.
+  This replaces the former single `said` and `attachmentBytes` fields, which
+  described an unused wrapper. A locally completed proposal with no remote
+  recipients returns an empty list.
+- Recipient-specific SAIDs preserve the outbox's one-recipient-per-message retry
+  contract, including recipients sharing the same mailbox endpoint.
 - Startup should not synthesize `/loc/scheme` or `/end/role/add` state when
   explicit endpoint config is missing.
 

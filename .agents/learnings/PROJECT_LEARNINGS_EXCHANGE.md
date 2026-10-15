@@ -39,17 +39,37 @@ Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 
 ## Route ownership
 
+Challenge responses share one word-list contract between CLI production, decoded
+EXN validation and verifier lookup. Read decoded attributes as unknown; narrow
+words before domain use instead of asserting an open record. CLI JSON uses the
+same word-list predicate while retaining its own trim/filter behavior. The
+verified EXN sender identifies the responder; payload i is only existing wire
+projection and cannot select the reps/chas identity.
+
 V2 forwarding binds exactly one child to signed `a.evt`. The recipient authenticates
 its signatures. Children survive bounded enst storage, retry and replay; verified
 duplicates replace child evidence atomically and rerun the handler.
 
 V2 multisig supports icp/rot/ixn/rpy commitments and local membership. Child-SAID
 approval precedes ordinary KEL/reply processing. Local-first approval borrows parsed
-frames; remote-first approval reopens evidence. CLI proposal/join remains v1.
-Preserve first-notice behavior or retries can republish approval unnecessarily.
+frames; remote-first approval reopens evidence. V1 approval replays stored pathed
+child proofs through the same KEL/reply owners in either arrival order, including
+after database reopen. Replay decodes generic protocol bodies: issuance contains
+an ACDC child as well as KERI TEL/anchor children. Keep the KEL/reply approval
+reader KERI-specific and share only proof/genus resolution. Decode signed cgvrsn before parsing; explicit child genus
+wins, and a hint applies only to a child with attachments. Parent signatures never
+supply missing child proofs. CLI proposal/join remains v1. Shared proposal
+publication registers its actual signed wire through intake before transmission,
+so later peer proofs can replay without another approval prompt. Endpoint-role
+initiation likewise records each recipient-specific wrapper before delivery and
+returns those actual proposal identities. Preserve first-notice behavior or retries
+can republish approval unnecessarily.
 
 V2 IPEX construction and verification share IPEX_V2_PREDECESSORS in protocol-exchanging;
 v1 retains its distinct prior-route rule (grant follows agree, not apply).
+Closed IPEX verbs and their guard belong to the protocol module; version-specific
+predecessor policies remain distinct. Application-defined IPEX payload fields
+match KERIpy extension semantics, while disclosure modifiers use a named dp field.
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
 proof; metadata offers withhold issuer proofs but still validate carried schemas.
 Grant order is issuer authentication, own schemas, edge pins, then presentation.
@@ -61,6 +81,55 @@ receiver-owned KRAM time, node-local BLIDs and explicit fully witnessed Issuee
 source triples. Bind the exact grant target at the inclusive receipt cutoff;
 later accepted TEL updates cannot refresh it. Preserve missing proof escrow and
 independent issuer verification; deeper/hidden paths and unfinished routes remain guarded.
+
+The four multisig event builders carry one MultisigEventProposal with correlated
+icp/rot/ixn/rpy attributes through byte preparation and synchronous body building.
+Inception derives gid from its child; callers supply member lists, not another gid
+or child commitment. Do not reconstruct typed input from an erased serialized SAD.
+Local KEL/reply publication and approval re-publication reuse this proposal and preparation
+contract, including the resolved recipient. Derive labels and inception gid at the
+grouping owner; do not accept a second CLI label or group identity. Decode known
+member/delegator fields before approval, and publish only those fields. Derive the
+signed genus hint from the actual local attachment genus, not copied peer attributes. Other
+multisig/TEL/business routes retain their separate builders. Inbound
+membership decodes unknown attributes into join, rotate or participate requests
+before consulting local habitats. Preserve optional-list filtering, rotation's
+known-group shortcut and KERIpy's family-wide membership rule; handler registration
+selects supported routes. Generic EXN/embedded-SAD and approval boundaries still
+need their own audit.
+For a v1 wrapper around a legacy body with a different explicit attachment genus,
+derive signed a.cgvrsn from childGvrsn. Omit it when the body declares its genus or
+the versions agree. Canonical 714 icp/rot/ixn/rpy vectors compare complete unsigned
+bodies and supplemental wire; KERIpy's separate parent endorsement is not part of
+our builder output. KEL and reply approval use the same decoded child/body,
+pathed proof and resolved genus as replay. Sign local attachments in that genus
+and prefix only parser input with its selector; embedded wire remains body-first.
+VDR anchor approval uses the same decoded proof/genus for local signatures and
+combined intake; the registry regression verifies both accepted KEL anchor and
+TEL state. Decode the issuance credential before prompting or signing/accepting its
+anchor; a missing required child must not leave an accepted anchor behind a null
+approval result. Other VDR/credential input contracts and live issuance qualification
+remain separate work.
+Endpoint-role publication prepares its known gid/rpy envelope at the workflow
+owner. Keep recipient-specific SAIDs: the existing outbox stores one recipient
+per message SAID, so sharing a wrapper can overwrite retry routing. Report explicit
+recipient/SAID pairs, not a separate unsent wrapper or its attachment size. A
+one-caller helper accepting arbitrary payload/embed maps adds no boundary. Decoded endpoint-reply attributes narrow unknown cid/role/eid
+before acceptance lookup. These local cuts do not close the generic approval
+payload or child-genus contracts.
+
+KEL approval decodes its named child, group and member lists before local member
+selection, joining or signing. Bind the selected group to the KEL child prefix or
+VDR anchor prefix before prompting: shared participants do not make group identities
+interchangeable. A mismatched wrapper must not authorize another group's event. Interaction does not carry rotation members.
+The same decoded proposal drives approval and KEL re-publication; unknown peer
+attributes are not endorsed into a fresh local wrapper. RPY/VDR publication input
+contracts remain separate follow-up work.
+Multisig publication prepares and endorses its recipient-specific EXN at the
+workflow owner. Poster borrows that exact body and wire for delivery and durable
+retry; its optional TCP dependency is the reply receiver contract. Preparation
+alone is not approval: the publication owner first submits those bytes to local
+intake, then delivers them. Transport does not register approval.
 
 Pure multisig/IPEX body builders take parsed Serders synchronously. Byte convenience
 operations own cancellable parseBytes, finite nested-wire collection and finally
@@ -121,3 +190,20 @@ hidden declarations and unfinished graphs remain guarded.
 [multisig](../../docs/design-docs/exchange/MULTISIG.md),
 [IPEX](../../docs/design-docs/exchange/IPEX.md),
 [storage](../../docs/design-docs/db/PAYLOAD_STORAGE.md).
+
+Group IPEX approval derives its child, stored proof and genus from the wrapper.
+Partial signing receives proof bytes directly; it does not look them up through
+a wrapper ID. Prefix parser input with the resolved genus, serialize local
+signatures in that genus, and publish its signed replay hint. CLI group grants
+use the same genus for credential attachments, partial signatures and intake. Grant artifacts carry
+body-first bytes and explicit attachment genus; parser selectors belong only at
+intake, never inside embedded bytes. Apply the requested genus to ACDC, TEL and
+KEL proofs. Stored legacy grants require the receiver's configured child genus:
+a V1 outer envelope can preserve V2 child proofs, so its body cannot determine
+child framing. Holder polling and verifier runs expose this through `--gvrsn`.
+
+Reply approval publishes only its group identity through the event builder. VDR
+publication correlates registry/issuance routes with their required named children
+and known gid/usage fields. Derive the signed genus hint from the local anchor,
+and serialize the credential source proof in that genus too; a valid local
+credential does not prove the outgoing embedded proof is parseable.

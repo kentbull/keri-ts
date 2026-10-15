@@ -342,14 +342,26 @@ export class RegStateRecord extends RawRecord<RegStateRecordShape> implements Re
   }
 }
 
+/** Credential TSN KEL anchor: integer sequence and digest, unlike registry seals' hex sequence. */
+export interface CredentialKelAnchor {
+  s: number;
+  d: string;
+}
+
+/** Raw registry seal fields reuse the existing CESR SAD contract. */
+export type RegistrySealFields = ReturnType<typeof SealEventValue.toSad>;
+
+/** Raw state may carry an empty/partial registry seal: KERIpy lookup uses i/d and preserves absent s.
+ * TSN intake separately requires an empty or complete seal before semantic acceptance.
+ */
 export interface VcStateRecordShape {
   vn?: number[];
   i?: string;
   s?: string;
   d?: string;
   ri?: string;
-  ra?: Record<string, unknown>;
-  a?: Record<string, unknown>;
+  ra?: Partial<RegistrySealFields>;
+  a?: CredentialKelAnchor;
   dt?: string;
   et?: string;
 }
@@ -361,8 +373,8 @@ export class VcStateRecord extends RawRecord<VcStateRecordShape> implements VcSt
   declare s?: string;
   declare d?: string;
   declare ri?: string;
-  declare ra?: Record<string, unknown>;
-  declare a?: Record<string, unknown>;
+  declare ra?: Partial<RegistrySealFields>;
+  declare a?: CredentialKelAnchor;
   declare dt?: string;
   declare et?: string;
 

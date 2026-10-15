@@ -20,8 +20,21 @@ import { pathedMaterialCounterQb64b } from "./attachment-countering.ts";
 import { type TransIdxSigGroup } from "./dispatch.ts";
 import { serializeMessage as serializeExchangeMessage } from "./protocol-serialization.ts";
 
-/** V2 IPEX prior-route policy shared by body construction and accepted-conversation verification. */
-export const IPEX_V2_PREDECESSORS: Readonly<Record<string, readonly string[]>> = {
+/** Closed IPEX verb vocabulary shared by protocol versions. */
+export type IpexVerb = "apply" | "offer" | "agree" | "grant" | "admit" | "spurn";
+
+/** Narrow a wire route component before consulting version-specific policy. */
+export function isIpexVerb(value: string): value is IpexVerb {
+  return value === "apply"
+    || value === "offer"
+    || value === "agree"
+    || value === "grant"
+    || value === "admit"
+    || value === "spurn";
+}
+
+/** KERIpy acdc.ipexing PreviousRoutes, shared by v2 construction and accepted-conversation verification. */
+export const IPEX_V2_PREDECESSORS: Readonly<Record<Exclude<IpexVerb, "apply">, readonly IpexVerb[]>> = {
   offer: ["apply"],
   agree: ["offer"],
   grant: ["apply", "agree"],

@@ -154,7 +154,6 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
   if (isNaN(port) || port < 1 || port > 65535) {
     throw new ValidationError(
       `Invalid port number: ${port}. Port must be between 1 and 65535.`,
-      { port },
     );
   }
   if (!agentArgs.name) {

@@ -88,11 +88,10 @@ export function* endsAddCommand(
           });
           console.log(JSON.stringify({
             route: result.route,
-            said: result.said,
+            proposals: result.proposals,
             group: result.group,
             accepted: result.accepted,
             deliveries: result.deliveries,
-            attachmentBytes: result.attachmentBytes,
           }));
           return;
         }

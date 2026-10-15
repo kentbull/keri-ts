@@ -3,15 +3,15 @@
 Start with the [architecture map](ARCHITECTURE_MAP.md) for package/source ownership
 or the [parity roadmap](plans/PARITY_ROADMAP.md) for remaining approved work.
 
-| Area                                              | Purpose                                           |
-| ------------------------------------------------- | ------------------------------------------------- |
-| [Plans](plans/README.md)                          | Remaining work, dependencies and acceptance gates |
-| [Designs](design-docs/README.md)                  | Current behavior, ownership and contracts         |
-| [ADRs](adr/adr-0012-progressive-nested-parser.md) | Accepted decisions and supersession               |
-| [References](reference/README.md)                 | Worked examples, schema/coverage inventories      |
-| [Reports](reports/README.md)                      | Dated observations, evidence and limitations      |
-| [Archives](archived-plan-docs/README.md)          | Superseded plans and historical proposals         |
-| [Learnings](../.agents/PROJECT_LEARNINGS.md)      | Concise subject routing and durable traps         |
+| Area                                           | Purpose                                           |
+| ---------------------------------------------- | ------------------------------------------------- |
+| [Plans](plans/README.md)                       | Remaining work, dependencies and acceptance gates |
+| [Designs](design-docs/README.md)               | Current behavior, ownership and contracts         |
+| [ADRs](adr/adr-0013-simple-component-flows.md) | Accepted decisions and supersession               |
+| [References](reference/README.md)              | Worked examples, schema/coverage inventories      |
+| [Reports](reports/README.md)                   | Dated observations, evidence and limitations      |
+| [Archives](archived-plan-docs/README.md)       | Superseded plans and historical proposals         |
+| [Learnings](../.agents/PROJECT_LEARNINGS.md)   | Concise subject routing and durable traps         |
 
 Keep one owner per obligation or contract. Plans summarize delivered work in a
 line and link evidence; they are not session logs. Designs describe behavior,
