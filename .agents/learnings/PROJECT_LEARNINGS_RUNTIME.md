@@ -99,6 +99,10 @@ AgentRuntime exposes that same policy
 for recipients; shared deployments must inject one policy into all runtimes.
 Protocol producers borrow CuePublisher; its optional retention policy distinguishes
 held runtime credit from caller-owned standalone queues without concrete queue checks.
+Cue byte admission returns only its own expected capacity refusal; strict protocol
+producers keep reserveCueBytes, while runtime queues consume admitCueBytes directly.
+Pending query metadata admission returns queued/ineligible/refuse before copying;
+its queue has no refusal observer or disabled inherited methods.
 CueReader exposes only borrowing, transfer, and requeue; interpreting a plain
 queue still admits its input separately and removes it only after acceptance.
 CueDeck composes one Deck<OwnedCue>; it has no raw-cue mirror or destructive unowned removal API.

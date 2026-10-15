@@ -17,7 +17,7 @@ import {
 import { type CueSink } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { QueryCoordinator } from "../../../src/app/querying.ts";
-import { reserveCueBytes } from "../../../src/core/cue-admission.ts";
+import { admitCueBytes, reserveCueBytes } from "../../../src/core/cue-admission.ts";
 import { type KeverEventEnvelope } from "../../../src/core/eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 
@@ -715,13 +715,9 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, route: "logs", query: {} };
       assertThrows(() => reserveCueBytes(hby.db.resources, [cue], 64, undefined, { copies: 0 }), RangeError);
       const finite = new ResourcePolicy({ bytes: 25000 });
-      let floor: unknown;
-      const impossible = assertThrows(
-        () => reserveCueBytes(finite, [cue], 64, (error) => floor = error, { copies: 3 }),
-        ResourceAdmissionError,
-      );
-      assertStrictEquals(impossible, floor);
-      assertEquals([impossible.reason, finite.used.bytes], ["limit", 0]);
+      const impossible = admitCueBytes(finite, [cue], 64, { copies: 3 });
+      if (impossible.kind !== "refuse") throw new Error("Expected configured capacity refusal");
+      assertEquals([impossible.error.reason, finite.used.bytes], ["limit", 0]);
       const occupied = hby.db.resources.reserve({ bytes: hby.db.resources.limits.bytes });
       if (occupied.kind !== "reserve") throw new Error("Expected byte occupancy");
       let copied = false, observed: unknown;

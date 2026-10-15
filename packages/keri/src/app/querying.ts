@@ -1,6 +1,6 @@
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
-import { reserveCueBytes } from "../core/cue-admission.ts";
+import { admitCueBytes } from "../core/cue-admission.ts";
 import { cueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CueEmission, QueryCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
@@ -9,6 +9,12 @@ import type { AgentRuntime } from "./agent-runtime.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+
+/** Metadata admission precedes normalization/copying; foreign callback/service failures still throw. */
+type PendingQueryAdmission =
+  | { kind: "queued" }
+  | { kind: "ineligible" }
+  | { kind: "refuse"; error: ResourceAdmissionError | DeckFullError };
 
 /**
  * Query/reply correspondence helpers for the Gate E runtime.
@@ -90,29 +96,19 @@ class PendingQueries {
   peekHead(): PendingQuery | undefined {
     return this.queued.peekHead();
   }
-  checkSpace(count = 1, onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void): void {
-    if (!Number.isSafeInteger(count) || count < 0) throw new RangeError("Invalid query admission count");
-    if (count > this.capacity) throw new ResourceLimitError("Query batch exceeds item capacity");
-    if (count > this.capacity - this.length) {
-      const refusal = new DeckFullError("Pending query slots are occupied");
-      onAdmissionRefusal?.(refusal);
-      throw refusal;
+  /** Admit before normalization/witness copies; ineligible preparation never acknowledges queueing. */
+  admit(cue: QueryCue, prepare: () => QueryRequest | undefined): PendingQueryAdmission {
+    if (this.capacity < 1) throw new ResourceLimitError("Query batch exceeds item capacity");
+    if (this.length === this.capacity) {
+      return { kind: "refuse", error: new DeckFullError("Pending query slots are occupied") };
     }
-  }
-  /** Admit before normalization/witness copies; undefined preparation is ineligible, not a queued acknowledgment. */
-  admit(
-    cue: QueryCue,
-    prepare: () => QueryRequest | undefined,
-    onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void,
-  ): boolean {
-    this.checkSpace(1, onAdmissionRefusal);
-    const input = reserveCueBytes(this.resources, [cue], undefined, onAdmissionRefusal, {
-      copies: 3,
-    });
+    const credit = admitCueBytes(this.resources, [cue], undefined, { copies: 3 });
+    if (credit.kind === "refuse") return credit;
+    const input = credit.reservation;
     let published = false;
     try {
       const request = prepare();
-      if (!request) return false;
+      if (!request) return { kind: "ineligible" };
       let live = true;
       this.queued.append({
         ...request,
@@ -123,7 +119,7 @@ class PendingQueries {
         },
       });
       published = true;
-      return true;
+      return { kind: "queued" };
     } finally {
       if (!published) {
         input.release();
@@ -619,11 +615,12 @@ export class QueryCoordinator implements CueSink {
   enqueue(request: QueryRequest): void {
     if (this.closed) throw new Error("Query coordinator is closed");
     const { pre, route, query, src, wits } = request;
-    this.pending.admit({ kin: "query", pre, route, query, src, wits }, () => ({
+    const result = this.pending.admit({ kin: "query", pre, route, query, src, wits }, () => ({
       ...request,
       query: cloneQueryBody(query),
       wits: wits ? [...wits] : undefined,
     }));
+    if (result.kind === "refuse") throw result.error;
   }
 
   /** Retain a portable recovery cue using the normal field normalization and bounded pending queue. */
@@ -634,7 +631,7 @@ export class QueryCoordinator implements CueSink {
     if (this.closed) throw new Error("Query coordinator is closed");
     const pre = extractQueriedPrefix(cue);
     if (!pre) return false;
-    return this.pending.admit(cue, () => {
+    const result = this.pending.admit(cue, () => {
       return {
         pre,
         route: cue.route ?? "logs",
@@ -642,7 +639,12 @@ export class QueryCoordinator implements CueSink {
         src: cue.src,
         wits: cue.wits ? [...cue.wits] : undefined,
       };
-    }, onAdmissionRefusal);
+    });
+    if (result.kind === "refuse") {
+      onAdmissionRefusal?.(result.error);
+      throw result.error;
+    }
+    return result.kind === "queued";
   }
 
   /** Observe a source cue only after the downstream owner has atomically retained eligible delivery. */
