@@ -1,5 +1,6 @@
 import { clearSource, Decoder } from "cbor-x/decode";
 import { Encoder } from "cbor-x/encode";
+import { codecSyntaxFailure, forgetCodecSyntaxFailure, isCodecSyntaxFailure } from "./codec-errors.ts";
 import { DeserializeError } from "./errors.ts";
 
 /**
@@ -138,7 +139,6 @@ export function decodeKeriCbor<T = unknown>(raw: Uint8Array): T {
 const nativeDecode = Decoder.prototype.decode;
 const nativeTextDecode = TextDecoder.prototype.decode;
 const NativeArray = Array;
-const syntaxFailures = new WeakSet<DeserializeError>();
 // Private fixed bytes never reach an injected decode method or tag callback.
 const resetSource = Uint8Array.of(0xf6);
 Object.defineProperty(resetSource, "dataView", { value: new DataView(resetSource.buffer) });
@@ -172,7 +172,7 @@ function decodeCborScope(
       nativeDecode.call(keriCborDecoder, resetSource);
     } catch (cleanup) {
       clearSource(); // A foreign option/getter failure may precede checkedRead cleanup.
-      if (cleanup instanceof DeserializeError) syntaxFailures.delete(cleanup);
+      forgetCodecSyntaxFailure(cleanup);
       const failure = failed ? new AggregateError([primary, cleanup], "CBOR decode and reset failed") : cleanup;
       onResetFailure?.(failure);
       throw failure;
@@ -184,14 +184,12 @@ function decodeCborScope(
 
 /** Create only our own CBOR syntax refusal, preserving foreign same-class errors. */
 export function cborSyntaxFailure(message: string): DeserializeError {
-  const error = new DeserializeError(message);
-  syntaxFailures.add(error);
-  return error;
+  return codecSyntaxFailure("CBOR", message);
 }
 
 /** Identify only locally created admitted CBOR syntax failures for opaque fallback. */
 export function isCborSyntaxFailure(error: unknown): boolean {
-  return error instanceof DeserializeError && syntaxFailures.has(error);
+  return isCodecSyntaxFailure(error, "CBOR");
 }
 
 /**

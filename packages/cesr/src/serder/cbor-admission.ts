@@ -1,5 +1,6 @@
 import { CborAdmissionError, ResourceLimitError } from "../core/errors.ts";
 import type { DecodedBodyBudget } from "./body-admission.ts";
+import { cborWorkspaceBytes } from "./codec-workspace.ts";
 
 /**
  * Admit base CBOR tokens before codec allocation, without a value tree or syntax/depth limit.
@@ -76,11 +77,7 @@ export function admitCbor(raw: Uint8Array, budget: DecodedBodyBudget): boolean {
     }
     offset += payload;
   }
-  // Pinned JS strings use scalar-unit arrays at <=64 bytes; decoder caches a DataView
-  // on the source. Working credit for context, uint64/Date scratch, raw copy and
-  // temporary units stays with the root until cleanup. Scope64, callback96 and reset array64
-  // are admitted before decode; the native reset drops message-bearing globals before return.
-  const working = 64 + 16 + 64 + 26 * shortString + 64 + 2 * 16 + 8 + raw.length + 64 + 96 + 64;
+  const working = cborWorkspaceBytes(raw.length, shortString);
   budget.admitStage?.(working);
   budget.admitStage?.(budget.decodedBytes - remaining);
   budget.decodedBytes = remaining;

@@ -1,9 +1,8 @@
 import { t } from "../core/bytes.ts";
-import { DeserializeError, ResourceLimitError } from "../core/errors.ts";
+import { codecSyntaxFailure } from "../core/codec-errors.ts";
+import { ResourceLimitError } from "../core/errors.ts";
 
 import type { DecodedBodyBudget } from "./body-admission.ts";
-
-const syntaxFailures = new WeakSet<DeserializeError>();
 
 /** Decode with native JSON semantics; only our intrinsic syntax refusal permits opaque fallback. */
 export function decodeJson(raw: Uint8Array, onFailure?: (error: unknown) => void): unknown {
@@ -21,15 +20,8 @@ export function decodeJson(raw: Uint8Array, onFailure?: (error: unknown) => void
       onFailure?.(error);
       throw error;
     }
-    const refusal = new DeserializeError(`Failed to decode JSON Serder: ${String(error)}`);
-    syntaxFailures.add(refusal);
-    throw refusal;
+    throw codecSyntaxFailure("JSON", `Failed to decode JSON Serder: ${String(error)}`);
   }
-}
-
-/** Distinguish intrinsic JSON syntax from same-class infrastructure/caller failures. */
-export function isJsonSyntaxFailure(error: unknown): boolean {
-  return error instanceof DeserializeError && syntaxFailures.has(error);
 }
 
 /**

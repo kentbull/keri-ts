@@ -1,4 +1,4 @@
-import { isCborSyntaxFailure } from "../core/cbor.ts";
+import { isCodecSyntaxFailure } from "../core/codec-errors.ts";
 import { isCesrDomain, tokenSize, unitBytes } from "../core/domain.ts";
 import {
   ColdStartError,
@@ -12,8 +12,6 @@ import type { CesrBody, CesrDomain, Smellage } from "../core/types.ts";
 import { type Counter, parseCounter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import type { DecodedBodyBudget } from "../serder/body-admission.ts";
-import { isJsonSyntaxFailure } from "../serder/json-admission.ts";
-import { isMsgpackSyntaxFailure } from "../serder/msgpack-admission.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { smell } from "../serder/smell.ts";
 import { resolveCounterSizeTable } from "../tables/counter-version-registry.ts";
@@ -97,9 +95,12 @@ function wrappedBody(
   try {
     return reapSerder(matter.raw, bodyBudget).serder;
   } catch (error) {
-    if (metadata?.kind === Kinds.json && !isJsonSyntaxFailure(error)) throw error;
-    if (bodyBudget && metadata?.kind === Kinds.mgpk && !isMsgpackSyntaxFailure(error)) throw error;
-    if (bodyBudget && metadata?.kind === Kinds.cbor && !isCborSyntaxFailure(error)) throw error;
+    if (
+      metadata
+      && (metadata.kind === Kinds.json
+        || (bodyBudget && (metadata.kind === Kinds.mgpk || metadata.kind === Kinds.cbor)))
+      && !isCodecSyntaxFailure(error, metadata.kind)
+    ) throw error;
     return {
       raw: matter.raw,
       ked: null,

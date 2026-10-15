@@ -25,7 +25,9 @@
   semantics; MGPK uses private standard extensions and disables shared key caching.
   Pin the audited MessagePack 3.1.3 and cbor-x 1.6.0 versions exactly in source
   and emitted packages while decoder/reset assumptions depend on those implementations.
-  Only locally created intrinsic refusals permit opaque fallback for admitted codecs.
+  Declaration preflight, codec workspace policy and intrinsic syntax provenance are
+  separate responsibilities. The body parser consults one codec syntax contract;
+  only locally created intrinsic refusals permit opaque fallback for admitted codecs.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each
   owner once, including shared credit on ordinary frames. A suspended generator
   also retains its output: credit returns after consumer disposal and generator

@@ -1,8 +1,9 @@
 import { DecodeError, Decoder, ExtensionCodec } from "@msgpack/msgpack";
-import { DeserializeError, ResourceLimitError } from "../core/errors.ts";
+import { codecSyntaxFailure } from "../core/codec-errors.ts";
+import { ResourceLimitError } from "../core/errors.ts";
 import type { DecodedBodyBudget } from "./body-admission.ts";
+import { msgpackWorkspaceBytes } from "./codec-workspace.ts";
 
-const syntaxFailures = new WeakSet<DeserializeError>();
 const nativeDecode = Decoder.prototype.decode;
 const nativeTextDecode = TextDecoder.prototype.decode;
 const NativeArray = Array;
@@ -10,11 +11,6 @@ const standard = new ExtensionCodec();
 const standardDecode = standard.decode.bind(standard);
 const standardEncode = standard.tryToEncode.bind(standard);
 const codec = Object.freeze({ decode: standardDecode, tryToEncode: standardEncode });
-
-/** Identify only this admitted codec invocation's own intrinsic refusal. */
-export function isMsgpackSyntaxFailure(error: unknown): boolean {
-  return error instanceof DeserializeError && syntaxFailures.has(error);
-}
 
 /** Decode with standard timestamp/ExtData semantics; global custom extensions and key caching stay outside. */
 export function decodeAdmittedMsgpack(
@@ -35,14 +31,10 @@ export function decodeAdmittedMsgpack(
       onFailure?.(error);
       throw error;
     }
-    const refusal = new DeserializeError(`Failed to decode MGPK Serder: ${String(error)}`);
-    syntaxFailures.add(refusal);
-    throw refusal;
+    throw codecSyntaxFailure("MGPK", `Failed to decode MGPK Serder: ${String(error)}`);
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    const refusal = new DeserializeError("MGPK root must be a map/object");
-    syntaxFailures.add(refusal);
-    throw refusal;
+    throw codecSyntaxFailure("MGPK", "MGPK root must be a map/object");
   }
   return value as Record<string, unknown>;
 }
@@ -124,11 +116,7 @@ export function admitMsgpack(raw: Uint8Array, budget: DecodedBodyBudget): boolea
     }
     offset += payload;
   }
-  // Pinned 3.1.3: 18-field Decoder, StackPool/array/view; seven-field pooled state per container.
-  // Short UTF8 paths use an array of scalar units (<=200), plus a temporary string.
-  // Timestamp decoding has a two-field timespec/DataView; copy credit stays conservative on reuse.
-  const working = 64 + 18 * 16 + 64 + 2 * 16 + 64 + 64 + 64 + 26 * shortString
-    + 64 + 2 * 16 + states * (64 + 7 * 16 + 16) + extensions * (64 + 2 * 16 + 2 * 8 + 64) + raw.length;
+  const working = msgpackWorkspaceBytes(raw.length, states, extensions, shortString);
   const charge = budget.decodedBytes - remaining;
   if (!Number.isSafeInteger(working)) throw new ResourceLimitError("MGPK working extent exceeds safe accounting");
   budget.admitStage?.(working);
