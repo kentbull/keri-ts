@@ -9,7 +9,7 @@ body, or Deno file. A file source can be consumed directly:
 yield * reactor.process((signal) => fileBytes(path, { signal }));
 ```
 
-`Reactor.frames` exposes the optional CESR Effection channel when an edge needs
+`runtime.intake.frames` exposes the optional CESR Effection channel when an edge needs
 to inspect each complete frame before choosing its dispatch policy. Its channel
 belongs to the caller's scope. Each complete independent GenericGroup child is dispatched before the
 consumer requests the next frame. Parent-owned nested children remain evidence
@@ -93,6 +93,12 @@ separately bounded CESR attachment header. Administrative requests still collect
 an explicitly bounded 8 MiB value. `Reactor.processBytes` supplies a finite value to the same progressive source
 path; it owns parsing and dispatch through an Effection operation. No shared
 feed buffer or separate synchronous parser remains.
+
+FrameIntake owns source admission, one pending parser pull and joined source/parser
+cleanup. AgentRuntime constructs it and lends the same component to protocol
+processing and HTTP/TCP edges. Reactor owns guarded dispatch/escrow/state turns;
+its former frames method is removed. Frame ownership still crosses the existing
+consume/settle boundary; storage payloads retain their valid independent lifetime.
 
 ## Socket-to-application boundary (implementation pending)
 

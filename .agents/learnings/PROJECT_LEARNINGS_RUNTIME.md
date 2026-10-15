@@ -17,7 +17,10 @@ remains the cue-semantics seam.
 
 KERI/Tufa operations own lifecycle. Acquire source/frame/runtime resources before
 work children so cancellation aborts and joins I/O before releasing permits or
-owners. Promise adaptation belongs at real edges. Reactor serializes dispatch,
+owners. Promise adaptation belongs at real edges. FrameIntake owns demand-driven parser/source acquisition and source concurrency;
+application composition shares that owner with HTTP, witness and TCP intake.
+Its admission stays private and predates parser cleanup; per-source options do
+not expose a resource policy. Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 QueryCoordinator composes a private pending-query Deck with only admission, head
 inspection, completion, rotation and scoped clear. It owns canonical query/witness

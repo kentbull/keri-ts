@@ -451,7 +451,7 @@ export function* processWitnessIngressSource(
   consume?: (emission: CueEmission) => Operation<void>,
 ): Operation<void> {
   yield* call(function*() {
-    const channel = yield* runtime.reactor.frames(source, { classifyWireErrors, onAdmissionRefusal });
+    const channel = yield* runtime.intake.frames(source, { classifyWireErrors, onAdmissionRefusal });
     for (const frame of yield* each(channel.frames)) {
       yield* runtime.reactor.settle(frame, { local, escrows: true });
       yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume, onAdmissionRefusal);
