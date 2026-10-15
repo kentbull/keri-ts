@@ -6,9 +6,8 @@ import {
   type ResourceReservation,
 } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import { admitCueBytes } from "../core/cue-admission.ts";
 import type { CueQueueInput } from "../core/cue-publishing.ts";
-import type { CueEmission, QueryCue } from "../core/cues.ts";
+import type { CueEmission } from "../core/cues.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { DeckFullError } from "../core/deck.ts";
@@ -132,10 +131,9 @@ export class RuntimeDeliveries {
   /** Borrow the same ledger as runtime parsing, crypto and HTTP reply ownership. */
   constructor(private readonly resources = new ResourcePolicy()) {}
 
-  /** Admit before synchronous wire preparation; an ineligible result never acknowledges queueing. */
+  /** Admit prepared wire capacity; input records stay borrowed under their existing source ownership. */
   enqueue(
     prepare: () => QueryDelivery | undefined,
-    cue?: QueryCue,
     sourceRetainedBytes = 0,
   ): QueryDeliveryAdmission {
     if (this.closed) throw new Error("Runtime deliveries are closed");
@@ -153,10 +151,6 @@ export class RuntimeDeliveries {
         error: new ResourceAdmissionError("Query preparation exceeds shared byte capacity", "limit"),
       };
     }
-    const input = cue
-      ? admitCueBytes(this.resources, [cue], undefined, { additionalBytes: floor, maxBytes: requestBytes })
-      : undefined;
-    if (input?.kind === "refuse") return input;
     let retained: ResourceReservation | undefined, preparation: ResourceReservation | undefined;
     let queued = false;
     try {
@@ -183,7 +177,6 @@ export class RuntimeDeliveries {
       queued = true;
       return { kind: "queued" };
     } finally {
-      input?.reservation.release();
       preparation?.release();
       if (!queued) retained?.release();
     }
@@ -534,7 +527,6 @@ export function queryTransportSink(
       if (source && source.resourcePolicy !== runtime.resources) throw new RangeError("Wrong query source policy");
       const result = runtime.deliveries.enqueue(
         () => prepareDelivery(prepare()),
-        cue,
         source?.headRetentionBytes(),
       );
       if (result.kind === "refuse") {
