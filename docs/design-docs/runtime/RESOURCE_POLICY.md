@@ -329,8 +329,10 @@ hydration disposal and checked acknowledgement. Missing-state cues use the exist
 Deck append seam, which performs admission when a CueDeck is injected. The local
 handoff guard remains separate from deployment capacity and adds no queue or retry.
 
-QueryReplies fanout, mailbox correlation, query continuations and delivery consumers must transfer
-owners before Runtime enables this deck. This does not promise durable cue recovery.
+QueryReplies fanout, mailbox correlation and delivery consumers transfer actual
+owners. Pending query records and continuations use ordinary unbounded metadata
+storage without byte reservations; their coordinator joins active consumption
+before clearing. This does not promise a shared memory bound or durable cue recovery.
 
 Internal DID alias-ID capture holds `4 * maxMetadataBytes + 64 * maxIds + 1024`
 bytes from the exact runtime policy before native duplicate iteration. Defaults

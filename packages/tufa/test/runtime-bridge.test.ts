@@ -50,7 +50,6 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       failure = undefined;
       yield* drainRuntimeCues(runtime, sender, runtime.cues);
       assertEquals(runtime.querying.pending.length, 1, "unresolved query transfers to its existing owned queue");
-      runtime.querying.pending.clear();
       for (let pass = 0; pass < 4 && runtime.deliveries.hasPending; pass++) {
         yield* runtime.deliveries.process(runtime);
       }

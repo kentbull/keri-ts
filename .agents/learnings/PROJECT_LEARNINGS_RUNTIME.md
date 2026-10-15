@@ -47,13 +47,14 @@ application composition shares that owner with HTTP, witness and TCP intake.
 Its admission stays private and predates parser cleanup; per-source options do
 not expose a resource policy. Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
-QueryCoordinator composes a private pending-query Deck with only admission, head
-inspection, completion, rotation and scoped clear. It owns canonical query/witness
-metadata on Baser's exact policy before copies. Rotation retains the same owner; sent or
-transferred work releases only after consumption joins. clear() preserves an
-active head; close cancels/joins processing before clearing every pending owner.
-Signer identifiers are ordinary retained metadata in the existing byte walk;
-component-owned configured Hab dependencies never enter queued work.
+QueryCoordinator owns an ordinary private Deck of plain QueryRequest records.
+Pending inspection exposes length/empty/peekHead, never queue mutation. Query
+metadata and continuations have no byte reservations or configured caps: no
+production caller used those controls and no demonstrated backlog justified them.
+The current head remains until send/transfer succeeds; failed or cancelled sends
+retry it, unresolved records rotate, and new work waits for the next finite pass.
+Close cancels/joins active consumption before clearing. Actual wire/source owners
+retain their separate admission and joined cleanup; this is not a shared memory bound.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state. Without explicit mailbox routes, poll every eligible witness
 mailbox in stable order through the existing per-endpoint workers. A logs reply is stored at the
@@ -226,15 +227,15 @@ has its own pre-admitted finite credit. Retired owners are local progress, not
 protocol success or durable retry. Respondant source heads now transfer immediately
 under the guard; their queued network work drains outside it. Unsupported/custom
 cues retain existing sink handling; occupied capacity never destructively falls back.
-Source query/continuation callbacks now run only after bounded input, item, wire,
+Query wire preparation runs only after bounded input, item, wire,
 route and preparation admission; captured signature/routing survive later changes.
 Busy preserves the raw or continuation head, and unresolved/custom sinks keep
 notify semantics. QueryCoordinator prepares/signs synchronously against committed
 accepted state without a parent-runtime argument or Reactor callback; network waits
 remain outside preparation. AnchorQuerier retains an owned CESR event-seal SAD in KERIpy’s required i/s/d key order;
 CLI anchor JSON/primitive validation precedes controller-store opening.
-Anchor continuations ask each eligible attester once and retain the next index
-across pending-queue refusal; a retired first witness cannot strand recovery.
+Anchor continuations ask each eligible attester once; no partial-admission index
+is needed for the ordinary pending Deck. A retired first witness cannot strand recovery.
 Ordinary queries retain first-choice behavior. Completion uses accepted seal state.
 CLI query uses the existing concurrent runner and joins it before state display/close;
 serial mailbox polls must not consume the query window before other workers progress.
@@ -261,7 +262,7 @@ short turn and await the sink outside the guard; register that owner before sink
 resources so cancellation joins child cleanup before release. Initial pass count
 and eligible immediate transfer/busy semantics stay bounded. QueryCoordinator
 transforms under the same preparation/output check and sends without repeating
-observation/signing. Standalone custom pending queries retain caller-owned bounds.
+observation/signing. Standalone custom wire preparation retains caller-owned bounds; pending metadata is unbounded.
 Generic HTTP drains reuse that owner with invocation-local service-habitat/sink
 selection. Transfer stream/query metadata before source removal; observe query
 continuations only after transfer. Earlier captured query batches use their own

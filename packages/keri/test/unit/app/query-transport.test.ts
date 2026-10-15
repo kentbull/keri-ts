@@ -177,6 +177,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
           assertEquals(cleanup.errors, [readFailure, cleanupFailure]);
           assertEquals(runtime.resources.used.bytes, 0, "both query failure paths release unpublished credit");
           runtime.cues.push(cue);
+          const sourceBytes = runtime.resources.used.bytes;
           runtime.querying.configure({ hab: sender, sink });
           const sign = sender.query, resolve = sender.endsFor;
           const signed: Uint8Array[] = [];
@@ -213,7 +214,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             assertEquals([signed.length, resolved], [0, 0], "item refusal precedes signing and route lookup");
             yield* runtime.deliveries.process(runtime);
             const pendingBytes = runtime.resources.used.bytes;
-            assertEquals(pendingBytes > 0, true, "unresolved pending metadata remains owned");
+            assertEquals(pendingBytes, sourceBytes, "only the source cue retains its existing credit");
             const foreign = new ResourceAdmissionError("foreign signing busy", "busy");
             sender.query = () => {
               throw foreign;
@@ -226,7 +227,11 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             );
             assertStrictEquals(runtime.cues.peekHead(), cue);
             assertStrictEquals(runtime.querying.pending.peekHead(), pending);
-            assertEquals(runtime.resources.used.bytes, pendingBytes, "failed signing cannot retire pending metadata");
+            assertEquals(
+              runtime.resources.used.bytes,
+              pendingBytes,
+              "failed signing cannot retire source cue ownership",
+            );
             sender.query = function(...args) {
               const wire = sign.apply(this, args);
               signed.push(wire);
