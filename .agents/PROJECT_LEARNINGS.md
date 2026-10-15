@@ -3,8 +3,9 @@
 Routing and durable rules only. Current source, tests and normative contracts
 outrank these summaries. The [parity roadmap](../docs/plans/PARITY_ROADMAP.md)
 owns remaining work; do not duplicate its checklist here. Parser structure,
-nested consumers and optional KRAM intake are implemented. Shared budgets,
-storage/transport reconciliation and final qualification remain incomplete.
+nested consumers and optional KRAM intake are implemented. Explicit contracts,
+component ownership, storage/transport reconciliation and final qualification
+remain incomplete.
 
 ## Read by subject
 
@@ -20,6 +21,12 @@ storage/transport reconciliation and final qualification remain incomplete.
   test provenance, witness harnesses, packaging and release.
 
 ## Cross-topic rules
+
+[ADR-0013](../docs/adr/adr-0013-simple-component-flows.md) governs component
+flows and explicit contracts and supersedes conflicting older blanket budget,
+reservation, and runtime-container guidance. Its implementation is incomplete.
+Use concrete semantic records, narrow validated input, and locally justified
+open boundaries. Diagnostic metadata must not drive domain control flow.
 
 One progressive parser engine; CESR stays framework-neutral with an optional
 Effection adapter. KERI/Tufa own cancellable operations and joined cleanup.
