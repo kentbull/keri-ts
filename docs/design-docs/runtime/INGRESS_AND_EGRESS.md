@@ -9,7 +9,7 @@ body, or Deno file. A file source can be consumed directly:
 yield * reactor.process((signal) => fileBytes(path, { signal }));
 ```
 
-`Reactor.frames` exposes the optional CESR Effection channel when an edge needs
+`runtime.intake.frames` exposes the optional CESR Effection channel when an edge needs
 to inspect each complete frame before choosing its dispatch policy. Its channel
 belongs to the caller's scope. Each complete independent GenericGroup child is dispatched before the
 consumer requests the next frame. Parent-owned nested children remain evidence
@@ -93,6 +93,12 @@ separately bounded CESR attachment header. Administrative requests still collect
 an explicitly bounded 8 MiB value. `Reactor.processBytes` supplies a finite value to the same progressive source
 path; it owns parsing and dispatch through an Effection operation. No shared
 feed buffer or separate synchronous parser remains.
+
+FrameIntake owns source admission, one pending parser pull and joined source/parser
+cleanup. AgentRuntime constructs it and lends the same component to protocol
+processing and HTTP/TCP edges. Reactor owns guarded dispatch/escrow/state turns;
+its former frames method is removed. Frame ownership still crosses the existing
+consume/settle boundary; storage payloads retain their valid independent lifetime.
 
 ## Socket-to-application boundary (implementation pending)
 
@@ -487,19 +493,27 @@ in addition to its two transport chunk allowances. Serializer output is re-chunk
 under the configured backing ceiling. The caller retains its original owners until
 joined completion. This conservative policy is not an RSS bound.
 
-Explicit `replies: { runtime, local?, consume? }` selects conversation mode on all
-three TCP adapters; default options retain transmit-only behavior and routing.
-Use the borrowed runtime's exact services. TX credit, a logical 2 MiB read/handle
-allowance and Reactor's sole RX stream/64 KiB producer/8 MiB cursor credit precede
-connect. Reactor channel acquisition is lazy; the socket source starts after connect.
+The application flow in `tcp-conversation.ts` composes `converseCesrTcp` and
+`streamCesrTcpConversation` from a borrowed `services`, `intake` and `reactor`.
+The lower TCP engine in `tcp-egress.ts` knows none of those application processor
+types. It lends a bounded byte source to a scoped `TcpRead` consumer. Consumer
+setup precedes connection; its returned operation runs after connect, concurrently
+with output. This reuses the existing pull stream, without another queue or prefetch.
+
+The application selects `replies: { services, intake, reactor, local?, consume? }`;
+default lower-level send options remain transmit-only. An explicit transport
+services override must match the application receiver's services. TX credit, a
+logical 2 MiB read/handle allowance and FrameIntake's RX stream/64 KiB producer/
+8 MiB cursor credit precede connect. The socket source starts after connect.
 These are JS/logical bounds, with native pools/kernel buffering separately qualified.
 One RX parser settles frames concurrently with TX under `allowHalfOpen: true`.
 Genuine RX EOF leaves TX alive. TX EOF starts one absolute drain deadline; reply
 activity cannot refresh it. Failure/cancellation aborts both directions before
-joining either cleanup, with credit and borrowed runtime/frame/payload owners held
+joining either cleanup, with credit and borrowed receiver/frame/payload owners held
 through parser/source/write/socket cleanup. Callback envelopes are non-retaining
 and guarded; do not reenter Reactor or implicitly drain network cues there.
-The `conversationDrained` result means local transmission plus processed RX EOF.
+The application flow's `conversationDrained` result means local transmission plus
+processed RX EOF. Lower-level TCP returns only `transmitted` and counts no protocol frames.
 `processedFrames` counts dispatch attempts, including refusal/escrow/ignored inputs,
 not verified replies or durable remote acceptance. Inspect route decisions and
 accepted state explicitly; KEL dispatch may return no decision. Earlier accepted

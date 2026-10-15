@@ -13,6 +13,7 @@ import {
 import { Baser } from "../db/basing.ts";
 import { dgKey, snKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import type { PreparedCueBatch } from "./cue-admission.ts";
 import type { CueQueueInput } from "./cue-publishing.ts";
 import { type CuePublisher, cuePublisher } from "./cue-publishing.ts";
 import type { AgentCue } from "./cues.ts";
@@ -168,11 +169,15 @@ interface EventEscrowEntry {
   said: string;
 }
 
-/** One invocation's admitted KEL effects, published after its owning native commit. */
-interface PreparedKeverDecision {
-  write(): void;
-  publish(): void;
-  release(): void;
+/** Concrete log coordinates and accepted cache state for one synchronous processing turn. */
+interface EventMetadata {
+  cues: AgentCue[];
+  log?: {
+    event: KELEventState;
+    firstSeen: ReturnType<Baser["prepareKelEventLog"]>;
+    delegated: boolean;
+  };
+  accepted?: { target: Kever; transition: KeverTransition; group: boolean };
 }
 
 /**
@@ -258,7 +263,8 @@ export class Kevery {
    * The returned decision is the normal typed outcome for remote processing.
    * The owning native writer covers decision, admission and durable effects;
    * accepted live state and cues publish only after that commit returns.
-   * An already active writer remains caller-owned, including its publication boundary.
+   * Caller-owned native writers are refused before evaluation or effects: this
+   * processor must own the commit that precedes live state/cue publication.
    * Exceptions are reserved for invariant/corruption cases during application.
    */
   processEvent(envelope: KeverEventEnvelope): KeverDecision {
@@ -273,7 +279,11 @@ export class Kevery {
     escrow?: EventEscrowEntry,
   ): KeverDecision | null {
     const env = this.db.env!;
-    let prepared: PreparedKeverDecision | undefined;
+    if ((env as unknown as { env: { writeTxn?: unknown } }).env.writeTxn) {
+      throw new Error("Kevery must own the KEL transaction; process events outside caller-owned writers");
+    }
+    let metadata: EventMetadata | undefined;
+    let batch: PreparedCueBatch | undefined;
     try {
       const write = () => {
         // Replay hydration may repair an existing delegation source hint; it belongs to this writer too.
@@ -284,20 +294,23 @@ export class Kevery {
         }
         const decision = this.decideEvent(envelope);
         // A still-pending replay keeps its existing row and emits no additional cues.
-        if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) return decision;
-        prepared = this.prepareDecision(decision);
-        prepared?.write();
+        if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) {
+          this.writeSourceSealRepairs(decision);
+          return decision;
+        }
+        metadata = this.eventMetadata(decision);
+        this.cues.checkSpace(metadata.cues.length);
+        batch = metadata.cues.length ? this.publisher.prepare(metadata.cues) : undefined;
+        this.writeEventDecision(decision, metadata);
         if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
         return decision;
       };
-      // Nested callers retain their existing caller-owned commit/publication contract.
-      const decision = (env as unknown as { env: { writeTxn?: unknown } }).env.writeTxn
-        ? write()
-        : env.transactionSync(write);
-      prepared?.publish();
+      const decision = env.transactionSync(write);
+      this.publishEventState(metadata?.accepted);
+      batch?.publish();
       return decision;
     } finally {
-      prepared?.release();
+      batch?.release();
     }
   }
 
@@ -926,82 +939,85 @@ export class Kevery {
     return kever.evaluateUpdate(init);
   }
 
-  /**
-   * Apply one previously decided outcome to the durable DB/runtime state.
-   *
-   * Ownership rule:
-   * - `Kever` decides acceptance/rejection criteria
-   * - `Kevery` owns durable mutation, escrow routing, duplicate logging, and
-   *   post-acceptance cue emission
-   * - explicit decide/apply callers own synchronous writer and commit/publication ordering
-   */
-  applyDecision(decision: KeverDecision): void {
-    const prepared = this.prepareDecision(decision);
-    try {
-      prepared?.write();
-      prepared?.publish();
-    } finally {
-      prepared?.release();
-    }
-  }
-
-  /** Admit concrete cues and fix FEL metadata under the caller's synchronous writer ownership. */
-  private prepareDecision(decision: KeverDecision): PreparedKeverDecision | undefined {
-    // Ordinary Runtime decks retain their existing refusal/retry boundary until ownership is fully ported.
+  /** Describe finalized log coordinates, clone notices and accepted state without executable effects. */
+  private eventMetadata(decision: KeverDecision): EventMetadata {
+    // Preserve the standalone Deck refusal boundary until its producer migration.
     this.publisher.preflight(
       ("cues" in decision ? decision.cues?.length ?? 0 : 0)
         + (decision.kind === "accept" ? 4 : decision.kind === "duplicate" ? 1 : 0),
     );
-    if (decision.kind === "reject") return;
+    if (decision.kind === "reject") return { cues: [] };
     if (decision.kind === "accept") {
       const kever = this.kevers.get(decision.transition.pre);
       const target = !kever || decision.transition.mode === "create"
-        ? Kever.fromTransition(decision.transition, { db: this.db, cues: this.cues })
+        ? Kever.fromTransition(decision.transition, { db: this.db })
         : kever;
-      const logged = target.prepareLogEvent(decision.transition.log);
-      const transition = this.applyFirstSeenState(decision.transition, logged.fn, logged.dater.dts);
+      const firstSeen = this.db.prepareKelEventLog(decision.transition.log);
+      const transition = this.applyFirstSeenState(decision.transition, firstSeen.fn, firstSeen.dater.dts);
       const group = !!this.db.getHab(transition.pre)?.mid;
-      const cues = [...logged.cues, ...(decision.cues ?? []), ...this.acceptanceCues(transition, group)];
-      // Hold exact cue objects/backing and slots before accepted-event writes.
-      this.cues.checkSpace(cues.length);
-      const prepared = this.publisher.prepare(cues);
       return {
-        write: () => {
-          target.logEvent(transition.log, logged);
-          this.db.pinState(transition.pre, transition.state);
-          this.db.udes.rem(dgKey(transition.pre, transition.said));
-          this.repairAnchoredDelegationSourceSeals(transition.log.serder);
-        },
-        publish: () => {
-          target.applyTransition(transition);
-          this.kevers.set(transition.pre, target);
-          if (group) {
-            this.db.prefixes.add(transition.pre);
-            this.db.groups.add(transition.pre);
-          }
-          prepared.publish();
-        },
-        release: () => prepared?.release(),
+        cues: [
+          ...this.logNoticeCues(decision.transition.log, firstSeen),
+          ...(decision.cues ?? []),
+          ...this.acceptanceCues(transition, group),
+        ],
+        log: { event: transition.log, firstSeen, delegated: target.delegated },
+        accepted: { target, transition, group },
       };
     }
-
     const kever = decision.kind === "duplicate" ? this.kevers.get(decision.log?.serder.pre ?? "") : undefined;
-    const logged = decision.kind === "duplicate" && decision.log && kever
-      ? kever.prepareLogEvent(decision.log)
+    const log = decision.kind === "duplicate" && decision.log && kever
+      ? { event: decision.log, firstSeen: this.db.prepareKelEventLog(decision.log), delegated: kever.delegated }
       : undefined;
-    const cues = [...(logged?.cues ?? []), ...(decision.cues ?? [])];
-    this.cues.checkSpace(cues.length);
-    const prepared = cues.length ? this.publisher.prepare(cues) : undefined;
     return {
-      write: () => {
-        if (decision.kind === "escrow") this.persistEscrowInstruction(decision.instruction);
-        else if (decision.log && kever && logged) kever.logEvent(decision.log, logged);
-      },
-      publish: () => {
-        prepared?.publish();
-      },
-      release: () => prepared?.release(),
+      cues: [...(log ? this.logNoticeCues(log.event, log.firstSeen) : []), ...(decision.cues ?? [])],
+      log,
     };
+  }
+
+  /** Persist the decision and its concrete log metadata after cue admission. */
+  private writeEventDecision(decision: KeverDecision, metadata: EventMetadata): void {
+    this.writeSourceSealRepairs(decision);
+    if (metadata.log) {
+      const { event, firstSeen, delegated } = metadata.log;
+      this.db.writeKelEventLog(event, firstSeen, delegated);
+    }
+    if (metadata.accepted) {
+      const { transition } = metadata.accepted;
+      this.db.pinState(transition.pre, transition.state);
+      this.db.udes.rem(dgKey(transition.pre, transition.said));
+      this.repairAnchoredDelegationSourceSeals(transition.log.serder);
+    } else if (decision.kind === "escrow") this.persistEscrowInstruction(decision.instruction);
+  }
+
+  /** Publish accepted cache state; cue publication remains explicit at the processing owner. */
+  private publishEventState(accepted: EventMetadata["accepted"]): void {
+    if (!accepted) return;
+    const { target, transition, group } = accepted;
+    target.applyTransition(transition);
+    this.kevers.set(transition.pre, target);
+    if (group) {
+      this.db.prefixes.add(transition.pre);
+      this.db.groups.add(transition.pre);
+    }
+  }
+
+  /** Apply concrete delegation-hint discoveries only under the processing owner's write phase. */
+  private writeSourceSealRepairs(decision: KeverDecision): void {
+    for (const { pre, said, sourceSeal } of decision.sourceSealRepairs ?? []) {
+      const key = dgKey(pre, said);
+      if (sourceSeal) this.db.aess.pin(key, [sourceSeal.s, sourceSeal.d]);
+      else this.db.aess.rem(key);
+    }
+  }
+
+  /** Describe a clone-order anomaly; storage metadata does not publish protocol work. */
+  private logNoticeCues(
+    log: KELEventState,
+    prepared: ReturnType<Baser["prepareKelEventLog"]>,
+  ): AgentCue[] {
+    if (prepared.fn === null || !log.frc || prepared.fn === Number(log.frc.f.num)) return [];
+    return [{ kin: "noticeBadCloneFN", serder: log.serder, fn: prepared.fn, firner: log.frc.f, dater: log.frc.dt }];
   }
 
   /** Reprocess one pass of out-of-order escrowed events. */
@@ -2576,7 +2592,6 @@ export class Kevery {
   ): KeverEventInit {
     return {
       db: this.db,
-      cues: this.cues,
       serder: envelope.serder,
       sigers: [...envelope.sigers],
       wigers: [...envelope.wigers],
@@ -3049,7 +3064,7 @@ export class Kevery {
    *
    * Event-escrow replay differs from receipt/query/reply replay:
    * - the escrowed event is reconstructed back into a normal event envelope
-   * - the same native writer and prepared decision path as live intake is reused
+   * - the same native writer and explicit processing path as live intake is reused
    * - escrow movement/removal commits with event effects before state/cue publication
    */
   private replayEscrowEntry(

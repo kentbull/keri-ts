@@ -23,10 +23,14 @@ storage/transport reconciliation and final qualification remain incomplete.
 
 One progressive parser engine; CESR stays framework-neutral with an optional
 Effection adapter. KERI/Tufa own cancellable operations and joined cleanup.
+Composition points depend downward: transport lends bounded byte streams;
+application flows compose parsing/dispatch without an AgentRuntime dependency in transport.
 Consume-scoped hydration joins disposal and propagates cleanup failures before returning.
 Retryable handoff acknowledges after disposal; callback effects remain at least once.
 Parsed evidence, wrapper construction, verified acceptance and durable publication
-are separate boundaries. Parent signatures never authenticate nested children.
+are separate boundaries. Validation returns delegation-hint repairs as data;
+the processing owner persists them after queue admission, never during lookup.
+Parent signatures never authenticate nested children.
 Public registry intake borrows issuer KEL state independently of local Hab aliases.
 Accepted legacy bytes remain readable; new intake requires full witnessed tuples.
 Raw evidence stays separate from opt-in strict seal projection.
@@ -36,6 +40,9 @@ Finite retry credit precedes native row materialization and outlives joined tran
 
 Active KERIpy parity targets `7143832813cac6a394ab1faf9be83bb3372be87c`.
 Keep historical 927 fixtures and fork/legacy compatibility results labeled by their actual sources.
+
+Kever returns decisions and describes follow-up work without a queue. Baser owns
+accepted event/FEL row persistence; Kevery keeps processing and publication policy.
 
 Normal remote outcomes use typed decisions. Exceptions retain invariant,
 infrastructure and caller-contract failures. Keep protocol compatibility and

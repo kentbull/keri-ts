@@ -3,7 +3,6 @@ import {
   Cigar,
   discardFrame,
   Ilks,
-  type ParseOptions,
   ResourceAdmissionError,
   ResourceLimitError,
   ResourcePolicy,
@@ -12,7 +11,6 @@ import {
   Siger,
   Verfer,
 } from "cesr-ts";
-import { type FrameChannel, toEffectionFrames } from "cesr-ts/effection";
 import { action, call, each, type Operation, resource } from "npm:effection@^3.6.0";
 import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { CueQueueInput } from "../core/cue-publishing.ts";
@@ -27,6 +25,7 @@ import { Tevery } from "../vdr/eventing.ts";
 import { RegistryStateReceiver } from "../vdr/registry-tsn.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
+import { type FrameInputOptions, FrameIntake } from "./frame-intake.ts";
 import type { Habery } from "./habbing.ts";
 import {
   type DispatchDecision,
@@ -39,7 +38,7 @@ import { QueryReplies } from "./query-replies.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 /** Request-local provenance and parser bounds; each source keeps independent parser state. */
-export interface IngressOptions extends ParseOptions {
+export interface IngressOptions extends FrameInputOptions {
   /** Treat witness/controller ingress as locally received protocol events. */
   local?: boolean;
   /** Hosted mailbox endpoint that received this source. */
@@ -83,8 +82,8 @@ export class Reactor {
   readonly local: boolean;
   /** Bounded direct-response reservations, captured before any guarded cue consumer runs. */
   readonly replies: QueryReplies;
-  /** Active parser scopes; admission never creates an unbounded queue of source readers. */
-  private sources = 0;
+  /** Input parsing/lifetime is separate from the guarded protocol turn. */
+  private readonly intake: FrameIntake;
   /** Whether one dispatch/escrow/cue turn currently owns shared runtime state. */
   private busy = false;
   /** Waiting turns are bounded independently of the lifetime of their input streams. */
@@ -93,7 +92,7 @@ export class Reactor {
   private queuedBytes = 0;
   private ingressRecords = 0;
   private ingressGeneration = 0;
-  /** Maximum simultaneous input sources and waiting runtime turns. */
+  /** Complete-record and waiting-turn limit; injected FrameIntake owns source concurrency. */
   private readonly maxSources: number;
   /** Maximum bytes in the complete-record ingress deck. */
   private readonly maxQueuedBytes: number;
@@ -116,12 +115,13 @@ export class Reactor {
       resources = hby.db.resources,
       kram,
       now,
+      intake,
     }: {
       cues?: CueQueueInput;
       local?: boolean;
       vdr?: VdrRuntimeServices;
       acdc?: AcdcRuntimeServices;
-      /** Reject additional sources and waiting turns when this admission limit is reached. */
+      /** Bound queued records/waiting turns and the standalone intake default. */
       maxSources?: number;
       /** Bound already resident complete records awaiting processOnce(). */
       maxQueuedBytes?: number;
@@ -134,6 +134,8 @@ export class Reactor {
       /** Omitted preserves disabled intake; the receiver clock is runtime-owned. */
       kram?: KramConfig;
       now?: () => number;
+      /** Composition-owned source lifetime; standalone processors construct their local intake owner. */
+      intake?: FrameIntake;
     } = {},
   ) {
     for (const limit of [maxSources, maxQueuedBytes, maxPendingCues]) {
@@ -146,6 +148,12 @@ export class Reactor {
     this.replies = new QueryReplies(maxSources);
     this.hby = hby;
     this.resources = resources;
+    this.intake = intake
+      ?? new FrameIntake(
+        resources,
+        async (maxBytes, signal) => (await hby.db.openPayloads(signal)).files.stage(maxBytes, signal),
+        maxSources,
+      );
     this.cues = cues ?? new Deck();
     this.cues.capacity = Math.min(this.cues.capacity, maxPendingCues);
     this.ingress = new Deck();
@@ -173,62 +181,6 @@ export class Reactor {
     return !this.ingress.empty;
   }
 
-  /** Own one admitted parser channel until the caller's scope ends, including input cancellation. */
-  frames(
-    source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
-    options: ParseOptions = {},
-  ): Operation<FrameChannel> {
-    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
-    const self = this;
-    return resource<FrameChannel>(function*(provide) {
-      // Capture policy once; later caller mutations must not exceed the reserved input allowance.
-      const limits = {
-        ...options,
-        maxChunkBytes: options.maxChunkBytes ?? 1024 ** 2,
-        maxBufferedBytes: options.maxBufferedBytes ?? 8 * 1024 ** 2,
-      };
-      for (const limit of [limits.maxChunkBytes, limits.maxBufferedBytes]) {
-        if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Invalid ingress input limit");
-      }
-      if (limits.maxChunkBytes > limits.maxBufferedBytes) throw new RangeError("Chunk limit exceeds buffer limit");
-      // One producer allocation may coexist with the retained cursor queue while next() completes.
-      const inputBytes = limits.maxChunkBytes + limits.maxBufferedBytes;
-      if (!Number.isSafeInteger(inputBytes)) throw new RangeError("Ingress input reservation exceeds safe range");
-      // The admission lease predates the parser resource, so parser cleanup completes before release.
-      yield* resource<void>(function*(hold) {
-        if (self.sources >= self.maxSources) {
-          const error = new ResourceAdmissionError("Too many active ingress sources", "busy");
-          options.onAdmissionRefusal?.(error);
-          throw error;
-        }
-        const credit = self.resources.reserve({ streams: 1, bytes: inputBytes });
-        if (credit.kind === "refuse") {
-          const error = new ResourceAdmissionError(
-            `Ingress ${credit.resource} admission refused: ${credit.reason}`,
-            credit.reason,
-          );
-          options.onAdmissionRefusal?.(error);
-          throw error;
-        }
-        self.sources++;
-        try {
-          yield* hold();
-        } finally {
-          self.sources--;
-          credit.reservation.release();
-        }
-      });
-      const channel = yield* toEffectionFrames(source, {
-        ...limits,
-        resources: self.resources,
-        // Acquire storage lazily: ordinary frames do not open the payload archive.
-        payloadSink: options.payloadSink
-          ?? (async (maxBytes, signal) => (await self.hby.db.openPayloads(signal)).files.stage(maxBytes, signal)),
-      });
-      yield* provide(channel);
-    });
-  }
-
   /** Finish dispatch before returning input credit for the next complete frame. */
   *process(
     source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
@@ -238,7 +190,7 @@ export class Reactor {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     yield* call(function*() {
-      const channel = yield* self.frames(source, options);
+      const channel = yield* self.intake.frames(source, options);
       for (const frame of yield* each(channel.frames)) {
         yield* self.settle(frame, options, consume);
         yield* each.next();

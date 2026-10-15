@@ -111,7 +111,7 @@ function* processWitnessSocket(
   try {
     yield* race([
       call(function*() {
-        const channel = yield* runtime.reactor.frames((signal) => {
+        const channel = yield* runtime.intake.frames((signal) => {
           receiveSignal = signal;
           const input = socketBytes(socket, { signal });
           const source: AsyncIterableIterator<Uint8Array> = {

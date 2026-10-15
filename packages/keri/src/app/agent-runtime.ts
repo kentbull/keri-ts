@@ -35,6 +35,7 @@ import {
   mailboxTopicForRoute,
   Poster,
 } from "./forwarding.ts";
+import { FrameIntake } from "./frame-intake.ts";
 import { loadMultisigHandlers } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { loadIpexHandlers } from "./ipexing.ts";
@@ -93,6 +94,8 @@ export interface AgentRuntime {
    * Consume with processCuesOnce or an owned transfer; naked pull cannot discard that credit.
    */
   cues: CueQueueInput;
+  /** Demand-driven input lifetime; protocol decisions stay with Reactor. */
+  readonly intake: FrameIntake;
   reactor: Reactor;
   oobiery: Oobiery;
   authenticator: Authenticator;
@@ -276,7 +279,12 @@ export function* createAgentRuntime(
       yield* deliveries.close();
     }
   });
+  const intake = new FrameIntake(
+    resources,
+    async (maxBytes, signal) => (await hby.db.openPayloads(signal)).files.stage(maxBytes, signal),
+  );
   const reactor = new Reactor(hby, {
+    intake,
     cues,
     vdr,
     resources,
@@ -363,6 +371,7 @@ export function* createAgentRuntime(
     notifier,
     signaler,
     cues,
+    intake,
     reactor,
     oobiery,
     authenticator,

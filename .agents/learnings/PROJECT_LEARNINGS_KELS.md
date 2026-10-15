@@ -3,15 +3,29 @@
 ## Accepted state and decisions
 
 `Kever` decides validity; `Kevery` routes, persists escrows, handles duplicates and
-applies post-acceptance effects. Expected remote outcomes use typed decisions
+applies post-acceptance effects. Kever has no queue dependency: decision-carried
+cue descriptions are data, and processing/publication stays with Kevery.
+Baser prepares and writes accepted-event row/FEL metadata; Kevery turns clone
+order anomalies into cues and owns admission/commit/publication sequencing.
+Kever neither writes the event log nor prepares queue work. Delegation hint
+repairs/removals are decision data; Kevery writes them after cue admission in the
+same transaction as acceptance/escrow. Same-bucket retry keeps its existing row
+while applying discovered repairs. Within one validation, later lookups see
+pending repairs without durable publication.
+Expected remote outcomes use typed decisions
 under [ADR-0005](../../docs/adr/adr-0005-kel-decision-control-flow.md), not exceptions.
 Local inception/interaction uses the same acceptance path as remote events.
 Kevery builds finalized first-seen/date, clone and acceptance cues before accepted
 writes, and holds concrete CueDeck batches before duplicate/escrow effects too.
-Kever logging checks the prospective FEL tail before writes. Kevery.processEvent
+Baser logging checks the prospective FEL tail before writes. Kevery.processEvent
 owns one native writer through decision, cue admission and durable effects, then
-publishes live state/cues after commit. Explicit decide/apply and already nested
-writer callers retain caller-owned commit/publication ordering. Group-prefix
+publishes live state/cues after commit. Plain EventMetadata carries log coordinates,
+cues and accepted cache state; it has no executable decision lifecycle. The owner
+explicitly sequences writes and publication and releases actual cue capacity.
+processEvent refuses a caller-owned native writer before evaluation or admission;
+its own successful commit is the publication boundary. The unused public
+applyDecision is removed, so callers cannot apply stale decisions outside that
+writer. Pure decideEvent remains an inspection seam. Group-prefix
 publication follows admission. Default event escrow promotion uses the same
 owning writer, including bucket movement/removal before post-commit publication;
 same-bucket retries do not rewrite rows or emit additional cues.
