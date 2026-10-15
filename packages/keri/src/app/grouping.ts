@@ -329,6 +329,16 @@ export function multisigExnBody(
   return exchange(route, payload, { ...options, sender, pvrsn })[0];
 }
 
+/** Signed replay hint for a legacy child whose attachments use a different genus. */
+export function multisigChildGenusAttrs(
+  child: Serder,
+  genus: Versionage,
+): { cgvrsn?: readonly [number, number] } {
+  return !child.gvrsn && (genus.major !== child.pvrsn.major || genus.minor !== child.pvrsn.minor)
+    ? { cgvrsn: [genus.major, genus.minor] }
+    : {};
+}
+
 /**
  * Own finite byte-input preparation, construction, wire consumption and disposal.
  * The v1 pathed path retains its established encoding; v2 delegates parsing to parseBytes
@@ -351,9 +361,7 @@ export function* prepareMultisigEventExn(
     const child = new SerderKERI({ raw: wire });
     const genus = options.childGvrsn ?? child.gvrsn ?? child.pvrsn;
     // KERIpy replays a legacy embed using this signed hint when body and attachment versions differ.
-    const hint = !child.gvrsn && (genus.major !== child.pvrsn.major || genus.minor !== child.pvrsn.minor)
-      ? { cgvrsn: [genus.major, genus.minor] }
-      : {};
+    const hint = multisigChildGenusAttrs(child, genus);
     const payload = route === MULTISIG_ICP_ROUTE
       ? { gid: requireString(child.pre, "group inception prefix"), ...attrs, ...hint }
       : { ...attrs, ...hint };
