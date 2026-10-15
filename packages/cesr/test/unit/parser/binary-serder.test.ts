@@ -339,7 +339,9 @@ Deno.test("runtime CBOR refuses unqualified JS expansion before decoding while s
   // Payload bytes resembling guarded tags remain binary; genuine unknown tags stay Tags.
   for (const tag of [224, 256, 27646, 28672, 28703, 32768, 1811940351, 1879048192, 1879052287, 2147483648]) {
     const raw = tokenBody(Uint8Array.of(0xda, tag >>> 24, tag >>> 16, tag >>> 8, tag, 0), "CBOR");
-    assertEquals((await parseSingle(raw)).body.ked?.a, decodeKeriCbor<{ a: unknown }>(raw).a);
+    const decoded = decodeKeriCbor(raw);
+    assert(decoded !== null && typeof decoded === "object" && "a" in decoded);
+    assertEquals((await parseSingle(raw)).body.ked?.a, decoded.a);
   }
   const shared = tokenBody(Uint8Array.of(0xd8, 28, 0x82, 1, 0xd8, 29, 0), "CBOR");
   const sharedValue = (await parseSingle(shared)).body.ked?.a as unknown[];
@@ -362,7 +364,9 @@ Deno.test("runtime CBOR refuses unqualified JS expansion before decoding while s
     await assertRejects(() => parseBytes(raw), CborAdmissionError);
   }
   const recordFallback = (await parseSingle(tokenBody(Uint8Array.of(0xd9, 0xe0, 0, 1), "CBOR"))).body.ked?.a;
-  assertEquals(recordFallback, decodeKeriCbor<{ a: unknown }>(tokenBody(Uint8Array.of(0xd9, 0xe0, 0, 1), "CBOR")).a);
+  const decodedFallback = decodeKeriCbor(tokenBody(Uint8Array.of(0xd9, 0xe0, 0, 1), "CBOR"));
+  assert(decodedFallback !== null && typeof decodedFallback === "object" && "a" in decodedFallback);
+  assertEquals(recordFallback, decodedFallback.a);
   const foreign = new CborAdmissionError(27);
   class FailingPolicy extends ResourcePolicy {
     override reserve(request: Parameters<ResourcePolicy["reserve"]>[0]) {

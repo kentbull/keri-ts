@@ -78,8 +78,7 @@ Deno.test("CESR HTTP - header mode splits attachments into the CESR header", asy
       message = hab.query(
         hab.pre,
         hab.pre,
-        { topics: { "/challenge": 0 } },
-        "mbx",
+        { route: "mbx", q: { topics: { "/challenge": 0 } } },
       );
       destination = hab.pre;
       request = buildCesrRequest(message, {
@@ -160,8 +159,7 @@ Deno.test("CESR HTTP - body mode preserves the full CESR message in the body", a
       message = hab.query(
         hab.pre,
         hab.pre,
-        { topics: { "/challenge": 0 } },
-        "mbx",
+        { route: "mbx", q: { topics: { "/challenge": 0 } } },
       );
       destination = hab.pre;
       request = buildCesrRequest(message, {
@@ -218,8 +216,7 @@ Deno.test("CESR HTTP - header mode splits a multi-message stream into KERIpy-sty
       query = hab.query(
         hab.pre,
         hab.pre,
-        { topics: { "/challenge": 0 } },
-        "mbx",
+        { route: "mbx", q: { topics: { "/challenge": 0 } } },
       );
       stream = new Uint8Array(reply.length + query.length);
       stream.set(reply, 0);

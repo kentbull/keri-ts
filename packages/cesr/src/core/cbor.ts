@@ -130,10 +130,11 @@ export function encodeKeriCbor(value: unknown): Uint8Array {
  *
  * This keeps the decoder aligned with the encoder policy surface and avoids
  * record-extension or `Map`-typed decode behavior on KERI/ACDC protocol and
- * storage paths.
+ * storage paths. Decoded schema-defined values remain unknown until their
+ * consumer validates the required shape; this codec cannot promise a caller type.
  */
-export function decodeKeriCbor<T = unknown>(raw: Uint8Array): T {
-  return decodeCborScope(raw, keriCborDecoder.decode) as T;
+export function decodeKeriCbor(raw: Uint8Array): unknown {
+  return decodeCborScope(raw, keriCborDecoder.decode);
 }
 
 const nativeDecode = Decoder.prototype.decode;

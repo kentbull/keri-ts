@@ -12,11 +12,13 @@ import {
   concatBytes,
   Counter,
   parsePather,
+  type Serder,
   SerderACDC,
   SerderKERI,
   type Versionage,
   Vrsn_1_0,
 } from "cesr-ts";
+import { resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
 import { ValidationError } from "../core/errors.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
@@ -27,14 +29,20 @@ import type { Reactor } from "./reactor.ts";
 
 const textEncoder = new TextEncoder();
 
+/** Body-first embedded bytes plus the context needed to parse their attachments. */
+export interface CredentialArtifact {
+  wire: Uint8Array;
+  genus: Versionage;
+}
+
 /** Grant-embedded presentation streams required by KERIpy verifier import. */
 export interface CredentialPresentationArtifacts {
   /** ACDC body plus its SealSourceTriples proof attachment. */
-  acdc: Uint8Array;
+  acdc: CredentialArtifact;
   /** Credential TEL issue/revoke stream message for the presented ACDC. */
-  iss: Uint8Array;
+  iss: CredentialArtifact;
   /** Issuer KEL event that anchors `iss`. */
-  anc: Uint8Array;
+  anc: CredentialArtifact;
 }
 
 /** Complete `/ipex/grant` message plus credential support material. */
@@ -160,7 +168,7 @@ export function credentialPresentationArtifacts(
 ): CredentialPresentationArtifacts {
   const [creder, prefixer, number, diger] = reger.cloneCred(credentialSaidValue);
   const acdc = serializeCredential(creder, prefixer, number, diger, gvrsn);
-  const iss = reger.cloneTvtAt(credentialSaidValue, 0);
+  const iss = reger.cloneTvtAt(credentialSaidValue, 0, gvrsn);
   const iserder = new SerderKERI({ raw: iss });
   if (!iserder.said) {
     throw new ValidationError(`Credential TEL message ${credentialSaidValue} is missing SAID.`);
@@ -183,14 +191,18 @@ export function credentialPresentationArtifacts(
   if (!Number.isSafeInteger(sn)) {
     throw new ValidationError(`Credential anchor sequence is too large for replay: ${anchorNumber.qb64}.`);
   }
-  const replay = acceptedEventReplayMessage(hby, issuer, sn);
+  const replay = acceptedEventReplayMessage(hby, issuer, sn, gvrsn);
   if (replay.serder.said !== anchorDiger.qb64) {
     throw new ValidationError(
       `Credential anchor event ${replay.serder.said ?? "<missing>"} did not match ${anchorDiger.qb64}.`,
     );
   }
 
-  return { acdc, iss, anc: replay.message };
+  return {
+    acdc: { wire: acdc, genus: resolveAttachmentGvrsn(creder, gvrsn) },
+    iss: { wire: iss, genus: resolveAttachmentGvrsn(iserder, gvrsn) },
+    anc: { wire: replay.message, genus: resolveAttachmentGvrsn(replay.serder, gvrsn) },
+  };
 }
 
 /** Build a signed `/ipex/grant` message with embedded credential artifacts. */
@@ -223,11 +235,11 @@ export function ipexCredentialGrant(args: {
     args.hab,
     args.recipient,
     args.message ?? "",
-    artifacts.acdc,
+    artifacts.acdc.wire,
     {
       ...(args.options ?? {}),
-      iss: artifacts.iss,
-      anc: artifacts.anc,
+      iss: artifacts.iss.wire,
+      anc: artifacts.anc.wire,
       agree: args.options?.agree ?? null,
     },
   );
@@ -278,9 +290,9 @@ export function* processCredentialPresentationArtifacts(
   reactor: Reactor,
   artifacts: CredentialPresentationArtifacts,
 ): Operation<void> {
-  yield* reactor.processBytes(artifacts.anc);
-  yield* reactor.processBytes(artifacts.iss);
-  yield* reactor.processBytes(artifacts.acdc);
+  yield* reactor.processBytes(concatBytes(Counter.makeGVC(artifacts.anc.genus), artifacts.anc.wire));
+  yield* reactor.processBytes(concatBytes(Counter.makeGVC(artifacts.iss.genus), artifacts.iss.wire));
+  yield* reactor.processBytes(concatBytes(Counter.makeGVC(artifacts.acdc.genus), artifacts.acdc.wire));
   yield* reactor.processEscrowsOnce();
 }
 
@@ -288,6 +300,7 @@ export function* processCredentialPresentationArtifacts(
 export function storedGrantArtifacts(
   hby: Habery,
   grant: SerderKERI,
+  gvrsn: Versionage = Vrsn_1_0,
 ): CredentialPresentationArtifacts {
   if (grant.route !== IPEX_GRANT_ROUTE || !grant.said) {
     throw new ValidationError(`Expected stored ${IPEX_GRANT_ROUTE} EXN.`);
@@ -297,9 +310,9 @@ export function storedGrantArtifacts(
     throw new ValidationError(`Grant ${grant.said} is missing embedded artifacts.`);
   }
   return {
-    anc: concatBytes(keriRaw(embeds.anc, "anc"), pathedAttachment(hby, grant.said, "anc")),
-    iss: concatBytes(keriRaw(embeds.iss, "iss"), pathedAttachment(hby, grant.said, "iss")),
-    acdc: concatBytes(acdcRaw(embeds.acdc, "acdc"), pathedAttachment(hby, grant.said, "acdc")),
+    anc: storedArtifact(keriBody(embeds.anc, "anc"), pathedAttachment(hby, grant.said, "anc"), gvrsn),
+    iss: storedArtifact(keriBody(embeds.iss, "iss"), pathedAttachment(hby, grant.said, "iss"), gvrsn),
+    acdc: storedArtifact(acdcBody(embeds.acdc, "acdc"), pathedAttachment(hby, grant.said, "acdc"), gvrsn),
   };
 }
 
@@ -307,10 +320,8 @@ export function storedGrantArtifacts(
 export function credentialSaidFromGrant(grant: SerderKERI): string | null {
   const embeds = embeddedSection(grant);
   const acdc = embeds?.acdc;
-  if (!acdc || typeof acdc !== "object" || Array.isArray(acdc)) {
-    return null;
-  }
-  const said = (acdc as Record<string, unknown>).d;
+  if (!isRecord(acdc)) return null;
+  const said = acdc.d;
   return typeof said === "string" ? said : null;
 }
 
@@ -328,43 +339,43 @@ function credentialSaid(creder: SerderACDC): string {
 
 function credentialIssuee(creder: SerderACDC): string | null {
   const attrib = creder.attrib;
-  if (attrib && typeof attrib === "object" && !Array.isArray(attrib)) {
-    const issuee = (attrib as Record<string, unknown>).i;
+  if (isRecord(attrib)) {
+    const issuee = attrib.i;
     return typeof issuee === "string" ? issuee : null;
   }
   return null;
 }
 
-function embeddedSection(serder: SerderKERI): Record<string, unknown> | null {
+/** Project only grant children; protocol readers below own body reconstruction. */
+function embeddedSection(serder: SerderKERI): { anc: unknown; iss: unknown; acdc: unknown } | null {
   const ked = serder.ked;
-  if (!ked) {
-    return null;
-  }
-  if (ked.e && typeof ked.e === "object" && !Array.isArray(ked.e)) {
-    return ked.e as Record<string, unknown>;
-  }
-  const attrs = ked.a;
-  if (attrs && typeof attrs === "object" && !Array.isArray(attrs)) {
-    const embeds = (attrs as Record<string, unknown>).e;
-    if (embeds && typeof embeds === "object" && !Array.isArray(embeds)) {
-      return embeds as Record<string, unknown>;
-    }
-  }
-  return null;
+  if (!ked) return null;
+  const embeds = isRecord(ked.e) ? ked.e : isRecord(ked.a) && isRecord(ked.a.e) ? ked.a.e : null;
+  return embeds ? { anc: embeds.anc, iss: embeds.iss, acdc: embeds.acdc } : null;
 }
 
-function keriRaw(value: unknown, label: string): Uint8Array {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new ValidationError(`Grant embedded ${label} is missing.`);
-  }
-  return new SerderKERI({ sad: value as Record<string, unknown> }).raw;
+/** Wire/schema-defined SAD keys remain unknown until a named-field check or Serder validates them. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function acdcRaw(value: unknown, label: string): Uint8Array {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+function keriBody(value: unknown, label: string): SerderKERI {
+  if (!isRecord(value)) {
     throw new ValidationError(`Grant embedded ${label} is missing.`);
   }
-  return new SerderACDC({ sad: value as Record<string, unknown>, verify: false }).raw;
+  return new SerderKERI({ sad: value });
+}
+
+function acdcBody(value: unknown, label: string): SerderACDC {
+  if (!isRecord(value)) {
+    throw new ValidationError(`Grant embedded ${label} is missing.`);
+  }
+  return new SerderACDC({ sad: value, verify: false });
+}
+
+/** Use the receiver-configured child genus; legacy parent framing does not determine it. */
+function storedArtifact(body: Serder, attachment: Uint8Array, gvrsn: Versionage): CredentialArtifact {
+  return { wire: concatBytes(body.raw, attachment), genus: resolveAttachmentGvrsn(body, gvrsn) };
 }
 
 function pathedAttachment(hby: Habery, said: string, label: string): Uint8Array {

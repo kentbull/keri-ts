@@ -10,6 +10,7 @@ import {
   ResourceAdmissionError,
   ResourcePolicy,
   SerderACDC,
+  SerderKERI,
   TraitDex,
   Vrsn_1_0,
   Vrsn_2_0,
@@ -436,6 +437,11 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
         reason: "missingAuthentication",
       });
       assertEquals(tvy.processQuery({ serder: request(""), source }), { kind: "drop", reason: "invalidQuery" });
+      for (const q of [null, false, "query", [], { ri: vcp.pre!, i: "" }, { ri: vcp.pre!, src: issuer.pre, i: 0 }]) {
+        const malformed = new SerderKERI({ sad: { ...request().ked, q }, makify: true });
+        assertEquals(tvy.processQuery({ serder: malformed, source }), { kind: "drop", reason: "invalidQuery" });
+      }
+      assertEquals(runtime.cues.length, 0);
       assertEquals(tvy.processQuery({ serder: request(vcp.pre!, "", "tsn"), source }), undefined);
       assertRuntimeCue(runtime, "reply");
       const unsigned = hby.makeHab("nontransferable", undefined, { transferable: false });
@@ -487,7 +493,7 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
           ["/tsn/registry", issuer.pre, serder.said!],
           ["/tsn/credential", issuer.pre, serder.said!],
         ]);
-        const { dt, ...registry } = result.replies[0].data!;
+        const { dt, ...registry } = result.replies[0].data.asDict();
         assertEquals(typeof dt, "string");
         assertEquals(registry, {
           vn: [1, 0],
@@ -500,31 +506,30 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
           b: [],
           c: [TraitDex.NoBackers],
         });
-        assertEquals(result.replies[1]!.data, {
+        assertEquals(result.replies[1]!.data.asDict(), {
           vn: [1, 0],
           i: credential.said,
           s: "0",
           d: iss.said,
-          ri: vcp.pre,
+          ri: vcp.pre!,
           ra: {},
           a: { s: Number(anchors[1].seqner.num), d: anchors[1].saider.qb64 },
           dt: iss.ked!.dt,
           et: "iss",
         });
-        result.replies[0].data!.b = ["foreign"];
+        result.replies[0].data.b = ["foreign"];
         assertEquals(tvy.tevers.get(vcp.pre!)!.baks, [], "Replies are detached record data");
       } finally {
         yield* call(() => discardFrame(frame));
       }
       const partial = prepareTsnQuery({ serder: request(vcp.pre!, issuer.pre), source }, tvy.tevers);
       if (partial.kind !== "reply") throw new Error("Expected registry reply");
-      assertEquals([partial.replies.length, partial.missingCredential], [1, issuer.pre]);
+      assertEquals(partial.replies.length, 1, "Missing credential retains the registry reply");
       const registryOnly = prepareTsnQuery({ serder: request(vcp.pre!, ""), source }, tvy.tevers);
       if (registryOnly.kind !== "reply") throw new Error("Expected registry reply");
       assertEquals(registryOnly.replies.length, 1);
       assertEquals(prepareTsnQuery({ serder: request(issuer.pre), source }, tvy.tevers), {
         kind: "unavailable",
-        registry: issuer.pre,
       });
       assertEquals(prepareTsnQuery({ serder: request() }, tvy.tevers), {
         kind: "drop",
@@ -534,6 +539,14 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
         kind: "drop",
         reason: "invalidQuery",
       });
+
+      for (const q of [null, false, "query", [], { ri: vcp.pre }, { ri: vcp.pre!, i: 0 }]) {
+        const malformed = new SerderKERI({ sad: { ...request().ked, q }, makify: true });
+        assertEquals(prepareTsnQuery({ serder: malformed, source }, tvy.tevers), {
+          kind: "drop",
+          reason: "invalidQuery",
+        });
+      }
       assertEquals(prepareTsnQuery({ serder: request(vcp.pre!, "", "tels"), source }, tvy.tevers), {
         kind: "drop",
         reason: "unsupportedRoute",
@@ -596,6 +609,9 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
         const malformed of [
           notice({ ...state, i: `${vcp.pre}suffix` }),
           notice({ ...state, s: "20000000000001" }),
+          notice({ ...state, vn: [1, "0"] }),
+          notice({ ...state, b: [1] }),
+          notice({ ...state, c: [1] }),
           reply(`/tsn/registry/${issuer.pre}suffix`, state, { pre: issuer.pre }),
         ]
       ) yield* runtime.reactor.processBytes(issuer.endorse(malformed));
@@ -653,7 +669,7 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, valid.said);
       assertExists(hby.db.sdts.get([valid.said!]), "Pending/rejected semantic state retains previous BADA metadata");
       assertEquals(runtime.cues.length, 0);
-      tvy.processQuery({ serder: query("tsn", { ri: vcp.pre, i: "" }), source: issuer.kever!.prefixer });
+      tvy.processQuery({ serder: query("tsn", { ri: vcp.pre!, i: "" }), source: issuer.kever!.prefixer });
       assertEquals(
         standaloneCues(tvy.cues).pull()?.kin,
         "reply",
@@ -768,20 +784,30 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
         assertEquals(pendingReger.txnsb.escrowdb.cnt(), 0);
         assertEquals(pendingReger.txnsb.serderdb.get([incoming.diger.qb64]), null);
         assertEquals(pendingReger.txnsb.daterdb.get([incoming.diger.qb64]), null);
-        assertEquals(expectKind(pending.processReply(incoming), "unverified").context?.escrow, "registry-mae");
+        assertEquals(pending.processReply(incoming), {
+          kind: "unverified",
+          reason: "dependencyPending",
+          family: "registry-mae",
+          message: "Registry state dependency unavailable.",
+        });
         assertEquals(pendingCues.toArray(), [{
           kin: "query",
           pre: issuer.pre,
           src: issuer.pre,
           route: "logs",
-          query: { i: issuer.pre },
+          q: {},
         }]);
         pendingCues.clear();
         pendingCues.capacity = 0;
         const blocked = expectKind(pendingResources.reserve({ bytes: pendingResources.limits.bytes }), "reserve");
         assertEquals(
-          expectKind(pending.processReply(incoming), "unverified").context?.escrow,
-          "registry-mae",
+          pending.processReply(incoming),
+          {
+            kind: "unverified",
+            reason: "dependencyPending",
+            family: "registry-mae",
+            message: "Registry state dependency unavailable.",
+          },
           "existing bucket membership acquires no second query credit",
         );
         blocked.reservation.release();
@@ -872,7 +898,7 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
       assertEquals(reger.txnsb.escrowdb.get(["registry-ooo", vcp.pre!, issuer.pre]).length, 1);
       assertExists(reger.txnsb.serderdb.get([serder.said!]), "Broker retains the pending authenticated body");
       assertEquals(hby.db.rpys.get([serder.said!]), null, "Pending proof has one external owner");
-      assertEquals(queries.at(-1), { ri: vcp.pre, i: "", src: issuer.pre }, "Recovery preserves TEL coordinates");
+      assertEquals(queries.at(-1), { ri: vcp.pre!, i: "", src: issuer.pre }, "Recovery preserves TEL coordinates");
       yield* runtime.reactor.processBytes(source.cloneTvt(vcp.pre!, vcp.said!));
       yield* turn();
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, serder.said);
@@ -1155,6 +1181,18 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
           ),
         ],
       };
+      for (const et of [["iss"], null]) {
+        const malformed = reply(`/tsn/credential/${issuer.pre}`, {
+          ...tvy.tevers.get(vcp.pre!)!.vcState(credential.said!)!.asDict(),
+          et,
+        }, { pre: issuer.pre });
+        yield* runtime.reactor.processBytes(issuer.endorse(malformed));
+        assertEquals(reger.txnsb.escrowdb.cnt(), 0, "Malformed kinds must not acquire dependency escrow");
+        assertEquals(reger.txnsb.serderdb.get([malformed.said!]), null);
+        assertEquals(reger.txnsb.daterdb.get([malformed.said!]), null);
+        assertEquals(hby.db.rpys.get([malformed.said!]), null);
+        assertEquals(runtime.cues.length, 0);
+      }
       const busy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
       assertThrows(() => owned.processReply(incoming), ResourceAdmissionError);
       busy.reservation.release();
@@ -1168,11 +1206,16 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
         pre: issuer.pre,
         src: issuer.pre,
         route: "tels",
-        query: { ri: vcp.pre, i: "" },
+        q: { ri: vcp.pre!, i: "" },
       });
       cues.capacity = 0;
       const duplicateBusy = expectKind(resources.reserve({ bytes: resources.limits.bytes }), "reserve");
-      assertEquals(expectKind(owned.processReply(incoming), "unverified").context?.escrow, "credential-mre");
+      assertEquals(owned.processReply(incoming), {
+        kind: "unverified",
+        reason: "dependencyPending",
+        family: "credential-mre",
+        message: "Credential state dependency unavailable.",
+      });
       duplicateBusy.reservation.release();
       assertEquals(cues.length, 0);
       assertEquals(resources.used.bytes, 0);
@@ -1205,7 +1248,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
         pre: issuer.pre,
         src: issuer.pre,
         route: "tels",
-        query: { ri: vcp.pre, i: credential.said },
+        q: { ri: vcp.pre!, i: credential.said! },
       });
       assertExists(reger.txnsb.serderdb.get([notice.said!]));
       assertEquals(hby.db.rpys.get([notice.said!]), null, "Pending proof belongs only to Broker");
@@ -1286,7 +1329,10 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
       assertEquals(tvy.processEvent({ serder: iss, ...anchorTel(issuer, iss) }).kind, "accept");
       for (const bytes of sender.db.clonePreIter(issuer.pre)) yield* target.reactor.processBytes(bytes);
       for (const event of [vcp, iss]) yield* target.reactor.processBytes(reger.cloneTvt(event.pre!, event.said!));
-      const queryWire = requester.query(issuer.pre, issuer.pre, { ri: vcp.pre, i: credential.said }, "tsn");
+      const queryWire = requester.query(issuer.pre, issuer.pre, {
+        route: "tsn",
+        q: { ri: vcp.pre!, i: credential.said! },
+      });
       yield* runtime.reactor.processBytes(queryWire);
       if (!(runtime.cues instanceof CueDeck)) throw new Error("Expected admitted runtime cues");
       const owners = [];
@@ -1336,7 +1382,7 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
         for (const owner of owners) owner.release();
       }
       yield* runtime.reactor.processBytes(
-        requester.query(issuer.pre, issuer.pre, { ri: vcp.pre, i: requester.pre }, "tsn"),
+        requester.query(issuer.pre, issuer.pre, { route: "tsn", q: { ri: vcp.pre!, i: requester.pre } }),
       );
       assertEquals(
         runtime.cues.toArray().map((cue) => cue.kin),
@@ -1348,7 +1394,7 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
       assertThrows(
         () =>
           tvy.processQuery({
-            serder: query("tsn", { ri: vcp.pre, i: credential.said }),
+            serder: query("tsn", { ri: vcp.pre!, i: credential.said! }),
             source: requester.kever!.prefixer,
           }),
         Error,
@@ -1357,7 +1403,7 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
       assertEquals(runtime.cues.length, 0, "A pair cannot publish only its first cue on local refusal");
       const resources = new ResourcePolicy(), admitted = new CueDeck(resources, 2);
       const producing = new Tevery({ db: sender.db, reger, cues: admitted });
-      const args = { serder: query("tsn", { ri: vcp.pre, i: credential.said }), source: requester.kever!.prefixer };
+      const args = { serder: query("tsn", { ri: vcp.pre!, i: credential.said! }), source: requester.kever!.prefixer };
       const occupied = resources.reserve({ bytes: resources.limits.bytes });
       if (occupied.kind !== "reserve") throw new Error("Expected occupied TSN cue credit");
       try {

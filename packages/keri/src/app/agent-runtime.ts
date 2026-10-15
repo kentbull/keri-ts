@@ -1,10 +1,10 @@
-import type { ResourcePolicy } from "cesr-ts";
+import { ResourceAdmissionError, type ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
 import { CueDeck } from "../core/cue-admission.ts";
 import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
-import type { Deck } from "../core/deck.ts";
+import { type Deck, DeckFullError } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
 import type { MessagePolicy } from "../core/eventing.ts";
@@ -35,6 +35,7 @@ import {
   mailboxTopicForRoute,
   Poster,
 } from "./forwarding.ts";
+import { FrameIntake } from "./frame-intake.ts";
 import { loadMultisigHandlers } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { loadIpexHandlers } from "./ipexing.ts";
@@ -45,12 +46,50 @@ import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiU
 import { QueryCoordinator } from "./querying.ts";
 import { type AcdcRuntimeServices, Reactor, type VdrRuntimeServices } from "./reactor.ts";
 import { type ReplyStreamLimits, ReplyStreams } from "./reply-streams.ts";
-import { Respondant } from "./respondant.ts";
+import { recipientForCue, Respondant, senderHabForCue, topicForCue } from "./respondant.ts";
 import { RuntimeDeliveries } from "./runtime-deliveries.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
 import { Verifier } from "./verifying.ts";
+
+/** Compose responder source-to-delivery wiring at the runtime root; admission receives the actual cue flow. */
+export function respondantCueSink(runtime: AgentRuntime, hab?: Hab | null): CueSink {
+  return {
+    admitCue(source, interpreter) {
+      const cue = source.peekHead();
+      if (!cue || !interpreter) return "ineligible";
+      const recipient = recipientForCue(cue), topic = topicForCue(cue);
+      const sender = senderHabForCue(runtime.hby, cue, hab);
+      if (!recipient || !topic || !sender) return "ineligible";
+      let refusal: ResourceAdmissionError | DeckFullError | undefined;
+      try {
+        const transferred = runtime.deliveries.enqueueCue(
+          interpreter,
+          source,
+          () =>
+            runtime.poster.findBytesRoute(sender, { recipient, topic }) ?? {
+              sender: sender.pre,
+              recipient,
+              topic,
+              bodyMode: runtime.hby.cesrBodyMode,
+              kind: "direct",
+              targets: [],
+            },
+          sender,
+          (error) => refusal = error,
+        );
+        return transferred ? "transferred" : "ineligible";
+      } catch (error) {
+        if (refusal && error === refusal && (refusal instanceof DeckFullError || refusal.reason === "busy")) {
+          return "busy";
+        }
+        throw error;
+      }
+    },
+    send: (emission) => runtime.respondant.sendWithHab(emission, hab),
+  };
+}
 
 /**
  * Shared runtime host mode.
@@ -93,6 +132,8 @@ export interface AgentRuntime {
    * Consume with processCuesOnce or an owned transfer; naked pull cannot discard that credit.
    */
   cues: CueQueueInput;
+  /** Demand-driven input lifetime; protocol decisions stay with Reactor. */
+  readonly intake: FrameIntake;
   reactor: Reactor;
   oobiery: Oobiery;
   authenticator: Authenticator;
@@ -276,7 +317,12 @@ export function* createAgentRuntime(
       yield* deliveries.close();
     }
   });
+  const intake = new FrameIntake(
+    resources,
+    async (maxBytes, signal) => (await hby.db.openPayloads(signal)).files.stage(maxBytes, signal),
+  );
   const reactor = new Reactor(hby, {
+    intake,
     cues,
     vdr,
     resources,
@@ -363,6 +409,7 @@ export function* createAgentRuntime(
     notifier,
     signaler,
     cues,
+    intake,
     reactor,
     oobiery,
     authenticator,
@@ -622,11 +669,11 @@ export function* processRuntimeTurn(
     yield* processMailboxTurn(runtime, { hab: options.hab });
   }
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
-  yield* runtime.querying.processPending(runtime);
+  yield* runtime.querying.processPending();
   yield* runtime.reactor.processEscrowsOnce();
   yield* runtime.delegating.processAllOnce(runtime);
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
-  yield* runtime.querying.processPending(runtime);
+  yield* runtime.querying.processPending();
   yield* runtime.deliveries.process(runtime);
 }
 
@@ -832,7 +879,7 @@ export function* runAgentRuntime(
       }
     }),
     yield* spawn(function*() {
-      yield* runtime.querying.queryDo(runtime);
+      yield* runtime.querying.queryDo();
     }),
   ];
   try {

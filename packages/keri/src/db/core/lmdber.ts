@@ -341,6 +341,15 @@ export class LMDBer {
     return this.pathManager.opened && this.env !== null;
   }
 
+  /** Inspect the pinned lmdb-js writer at the storage boundary, without exposing its native handle. */
+  get inWriteTransaction(): boolean {
+    const root = this.requireEnv();
+    if (!("env" in root) || !root.env || typeof root.env !== "object") {
+      throw new DatabaseOperationError("Unsupported LMDB writer inspection");
+    }
+    return "writeTxn" in root.env && root.env.writeTxn != null;
+  }
+
   /** Report whether this environment uses a temporary backing directory. */
   get temp(): boolean {
     return this.pathManager.temp;
@@ -360,13 +369,11 @@ export class LMDBer {
   }
 
   /** Normalize low-level LMDB key-shape failures into one project-specific error type. */
-  private formatDbKeyError(key: Uint8Array, error: unknown): DatabaseKeyError {
+  private formatDbKeyError(error: unknown): DatabaseKeyError {
     const message = error instanceof Error ? error.message : String(error);
     return new DatabaseKeyError(
       `Key is empty, too big, or wrong size: ${message}`,
-      {
-        key: Array.from(key),
-      },
+      { cause: error },
     );
   }
 
@@ -482,11 +489,7 @@ export class LMDBer {
       const message = error instanceof Error ? error.message : String(error);
       throw new DatabaseOperationError(
         `Failed to open LMDB environment: ${message}`,
-        {
-          path: dbPath,
-          readonly,
-          mapSize: effectiveMapSize,
-        },
+        { cause: error },
       );
     }
   }
@@ -558,9 +561,7 @@ export class LMDBer {
       const message = error instanceof Error ? error.message : String(error);
       throw new DatabaseOperationError(
         `Failed to set database version: ${message}`,
-        {
-          version: val,
-        },
+        { cause: error },
       );
     }
   }
@@ -612,7 +613,7 @@ export class LMDBer {
       });
       return result;
     } catch (error) {
-      throw this.formatDbKeyError(key, error);
+      throw this.formatDbKeyError(error);
     }
   }
 
@@ -635,7 +636,7 @@ export class LMDBer {
       });
       return true;
     } catch (error) {
-      throw this.formatDbKeyError(key, error);
+      throw this.formatDbKeyError(error);
     }
   }
 
@@ -655,7 +656,7 @@ export class LMDBer {
         return copyDbBytes(val);
       }
     } catch (error) {
-      throw this.formatDbKeyError(key, error);
+      throw this.formatDbKeyError(error);
     }
   }
 
@@ -750,7 +751,7 @@ export class LMDBer {
       });
       return result;
     } catch (error) {
-      throw this.formatDbKeyError(key, error);
+      throw this.formatDbKeyError(error);
     }
   }
 
@@ -812,9 +813,7 @@ export class LMDBer {
       const message = error instanceof Error ? error.message : String(error);
       throw new DatabaseOperationError(
         `Failed to count database branch: ${message}`,
-        {
-          top: Array.from(top),
-        },
+        { cause: error },
       );
     }
   }
@@ -865,9 +864,7 @@ export class LMDBer {
       const message = error instanceof Error ? error.message : String(error);
       throw new DatabaseOperationError(
         `Failed to delete database branch: ${message}`,
-        {
-          top: Array.from(top),
-        },
+        { cause: error },
       );
     }
   }
@@ -905,9 +902,7 @@ export class LMDBer {
       const message = error instanceof Error ? error.message : String(error);
       throw new DatabaseOperationError(
         `Failed to iterate database branch: ${message}`,
-        {
-          top: Array.from(top),
-        },
+        { cause: error },
       );
     }
   }

@@ -338,11 +338,10 @@ function* withMailboxWorkflow(
           });
           writeJsonLine({
             route: result.route,
-            said: result.said,
+            proposals: result.proposals,
             group: result.group,
             accepted: result.accepted,
             deliveries: result.deliveries,
-            attachmentBytes: result.attachmentBytes,
           });
           return;
         }

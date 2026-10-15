@@ -1,7 +1,8 @@
-import { Diger, Ilks, SerderKERI, Siger } from "cesr-ts";
+import { concatBytes, Diger, Ilks, SerderKERI, Siger, type Versionage } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { reply as replyEvent } from "../core/protocol-eventing.ts";
+import { exchange } from "../core/protocol-exchanging.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
@@ -10,7 +11,7 @@ import {
   localGroupMember,
   uniqueMembers,
 } from "./group-members.ts";
-import { MULTISIG_RPY_ROUTE, multisigRpyExn } from "./grouping.ts";
+import { MULTISIG_RPY_ROUTE } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 
 const MULTISIG_TOPIC = "multisig";
@@ -24,11 +25,10 @@ export {
 /** Result of proposing one group endpoint-role authorization reply. */
 export interface GroupEndpointRoleProposalResult {
   route: typeof MULTISIG_RPY_ROUTE;
-  said: string | undefined;
+  proposals: { recipient: string; said: string }[];
   group: string;
   accepted: boolean;
   deliveries: string[];
-  attachmentBytes: number;
   rpy: Uint8Array;
 }
 
@@ -78,22 +78,35 @@ export function* proposeGroupEndpointRole(
   yield* runtime.reactor.processBytes(localRpy, { local: true });
   yield* runtime.reactor.processEscrowsOnce();
 
-  const [exn, attachments] = yield* multisigRpyExn(groupHab, member, localRpy);
-  const deliveries = yield* publishEndpointRoleProposal(
-    runtime,
-    member,
-    groupSigningMembers(runtime.hby, groupHab.pre),
-    { gid: groupHab.pre },
-    { rpy: localRpy },
-  );
+  const proposals: GroupEndpointRoleProposalResult["proposals"] = [];
+  const deliveries: string[] = [];
+  for (const recipient of uniqueMembers(groupSigningMembers(runtime.hby, groupHab.pre))) {
+    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
+      continue;
+    }
+    const [serder, attachments] = exchange(MULTISIG_RPY_ROUTE, { gid: groupHab.pre }, {
+      sender: member.pre,
+      recipient,
+      embeds: { rpy: localRpy },
+    });
+    const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
+    yield* runtime.reactor.processBytes(message, { local: true });
+    const result = yield* runtime.poster.sendPreparedExchange(member, {
+      recipient,
+      serder,
+      message,
+      topic: MULTISIG_TOPIC,
+    });
+    proposals.push({ recipient, said: serder.said! });
+    deliveries.push(...result.deliveries, ...result.queued);
+  }
 
   return {
     route: MULTISIG_RPY_ROUTE,
-    said: exn.said ?? undefined,
+    proposals,
     group: groupHab.pre,
     accepted: endpointRoleAccepted(runtime.hby, groupHab.pre, role, args.eid),
     deliveries,
-    attachmentBytes: attachments.length,
     rpy: localRpy,
   };
 }
@@ -103,6 +116,7 @@ export function groupEndorseReply(
   hby: Habery,
   groupPre: string,
   serder: SerderKERI,
+  gvrsn?: Versionage,
 ): Uint8Array {
   const keys = groupEventKeys(hby, groupPre, serder);
   const sigers = signLocalGroupEvent(hby, serder, groupSigningMembers(hby, groupPre), keys);
@@ -117,31 +131,8 @@ export function groupEndorseReply(
     sigers,
     seal: { i: kever.prefixer, s: seqner, d: new Diger({ qb64: estSaid }) },
     pipelined: true,
+    gvrsn,
   });
-}
-
-function* publishEndpointRoleProposal(
-  runtime: AgentRuntime,
-  member: Hab,
-  recipients: readonly string[],
-  payload: Record<string, unknown>,
-  embeds: Record<string, Uint8Array>,
-): Operation<string[]> {
-  const deliveries: string[] = [];
-  for (const recipient of uniqueMembers(recipients)) {
-    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
-      continue;
-    }
-    const result = yield* runtime.poster.sendExchange(member, {
-      recipient,
-      route: MULTISIG_RPY_ROUTE,
-      payload,
-      embeds,
-      topic: MULTISIG_TOPIC,
-    });
-    deliveries.push(...result.deliveries, ...result.queued);
-  }
-  return deliveries;
 }
 
 /**
