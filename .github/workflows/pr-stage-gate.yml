@@ -76,7 +76,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > "$PR_METADATA"
-          deno run --allow-read --allow-write --allow-env --allow-run=git scripts/ci/pr-test-scope.ts
+          deno run --no-config --no-lock --allow-read --allow-write --allow-env --allow-run=git scripts/ci/pr-test-scope.ts
 
       - name: require release intent
         run: bash scripts/ci/check-changeset.sh "${{ github.event.pull_request.base.sha }}"
