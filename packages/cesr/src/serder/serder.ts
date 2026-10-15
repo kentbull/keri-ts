@@ -1,6 +1,7 @@
 import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
 import { b, t } from "../core/bytes.ts";
-import { cborSyntaxFailure, decodeAdmittedKeriCbor, decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
+import { decodeAdmittedKeriCbor, decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
+import { codecSyntaxFailure } from "../core/codec-errors.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import type { CesrBody, CesrFrame, Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
@@ -893,7 +894,7 @@ function parseRawToKed(raw: Uint8Array, smellage: Smellage, context?: BodyDecode
         ? normalizeDecodedMap(
           decodeAdmittedKeriCbor(raw, context.cborBoundaryFailure, context.onDecodeFailure),
           kind,
-          cborSyntaxFailure,
+          (message) => codecSyntaxFailure("CBOR", message),
         )
         : normalizeDecodedMap(decodeKeriCbor(raw), kind);
     } else if (kind === "CESR") {

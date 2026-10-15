@@ -1,6 +1,5 @@
 import { encode as encodeMsgpack } from "@msgpack/msgpack";
 import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
-import { toAsyncFrames } from "../../../src/adapters/async-iterable.ts";
 import { concatBytes, decodeB64, decoder, t } from "../../../src/core/bytes.ts";
 import { encodeKeriCbor } from "../../../src/core/cbor.ts";
 import {
@@ -179,7 +178,7 @@ Deno.test("progressive traversal matches finite frames with partial edges and si
         );
       }
       assertEquals(
-        await collect(toAsyncFrames(chunks(
+        await collect(parse(chunks(
           new Uint8Array(),
           ...Array.from(input, (byte) => Uint8Array.of(byte)),
           new Uint8Array(),

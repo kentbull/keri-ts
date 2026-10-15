@@ -14,8 +14,3 @@ export function codecSyntaxFailure(kind: Kind, message: string): DeserializeErro
 export function isCodecSyntaxFailure(error: unknown, kind: Kind): boolean {
   return error instanceof DeserializeError && syntaxFailures.get(error) === kind;
 }
-
-/** A cleanup failure is foreign to body syntax even when it reuses an earlier syntax error. */
-export function forgetCodecSyntaxFailure(error: unknown): void {
-  if (error instanceof DeserializeError) syntaxFailures.delete(error);
-}

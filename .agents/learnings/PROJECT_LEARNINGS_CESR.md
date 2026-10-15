@@ -2,6 +2,8 @@
 
 ## Parser ownership
 
+- Public CBOR exports are encodeKeriCbor/decodeKeriCbor only; admitted decode and
+  syntax provenance are internal. Use parse directly; the unused toAsyncFrames alias is removed.
 - `parse` is the sole progressive async engine; `parseBytes` is bounded async
   complete-input collection. There is no atomic/push compatibility engine.
 - Chunk exhaustion is not frame completion. A body boundary, exact enclosure end

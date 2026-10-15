@@ -1,4 +1,3 @@
-export * from "./adapters/async-iterable.ts";
 export * from "./annotate/annotator.ts";
 export * from "./annotate/comments.ts";
 export * from "./annotate/denot.ts";
@@ -6,7 +5,7 @@ export * from "./annotate/render.ts";
 export * from "./annotate/types.ts";
 export * from "./bench/parser-benchmark.ts";
 export * from "./core/bytes.ts";
-export * from "./core/cbor.ts";
+export { decodeKeriCbor, encodeKeriCbor } from "./core/cbor.ts";
 export * from "./core/errors.ts";
 export * from "./core/frame.ts";
 export * from "./core/payload.ts";
