@@ -86,6 +86,7 @@ Deno.test("protocol-vdr-eventing state builders return KERIpy-shaped records", (
   assertInstanceOf(vsr, VcStateRecord);
   assertEquals(vsr.ri, REGISTRY);
   assertEquals(vsr.a, { s: 3, d: SAID });
+  assertEquals(vsr.a.s, 3);
   assertEquals(vsr.ra, {});
   const partial = vcstate(VC, SAID, 0, REGISTRY, Ilks.bis, { s: 3, d: SAID }, { ra: { i: REGISTRY, d: SAID } });
   assertEquals(partial.ra, { i: REGISTRY, d: SAID }, "Raw state preserves partial registry references");

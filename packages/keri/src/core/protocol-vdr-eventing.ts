@@ -427,7 +427,7 @@ export function vcstate(
     dts?: string;
     version?: Versionage;
   } = {},
-): VcStateRecord {
+): Required<VcStateRecord> {
   if (sn < 0) {
     throw new ValidationError(`Negative sn = ${sn} in key state.`);
   }
@@ -435,7 +435,8 @@ export function vcstate(
     throw new ValidationError(`Invalid event type et=${eilk} in key state.`);
   }
   const actualVersion = resolveVersion(version);
-  return new VcStateRecord(
+  return Object.assign(
+    new VcStateRecord(),
     {
       vn: [actualVersion.major, actualVersion.minor],
       i: vcpre,
@@ -446,7 +447,7 @@ export function vcstate(
       a: { ...anchor },
       dt: dts ?? makeNowIso8601(),
       et: eilk,
-    } satisfies VcStateRecordShape,
+    } satisfies Required<VcStateRecordShape>,
   );
 }
 
