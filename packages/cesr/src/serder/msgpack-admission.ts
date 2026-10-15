@@ -12,7 +12,11 @@ const standardDecode = standard.decode.bind(standard);
 const standardEncode = standard.tryToEncode.bind(standard);
 const codec = Object.freeze({ decode: standardDecode, tryToEncode: standardEncode });
 
-/** Decode with standard timestamp/ExtData semantics; global custom extensions and key caching stay outside. */
+/**
+ * Decode with standard timestamp/ExtData semantics; global custom extensions and key caching stay outside.
+ * The root guard admits a map; schema-defined keys and extension values remain
+ * unknown here. Serder owns validation of named protocol fields after decode.
+ */
 export function decodeAdmittedMsgpack(
   raw: Uint8Array,
   boundaryFailure: boolean,
