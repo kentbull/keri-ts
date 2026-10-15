@@ -83,6 +83,12 @@ State-record construction proves no acceptance. Complete-message caps do not pro
 Revery BADA preserves microseconds. Its bounded proof plan discovers the complete
 query batch before reply/proof/escrow writes. Same-call groups see virtual staged
 pins in input order; externalEscrow leaves pending proofs with the semantic owner.
+Reply outcomes distinguish notAccepted, caller-owned proofPending and semantic
+dependencyPending. The last requires the receiver's closed escrow family; registry
+and credential retry compare that semantic field, never diagnostic context keys.
+Proof verification cannot choose a semantic family. The reflective Router validates
+unknown handler results before returning the shared outcome contract. It transports
+family names without importing receiver policy; each receiver closes its own set.
 Resource refusals propagate through RPE replay without deleting its durable row.
 KSN publication holds caller-owned PreparedReply query credit while admitting the
 actual keyStateSaved child on Kevery's deck, including distinct local decks.

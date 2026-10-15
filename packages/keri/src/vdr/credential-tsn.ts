@@ -47,6 +47,12 @@ function credentialRecord(data: unknown): VcStateRecord | null {
   }
 }
 
+/** Dependency buckets owned by the credential notice receiver. */
+type CredentialEscrowFamily = "credential-mre" | "credential-mae" | "credential-ooo";
+
+/** Credential outcomes retain the receiver's exact dependency family. */
+export type CredentialReplyDecision = ReplyProcessDecision<CredentialEscrowFamily>;
+
 /** Credential TSN admission owns its attester proof, registry dependency and current TEL commitment.
  * Accepted configuration supplies trust; Broker owns pending proofs outside legacy Revery escrow.
  * Publication retains the outer reply SAID and refuses forged anchors or superseded issuance notices,
@@ -59,13 +65,12 @@ export class CredentialStateReceiver {
   }
 
   /** Revery's canonical route and Broker retries use the same current-state checks. */
-  processReply({ serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs): ReplyProcessDecision {
-    const refuse = (reason: string, escrow?: string) => unverifiedReplyDecision(reason, { escrow });
+  processReply({ serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs): CredentialReplyDecision {
     const record = credentialRecord(serder.ked?.a);
     if (
       !record || !qualifiedPrefix(aid) || timestampMicros(serder.ked?.dt) === null
       || route !== `/tsn/credential/${aid}` || serder.said !== diger.qb64 || !serder.verify()
-    ) return refuse("Invalid credential transaction-state notice.");
+    ) return unverifiedReplyDecision("Invalid credential transaction-state notice.");
     const vci = record.i!, regk = record.ri!, sn = Number.parseInt(record.s!, 16);
     const previous = this.tvy.reger.txnsb.current([vci, aid]);
     const disposeIncoming = () => {
@@ -73,13 +78,13 @@ export class CredentialStateReceiver {
     };
     const reject = (reason: string) => {
       disposeIncoming();
-      return refuse(reason);
+      return unverifiedReplyDecision(reason);
     };
     const stored = this.tvy.reger.states.get(regk);
     if (stored && !registryRecord(stored.asDict())) throw new Error("Corrupt stored registry state.");
     const issuer = stored?.ii ?? aid;
     this.publisher.preflight(1);
-    const escrow = (typ: string, query: boolean, proof?: PreparedReply) => {
+    const escrow = (typ: CredentialEscrowFamily, query: boolean, proof?: PreparedReply): CredentialReplyDecision => {
       const isNew = !this.tvy.reger.txnsb.hasStateNotice(typ, vci, aid, diger);
       const cues: AgentCue[] = isNew && query
         ? [{
@@ -108,7 +113,12 @@ export class CredentialStateReceiver {
         disposeIncoming();
         proof?.publishQueries();
         child?.publish();
-        return refuse("Credential state dependency unavailable.", typ);
+        return {
+          kind: "unverified",
+          reason: "dependencyPending",
+          family: typ,
+          message: "Credential state dependency unavailable.",
+        };
       } finally {
         child?.release();
       }
@@ -148,7 +158,7 @@ export class CredentialStateReceiver {
     });
     try {
       if (proof.decision.kind !== "accept") {
-        if (proof.decision.context?.pending) return escrow("credential-mae", false, proof);
+        if (proof.decision.reason === "proofPending") return escrow("credential-mae", false, proof);
         proof.applyProofs();
         proof.publishQueries();
         return reject("Unverified credential state attester.");
@@ -198,7 +208,9 @@ export class CredentialStateReceiver {
       this.tvy.reger.txnsb.retryStateNotices(typ, (args) => {
         const decision = this.processReply(args);
         if (decision.kind === "accept") return acceptEscrow();
-        return decision.context?.escrow === typ ? keepEscrow("recoverableError") : dropEscrow("processingError");
+        return decision.reason === "dependencyPending" && decision.family === typ
+          ? keepEscrow("recoverableError")
+          : dropEscrow("processingError");
       });
     }
   }
