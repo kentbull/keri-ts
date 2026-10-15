@@ -42,7 +42,7 @@ export class Kramer {
     this.pruner = new KramPruner(db, this.policy);
   }
 
-  /** Consume ready evidence before joined disposal/acknowledgement; borrowed input remains caller-owned. */
+  /** Consume ready evidence before joined disposal; borrowed input remains caller-owned. */
   intake(
     envelope: KeriDispatchEnvelope,
     consume: (ready: KeriDispatchEnvelope, receiverTime?: string) => Operation<void>,

@@ -170,11 +170,12 @@ Do not substitute Kever's index-sorted verifier: distinct encodings may share an
 index, so intake thresholds must use unique indices. Historical sender groups
 are diagnostic only; normalization borrows owners and leaves foreign proofs separate.
 
-KRAM staging publishes cache, verified pool/state, factors, private wire and first
-ready receiver time atomically after async rechecks. Never return hydrated owners
-through a generic callback result. Preserve ready rows until the handoff owner joins
-consumption/disposal and acknowledges the exact receipt/body; failures can replay
-callback side effects. Rotation clears partial ownership, retaining replay cache.
+KRAM staging publishes cache and partial factors atomically after async rechecks.
+Completion reconstructs evidence and removes partial factors/snapshots before
+consumption; the replay cache remains. No ready receipt or acknowledgement exists.
+Downstream failure cannot revive acceptance. Keep hydrated owners scoped through
+joined disposal until snapshot removal; callback results cannot retain them.
+Rotation clears partial ownership, retaining replay cache.
 Only a fresh foreign last group known at receipt clears its earlier unresolved
 marker; later KEL recovery alone cannot reinterpret unknown saved signatures.
 
@@ -183,8 +184,8 @@ empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
 not prove that path. Full resource qualification and presentation cutoffs remain open.
 
 KRAM time plans are read-only: cached multi partials reuse original windows; receipt
-time freezes on completion. Recheck plans atomically with current keys and durable
-readiness before publication so competing receipts cannot replace the first one.
+time freezes on completion. Recheck plans atomically with current keys and replay
+state before publication so competing receipts cannot replace the first one.
 
 KRAM pruning closes read cursors before atomic cleanup and defers for live handoff
 owners. Finite orphan scans restart on committed database changes; unrelated writes

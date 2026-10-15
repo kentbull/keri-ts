@@ -151,36 +151,24 @@ forwarding and retained only as historically verified diagnostics. Foreign group
 and children remain independent. These helpers publish no intake state or queries
 and do not change existing parser/v1 normalization.
 
-Internal `stageKram` publishes the parent cache, current sender pool/state, scalar
-factors, private snapshot and first-ready RFC3339 receiver receipt in one transaction.
-It rechecks authentication, current establishment, policy/cache and original ready
-receipt after asynchronous acquisition; concurrent snapshot replacement is refused.
-Rotated partials lose their evidence but retain replay cache. Same-index signature
-variants survive storage while thresholds and later accumulation use unique indices.
-Ready consumption remains scoped through joined hydration, and its generic return
-value must contain no untransferred frame/payload owner. Consumer/disposal failures
-retain durable readiness for at-least-once handoff. A separate handoff owner must
-acknowledge the exact ready receipt/body only after disposal; no public Kramer or
-runtime intake is enabled here. Finite collection limits are not a shared budget.
+Internal `stageKram` publishes cache and partial factors atomically after rechecking
+sender establishment and replay state. On threshold completion it reconstructs
+evidence and removes partial factors and snapshots before downstream consumption.
+The cache remains as the replay marker, matching KERIpy removal-before-delivery.
+Same-index signature variants retain their encoding while thresholds count unique
+indices. Rotation clears stale partials without removing the replay cache.
 
-Internal `KramHandoff` holds its local busy permit through atomic staging,
-callback consumption, joined hydration disposal and acknowledgement. Private
-`kready.` freezes the first ready receiver timestamp for retries, including
-nontransaction messages whose interoperable cache has no receipt field.
-This retryable handoff extends frozen KERIpy's removal-before-delivery behavior.
-Failures preserve durable readiness; successful acknowledgement compares the
-receipt, key and exact parent body before removing partial factors and snapshot.
-Replay caches remain, and neither parent nor child is accepted by this wrapper.
-Callbacks return non-owning values and consume/adopt plaintext within their scope,
-disposing untransferred owners in finally. Callback effects and owner adoption
-are at least once: disposal or acknowledgement failure can replay delivery and
-does not roll back prior effects. Local busy guards supply no shared runtime budget.
-An active-scope count shared by Baser excludes synchronous pruning through final
-cleanup. Pruning must check before its read/mutation batch and must not yield.
+`KramHandoff` keeps its local busy scope through staging, consumption and joined
+hydration disposal. No ready receipt store or downstream acknowledgement exists.
+Consumer and disposal errors propagate; they cannot revive accepted input. Actual
+hydration owners still require the callback scope until snapshot removal. Callback
+results must not retain borrowed frame/payload owners. Active scopes exclude
+synchronous pruning through final cleanup; this is resource lifetime, not durable
+application delivery.
 
 Internal `KramPruner` advances finite MSGC/TMSC/opener passes with no read cursor
 held across writes. Stored pruning windows retain inclusive microsecond cutoffs;
-expired idle rows atomically release factors, private snapshot and ready receipt.
+expired idle rows atomically release factors, private snapshot.
 Live handoff scopes sharing a Baser defer pruning. Shared XDT disappears only
 after a bounded global TMSC scan proves no participant remains. Committed writes
 restart that proof and reopen resets checkpoints; unrelated writes can postpone

@@ -1,4 +1,4 @@
-/** Internal atomic KRAM staging; the handoff owner supplies capacity, queries and acknowledgement. */
+/** Internal atomic KRAM staging; the intake owner supplies queries and scoped hydration. */
 import {
   Dater,
   Diger,
@@ -18,7 +18,7 @@ import {
   withKramHydration,
   withKramSnapshot,
 } from "../db/kram-snapshots.ts";
-import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
+import { encodeDateTimeToDater } from "../time/mod.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup } from "./dispatch.ts";
 import type { Kever } from "./kever.ts";
 import { authenticateKramSource } from "./kram-auth.ts";
@@ -51,15 +51,8 @@ interface Candidate {
   establishment: string;
   complete: boolean;
   multi: boolean;
-  receipt: string | null;
 }
 
-/** Validate the private first-ready timestamp before enabling trusted replay resumption. */
-function readyReceipt(db: Baser, key: readonly string[]): string | null {
-  const receipt = db.kready.get(key);
-  if (receipt !== null && timestampMicros(receipt) === null) throw new Error("Corrupt KRAM ready receipt");
-  return receipt;
-}
 /** Bind verified or foreign factors to one accepted establishment tuple. */
 function establishmentGroup(kever: Kever, sigers: readonly Siger[]): TransIdxSigGroup {
   return new TransIdxSigGroup(
@@ -92,15 +85,15 @@ function candidate(
 ): Candidate | RotatedPartial | KramStageRefusal {
   const body = incoming.serder, sender = body.pre, said = body.said;
   if (!sender || !said) throw new Error("KRAM staging requires sender and message SAID");
-  const key = [sender, said], receipt = readyReceipt(db, key);
-  const inspection = inspectKramReplay(db, body, { resumingReady: receipt !== null });
+  const key = [sender, said];
+  const inspection = inspectKramReplay(db, body);
   if (inspection.kind === "drop") return inspection;
   const envelope = normalizeKramSenderFactors(incoming);
   const hasSeal = envelope.sscs.length > 0;
   const hasSigs = envelope.sigers.length > 0 || envelope.tsgs.some((group) => group.pre === sender)
     || envelope.cigars.some((cigar) => cigar.verfer?.qb64 === sender);
   if (!hasSeal && !hasSigs) return { kind: "drop", reason: "authentication" };
-  if (inspection.cache && hasSeal && !hasSigs && !receipt) return { kind: "drop", reason: "replay" };
+  if (inspection.cache && hasSeal && !hasSigs) return { kind: "drop", reason: "replay" };
   const source = authenticateKramSource(db, envelope);
   if (source.kind === "missing") return source;
   const kever = db.getKever(sender, { refresh: true });
@@ -141,10 +134,9 @@ function candidate(
     policy,
     inspection,
     seal ? { kind: "seal" } : multi ? { kind: "multi", complete } : { kind: "single" },
-    receipt ?? receiverTime,
+    receiverTime,
   );
   if (plan.kind === "drop") return plan;
-  if (receipt && plan.receiverTime !== receipt) throw new Error("KRAM cache and ready receipt disagree");
   return {
     kind: "candidate",
     plan,
@@ -154,23 +146,20 @@ function candidate(
     establishment,
     complete,
     multi,
-    receipt,
   };
 }
 /** Remove stale partial ownership only; replay cache and shared opener remain independent. */
 function discardPartial(db: Baser, key: readonly string[]): void {
   removeKramFactors(db, key);
   removeKramSnapshot(db, key);
-  db.kready.rem(key);
 }
 
 /**
  * Stage one parent while borrowing fresh input and owning hydrated snapshots through consume.
- * Recheck KEL establishment, current policy/cache and original ready receipt after async reads.
- * Publish cache, factors, private wire and first-ready timestamp in one transaction.
- * No acknowledgement occurs here. Consumer results MUST NOT retain hydration/frame/payload owners;
- * the generic result type cannot enforce that contract. Consumer/cleanup failures propagate,
- * retaining durable ready state for at-least-once handoff. No public Kramer intake is installed.
+ * Recheck establishment and replay state after asynchronous reads. Publish cache and
+ * partial factors atomically, retiring partial state on threshold completion before
+ * consumption. Consumer/cleanup failures propagate without reviving accepted input.
+ * Callback results must not retain scoped hydration/frame/payload owners.
  */
 export function* stageKram<T>(
   db: Baser,
@@ -204,9 +193,6 @@ export function* stageKram<T>(
           return { kind: "drop", reason: "replay" } as const;
         }
         if (fresh.kind !== "candidate") return fresh;
-        if (initial.receipt && fresh.receipt !== initial.receipt) {
-          throw new Error("KRAM ready receipt changed during staging");
-        }
         if (
           fresh.establishment !== initial.establishment || kramSnapshotIdentity(db, key, resources) !== snapshotBefore
         ) {
@@ -237,7 +223,6 @@ export function* stageKram<T>(
         for (const prefix of resolvedLast) db.ulgs.rem(key, prefix);
         validateKramFactors(db, key);
         storeKramSnapshot(db, key, snapshot);
-        if (fresh.complete) db.kready.pin(key, fresh.receipt ?? plan.receiverTime);
         const delivery = rehydrateKramFactors(db, key, fresh.envelope);
         if (fresh.multi) {
           delivery.sigers.splice(0, delivery.sigers.length, ...[...fresh.pool].sort((a, b) => a.index - b.index));
@@ -250,12 +235,14 @@ export function* stageKram<T>(
             );
           }
         }
+        // Acceptance retires partial evidence before downstream work; the cache rejects replay.
+        if (fresh.complete) discardPartial(db, key);
         return { kind: "staged", fresh, delivery } as const;
       });
     const staged = yield* withKramSnapshot(hydrated, resources, publish);
     if (staged.kind !== "staged") return staged;
     if (!staged.fresh.complete) return { kind: "pending", key } as const;
-    const receipt = staged.fresh.receipt ?? staged.fresh.plan.receiverTime;
+    const receipt = staged.fresh.plan.receiverTime;
     const ready = new KeriDispatchEnvelope({
       ...staged.delivery,
       attachmentGroups: [...hydrated.attachmentGroups],

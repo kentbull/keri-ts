@@ -194,21 +194,8 @@ Deno.test("KRAM replay and time plans match frozen receipts, openers and inclusi
         if (row.name === "transaction threshold freezes receiver time") {
           const received = makeRecord("transaction-received") as TxnMsgCacheRecord;
           db.tmsc.pin([body.pre!, String(body.ked?.x), body.said!], received);
-          const ready = inspectKramReplay(db, body, { resumingReady: true });
-          if (ready.kind === "drop") throw new Error("durable partial must remain resumable");
-          const retry = evaluateKramTime(db, policy, ready, { kind: "seal" }, "2026-10-13T12:20:02.000000+00:00");
-          assertEquals(
-            retry.kind === "proceed" && retry.receiverTime,
-            received.rdt,
-            "ready retry cannot refresh first receipt",
-          );
-          assertEquals(
-            evaluateKramTime(db, policy, { ...ready, resumingReady: false }, { kind: "single" }, row.receiverTime),
-            { kind: "drop", reason: "replay" },
-          );
-          assertThrows(() => evaluateKramTime(db, policy, ready, { kind: "single" }, "bad"), Error, "receiver clock");
           db.pmkm.rem([body.pre!, body.said!]);
-          assertThrows(() => inspectKramReplay(db, body, { resumingReady: true }), Error, "partial state");
+          assertEquals(inspectKramReplay(db, body), { kind: "drop", reason: "replay" });
           db.tmsc.pin(
             [body.pre!, String(body.ked?.x), body.said!],
             new TxnMsgCacheRecord({ ...received.asDict(), mdt: "bad" }),
@@ -274,7 +261,6 @@ Deno.test("KRAM finite pruning matches frozen TTL cleanup and retains exact micr
         db.pmsk.pin(key, [NumberPrimitive.fromNum(0n), new Diger({ qb64: body.said! })]);
         db.ptds.add(key, new Uint8Array([0xff, 0x00]));
         db.kpnd.pin(key, b("private snapshot"));
-        db.kready.pin(key, body.stamp!);
         pass(new KramPruner(db, policy), clock(offset));
         assertEquals((family === "message" ? db.msgc.get(key) : db.tmsc.get(txkey)) !== null, keep);
         assertEquals([
@@ -283,8 +269,7 @@ Deno.test("KRAM finite pruning matches frozen TTL cleanup and retains exact micr
           db.pmsk.get(key) !== null,
           !!db.ptds.get(key).length,
           db.kpnd.get(key) !== null,
-          db.kready.get(key) !== null,
-        ], Array(6).fill(keep));
+        ], Array(5).fill(keep));
         assertEquals(db.xdt.get(xid) !== null, family === "transaction" && keep);
         db.msgc.rem(key);
         db.tmsc.rem(txkey);
@@ -359,7 +344,7 @@ Deno.test("KRAM orphan scan restarts for insertion behind its checkpoint and exc
 Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without skipping rows", async () => {
   await run(function*() {
     const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
-    const getKeys = db.msgc.sdb.getKeys, transaction = db.env!.transactionSync, remove = db.kready.rem;
+    const getKeys = db.msgc.sdb.getKeys, transaction = db.env!.transactionSync, remove = db.pmkm.rem;
     let cursors = 0;
     try {
       const policy = new KramPolicy(db, { caches: { "~": initial } });
@@ -369,7 +354,6 @@ Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without
         new MsgCacheRecord({ mdt: body.stamp!, d: 1000, ml: 60000, pml: 60000, xl: 300000, pxl: 300000 }),
       );
       db.pmkm.pin(key, body);
-      db.kready.pin(key, body.stamp!);
       db.kpnd.pin(key, b("owned wire"));
       db.msgc.sdb.getKeys = function(options) {
         const iterable = getKeys.call(this, options);
@@ -392,7 +376,7 @@ Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without
         return transaction.call(this, action, flags) as T;
       };
       const failure = new Error("cleanup I/O failed");
-      db.kready.rem = () => {
+      db.pmkm.rem = () => {
         throw failure;
       };
       const pruner = new KramPruner(db, policy), receipt = "2026-10-13T12:20:00.000000+00:00";
@@ -400,13 +384,11 @@ Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without
       assertEquals([
         db.msgc.get(key) !== null,
         db.pmkm.get(key) !== null,
-        db.kready.get(key) !== null,
         db.kpnd.get(key) !== null,
-      ], [true, true, true, true]);
-      db.kready.rem = remove;
+      ], [true, true, true]);
+      db.pmkm.rem = remove;
       assertEquals(pruner.prune(receipt, 1).removed, 1, "failed cleanup cannot advance the checkpoint");
-      assertEquals([db.msgc.get(key), db.pmkm.get(key), db.kready.get(key), db.kpnd.get(key)], [
-        null,
+      assertEquals([db.msgc.get(key), db.pmkm.get(key), db.kpnd.get(key)], [
         null,
         null,
         null,
@@ -415,7 +397,7 @@ Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without
     } finally {
       db.msgc.sdb.getKeys = getKeys;
       db.env!.transactionSync = transaction;
-      db.kready.rem = remove;
+      db.pmkm.rem = remove;
       yield* db.close(true);
     }
   });

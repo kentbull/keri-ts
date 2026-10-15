@@ -21,8 +21,6 @@ export interface KramReplayInspection {
   xid: string;
   mdt: bigint;
   partial: boolean;
-  /** Only a caller-proven durable ready record permits completed handoff resumption. */
-  resumingReady: boolean;
   cache: MsgCacheRecord | TxnMsgCacheRecord | null;
 }
 /** No cache, opener, receipt time or partial state is published by a plan. */
@@ -46,13 +44,11 @@ export function kramCacheValues(cache: MsgCacheRecord | TxnMsgCacheRecord): Requ
 
 /**
  * Inspect frozen message/xid routing and strict completed-message replay rules.
- * A ready resumption requires matching durable cache/partial state; its trusted
- * readiness and original receiver time are rechecked by K8.
+ * Only an incomplete multi-signature message retains partial state.
  */
 export function inspectKramReplay(
   db: Baser,
   body: SerderKERI,
-  options: { resumingReady?: boolean } = {},
 ): KramReplayInspection | KramTimeRefusal {
   const mdt = timestampMicros(body.stamp);
   if (mdt === null) return { kind: "drop", reason: "timestamp" };
@@ -62,16 +58,12 @@ export function inspectKramReplay(
   const xid = body.ilk === "xip" ? said : body.ilk === "exn" && body.pvrsn.major >= 2 ? String(body.ked?.x ?? "") : "";
   const cacheKey = xid ? [sender, xid, said] : key;
   const cache = xid ? db.tmsc.get(cacheKey) : db.msgc.get(cacheKey);
-  const partial = db.pmkm.get(key) !== null, resumingReady = options.resumingReady ?? false;
-  if (resumingReady && (!cache || !partial)) throw new Error("Ready KRAM resumption lacks cache or partial state");
+  const partial = db.pmkm.get(key) !== null;
   if (cache) {
     const values = kramCacheValues(cache);
     if (mdt <= timestampMicros(values.mdt)! && !partial) return { kind: "drop", reason: "replay" };
-    if (resumingReady && cache instanceof TxnMsgCacheRecord && !cache.rdt) {
-      throw new Error("Ready KRAM transaction lacks receiver time");
-    }
   }
-  return { kind: cache ? "cached" : "new", body, key, cacheKey, xid, mdt, partial, resumingReady, cache };
+  return { kind: cache ? "cached" : "new", body, key, cacheKey, xid, mdt, partial, cache };
 }
 
 function within(value: bigint, lower: bigint, upper: bigint): boolean {
@@ -80,8 +72,7 @@ function within(value: bigint, lower: bigint, upper: bigint): boolean {
 
 /**
  * Resolve sender-local/shared openers and retain cached multi windows.
- * Receipt time freezes at completion; nontransaction ready retries supply their
- * durable original receiverTime. K8 rechecks and publishes all state atomically.
+ * Receipt time freezes at completion. Staging publishes the cache atomically.
  */
 export function evaluateKramTime(
   db: Baser,
@@ -93,7 +84,7 @@ export function evaluateKramTime(
   const receipt = timestampMicros(receiverTime);
   if (receipt === null) throw new Error("Invalid KRAM receiver clock");
   const { body, cache, xid, mdt } = inspection;
-  if (cache && authentication.kind !== "multi" && !inspection.resumingReady) return { kind: "drop", reason: "replay" };
+  if (cache && authentication.kind !== "multi") return { kind: "drop", reason: "replay" };
   let values: Required<MsgCacheRecordShape>;
   if (cache) values = kramCacheValues(cache);
   else {
