@@ -1,3 +1,4 @@
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 /** One interpreted reply batch owned by delivery and a borrowed HTTP/witness consumer until both close. */
 import { ResourceAdmissionError } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
@@ -54,7 +55,7 @@ export class DirectReplyDelivery {
   static prepareCue(
     runtime: AgentRuntime,
     hab: Hab,
-    cues: Deck<AgentCue>,
+    cues: CueQueueInput,
     resolve: (emission: CueEmission) => RawCesrRoute | null,
     accept: (delivery: DirectReplyDelivery, borrow: PreparedCueEmission) => void,
     onAdmissionRefusal?: (error: ResourceAdmissionError) => void,

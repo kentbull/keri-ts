@@ -3,8 +3,8 @@ import { type Operation } from "effection";
 import {
   type AgentCue,
   type AgentRuntime,
+  type CueQueueInput,
   type CueSink,
-  type Deck,
   DeckFullError,
   type Hab,
   processCuesOnce,
@@ -19,7 +19,7 @@ import {
 export function* drainRuntimeCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
-  cues: Deck<AgentCue>,
+  cues: CueQueueInput,
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
 ): Operation<void> {
   if (cues !== runtime.cues) throw new RangeError("HTTP cue drain requires the runtime source deck");

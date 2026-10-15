@@ -1,3 +1,4 @@
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 /**
  * Registry-backed ACDC verifier.
  *
@@ -54,7 +55,7 @@ export interface CredentialStateProvider {
 
 export interface VerifierOptions {
   reger: Reger;
-  cues?: Deck<AgentCue>;
+  cues?: CueQueueInput;
   credentialExpiryMs?: number;
   missingRegistryTimeoutMs?: number;
   missingIssuerTimeoutMs?: number;
@@ -74,7 +75,7 @@ export class Verifier {
 
   readonly hby: Habery;
   readonly reger: Reger;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   private readonly publisher: CuePublisher;
   readonly credentialExpiryMs: number;
   readonly missingRegistryTimeoutMs: number;

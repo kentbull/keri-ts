@@ -2,6 +2,7 @@ import type { ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
 import { CueDeck } from "../core/cue-admission.ts";
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
@@ -91,7 +92,7 @@ export interface AgentRuntime {
    * Default cues retain shared byte/item credit through joined consumer cleanup.
    * Consume with processCuesOnce or an owned transfer; naked pull cannot discard that credit.
    */
-  cues: Deck<AgentCue>;
+  cues: CueQueueInput;
   reactor: Reactor;
   oobiery: Oobiery;
   authenticator: Authenticator;

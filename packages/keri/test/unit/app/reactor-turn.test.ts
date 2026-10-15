@@ -12,6 +12,7 @@ import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue, ReplayCue } from "../../../src/core/cues.ts";
 import { DeckFullError } from "../../../src/core/deck.ts";
+import { standaloneCues } from "../../private-access.ts";
 
 /** Explicit test gates make turn ordering observable without timing sleeps. */
 function gate(): { wait: Promise<void>; open: () => void } {
@@ -121,7 +122,7 @@ Deno.test("a full cue deck pauses escrow work but still permits a draining turn"
       assertEquals(reactor.cues.length, 1);
       // Draining needs no new protocol admission, otherwise a full deck could never recover.
       yield* reactor.settle(undefined, {}, function*() {
-        assertEquals(reactor.cues.pull()?.kin, "replay");
+        assertEquals(standaloneCues(reactor.cues).pull()?.kin, "replay");
       });
       yield* reactor.settle(undefined, { escrows: true });
       assertEquals(reactor.cues.length, 0);

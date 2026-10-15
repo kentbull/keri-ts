@@ -28,6 +28,7 @@ import {
 import { call, type Operation, type Provide, resource } from "npm:effection@^3.6.0";
 import { resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
 import type { PreparedCueBatch } from "../core/cue-admission.ts";
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
@@ -222,7 +223,7 @@ export type ExchangeDecision =
  */
 export class Exchanger {
   readonly hby: Habery;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   private readonly publisher: CuePublisher;
   readonly routes = new Map<string, ExchangeRouteHandler>();
   private readonly versionedRoutes = new Map<string, Map<number, ExchangeRouteHandler>>();
@@ -249,7 +250,7 @@ export class Exchanger {
       now = Date.now,
     }: {
       handlers?: readonly ExchangeRouteHandler[];
-      cues?: Deck<AgentCue>;
+      cues?: CueQueueInput;
       maxEssrBytes?: number;
       maxEssrItems?: number;
       resources?: ResourcePolicy;

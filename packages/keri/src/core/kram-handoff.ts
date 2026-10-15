@@ -1,3 +1,4 @@
+import type { CueQueueInput } from "./cue-publishing.ts";
 /** Internal retryable KRAM handoff; borrowed shared credit covers scoped snapshot copies. */
 import { bytesEqual, ResourceAdmissionError, type ResourcePolicy } from "cesr-ts";
 import { call, type Operation, type Provide, resource } from "effection";
@@ -34,7 +35,7 @@ export function isKramHandoffActive(db: Baser): boolean {
  */
 export class KramHandoff {
   private active = false;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   private readonly now: () => number;
   readonly resources: ResourcePolicy;
 
@@ -42,7 +43,7 @@ export class KramHandoff {
     readonly db: Baser,
     readonly policy: KramPolicy,
     { cues = new Deck<AgentCue>(), now = Date.now, resources = db.resources }: {
-      cues?: Deck<AgentCue>;
+      cues?: CueQueueInput;
       now?: () => number;
       resources?: ResourcePolicy;
     } = {},

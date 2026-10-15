@@ -1,6 +1,7 @@
 import { type Cigar, Diger, Ilks, Prefixer, ResourceAdmissionError, SerderKERI } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { PreparedCueBatch } from "../core/cue-admission.ts";
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { type CuePublisher, cuePublisher } from "../core/cue-publishing.ts";
 import type { AgentCue, OobiResolvedCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
@@ -45,7 +46,7 @@ export interface OobiJob {
 type OobiQueueKind = "oobis" | "woobi";
 
 interface OobieryOptions {
-  cues?: Deck<AgentCue>;
+  cues?: CueQueueInput;
   services?: RuntimeServices;
 }
 
@@ -65,7 +66,7 @@ interface OobieryOptions {
 export class Oobiery {
   readonly hby: Habery;
   readonly reactor: Reactor;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   private readonly publisher: CuePublisher;
   readonly services: RuntimeServices;
   private active = false;

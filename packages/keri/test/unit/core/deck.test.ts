@@ -65,7 +65,8 @@ Deno.test("cue preparation holds slots and shared Serder bytes before publicatio
   batch.publish();
   batch.release(); // finally-release cannot revoke published ownership.
   assertEquals(deck.length, 2);
-  assertThrows(() => deck.pull(), Error, "takeOwned");
+  assertEquals(deck instanceof Deck, false);
+  assertEquals("pull" in deck || "pop" in deck || "prepend" in deck, false);
   const first = deck.takeOwned()!;
   const bytes = resources.used.bytes;
   const transferred = first.transfer();

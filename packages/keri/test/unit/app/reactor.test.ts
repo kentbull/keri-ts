@@ -10,6 +10,7 @@ import { query as makeQuerySerder } from "../../../src/core/protocol-eventing.ts
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+import { standaloneCues } from "../../private-access.ts";
 
 Deno.test("app/reactor - query parsing normalizes transferable last-establishment endorsements into source plus sigers", async () => {
   await run(function*() {
@@ -533,12 +534,12 @@ Deno.test("app/reactor - malformed and unsupported queries do not throw, and uns
         hab.endorse(makeQuerySerder("ksn", { i: hab.pre })),
       );
       yield* reactor.processOnce();
-      assertEquals(reactor.kevery.cues.pull(), undefined);
+      assertEquals(standaloneCues(reactor.kevery.cues).pull(), undefined);
 
       reactor.ingest(hab.query(hab.pre, hab.pre, {}, "bogus"));
       yield* reactor.processOnce();
 
-      const cue = reactor.kevery.cues.pull();
+      const cue = standaloneCues(reactor.kevery.cues).pull();
       assertExists(cue);
       assertEquals(cue.kin, "invalid");
       if (cue.kin !== "invalid") {
@@ -586,14 +587,14 @@ Deno.test("app/reactor - unverified `/ksn` replies stay recoverable through escr
       reactor.ingest(icp);
       yield* reactor.processOnce();
       while (!reactor.cues.empty) {
-        reactor.cues.pull();
+        standaloneCues(reactor.cues).pull();
       }
 
       reactor.ingest(rotatedReply);
       yield* reactor.processOnce();
 
       assertEquals(remote.db.rpes.cnt(), 1);
-      const cue = reactor.cues.pull();
+      const cue = standaloneCues(reactor.cues).pull();
       assertExists(cue);
       assertEquals(cue.kin, "query");
       if (cue.kin !== "query") {

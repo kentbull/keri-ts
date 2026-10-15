@@ -1,3 +1,4 @@
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 /**
  * Transaction event log state processing.
  *
@@ -102,7 +103,7 @@ export interface TeveryOptions {
   db: Baser;
   local?: boolean;
   lax?: boolean;
-  cues?: Deck<AgentCue>;
+  cues?: CueQueueInput;
 }
 
 export interface TeverOptions extends TeveryOptions {
@@ -267,7 +268,7 @@ export class Tever {
   readonly db: Baser;
   readonly reger: Reger;
   readonly local: boolean;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
   private readonly publisher: CuePublisher;
 
   version: { major: number; minor: number };
@@ -910,7 +911,7 @@ export class Tevery {
   readonly reger: Reger;
   readonly local: boolean;
   readonly lax: boolean;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
 
   constructor(options: TeveryOptions) {
     this.db = options.db;

@@ -15,6 +15,7 @@ import {
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import type { CueQueueInput } from "./cue-publishing.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import { DispatchOrdinal } from "./dispatch.ts";
@@ -118,7 +119,7 @@ export interface LastEstLoc {
 /** Shared constructor options for live or reloaded `Kever` instances. */
 interface KeverBaseInit {
   db: Baser;
-  cues?: Deck<AgentCue>;
+  cues?: CueQueueInput;
   local?: boolean;
   check?: boolean;
 }
@@ -187,7 +188,7 @@ interface DelegatingEventLookup {
  */
 export class Kever {
   readonly db: Baser;
-  readonly cues: Deck<AgentCue>;
+  readonly cues: CueQueueInput;
 
   version!: readonly [number, number];
   prefixer!: Prefixer;
@@ -217,7 +218,7 @@ export class Kever {
    * and accepted-transition materialization do not have to fight over one
    * constructor policy.
    */
-  private constructor(db: Baser, cues?: Deck<AgentCue>) {
+  private constructor(db: Baser, cues?: CueQueueInput) {
     this.db = db;
     this.cues = cues ?? new Deck();
   }
@@ -237,7 +238,7 @@ export class Kever {
    */
   static fromTransition(
     transition: KeverTransition,
-    { db, cues }: { db: Baser; cues?: Deck<AgentCue> },
+    { db, cues }: { db: Baser; cues?: CueQueueInput },
   ): Kever {
     const kever = new Kever(db, cues);
     kever.loadState(transition.state, transition.log.serder);
