@@ -1,5 +1,9 @@
 # CESR Primitives KERIpy Parity Matrix
 
+Historical plan: the [2026-10-15 removal boundary](../../../adr/adr-0013-simple-component-flows.md)
+supersedes accounting, outbox and unsupported delivery-ack preservation here.
+Do not resume these mechanisms or add old-version keri-ts API/data compatibility.
+
 ## Purpose
 
 This is the scan-friendly companion to the walkthrough guide.

@@ -1,5 +1,9 @@
 # IPEX plan
 
+Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
+application accounting and unsupported delivery durability, without old-version
+keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+
 Owner: roadmap **3e**. See the
 [design](../../design-docs/exchange/IPEX.md) and
 [delivery evidence](../../reports/parity/DELIVERED_THROUGH_168.md).

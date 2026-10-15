@@ -1,5 +1,9 @@
 # CESR parser and primitives impl high level plan
 
+Historical plan: the [2026-10-15 removal boundary](../../../../adr/adr-0013-simple-component-flows.md)
+supersedes accounting, outbox and unsupported delivery-ack preservation here.
+Do not resume these mechanisms or add old-version keri-ts API/data compatibility.
+
 1. The Flow from cesrixir (Generators).
 2. The Logic from keripy (Parsator mechanics).
 3. The Types from parside (Discriminated Unions).

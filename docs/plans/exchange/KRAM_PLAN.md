@@ -1,9 +1,14 @@
 # Incremental KRAM intake plan
 
+Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
+application accounting and unsupported delivery durability, without old-version
+keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+
 Owner: roadmap **3f**, within [exchange admission](EXCHANGE_ADMISSION_PLAN.md).
 K1–K10 are implemented. They cover
 storage, microsecond time, policy, source/signature normalization, durable partial
-staging, ready handoff and finite pruning. The donor [#172][snapshot] remains
+staging and cache pruning. The added ready/snapshot acknowledgement handoff
+is a removal target, not KERIpy parity. The donor [#172][snapshot] remains
 recoverable evidence, not a merge target.
 
 ## Implemented boundaries requiring composed qualification
@@ -11,14 +16,14 @@ recoverable evidence, not a merge target.
 | Unit | Boundary                       | Remaining evidence                                |
 | ---- | ------------------------------ | ------------------------------------------------- |
 | K10a | Optional runtime/HTTP intake   | Final workflow qualification                      |
-| K10b | Scoped receipt into EXN escrow | Durable retry and unchanged first receipt         |
+| K10b | Scoped receipt into EXN escrow | KERIpy receipt timing and cache semantics         |
 | K10c | IPEX presentation cutoff       | Actual presentation verification and dependencies |
 
-K10b carries completed, nonexempt KRAM receipt authority to Exchanger without a
-sender-controlled timestamp override. Private exchange metadata preserves the
-first receipt through route escrow, retry, reopen and acceptance. K10c belongs to
+Remove branded KramReceipt authority and downstream acknowledgement machinery.
+Use KERIpy receiver-observed acceptance time and replay/cache semantics; sender
+input cannot supply authoritative receiver time. K10c belongs to
 the [IPEX plan](IPEX_PLAN.md); child proof, registry and receiver-cutoff checks
-are implemented. Their complete maintained workflow and resource qualification
+are implemented. Their complete maintained workflow qualification
 remain open; do not infer completion from isolated receipt/cutoff tests.
 
 Cancellation, I/O, corruption and programming failures propagate. Normal intake
@@ -52,15 +57,20 @@ Require partial/repeat/complete/replay, rotation, last-source precedence,
 nontransferable and indexed signatures, foreign proof independence, exact missing
 state cues, inclusive microsecond boundaries, xid opening/lifetime, durable
 receipt time, and safe configuration transitions. Prove nested evidence survives
-retry/reopen until its parent route consumes it; children remain independently
-unaccepted. Verify cancellation joins reads and disposal before freeing capacity,
-with no premature durable publication and retry after failed downstream handoff.
+supported partial/restart behavior without an added ready snapshot or downstream
+acknowledgement. Children remain independently unaccepted. Cancellation joins real
+reads and disposal; downstream failure must follow KERIpy acceptance semantics.
 
-Optional intake preserves sender allow/deny, OOBI verification and HTTP authorization.
-Its final qualification remains part of the full workflow gate. Per-instance
-busy/size guards do not establish a shared runtime budget. Whole-row allocation
-and unbounded consumed-work scans retain their phase 4/5 owners. `xip/pro/bar`
-remain frozen-reference processing stubs even when intake understands their bodies.
+Remove kready./kpnd., ready-resume paths, factor/copy credits, body/item quotas and
+policy arguments. Keep verified distinct signatures, sender establishment state,
+foreign attachment factors and KERIpy replay/timeliness caches and pruning.
+No old-version data migration or compatibility tests. Optional intake retains
+sender policy, OOBI verification and HTTP authorization. `xip/pro/bar` remain
+reference processing stubs even when intake understands their bodies.
+
+Require live KERIpy ↔ keri-ts single-signature and multisig tests with witnesses
+and mailboxes. Frozen fixtures alone are insufficient; include replay, refusal,
+partial/restart and a downstream failure at KERIpy's actual acceptance boundary.
 
 V2 registry foundations proceed alongside this sequence; dependent IPEX
 presentations require both those foundations and receiver-observed KRAM cutoffs.

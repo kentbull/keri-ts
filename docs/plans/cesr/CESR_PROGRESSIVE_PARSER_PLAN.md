@@ -1,5 +1,9 @@
 # Progressive CESR parser plan
 
+Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
+application accounting and unsupported delivery durability, without old-version
+keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+
 Owner: follow-on phases 1–2 of the [parity roadmap](../PARITY_ROADMAP.md).
 The single progressive engine, frozen-reference table/semantic changes,
 parent-owned trees, serialization and annotation are delivered. The
@@ -12,9 +16,11 @@ parent-owned trees, serialization and annotation are delivered. The
   number-width limits; final execution does not establish full Python object-API parity.
 - Keep structural guards on child kinds, ilks and contexts without completed
   consumers. Table membership alone never enables a runtime route.
-- Parser reservations and deterministic work checkpoints are integrated with
-  [shared policy](../runtime/RESOURCE_POLICY_PLAN.md). Final maintained execution
-  must confirm their lifecycle; no second engine or cross-major retry path is needed.
+- Remove parser/codec allocation estimates, quota options, tree/frame credits,
+  side tables and capacity refusal hooks. Preserve declared lengths, enclosure
+  state, syntax/error provenance, actual payload disposal and source cancellation.
+  No second engine, no-op policy or cross-major retry path. Review synthetic work
+  scheduling without turning it into a renamed budget.
 
 ## Regression floor
 

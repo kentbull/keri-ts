@@ -1,5 +1,9 @@
 # Reference environment qualification inventory
 
+Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
+application accounting and unsupported delivery durability, without old-version
+keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+
 Owner: [phase 7](QUALIFICATION_PLAN.md). Pins below are the observed continuation
 baseline, not proof of current execution. Re-verify each path and **actual imported
 modules** before changing a pin or claiming qualification. Upgrade applicable
