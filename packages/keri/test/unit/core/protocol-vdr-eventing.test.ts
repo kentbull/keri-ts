@@ -83,6 +83,7 @@ Deno.test("protocol-vdr-eventing state builders return KERIpy-shaped records", (
 
   assertInstanceOf(rsr, RegStateRecord);
   assertEquals(rsr.i, REGISTRY);
+  assertEquals(rsr.b.length, 1);
   assertInstanceOf(vsr, VcStateRecord);
   assertEquals(vsr.ri, REGISTRY);
   assertEquals(vsr.a, { s: 3, d: SAID });
