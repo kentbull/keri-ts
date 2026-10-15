@@ -9,7 +9,7 @@ body, or Deno file. A file source can be consumed directly:
 yield * reactor.process((signal) => fileBytes(path, { signal }));
 ```
 
-`Reactor.frames` exposes the optional CESR Effection channel when an edge needs
+`runtime.intake.frames` exposes the optional CESR Effection channel when an edge needs
 to inspect each complete frame before choosing its dispatch policy. Its channel
 belongs to the caller's scope. Each complete independent GenericGroup child is dispatched before the
 consumer requests the next frame. Parent-owned nested children remain evidence
@@ -94,6 +94,12 @@ an explicitly bounded 8 MiB value. `Reactor.processBytes` supplies a finite valu
 path; it owns parsing and dispatch through an Effection operation. No shared
 feed buffer or separate synchronous parser remains.
 
+FrameIntake owns source admission, one pending parser pull and joined source/parser
+cleanup. AgentRuntime constructs it and lends the same component to protocol
+processing and HTTP/TCP edges. Reactor owns guarded dispatch/escrow/state turns;
+its former frames method is removed. Frame ownership still crosses the existing
+consume/settle boundary; storage payloads retain their valid independent lifetime.
+
 ## Socket-to-application boundary (implementation pending)
 
 The required transport path is a bounded abortable source, one progressive parser
@@ -171,27 +177,22 @@ after item preflight, bounded raw input, 8 MiB retained wire, 1 MiB route metada
 and 24 MiB temporary preparation admission. This local input/wire policy refuses
 before signing when capacity is occupied; configured input/floor limits remain
 distinct. Ineligible preparation publishes nothing and preserves unresolved/custom
-notify behavior. Continuation drains receive their owning runtime for guarded
-preparation; no signing, route lookup, capacity or network wait occurs before that
+notify behavior. Continuation drains prepare synchronously over committed state without a parent
+runtime or Reactor callback; no signing, route lookup, capacity or network wait occurs before that
 admission. Source removal/observation follows transfer, and joined network work
 retains the original endpoint/signature. These logical allowances leave decoded
 serialization/native endpoint-row copy qualification open. Request-local HTTP/
 witness response ownership, mailbox workers and the remaining stack inventory
 still require their caller ports.
 
-Pending queries retain canonical query/witness metadata on the Baser policy
-before normalized body/witness-list copies. Three conservative canonical estimates
-cover retention/copy coexistence; this is not a native heap/RSS measurement. Their existing default 1024 slots
-include the active head. Unresolved rotation keeps its lease; successful send or
-atomic transport transfer retires it. `pending.clear()` releases queued records,
-while an active head remains charged until processing joins. Runtime shutdown
-cancels and joins the coordinator before clearing it; a standalone coordinator
-caller owns its `close()` lifecycle. Hab references are borrowed accepted state,
-not recursively charged metadata. The top-level query/witness list is copied;
-nested query values remain aliases and must stay immutable while queued or consumed.
-Pending pull/push bypasses are rejected; use
-coordinator enqueue and completion/rotation ownership. Wire preparation still
-needs the caller's existing admission/guard, separately from this metadata lease.
+Pending queries are plain QueryRequest records in the coordinator's private
+ordinary Deck; continuations are unbounded metadata too. No byte estimates,
+reservation wrappers or configurable caps apply to these records. The top-level
+query/witness list is copied; nested query values remain immutable borrows.
+Failed/cancelled sends retain the head, unresolved work rotates, and close joins
+active consumption before clearing. Inspection cannot mutate the queue. Actual
+wire preparation and source/transport cleanup keep their separate controls; this
+metadata path does not establish a shared memory bound.
 
 ## Messenger responsibilities
 
@@ -309,8 +310,8 @@ or stream slot is added. `QueryCoordinator.prepareEmission` observes continuatio
 and resolves/signs incomplete queries within that admitted preparation and final
 finite output check; `sendPrepared` performs no repeated local preparation.
 Actual runtime/host callers enter this drain outside an enclosing Reactor turn.
-`processPending(runtime)` also guards fallback signing before custom delivery;
-standalone/custom pending queries retain caller-owned byte bounds. Default runtime
+`processPending()` owns synchronous fallback signing without a parent runtime;
+standalone/custom wire preparation retains caller-owned byte bounds. Default runtime
 cues retain byte/item credit through transfer and joined consumer cleanup.
 
 Prepared Poster targets preserve HTTP/HTTPS priority and select the shared TCP
@@ -405,9 +406,8 @@ before response transfer, ingress joins its task then cancels the published body
 outside status mapping; foreign source/fetch/cleanup failures remain failures.
 No background task or whole-replay array is needed for these synchronous database readers.
 
-`QueryCoordinator` caps pending requests and continuations separately. A request
-retains its queue credit until delivery succeeds; failure leaves it available
-for retry. Concurrent drains cannot send the same head, and newly appended work
+`QueryCoordinator` retains a pending request until delivery succeeds; failure
+leaves it available for retry. Concurrent drains cannot send the same head, and newly appended work
 waits for the next bounded pass.
 
 Finite `cloneEvtMsg` body reads use native row-size preflight before owned
@@ -487,19 +487,27 @@ in addition to its two transport chunk allowances. Serializer output is re-chunk
 under the configured backing ceiling. The caller retains its original owners until
 joined completion. This conservative policy is not an RSS bound.
 
-Explicit `replies: { runtime, local?, consume? }` selects conversation mode on all
-three TCP adapters; default options retain transmit-only behavior and routing.
-Use the borrowed runtime's exact services. TX credit, a logical 2 MiB read/handle
-allowance and Reactor's sole RX stream/64 KiB producer/8 MiB cursor credit precede
-connect. Reactor channel acquisition is lazy; the socket source starts after connect.
+The application flow in `tcp-conversation.ts` composes `converseCesrTcp` and
+`streamCesrTcpConversation` from a borrowed `services`, `intake` and `reactor`.
+The lower TCP engine in `tcp-egress.ts` knows none of those application processor
+types. It lends a bounded byte source to a scoped `TcpRead` consumer. Consumer
+setup precedes connection; its returned operation runs after connect, concurrently
+with output. This reuses the existing pull stream, without another queue or prefetch.
+
+The application selects `replies: { services, intake, reactor, local?, consume? }`;
+default lower-level send options remain transmit-only. An explicit transport
+services override must match the application receiver's services. TX credit, a
+logical 2 MiB read/handle allowance and FrameIntake's RX stream/64 KiB producer/
+8 MiB cursor credit precede connect. The socket source starts after connect.
 These are JS/logical bounds, with native pools/kernel buffering separately qualified.
 One RX parser settles frames concurrently with TX under `allowHalfOpen: true`.
 Genuine RX EOF leaves TX alive. TX EOF starts one absolute drain deadline; reply
 activity cannot refresh it. Failure/cancellation aborts both directions before
-joining either cleanup, with credit and borrowed runtime/frame/payload owners held
+joining either cleanup, with credit and borrowed receiver/frame/payload owners held
 through parser/source/write/socket cleanup. Callback envelopes are non-retaining
 and guarded; do not reenter Reactor or implicitly drain network cues there.
-The `conversationDrained` result means local transmission plus processed RX EOF.
+The application flow's `conversationDrained` result means local transmission plus
+processed RX EOF. Lower-level TCP returns only `transmitted` and counts no protocol frames.
 `processedFrames` counts dispatch attempts, including refusal/escrow/ignored inputs,
 not verified replies or durable remote acceptance. Inspect route decisions and
 accepted state explicitly; KEL dispatch may return no decision. Earlier accepted

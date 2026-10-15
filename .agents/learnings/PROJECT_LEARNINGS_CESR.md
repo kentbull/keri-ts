@@ -30,6 +30,9 @@
   256 bytes per nonempty container/extension and one raw copy, not private field/pool counts.
   The body parser consults one codec syntax contract;
   only locally created intrinsic refusals permit opaque fallback for admitted codecs.
+  Generic CBOR decode returns unknown; consumers validate the shape they need.
+  Admitted map decoders retain schema-defined keys and extension values without
+  pretending to validate named protocol fields owned by Serder.
 - `discardFrame` claims all descendants before awaiting cleanup and attempts each
   owner once, including shared credit on ordinary frames. A suspended generator
   also retains its output: credit returns after consumer disposal and generator

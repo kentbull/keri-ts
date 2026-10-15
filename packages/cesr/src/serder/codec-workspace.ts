@@ -1,6 +1,6 @@
 /**
  * Logical MessagePack decode allowance: 8 KiB fixed scratch, 256 bytes per
- * nonempty container/extension, and one raw copy. This conservative policy
+ * nonempty container and per extension, and one raw copy. This conservative policy
  * covers the audited decoder without counting its private fields or pool layout.
  * It is not a native heap bound; declaration and decoded-tree charges stay separate.
  */

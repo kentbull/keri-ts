@@ -1,11 +1,13 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import {
-  CtrDexV1,
+  concatBytes,
+  Counter,
   CtrDexV2,
   parseCounterFromText,
   SerderACDC,
   SerderKERI,
+  type Versionage,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
@@ -15,8 +17,9 @@ import {
   ipexCredentialAdmit,
   ipexCredentialGrant,
   processCredentialPresentationArtifacts,
+  storedGrantArtifacts,
 } from "../../../src/app/ipex-credentialing.ts";
-import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE } from "../../../src/app/ipexing.ts";
+import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexGrantExn, loadIpexHandlers } from "../../../src/app/ipexing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
@@ -103,9 +106,9 @@ Deno.test("IPEX credential grant embeds ACDC, issue TEL, and anchor KEL artifact
       assertEquals(grant.grant.ked?.p, "");
       assertEquals(grant.grant.ked?.a, { m: "grant", i: holder.pre });
       assertExists(grant.grant.ked?.e);
-      assertEquals(new SerderACDC({ raw: grant.artifacts.acdc }).said, creder.said);
-      assertEquals(grant.artifacts.acdc, new CredentialWallet(reger).exportCredential(creder.said!));
-      assertEquals(grant.artifacts.iss, reger.cloneTvtAt(creder.said!, 0));
+      assertEquals(new SerderACDC({ raw: grant.artifacts.acdc.wire }).said, creder.said);
+      assertEquals(grant.artifacts.acdc.wire, new CredentialWallet(reger).exportCredential(creder.said!));
+      assertEquals(grant.artifacts.iss.wire, reger.cloneTvtAt(creder.said!, 0));
       assertEquals(
         grant.artifacts,
         credentialPresentationArtifacts(hby, reger, creder.said!),
@@ -117,23 +120,23 @@ Deno.test("IPEX credential grant embeds ACDC, issue TEL, and anchor KEL artifact
         Vrsn_2_0,
       );
       const acdcProofCounter = parseCounterFromText(
-        v2Artifacts.acdc.slice(creder.raw.length),
+        v2Artifacts.acdc.wire.slice(creder.raw.length),
         Vrsn_2_0,
       );
-      const issSerder = new SerderKERI({ raw: v2Artifacts.iss });
+      const issSerder = new SerderKERI({ raw: v2Artifacts.iss.wire });
       const issReplayCounter = parseCounterFromText(
-        v2Artifacts.iss.slice(issSerder.size),
-        Vrsn_1_0,
+        v2Artifacts.iss.wire.slice(issSerder.size),
+        Vrsn_2_0,
       );
-      const ancSerder = new SerderKERI({ raw: v2Artifacts.anc });
+      const ancSerder = new SerderKERI({ raw: v2Artifacts.anc.wire });
       const ancReplayCounter = parseCounterFromText(
-        v2Artifacts.anc.slice(ancSerder.size),
-        Vrsn_1_0,
+        v2Artifacts.anc.wire.slice(ancSerder.size),
+        Vrsn_2_0,
       );
 
       assertEquals(acdcProofCounter.code, CtrDexV2.SealSourceTriples);
-      assertEquals(issReplayCounter.code, CtrDexV1.AttachmentGroup);
-      assertEquals(ancReplayCounter.code, CtrDexV1.AttachmentGroup);
+      assertEquals(issReplayCounter.code, CtrDexV2.AttachmentGroup);
+      assertEquals(ancReplayCounter.code, CtrDexV2.AttachmentGroup);
       assertEquals(grant.support.length > 0, true);
       assertEquals(grant.wire.length > grant.grant.raw.length, true);
     } finally {
@@ -143,7 +146,8 @@ Deno.test("IPEX credential grant embeds ACDC, issue TEL, and anchor KEL artifact
   });
 });
 
-Deno.test("IPEX credential artifacts settle in a fresh holder verifier and admit references grant", async () => {
+/** Exercise the same independent issuer/holder workflow with each attachment genus. */
+async function assertCredentialArtifactIntake(genus: Versionage, envelopeGenus = genus): Promise<void> {
   await run(function*() {
     const issuerHby = yield* createHabery({
       name: `ipex-credential-issuer-${crypto.randomUUID()}`,
@@ -195,14 +199,29 @@ Deno.test("IPEX credential artifacts settle in a fresh holder verifier and admit
       });
       credentialer.issue(registry, creder);
 
-      const grant = ipexCredentialGrant({
+      let grant = ipexCredentialGrant({
         hby: issuerHby,
         hab: issuer,
         reger: issuerReger,
         recipient: holder.pre,
         credentialSaid: creder.said!,
         message: "grant",
+        options: { gvrsn: genus },
       });
+
+      if (envelopeGenus.major !== genus.major) {
+        // KERIpy rebuilds legacy grant envelopes with V1 while preserving child proofs.
+        const [envelope, attachments] = ipexGrantExn(issuer, holder.pre, "grant", grant.artifacts.acdc.wire, {
+          iss: grant.artifacts.iss.wire,
+          anc: grant.artifacts.anc.wire,
+          gvrsn: envelopeGenus,
+        });
+        grant = {
+          ...grant,
+          grant: envelope,
+          wire: concatBytes(issuer.endorse(envelope, { pipelined: false, gvrsn: envelopeGenus }), attachments),
+        };
+      }
 
       const holderTvy = new Tevery({ db: holderHby.db, reger: holderReger });
       const holderVry = new Verifier(holderHby, { reger: holderReger });
@@ -217,7 +236,14 @@ Deno.test("IPEX credential artifacts settle in a fresh holder verifier and admit
         yield* holderReactor.processBytes(message);
       }
       yield* holderReactor.processEscrowsOnce();
-      yield* processCredentialPresentationArtifacts(holderReactor, grant.artifacts);
+      loadIpexHandlers(holderHby, holderReactor.exchanger);
+      yield* holderReactor.processBytes(concatBytes(Counter.makeGVC(envelopeGenus), grant.wire));
+      yield* holderHby.db.reopen();
+      const storedGrant = holderHby.db.exns.get([grant.grant.said!]);
+      assertExists(storedGrant);
+      const artifacts = storedGrantArtifacts(holderHby, storedGrant, genus);
+      assertEquals(artifacts, grant.artifacts);
+      yield* processCredentialPresentationArtifacts(holderReactor, artifacts);
 
       assertEquals(holderReger.saved.get([creder.said!])?.qb64, creder.said);
       assertEquals(new CredentialWallet(holderReger).list({ aid: holder.pre }), [creder.said]);
@@ -238,4 +264,12 @@ Deno.test("IPEX credential artifacts settle in a fresh holder verifier and admit
       yield* issuerHby.close(true);
     }
   });
-});
+}
+
+for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
+  Deno.test(`IPEX credential artifacts with genus ${genus.major} settle in a fresh holder verifier and admit references grant`, () =>
+    assertCredentialArtifactIntake(genus));
+}
+
+Deno.test("IPEX stored V1 grant framing preserves V2 child proofs after database reopen", () =>
+  assertCredentialArtifactIntake(Vrsn_2_0, Vrsn_1_0));
