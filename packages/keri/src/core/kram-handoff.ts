@@ -1,10 +1,8 @@
 import type { CueQueueInput } from "./cue-publishing.ts";
-/** Internal retryable KRAM handoff; borrowed shared credit covers scoped snapshot copies. */
-import { bytesEqual, ResourceAdmissionError, type ResourcePolicy } from "cesr-ts";
+/** Internal KRAM intake with scoped hydration cleanup and query publication. */
+import { type ResourcePolicy } from "cesr-ts";
 import { call, type Operation, type Provide, resource } from "effection";
 import type { Baser } from "../db/basing.ts";
-import { removeKramFactors } from "../db/kram-factors.ts";
-import { removeKramSnapshot } from "../db/kram-snapshots.ts";
 import { makeNowIso8601, timestampMicros } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
@@ -26,12 +24,9 @@ export function isKramHandoffActive(db: Baser): boolean {
 }
 
 /**
- * Hold one local permit through staging, callback consumption, disposal and acknowledgement.
- * Durable ready receipt makes failed deliveries explicitly retryable after reopen. Callbacks
- * and owner adoption are at least once: later cleanup/ack failures do not roll back side effects.
- * Callback results MUST NOT retain borrowed hydration/frame/payload owners. Consume or adopt
- * accepted plaintext within the callback and dispose every untransferred owner in its finally.
- * This per-instance guard does not provide a shared admission budget or cross-instance lock.
+ * Hold one local permit through staging, consumption and actual resource disposal.
+ * Staging completes acceptance before the consumer runs; consumer failure cannot
+ * revive the accepted input. Callbacks must not retain borrowed hydration owners.
  */
 export class KramHandoff {
   private active = false;
@@ -62,7 +57,7 @@ export class KramHandoff {
     return this.active;
   }
 
-  /** Borrow input; only a successfully consumed and disposed ready message is acknowledged. */
+  /** Borrow input and consume accepted evidence within its hydration scope. */
   *intake<T>(
     incoming: KeriDispatchEnvelope,
     consume: (ready: KeriDispatchEnvelope, receiverTime: string) => Operation<T>,
@@ -89,20 +84,6 @@ export class KramHandoff {
         const receipt = makeNowIso8601(new Date(clock));
         if (timestampMicros(receipt) === null) throw new Error("Invalid KRAM receiver clock");
         if (this.policy.exempts(incoming.serder)) return yield* consume(incoming, receipt);
-        const key = [incoming.serder.pre!, incoming.serder.said!];
-        // This acknowledgement snapshot coexists with staged/hydrated evidence until cleanup and commit join.
-        yield* resource<void>(function*(this: KramHandoff, provide: Provide<void>) {
-          const credit = this.resources.reserve({ bytes: incoming.serder.raw.byteLength });
-          if (credit.kind === "refuse") {
-            throw new ResourceAdmissionError("KRAM acknowledgement copy admission refused", credit.reason);
-          }
-          try {
-            yield* provide(undefined);
-          } finally {
-            credit.reservation.release();
-          }
-        }.bind(this));
-        const body = incoming.serder.raw.slice();
         const result = yield* stageKram(
           this.db,
           this.policy,
@@ -120,21 +101,6 @@ export class KramHandoff {
           });
         }
         if (result.kind !== "ready") return result;
-        const env = this.db.env;
-        if (!env) throw new Error("KRAM acknowledgement database is closed");
-        env.transactionSync(() => {
-          const stored = this.db.pmkm.get(key);
-          if (
-            result.key.length !== 2 || result.key.some((part, i) => part !== key[i])
-            || this.db.kready.get(key) !== result.receiverTime || !stored
-            || stored.pre !== key[0] || stored.said !== key[1] || !bytesEqual(stored.raw, body)
-          ) {
-            throw new Error("KRAM ready state changed before acknowledgement");
-          }
-          this.db.kready.rem(key);
-          removeKramFactors(this.db, key);
-          removeKramSnapshot(this.db, key);
-        });
         return result.value;
       }.bind(this));
     }.bind(this));

@@ -82,7 +82,7 @@ export class KramPruner {
 
   /**
    * Advance one finite pass without yielding or holding read cursors across writes.
-   * Cached TTLs own expiry; idle ready state expires with its cache. Orphan scans
+   * Cached TTLs own expiry; incomplete state expires with its cache. Orphan scans
    * restart on any committed change, so unrelated writes can postpone cleanup.
    * Reopen restarts all checkpoints; insertion behind a cache cursor is seen next pass.
    */
@@ -118,7 +118,6 @@ export class KramPruner {
           const partial = [keys[0], keys.at(-1)!];
           removeKramFactors(this.db, partial);
           removeKramSnapshot(this.db, partial);
-          this.db.kready.rem(partial);
           result.removed++;
         });
         scan.start = this.after(physical);

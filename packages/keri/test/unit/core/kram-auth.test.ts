@@ -209,7 +209,7 @@ Deno.test("KRAM sender normalization and signatures preserve frozen factor order
   });
 });
 
-Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts and discards rotated partials", async () => {
+Deno.test("KRAM staging atomically pools frozen proofs, retires accepted partials and discards rotated partials", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const receipt = "2026-10-13T12:00:02.000000+00:00", later = "2026-10-13T12:00:03.000000+00:00";
@@ -267,8 +267,7 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
         hby.db.pmkm.get(priorKey),
         hby.db.pmsk.get(priorKey),
         hby.db.pmks.get(priorKey),
-        hby.db.kready.get(priorKey),
-      ], [null, null, [], null]);
+      ], [null, null, []]);
       const foreign = new SerderKERI({ raw: b(signatureFixture.bodies.single) }).pre!;
       const last = new TransLastIdxSigGroup(new Prefixer({ qb64: foreign }), [new Siger({ qb64: proofs.single0 })]);
       const first = new KeriDispatchEnvelope({
@@ -279,7 +278,7 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
       });
       assertEquals(yield* stageKram(hby.db, policy, resources, first, receipt, unexpected), { kind: "pending", key });
       assertEquals(hby.db.pmks.get(key).map((sig) => sig.qb64), [proofs.sender0, proofs.sender0Only]);
-      assertEquals(hby.db.kready.get(key), null, "same-index variants do not satisfy threshold");
+      assertExists(hby.db.pmkm.get(key), "same-index variants remain partial");
       assertEquals(hby.db.ulgs.get(key).map((prefix) => prefix.qb64), [foreign]);
       yield* acceptKel(signatureFixture.kel[1]);
       assertEquals(yield* stageKram(hby.db, policy, resources, input(["sender0"]), later, unexpected), {
@@ -325,7 +324,7 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
             null,
             "parent admission never admits child",
           );
-          assertEquals(hby.db.kready.get(key), later, "publication precedes scoped consumption");
+          assertEquals(hby.db.pmkm.get(key), null, "acceptance retires partials before consumption");
           return "consumed";
         },
       );
@@ -334,70 +333,34 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
       yield* call(() => sink.write(b("4BABYWJj")));
       owner = essrPayload(yield* call(() => sink.finish()), 1, 3, Vrsn_2_0);
       const wire = owner.wire;
-      const changedReceipt = new KeriDispatchEnvelope({
-        ...input(["sender1"]),
-        attachmentGroups: [],
-        essr: {
-          ...owner,
-          wire: {
-            size: wire.size,
-            async *open(signal?: AbortSignal) {
-              hby.db.kready.pin(key, receipt);
-              yield* wire.open(signal);
-            },
-          },
-        },
-      });
-      yield* call(() =>
-        assertRejects(
-          () => run(() => stageKram(hby.db, policy, resources, changedReceipt, later, unexpected)),
-          Error,
-          "ready receipt changed",
-        )
-      );
-      hby.db.kready.pin(key, later);
       yield* call(() => hby.db.reopen());
-      const retry = yield* stageKram(
-        hby.db,
-        policy,
-        resources,
-        input(["sender1"]),
-        receipt,
-        function*(_envelope, _key, clock) {
-          return clock;
-        },
-      );
-      assertEquals(
-        retry,
-        { kind: "ready", key, receiverTime: later, value: later },
-        "reopen freezes first ready receipt",
-      );
+      assertEquals(yield* stageKram(hby.db, policy, resources, input(["sender1"]), later, unexpected), {
+        kind: "drop",
+        reason: "replay",
+      });
+      hby.db.msgc.rem(key);
       const failConsumer = function*() {
         throw new Error("handoff failed");
       };
       yield* call(() =>
         assertRejects(
-          () => run(() => stageKram(hby.db, policy, resources, input(["sender1"]), receipt, failConsumer)),
+          () => run(() => stageKram(hby.db, policy, resources, input(["sender0", "sender1"]), receipt, failConsumer)),
           Error,
           "handoff failed",
         )
       );
-      assertEquals(hby.db.kready.get(key), later, "consumer failure retains ready ownership");
-      hby.db.env!.transactionSync(() => {
-        removeKramFactors(hby.db, key);
-        hby.db.kpnd.rem(key);
-        hby.db.kready.rem(key);
-      });
+      assertEquals(hby.db.pmkm.get(key), null);
+      assertExists(hby.db.msgc.get(key));
       assertEquals(yield* stageKram(hby.db, policy, resources, first, later, unexpected), {
         kind: "drop",
         reason: "replay",
       });
       // Re-admit only after removing the replay row, then fail the last publication write.
       hby.db.msgc.rem(key);
-      const pin = hby.db.kready.pin.bind(hby.db.kready);
-      hby.db.kready.pin = (keys, value) => {
-        pin(keys, value);
-        throw new Error("ready write failed");
+      const remove = hby.db.pmkm.rem.bind(hby.db.pmkm);
+      hby.db.pmkm.rem = (keys) => {
+        remove(keys);
+        throw new Error("partial cleanup failed");
       };
       try {
         const complete = new KeriDispatchEnvelope({
@@ -409,11 +372,11 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
           assertRejects(
             () => run(() => stageKram(hby.db, policy, resources, complete, receipt, unexpected)),
             Error,
-            "ready write failed",
+            "partial cleanup failed",
           )
         );
       } finally {
-        hby.db.kready.pin = pin;
+        hby.db.pmkm.rem = remove;
       }
       assertEquals([
         hby.db.msgc.get(key),
@@ -421,8 +384,7 @@ Deno.test("KRAM staging atomically pools frozen proofs, retains ready receipts a
         hby.db.pmsk.get(key),
         hby.db.pmks.get(key),
         hby.db.kpnd.get(key),
-        hby.db.kready.get(key),
-      ], [null, null, null, [], null, null]);
+      ], [null, null, null, [], null]);
       // A real serializer read changes current policy before the transaction rechecks admission.
       const original = hby.db.ctyp.get("~")!;
       const changed = new KeriDispatchEnvelope({

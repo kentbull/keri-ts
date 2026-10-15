@@ -990,7 +990,7 @@ Deno.test("cancelling private KRAM hydration joins parser writes and deletes unf
   });
 });
 
-Deno.test("KRAM handoff freezes ready receipt through reopen, disposal failure and checked acknowledgement", async () => {
+Deno.test("KRAM acceptance retires partials before consumer failure and rejects replay after reopen", async () => {
   await scenario(async (hby, sender, recipient, provider) => {
     const nest = await child(sender, "retry-handoff");
     const wire = await attachEssr(nest), borrowed = nest.essr!;
@@ -1011,24 +1011,6 @@ Deno.test("KRAM handoff freezes ready receipt through reopen, disposal failure a
     let handoff = new KramHandoff(hby.db, policy, { now: () => clock });
     assertStrictEquals(handoff.resources, hby.db.resources);
     assertThrows(() => new KramHandoff(hby.db, policy, { resources: new ResourcePolicy() }), RangeError);
-    const occupied = hby.db.resources.reserve({ bytes: hby.db.resources.limits.bytes });
-    if (occupied.kind !== "reserve") throw new Error("Expected free copy capacity");
-    try {
-      await assertRejects(
-        () =>
-          run(() =>
-            handoff.intake(incoming, function*() {
-              throw new Error("refused input was consumed");
-            })
-          ),
-        ResourceAdmissionError,
-        "acknowledgement copy",
-      );
-      assertEquals([handoff.busy, hby.db.pmkm.get(key), hby.db.kready.get(key)], [false, null, null]);
-    } finally {
-      occupied.reservation.release();
-    }
-    assertEquals(hby.db.resources.used.bytes, 0);
     const sn = 2n ** 53n + 1n;
     assertEquals(
       await run(() =>
@@ -1057,104 +1039,37 @@ Deno.test("KRAM handoff freezes ready receipt through reopen, disposal failure a
         run(() =>
           handoff.intake(incoming, function*(_ready, receipt) {
             deliveries++;
-            assertEquals(hby.db.kready.get(key), receipt);
+            assertEquals(hby.db.pmkm.get(key), null);
             throw new Error("delivery fault");
           })
         ),
       Error,
       "delivery fault",
     );
-    const receipt = hby.db.kready.get(key)!;
-    assertEquals(handoff.busy, false);
-    assertExists(hby.db.kpnd.get(key));
+    assertEquals([handoff.busy, hby.db.pmkm.get(key), hby.db.kpnd.get(key)], [false, null, null]);
     assertEquals(await collectPayload(borrowed.wire, 1024), wire, "fresh child remains borrowed");
     await discardFrame(nest);
     await run(() => hby.db.reopen());
     clock += 500;
     handoff = new KramHandoff(hby.db, new KramPolicy(hby.db, { enabled: true }), { now: () => clock });
     const retry = new KeriDispatchEnvelope({ ...incoming, attachmentGroups: [], nests: [] });
-    let disposals = 0;
-    await assertRejects(() =>
-      run(() =>
-        handoff.intake(retry, function*(ready, frozen) {
-          deliveries++;
-          assertEquals(frozen, receipt);
-          const owner = ready.nests[0].essr!, discard = owner.discard.bind(owner);
-          owner.discard = async () => {
-            disposals++;
-            await discard();
-            throw new Error("disposal fault");
-          };
-          assertEquals(yield* call(() => collectPayload(owner.wire, 1024)), wire);
-          return "already delivered";
-        })
-      ), AggregateError);
-    assertEquals([handoff.busy, disposals], [false, 1]);
-    assertEquals(hby.db.kready.get(key), receipt);
-    assertExists(hby.db.pmkm.get(key));
-    await assertRejects(
-      () =>
-        run(() =>
-          handoff.intake(retry, function*(_ready, frozen) {
-            deliveries++;
-            assertEquals(frozen, receipt);
-            hby.db.kready.pin(key, "2020-01-01T00:00:00.000000+00:00");
-            return "side effect cannot roll back";
-          })
-        ),
-      Error,
-      "changed before acknowledgement",
-    );
-    assertExists(hby.db.kpnd.get(key));
-    assertExists(hby.db.pmkm.get(key));
-    hby.db.kready.pin(key, receipt);
-    const remove = hby.db.kpnd.rem.bind(hby.db.kpnd);
-    hby.db.kpnd.rem = () => {
-      throw new Error("ack storage fault");
-    };
-    try {
-      await assertRejects(
-        () =>
-          run(() =>
-            handoff.intake(retry, function*() {
-              deliveries++;
-              return "another side effect";
-            })
-          ),
-        Error,
-        "ack storage fault",
-      );
-    } finally {
-      hby.db.kpnd.rem = remove;
-    }
-    assertEquals([handoff.busy, hby.db.kready.get(key)], [false, receipt]);
-    assertExists(hby.db.pmkm.get(key), "ack transaction rolls back earlier factor removals");
-    assertExists(hby.db.kpnd.get(key));
-    assertEquals(hby.db.pmks.get(key).length, 1);
     assertEquals(
       await run(() =>
-        handoff.intake(retry, function*(ready, frozen) {
+        handoff.intake(retry, function*() {
           deliveries++;
-          assertEquals(frozen, receipt);
-          assertEquals(ready.nests[0].body.raw, nest.body.raw);
-          assertEquals(yield* call(() => collectPayload(ready.nests[0].essr!.wire, 1024)), wire);
-          return "delivered";
         })
       ),
-      "delivered",
+      {
+        kind: "drop",
+        reason: "replay",
+      },
     );
-    assertEquals(deliveries, 5, "callback delivery is at least once after later failures");
-    assertEquals([handoff.busy, hby.db.kready.get(key), hby.db.pmkm.get(key), hby.db.kpnd.get(key)], [
-      false,
-      null,
-      null,
-      null,
-    ]);
+    assertEquals(deliveries, 1, "consumer failure does not revive accepted input");
     assertEquals(hby.db.pmks.get(key), []);
-    assertExists(hby.db.msgc.get(key), "ack retains the replay cache");
+    assertExists(hby.db.msgc.get(key), "acceptance retains the replay cache");
     assertEquals(hby.db.exns.get([input.serder.said!]), null);
     assertEquals(hby.db.exns.get([nest.body.said!]), null, "parent delivery never accepts its child");
-    assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
+    assertThrows(() => Deno.readDirSync(`${hby.db.path}/payloads/staging`), Deno.errors.NotFound);
   });
 });
 
@@ -1225,25 +1140,23 @@ Deno.test("KRAM handoff cancellation holds capacity until serialization and hydr
       ),
       { kind: "drop", reason: "busy" },
     );
-    assertEquals([hby.db.pmkm.get(key), hby.db.kready.get(key)], [null, null]);
+    assertEquals(hby.db.pmkm.get(key), null);
     assertEquals(hby.db.resources.used.bytes, retainedCredit, "halt retains all copy credit while reads are closing");
     release();
     await stopping;
-    assertEquals(hby.db.resources.used.bytes, 0, "joined source cleanup precedes acknowledgement copy release");
+    assertEquals(hby.db.resources.used.bytes, 0, "joined source cleanup releases snapshot credit");
     assertEquals([handoff.busy, readsClosed, consumed], [false, true, false]);
     assertEquals(isKramHandoffActive(hby.db), false);
     assertEquals(await collectPayload(owner.wire, 1024), wire);
     nest.essr = owner;
-    await assertRejects(() =>
-      run(() =>
-        handoff.intake(incoming, function*() {
-          throw new Error("retain ready");
-        })
-      )
+    // Seed a private partial snapshot to exercise joined hydration disposal independently of ready retries.
+    await run(() =>
+      withKramSnapshot(incoming, hby.db.resources, (wire) => {
+        hby.db.env!.transactionSync(() => storeKramSnapshot(hby.db, key, wire));
+      })
     );
     await discardFrame(nest);
     const retry = new KeriDispatchEnvelope({ ...incoming, attachmentGroups: [], nests: [] });
-    const receipt = hby.db.kready.get(key);
     let hydrated!: () => void, discarding!: () => void, dispose!: () => void, disposals = 0;
     const ready = new Promise<void>((resolve) => hydrated = resolve);
     const disposing = new Promise<void>((resolve) => discarding = resolve);
@@ -1267,7 +1180,7 @@ Deno.test("KRAM handoff cancellation holds capacity until serialization and hydr
     const halting = consumer.halt().then(() => joined = true);
     await disposing;
     assertEquals([handoff.busy, joined, consumed, disposals], [true, false, false, 1]);
-    assertEquals(hby.db.kready.get(key), receipt);
+    assertEquals(hby.db.pmkm.get(key), null);
     assertEquals(await run(() => handoff.intake(retry, function*() {})), { kind: "drop", reason: "busy" });
     const exempt = new KramHandoff(hby.db, new KramPolicy(hby.db));
     let otherEntered!: () => void;
@@ -1285,7 +1198,7 @@ Deno.test("KRAM handoff cancellation holds capacity until serialization and hydr
     assertEquals(isKramHandoffActive(hby.db), true, "one released scope cannot clear another owner's exclusion");
     await other.halt();
     assertEquals(isKramHandoffActive(hby.db), false);
-    assertEquals(hby.db.kready.get(key), receipt, "cancellation cannot acknowledge");
+    assertEquals(hby.db.pmkm.get(key), null, "cancellation cannot revive accepted partials");
     assertEquals(Array.from(Deno.readDirSync(`${hby.db.path}/payloads/staging`)).length, 0);
     assertEquals(
       await run(() =>
@@ -1293,9 +1206,9 @@ Deno.test("KRAM handoff cancellation holds capacity until serialization and hydr
           return "retry";
         })
       ),
-      "retry",
+      { kind: "drop", reason: "replay" },
     );
-    assertEquals([handoff.busy, hby.db.kready.get(key)], [false, null]);
+    assertEquals(handoff.busy, false);
     assertEquals(
       await run(() =>
         exempt.intake(retry, function*(ready) {
@@ -1364,13 +1277,13 @@ Deno.test("optional runtime KRAM forwards reopened nested evidence without accep
         assertEquals(runtime.resources.used.bytes > 64 * 1024 ** 2, true, "KRAM shares runtime owner credit");
         assertEquals(ready!.nests[0].body.raw, nest.body.raw);
         assertEquals(yield* call(() => collectPayload(ready!.nests[0].essr!.wire, 1024)), wire);
-        assertExists(hby.db.kready.get(key), "transport callback owns hydrated evidence before acknowledgement");
+        assertEquals(hby.db.pmkm.get(key), null, "acceptance retires partial state before transport callback");
         assertEquals(hby.db.exns.get(nest.body.said!), null);
       });
-      assertEquals(runtime.resources.used.bytes, 64 * 1024 ** 2, "hydrated credit releases after acknowledgement");
+      assertEquals(runtime.resources.used.bytes, 64 * 1024 ** 2, "hydrated credit releases after consumption");
       assertEquals(returned!.nests.length, 0, "hydrated descendants never escape the ready callback");
       assertExists(hby.db.exns.get(input.serder.said!));
-      assertEquals([hby.db.pmkm.get(key), hby.db.kpnd.get(key), hby.db.kready.get(key)], [null, null, null]);
+      assertEquals([hby.db.pmkm.get(key), hby.db.kpnd.get(key)], [null, null]);
       const saved = [...runtime.mailboxDirector.topicIter(recipient.pre, "/nested")];
       assertEquals(saved.length, 1);
       yield* runtime.reactor.processBytes(saved[0].msg);

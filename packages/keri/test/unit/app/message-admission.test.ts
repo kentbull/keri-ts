@@ -212,7 +212,7 @@ Deno.test("refused nested evidence is disposed with joined cleanup and infrastru
   });
 });
 
-Deno.test("optional KRAM uses the receiver clock and scopes consumers through ready acknowledgement", async () => {
+Deno.test("optional KRAM retires acceptance before downstream failure", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender", undefined, { icount: 3, isith: "2", ncount: 3, nsith: "2" });
@@ -229,29 +229,23 @@ Deno.test("optional KRAM uses the receiver clock and scopes consumers through re
       yield* runtime.reactor.settle(partial, {}, function*(_envelope, decision) {
         assertEquals(decision?.kind, "pending");
       });
-      assertEquals(hby.db.kready.get(key), null);
+      assertExists(hby.db.pmkm.get(key));
       now += 1000;
       const [complete] = yield* call(() => frame(1));
       const failure = new Error("transport consumer failed");
       const fail = function*(ready?: import("../../../src/core/dispatch.ts").KeriDispatchEnvelope) {
         assertEquals(ready!.sigers.map((sig) => sig.index), [0, 1]);
-        assertExists(hby.db.pmkm.get(key), "consumer runs before acknowledgement");
+        assertEquals(hby.db.pmkm.get(key), null, "partial state is retired before consumption");
         assertEquals(runtime.reactor.kevery.kramer!.prune().kind, "busy");
         throw failure;
       };
       yield* call(() =>
         assertRejects(() => run(() => runtime.reactor.settle(complete, {}, fail)), Error, failure.message)
       );
-      const receipt = hby.db.kready.get(key)!;
-      assertEquals(Date.parse(receipt), now, "services.clock owns first completion time");
+      assertExists(hby.db.msgc.get(key));
+      assertEquals(hby.db.pmkm.get(key), null);
       now += 1000;
-      const [retry] = yield* call(() => frame(1));
-      const returned = yield* runtime.reactor.settle(retry, {}, function*(ready) {
-        assertEquals(hby.db.kready.get(key), receipt);
-        assertEquals(ready!.sigers.map((sig) => sig.index), [0, 1]);
-      });
-      assertEquals(returned!.sigers.map((sig) => sig.index), [1], "returned input cannot expose hydrated pool/owners");
-      assertEquals([hby.db.pmkm.get(key), hby.db.kready.get(key)], [null, null]);
+      yield* hby.db.reopen();
       yield* runtime.reactor.settle((yield* call(() => frame(1)))[0], {}, function*(_ready, decision) {
         assertEquals(decision, { kind: "drop", reason: "replay" });
       });
@@ -310,7 +304,6 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refres
       assertEquals(seen, [receipt]);
       assertEquals(handled, []);
       assertEquals(hby.db.exchangeMeta.get([pending.said!])?.receiverTime, receipt);
-      assertEquals(hby.db.kready.get([sender.pre, pending.said!]), null);
       // Retry at the shared clock's exact proof-escrow boundary, preserving the first receipt.
       now += 10000;
       yield* hby.db.reopen();
