@@ -219,6 +219,7 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       cues.extend(pair);
       replies.capture(cues);
       const unread = runtime.deliveries.openReply(runtime, sender, later)!;
+      const heldBeforeDelivery = runtime.resources.used.bytes;
       later.close();
       blocked = true;
       const delivery = yield* spawn(function*() {
@@ -246,6 +247,11 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
         [runtime.deliveries.hasPending, runtime.resources.used.bytes > 0],
         [false, true],
         "Joined queued cleanup still borrows the unread response wire",
+      );
+      assertEquals(
+        runtime.resources.used.bytes < heldBeforeDelivery,
+        true,
+        "Queued route credit retires before the unread response releases shared emission bytes",
       );
       yield* call(() => unread.cancel());
       assertEquals(runtime.resources.used.bytes, 0);

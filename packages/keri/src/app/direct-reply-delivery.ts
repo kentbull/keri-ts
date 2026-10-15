@@ -21,7 +21,7 @@ export class DirectReplyDelivery {
   private published = false;
   private readonly owners: PreparedCueEmission[] = [];
   private readonly routes: PreparedCueRoute[] = [];
-  private readonly deliveries: CueDelivery[] = [];
+  private readonly deliveries: { delivery: CueDelivery; route: PreparedCueRoute }[] = [];
   private releaseInput?: () => void;
 
   /** All acquisition/publication is synchronous under the guard; no replay reader opens here. */
@@ -76,20 +76,10 @@ export class DirectReplyDelivery {
             }, onAdmissionRefusal);
           batch.routes.push(route);
           if (route.route.targets.length) {
-            batch.deliveries.push(
-              new CueDelivery(
-                {
-                  get emission() {
-                    return owner.emission;
-                  },
-                  retainedBytes: owner.retainedBytes,
-                  resourcePolicy: owner.resourcePolicy,
-                  release() {},
-                },
-                runtime.hby.habs.get(route.route.sender) ?? hab,
-                route,
-              ),
-            );
+            batch.deliveries.push({
+              delivery: new CueDelivery(owner.emission, runtime.hby.habs.get(route.route.sender) ?? hab, route.route),
+              route,
+            });
           }
         }
         let live = true;
@@ -190,20 +180,7 @@ export class DirectReplyDelivery {
               batch.routes.push(route);
               if (route.route.targets.length) {
                 const sender = runtime.hby.habs.get(route.route.sender) ?? hab;
-                batch.deliveries.push(
-                  new CueDelivery(
-                    {
-                      get emission() {
-                        return owner.emission;
-                      },
-                      retainedBytes: owner.retainedBytes,
-                      resourcePolicy: owner.resourcePolicy,
-                      release() {},
-                    },
-                    sender,
-                    route,
-                  ),
-                );
+                batch.deliveries.push({ delivery: new CueDelivery(owner.emission, sender, route.route), route });
               }
               prepare(index + 1);
               return undefined;
@@ -230,12 +207,12 @@ export class DirectReplyDelivery {
 
   /** Exhausted batches and already prepared packets do not enter a new preparation turn. */
   get needsPreparation(): boolean {
-    return this.deliveries[this.index]?.needsPreparation ?? false;
+    return this.deliveries[this.index]?.delivery.needsPreparation ?? false;
   }
 
   /** Prepare one target per pass, preserving bounded sibling fairness across reply cues. */
   prepareTarget(poster: Poster, resources: ResourcePolicy): CueTargetPreparation {
-    const current = this.deliveries[this.index];
+    const current = this.deliveries[this.index]?.delivery;
     if (!current) return { kind: "done" };
     const result = current.prepareTarget(poster, resources);
     if (result.kind === "done") {
@@ -247,14 +224,18 @@ export class DirectReplyDelivery {
 
   /** Apply the queue owner's completed transmission or failed-packet transfer to the current cue. */
   retireTarget(outcome: "sent" | "retained"): void {
-    this.deliveries[this.index].retireTarget(outcome);
+    this.deliveries[this.index].delivery.retireTarget(outcome);
   }
 
   /** Queue cleanup joins network before marking its half complete; attempt every independent owner. */
   release(): void {
     if (this.deliveryDone) return;
     this.deliveryDone = true;
-    const cleanups = this.deliveries.map((delivery) => () => delivery.release());
+    // Route credit retires with queued delivery, even while an HTTP borrower retains emission bytes.
+    const cleanups = this.deliveries.flatMap(({ delivery, route }) => [
+      () => delivery.release(),
+      () => route.release(),
+    ]);
     this.deliveries.length = 0;
     this.finish(cleanups);
   }

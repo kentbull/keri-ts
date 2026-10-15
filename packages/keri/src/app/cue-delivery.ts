@@ -1,9 +1,8 @@
 /** One captured cue cursor plus independently owned failed packets on the existing runtime delivery queue. */
 import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy, type ResourceReservation } from "cesr-ts";
+import type { CueEmission } from "../core/cues.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
-import type { PreparedCueEmission } from "./cue-preparation.ts";
-import type { PreparedCueRoute } from "./cue-route.ts";
-import type { Poster, PreparedCesrTarget } from "./forwarding.ts";
+import type { Poster, PreparedCesrTarget, RawCesrRoute } from "./forwarding.ts";
 import type { Hab } from "./habbing.ts";
 
 const { wireBytes, preparationBytes } = cueDeliveryBudget;
@@ -35,17 +34,19 @@ function ownTarget(value: PreparedCesrTarget | undefined, credit: ResourceReserv
 
 /** Keep one lazy extent/current message and one target; failed packets transfer into admitted queue slots. */
 export class CueDelivery {
+  private emission?: CueEmission;
   private iterator?: Iterator<Uint8Array>;
   private message?: Uint8Array;
   private targetIndex = 0;
   private prepared?: OwnedCueTarget;
   private released = false;
   constructor(
-    private readonly owner: PreparedCueEmission,
+    emission: CueEmission,
     private readonly hab: Hab,
-    private readonly routing: PreparedCueRoute,
+    private readonly routing: RawCesrRoute,
   ) {
-    if (routing.route.sender !== hab.pre || !routing.route.targets.length) {
+    this.emission = emission;
+    if (routing.sender !== hab.pre || !routing.targets.length) {
       throw new RangeError("Invalid cue delivery route");
     }
   }
@@ -66,7 +67,7 @@ export class CueDelivery {
     let transferred = false;
     try {
       if (!this.message) {
-        this.iterator ??= this.owner.emission!.messages[Symbol.iterator]();
+        this.iterator ??= this.emission!.messages[Symbol.iterator]();
         const next = this.iterator.next();
         if (next.done) return { kind: "done" };
         this.message = next.value;
@@ -75,7 +76,7 @@ export class CueDelivery {
           throw new ResourceLimitError("Cue message backing exceeds limit");
         }
       }
-      const target = poster.prepareBytesTarget(this.hab, this.routing.route, this.targetIndex, this.message, wireBytes);
+      const target = poster.prepareBytesTarget(this.hab, this.routing, this.targetIndex, this.message, wireBytes);
       this.prepared = ownTarget(target, admitted.reservation);
       transferred = true;
       return { kind: "target", owner: this.prepared };
@@ -94,13 +95,13 @@ export class CueDelivery {
 
   /** Advance only joined transmission or successful independent live transfer; never claim remote acceptance. */
   private advance(): void {
-    if (++this.targetIndex === this.routing.route.targets.length) {
+    if (++this.targetIndex === this.routing.targets.length) {
       this.targetIndex = 0;
       this.message = undefined;
     }
   }
 
-  /** Queue acknowledgement/shutdown releases retained evidence after the active transport has joined. */
+  /** Close the actual cursor/packet obligations; callers retain source and route owners through this cleanup. */
   release(): void {
     if (this.released) return;
     this.released = true;
@@ -109,8 +110,6 @@ export class CueDelivery {
       const cleanup of [
         () => this.iterator?.return?.(),
         () => this.prepared?.release(),
-        () => this.owner.release(),
-        () => this.routing.release(),
       ]
     ) {
       try {
@@ -119,6 +118,7 @@ export class CueDelivery {
         if (!errors.includes(error)) errors.push(error);
       }
     }
+    this.emission = undefined;
     this.iterator = this.message = undefined;
     this.prepared = undefined;
     if (errors.length === 1) throw errors[0];
