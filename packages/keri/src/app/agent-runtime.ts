@@ -294,7 +294,7 @@ export function* createAgentRuntime(
     }
   });
   const deliveries = yield* resource<RuntimeDeliveries>(function*(provide) {
-    const deliveries = new RuntimeDeliveries(resources);
+    const deliveries = new RuntimeDeliveries();
     try {
       yield* provide(deliveries);
     } finally {

@@ -471,7 +471,7 @@ export class QueryCoordinator implements CueSink {
     return true;
   }
 
-  /** Observe a source cue only after the downstream owner has atomically retained eligible delivery. */
+  /** Observe a source cue only after its prepared delivery record is queued. */
   admitCue(source: Deck<AgentCue>, interpreter: Hab | null, sink: CueSink = this.sink): CueAdmission {
     const cue = source.peekHead();
     let admission: CueAdmission;
@@ -487,14 +487,14 @@ export class QueryCoordinator implements CueSink {
         return "transferred";
       }
     } else admission = sink.admitCue?.(source, interpreter) ?? "ineligible";
-    if (admission !== "transferred" && admission !== "busy" && admission !== "ineligible") {
+    if (admission !== "transferred" && admission !== "ineligible") {
       throw new TypeError("Invalid query source admission");
     }
     if (cue && admission === "transferred") this.observeCue(cue);
     return admission;
   }
 
-  /** Observe and resolve incomplete queries synchronously under the caller's local preparation ownership. */
+  /** Observe and resolve incomplete queries synchronously under the caller's state guard. */
   prepareEmission(emission: CueEmission): CueEmission {
     this.observeCue(emission.cue);
     const prepared = emission.cue.kin === "query" && emission.kind !== "wire"
@@ -557,7 +557,6 @@ export class QueryCoordinator implements CueSink {
             if (self.sink.admitQuery) {
               const cue: QueryCue = { kin: "query", ...request };
               const admission = self.sink.admitQuery(cue, () => self.wireEmissionForRequest(request));
-              if (admission === "busy") break;
               if (admission === "transferred") {
                 self.requests.pull();
                 continue;

@@ -512,9 +512,10 @@ scope after each response so neither bodies nor resource registrations accumulat
 
 ## Query delivery and mailbox SSE
 
-The query cue sink admits at most eight finite 8 MiB signed request streams.
-The runtime drains those requests after its guarded cue turn, preserving a failed
-request for retry. Its HTTP response stays in the delivery scope and enters the
+The query cue sink signs and resolves the endpoint synchronously, then appends
+a concrete QueryDelivery record. RuntimeDeliveries has no byte policy, queue
+quota, preparation factory or refusal wrapper. It drains the initial record extent
+after the guarded cue turn, preserving a failed request for retry. Its HTTP response stays in the delivery scope and enters the
 progressive Reactor directly. Runtime closure aborts and joins the active delivery
 before closing stores; a consumer never reenters its own guarded turn.
 
@@ -643,8 +644,8 @@ its context-free form remains a transmit-only primitive.
 Default runtime Anchorer turns explicitly lend their existing runtime to TCP
 witness publication; a standalone turn without receiver context stays transmit-only.
 Witness inquiry routing prefers HTTPS/HTTP before TCP. The existing RuntimeDeliveries
-query owner retains its wire, abort signal and admission through same-socket local
-reply parsing and joined cleanup. Guarded query preparation opens no socket.
+query record retains its wire; the active transport owns its abort signal through
+same-socket local reply parsing and joined cleanup. Guarded query preparation opens no socket.
 Retiring that owner records transport completion only; query continuations complete
 from Kevery-verified accepted state, never from drain or received frame counts.
 
