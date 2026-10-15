@@ -19,14 +19,16 @@ import {
   Siger,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run } from "effection";
-import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
+import { call, type Operation, run } from "effection";
+import { assertEquals, assertExists, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
 import {
   loadMultisigHandlers,
+  type MultisigEventProposal,
   multisigExnBody,
   multisigInceptExn,
   multisigInteractExn,
+  type MultisigMessage,
   multisigRotateExn,
   type MultisigRoute,
   multisigRpyExn,
@@ -38,6 +40,13 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
+
+// @ts-expect-error Inception derives gid from its child instead of accepting a second identity.
+void ({ route: "/multisig/icp", attrs: { gid: "group", smids: [], rmids: [] } } satisfies MultisigEventProposal);
+// @ts-expect-error Rotation requires its rotation members as well as signing members.
+void ({ route: "/multisig/rot", attrs: { gid: "group", smids: [] } } satisfies MultisigEventProposal);
+// @ts-expect-error Reply proposals do not carry interaction member fields.
+void ({ route: "/multisig/rpy", attrs: { gid: "group", smids: [] } } satisfies MultisigEventProposal);
 
 /** Sign just the wrapper body with its sender's accepted establishment keys. */
 function proof(sender: Hab, serder: SerderKERI): TransIdxSigGroup[] {
@@ -219,13 +228,25 @@ Deno.test("nested multisig builders and public normalization preserve all four r
     const reply = bob.reply("/end/role/add", { cid: bob.pre, role: "controller", eid: alice.pre });
     await learn(left, bob);
     const options = { pvrsn: Vrsn_2_0 };
-    const builds = [
-      () => multisigInceptExn(bob, mids, mids, inception, null, options),
-      () => multisigRotateExn(alice.pre, bob, mids, mids, rotation, options),
-      () => multisigInteractExn(alice.pre, bob, mids, interaction, options),
-      () => multisigRpyExn(alice.pre, bob, reply, options),
+    const builds: Array<[MultisigEventProposal, () => Operation<MultisigMessage>]> = [
+      [
+        { route: "/multisig/icp", attrs: { smids: mids, rmids: mids } },
+        () => multisigInceptExn(bob, mids, mids, inception, null, options),
+      ],
+      [
+        { route: "/multisig/rot", attrs: { gid: alice.pre, smids: mids, rmids: mids } },
+        () => multisigRotateExn(alice.pre, bob, mids, mids, rotation, options),
+      ],
+      [
+        { route: "/multisig/ixn", attrs: { gid: alice.pre, smids: mids } },
+        () => multisigInteractExn(alice.pre, bob, mids, interaction, options),
+      ],
+      [
+        { route: "/multisig/rpy", attrs: { gid: alice.pre } },
+        () => multisigRpyExn(alice.pre, bob, reply, options),
+      ],
     ];
-    for (const build of builds) {
+    for (const [request, build] of builds) {
       const [serder, nested] = await run(build);
       const signatures = messageAttachmentGroups({ tsgs: proof(bob, serder) }, Vrsn_2_0);
       const wire = concatBytes(
@@ -245,16 +266,18 @@ Deno.test("nested multisig builders and public normalization preserve all four r
         assertEquals(normalized.nests.length, 1);
         assertEquals(normalized.tsgs.length, 1);
         const child = frame.nests![0];
+        const body = child.body;
+        assertInstanceOf(body, SerderKERI);
         const direct = multisigExnBody(
           bob.pre,
-          serder.route as MultisigRoute,
-          child.body as SerderKERI,
-          serder.a as Record<string, unknown>,
+          request,
+          body,
           { ...options, stamp: serder.ked!.dt as string },
         );
         assertEquals(direct.raw, serder.raw);
         assertEquals(await collectPayload(nestedPayload(child, Vrsn_2_0), 8192), nested);
-        assertEquals((serder.a as Record<string, unknown>)[serder.route!.split("/").at(-1)!], child.body.said);
+        // This assertion reads the generic on-wire SAD only; typed proposal input stays authoritative above.
+        assertEquals((serder.a as Record<string, unknown>)[serder.route!.split("/").at(-1)!], body.said);
         assertEquals(mux.verify(serder, [child]), true);
         await run(() => dispatchEnvelope(normalized, left.rvy, left.kevery, exchanger));
         assertEquals(exchanger.complete(serder.said!), true);
@@ -447,21 +470,38 @@ Deno.test("multisig body construction borrows a parsed child without reading or 
       child.gvrsn!,
     );
     try {
-      const attrs = { smids: [alice.pre, bob.pre], rmids: [alice.pre, bob.pre] };
+      const request: MultisigEventProposal = {
+        route: "/multisig/icp",
+        attrs: { smids: [alice.pre, bob.pre], rmids: [alice.pre, bob.pre] },
+      };
+      const body = child.body;
+      assertInstanceOf(body, SerderKERI);
       const options = { stamp: "2026-10-13T00:00:00.000000+00:00" };
-      const parent = multisigExnBody(bob.pre, "/multisig/icp", child.body as SerderKERI, attrs, options);
+      const parent = multisigExnBody(bob.pre, request, body, options);
       const borrowed = nestedPayload(child, Vrsn_2_0);
       assertEquals(reads, 0);
-      assertEquals((parent.a as Record<string, unknown>).icp, child.body.said);
+      assertEquals(parent.a, {
+        gid: bob.pre,
+        smids: [alice.pre, bob.pre],
+        rmids: [alice.pre, bob.pre],
+        icp: body.said,
+      });
       // The same body can be constructed without signatures; acceptance remains the processor's responsibility.
-      assertEquals(multisigExnBody(bob.pre, "/multisig/icp", child.body as SerderKERI, attrs, options).raw, parent.raw);
+      assertEquals(multisigExnBody(bob.pre, request, body, options).raw, parent.raw);
       assertThrows(
-        () => multisigExnBody(bob.pre, "/multisig/rot", child.body as SerderKERI, attrs),
+        () =>
+          multisigExnBody(bob.pre, {
+            route: "/multisig/rot",
+            attrs: { gid: bob.pre, smids: [bob.pre], rmids: [bob.pre] },
+          }, body),
         Error,
         "child kind",
       );
       assertThrows(
-        () => multisigExnBody(bob.pre, "/multisig/exn", child.body as SerderKERI, attrs),
+        () => {
+          // @ts-expect-error Preserve the malformed JavaScript route regression at runtime too.
+          return multisigExnBody(bob.pre, { route: "/multisig/exn", attrs: { gid: bob.pre } }, body);
+        },
         Error,
         "child kind",
       );
@@ -472,7 +512,7 @@ Deno.test("multisig body construction borrows a parsed child without reading or 
       assertEquals(await collectPayload(borrowed, 8192), nested);
       const wire = await collectPayload(framePayload(child), 8192);
       const [prepared, preparedNested] = await run(() =>
-        prepareMultisigEventExn(bob.pre, "/multisig/icp", attrs, wire, { ...options, pvrsn: Vrsn_2_0 })
+        prepareMultisigEventExn(bob.pre, request, wire, { ...options, pvrsn: Vrsn_2_0 })
       );
       assertEquals(prepared.raw, parent.raw);
       assertEquals(preparedNested, nested);
@@ -533,9 +573,17 @@ Deno.test("multisig byte preparation aborts payload reads and joins disposal bef
       };
     };
     const task = run(function*() {
-      yield* prepareMultisigEventExn(bob.pre, "/multisig/icp", { smids: [alice.pre, bob.pre] }, wire, {
-        pvrsn: Vrsn_2_0,
-      });
+      yield* prepareMultisigEventExn(
+        bob.pre,
+        {
+          route: "/multisig/icp",
+          attrs: { smids: [alice.pre, bob.pre], rmids: [alice.pre, bob.pre] },
+        },
+        wire,
+        {
+          pvrsn: Vrsn_2_0,
+        },
+      );
       continued = true;
     });
     try {

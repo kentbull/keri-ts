@@ -67,6 +67,13 @@ source triples. Bind the exact grant target at the inclusive receipt cutoff;
 later accepted TEL updates cannot refresh it. Preserve missing proof escrow and
 independent issuer verification; deeper/hidden paths and unfinished routes remain guarded.
 
+The four multisig event builders carry one MultisigEventProposal with correlated
+icp/rot/ixn/rpy attributes through byte preparation and synchronous body building.
+Inception derives gid from its child; callers supply member lists, not another gid
+or child commitment. Do not reconstruct typed input from an erased serialized SAD.
+Other multisig/TEL/business routes retain their separate builders; inbound
+membership and generic EXN/embedded-SAD boundaries still need their own audit.
+
 Pure multisig/IPEX body builders take parsed Serders synchronously. Byte convenience
 operations own cancellable parseBytes, finite nested-wire collection and finally
 disposal. Serializer views borrow frame owners through consumption. Parent signatures
