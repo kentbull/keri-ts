@@ -125,8 +125,7 @@ anchor; a missing required child must not leave an accepted anchor behind a null
 approval result. Other VDR/credential input contracts and live issuance qualification
 remain separate work.
 Endpoint-role publication prepares its known gid/rpy envelope at the workflow
-owner. Keep recipient-specific SAIDs: the existing outbox stores one recipient
-per message SAID, so sharing a wrapper can overwrite retry routing. Report explicit
+owner. Keep recipient-specific signed envelopes and report explicit
 recipient/SAID pairs, not a separate unsent wrapper or its attachment size. A
 one-caller helper accepting arbitrary payload/embed maps adds no boundary. Decoded endpoint-reply attributes narrow unknown cid/role/eid
 before acceptance lookup. These local cuts do not close the generic approval

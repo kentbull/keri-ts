@@ -18,7 +18,6 @@ export * from "./koming.ts";
 export * from "./mailbox-inbox.ts";
 export * from "./mailboxing.ts";
 export * from "./noting.ts";
-export * from "./outboxing.ts";
 export { PayloadArchive } from "./payload-archive.ts";
 export { type FilePayload, type FilePayloadSink, PayloadStore } from "./payload-store.ts";
 export * from "./reger.ts";

@@ -21,8 +21,8 @@ POST /mailboxes updates authorization rather than creating a mailbox AID.
 ## Delivery
 
 Tufa's sender policy prefers accepted mailbox endpoints, sends to all selected
-mailboxes and otherwise falls back to direct controller/agent delivery. Enabled
-Outboxer state retains failed sends for retry. This operational selection is
+mailboxes and otherwise falls back to direct controller/agent delivery. Failed
+sends are reported to the caller without durable retry state. This selection is
 distinct from the inner message's validity.
 
 Delivery may fall back to TCP, while mailbox SSE polling selects HTTP(S) only,
@@ -30,12 +30,6 @@ matching KERIpy 714 Poller/httpClient. A TCP-only authorized remote mailbox keep
 mailbox-role precedence and produces no SSE target until it advertises HTTP(S);
 it does not silently poll an available witness instead. Witness-only polling
 also waits for an HTTP(S) endpoint. HTTPS priority is unchanged.
-
-Optional Outboxer publication commits payload, message metadata and target rows
-in one transaction. Terminal target state and final message pruning also commit
-together; failure preserves the prior retry obligation. Delivered status records
-transport handoff, not authenticated remote acceptance. Shared pending-byte/item
-admission and recovery before initial cue transfer remain separate requirements.
 
 Remote delivery uses `/fwd`, with q.pre identifying the recipient and q.topic the
 bucket. Legacy v1 carries e.evt plus pathed attachments. V2 binds one parent-owned
