@@ -184,7 +184,7 @@ export function* publishGroupIpexProposal(
       topic: "multisig",
       delivery,
     });
-    deliveries.push(...result.deliveries, ...result.queued);
+    deliveries.push(...result.deliveries);
   }
   return deliveries;
 }
@@ -381,7 +381,7 @@ export function* sendCredentialBytes(
       topic: CREDENTIAL_MAILBOX_TOPIC,
       delivery,
     });
-    sent.push(...result.deliveries, ...result.queued);
+    sent.push(...result.deliveries);
   }
   return sent;
 }

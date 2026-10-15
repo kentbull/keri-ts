@@ -177,7 +177,7 @@ function* publishGroupDelegationApproval(
       embeds: { ixn: message },
       topic: "multisig",
     });
-    deliveries.push(...result.deliveries, ...result.queued);
+    deliveries.push(...result.deliveries);
   }
   return deliveries;
 }

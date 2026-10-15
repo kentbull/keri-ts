@@ -21,7 +21,6 @@ import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
-  runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
@@ -44,6 +43,7 @@ import {
 } from "../../../src/app/mailboxing.ts";
 import { persistResolvedContact } from "../../../src/app/organizing.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -699,7 +699,6 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
     await run(function*() {
       const hby = yield* createHabery({
         name: `poster-remote-witness-bytes-${crypto.randomUUID()}`,
-        outboxer: "create",
         temp: true,
         skipConfig: true,
       });
@@ -819,7 +818,6 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           const receiptKey = dgKey(sender.pre, sender.kever!.said);
           const receipt = remoteWitness.receipt(sender.kever!.serder);
           let connections = 0;
-          let holdClose: { started: PromiseWithResolvers<void>; release: PromiseWithResolvers<void> } | undefined;
           const tcpBodies: Uint8Array[][] = [];
           const tcp = createServer({ allowHalfOpen: true }, (socket) => {
             connections++;
@@ -829,12 +827,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             socket.on("data", (chunk) => chunks.push(new Uint8Array(chunk)));
             // A real signed receipt travels independently of the prepared upload's framing.
             socket.write(receipt);
-            const held = holdClose;
-            socket.once("end", () => {
-              held?.started.resolve();
-              if (held) void held.release.promise.then(() => socket.end());
-              else socket.end();
-            });
+            socket.once("end", () => socket.end());
           });
           yield* call(() => new Promise<void>((resolve) => tcp.listen(0, "127.0.0.1", resolve)));
           try {
@@ -919,139 +912,6 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             assertEquals(yield* attemptPreparedCesrTarget(tcpTarget, runtime.services), "complete");
             assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");
             assertEquals(concatBytes(...tcpBodies[2]), tcpTarget.message);
-            // Drive the actual durable outbox through both deterministic and background composition roots.
-            yield* runtime.reactor.processBytes(recipient.makeEndRole(remoteWitness.pre, EndpointRoles.mailbox, true));
-            const said = crypto.randomUUID(), stamp = new Date().toISOString();
-            hby.obx.queueMessage(said, message, {
-              sender: sender.pre,
-              recipient: recipient.pre,
-              topic: "/receipt",
-              createdAt: stamp,
-            }, [remoteWitness.pre]);
-            const bounded = hby.obx.iterPendingBounded!, ordinary = hby.obx.iterPending;
-            hby.obx.iterPending = () => {
-              throw new Error("Runtime retry cannot use the unbounded iterator");
-            };
-            let scans = 0, retiredScans = 0;
-            hby.obx.iterPendingBounded = function*(limits) {
-              assertEquals(guarded, true, "bounded row pulls own a short Reactor turn");
-              assertEquals(runtime.resources.used.bytes > 0, true, "admission precedes iterator acquisition");
-              scans++;
-              try {
-                yield* bounded.call(this, limits);
-              } finally {
-                assertEquals(runtime.resources.used.bytes > 0, true, "cursor joins before credit returns");
-                retiredScans++;
-              }
-            };
-            let guarded = false, failPreparation = true;
-            const settle = runtime.reactor.settle.bind(runtime.reactor), endorse = sender.endorse;
-            const failed = hby.obx.markFailed.bind(hby.obx), markDelivered = hby.obx.markDelivered.bind(hby.obx);
-            const acknowledged = Promise.withResolvers<void>();
-            runtime.reactor.settle = (frame, options, consume) =>
-              settle(frame, options, function*(envelope, decision) {
-                guarded = true;
-                try {
-                  if (consume) yield* consume(envelope, decision);
-                } finally {
-                  guarded = false;
-                }
-              });
-            sender.endorse = (...args) => {
-              assertEquals(guarded, true, "outbox signing owns a short Reactor turn");
-              if (failPreparation) throw new Error("retry preparation");
-              return endorse.apply(sender, args);
-            };
-            hby.obx.markFailed = (...args) => {
-              assertEquals(guarded, true);
-              failed(...args);
-            };
-            hby.obx.markDelivered = (...args) => {
-              assertEquals(guarded, true);
-              markDelivered(...args);
-              acknowledged.resolve();
-            };
-            try {
-              const occupied = runtime.resources.reserve({ bytes: runtime.resources.limits.bytes });
-              if (occupied.kind !== "reserve") throw new Error("Expected free byte policy");
-              try {
-                yield* poster.processPending(runtime);
-                assertEquals(scans, 0, "busy cannot acquire a native iterator");
-                assertEquals(hby.obx.pendingCount(), 1);
-              } finally {
-                occupied.reservation.release();
-              }
-              const admitted = hby.obx.iterPendingBounded;
-              hby.obx.iterPendingBounded = undefined;
-              try {
-                yield* call(() =>
-                  assertRejects(() => run(() => poster.processPending(runtime)), RangeError, "bounded reads")
-                );
-                assertEquals(scans, 0, "unsupported runtime store cannot start a scan");
-              } finally {
-                hby.obx.iterPendingBounded = admitted;
-              }
-              yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
-              assertEquals(hby.obx.pendingCount(), 1, "preparation failure preserves retry state");
-              assertEquals(connections, 3);
-              failPreparation = false;
-              holdClose = { started: Promise.withResolvers<void>(), release: Promise.withResolvers<void>() };
-              const progress = remoteHby.makeHab("outbox-progress");
-              const [frame] = yield* call(() =>
-                parseBytes(concatBytes(...remoteHby.db.clonePreIter(progress.pre)), {
-                  resources: runtime.resources,
-                })
-              );
-              let background = yield* spawn(() => runAgentRuntime(runtime, { hab: sender }));
-              try {
-                yield* call(() => holdClose!.started.promise);
-                assertEquals(hby.obx.pendingCount(), 1, "TCP wait cannot acknowledge the outbox early");
-                yield* runtime.reactor.settle(frame);
-                assertEquals(hby.db.getKever(progress.pre)?.sn, 0, "signed protocol work progresses during TCP wait");
-                assertEquals(
-                  runtime.resources.used.bytes >= 32 * 1024 ** 2,
-                  true,
-                  "outbox wire stays credited during TCP wait",
-                );
-                yield* background.halt();
-                assertEquals(hby.obx.pendingCount(), 1, "cancellation keeps the durable target pending");
-                assertEquals(retiredScans, scans, "cancellation joins the live iterator");
-                assertEquals(
-                  runtime.cues.toArray().map((cue) =>
-                    cue.kin === "receipt"
-                      ? [cue.kin, cue.serder.pre, cue.serder.said]
-                      : cue.kin === "keyStateSaved"
-                      ? [cue.kin, cue.ksn.i, cue.ksn.d]
-                      : [cue.kin]
-                  ),
-                  [["receipt", progress.pre, progress.kever!.said], [
-                    "keyStateSaved",
-                    progress.pre,
-                    progress.kever!.said,
-                  ]],
-                );
-                runtime.cues.clear(); // Discard only verified queued test output; leaked transport credit would remain.
-                assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-                holdClose.release.resolve();
-                holdClose = { started: Promise.withResolvers<void>(), release: Promise.withResolvers<void>() };
-                background = yield* spawn(() => runAgentRuntime(runtime, { hab: sender }));
-                yield* call(() => holdClose!.started.promise);
-                holdClose.release.resolve();
-                yield* call(() => acknowledged.promise);
-                assertEquals(hby.obx.pendingCount(), 0);
-              } finally {
-                holdClose.release.resolve();
-                yield* background.halt();
-              }
-              assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-            } finally {
-              runtime.reactor.settle = settle;
-              sender.endorse = endorse;
-              hby.obx.markFailed = failed;
-              hby.obx.markDelivered = markDelivered;
-              hby.obx.iterPendingBounded = bounded;
-              hby.obx.iterPending = ordinary;
-            }
           } finally {
             yield* call(() =>
               new Promise<void>((resolve, reject) => tcp.close((error) => error ? reject(error) : resolve()))
@@ -1373,4 +1233,64 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
       yield* hby.close(true);
     }
   });
+});
+
+/** Real HTTP targets report partial/total failures without claiming durable enqueue. */
+Deno.test("Poster mailbox sends report partial failure and complete only after every target succeeds", async () => {
+  let mode: "partial" | "failed" | "success" = "partial";
+  const requests: string[] = [];
+  const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
+    await request.arrayBuffer();
+    const path = new URL(request.url).pathname;
+    requests.push(path);
+    return new Response(null, { status: mode === "success" || (mode === "partial" && path === "/good") ? 204 : 503 });
+  });
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name: `send-result-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+      const peer = yield* createHabery({ name: `send-peer-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      try {
+        const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
+        for (const name of ["good", "bad"]) {
+          const mailbox = peer.makeHab(name, undefined, { transferable: false });
+          yield* runtime.reactor.processBytes(concatBytes(...peer.db.clonePreIter(mailbox.pre)));
+          yield* runtime.reactor.processBytes(
+            mailbox.makeLocScheme(`http://127.0.0.1:${server.addr.port}/${name}`, mailbox.pre, "http"),
+          );
+          yield* runtime.reactor.processBytes(recipient.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true));
+        }
+        const message = concatBytes(...hby.db.clonePreIter(sender.pre));
+        for (const kind of ["raw", "exchange"]) {
+          const send = () =>
+            kind === "raw"
+              ? runtime.poster.sendBytes(sender, { recipient: recipient.pre, message, topic: "/receipt" })
+              : runtime.poster.sendExchange(sender, {
+                recipient: recipient.pre,
+                route: "/challenge/response",
+                payload: {},
+              });
+          for (const outcome of ["partial", "failed"] as const) {
+            mode = outcome;
+            requests.length = 0;
+            // Introduction and forwarded frames use separate POSTs; endpoint coverage is the invariant.
+            const error = yield* call(() => assertRejects(() => run(send), ValidationError, "delivery failed"));
+            assertEquals([...new Set(requests)].sort(), ["/bad", "/good"]);
+            assertEquals(error.message.includes(outcome === "partial" ? "/good" : "completed: none"), true);
+          }
+          mode = "success";
+          requests.length = 0;
+          const result = yield* send();
+          assertEquals(result.deliveries.length, 2);
+          assertEquals([...new Set(requests)].sort(), ["/bad", "/good"]);
+        }
+      } finally {
+        yield* runtime.close();
+        yield* peer.close(true);
+        yield* hby.close(true);
+      }
+    });
+  } finally {
+    await server.shutdown();
+  }
 });

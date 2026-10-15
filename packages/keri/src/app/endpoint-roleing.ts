@@ -6,21 +6,13 @@ import { exchange } from "../core/protocol-exchanging.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
-import {
-  groupSigningMembers,
-  localGroupMember,
-  uniqueMembers,
-} from "./group-members.ts";
+import { groupSigningMembers, localGroupMember, uniqueMembers } from "./group-members.ts";
 import { MULTISIG_RPY_ROUTE } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
-export {
-  groupSigningMembers,
-  isLocalGroupHab,
-  localGroupMember,
-} from "./group-members.ts";
+export { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 
 /** Result of proposing one group endpoint-role authorization reply. */
 export interface GroupEndpointRoleProposalResult {
@@ -98,7 +90,7 @@ export function* proposeGroupEndpointRole(
       topic: MULTISIG_TOPIC,
     });
     proposals.push({ recipient, said: serder.said! });
-    deliveries.push(...result.deliveries, ...result.queued);
+    deliveries.push(...result.deliveries);
   }
 
   return {

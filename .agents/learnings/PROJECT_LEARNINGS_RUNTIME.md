@@ -246,7 +246,7 @@ retains TCP fallback. Witness-only polling also waits for HTTP(S).
 
 Poster route snapshots and synchronous target preparation own habitat/DB work;
 prepared sending selects HTTP or the shared TCP engine. Runtime cue/failed-target
-and Poster outbox drains use the application `tcp-conversation` flow to compose
+use the application `tcp-conversation` flow to compose
 same-socket parsing/dispatch. Lower TCP takes only a bounded byte consumer, with
 no AgentRuntime, Reactor or FrameIntake dependency. The application consumer
 prepares intake before connect and processes its pull stream afterward;
@@ -255,12 +255,11 @@ HTTP/HTTPS priority and signed introductions stay unchanged. TCP and RX capacity
 refusals use invocation-local observation; foreign failures preserve identity.
 Raw TCP peer failures still propagate; this adds no new refusal/retry taxonomy.
 Public Poster operations retain caller-owned preparation/retention bounds.
-Runtime outbox retries guard route/signing and cancel/outcome writes, and join
-transport outside those turns. Optional outbox retries reserve finite row/copy,
-metadata and prepared-wire credit before a keys-only bounded native scan; hold it
-through joined transport and iterator return. Runtime custom stores require that
-explicit bounded capability; standalone scans remain caller-owned. Native scratch,
-general record hydration and other outbox scans remain separately unqualified.
+Poster no longer owns an outbox, queues failures or retries durable targets.
+Mailbox sends attempt all targets and throw on any failure, reporting completed
+URLs in the diagnostic. Successful results contain only actual local transport
+completions; no queued marker implies delivery. Runtime has no outbox worker or
+pending-work predicate. Habery/CLI/storage retirement follows separately.
 An explicit target cap validates backing and bounds introduction plus forwarded wire
 before their final concatenation; direct wire becomes an independent copy. The
 caller must reserve preparation/copy credit first and retain it through joined send.

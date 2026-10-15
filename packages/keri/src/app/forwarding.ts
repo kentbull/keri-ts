@@ -9,7 +9,6 @@
  * Current `keri-ts` difference:
  * - delivery and polling are synchronous Effection operations instead of HIO
  *   doers
- * - sender retry durability is optional via `Outboxer`
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
 import {
@@ -20,7 +19,6 @@ import {
   Diger,
   nestedPayload,
   parsePather,
-  ResourceAdmissionError,
   ResourceLimitError,
   SerderACDC,
   SerderKERI,
@@ -41,8 +39,6 @@ import {
   type MailboxInboxLimits,
 } from "../db/mailbox-inbox.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
-import type { OutboxerLike, PendingOutboxEntry } from "../db/outboxing.ts";
-import { makeNowIso8601 } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes } from "./byte-source.ts";
@@ -56,7 +52,6 @@ import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
 import {
   directDeliveryEndpoints,
   firstSortedEndpoint,
-  getOutboxer,
   mailboxDeliveryEndpoints,
   mailboxPollEndpoints,
   mailboxTopicKey,
@@ -75,13 +70,11 @@ export type ExchangeDeliveryPreference = "auto" | "direct" | "indirect";
 export interface ExchangeSendResult {
   serder: SerderKERI;
   deliveries: string[];
-  queued: string[];
 }
 
 /** Result summary for one raw CESR delivery attempt. */
 export interface RawCesrSendResult {
   deliveries: string[];
-  queued: string[];
 }
 
 /** Recipient policy captured during a short guarded preparation turn. */
@@ -187,7 +180,6 @@ export function* attemptPreparedCesrTarget(
 
 interface PosterOptions {
   mailboxer?: Mailboxer | null;
-  outboxer?: OutboxerLike;
   services?: RuntimeServices;
 }
 
@@ -206,20 +198,17 @@ interface MailboxPollerOptions {
  * - route to all currently authorized recipient mailbox endpoints when present
  * - fall back to direct controller/agent endpoints, then one witness endpoint,
  *   when no mailbox exists
- * - persist sender-side mailbox retry state per mailbox endpoint
  */
 export class Poster {
   readonly hby: Habery;
   readonly mailboxer: Mailboxer | null;
-  readonly outboxer: OutboxerLike;
   readonly organizer: Organizer;
   readonly services: RuntimeServices;
 
   constructor(hby: Habery, options: PosterOptions = {}) {
-    const { mailboxer, outboxer, services = defaultRuntimeServices } = options;
+    const { mailboxer, services = defaultRuntimeServices } = options;
     this.hby = hby;
     this.mailboxer = mailboxer ?? null;
-    this.outboxer = outboxer ?? getOutboxer(hby);
     this.organizer = new Organizer(hby);
     this.services = services;
   }
@@ -256,7 +245,7 @@ export class Poster {
    * - if recipient mailboxes exist, broadcast to all mailbox endpoints
    * - if no mailbox exists, send directly to controller/agent endpoints
    * - if no direct endpoints exist, fall back to one witness endpoint
-   * - failed mailbox deliveries are queued durably for retry
+   * - all mailbox targets are attempted; any failure is reported to the caller
    *
    * Current `keri-ts` difference:
    * - KERIpy `Poster` is queue/doer based
@@ -325,7 +314,6 @@ export class Poster {
     receiver?: TcpReplyReceiver,
   ): Operation<ExchangeSendResult> {
     const deliveries: string[] = [];
-    const queued: string[] = [];
     const mailboxEndpoints = delivery === "direct" ? [] : mailboxDeliveryEndpoints(hab, recipient);
 
     if (mailboxEndpoints.length > 0) {
@@ -350,35 +338,14 @@ export class Poster {
       }
 
       if (failed.size > 0) {
-        if (this.outboxer.enabled) {
-          const said = serder.said;
-          if (!said) {
-            throw new ValidationError("Exchange message is missing a SAID.");
-          }
-          this.outboxer.queueMessage(
-            said,
-            message,
-            {
-              sender: hab.pre,
-              recipient,
-              topic,
-              createdAt: makeNowIso8601(),
-            },
-            failed.keys(),
-          );
-          const attemptedAt = makeNowIso8601();
-          for (const [eid, error] of failed.entries()) {
-            this.outboxer.markFailed(said, eid, attemptedAt, error);
-            queued.push(`outbox:${eid}`);
-          }
-        } else if (deliveries.length === 0) {
-          throw new ValidationError(
-            `Exchange delivery failed for ${recipient}: ${[...failed.values()].join("; ")}`,
-          );
-        }
+        throw new ValidationError(
+          `Exchange delivery failed for ${recipient}: ${[...failed.values()].join("; ")}; completed: ${
+            deliveries.join(", ") || "none"
+          }`,
+        );
       }
 
-      return { serder, deliveries, queued };
+      return { serder, deliveries };
     }
 
     const directEndpoints = directDeliveryEndpoints(hab, recipient);
@@ -392,7 +359,7 @@ export class Poster {
         );
         deliveries.push(endpoint.url);
       }
-      return { serder, deliveries, queued };
+      return { serder, deliveries };
     }
 
     if (delivery !== "direct") {
@@ -409,7 +376,7 @@ export class Poster {
           receiver,
         );
         deliveries.push(witnessEndpoint.url);
-        return { serder, deliveries, queued };
+        return { serder, deliveries };
       }
     }
 
@@ -437,7 +404,6 @@ export class Poster {
   ): Operation<RawCesrSendResult> {
     const route = this.resolveBytesRoute(hab, args);
     const deliveries: string[] = [];
-    const queued: string[] = [];
     const failed = new Map<string, string>();
     for (let index = 0; index < route.targets.length; index++) {
       const endpoint = route.targets[index]!;
@@ -452,31 +418,13 @@ export class Poster {
     }
 
     if (failed.size > 0) {
-      if (this.outboxer.enabled) {
-        const said = crypto.randomUUID();
-        this.outboxer.queueMessage(
-          said,
-          args.message,
-          {
-            sender: hab.pre,
-            recipient: route.recipient,
-            topic: route.topic,
-            createdAt: makeNowIso8601(),
-          },
-          failed.keys(),
-        );
-        const attemptedAt = makeNowIso8601();
-        for (const [eid, error] of failed) {
-          this.outboxer.markFailed(said, eid, attemptedAt, error);
-          queued.push(`outbox:${eid}`);
-        }
-      } else if (deliveries.length === 0) {
-        throw new ValidationError(
-          `CESR delivery failed for ${route.recipient}: ${[...failed.values()].join("; ")}`,
-        );
-      }
+      throw new ValidationError(
+        `CESR delivery failed for ${route.recipient}: ${[...failed.values()].join("; ")}; completed: ${
+          deliveries.join(", ") || "none"
+        }`,
+      );
     }
-    return { deliveries, queued };
+    return { deliveries };
   }
 
   /** Snapshot mailbox/direct/witness policy without opening transport or reading message bytes. */
@@ -544,143 +492,6 @@ export class Poster {
       return forwarded.kind === "http" ? { ...forwarded, bodyMode: route.bodyMode } : forwarded;
     }
     return remoteCesrTarget(endpoint, maxBytes === undefined ? message : message.slice(), route.bodyMode);
-  }
-
-  /**
-   * Retry any pending mailbox-target deliveries using current recipient state.
-   *
-   * Retry behavior is per mailbox endpoint, not per logical message. A removed
-   * mailbox cancels only that endpoint's target row. Runtime route/signing and
-   * outcome publication use short turns; transport cleanup joins outside the guard.
-   * Runtime scans require pre-copy bounded reads and retain admitted copies through joined cleanup.
-   * Standalone/custom iteration retains its caller-owned preparation and retention contract.
-   */
-  processPending(runtime?: AgentRuntime): Operation<void> {
-    if (runtime && runtime.hby !== this.hby) throw new RangeError("Poster retry requires its owning Habery runtime");
-    // deno-lint-ignore no-this-alias -- One retry pass owns transport cleanup before guarded publication.
-    const self = this;
-    return call(function*() {
-      if (runtime && !self.outboxer.enabled) return;
-      const limits = { maxMessageBytes: DEFAULT_FORWARD_BYTES, maxMetadataBytes: 65536 };
-      if (runtime && self.outboxer.enabled && !self.outboxer.iterPendingBounded) {
-        throw new RangeError("Runtime outbox retries require bounded reads from the custom store");
-      }
-      // Four payload copies (including pull overlap), retained wire plus three preparation copies, metadata/key work.
-      // Register credit first: nested transport and cursor cleanup join before this owner releases.
-      let busy = false;
-      yield* resource<void>(function*(provide) {
-        const credit = runtime && self.outboxer.enabled
-          ? runtime.resources.reserve({ bytes: 8 * limits.maxMessageBytes + 8 * limits.maxMetadataBytes + 131072 })
-          : undefined;
-        if (credit?.kind === "refuse") {
-          if (credit.reason === "busy") busy = true;
-          else throw new ResourceAdmissionError("Outbox read/copy admission exceeds shared capacity", credit.reason);
-        }
-        try {
-          yield* provide();
-        } finally {
-          if (credit?.kind === "reserve") credit.reservation.release();
-        }
-      });
-      if (busy) return;
-      let iterator: Generator<PendingOutboxEntry> | undefined;
-      yield* resource<void>(function*(provide) {
-        try {
-          yield* provide();
-        } finally {
-          const close = function*() {
-            iterator?.return(undefined);
-          };
-          if (runtime) yield* runtime.reactor.settle(undefined, {}, close);
-          else yield* close();
-        }
-      });
-      while (true) {
-        let next: IteratorResult<PendingOutboxEntry> | undefined;
-        const pull = function*() {
-          iterator ??= runtime && self.outboxer.enabled
-            ? self.outboxer.iterPendingBounded!(limits)
-            : self.outboxer.iterPending();
-          next = iterator.next();
-        };
-        if (runtime) yield* runtime.reactor.settle(undefined, {}, pull);
-        else yield* pull();
-        if (next!.done) break;
-        const pending = next!.value;
-        const state: { target?: PreparedCesrTarget; failure?: { error: unknown } } = {};
-        const prepare = function*() {
-          const hab = self.hby.habs.get(pending.message.sender);
-          if (!hab) {
-            self.outboxer.cancelTarget(
-              pending.said,
-              pending.target.eid,
-              makeNowIso8601(),
-              "sender habitat is unavailable",
-            );
-            return;
-          }
-          const endpoint = mailboxDeliveryEndpoints(hab, pending.message.recipient)
-            .find((current) => current.eid === pending.target.eid);
-          if (!endpoint) {
-            self.outboxer.cancelTarget(pending.said, pending.target.eid, makeNowIso8601(), "mailbox removed");
-            return;
-          }
-          try {
-            state.target = self.prepareForwardedTarget(
-              hab,
-              pending.message.recipient,
-              pending.message.topic,
-              pending.raw,
-              endpoint,
-            );
-          } catch (error) {
-            state.failure = { error };
-          }
-        };
-        if (runtime) yield* runtime.reactor.settle(undefined, {}, prepare);
-        else yield* prepare();
-        if (!state.target && !state.failure) continue;
-        if (state.target) {
-          try {
-            yield* call(() =>
-              sendPreparedCesrTarget(
-                state.target!,
-                self.services,
-                undefined,
-                runtime,
-              )
-            );
-          } catch (error) {
-            state.failure = { error };
-          }
-        }
-        const publish = function*() {
-          try {
-            if (state.failure) throw state.failure.error;
-            self.outboxer.markDelivered(pending.said, pending.target.eid, makeNowIso8601());
-          } catch (error) {
-            self.outboxer.markFailed(
-              pending.said,
-              pending.target.eid,
-              makeNowIso8601(),
-              error instanceof Error ? error.message : String(error),
-            );
-          }
-        };
-        if (runtime) yield* runtime.reactor.settle(undefined, {}, publish);
-        else yield* publish();
-      }
-    });
-  }
-
-  /** Return whether any sender retry work still remains. */
-  hasPendingWork(): boolean {
-    return this.outboxer.pendingCount() > 0;
-  }
-
-  /** Cancel all pending retry targets for one mailbox AID. */
-  cancelMailbox(eid: string): void {
-    this.outboxer.cancelMailbox(eid, makeNowIso8601());
   }
 
   /**

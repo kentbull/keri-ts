@@ -5,17 +5,7 @@
  * service validation, registry state, credential issue/revoke/import/export,
  * and multisig VC proposal coordination.
  */
-import {
-  concatBytes,
-  Diger,
-  NumberPrimitive,
-  NumDex,
-  Prefixer,
-  Saider,
-  Seqner,
-  SerderACDC,
-  TraitDex,
-} from "cesr-ts";
+import { concatBytes, Diger, NumberPrimitive, NumDex, Prefixer, Saider, Seqner, SerderACDC, TraitDex } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
@@ -95,7 +85,6 @@ export interface CredentialRevokeResult {
   tel: string | null;
   status: string;
   deliveries: string[];
-  queued: string[];
 }
 
 /** Pin a JSON schema body into the local schema table. */
@@ -261,7 +250,6 @@ export function* revokeCredential(
   const result = registry.revoke(options.credentialSaid);
   const [creder] = reger.cloneCred(options.credentialSaid);
   const deliveries: string[] = [];
-  const queued: string[] = [];
 
   if ((options.sendRecipients?.length ?? 0) > 0) {
     if (!options.senderHab) {
@@ -277,7 +265,6 @@ export function* revokeCredential(
           delivery: options.delivery,
         });
         deliveries.push(...sent.deliveries);
-        queued.push(...sent.queued);
       }
     }
   }
@@ -288,7 +275,6 @@ export function* revokeCredential(
     tel: result.serder.said,
     status: result.decision.kind,
     deliveries,
-    queued,
   };
 }
 
@@ -474,7 +460,7 @@ function* publishGroupVcProposal(
       embeds,
       topic: MULTISIG_TOPIC,
     });
-    deliveries.push(...result.deliveries, ...result.queued);
+    deliveries.push(...result.deliveries);
   }
   return deliveries;
 }
