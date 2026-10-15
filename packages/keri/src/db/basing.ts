@@ -1234,7 +1234,7 @@ export class Baser {
       this.logger.error(`Failed to open Baser sub-databases: ${error}`);
       throw new DatabaseOperationError(
         "Failed to open Baser sub-databases",
-        { cause: error instanceof Error ? error.message : String(error) },
+        { cause: error },
       );
     }
   }

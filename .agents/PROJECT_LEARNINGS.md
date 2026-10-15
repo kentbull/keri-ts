@@ -52,7 +52,9 @@ Kever returns decisions and describes follow-up work without a queue. Baser owns
 accepted event/FEL row persistence; Kevery keeps processing and publication policy.
 
 Normal remote outcomes use typed decisions. Exceptions retain invariant,
-infrastructure and caller-contract failures. Keep protocol compatibility and
+infrastructure and caller-contract failures. Diagnostic messages stay separate
+from standard Error.cause, which preserves actual underlying failures,
+never a substitute metadata bag. Keep protocol compatibility and
 frozen-reference evidence explicit; no old TypeScript API shims are required.
 Finite local limits do not establish a shared in-flight memory bound.
 Baser fixes the deployment policy before reopen; runtime inherits it. This release

@@ -173,9 +173,7 @@ export class PathManager {
   set name(value: string) {
     // Check if path is absolute
     if (isAbsolute(value) || /^[a-zA-Z]:[\\/]/.test(value)) {
-      throw new InvalidPathNameError(`Not relative name=${value} path.`, {
-        name: value,
-      });
+      throw new InvalidPathNameError(`Not relative name=${value} path.`);
     }
     this._name = value;
   }
@@ -470,7 +468,7 @@ export class PathManager {
     const altReady = yield* this._ensurePathAccessible(alt);
     if (!altReady) {
       this.logger.error(`Alt path not available at ${alt}`);
-      throw new PathError(`Alt path not available at ${alt}`, { path: alt });
+      throw new PathError(`Alt path not available at ${alt}`);
     }
     return { path: alt, headDirPath: this.defaults.altHeadDirPath };
   }
