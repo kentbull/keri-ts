@@ -6,6 +6,7 @@ import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
+  respondantCueSink,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 
@@ -136,7 +137,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       );
       yield* processRuntimeTurn(runtime, {
         hab,
-        sink: runtime.respondant.forHab(hab),
+        sink: respondantCueSink(runtime, hab),
       });
     } finally {
       yield* hby.close();
@@ -154,7 +155,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, {
         hab: hab ?? undefined,
-        sink: runtime.respondant.forHab(hab),
+        sink: respondantCueSink(runtime, hab),
       });
     });
     const serverTask = yield* spawn(function*() {
@@ -328,8 +329,8 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       mode: "indirect",
     });
 
-    const witnessSink = witnessRuntime.respondant.forHab(witness);
-    const relaySink = relayRuntime.respondant.forHab(relay);
+    const witnessSink = respondantCueSink(witnessRuntime, witness);
+    const relaySink = respondantCueSink(relayRuntime, relay);
     const witnessRuntimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(witnessRuntime, {
         hab: witness,

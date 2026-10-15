@@ -16,7 +16,12 @@ body; do not restore a `query` alias, default-recovery or two copy wrappers.
 TEL recovery cues require registry/credential fields, with issuer only when needed.
 Incomplete query cues require QueryCoordinator to resolve a local
 habitat and honest remote attester before producing wire. Hab.processCuesIter
-remains the cue-semantics seam.
+remains the cue-semantics seam. CueSink admission receives the actual source queue,
+not AgentRuntime. respondantCueSink wires source-to-delivery work at the runtime
+root; do not inject a delivery-worker bundle into Respondant. QueryCoordinator
+prepares/adopts pending queries synchronously over committed accepted state,
+without Reactor callbacks or parent-runtime arguments. Network waits remain in
+delivery, and failed/cancelled drains retain pending ownership through cleanup.
 
 KERI/Tufa operations own lifecycle. Acquire source/frame/runtime resources before
 work children so cancellation aborts and joins I/O before releasing permits or

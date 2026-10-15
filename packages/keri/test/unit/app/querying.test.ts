@@ -601,6 +601,44 @@ Deno.test("SeqNoQuerier and AnchorQuerier stay pending until their local complet
   });
 });
 
+Deno.test("QueryCoordinator prepares admitted requests without a parent runtime", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("requester");
+    let prepared = 0;
+    const coordinator = new QueryCoordinator(hby, {
+      hab,
+      sink: {
+        admitQuery(_cue, prepare) {
+          const emission = prepare();
+          assertExists(emission);
+          const message = [...emission.messages][0];
+          assertExists(message);
+          const query = parseSerder(message);
+          assertEquals([query.verify(), query.route, query.ked?.q], [
+            true,
+            "logs",
+            { s: "0", i: hab.pre, src: hab.pre },
+          ]);
+          prepared++;
+          return "transferred";
+        },
+        *send() {
+          throw new Error("Admitted query must not fall through to sending");
+        },
+      },
+    });
+    try {
+      coordinator.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: { s: "0" } });
+      yield* coordinator.processPending();
+      assertEquals([prepared, coordinator.pending.length, hby.db.resources.used.bytes], [1, 0, 0]);
+    } finally {
+      yield* coordinator.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("query queues keep failed deliveries and defer newly appended work to the next pass", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `query-bounds-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -750,11 +788,11 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       coordinator.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, hab });
       coordinator.enqueueCue({ ...cue, pre: "unresolved", src: undefined });
       const retained = hby.db.resources.used.bytes;
-      yield* coordinator.processPending(runtime); // The default sink retires resolved input; unresolved metadata rotates.
+      yield* coordinator.processPending(); // The default sink retires resolved input; unresolved metadata rotates.
       assertEquals(coordinator.pending.length, 1);
       assertEquals(hby.db.resources.used.bytes > 0 && hby.db.resources.used.bytes < retained, true);
       const deferred = coordinator.pending.peekHead(), deferredBytes = hby.db.resources.used.bytes;
-      yield* coordinator.processPending(runtime);
+      yield* coordinator.processPending();
       assertStrictEquals(coordinator.pending.peekHead(), deferred);
       assertEquals(hby.db.resources.used.bytes, deferredBytes);
       coordinator.pending.clear();
@@ -782,7 +820,7 @@ Deno.test("pending query metadata refuses before copies and runtime close joins 
       let consumeError: unknown, closeError: unknown;
       const sending = yield* spawn(function*() {
         try {
-          yield* coordinator.processPending(runtime);
+          yield* coordinator.processPending();
         } catch (error) {
           consumeError = error;
         }

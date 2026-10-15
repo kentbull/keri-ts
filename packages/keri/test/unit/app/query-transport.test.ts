@@ -187,7 +187,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             });
             const pending = runtime.querying.pending.peekHead();
             yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
-            yield* runtime.querying.processPending(runtime);
+            yield* runtime.querying.processPending();
             assertStrictEquals(runtime.cues.peekHead(), cue);
             assertStrictEquals(runtime.querying.pending.peekHead(), pending);
             assertEquals([signed.length, resolved], [0, 0], "item refusal precedes signing and route lookup");
@@ -213,7 +213,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               return wire;
             };
             yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
-            yield* runtime.querying.processPending(runtime);
+            yield* runtime.querying.processPending();
             assertEquals([runtime.cues.empty, runtime.querying.pending.empty, signed.length], [true, true, 2]);
             assertEquals(runtime.resources.used.bytes, 18 * 1024 ** 2, "two independent wire and route owners remain");
             const captured = concatBytes(introduce(sender, remoteController.pre), signed[0]);
@@ -399,7 +399,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             hab: sender,
             wits: [remoteWitness.pre],
           });
-          yield* runtime.querying.processPending(runtime);
+          yield* runtime.querying.processPending();
           assertEquals(tcpConnections, 0, "guarded query preparation performs no network I/O");
           assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });
           assertEquals(hby.db.getKever(remoteController.pre)?.sn, 0, "TCP drain does not satisfy the query");
@@ -410,7 +410,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           );
           reply = acceptedEventReplayMessage(remoteHby, remoteController.pre, 1).message;
           enqueue();
-          yield* runtime.querying.processPending(runtime);
+          yield* runtime.querying.processPending();
           yield* runtime.deliveries.process(runtime);
           assertEquals(tcpConnections, 2);
           assertEquals(
@@ -418,7 +418,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             1,
             "signed TCP replay passes Kevery before state advances",
           );
-          yield* runtime.querying.processPending(runtime);
+          yield* runtime.querying.processPending();
           assertEquals(waiting.done, true, "the sequence continuation observes verified accepted state");
           assertEquals(
             runtime.cues.toArray().map((cue) =>

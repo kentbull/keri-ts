@@ -126,8 +126,8 @@ immutable borrows and joined retry/cancellation lifetimes.
 
 TEL recovery notifications carry concrete `q.ri` and `q.i` fields, with `q.issr`
 when the registry itself is unknown. This does not add a transport consumer for
-TEL/schema notifications. Route-specific query variants and the remaining
-coordinator/runtime dependency are still part of the ADR-0013 migration.
+TEL/schema notifications. Route-specific query variants remain part of the
+ADR-0013 migration.
 
 Incomplete cue:
 
@@ -145,6 +145,28 @@ Maintainer rule:
 
 - if a `query` cue still needs policy, it belongs to `QueryCoordinator`
 - if it only needs message construction, it belongs to `Hab.processCuesIter()`
+
+## Query and cue source ownership
+
+CueSink admission takes the actual source queue and an interpreter. Composition
+wires responder delivery through respondantCueSink(runtime, hab); Respondant and
+QueryCoordinator do not receive the parent runtime or discover its siblings.
+QueryCoordinator's processPending/queryDo operations own their local pending
+state without an AgentRuntime argument or Reactor callback scheduler.
+
+Query preparation, signing and admission are synchronous operations over accepted
+state published by its processing owner after commit. They do not suspend between
+state lookup and signing. Network waits happen after preparation; failed delivery,
+refusal and cancellation retain the pending head and its real lifetime through
+joined cleanup. Reactor still owns protocol dispatch and reply capture; this does
+not remove guards from other workers or declare the full flow migration complete.
+
+The root composition replaces Respondant.forHab with respondantCueSink. Internal
+address-selection helpers are not added to the runtime barrel's public surface.
+Queue capacity, accounting and retention policy are unchanged in this structural
+cut; their ADR-0013 justification/removal remains a separate deliberate policy
+change. Existing tests are evidence for cleanup and retry, not proof that a
+particular accounting formula is necessary.
 
 ## Attester Resolution Contract
 
