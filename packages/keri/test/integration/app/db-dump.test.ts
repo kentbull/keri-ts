@@ -2,7 +2,7 @@
  * Integration coverage for selective LMDB dumping.
  *
  * The mailbox architecture docs now point maintainers at `tufa db dump` as the
- * shortest path to understanding protocol, mailbox, and outbox state. These
+ * shortest path to understanding protocol and mailbox state. These
  * tests keep that debugging seam honest.
  */
 
@@ -15,7 +15,6 @@ import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { createKeeper, PrePrm } from "../../../src/db/keeping.ts";
 import { createMailboxer } from "../../../src/db/mailboxing.ts";
-import { createOutboxer } from "../../../src/db/outboxing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
 
 /** Capture stdout/stderr from one `db dump` invocation for assertion. */
@@ -90,9 +89,9 @@ Deno.test({
   },
 });
 
-/** Proves mailboxer and outboxer inspection for mailbox debugging workflows. */
+/** Proves mailboxer inspection for mailbox debugging workflows. */
 Deno.test({
-  name: "Integration: db dump supports mailboxer and outboxer targets",
+  name: "Integration: db dump supports mailboxer targets",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
@@ -105,29 +104,11 @@ Deno.test({
         reopen: true,
         readonly: false,
       });
-      const outboxer = yield* createOutboxer({
-        name,
-        temp: true,
-        reopen: true,
-        readonly: false,
-      });
 
       try {
         mailboxer.storeMsg("recipient/challenge", b("challenge payload"));
-        outboxer.queueMessage(
-          "EABC123",
-          b("signed exn payload"),
-          {
-            sender: "sender1",
-            recipient: "recipient1",
-            topic: "/challenge",
-            createdAt: "2026-04-05T12:00:00.000000+00:00",
-          },
-          ["mailbox1"],
-        );
       } finally {
         yield* mailboxer.close();
-        yield* outboxer.close();
       }
     });
 
@@ -143,23 +124,6 @@ Deno.test({
     );
     assert(
       mailboxDump.output.some((line) => line.includes("challenge payload")),
-    );
-
-    const outboxDump = await captureDump({
-      name,
-      temp: true,
-      target: "outboxer.tgts",
-    });
-
-    assertEquals(outboxDump.errors.length, 0);
-    assert(
-      outboxDump.output.some((line) => line.includes("Target: outboxer.tgts")),
-    );
-    assert(
-      outboxDump.output.some((line) => line.includes("\"status\": \"pending\"")),
-    );
-    assert(
-      outboxDump.output.some((line) => line.includes("\"eid\": \"mailbox1\"")),
     );
   },
 });
