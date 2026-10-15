@@ -23,6 +23,9 @@ export interface PreparedCueEmission {
 /** Expected cue preparation refusal, including an accepting queue's occupied item slot. */
 export type CuePreparationRefusal = { kind: "refuse"; error: ResourceAdmissionError | DeckFullError };
 
+/** Synchronous source-head preparation outcome. */
+export type CuePreparationResult = { kind: "prepared" } | { kind: "empty" } | CuePreparationRefusal;
+
 /** Strict preparation boundary for callers whose policy is to fail on occupied capacity. */
 export function prepareCueEmission(
   hab: Hab | null,
@@ -33,11 +36,11 @@ export function prepareCueEmission(
   transformEmission?: (emission: CueEmission) => CueEmission,
 ): boolean {
   const result = admitCueEmission(hab, cues, resources, accept, transformEmission);
-  if (typeof result !== "boolean") {
+  if (result.kind === "refuse") {
     if (result.error instanceof ResourceAdmissionError) onAdmissionRefusal?.(result.error);
     throw result.error;
   }
-  return result;
+  return result.kind === "prepared";
 }
 
 /**
@@ -54,11 +57,11 @@ export function admitCueEmission(
   cues: CueQueueInput,
   resources: ResourcePolicy,
   accept: (owner: PreparedCueEmission) => undefined | CuePreparationRefusal,
-  transformEmission?: (emission: CueEmission) => CueEmission | CuePreparationRefusal,
-): boolean | CuePreparationRefusal {
+  transformEmission?: (emission: CueEmission) => CueEmission,
+): CuePreparationResult {
   const source = cueReader(cues);
   const cue = source.peekHead();
-  if (!cue) return false;
+  if (!cue) return { kind: "empty" };
   if (source.resourcePolicy && source.resourcePolicy !== resources) {
     throw new RangeError("Cue interpretation requires the source deck's exact policy");
   }
@@ -108,11 +111,7 @@ export function admitCueEmission(
       messages: [],
       kind: cue.kin === "stream" ? "transport" as const : "notify" as const,
     };
-    if (emission && transformEmission) {
-      const transformed = transformEmission(emission);
-      if (transformed.kind === "refuse") return transformed;
-      emission = transformed;
-    }
+    if (emission && transformEmission) emission = transformEmission(emission);
     if (emission && Array.isArray(emission.messages)) {
       const backing = new Set<ArrayBufferLike>();
       let size = 0;
@@ -151,7 +150,7 @@ export function admitCueEmission(
       source.takeOwned()!.release();
     }
     published = true;
-    return true;
+    return { kind: "prepared" };
   } finally {
     preparation?.release();
     if (!published) {

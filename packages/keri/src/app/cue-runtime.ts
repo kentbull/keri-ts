@@ -1,9 +1,10 @@
 import { ResourceAdmissionError } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
+import type { CueQueueInput } from "../core/cue-publishing.ts";
 import type { CueEmission, QueryCue } from "../core/cues.ts";
 import { DeckFullError } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
-import { admitCueEmission, type CuePreparationRefusal, type PreparedCueEmission } from "./cue-preparation.ts";
+import { admitCueEmission, type CuePreparationResult, type PreparedCueEmission } from "./cue-preparation.ts";
 import type { Hab } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
@@ -13,7 +14,7 @@ export type CueAdmission = "transferred" | "busy" | "ineligible";
 /** Host-facing emissions and optional synchronous transfer of the guarded source head. */
 export interface CueSink {
   /** Synchronous guarded admission only: no waiting, reentry or destructive fallback on capacity refusal. */
-  admitCue?(runtime: AgentRuntime, interpreter: Hab | null): CueAdmission;
+  admitCue?(source: CueQueueInput, interpreter: Hab | null): CueAdmission;
   /** Admit source retention and one finite query before invoking its synchronous signing/route preparation. */
   admitQuery?(cue: QueryCue, prepare: () => CueEmission | null): CueAdmission;
   /** Synchronous local transformation under admitted interpretation/output credit and the Reactor guard. */
@@ -89,12 +90,12 @@ export function processCuesOnce(
             owner?.release();
           }
         });
-        const result: { admission: CueAdmission; preparation: boolean | CuePreparationRefusal } = {
+        const result: { admission: CueAdmission; preparation: CuePreparationResult } = {
           admission: "ineligible",
-          preparation: false,
+          preparation: { kind: "empty" },
         };
         yield* runtime.reactor.settle(undefined, {}, function*() {
-          result.admission = sink.admitCue?.(runtime, cueHab) ?? "ineligible";
+          result.admission = sink.admitCue?.(runtime.cues, cueHab) ?? "ineligible";
           if (result.admission === "transferred" || result.admission === "busy") return;
           if (result.admission !== "ineligible") throw new TypeError("Invalid immediate cue admission");
           result.preparation = admitCueEmission(
@@ -108,7 +109,7 @@ export function processCuesOnce(
             (emission) => sink.prepareEmission?.(emission) ?? emission,
           );
         });
-        if (typeof result.preparation !== "boolean") {
+        if (result.preparation.kind === "refuse") {
           const error = result.preparation.error;
           if (error instanceof ResourceAdmissionError) onAdmissionRefusal?.(error);
           if (error instanceof DeckFullError || error.reason === "busy") return false;

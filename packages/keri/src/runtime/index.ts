@@ -40,7 +40,7 @@ export * from "../app/protocol-host-policy.ts";
 export * from "../app/querying.ts";
 export * from "../app/reactor.ts";
 export * from "../app/reply-streams.ts";
-export * from "../app/respondant.ts";
+export { Respondant } from "../app/respondant.ts";
 export { queryTransportSink } from "../app/runtime-deliveries.ts";
 export * from "../app/runtime-services.ts";
 export * from "../app/runtime-turn.ts";
@@ -48,11 +48,17 @@ export * from "../app/schema-resolving.ts";
 export * from "../app/signaling.ts";
 export * from "../app/socket-source.ts";
 export {
+  converseCesrTcp,
+  streamCesrTcpConversation,
+  type TcpConversation,
+  type TcpConversationOptions,
+  type TcpReplyReceiver,
+} from "../app/tcp-conversation.ts";
+export {
   sendCesrTcp,
   sendCesrTcpFrame,
   streamCesrTcp,
-  type TcpConversation,
-  type TcpConversationOptions,
+  type TcpRead,
   type TcpSendOptions,
   type TcpSocketWriteOptions,
   type TcpSourceFactory,

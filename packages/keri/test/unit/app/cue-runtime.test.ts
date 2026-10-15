@@ -10,6 +10,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 
 Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and transport cues", async () => {
   const name = `cue-runtime-${crypto.randomUUID()}`;
@@ -41,15 +42,14 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
       });
       runtime.cues.push({
         kin: "reply",
-        route: "/loc/scheme",
-        data: { eid: hab.pre, scheme: "http", url: "http://127.0.0.1:7723" },
+        serder: replyEvent("/loc/scheme", { eid: hab.pre, scheme: "http", url: "http://127.0.0.1:7723" }),
       });
       runtime.cues.push({
         kin: "query",
         pre: hab.pre,
         src: hab.pre,
         route: "ksn",
-        query: {},
+        q: {},
       });
       runtime.cues.push({
         kin: "stream",
@@ -228,8 +228,7 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
       const hab = hby.makeHab("interpreter");
       const cue: AgentCue = {
         kin: "reply",
-        route: "/loc/scheme",
-        data: { eid: hab.pre, scheme: "http", url: "http://localhost" },
+        serder: replyEvent("/loc/scheme", { eid: hab.pre, scheme: "http", url: "http://localhost" }),
       };
       const resources = new ResourcePolicy();
       const ordinary = new Deck([cue], 1);
@@ -255,7 +254,7 @@ Deno.test("cue interpretation admits before transfer and retains evidence throug
       };
       try {
         const busy = admitCueEmission(hab, ordinary, resources, () => undefined);
-        if (typeof busy === "boolean") throw new Error("Expected byte capacity refusal");
+        if (busy.kind !== "refuse") throw new Error("Expected byte capacity refusal");
         assertObjectMatch(busy, { kind: "refuse", error: { reason: "busy" } });
         const limit = assertThrows(
           () => prepareCueEmission(hab, ordinary, new ResourcePolicy({ bytes: 1 }), () => undefined),
@@ -489,7 +488,7 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
         },
       },
     });
-    const cue = { kin: "query" as const, pre: sender.pre, src: sender.pre, route: "logs", query: {} };
+    const cue = { kin: "query" as const, pre: sender.pre, src: sender.pre, route: "logs" as const, q: {} };
     const route = () => {
       routes++;
       return {
@@ -506,8 +505,8 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
     };
     try {
       runtime.cues.push(cue);
-      assertEquals(runtime.deliveries.enqueueCue(sender, runtime.cues, route), true);
-      const query = sender.query(sender.pre, sender.pre, {}, "logs");
+      assertEquals(runtime.deliveries.enqueueCue(sender, runtime.cues, route), { kind: "prepared" });
+      const query = sender.query(sender.pre, sender.pre, { route: "logs" as const, q: {} });
       for (let index = 0; index < 7; index++) {
         runtime.deliveries.enqueue(() => ({
           url: "https://query.test/",
@@ -518,7 +517,7 @@ Deno.test("runtime cue delivery retains exact failed wire while admitted fanout 
       }
       runtime.cues.push(cue);
       const full = runtime.deliveries.enqueueCue(sender, runtime.cues, route);
-      if (typeof full === "boolean") throw new Error("Expected occupied delivery queue");
+      if (full.kind !== "refuse") throw new Error("Expected occupied delivery queue");
       assertObjectMatch(full, { kind: "refuse", error: { message: "Deck capacity exceeded" } });
       assertEquals([runtime.cues.length, routes], [1, 1], "item refusal precedes interpretation/route acquisition");
       assertStrictEquals(
@@ -629,7 +628,7 @@ Deno.test("cue delivery releases its guarded turn but retains owners until HTTP 
         },
       },
     });
-    runtime.cues.push({ kin: "query", pre: hab.pre, src: hab.pre, route: "logs" });
+    runtime.cues.push({ kin: "query", pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} });
     runtime.deliveries.enqueueCue(hab, runtime.cues, () => ({
       sender: hab.pre,
       recipient: hab.pre,

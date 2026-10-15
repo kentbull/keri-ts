@@ -1,7 +1,12 @@
 import { ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+  respondantCueSink,
+} from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
@@ -11,6 +16,7 @@ import { Respondant } from "../../../src/app/respondant.ts";
 import { drainWitnessCues, processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
 import { CueDeck } from "../../../src/core/cue-admission.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
+import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
@@ -82,7 +88,7 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
     {
       emission: {
         kind: "wire",
-        cue: { kin: "reply", route: "/ksn", src: "EWIT", dest: "EDEST" },
+        cue: { kin: "reply", serder: replyEvent("/ksn", {}), src: "EWIT", dest: "EDEST" },
         messages: [new Uint8Array([3])],
       },
       recipient: "EDEST",
@@ -424,8 +430,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
           kin: "reply" as const,
           src: sender.pre,
           dest: recipient.pre,
-          route: "/loc/scheme",
-          data: { eid: sender.pre, scheme: "http", url: "http://sender.test/" },
+          serder: replyEvent("/loc/scheme", { eid: sender.pre, scheme: "http", url: "http://sender.test/" }),
         };
         runtime.cues.push(cue);
         const interpretation = sender.interpretCue;
@@ -441,7 +446,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
           destination: sender.pre,
         };
         for (let index = 0; index < 8; index++) runtime.deliveries.enqueue(() => queued);
-        runtime.querying.configure({ hab: sender, sink: runtime.respondant.forHab(sender) });
+        runtime.querying.configure({ hab: sender, sink: respondantCueSink(runtime, sender) });
         yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
         assertStrictEquals(runtime.cues.peekHead(), cue);
         assertEquals([interpreted, runtime.deliveries.hasPending], [0, true]);
@@ -449,7 +454,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
         yield* runtime.close();
         const active = yield* createAgentRuntime(hby, { mode: "local" });
         active.cues.push(cue);
-        const sink = active.respondant.forHab(sender);
+        const sink = respondantCueSink(active, sender);
         if (!(active.cues instanceof CueDeck)) throw new Error("Expected admitted runtime source");
         const queuedBytes = active.cues.headRetentionBytes();
         assertEquals(active.resources.used.bytes, queuedBytes, "only this source's queued owner is live");
@@ -462,7 +467,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
         const refusal = active.deliveries.enqueueCue(sender, active.cues, () => {
           throw new Error("Unadmitted route resolution");
         }, sender);
-        if (typeof refusal === "boolean") throw new Error("Expected occupied byte capacity");
+        if (refusal.kind !== "refuse") throw new Error("Expected occupied byte capacity");
         if (!(refusal.error instanceof ResourceAdmissionError)) throw new Error("Expected byte refusal");
         assertEquals(refusal.error.reason, "busy");
         assertStrictEquals(active.cues.peekHead(), cue);
@@ -493,7 +498,7 @@ Deno.test("runtime Respondant admission keeps saturated cues and progresses sign
         const sending = yield* spawn(function*() {
           yield* processRuntimeTurn(active, {
             hab: sender,
-            sink: active.respondant.forHab(sender),
+            sink: respondantCueSink(active, sender),
             pollMailbox: false,
           });
           returned = true;

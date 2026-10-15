@@ -32,12 +32,13 @@ import {
   Vrsn_1_0,
 } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import type { AgentCue, CueEmission } from "../core/cues.ts";
+import type { AgentCue, CueEmission, QueryInstruction } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
+import type { MbxTopicCursor } from "../core/mailbox-topics.ts";
 import {
   incept as inceptEvent,
   interact as interactEvent,
@@ -255,6 +256,7 @@ function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
 export function eventReplayMessage(
   hby: Habery,
   serder: SerderKERI,
+  gvrsn: Versionage = Vrsn_1_0,
 ): Uint8Array {
   const pre = serder.pre;
   const said = serder.said;
@@ -269,7 +271,7 @@ export function eventReplayMessage(
       `Missing first-seen ordinal for accepted event ${pre}:${said}.`,
     );
   }
-  return hby.db.cloneEvtMsg(pre, fn, said);
+  return hby.db.cloneEvtMsg(pre, fn, said, Infinity, gvrsn);
 }
 
 /**
@@ -306,6 +308,7 @@ export function acceptedEventReplayMessage(
   hby: Habery,
   pre: string,
   sn: number,
+  gvrsn: Versionage = Vrsn_1_0,
 ): { serder: SerderKERI; message: Uint8Array } {
   const said = hby.db.kels.getLast(pre, sn);
   if (!said) {
@@ -319,7 +322,7 @@ export function acceptedEventReplayMessage(
       `Missing accepted event body for ${pre}:${said}.`,
     );
   }
-  return { serder, message: eventReplayMessage(hby, serder) };
+  return { serder, message: eventReplayMessage(hby, serder, gvrsn) };
 }
 
 /**
@@ -406,10 +409,8 @@ export class Hab {
       local: true,
     });
     if (decision.kind !== "accept") {
-      throw new ValidationError(
-        `Local event ${serder.said ?? "<unknown>"} was not accepted.`,
-        { decision },
-      );
+      const detail = decision.kind === "duplicate" ? decision.duplicate : decision.message;
+      throw new ValidationError(`Local event ${serder.said ?? "<unknown>"} was not accepted: ${detail}`);
     }
     const kever = this.db.getKever(this.pre);
     if (!kever) {
@@ -866,14 +867,13 @@ export class Hab {
   query(
     pre: string,
     src: string,
-    query: Record<string, unknown> = {},
-    route = "",
+    instruction: QueryInstruction | { route: "mbx"; q: { topics: MbxTopicCursor } },
     stamp = makeNowIso8601(),
   ): Uint8Array {
     return this.endorse(
-      queryEvent(route, {
-        ...query,
-        i: (route === "tels" || route === "tsn") && typeof query.i === "string" ? query.i : pre,
+      queryEvent(instruction.route, {
+        ...instruction.q,
+        i: instruction.route === "tels" || instruction.route === "tsn" ? instruction.q.i : pre,
         src,
       }, {
         pre: this.pre,
@@ -1258,18 +1258,17 @@ export class Hab {
           cue,
           messages: [
             cue.serder ? this.endorse(cue.serder) : this.reply(
-              ["/tsn/registry", "/tsn/credential"].includes(cue.route) ? `${cue.route}/${this.pre}` : cue.route,
-              cue.data ?? {},
+              `${cue.route}/${this.pre}`,
+              cue.data.asDict(),
             ),
           ],
           kind: "wire",
         };
       case "query": {
-        const query = cue.query ?? cue.q ?? {};
-        if (cue.pre && cue.src) {
+        if (cue.route && cue.pre && cue.src && (cue.signer === undefined || cue.signer === this.pre)) {
           return {
             cue,
-            messages: [this.query(cue.pre, cue.src, query, cue.route ?? "")],
+            messages: [this.query(cue.pre, cue.src, cue)],
             kind: "wire",
           };
         }
@@ -1470,7 +1469,7 @@ export class Habery {
       lax: false,
       local: true,
     });
-    this.replyRoutes = new BasicReplyRouteHandler(this.db, this.rvy);
+    this.replyRoutes = new BasicReplyRouteHandler(this.rvy);
     this.replyRoutes.registerReplyRoutes(this.rtr);
     this.kevery = new Kevery(this.db, {
       cues: localCues,
@@ -1692,7 +1691,7 @@ export class Habery {
         this.removeGroupHabRecord(pre, group, ns);
       }
       this.habs.delete(pre);
-      throw new ValidationError(decision.message, decision.context);
+      throw new ValidationError(decision.message);
     }
 
     if (hab.accepted) {
@@ -1720,8 +1719,8 @@ export class Habery {
     pre: string,
     group: string,
     mhab: Hab,
-    smids: string[],
-    rmids?: string[],
+    smids: readonly string[],
+    rmids?: readonly string[],
     ns?: string,
   ): Hab {
     if (!pre) {
@@ -1889,7 +1888,7 @@ export class Habery {
       local: true,
     });
     if (decision.kind === "reject") {
-      throw new ValidationError(decision.message, decision.context);
+      throw new ValidationError(decision.message);
     }
 
     if (serder.sn !== null && serder.said && this.db.kels.getLast(hab.pre, serder.sn) === serder.said) {
@@ -1949,7 +1948,7 @@ export class Habery {
       local: true,
     });
     if (decision.kind === "reject") {
-      throw new ValidationError(decision.message, decision.context);
+      throw new ValidationError(decision.message);
     }
 
     if (hab.accepted) {

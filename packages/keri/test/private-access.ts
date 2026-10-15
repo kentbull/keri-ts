@@ -4,7 +4,6 @@ import type { AgentCue } from "../src/core/cues.ts";
 import { Deck } from "../src/core/deck.ts";
 import type { Kevery } from "../src/core/eventing.ts";
 import type { Revery } from "../src/core/routing.ts";
-import type { Broker } from "../src/db/escrowing.ts";
 
 export type EventingTestApi = Pick<
   Kevery,
@@ -23,12 +22,6 @@ export type RoutingTestApi = Pick<Revery, "reprocessEscrowedReply">;
 
 export function routingTestApi(rvy: Revery): RoutingTestApi {
   return rvy;
-}
-
-export type BrokerTestApi = Pick<Broker, "processEscrowedStateNotice">;
-
-export function brokerTestApi(broker: Broker): BrokerTestApi {
-  return broker;
 }
 
 export function withPatchedMethod<

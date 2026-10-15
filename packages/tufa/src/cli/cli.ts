@@ -83,11 +83,7 @@ function handleParseError(error: unknown): void {
 }
 
 function reportAppError(error: AppError, debugError: boolean): never {
-  if (error.context) {
-    console.error(`Error: ${error.message}`, error.context);
-  } else {
-    console.error(`Error: ${error.message}`);
-  }
+  console.error(`Error: ${error.message}`);
   throw new CliExitError(1, true, debugError, error);
 }
 

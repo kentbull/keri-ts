@@ -116,14 +116,64 @@ teach the wrong mental model. Habitat cue interpretation should not guess:
 - KERIpy role: watcher-owned observed-AID reply processing
 - `keri-ts` role: `Kevery.processReplyAddWatched(...)`
 
+## Reply payload contracts
+
+Current KSN production prepares a reply serder. That serder carries the route;
+a second cue-level route or data body is prohibited. Arbitrary already-formed
+reply bodies can use this form without an untyped cue payload slot.
+
+TSN production carries the existing required registry or credential state record
+with its matching /tsn/registry or /tsn/credential route and requester destination.
+It waits for the interpreting Hab to supply the local attester suffix and signing.
+The fresh owned record stays typed through the cue; Hab serializes it only while
+constructing the wire reply. Missing credentials retain the registry-only reply;
+the producer's tuple type preserves registry-before-credential ordering.
+
+Both forms have actual producers. They are disjoint; absent payloads, contradictory
+route/data/serder combinations, mismatched TSN state and missing TSN destinations
+are invalid contracts. A successful serialized response still does not replace
+independent receiver proof/trust/TEL checks. Raw partial registry seals retain
+their existing producer behavior and remain distinct from accepted TSN validation.
+
 ## Incomplete Versus Complete `query` Cues
 
-`keri-ts` intentionally keeps two shapes under one `QueryCue` contract.
+`keri-ts` intentionally keeps two states under one `QueryCue` contract. Both use
+one required `q` body, as KERIpy does; there is no `query` alias or precedence rule.
+Routed work requires `pre` and a concrete `route`: logs accepts sequence/FEL/anchor
+filters, ksn accepts sequence/FEL filters, and tels/tsn require registry and credential
+identifiers. The target appears once in the envelope. QueryRequest shares this
+routed record with QueryCue; signer is the local AID, while src is the remote
+attester. Continuations and pending work carry identifiers, not Hab references.
+The existing coordinator resolves an explicit selection through Habery at signing;
+an unavailable selection remains unresolved and never falls back to another Hab.
+A Hab interpreting a cue selected for another signer leaves it to correspondence.
+Anchorer receives only a QueryRequest enqueue port; composition owns the consuming
+coordinator and its lifetime. KERIpy 714 normally resolves its queued src through
+Habery, but also permits a Hab override. This queue uses an identifier in both
+cases; the explicit signer name distinguishes it from our existing remote-attester
+src field. Delivery uses that same selected signer for its introduction and
+endpoint lookup. Without explicit mailbox routes, poll all eligible witness
+mailboxes: a reply lives at the witness that answered. The existing per-endpoint
+workers provide concurrency; no new scheduler is needed. Hab.query accepts the same
+instruction, or the existing mbx topic-cursor form. The raw query constructor remains
+an open codec boundary for extension routes and malformed-input vectors.
+
+Continuation-owned pending requests use the same field. Copy the top level at the
+existing ownership boundaries before signing; preserve nested
+immutable borrows and joined retry/cancellation lifetimes.
+
+TEL recovery notifications carry concrete `q.ri` and `q.i` fields, with `q.issr`
+when the registry itself is unknown. This does not add a transport consumer for
+TEL/schema notifications. Schema and credential-recovery `query` notices retain
+their concrete KERIpy-shaped q.r hints; they are separate from routed work.
+Notices remain notify-only even if a hint happens to name a known KEL. They must
+not fall through to a logs request. Producers use canonical s filters directly;
+there is no sn/anchor alias normalization or redundant r/dig wire hint.
 
 Incomplete cue:
 
 - usually produced by `Revery` or `Kevery`
-- may contain only `pre`, `route`, `q/query`, or `wits`
+- carries a concrete route/body and target; `wits` may still be unresolved
 - does not yet know the honest `src`
 - does not yet know whether runtime can honestly choose a local habitat
 
@@ -136,6 +186,33 @@ Maintainer rule:
 
 - if a `query` cue still needs policy, it belongs to `QueryCoordinator`
 - if it only needs message construction, it belongs to `Hab.processCuesIter()`
+
+## Query and cue source ownership
+
+CueSink admission takes the actual source queue and an interpreter. Composition
+wires responder delivery through respondantCueSink(runtime, hab); Respondant and
+QueryCoordinator do not receive the parent runtime or discover its siblings.
+QueryCoordinator's processPending/queryDo operations own their local pending
+state without an AgentRuntime argument or Reactor callback scheduler.
+
+Query preparation, signing and admission are synchronous operations over accepted
+state published by its processing owner after commit. They do not suspend between
+state lookup and signing. Network waits happen after preparation; failed delivery,
+refusal and cancellation retain the pending head and its real lifetime through
+joined cleanup. Reactor still owns protocol dispatch and reply capture; this does
+not remove guards from other workers or declare the full flow migration complete.
+
+The root composition replaces Respondant.forHab with respondantCueSink. Internal
+address-selection helpers are not added to the runtime barrel's public surface.
+After the signer-identifier refactor, pending queries use one private ordinary
+Deck of plain QueryRequest records with read-only inspection. Metadata reservation
+wrappers, configurable pending/continuation caps and partial-admission bookkeeping
+are removed: no production caller used those controls and no demonstrated backlog
+justified their complexity. Failed/cancelled sends retain the head, unresolved work
+rotates, newly appended work waits for the next finite pass, and close joins active
+consumption before clearing. Actual wire preparation, payload/source lifetime and
+transport cleanup retain their own controls. Pending metadata is unbounded; there
+is no shared memory-bound claim.
 
 ## Attester Resolution Contract
 
@@ -249,7 +326,28 @@ runtime-owned coordinator instead of as independent HIO doers.
 `AnchorQuerier`
 
 - emits `logs` with anchor search criteria
+- asks each eligible attester once through the existing pending queue; a retired
+  witness must not prevent another known witness from answering
+- resumes unqueued candidates after capacity refusal, without resending admitted
+  candidates; accepted seal state ends the continuation
+- retains the ordinary deferred-resolution request when no endpoint is yet known
 - completes when the local database contains a sealing event for that anchor
+- accepts the existing CESR event-seal SAD contract (`i`, hexadecimal `s`, `d`),
+  copies it at registration and emits the owned seal as the logs query’s `q.a`
+- `tufa query --anchor` validates the JSON shape and CESR primitive values before
+  opening a controller store; malformed files cannot become pending query work
+- emits `i, s, d` key order required by KERIpy’s lookup; supplied field values
+  are retained rather than canonicalized
+
+KERIpy's WitnessInquisitor selects one random peer. Anchor queries deliberately
+try the known alternatives because a witness cut can leave the old first peer
+without the requested seal. This is finite query work, with no new retry timer or
+scheduler. Witness HTTP replies can arrive through mailbox delivery; the querying
+controller needs actual witness/mailbox routing and active polling. Transmission
+alone does not establish local acceptance. `tufa query` uses the existing concurrent
+runtime runner so an empty long poll at one mailbox cannot postpone query
+transmission or polling another endpoint until the command deadline. It halts
+and joins those workers before printing state and closing its stores.
 
 ## Runtime Convergence Rule
 

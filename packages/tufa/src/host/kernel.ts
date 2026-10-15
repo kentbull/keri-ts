@@ -7,6 +7,7 @@ import {
   type Habery,
   processRuntimeTurn,
   type ProtocolHostPolicy,
+  respondantCueSink,
   runAgentRuntime,
 } from "keri-ts/runtime";
 import { startServer } from "./http-server.ts";
@@ -79,7 +80,7 @@ export function* runHostKernel(
     serviceHab: spec.protocolPolicy.serviceHab ?? spec.serviceHab,
     hostedPrefixes: spec.protocolPolicy.hostedPrefixes ?? hostedPrefixes,
   };
-  const sink = runtime.respondant.forHab(spec.serviceHab);
+  const sink = respondantCueSink(runtime, spec.serviceHab);
 
   for (const hab of seedHabs) {
     yield* processRuntimeTurn(runtime, {
