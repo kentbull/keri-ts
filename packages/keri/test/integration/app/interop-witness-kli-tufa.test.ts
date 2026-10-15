@@ -939,7 +939,9 @@ Deno.test("Interop witness: KLI controller completes default witness-mode incept
           witness.pre,
         ],
         ctx.env,
-        30_000,
+        // An initial mailbox poll can precede inception. Allow KERIpy's
+        // 30-second reconnect cycle plus its one-second retry and startup.
+        45_000,
       ),
     );
     const controllerPre = extractPrefix(incepted.stdout);
