@@ -35,7 +35,10 @@ Incomplete query cues require QueryCoordinator to resolve a local
 habitat and honest remote attester before producing wire. Hab.processCuesIter
 remains the cue-semantics seam. CueSink admission receives the actual source queue,
 not AgentRuntime. respondantCueSink wires source-to-delivery work at the runtime
-root; do not inject a delivery-worker bundle into Respondant. Preparation returns
+root; do not inject a delivery-worker bundle into Respondant. CueDelivery owns
+its lazy cursor and exact pending target, exposes synchronous preparation and
+retirement, and does not discover runtime services or execute transport. The
+delivery queue applies joined transport outcomes and owns failed-packet transfer. Preparation returns
 prepared/empty/refuse records, and the composition root consumes delivery refusals
 directly. A refused destination restores source ownership; foreign preparation
 failures retain their exception identity. Strict preparation callers keep their

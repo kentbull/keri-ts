@@ -1,16 +1,15 @@
 import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { cueDeliveryBudget } from "./cue-budget.ts";
 /** One interpreted reply batch owned by delivery and a borrowed HTTP/witness consumer until both close. */
-import { ResourceAdmissionError } from "cesr-ts";
-import type { Operation } from "npm:effection@^3.6.0";
+import { ResourceAdmissionError, type ResourcePolicy } from "cesr-ts";
 import { reserveCueBytes } from "../core/cue-admission.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
-import { CueDelivery, type OwnedCueTarget } from "./cue-delivery.ts";
+import { CueDelivery, type CueTargetPreparation } from "./cue-delivery.ts";
 import { prepareCueEmission, type PreparedCueEmission } from "./cue-preparation.ts";
 import { prepareCueRoute, type PreparedCueRoute } from "./cue-route.ts";
-import type { RawCesrRoute } from "./forwarding.ts";
+import type { Poster, RawCesrRoute } from "./forwarding.ts";
 import type { Hab } from "./habbing.ts";
 import type { QueryReply } from "./query-replies.ts";
 
@@ -229,20 +228,21 @@ export class DirectReplyDelivery {
     return this.deliveries.length > 0;
   }
 
-  /** One target per pass, preserving the queue's bounded sibling fairness and exact failed packets. */
-  *step(
-    runtime: AgentRuntime,
-    signal: AbortSignal,
-    retainFailed: (target: OwnedCueTarget) => boolean,
-  ): Operation<"done" | "more" | "pending"> {
+  /** Prepare one target per pass, preserving bounded sibling fairness across reply cues. */
+  prepareTarget(poster: Poster, resources: ResourcePolicy): CueTargetPreparation {
     const current = this.deliveries[this.index];
-    if (!current) return "done";
-    const result = yield* current.step(runtime, signal, retainFailed);
-    if (result === "done") {
+    if (!current) return { kind: "done" };
+    const result = current.prepareTarget(poster, resources);
+    if (result.kind === "done") {
       this.index++;
-      return "more";
+      return { kind: "more" };
     }
     return result;
+  }
+
+  /** Apply the queue owner's completed transmission or failed-packet transfer to the current cue. */
+  retireTarget(outcome: "sent" | "retained"): void {
+    this.deliveries[this.index].retireTarget(outcome);
   }
 
   /** Queue cleanup joins network before marking its half complete; attempt every independent owner. */
