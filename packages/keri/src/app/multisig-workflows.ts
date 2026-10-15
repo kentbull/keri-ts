@@ -47,7 +47,6 @@ import {
   MULTISIG_VCP_ROUTE,
   type MultisigChild,
   multisigChild,
-  multisigPathedAttachment,
 } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { queryTransportSink } from "./runtime-deliveries.ts";
@@ -498,13 +497,13 @@ function* approveVdrProposal(
   const embed = embeddedSection(exn.ked ?? {});
   const label = route === MULTISIG_VCP_ROUTE ? "vcp" : "iss";
   const embeddedSad = embed?.[label];
-  const anchorSad = embed?.anc;
-  if (!isRecord(embeddedSad) || !isRecord(anchorSad)) {
+  const anchor = multisigChild(hby, exn, "anc");
+  if (!isRecord(embeddedSad) || !anchor) {
     return null;
   }
 
   const embeddedSerder = new SerderKERI({ sad: embeddedSad });
-  const anchorSerder = new SerderKERI({ sad: anchorSad });
+  const { event: anchorSerder, attachment, genus } = anchor;
   const embeddedSaid = embeddedSerder.said ?? "";
   if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid || "<unknown>" })) {
     return null;
@@ -514,9 +513,8 @@ function* approveVdrProposal(
   const keys = groupEventKeys(hby, groupPre, anchorSerder);
   const sigers = signLocalGroupEvent(hby, anchorSerder, smids, keys);
   // Keep the attachment set open until the peer signatures are appended.
-  const localAnchor = messagize(anchorSerder, { sigers, pipelined: false });
-  const peerAnchorAttachment = multisigPathedAttachment(hby, wrapperSaid, "anc");
-  yield* runtime.reactor.processBytes(concatBytes(localAnchor, peerAnchorAttachment), { local: true });
+  const localAnchor = messagize(anchorSerder, { sigers, pipelined: false, gvrsn: genus });
+  yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localAnchor, attachment), { local: true });
   yield* runtime.reactor.processEscrowsOnce();
 
   let accepted = false;

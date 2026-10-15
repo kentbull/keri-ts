@@ -91,7 +91,10 @@ bodies and supplemental wire; KERIpy's separate parent endorsement is not part o
 our builder output. KEL and reply approval use the same decoded child/body,
 pathed proof and resolved genus as replay. Sign local attachments in that genus
 and prefix only parser input with its selector; embedded wire remains body-first.
-VDR anchor approval still needs its separate genus and input-contract audit.
+VDR anchor approval uses the same decoded proof/genus for local signatures and
+combined intake; the registry regression verifies both accepted KEL anchor and
+TEL state. Other VDR/credential input contracts and live issuance qualification
+remain separate work.
 Endpoint-role proposal publication constructs its one known gid/rpy envelope at
 the workflow owner; a one-caller helper accepting arbitrary payload/embed maps
 adds no boundary. Decoded endpoint-reply attributes narrow unknown cid/role/eid
