@@ -46,7 +46,7 @@ import { makeNowIso8601 } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes } from "./byte-source.ts";
-import { type CesrHttpRefusal, postCesr } from "./cesr-egress.ts";
+import { attemptPostCesr, CesrHttpRefusal, postCesr } from "./cesr-egress.ts";
 import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -160,6 +160,19 @@ export function* attemptPreparedCesrTarget(
   signal?: AbortSignal,
   receiver?: TcpReplyReceiver,
 ): Operation<"complete" | "refused" | "busy"> {
+  if (target.kind === "http") {
+    const result = yield* attemptPostCesr(target.url, (signal) => chunkBytes(target.message, { signal }), {
+      bodyMode: target.bodyMode,
+      destination: target.destination,
+      services,
+      signal,
+    });
+    signal?.throwIfAborted();
+    if (result.kind === "complete") return "complete";
+    if (result.error instanceof CesrHttpRefusal) return "refused";
+    if (result.error.reason === "busy") return "busy";
+    throw result.error;
+  }
   let observed: CesrHttpRefusal | ResourceAdmissionError | undefined;
   try {
     yield* call(() =>

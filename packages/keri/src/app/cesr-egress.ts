@@ -9,6 +9,7 @@ import {
   type ParseOptions,
   type Payload,
   ResourceAdmissionError,
+  type ResourceDecision,
 } from "cesr-ts";
 import { toEffectionFrames } from "cesr-ts/effection";
 import { call, each, type Operation, resource, scoped } from "npm:effection@^3.6.0";
@@ -30,6 +31,10 @@ export class CesrHttpRefusal extends ValidationError {
     super(message);
   }
 }
+
+/** Expected local admission or remote HTTP refusal; infrastructure and cleanup failures still throw. */
+export type CesrPostResult = { kind: "complete" } | { kind: "refuse"; error: ResourceAdmissionError | CesrHttpRefusal };
+type FrameResponse = { kind: "response"; response: Response } | Extract<CesrPostResult, { kind: "refuse" }>;
 
 /** Transport choices and finite HTTP metadata limits for an admitted CESR frame. */
 export interface EgressOptions {
@@ -159,8 +164,10 @@ function byteLimit(value: number, name: string): number {
  * attachments. Scope exit aborts fetch and its body iterator, joins pending I/O,
  * and closes the response. The caller retains ownership of frame.essr.
  */
-export function requestFrame(url: string, frame: CesrFrame, options: EgressOptions = {}): Operation<Response> {
-  return openFrameResponse(url, frame, options, 1);
+export function* requestFrame(url: string, frame: CesrFrame, options: EgressOptions = {}): Operation<Response> {
+  const result = yield* openFrameResponse(url, frame, options, 1);
+  if (result.kind === "refuse") throw result.error;
+  return result.response;
 }
 
 /** Source-driven output already owns its stream slot; direct frame requests acquire one here. */
@@ -169,8 +176,8 @@ function openFrameResponse(
   frame: CesrFrame,
   options: EgressOptions,
   streams: 0 | 1,
-): Operation<Response> {
-  return resource<Response>(function*(provide) {
+): Operation<FrameResponse> {
+  return resource<FrameResponse>(function*(provide) {
     // One controller owns fetch, payload reads, and the response body until the resource closes.
     const controller = new AbortController();
     // External abort and structured cancellation share the same transport signal.
@@ -191,7 +198,8 @@ function openFrameResponse(
         credit.reason,
       );
       options.onAdmissionRefusal?.(refusal);
-      throw refusal;
+      yield* provide({ kind: "refuse", error: refusal });
+      return;
     }
     // Register credit before response owners so cancellation joins their last use before release.
     yield* resource<void>(function*(provide) {
@@ -244,7 +252,7 @@ function openFrameResponse(
         const owner = yield* ownHttpResponse(() => services.http.fetch(url, init), controller);
         response = yield* owner.response();
         if (response.ok) {
-          yield* provide(response);
+          yield* provide({ kind: "response", response });
           return;
         }
         // Only failed response text is read here; successful bodies remain available to the caller.
@@ -260,7 +268,8 @@ function openFrameResponse(
           response.status,
         );
         options.onHttpRefusal?.(refusal);
-        throw refusal;
+        yield* provide({ kind: "refuse", error: refusal });
+        return;
       }
     } catch (error) {
       deliveredFailure = { error };
@@ -288,71 +297,98 @@ function openFrameResponse(
   });
 }
 
-/** Post one complete frame at a time, joining its optional response consumer before advancing input. */
-export function postCesr(
+/** Strict source sender; callers wanting retry/refusal policy use the joined attempt result. */
+export function* postCesr(
   url: string,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
   options: PostOptions = {},
   consume?: (response: Response) => Operation<void>,
 ): Operation<void> {
+  const result = yield* attemptPostCesr(url, source, options, consume);
+  if (result.kind === "refuse") throw result.error;
+}
+
+/** Post through the same lifetime owner, returning only this invocation's expected refusal after joined cleanup. */
+export function attemptPostCesr(
+  url: string,
+  source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
+  options: PostOptions = {},
+  consume?: (response: Response) => Operation<void>,
+): Operation<CesrPostResult> {
   // Isolate joining cleanup so a halt cannot resume a delegated caller after payload disposal.
   return call(function*() {
-    const services = options.services ?? defaultRuntimeServices;
-    const limits = {
-      ...options.parse,
-      maxChunkBytes: options.parse?.maxChunkBytes ?? 1024 ** 2,
-      maxBufferedBytes: options.parse?.maxBufferedBytes ?? 8 * 1024 ** 2,
-    };
-    for (const limit of [limits.maxChunkBytes, limits.maxBufferedBytes]) {
-      if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Invalid output input limit");
-    }
-    if (limits.maxChunkBytes > limits.maxBufferedBytes) throw new RangeError("Chunk limit exceeds buffer limit");
-    if (limits.resources && limits.resources !== services.resources) {
-      throw new RangeError("Output parser must share its HTTP resource policy");
-    }
-    // Registered before parsing: its stream/cursor/producer credit outlives all parser and source cleanup.
-    yield* resource<void>(function*(provide) {
-      const credit = services.resources.reserve({
-        streams: 1,
-        bytes: limits.maxChunkBytes + limits.maxBufferedBytes,
-      });
-      if (credit.kind === "refuse") {
-        const refusal = new ResourceAdmissionError(`Output source admission refused: ${credit.reason}`, credit.reason);
-        options.onAdmissionRefusal?.(refusal);
-        throw refusal;
-      }
-      try {
-        yield* provide();
-      } finally {
-        credit.reservation.release();
-      }
-    });
-    // Either caller-facing signal cancels both parsing and the request already consuming a frame.
-    const signals = [options.signal, options.parse?.signal].filter((value): value is AbortSignal =>
-      value !== undefined
-    );
-    const signal = signals.length ? AbortSignal.any(signals) : undefined;
-    // The adapter owns input cancellation and leaves each delivered ESSR payload with this loop.
-    const channel = yield* toEffectionFrames(source, {
-      ...limits,
-      resources: services.resources,
-      signal,
-      onAdmissionRefusal(error) {
-        options.parse?.onAdmissionRefusal?.(error);
-        options.onAdmissionRefusal?.(error);
-      },
-    });
-    for (const frame of yield* each(channel.frames)) {
-      try {
-        // Each request is closed before another frame or request can become resident.
-        yield* scoped(function*() {
-          const response = yield* openFrameResponse(url, frame, { ...options, services, signal }, 0);
-          if (consume) yield* consume(response);
+    let parserRefusal: ResourceAdmissionError | undefined;
+    try {
+      return yield* call(function*(): Operation<CesrPostResult> {
+        const services = options.services ?? defaultRuntimeServices;
+        const limits = {
+          ...options.parse,
+          maxChunkBytes: options.parse?.maxChunkBytes ?? 1024 ** 2,
+          maxBufferedBytes: options.parse?.maxBufferedBytes ?? 8 * 1024 ** 2,
+        };
+        for (const limit of [limits.maxChunkBytes, limits.maxBufferedBytes]) {
+          if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Invalid output input limit");
+        }
+        if (limits.maxChunkBytes > limits.maxBufferedBytes) throw new RangeError("Chunk limit exceeds buffer limit");
+        if (limits.resources && limits.resources !== services.resources) {
+          throw new RangeError("Output parser must share its HTTP resource policy");
+        }
+        // Registered before parsing: its stream/cursor/producer credit outlives all parser and source cleanup.
+        const sourceCredit = yield* resource<ResourceDecision>(function*(provide) {
+          const credit = services.resources.reserve({
+            streams: 1,
+            bytes: limits.maxChunkBytes + limits.maxBufferedBytes,
+          });
+          try {
+            yield* provide(credit);
+          } finally {
+            if (credit.kind === "reserve") credit.reservation.release();
+          }
         });
-      } finally {
-        yield* call(() => discardFrame(frame));
-      }
-      yield* each.next();
+        if (sourceCredit.kind === "refuse") {
+          const error = new ResourceAdmissionError(
+            `Output source admission refused: ${sourceCredit.reason}`,
+            sourceCredit.reason,
+          );
+          options.onAdmissionRefusal?.(error);
+          return { kind: "refuse", error };
+        }
+        // Either caller-facing signal cancels both parsing and the request already consuming a frame.
+        const signals = [options.signal, options.parse?.signal].filter((value): value is AbortSignal =>
+          value !== undefined
+        );
+        const signal = signals.length ? AbortSignal.any(signals) : undefined;
+        // The adapter owns input cancellation and leaves each delivered ESSR payload with this loop.
+        const channel = yield* toEffectionFrames(source, {
+          ...limits,
+          resources: services.resources,
+          signal,
+          onAdmissionRefusal(error) {
+            options.parse?.onAdmissionRefusal?.(error);
+            options.onAdmissionRefusal?.(error);
+            parserRefusal = error;
+          },
+        });
+        for (const frame of yield* each(channel.frames)) {
+          try {
+            // Each request is closed before another frame or request can become resident.
+            const result = yield* scoped(function*(): Operation<CesrPostResult> {
+              const response = yield* openFrameResponse(url, frame, { ...options, services, signal }, 0);
+              if (response.kind === "refuse") return response;
+              if (consume) yield* consume(response.response);
+              return { kind: "complete" };
+            });
+            if (result.kind === "refuse") return result;
+          } finally {
+            yield* call(() => discardFrame(frame));
+          }
+          yield* each.next();
+        }
+        return { kind: "complete" };
+      });
+    } catch (error) {
+      if (error !== parserRefusal || !parserRefusal) throw error;
+      return { kind: "refuse", error: parserRefusal };
     }
   });
 }

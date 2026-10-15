@@ -868,6 +868,12 @@ Deno.test("prepared attempt reports only its own joined admission refusal", asyn
   assertEquals(requests, 0);
   held.reservation.release();
   assertEquals(await run(() => attemptPreparedCesrTarget(target, transport)), "complete");
+  transport.http = services(async (_url, init) => {
+    await new Response(init!.body).arrayBuffer();
+    return new Response("peer refusal", { status: 503 });
+  }).http;
+  assertEquals(await run(() => attemptPreparedCesrTarget(target, transport)), "refused");
+  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   const failure = new ResourceAdmissionError("foreign transport busy", "busy");
   const controller = new AbortController();
   transport.http = {
