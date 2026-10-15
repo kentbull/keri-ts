@@ -394,6 +394,8 @@ message acceptance. The job guard must be an earlier scope resource, not a bare
 finally flag: cancellation can enter parent finally while child cleanup still joins.
 Oobiery borrows Reactor's policy; GET handle credit precedes fetch and parser stream
 credit precedes body reads. Transient saturation uses the existing queued worker.
+OOBI producers publish directly to plain Decks after durable writes. Only admitted
+queues create preparation handles; keep their real credit through failure cleanup.
 OOBI queueing and multi-URL fanout stage all child records and admit exact ordered
 cue batches before queue/moobi writes; validate every URL before mutation. Admit
 parent resolved/failed cues before terminal/contact effects. Preserve ordinary
