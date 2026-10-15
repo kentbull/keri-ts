@@ -862,40 +862,26 @@ export class Revery {
     const serder = this.db.rpys.get([diger.qb64]);
     const tsgs = fetchStoredTsgs(this.db, diger.qb64);
     if (!dater || !serder || tsgs.length === 0) {
-      return dropEscrow("missingEscrowArtifact", {
-        message: `Missing escrow artifacts at said=${diger.qb64} for reply replay.`,
-        context: {
-          said: diger.qb64,
-          hasDater: !!dater,
-          hasSerder: !!serder,
-          tsgCount: tsgs.length,
-        },
-      });
+      return dropEscrow(
+        "missingEscrowArtifact",
+        `Missing reply escrow artifacts at said=${diger.qb64}: dater=${!!dater}, serder=${!!serder}, tsgs=${tsgs.length}.`,
+      );
     }
     if (Date.now() - new Date(dater.dts).getTime() > Revery.TimeoutRPE) {
-      return dropEscrow("stale", {
-        message: `Stale reply escrow at route = ${serder.route ?? "<unknown>"}.`,
-        context: { said: diger.qb64, route: serder.route },
-      });
+      return dropEscrow("stale", `Stale reply escrow at said=${diger.qb64}, route=${serder.route ?? "<unknown>"}.`);
     }
     try {
       const decision = this.processReply({ serder, tsgs });
       if (decision.kind === "unverified") {
-        return keepEscrow("unverifiedReply", {
-          message: decision.message,
-          context: {
-            said: diger.qb64,
-            route: serder.route,
-          },
-        });
+        return keepEscrow("unverifiedReply", `${decision.message} (said=${diger.qb64}, route=${serder.route})`);
       }
       return acceptEscrow();
     } catch (error) {
       if (error instanceof ResourceLimitError) throw error;
-      return dropEscrow("processingError", {
-        message: error instanceof Error ? error.message : String(error),
-        context: { said: diger.qb64, route: serder.route },
-      });
+      return dropEscrow(
+        "processingError",
+        `${error instanceof Error ? error.message : String(error)} (said=${diger.qb64}, route=${serder.route})`,
+      );
     }
   }
 }

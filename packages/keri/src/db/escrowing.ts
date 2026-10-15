@@ -437,10 +437,10 @@ export class Broker {
     try {
       tsgs = this.fetchTsgs(args.diger);
     } catch {
-      return dropEscrow("outerCorruption", {
-        message: `Failed to load escrowed transferable signatures at said=${args.diger.qb64}.`,
-        context: { said: args.diger.qb64, aid: args.aid },
-      });
+      return dropEscrow(
+        "outerCorruption",
+        `Failed to load escrowed transferable signatures at said=${args.diger.qb64}.`,
+      );
     }
 
     const escrowKeys = [args.diger.qb64] as const;
@@ -448,34 +448,21 @@ export class Broker {
     const serder = this.serderdb.get(escrowKeys);
     const vcigars = this.cigardb.get(escrowKeys);
     if (!dater || !serder || (tsgs.length === 0 && vcigars.length === 0)) {
-      return dropEscrow("missingEscrowArtifact", {
-        message: `Missing escrow artifacts at said=${args.diger.qb64} for pre=${args.aid}.`,
-        context: {
-          said: args.diger.qb64,
-          aid: args.aid,
-          hasDater: !!dater,
-          hasSerder: !!serder,
-          tsgCount: tsgs.length,
-          cigarCount: vcigars.length,
-        },
-      });
+      return dropEscrow(
+        "missingEscrowArtifact",
+        `Missing escrow artifacts at said=${args.diger.qb64} for pre=${args.aid}: dater=${!!dater}, serder=${!!serder}, tsgs=${tsgs.length}, cigars=${vcigars.length}.`,
+      );
     }
 
     if (
       (Date.now() - new Date(dater.dts).getTime()) > (this.timeout * 1000)
     ) {
-      return dropEscrow("stale", {
-        message: `Escrow unescrow error: Stale txn state escrow at pre = ${args.aid}`,
-        context: { said: args.diger.qb64, aid: args.aid, route: serder.route },
-      });
+      return dropEscrow("stale", `Stale txn state escrow at said=${args.diger.qb64} for pre=${args.aid}.`);
     }
 
     const route = serder.route;
     if (!route) {
-      return dropEscrow("malformedEscrowedReply", {
-        message: `Escrowed state notice at said=${args.diger.qb64} is missing route.`,
-        context: { said: args.diger.qb64, aid: args.aid },
-      });
+      return dropEscrow("malformedEscrowedReply", `Escrowed state notice at said=${args.diger.qb64} is missing route.`);
     }
 
     const cigars = vcigars.map(([verfer, cigar]) => new Cigar(cigar, verfer));
@@ -491,15 +478,17 @@ export class Broker {
       return acceptEscrow();
     } catch (error) {
       if (error instanceof args.extype) {
-        return keepEscrow("recoverableError", {
-          message: error.message,
-          context: { said: args.diger.qb64, aid: args.aid, route },
-        });
+        return keepEscrow(
+          "recoverableError",
+          `${error.message} (said=${args.diger.qb64}, aid=${args.aid}, route=${route})`,
+        );
       }
-      return dropEscrow("processingError", {
-        message: error instanceof Error ? error.message : String(error),
-        context: { said: args.diger.qb64, aid: args.aid, route },
-      });
+      return dropEscrow(
+        "processingError",
+        `${
+          error instanceof Error ? error.message : String(error)
+        } (said=${args.diger.qb64}, aid=${args.aid}, route=${route})`,
+      );
     }
   }
 }

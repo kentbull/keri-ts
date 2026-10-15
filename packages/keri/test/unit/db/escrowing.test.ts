@@ -186,8 +186,7 @@ Deno.test("db/escrowing - Broker escrow helper exposes typed keep/drop/accept de
 
       const keep = expectKind(decision, "keep");
       assertEquals(keep.reason, "recoverableError");
-      assertEquals(keep.message, "retry later");
-      assertEquals(keep.context?.aid, "Eaid");
+      assertEquals(keep.message, `retry later (said=${diger.qb64}, aid=Eaid, route=/tsn/registry/Eaid)`);
     } finally {
       yield* lmdber.close(true);
     }
@@ -215,8 +214,7 @@ Deno.test("db/escrowing - Broker preserves processing error detail on drop decis
 
       const drop = expectKind(decision, "drop");
       assertEquals(drop.reason, "processingError");
-      assertEquals(drop.message, "boom");
-      assertEquals(drop.context?.said, diger.qb64);
+      assertEquals(drop.message, `boom (said=${diger.qb64}, aid=Eaid, route=/tsn/registry/Eaid)`);
     } finally {
       yield* lmdber.close(true);
     }
