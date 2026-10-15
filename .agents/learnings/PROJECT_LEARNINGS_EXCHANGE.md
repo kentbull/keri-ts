@@ -81,7 +81,7 @@ The four multisig event builders carry one MultisigEventProposal with correlated
 icp/rot/ixn/rpy attributes through byte preparation and synchronous body building.
 Inception derives gid from its child; callers supply member lists, not another gid
 or child commitment. Do not reconstruct typed input from an erased serialized SAD.
-Local KEL publication and approval re-publication reuse this proposal and preparation
+Local KEL/reply publication and approval re-publication reuse this proposal and preparation
 contract, including the resolved recipient. Derive labels and inception gid at the
 grouping owner; do not accept a second CLI label or group identity. Decode known
 member/delegator fields before approval, and publish only those fields. Derive the
@@ -185,3 +185,9 @@ hidden declarations and unfinished graphs remain guarded.
 [multisig](../../docs/design-docs/exchange/MULTISIG.md),
 [IPEX](../../docs/design-docs/exchange/IPEX.md),
 [storage](../../docs/design-docs/db/PAYLOAD_STORAGE.md).
+
+Reply approval publishes only its group identity through the event builder. VDR
+publication correlates registry/issuance routes with their required named children
+and known gid/usage fields. Derive the signed genus hint from the local anchor,
+and serialize the credential source proof in that genus too; a valid local
+credential does not prove the outgoing embedded proof is parseable.

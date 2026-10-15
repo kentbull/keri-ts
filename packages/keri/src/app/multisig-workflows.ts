@@ -48,6 +48,7 @@ import {
   MULTISIG_VCP_ROUTE,
   type MultisigChild,
   multisigChild,
+  multisigChildGenusAttrs,
   type MultisigEventProposal,
   type MultisigMessage,
   prepareMultisigEventExn,
@@ -106,12 +107,12 @@ interface NoticeLike {
   attrs: { r?: unknown; d?: unknown };
 }
 
-/** Publish a route-correlated KEL proposal; grouping owns child identity and label derivation. */
+/** Publish a route-correlated event proposal; grouping owns child identity and label derivation. */
 export function* publishProposal(
   runtime: AgentRuntime,
   member: Hab,
   recipients: readonly string[],
-  proposal: Extract<MultisigEventProposal, { route: MultisigKelRoute }>,
+  proposal: MultisigEventProposal,
   embeddedMessage: Uint8Array,
   childGvrsn?: Versionage,
 ): Operation<string[]> {
@@ -128,15 +129,27 @@ export function* publishProposal(
   return deliveries;
 }
 
-/** Publish one multisig proposal with explicit embedded attachments. */
-function* publishProposalEmbeds(
+/** VDR routes carry their own required children and only known publication attributes. */
+type VdrPublication =
+  | {
+    route: typeof MULTISIG_VCP_ROUTE;
+    payload: { gid: string; usage?: string; cgvrsn?: readonly [number, number] };
+    embeds: { vcp: Uint8Array; anc: Uint8Array };
+  }
+  | {
+    route: typeof MULTISIG_ISS_ROUTE;
+    payload: { gid: string; cgvrsn?: readonly [number, number] };
+    embeds: { acdc: Uint8Array; iss: Uint8Array; anc: Uint8Array };
+  };
+
+/** Publish a registry or issuance proposal with its required named children. */
+function* publishVdrProposal(
   runtime: AgentRuntime,
   member: Hab,
   recipients: readonly string[],
-  route: MultisigProposalRoute,
-  payload: Record<string, unknown>,
-  embeds: Record<string, Uint8Array>,
+  proposal: VdrPublication,
 ): Operation<string[]> {
+  const { route, payload, embeds } = proposal;
   const deliveries: string[] = [];
   for (const recipient of uniqueMembers(recipients)) {
     if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
@@ -146,7 +159,7 @@ function* publishProposalEmbeds(
     const [serder, attachments] = exchange(route, payload, {
       sender: member.pre,
       recipient: destination,
-      embeds: Object.keys(embeds).length > 0 ? embeds : undefined,
+      embeds,
     });
     deliveries.push(...yield* registerAndSendProposal(runtime, member, destination, [serder, attachments]));
   }
@@ -403,13 +416,13 @@ function* approveRpyProposal(
   yield* runtime.reactor.processEscrowsOnce();
 
   const attrs = rpyAttrs(rpySerder);
-  const deliveries = yield* publishProposalEmbeds(
+  const deliveries = yield* publishProposal(
     runtime,
     member,
     groupSigningMembers(hby, groupPre),
-    route,
-    payload,
-    { rpy: localRpy },
+    { route, attrs: { gid: groupPre } },
+    localRpy,
+    genus,
   );
   const accepted = endpointRoleAccepted(hby, attrs.cid, attrs.role, attrs.eid);
 
@@ -532,22 +545,31 @@ function* approveVdrProposal(
   yield* runtime.reactor.processEscrowsOnce();
 
   let accepted = false;
-  let embeds: Record<string, Uint8Array>;
+  let publication: VdrPublication;
+  const attrs = { gid: groupPre, ...multisigChildGenusAttrs(anchorSerder, genus) };
   if (proposal.route === MULTISIG_VCP_ROUTE) {
     accepted = approveRegistryIncept(runtime, groupHab, embeddedSerder, anchorSerder, options);
-    embeds = { vcp: embeddedSerder.raw, anc: localAnchor };
+    publication = {
+      route: proposal.route,
+      payload: { ...attrs, ...(typeof payload.usage === "string" ? { usage: payload.usage } : {}) },
+      embeds: { vcp: embeddedSerder.raw, anc: localAnchor },
+    };
   } else {
     const creder = proposal.credential;
     accepted = approveCredentialIssue(runtime, hby, creder, embeddedSerder, anchorSerder);
     const seal = telCredentialSeal(embeddedSerder);
-    embeds = {
-      acdc: serializeCredential(creder, seal.prefixer, seal.seqner, seal.saider),
-      iss: embeddedSerder.raw,
-      anc: localAnchor,
+    publication = {
+      route: proposal.route,
+      payload: attrs,
+      embeds: {
+        acdc: serializeCredential(creder, seal.prefixer, seal.seqner, seal.saider, genus),
+        iss: embeddedSerder.raw,
+        anc: localAnchor,
+      },
     };
   }
 
-  const deliveries = yield* publishProposalEmbeds(runtime, member, smids, route, payload, embeds);
+  const deliveries = yield* publishVdrProposal(runtime, member, smids, publication);
   return { route, said: wrapperSaid, embedded: embeddedSaid, group: groupPre, accepted, deliveries };
 }
 

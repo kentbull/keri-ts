@@ -16,6 +16,7 @@ import {
   parseBytes,
   Prefixer,
   ResourcePolicy,
+  SerderACDC,
   SerderKERI,
   Siger,
   Vrsn_1_0,
@@ -40,6 +41,7 @@ import {
   multisigInceptExn,
   multisigInteractExn,
   type MultisigMessage,
+  multisigPathedAttachment,
   multisigRotateExn,
   type MultisigRoute,
   multisigRpyExn,
@@ -59,8 +61,8 @@ import { Reger } from "../../../src/db/reger.ts";
 import { credential, serializeCredential } from "../../../src/vdr/credentialing.ts";
 import framing714 from "../../fixtures/multisig-framing-714.json" with { type: "json" };
 
-// @ts-expect-error KEL publication cannot accept a reply proposal.
-void ({ route: "/multisig/rpy", attrs: { gid: "group" } } satisfies Parameters<typeof publishProposal>[3]);
+// @ts-expect-error Event publication cannot accept a registry proposal.
+void ({ route: "/multisig/vcp", attrs: { gid: "group" } } satisfies Parameters<typeof publishProposal>[3]);
 // @ts-expect-error Inception derives gid from its child instead of accepting a second identity.
 void ({ route: "/multisig/icp", attrs: { gid: "group", smids: [], rmids: [] } } satisfies MultisigEventProposal);
 // @ts-expect-error Rotation requires its rotation members as well as signing members.
@@ -194,6 +196,28 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
               i: bob.pre,
             });
           }
+          if (["/multisig/rpy", "/multisig/vcp", "/multisig/iss"].includes(args.serder.route!)) {
+            assertEquals(args.serder.ked!.a, {
+              gid: local.hab.pre,
+              cgvrsn: [2, 0],
+              ...(args.serder.route === "/multisig/vcp" ? { usage: "group credentials" } : {}),
+              i: bob.pre,
+            });
+          }
+          if (args.serder.route === "/multisig/iss") {
+            const sad = args.serder.ked!.e as Record<string, unknown>;
+            const child = new SerderACDC({ sad: sad.acdc as Record<string, unknown> });
+            const proof = multisigPathedAttachment(left, args.serder.said!, "acdc");
+            const frames = yield* call(() => parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), child.raw, proof)));
+            try {
+              assertEquals(frames.length, 1);
+              const seals = envelopeFromFrame(frames[0]).ssts;
+              assertEquals(seals.length, 1);
+              assertEquals([seals[0].i.qb64, seals[0].s.num, seals[0].d.qb64], [issuance.pre, 0n, issuance.said]);
+            } finally {
+              for (const frame of frames) yield* call(() => discardFrame(frame));
+            }
+          }
           return { serder: args.serder, deliveries: ["test"], queued: [] };
         };
         const [peer, paths] = exchange("/multisig/icp", {
@@ -225,15 +249,11 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
           pre: local.hab.pre,
         });
         const peerRpy = groupEndorseReply(right, remote.hab.pre, rpy, Vrsn_2_0);
-        const [rpyWrapper, rpyPaths] = yield* prepareMultisigEventExn(
-          bob.pre,
-          {
-            route: "/multisig/rpy",
-            attrs: { gid: local.hab.pre },
-          },
-          peerRpy,
-          { pvrsn: Vrsn_1_0, childGvrsn: Vrsn_2_0 },
-        );
+        const [rpyWrapper, rpyPaths] = exchange("/multisig/rpy", {
+          gid: local.hab.pre,
+          cgvrsn: [2, 0],
+          unrecognized: "peer-only",
+        }, { sender: bob.pre, embeds: { rpy: peerRpy } });
         yield* runtime.reactor.processBytes(concatBytes(bob.endorse(rpyWrapper, { pipelined: false }), rpyPaths), {
           local: true,
         });
@@ -255,6 +275,8 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         const [vcpWrapper, vcpPaths] = exchange("/multisig/vcp", {
           gid: local.hab.pre,
           cgvrsn: [2, 0],
+          usage: "group credentials",
+          unrecognized: "peer-only",
         }, {
           sender: bob.pre,
           embeds: { vcp: registry.raw, anc: messagize(anchor.serder, { sigers: anchor.sigers, gvrsn: Vrsn_2_0 }) },
@@ -289,7 +311,11 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         const issueAnchor = right.interactGroupHab("group", mids, {
           data: [{ i: issuance.pre, s: "0", d: issuance.said }],
         });
-        const [issWrapper, issPaths] = exchange("/multisig/iss", { gid: local.hab.pre, cgvrsn: [2, 0] }, {
+        const [issWrapper, issPaths] = exchange("/multisig/iss", {
+          gid: local.hab.pre,
+          cgvrsn: [2, 0],
+          unrecognized: "peer-only",
+        }, {
           sender: bob.pre,
           embeds: {
             acdc: serializeCredential(
