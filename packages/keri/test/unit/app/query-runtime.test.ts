@@ -6,6 +6,7 @@ import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
+  respondantCueSink,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 
@@ -136,7 +137,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       );
       yield* processRuntimeTurn(runtime, {
         hab,
-        sink: runtime.respondant.forHab(hab),
+        sink: respondantCueSink(runtime, hab),
       });
     } finally {
       yield* hby.close();
@@ -154,7 +155,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, {
         hab: hab ?? undefined,
-        sink: runtime.respondant.forHab(hab),
+        sink: respondantCueSink(runtime, hab),
       });
     });
     const serverTask = yield* spawn(function*() {
@@ -167,7 +168,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       }
       yield* waitForServer(port);
 
-      const ksnQuery = hab.query(hab.pre, hab.pre, {}, "ksn");
+      const ksnQuery = hab.query(hab.pre, hab.pre, { route: "ksn", q: {} });
       const posted = yield* fetchOp(baseUrl, {
         method: "POST",
         headers: { "Content-Type": "application/cesr" },
@@ -179,8 +180,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       const mailboxQuery = hab.query(
         hab.pre,
         hab.pre,
-        { topics: { "/reply": 0 } },
-        "mbx",
+        { route: "mbx", q: { topics: { "/reply": 0 } } },
       );
       const { response: streamed, controller } = yield* fetchResponseHandle(
         baseUrl,
@@ -201,8 +201,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       const logsQuery = hab.query(
         hab.pre,
         hab.pre,
-        { s: "0", fn: "0" },
-        "logs",
+        { route: "logs", q: { s: "0", fn: "0" } },
       );
       const logsPosted = yield* fetchOp(baseUrl, {
         method: "POST",
@@ -215,8 +214,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       const replayQuery = hab.query(
         hab.pre,
         hab.pre,
-        { topics: { "/replay": 0 } },
-        "mbx",
+        { route: "mbx", q: { topics: { "/replay": 0 } } },
       );
       const { response: replayStream, controller: replayController } = yield* fetchResponseHandle(baseUrl, {
         method: "POST",
@@ -328,8 +326,8 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       mode: "indirect",
     });
 
-    const witnessSink = witnessRuntime.respondant.forHab(witness);
-    const relaySink = relayRuntime.respondant.forHab(relay);
+    const witnessSink = respondantCueSink(witnessRuntime, witness);
+    const relaySink = respondantCueSink(relayRuntime, relay);
     const witnessRuntimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(witnessRuntime, {
         hab: witness,
@@ -389,8 +387,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       const query = proxy.query(
         delegator.pre,
         witness.pre,
-        { fn: "0", s: "0", a: seal },
-        "logs",
+        { route: "logs", q: { fn: "0", s: "0", a: seal } },
       );
       const sink = queryTransportSink(proxyRuntime, proxyHby, proxy);
       yield* sink.send({
@@ -400,7 +397,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
           pre: delegator.pre,
           src: witness.pre,
           route: "logs",
-          query: { fn: "0", s: "0", a: seal },
+          q: { fn: "0", s: "0", a: seal },
           wits: [witness.pre],
         },
         messages: [query],
@@ -434,8 +431,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       const mbx = proxy.query(
         proxy.pre,
         relay.pre,
-        { topics: { "/replay": 0 } },
-        "mbx",
+        { route: "mbx", q: { topics: { "/replay": 0 } } },
       );
       assertExists(relayRuntime.hby.db.getKever(witness.pre));
       const { response, controller } = yield* fetchResponseHandle(relayUrl, {
@@ -526,8 +522,7 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
         requester.query(
           subject.pre,
           requester.pre,
-          { fn: "0", s: "0" },
-          "logs",
+          { route: "logs", q: { fn: "0", s: "0" } },
         ),
       );
 

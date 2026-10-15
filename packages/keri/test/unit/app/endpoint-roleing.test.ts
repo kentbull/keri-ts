@@ -1,6 +1,6 @@
-import { type Operation, run } from "effection";
+import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import {
   endpointRoleAccepted,
   isLocalGroupHab,
@@ -27,36 +27,51 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
   await run(function*() {
     const hby = yield* createHabery({
       name: `endpoint-role-propose-${crypto.randomUUID()}`,
+      outboxer: "create",
       temp: true,
       skipConfig: true,
     });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
     try {
       const member = makeTransferableHab(hby, "member");
       const remote = makeTransferableHab(hby, "remote");
-      const { hab: group } = hby.makeGroupHab("group", member, [member.pre, remote.pre], undefined, undefined, {
-        isith: "1",
-        nsith: "1",
-        toad: 0,
-      });
+      const other = makeTransferableHab(hby, "other");
+      const { hab: group } = hby.makeGroupHab(
+        "group",
+        member,
+        [member.pre, remote.pre, other.pre],
+        undefined,
+        undefined,
+        {
+          isith: "1",
+          nsith: "1",
+          toad: 0,
+        },
+      );
       hby.habs.delete(remote.pre);
+      hby.habs.delete(other.pre);
 
-      const sent: Record<string, unknown>[] = [];
-      const runtime = {
-        hby,
-        reactor: {
-          *processBytes() {},
-          *processEscrowsOnce() {},
-        },
-        poster: {
-          *sendExchange(
-            _member: Hab,
-            args: Record<string, unknown>,
-          ): Operation<{ deliveries: string[]; queued: string[] }> {
-            sent.push(args);
-            return { deliveries: ["stub-delivery"], queued: [] };
-          },
-        },
-      } as unknown as AgentRuntime;
+      const sent: { recipient: string; said: string }[] = [];
+      let sends = 0;
+      runtime.poster.sendPreparedExchange = function*(sender, args) {
+        assertEquals(sender, member);
+        assertEquals(args.recipient, [remote.pre, other.pre][sends]);
+        assertEquals(args.serder.route, MULTISIG_RPY_ROUTE);
+        assertEquals(args.serder.ked?.a, { gid: group.pre, i: args.recipient });
+        assertExists(args.serder.ked?.e);
+        assertEquals(runtime.reactor.exchanger.complete(args.serder.said!), true);
+        assertEquals(hby.db.exns.get([args.serder.said!])?.raw, args.serder.raw);
+        sent.push({ recipient: args.recipient, said: args.serder.said! });
+        // Shared mailbox failure must retain separate recipient routing in the real outbox.
+        runtime.poster.outboxer.queueMessage(args.serder.said!, args.message, {
+          sender: member.pre,
+          recipient: args.recipient,
+          topic: args.topic,
+          createdAt: new Date().toISOString(),
+        }, ["shared-mailbox"]);
+        sends++;
+        return { serder: args.serder, deliveries: [], queued: ["outbox:shared-mailbox"] };
+      };
 
       const result = yield* proposeGroupEndpointRole(runtime, group, {
         eid: remote.pre,
@@ -67,12 +82,16 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       assertEquals(isLocalGroupHab(hby, group), true);
       assertEquals(result.route, MULTISIG_RPY_ROUTE);
       assertEquals(result.group, group.pre);
-      assertEquals(result.deliveries, ["stub-delivery"]);
-      assertEquals(sent.length, 1);
-      assertEquals(sent[0]?.route, MULTISIG_RPY_ROUTE);
-      assertEquals(sent[0]?.payload, { gid: group.pre });
-      assertExists((sent[0]?.embeds as Record<string, unknown>).rpy);
+      assertEquals(result.proposals, sent);
+      assertEquals(new Set(sent.map((proposal) => proposal.said)).size, 2);
+      assertEquals(result.deliveries, ["outbox:shared-mailbox", "outbox:shared-mailbox"]);
+      assertEquals(sends, 2);
+      assertEquals(
+        [...runtime.poster.outboxer.iterPending()].map((item) => item.message.recipient).sort(),
+        [remote.pre, other.pre].sort(),
+      );
     } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });

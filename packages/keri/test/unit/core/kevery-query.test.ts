@@ -161,7 +161,6 @@ Deno.test("Kevery.processQuery emits a key-state reply cue for the queried prefi
       if (cue.kin !== "reply") {
         throw new Error("Expected reply cue.");
       }
-      assertEquals(cue.route, "/ksn");
       assertExists(cue.serder);
       assertEquals(cue.serder?.route, `/ksn/${hab.pre}`);
       assertEquals(
@@ -780,7 +779,6 @@ Deno.test("Kevery query-not-found escrows retry once the requested key state arr
       if (cue.kin !== "reply") {
         throw new Error("Expected reply cue.");
       }
-      assertEquals(cue.route, "/ksn");
       assertEquals(cue.serder?.route, `/ksn/${bob.pre}`);
       assertEquals(cue.dest, bob.pre);
     } finally {
@@ -969,7 +967,7 @@ Deno.test("Reactor query ingress preserves transferable requester signatures thr
         nsith: "1",
         toad: 0,
       });
-      const query = bob.query(alice.pre, bob.pre, {}, "ksn");
+      const query = bob.query(alice.pre, bob.pre, { route: "ksn", q: {} });
       const reactor = new Reactor(remote);
 
       reactor.ingest(query);
@@ -1105,7 +1103,7 @@ Deno.test("Kevery query replay keeps live query drop reasons in escrow drop cont
 
       const drop = expectKind(decision, "drop");
       assertEquals(drop.reason, "malformedEscrowedQuery");
-      assertEquals(drop.context?.liveReason, "invalidLogsGate");
+      assertEquals(drop.message, `QNF Dropping escrowed query at dig=${malformed.said}: invalidLogsGate.`);
     } finally {
       yield* remote.close(true);
       yield* source.close(true);
@@ -1639,7 +1637,6 @@ Deno.test("Kevery.processQuery escrows `ksn` until the authoritative event is fu
       if (cue.kin !== "reply") {
         throw new Error("Expected reply cue.");
       }
-      assertEquals(cue.route, "/ksn");
       assertEquals(cue.serder?.route, `/ksn/${requester.pre}`);
       assertEquals(cue.dest, requester.pre);
     } finally {

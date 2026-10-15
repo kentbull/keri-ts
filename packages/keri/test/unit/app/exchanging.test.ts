@@ -2,7 +2,11 @@ import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { b, Diger, essrPayload, Prefixer, Texter, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
-import { loadChallengeHandlers } from "../../../src/app/challenging.ts";
+import {
+  CHALLENGE_RESPONSE_ROUTE,
+  findVerifiedChallengeResponse,
+  loadChallengeHandlers,
+} from "../../../src/app/challenging.ts";
 import { Exchanger, type ExchangeRouteHandler } from "../../../src/app/exchanging.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
@@ -117,8 +121,8 @@ Deno.test("Exchanger accepts signed challenge responses and records exchange sta
       const exchanger = new Exchanger(hby);
       loadChallengeHandlers(hby.db, exchanger);
       const serder = makeExchangeSerder(
-        "/challenge/response",
-        { i: sender.pre, words: ["baba", "coco"] },
+        CHALLENGE_RESPONSE_ROUTE,
+        { i: recipient.pre, words: ["baba", "coco"] },
         { sender: sender.pre, recipient: recipient.pre },
       );
       const sigers = sender.sign(serder.raw, true);
@@ -148,6 +152,29 @@ Deno.test("Exchanger accepts signed challenge responses and records exchange sta
         [...hby.db.esigs.getTopItemIter([said, ""])].length > 0,
         true,
       );
+      assertEquals(findVerifiedChallengeResponse(hby.db, sender.pre, ["baba", "coco"])?.said, said);
+      assertEquals(findVerifiedChallengeResponse(hby.db, sender.pre, ["wrong"]), null);
+      assertEquals(hby.db.reps.get([recipient.pre]).length, 0, "payload i cannot select the authenticated responder");
+      for (const payload of [{}, { words: null }, { words: "baba coco" }, { words: ["baba", 7] }]) {
+        const malformed = makeExchangeSerder(CHALLENGE_RESPONSE_ROUTE, payload, {
+          sender: sender.pre,
+          recipient: recipient.pre,
+        });
+        const rejected = yield* exchanger.processEvent({
+          serder: malformed,
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: sender.pre }),
+              sender.kever!.sner,
+              new Diger({ qb64: sender.kever!.said }),
+              sender.sign(malformed.raw, true),
+            ),
+          ],
+        });
+        assertEquals(rejected.kind, "reject");
+        assertEquals(hby.db.exns.get([malformed.said!]), null);
+      }
+      assertEquals(hby.db.reps.get([sender.pre]).length, 1);
     } finally {
       yield* hby.close(true);
     }

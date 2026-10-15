@@ -41,7 +41,7 @@ copy/decode. Declared arrays charge 16 bytes per slot; maps charge 48 per pair f
 fields/references, even when members are absent. Containers, scalar/string/binary/
 extension forms and numeric-label upper bounds receive logical charges. Pinned
 `@msgpack/msgpack` 3.1.3 decode workspace receives a logical 8 KiB fixed allowance,
-256 bytes per nonempty container/extension, and one raw copy, held through root
+256 bytes per nonempty container and per extension, and one raw copy, held through root
 cleanup. This rounds up the prior audited categories without private-field or
 pooled-state layout arithmetic. Tight policies can refuse earlier; it is not a
 native heap bound. Declaration and decoded retention charges remain separate.

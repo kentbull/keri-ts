@@ -13,6 +13,7 @@ import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
+  respondantCueSink,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest, inspectCesrRequest } from "../../../src/app/cesr-http.ts";
@@ -1308,7 +1309,7 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
         for (let i = 0; i < 2; i++) {
           const abort = new AbortController();
           const request = buildCesrRequest(
-            requester.query(recipientPre, providerPre, { topics: { "/challenge": 0 } }, "mbx"),
+            requester.query(recipientPre, providerPre, { route: "mbx", q: { topics: { "/challenge": 0 } } }),
             { destination: providerPre },
           );
           const response = yield* fetchOp(url, { method: "POST", ...request, signal: abort.signal });
@@ -1337,7 +1338,7 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
         try {
           const hab = requester.habByName(alias)!;
           const request = buildCesrRequest(
-            hab.query(recipientPre, providerPre, { topics: { "/challenge": 0 } }, "mbx"),
+            hab.query(recipientPre, providerPre, { route: "mbx", q: { topics: { "/challenge": 0 } } }),
             { destination: providerPre },
           );
           const response = yield* fetchOp(url, {
@@ -1369,11 +1370,14 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
       const abort = new AbortController();
       try {
         const validWire = recipientHby.habByName("alice")!.query(recipientPre, providerPre, {
-          topics: { "/challenge": 0 },
-        }, "mbx");
+          route: "mbx",
+          q: {
+            topics: { "/challenge": 0 },
+          },
+        });
         const query = inspectCesrRequest(validWire)!;
         ingestKeriBytes(runtime, validWire);
-        yield* processRuntimeTurn(runtime, { hab: hab!, sink: runtime.respondant.forHab(hab!), pollMailbox: false });
+        yield* processRuntimeTurn(runtime, { hab: hab!, sink: respondantCueSink(runtime, hab!), pollMailbox: false });
         assertEquals(runtime.mailboxDirector.hasQueryCue(query.said!), true);
         const forged = buildCesrRequest(senderHby.habByName("sender")!.endorse(query), { destination: providerPre });
         const response = yield* fetchOp(url, {

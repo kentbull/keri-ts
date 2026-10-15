@@ -36,7 +36,11 @@ Delete redundant tests when a retained case proves the same boundary. Preserve
 protocol assertions and participant topology; do not substitute name-filtered skips
 for cleanup. Tests and fixtures count toward the 300–500-line target.
 
-Fast deterministic regressions remain in required merge CI. Large ESSR, gigabyte
+PR validation follows [explicit test scope](../../reference/PR_TEST_SCOPE.md).
+Relevant deterministic regressions may receive exact-head local credit instead
+of duplicate CI execution. Select applicable interop/package checks and run the
+broad maintained battery about every 12 implementation PRs. Scoped PR checks do
+not replace this final full clean-source qualification. Large ESSR, gigabyte
 and endurance runs remain local/manual. Only the maintainer dispatches hosted
 extended jobs; retain both existing **15-minute** job caps. Do not dispatch them
 as part of autonomous continuation. Use identified disposable test stores only.

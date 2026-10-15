@@ -433,15 +433,7 @@ export function* dumpDatabase(args: Record<string, unknown>): Operation<void> {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new DatabaseOperationError(`Error dumping database: ${message}`, {
-      name,
-      base,
-      headDirPath,
-      temp,
-      compat,
-      target: target ?? DEFAULT_TARGET,
-      prefix: prefix ?? "",
-    });
+    throw new DatabaseOperationError(`Error dumping database: ${message}`, { cause: error });
   } finally {
     yield* domain.close();
   }
