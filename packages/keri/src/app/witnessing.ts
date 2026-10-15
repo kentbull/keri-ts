@@ -52,6 +52,7 @@ import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts"
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { envelopeFromFrame } from "./parsering.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import { converseCesrTcp } from "./tcp-conversation.ts";
 import { sendCesrTcp } from "./tcp-egress.ts";
 
 const WitnessReceiptPollAttempts = 20;
@@ -786,7 +787,10 @@ export function* sendWitnessMessage(
   if (parsed.protocol === "tcp:") {
     yield* call(function*() {
       if (runtime) {
-        yield* sendCesrTcp(url, bytes, { services, replies: { runtime, local: true } });
+        yield* converseCesrTcp(url, bytes, {
+          services,
+          replies: { services: runtime.services, intake: runtime.intake, reactor: runtime.reactor, local: true },
+        });
       } else {
         yield* sendCesrTcp(url, bytes, { services });
       }

@@ -493,19 +493,27 @@ in addition to its two transport chunk allowances. Serializer output is re-chunk
 under the configured backing ceiling. The caller retains its original owners until
 joined completion. This conservative policy is not an RSS bound.
 
-Explicit `replies: { runtime, local?, consume? }` selects conversation mode on all
-three TCP adapters; default options retain transmit-only behavior and routing.
-Use the borrowed runtime's exact services. TX credit, a logical 2 MiB read/handle
-allowance and Reactor's sole RX stream/64 KiB producer/8 MiB cursor credit precede
-connect. Reactor channel acquisition is lazy; the socket source starts after connect.
+The application flow in `tcp-conversation.ts` composes `converseCesrTcp` and
+`streamCesrTcpConversation` from a borrowed `services`, `intake` and `reactor`.
+The lower TCP engine in `tcp-egress.ts` knows none of those application processor
+types. It lends a bounded byte source to a scoped `TcpRead` consumer. Consumer
+setup precedes connection; its returned operation runs after connect, concurrently
+with output. This reuses the existing pull stream, without another queue or prefetch.
+
+The application selects `replies: { services, intake, reactor, local?, consume? }`;
+default lower-level send options remain transmit-only. An explicit transport
+services override must match the application receiver's services. TX credit, a
+logical 2 MiB read/handle allowance and FrameIntake's RX stream/64 KiB producer/
+8 MiB cursor credit precede connect. The socket source starts after connect.
 These are JS/logical bounds, with native pools/kernel buffering separately qualified.
 One RX parser settles frames concurrently with TX under `allowHalfOpen: true`.
 Genuine RX EOF leaves TX alive. TX EOF starts one absolute drain deadline; reply
 activity cannot refresh it. Failure/cancellation aborts both directions before
-joining either cleanup, with credit and borrowed runtime/frame/payload owners held
+joining either cleanup, with credit and borrowed receiver/frame/payload owners held
 through parser/source/write/socket cleanup. Callback envelopes are non-retaining
 and guarded; do not reenter Reactor or implicitly drain network cues there.
-The `conversationDrained` result means local transmission plus processed RX EOF.
+The application flow's `conversationDrained` result means local transmission plus
+processed RX EOF. Lower-level TCP returns only `transmitted` and counts no protocol frames.
 `processedFrames` counts dispatch attempts, including refusal/escrow/ignored inputs,
 not verified replies or durable remote acceptance. Inspect route decisions and
 accepted state explicitly; KEL dispatch may return no decision. Earlier accepted

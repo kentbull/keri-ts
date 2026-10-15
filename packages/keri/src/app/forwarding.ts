@@ -65,6 +65,7 @@ import type { OobiReplyLimits } from "./oobi-replies.ts";
 import { Organizer } from "./organizing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+import { converseCesrTcp, type TcpReplyReceiver } from "./tcp-conversation.ts";
 import { sendCesrTcp } from "./tcp-egress.ts";
 
 /** Delivery preference accepted by CLI and runtime exchange send helpers. */
@@ -110,22 +111,22 @@ export type PreparedCesrTarget =
     readonly bodyMode: CesrBodyMode;
   };
 
-/** Deliver prepared wire; explicit runtime lends same-socket intake, otherwise TCP drains output only. */
+/** Deliver prepared wire; explicit receiver lends same-socket intake, otherwise TCP drains output only. */
 export function* sendPreparedCesrTarget(
   target: PreparedCesrTarget,
   services: RuntimeServices,
   signal?: AbortSignal,
   onHttpRefusal?: (error: CesrHttpRefusal) => void,
   onAdmissionRefusal?: (error: ResourceAdmissionError) => void,
-  runtime?: AgentRuntime,
+  receiver?: TcpReplyReceiver,
 ): Operation<void> {
   if (target.kind === "tcp") {
-    if (runtime) {
-      yield* sendCesrTcp(target.url, target.message, {
+    if (receiver) {
+      yield* converseCesrTcp(target.url, target.message, {
         services,
         signal,
         onAdmissionRefusal,
-        replies: { runtime, local: true },
+        replies: { services: receiver.services, intake: receiver.intake, reactor: receiver.reactor, local: true },
       });
     } else yield* sendCesrTcp(target.url, target.message, { services, signal, onAdmissionRefusal });
   } else if (target.kind === "http") {
@@ -157,7 +158,7 @@ export function* attemptPreparedCesrTarget(
   target: PreparedCesrTarget,
   services: RuntimeServices,
   signal?: AbortSignal,
-  runtime?: AgentRuntime,
+  receiver?: TcpReplyReceiver,
 ): Operation<"complete" | "refused" | "busy"> {
   let observed: CesrHttpRefusal | ResourceAdmissionError | undefined;
   try {
@@ -168,7 +169,7 @@ export function* attemptPreparedCesrTarget(
         signal,
         (error) => observed = error,
         (error) => observed = error,
-        runtime,
+        receiver,
       )
     );
     signal?.throwIfAborted();

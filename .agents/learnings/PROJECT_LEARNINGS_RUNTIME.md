@@ -171,7 +171,10 @@ retains TCP fallback. Witness-only polling also waits for HTTP(S).
 
 Poster route snapshots and synchronous target preparation own habitat/DB work;
 prepared sending selects HTTP or the shared TCP engine. Runtime cue/failed-target
-and Poster outbox drains explicitly lend runtime for same-socket local intake;
+and Poster outbox drains use the application `tcp-conversation` flow to compose
+same-socket parsing/dispatch. Lower TCP takes only a bounded byte consumer, with
+no AgentRuntime, Reactor or FrameIntake dependency. The application consumer
+prepares intake before connect and processes its pull stream afterward;
 standalone targets remain transmit-only. Keep wire alive through joined cleanup.
 HTTP/HTTPS priority and signed introductions stay unchanged. TCP and RX capacity
 refusals use invocation-local observation; foreign failures preserve identity.

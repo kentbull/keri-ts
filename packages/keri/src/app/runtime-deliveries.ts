@@ -30,7 +30,7 @@ import type { Hab, Habery } from "./habbing.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
 import type { QueryReply } from "./query-replies.ts";
-import { sendCesrTcp } from "./tcp-egress.ts";
+import { converseCesrTcp } from "./tcp-conversation.ts";
 
 /**
  * Resolve the actual transport URL for one query destination AID.
@@ -389,10 +389,10 @@ function* postQueryMessage(
   controller: AbortController,
 ): Operation<void> {
   if (new URL(delivery.url).protocol === "tcp:") {
-    yield* sendCesrTcp(delivery.url, delivery.body, {
+    yield* converseCesrTcp(delivery.url, delivery.body, {
       services: runtime.services,
       signal: controller.signal,
-      replies: { runtime, local: true },
+      replies: { services: runtime.services, intake: runtime.intake, reactor: runtime.reactor, local: true },
     });
     return;
   }

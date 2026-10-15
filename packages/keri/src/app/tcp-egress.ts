@@ -1,24 +1,21 @@
 /** One owned TCP writer shared by finite values and pull-driven sources. */
 import { type CesrFrame, framePayload, ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
 import { createConnection, type Socket } from "node:net";
-import { call, each, type Operation, resource, type Task } from "npm:effection@^3.6.0";
-import type { KeriDispatchEnvelope } from "../core/dispatch.ts";
+import { call, type Operation, resource, type Task } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { abortable } from "./abortable.ts";
-import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { cesrOutputMetadataBytes } from "./cesr-output.ts";
-import type { DispatchDecision } from "./parsering.ts";
 import { defaultRuntimeServices, type RuntimeServices, type RuntimeTimer } from "./runtime-services.ts";
 import { socketBytes } from "./socket-source.ts";
 
-// Fixed JS read/cursor bounds; handle allowance remains logical policy, not a native pool/kernel ceiling.
-const RX_CHUNK = 65536, RX_BUFFER = 8 * 1024 ** 2, RX_HANDLE = 2 * 1024 ** 2;
+// Read/handle allowance remains logical policy, not a native pool/kernel ceiling.
+const RX_HANDLE = 2 * 1024 ** 2;
 
 /** Output limits and cancellation shared by all TCP input forms. */
 export interface TcpSendOptions {
-  /** Default mode does not parse replies; explicit conversation options select that lifetime. */
-  replies?: never;
+  /** Optional bounded byte consumer; application parsing/dispatch stays above this transport. */
+  read?: TcpRead;
   /** Source backing limit and one admitted transport-copy allowance; default 64 KiB. */
   maxChunkBytes?: number;
   /** Connection acquisition deadline; default 30 seconds. */
@@ -42,37 +39,25 @@ export interface TcpTransmission {
   bytes: number;
 }
 
-/** Explicit same-socket intake; runtime, callback envelopes and source owners remain borrowed. */
-export interface TcpConversationOptions extends Omit<TcpSendOptions, "replies"> {
-  replies: {
-    runtime: AgentRuntime;
-    /** Match upstream TCP reply parsing with local=true by default. */
-    local?: boolean;
-    /** Guarded, non-retaining consumption; never reenter Reactor or implicitly deliver cues here. */
-    consume?: (envelope?: KeriDispatchEnvelope, decision?: DispatchDecision) => Operation<void>;
-  };
+/**
+ * One bounded incoming byte stream, prepared before connection and run after connect.
+ * open owns consumer setup/cleanup and lends one operation for the connection scope.
+ * Consume through EOF or fail; setup must not invoke the source before connection.
+ * The transport knows bytes and finite read bounds, not the consumer's protocol.
+ * This scope-local consumer is never retained as queued work.
+ */
+export interface TcpRead {
+  readonly maxChunkBytes: number;
+  readonly maxBufferedBytes: number;
+  open(source: (signal: AbortSignal) => AsyncIterable<Uint8Array>, signal: AbortSignal): Operation<Operation<void>>;
 }
-
-/** Both directions drained locally; dispatch attempts do not establish verified replies or remote acceptance. */
-export interface TcpConversation {
-  kind: "conversationDrained";
-  transmission: TcpTransmission;
-  receive: { kind: "eof"; processedFrames: number };
-}
-
-type TcpOptions = TcpSendOptions | TcpConversationOptions;
-type TcpResult = TcpTransmission | TcpConversation;
 
 /** Send one already resident value; its owner remains borrowed until joined completion. */
 export function sendCesrTcp(
   url: string,
   bytes: Uint8Array,
-  options: TcpConversationOptions,
-): Operation<TcpConversation>;
-/** Preserve transmit-only completion unless a reply policy is supplied. */
-export function sendCesrTcp(url: string, bytes: Uint8Array, options?: TcpSendOptions): Operation<TcpTransmission>;
-/** Adapt finite values to the shared connection owner. */
-export function sendCesrTcp(url: string, bytes: Uint8Array, options: TcpOptions = {}): Operation<TcpResult> {
+  options: TcpSendOptions = {},
+): Operation<TcpTransmission> {
   const cap = Math.min(positive(options.maxChunkBytes ?? 65536, "maxChunkBytes"), Math.max(1, bytes.length));
   return writeTcp(url, (signal) => chunkBytes(bytes, { signal, maxChunkBytes: cap }), {
     ...options,
@@ -89,20 +74,8 @@ export function sendCesrTcp(url: string, bytes: Uint8Array, options: TcpOptions 
 export function streamCesrTcp(
   url: string,
   source: TcpSourceFactory,
-  options: TcpConversationOptions,
-): Operation<TcpConversation>;
-/** Preserve transmit-only streaming unless a reply policy is supplied. */
-export function streamCesrTcp(
-  url: string,
-  source: TcpSourceFactory,
-  options?: TcpSendOptions,
-): Operation<TcpTransmission>;
-/** Adapt source input to the shared connection owner. */
-export function streamCesrTcp(
-  url: string,
-  source: TcpSourceFactory,
-  options: TcpOptions = {},
-): Operation<TcpResult> {
+  options: TcpSendOptions = {},
+): Operation<TcpTransmission> {
   return writeTcp(url, source, options, 0);
 }
 
@@ -115,16 +88,8 @@ export function streamCesrTcp(
 export function sendCesrTcpFrame(
   url: string,
   frame: CesrFrame,
-  options: TcpConversationOptions,
-): Operation<TcpConversation>;
-/** Preserve transmit-only frame serialization unless a reply policy is supplied. */
-export function sendCesrTcpFrame(url: string, frame: CesrFrame, options?: TcpSendOptions): Operation<TcpTransmission>;
-/** Adapt borrowed frame serialization to the shared connection owner. */
-export function sendCesrTcpFrame(
-  url: string,
-  frame: CesrFrame,
-  options: TcpOptions = {},
-): Operation<TcpResult> {
+  options: TcpSendOptions = {},
+): Operation<TcpTransmission> {
   const cap = positive(options.maxChunkBytes ?? 65536, "maxChunkBytes");
   const metadata = 8 * cesrOutputMetadataBytes(frame) + 2 * 1024 ** 2;
   return writeTcp(
@@ -291,9 +256,9 @@ async function writeBorrowedSource(
 function writeTcp(
   url: string,
   factory: TcpSourceFactory,
-  options: TcpOptions,
+  options: TcpSendOptions,
   retainedBytes: number,
-): Operation<TcpResult> {
+): Operation<TcpTransmission> {
   return call(function*() {
     const refuse: (error: ResourceAdmissionError) => never = (error) => {
       options.onAdmissionRefusal?.(error);
@@ -306,18 +271,24 @@ function writeTcp(
     const cap = positive(options.maxChunkBytes ?? 65536, "maxChunkBytes");
     const connectTimeout = positive(options.connectTimeoutMs ?? 30000, "connectTimeoutMs");
     const drainTimeout = positive(options.drainTimeoutMs ?? 30000, "drainTimeoutMs");
-    const replies = options.replies === undefined ? undefined : { ...options.replies };
-    const services = replies?.runtime.services ?? options.services ?? defaultRuntimeServices;
-    if (replies && options.services && options.services !== services) {
-      throw new RangeError("TCP replies require the runtime's exact services");
+    const read = options.read === undefined ? undefined : {
+      maxChunkBytes: options.read.maxChunkBytes,
+      maxBufferedBytes: options.read.maxBufferedBytes,
+      open: options.read.open.bind(options.read),
+    };
+    const services = options.services ?? defaultRuntimeServices;
+    if (read) {
+      positive(read.maxChunkBytes, "read.maxChunkBytes");
+      positive(read.maxBufferedBytes, "read.maxBufferedBytes");
+      if (read.maxChunkBytes > read.maxBufferedBytes) throw new RangeError("Read chunk limit exceeds buffer limit");
     }
-    const outputBytes = retainedBytes + 2 * cap + (replies ? RX_HANDLE : 0);
+    const outputBytes = retainedBytes + 2 * cap + (read ? RX_HANDLE : 0);
     if (!Number.isSafeInteger(outputBytes)) throw new RangeError("TCP output charge exceeds safe integer range");
     if (
-      replies && (services.resources.limits.streams < 2
-        || services.resources.limits.bytes < outputBytes + RX_CHUNK + RX_BUFFER)
+      read && (services.resources.limits.streams < 2
+        || services.resources.limits.bytes < outputBytes + read.maxChunkBytes + read.maxBufferedBytes)
     ) {
-      refuse(new ResourceAdmissionError("TCP conversation exceeds configured capacity", "limit"));
+      refuse(new ResourceAdmissionError("TCP duplex exceeds configured capacity", "limit"));
     }
     yield* resource<void>(function*(provide) {
       const admission = services.resources.reserve({ streams: 1, bytes: outputBytes });
@@ -332,21 +303,15 @@ function writeTcp(
     });
     const receiver = new AbortController();
     let connectedSocket: Socket | undefined;
-    // Acquiring this channel reserves RX stream/cursor credit but does not invoke its source factory.
-    const channel = replies && (yield* replies.runtime.intake.frames((signal) => {
+    // Consumer setup owns RX admission before connect; its byte source remains lazy until the returned task runs.
+    const incoming = read && (yield* read.open((signal) => {
       if (!connectedSocket) throw new Error("TCP receive source acquired before connection");
-      return socketBytes(connectedSocket, { signal, maxChunkBytes: RX_CHUNK });
-    }, {
-      signal: receiver.signal,
-      maxChunkBytes: RX_CHUNK,
-      maxBufferedBytes: RX_BUFFER,
-      classifyWireErrors: true,
-      onAdmissionRefusal: options.onAdmissionRefusal,
-    }));
+      return socketBytes(connectedSocket, { signal, maxChunkBytes: read.maxChunkBytes });
+    }, receiver.signal));
     return yield* abortable(async (upstream, scope) => {
       const controller = new AbortController(), signal = AbortSignal.any([upstream, controller.signal]);
-      const socket = createConnection({ host: parsed.hostname, port, allowHalfOpen: !!replies });
-      if (replies) socket.pause();
+      const socket = createConnection({ host: parsed.hostname, port, allowHalfOpen: !!read });
+      if (read) socket.pause();
       // Transmit-only completion still drains ignored peer bytes so genuine EOF/close can arrive.
       else socket.resume();
       connectedSocket = socket;
@@ -360,7 +325,7 @@ function writeTcp(
         if (!socket.writableFinished) fail(new Error("TCP closed before output completed"));
       });
       let pendingWrite: Promise<void> | undefined;
-      let receiveTask: Task<void> | undefined, receiveEOF = false, processedFrames = 0;
+      let receiveTask: Task<void> | undefined, receiveEOF = false;
       let closingReceive: Promise<void> | undefined, receiveCleanupFailure: unknown;
       const stopReceive = () => {
         receiver.abort(signal.reason);
@@ -381,19 +346,10 @@ function writeTcp(
         );
         services.clock.clearTimeout(timer);
         timerActive = false;
-        if (channel && replies) {
+        if (incoming) {
           receiveTask = scope.run(function*() {
             try {
-              yield* call(function*() {
-                for (const frame of yield* each(channel.frames)) {
-                  yield* replies.runtime.reactor.settle(frame, {
-                    local: replies.local ?? true,
-                    escrows: true,
-                  }, replies.consume);
-                  processedFrames++;
-                  yield* each.next();
-                }
-              });
+              yield* incoming;
               receiveEOF = true;
             } catch (error) {
               fail(error);
@@ -439,10 +395,8 @@ function writeTcp(
       }
       if (failure !== undefined) throw failure;
       if (!finished) throw new Error("TCP closed before output completed");
-      const transmission: TcpTransmission = { kind: "transmitted", bytes };
-      if (!replies) return transmission;
-      if (!receiveEOF) throw new Error("TCP receive did not reach EOF");
-      return { kind: "conversationDrained", transmission, receive: { kind: "eof", processedFrames } };
+      if (read && !receiveEOF) throw new Error("TCP receive did not reach EOF");
+      return { kind: "transmitted", bytes };
     }, options.signal);
   });
 }

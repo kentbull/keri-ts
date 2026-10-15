@@ -23,6 +23,8 @@ storage/transport reconciliation and final qualification remain incomplete.
 
 One progressive parser engine; CESR stays framework-neutral with an optional
 Effection adapter. KERI/Tufa own cancellable operations and joined cleanup.
+Composition points depend downward: transport lends bounded byte streams;
+application flows compose parsing/dispatch without an AgentRuntime dependency in transport.
 Consume-scoped hydration joins disposal and propagates cleanup failures before returning.
 Retryable handoff acknowledges after disposal; callback effects remain at least once.
 Parsed evidence, wrapper construction, verified acceptance and durable publication
