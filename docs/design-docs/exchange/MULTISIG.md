@@ -61,3 +61,12 @@ is accepted. Attribute values remain immutable borrows through byte preparation;
 the route selection is captured before parser suspension. Existing v1/v2 bytes,
 child-kind checks and frame disposal remain separate from this input contract.
 Other route builders and inbound membership/codec contracts are separate concerns.
+
+For a v1 outer proposal carrying a legacy child body with another attachment
+genus, childGvrsn supplies the signed a.cgvrsn hint that KERIpy uses during replay.
+The builder derives it; it is not an arbitrary caller attribute. Intrinsic child
+genus or matching body/attachment versions need no hint. Frozen canonical-714
+vectors cover all four routes and the intrinsic-genus omission case, comparing
+complete parent bytes and supplemental bytes after removing KERIpy's separately
+owned parent endorsement. This proves encoding parity, not complete bidirectional
+approval interoperability; the receiving workflow remains a separate audit.

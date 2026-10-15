@@ -73,6 +73,11 @@ Inception derives gid from its child; callers supply member lists, not another g
 or child commitment. Do not reconstruct typed input from an erased serialized SAD.
 Other multisig/TEL/business routes retain their separate builders; inbound
 membership and generic EXN/embedded-SAD boundaries still need their own audit.
+For a v1 wrapper around a legacy body with a different explicit attachment genus,
+derive signed a.cgvrsn from childGvrsn. Omit it when the body declares its genus or
+the versions agree. Canonical 714 icp/rot/ixn/rpy vectors compare complete unsigned
+bodies and supplemental wire; KERIpy's separate parent endorsement is not part of
+our builder output. Receiving approval workflows still need their own genus audit.
 
 Pure multisig/IPEX body builders take parsed Serders synchronously. Byte convenience
 operations own cancellable parseBytes, finite nested-wire collection and finally
