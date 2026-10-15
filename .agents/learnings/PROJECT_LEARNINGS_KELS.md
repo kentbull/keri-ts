@@ -14,6 +14,9 @@ while applying discovered repairs. Within one validation, later lookups see
 pending repairs without durable publication.
 Expected remote outcomes use typed decisions
 under [ADR-0005](../../docs/adr/adr-0005-kel-decision-control-flow.md), not exceptions.
+Attachment and KEL refusals carry their typed reason/code, message and actual
+escrow instruction, not open diagnostic slots. Invalid-prefix messages retain the
+caught parser detail; local habitat adapters forward the message alone.
 Local inception/interaction uses the same acceptance path as remote events.
 Kevery builds finalized first-seen/date, clone and acceptance cues before accepted
 writes, and holds concrete CueDeck batches before duplicate/escrow effects too.

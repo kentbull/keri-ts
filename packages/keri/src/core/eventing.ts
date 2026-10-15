@@ -876,10 +876,7 @@ export class Kevery {
       return {
         kind: "reject",
         code: "invalidPre",
-        message: `Invalid pre=${pre} for event ${said}.`,
-        context: {
-          cause: error instanceof Error ? error.message : String(error),
-        },
+        message: `Invalid pre=${pre} for event ${said}: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
 

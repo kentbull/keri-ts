@@ -1692,7 +1692,7 @@ export class Habery {
         this.removeGroupHabRecord(pre, group, ns);
       }
       this.habs.delete(pre);
-      throw new ValidationError(decision.message, decision.context);
+      throw new ValidationError(decision.message);
     }
 
     if (hab.accepted) {
@@ -1889,7 +1889,7 @@ export class Habery {
       local: true,
     });
     if (decision.kind === "reject") {
-      throw new ValidationError(decision.message, decision.context);
+      throw new ValidationError(decision.message);
     }
 
     if (serder.sn !== null && serder.said && this.db.kels.getLast(hab.pre, serder.sn) === serder.said) {
@@ -1949,7 +1949,7 @@ export class Habery {
       local: true,
     });
     if (decision.kind === "reject") {
-      throw new ValidationError(decision.message, decision.context);
+      throw new ValidationError(decision.message);
     }
 
     if (hab.accepted) {

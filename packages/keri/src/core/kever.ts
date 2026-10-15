@@ -1910,8 +1910,9 @@ export class Kever {
     } catch (error) {
       return Kever.reject(
         "invalidPre",
-        `Invalid prefix ${pre} for inception ${said ?? "<unknown>"}.`,
-        { cause: error instanceof Error ? error.message : String(error) },
+        `Invalid prefix ${pre} for inception ${said ?? "<unknown>"}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
     if (!said || sn === null) {
@@ -2108,18 +2109,16 @@ export class Kever {
   private static reject(
     code: RejectKind,
     message: string,
-    context?: Record<string, unknown>,
   ): KeverReject {
-    return { kind: "reject", code, message, context };
+    return { kind: "reject", code, message };
   }
 
   /** Helper to produce one reject attachment decision. */
   private static rejectAttachment(
     code: RejectKind,
     message: string,
-    context?: Record<string, unknown>,
   ): AttachmentReject {
-    return { kind: "reject", code, message, context };
+    return { kind: "reject", code, message };
   }
 
   /** Build one typed escrow decision for event-level routing. */
