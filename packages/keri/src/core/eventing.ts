@@ -13,7 +13,7 @@ import {
 import { Baser } from "../db/basing.ts";
 import { dgKey, snKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
-import { CueDeck } from "./cue-admission.ts";
+import { type CuePublisher, cuePublisher } from "./cue-publishing.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import {
@@ -189,6 +189,7 @@ export class Kevery {
 
   readonly db: Baser;
   readonly cues: Deck<AgentCue>;
+  private readonly publisher: CuePublisher;
   readonly lax: boolean;
   readonly local: boolean;
   readonly rvy?: Revery;
@@ -218,6 +219,7 @@ export class Kevery {
   ) {
     this.db = db;
     this.cues = cues ?? new Deck();
+    this.publisher = cuePublisher(this.cues);
     this.lax = lax;
     this.local = local;
     this.rvy = rvy;
@@ -945,12 +947,10 @@ export class Kevery {
   /** Admit concrete cues and fix FEL metadata under the caller's synchronous writer ownership. */
   private prepareDecision(decision: KeverDecision): PreparedKeverDecision | undefined {
     // Ordinary Runtime decks retain their existing refusal/retry boundary until ownership is fully ported.
-    if (!(this.cues instanceof CueDeck)) {
-      this.cues.checkSpace(
-        ("cues" in decision ? decision.cues?.length ?? 0 : 0)
-          + (decision.kind === "accept" ? 4 : decision.kind === "duplicate" ? 1 : 0),
-      );
-    }
+    this.publisher.preflight(
+      ("cues" in decision ? decision.cues?.length ?? 0 : 0)
+        + (decision.kind === "accept" ? 4 : decision.kind === "duplicate" ? 1 : 0),
+    );
     if (decision.kind === "reject") return;
     if (decision.kind === "accept") {
       const kever = this.kevers.get(decision.transition.pre);
@@ -963,7 +963,7 @@ export class Kevery {
       const cues = [...logged.cues, ...(decision.cues ?? []), ...this.acceptanceCues(transition, group)];
       // Hold exact cue objects/backing and slots before accepted-event writes.
       this.cues.checkSpace(cues.length);
-      const prepared = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+      const prepared = this.publisher.prepare(cues);
       return {
         write: () => {
           target.logEvent(transition.log, logged);
@@ -978,8 +978,7 @@ export class Kevery {
             this.db.prefixes.add(transition.pre);
             this.db.groups.add(transition.pre);
           }
-          if (prepared) prepared.publish();
-          else this.emitDecisionCues(cues);
+          prepared.publish();
         },
         release: () => prepared?.release(),
       };
@@ -991,15 +990,14 @@ export class Kevery {
       : undefined;
     const cues = [...(logged?.cues ?? []), ...(decision.cues ?? [])];
     this.cues.checkSpace(cues.length);
-    const prepared = cues.length && this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    const prepared = cues.length ? this.publisher.prepare(cues) : undefined;
     return {
       write: () => {
         if (decision.kind === "escrow") this.persistEscrowInstruction(decision.instruction);
         else if (decision.log && kever && logged) kever.logEvent(decision.log, logged);
       },
       publish: () => {
-        if (prepared) prepared.publish();
-        else this.emitDecisionCues(cues);
+        prepared?.publish();
       },
       release: () => prepared?.release(),
     };
@@ -1304,13 +1302,12 @@ export class Kevery {
       const dater = new Dater({ qb64: encodeDateTimeToDater(dt) });
       const cues: AgentCue[] = [{ kin: "keyStateSaved", ksn }];
       this.cues.checkSpace();
-      const child = this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+      const child = this.publisher.prepare(cues);
       try {
         reply.applyProofs();
         this.updateKeyState(args.aid, ksn, saider, dater);
         reply.publishQueries();
-        if (child) child.publish();
-        else this.cues.extend(cues);
+        child.publish();
         return acceptReplyDecision();
       } finally {
         child?.release();
@@ -1422,23 +1419,17 @@ export class Kevery {
     return cues;
   }
 
-  /** Forward decision-carried cues into the shared runtime cue deck. */
-  private emitDecisionCues(cues?: readonly AgentCue[]): void {
-    this.cues.extend(cues ?? []);
-  }
-
   /** Admit concrete query output before repairing replay source seals or publishing its cues. */
   private publishQueryCues(serder: SerderKERI, cues: readonly AgentCue[] = []): void {
     this.cues.checkSpace(cues.length);
-    const batch = cues.length && this.cues instanceof CueDeck ? this.cues.prepare(cues) : undefined;
+    const batch = cues.length ? this.publisher.prepare(cues) : undefined;
     try {
       if (serder.route === "logs") {
         const query = serder.ked?.q as Record<string, unknown> | undefined;
         const kever = typeof query?.i === "string" ? this.db.getKever(query.i) : undefined;
         if (kever) this.repairReplaySourceSeal(kever);
       }
-      if (batch) batch.publish();
-      else this.emitDecisionCues(cues);
+      batch?.publish();
     } finally {
       batch?.release();
     }

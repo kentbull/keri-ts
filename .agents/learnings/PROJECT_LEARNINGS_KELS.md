@@ -20,6 +20,8 @@ failure after writes is not a durable rollback or cue recovery guarantee.
 Ordinary Runtime Deck keeps its conservative acceptance/duplicate count guard
 until owned producers/consumers are fully ported; changing that boundary changes
 ingress and escrow retry ownership even when the actual cue batch fits.
+KEL and reply producers use CuePublisher for preflight and prepared publication;
+queue consumption remains a separate responsibility during the composition migration.
 KEL live/retried queries hold their concrete output batch before replay source-seal
 repair. Capture construction remains separate admission work; refusal cannot repair `aess`.
 

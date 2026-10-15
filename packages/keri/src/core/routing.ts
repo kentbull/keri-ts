@@ -1,7 +1,7 @@
 import { Cigar, Dater, Diger, Prefixer, ResourceLimitError, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
-import { CueDeck } from "./cue-admission.ts";
+import { type CuePublisher, cuePublisher } from "./cue-publishing.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
@@ -340,6 +340,7 @@ export class Revery {
   readonly db: Baser;
   readonly rtr: Router;
   readonly cues: Deck<AgentCue>;
+  private readonly publisher: CuePublisher;
   readonly lax: boolean;
   readonly local: boolean;
   readonly maxReplyGroups: number;
@@ -371,6 +372,7 @@ export class Revery {
     this.db = db;
     this.rtr = rtr ?? new Router();
     this.cues = cues ?? new Deck();
+    this.publisher = cuePublisher(this.cues);
     this.lax = lax;
     this.local = local;
     if (!Number.isSafeInteger(maxReplyGroups) || maxReplyGroups < 0) throw new RangeError("Invalid reply group limit");
@@ -396,7 +398,7 @@ export class Revery {
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
     // Missing signer groups can each request state; the accepted route may also emit one cue.
-    if (!(this.cues instanceof CueDeck)) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
+    this.publisher.preflight((args.tsgs?.length ?? 0) + 1);
     if (!args.serder.verify()) {
       throw new ValidationError(
         `Invalid said for reply msg=${JSON.stringify(args.serder.ked)}.`,
@@ -452,7 +454,7 @@ export class Revery {
 
   /** Hold prospective query ownership while the semantic caller admits its own publication. */
   prepareReply(args: Parameters<Revery["acceptReply"]>[0]): PreparedReply {
-    if (!(this.cues instanceof CueDeck)) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
+    this.publisher.preflight((args.tsgs?.length ?? 0) + 1);
     let plan: ReplyAcceptancePlan | undefined = this.evaluateReply(args);
     let previous = args.retainPrevious ? null : args.osaider ?? null;
     let queries = plan.cues;
@@ -460,7 +462,7 @@ export class Revery {
     if (decision.kind === "unverified" && decision.context) Object.freeze(decision.context);
     Object.freeze(decision);
     this.cues.checkSpace(queries.length);
-    const batch = queries.length && this.cues instanceof CueDeck ? this.cues.prepare(queries) : undefined;
+    const batch = queries.length ? this.publisher.prepare(queries) : undefined;
     let phase: "prepared" | "applying" | "applied" | "published" | "released" = "prepared";
     return Object.freeze({
       decision,
@@ -482,8 +484,7 @@ export class Revery {
       },
       publishQueries: () => {
         if (phase !== "applied") throw new Error("Reply queries require successful proof application");
-        if (batch) batch.publish();
-        else this.cues.extend(queries);
+        batch?.publish();
         phase = "published";
         queries = [];
       },
