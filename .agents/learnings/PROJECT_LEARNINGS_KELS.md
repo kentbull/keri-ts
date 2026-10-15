@@ -5,12 +5,15 @@
 `Kever` decides validity; `Kevery` routes, persists escrows, handles duplicates and
 applies post-acceptance effects. Kever has no queue dependency: decision-carried
 cue descriptions are data, and processing/publication stays with Kevery.
+Baser prepares and writes accepted-event row/FEL metadata; Kevery turns clone
+order anomalies into cues and owns admission/commit/publication sequencing.
+Kever neither writes the event log nor prepares queue work.
 Expected remote outcomes use typed decisions
 under [ADR-0005](../../docs/adr/adr-0005-kel-decision-control-flow.md), not exceptions.
 Local inception/interaction uses the same acceptance path as remote events.
 Kevery builds finalized first-seen/date, clone and acceptance cues before accepted
 writes, and holds concrete CueDeck batches before duplicate/escrow effects too.
-Kever logging checks the prospective FEL tail before writes. Kevery.processEvent
+Baser logging checks the prospective FEL tail before writes. Kevery.processEvent
 owns one native writer through decision, cue admission and durable effects, then
 publishes live state/cues after commit. Explicit decide/apply and already nested
 writer callers retain caller-owned commit/publication ordering. Group-prefix

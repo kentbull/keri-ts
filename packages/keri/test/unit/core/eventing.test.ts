@@ -535,9 +535,13 @@ Deno.test("Kevery admits prospective clone/state cues before accepted writes and
       assertThrows(() => kvy.applyDecision(decision), DeckFullError);
       unchanged();
       slot.release();
-      const log = kever.prepareLogEvent(decision.transition.log);
+      const log = hby.db.prepareKelEventLog(decision.transition.log);
       withPatchedMethod(hby.db, "nextFelOrdinal", () => 2, () => {
-        assertThrows(() => kever.logEvent(decision.transition.log, log), Error, "changed before logging");
+        assertThrows(
+          () => hby.db.writeKelEventLog(decision.transition.log, log, kever.delegated),
+          Error,
+          "changed before logging",
+        );
       });
       unchanged();
       const native = (hby.db.env! as unknown as {
