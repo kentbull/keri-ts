@@ -35,6 +35,13 @@ provision libsodium independently of cached venvs; expose the resolved Homebrew
 dylib without overwriting a conflict, verify actual loading and keep KLI import
 assertions. /bin/bash scrubs DYLD variables, so GITHUB_ENV alone is insufficient.
 
+PR scope uses the [existing suite owners](../../scripts/ci/keri-test-suites.ts)
+and [description controls](../../docs/reference/PR_TEST_SCOPE.md). Exact-head local
+unit credit avoids duplicate CI execution; selected interop/package checks retain
+their real assertions and topology. A skipped lane is not execution evidence.
+Periodic broad checks catch cross-feature regressions; full release qualification
+still includes the maintained manual/endurance gates.
+
 ## Packaging and release
 
 Use dprint and deterministic version generation in checks; opt into build metadata
