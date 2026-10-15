@@ -8,7 +8,7 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.
 import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
-import { type KramConfig, type KramReceipt, kramReceipt, kramReceiptTime } from "../../../src/core/kraming.ts";
+import { type KramConfig } from "../../../src/core/kraming.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
@@ -265,7 +265,7 @@ Deno.test("optional KRAM uses the receiver clock and scopes consumers through re
   });
 });
 
-Deno.test("KRAM exchange receipt survives dependency escrow and cannot be forged or refreshed", async () => {
+Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refreshed", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender");
@@ -300,20 +300,13 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be forged
         sender.sign(serder.raw, true),
       );
     const pending = body("pending"), receipt = makeNowIso8601(new Date(now));
-    let escaped: KramReceipt | undefined, borrowed: SerderKERI | undefined;
     try {
       const [frame] = yield* call(() =>
         parseBytes(serializeMessage(pending, { tsgs: [group(pending)], gvrsn: Vrsn_2_0 }))
       );
-      yield* runtime.reactor.settle(frame, {}, function*(ready, decision) {
+      yield* runtime.reactor.settle(frame, {}, function*(_ready, decision) {
         assertEquals(decision?.kind, "escrow");
-        escaped = kramReceipt(ready!);
-        borrowed = ready!.serder;
-        assertExists(escaped);
-        assertEquals(kramReceiptTime(escaped, borrowed), receipt);
-        assertThrows(() => kramReceiptTime(escaped!, pending), Error, "Invalid scoped KRAM receipt");
       });
-      assertThrows(() => kramReceiptTime(escaped!, borrowed!), Error, "Invalid scoped KRAM receipt");
       assertEquals(seen, [receipt]);
       assertEquals(handled, []);
       assertEquals(hby.db.exchangeMeta.get([pending.said!])?.receiverTime, receipt);
@@ -328,9 +321,13 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be forged
       assertExists(hby.db.exns.get([pending.said!]));
       assertEquals(hby.db.exchangeMeta.get([pending.said!])?.receiverTime, receipt);
       // A new direct attempt cannot replace first qualified provenance with sender dt.
-      yield* runtime.reactor.exchanger.processEvent({ serder: pending, tsgs: [group(pending)] });
+      yield* runtime.reactor.exchanger.processEvent({
+        serder: pending,
+        tsgs: [group(pending)],
+        receiverTime: makeNowIso8601(new Date(now)),
+      });
       assertEquals(handled, [receipt, receipt]);
-      const fresh = body("forged");
+      const fresh = body("invalid-receiver-time");
       yield* call(() =>
         assertRejects(
           () =>
@@ -338,11 +335,11 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be forged
               runtime.reactor.exchanger.processEvent({
                 serder: fresh,
                 tsgs: [group(fresh)],
-                receipt: {} as KramReceipt,
+                receiverTime: "invalid",
               })
             ),
           Error,
-          "Invalid scoped KRAM receipt",
+          "Invalid exchange receiver time",
         )
       );
       assertEquals(hby.db.exchangeMeta.get([fresh.said!]), null);

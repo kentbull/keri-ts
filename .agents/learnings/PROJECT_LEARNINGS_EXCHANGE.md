@@ -192,10 +192,11 @@ can postpone cleanup. Remove the shared opener only after the final participant.
 
 Optional runtime KRAM keeps the transport consumer inside scoped ready handoff;
 never return hydrated owners or authorize HTTP from an older cue after refusal.
-Private envelope-bound receipt authority expires with the consumer and requires
-completed nonexempt intake. Freeze first exchange receiverTime through route proof
-escrow, retry and reopen; recheck publication against competing receipt writes.
-Signed dt, disabled/exempt/v1 intake and forged capabilities never confer cutoffs.
+Completed nonexempt intake passes receiverTime explicitly through dispatch.
+There is no receipt token or envelope WeakMap. Freeze the first exchange
+receiverTime through route proof escrow, retry and reopen; recheck publication
+against competing receipt writes. Signed dt and disabled/exempt/v1 intake do not
+supply receiver time. Local callers own the provenance of explicitly supplied time.
 Disclosed presentation registry processing consumes retained receipt provenance;
 hidden declarations and unfinished graphs remain guarded.
 

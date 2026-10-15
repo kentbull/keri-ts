@@ -198,12 +198,12 @@ No automatic ESSR decryption or child dispatch is enabled. Disclosed IPEX
 presentation registries use the retained trusted receipt; hidden and unfinished
 graph paths remain guarded under the [IPEX contract](IPEX.md).
 
-Completed KRAM intake lends private envelope-bound receipt authority only within
-the ready consumer. Disabled, exempt and v1 forwarding cannot confer it; forged,
-expired or differently bound capabilities fail as caller misuse. Exchanger retains
+Completed KRAM intake passes receiver time explicitly through parser dispatch;
+disabled, exempt and v1 forwarding supply no KRAM time. This is local composition
+data, not a branded capability or a field extracted from signed wire. Exchanger retains
 the first qualified `receiverTime` in private exchange metadata with accepted or
 dependency-escrow evidence, supplies it to route verification/handling and reuses
-it on retry/reopen. Signed `dt` and public caller strings cannot replace it. Archive
+it on retry/reopen. Signed `dt` and later local receipt values cannot replace it. Archive
 publication rechecks the previous receipt under the writer transaction; competing
 changes and corrupt stored timestamps propagate. Frozen 927 IPEX registry cutoff
 selection reads completed TMSC `rdt` and refuses missing/partial receipts; this

@@ -35,7 +35,6 @@ import { PathedMaterialGroup, TransIdxSigGroup, type TransLastIdxSigGroup } from
 import { ValidationError } from "../core/errors.ts";
 import { type ExchangeFactors, type MissingExchangeState, verifyExchangeProofs } from "../core/exchange-proofing.ts";
 import { Kever } from "../core/kever.ts";
-import { type KramReceipt, kramReceiptTime } from "../core/kraming.ts";
 import { exchange as exchangeMessage, supportsNestedExchange } from "../core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
@@ -180,8 +179,8 @@ export interface ExchangeInput {
   nests?: readonly CesrFrame[];
   /** Hosted endpoint provenance, retained across escrow. */
   mailboxAid?: string | null;
-  /** Private scoped KRAM authority; callers cannot supply a timestamp override. */
-  receipt?: KramReceipt;
+  /** Receiver-observed time supplied by local intake, independent of signed wire. */
+  receiverTime?: string;
 }
 
 /** Result of this attempt; complete(said) separately reports any earlier durable acceptance. */
@@ -370,7 +369,10 @@ export class Exchanger {
 
     const previous = this.hby.db.exchangeMeta.get([said]);
     const priorReceipt = storedReceiverTime(previous);
-    const incomingReceipt = args.receipt ? kramReceiptTime(args.receipt, args.serder) : undefined;
+    const incomingReceipt = args.receiverTime;
+    if (incomingReceipt !== undefined && timestampMicros(incomingReceipt) === null) {
+      throw new Error("Invalid exchange receiver time");
+    }
     const receiverTime = priorReceipt ?? incomingReceipt;
     const retained = yield* abortable((signal) =>
       this.hby.db.getEssr(said, signal, { maxEssrBytes: this.maxEssrBytes, maxEssrItems: this.maxEssrItems })
