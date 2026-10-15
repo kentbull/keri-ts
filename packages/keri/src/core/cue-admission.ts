@@ -268,8 +268,6 @@ export class CueDeck implements CueQueue {
   *[Symbol.iterator](): Iterator<AgentCue> {
     for (const owner of this.owners) yield owner.cue;
   }
-  /** Actual batch preparation owns item admission; no conservative producer estimate is needed. */
-  preflight(_count: number): void {}
   checkSpace(count = 1, onAdmissionRefusal?: (error: ResourceAdmissionError | DeckFullError) => void): void {
     if (!Number.isSafeInteger(count) || count < 0) throw new RangeError("Invalid cue admission count");
     if (count > this.capacity) throw new ResourceLimitError("Cue batch exceeds item capacity");

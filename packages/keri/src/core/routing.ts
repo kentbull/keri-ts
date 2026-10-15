@@ -3,7 +3,6 @@ import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
 import type { PreparedCueBatch } from "./cue-admission.ts";
 import type { CueQueueInput } from "./cue-publishing.ts";
-import { type CuePublisher, cuePublisher } from "./cue-publishing.ts";
 import type { QueryCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
@@ -379,7 +378,6 @@ export class Revery {
   readonly db: Baser;
   readonly rtr: Router;
   readonly cues: CueQueueInput;
-  private readonly publisher: CuePublisher;
   readonly lax: boolean;
   readonly local: boolean;
   readonly maxReplyGroups: number;
@@ -411,7 +409,6 @@ export class Revery {
     this.db = db;
     this.rtr = rtr ?? new Router();
     this.cues = cues ?? new Deck();
-    this.publisher = cuePublisher(this.cues);
     this.lax = lax;
     this.local = local;
     if (!Number.isSafeInteger(maxReplyGroups) || maxReplyGroups < 0) throw new RangeError("Invalid reply group limit");
@@ -437,7 +434,7 @@ export class Revery {
     tsgs?: TransIdxSigGroup[];
   }): ReplyProcessDecision {
     // Missing signer groups can each request state; the accepted route may also emit one cue.
-    this.publisher.preflight((args.tsgs?.length ?? 0) + 1);
+    if (this.cues instanceof Deck) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
     if (!args.serder.verify()) {
       throw new ValidationError(
         `Invalid said for reply msg=${JSON.stringify(args.serder.ked)}.`,
@@ -483,10 +480,11 @@ export class Revery {
   }): ReplyProofDecision {
     const plan = this.decideReply(args);
     this.cues.checkSpace(plan.cues.length);
-    const queries = plan.cues.length ? this.publisher.prepare(plan.cues) : undefined;
+    const queries = plan.cues.length && !(this.cues instanceof Deck) ? this.cues.prepare(plan.cues) : undefined;
     try {
       this.writeReply(plan);
-      queries?.publish();
+      if (queries) queries.publish();
+      else if (plan.cues.length) this.cues.extend(plan.cues);
       if (plan.kind === "accept") return acceptReplyDecision();
       return { kind: plan.kind, reason: plan.reason, message: plan.message };
     } finally {
@@ -505,7 +503,7 @@ export class Revery {
 
   /** Evaluate ordered proof groups with a virtual escrow view before any durable reply effects. */
   decideReply(args: Parameters<Revery["acceptReply"]>[0]): ReplyPlan {
-    this.publisher.preflight((args.tsgs?.length ?? 0) + 1);
+    if (this.cues instanceof Deck) this.cues.checkSpace((args.tsgs?.length ?? 0) + 1);
     if ((args.tsgs?.length ?? 0) > this.maxReplyGroups || (args.cigars?.length ?? 0) > this.maxReplyGroups) {
       throw new ResourceLimitError("Reply proof groups exceed configured work limit");
     }
@@ -960,6 +958,7 @@ export class BasicReplyRouteHandler {
       throw new Error("Endpoint handler must own the reply transaction; process replies outside caller-owned writers");
     }
     let queries: PreparedCueBatch | undefined;
+    let queryCues: readonly QueryCue[] = [];
     try {
       const decision = this.rvy.db.env!.transactionSync(() => {
         let osaider = this.rvy.db.eans.get(keys);
@@ -974,7 +973,8 @@ export class BasicReplyRouteHandler {
           tsgs: args.tsgs,
         });
         this.rvy.cues.checkSpace(plan.cues.length);
-        queries = plan.cues.length ? cuePublisher(this.rvy.cues).prepare(plan.cues) : undefined;
+        queryCues = plan.cues;
+        queries = queryCues.length && !(this.rvy.cues instanceof Deck) ? this.rvy.cues.prepare(queryCues) : undefined;
         this.rvy.writeReply(plan);
         if (plan.kind === "unverified") {
           return unverifiedReplyDecision(`Unverified end role reply = ${args.serder.said} role = ${role}`);
@@ -982,7 +982,8 @@ export class BasicReplyRouteHandler {
         this.updateEnd(keys, args.diger, allowed);
         return acceptReplyDecision();
       });
-      queries?.publish();
+      if (queries) queries.publish();
+      else if (queryCues.length) this.rvy.cues.extend(queryCues);
       return decision;
     } finally {
       queries?.release();
@@ -1038,6 +1039,7 @@ export class BasicReplyRouteHandler {
       throw new Error("Endpoint handler must own the reply transaction; process replies outside caller-owned writers");
     }
     let queries: PreparedCueBatch | undefined;
+    let queryCues: readonly QueryCue[] = [];
     try {
       const decision = this.rvy.db.env!.transactionSync(() => {
         let osaider = this.rvy.db.lans.get(keys);
@@ -1052,7 +1054,8 @@ export class BasicReplyRouteHandler {
           tsgs: args.tsgs,
         });
         this.rvy.cues.checkSpace(plan.cues.length);
-        queries = plan.cues.length ? cuePublisher(this.rvy.cues).prepare(plan.cues) : undefined;
+        queryCues = plan.cues;
+        queries = queryCues.length && !(this.rvy.cues instanceof Deck) ? this.rvy.cues.prepare(queryCues) : undefined;
         this.rvy.writeReply(plan);
         if (plan.kind === "unverified") {
           return unverifiedReplyDecision(`Unverified loc scheme reply URL=${url} SAID=${args.serder.said}`);
@@ -1060,7 +1063,8 @@ export class BasicReplyRouteHandler {
         this.updateLoc(keys, args.diger, url);
         return acceptReplyDecision();
       });
-      queries?.publish();
+      if (queries) queries.publish();
+      else if (queryCues.length) this.rvy.cues.extend(queryCues);
       return decision;
     } finally {
       queries?.release();

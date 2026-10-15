@@ -14,7 +14,7 @@ import type { CueQueueInput } from "../core/cue-publishing.ts";
 import { Dater, Ilks, Prefixer, SerderACDC, type Versionage, Vrsn_1_0 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import type { OwnedCue } from "../core/cue-admission.ts";
-import { cuePublisher, type CueReader } from "../core/cue-publishing.ts";
+import type { CueReader } from "../core/cue-publishing.ts";
 import type { AgentCue, CredentialRevokedCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -167,7 +167,7 @@ export class VerifierAgent {
       if (cue.kin !== "revoked") retained.push(cue);
       else queued += this.queueRevocation(cue);
     }
-    if (retained.length) cuePublisher(this.cues).prepare(retained).publish();
+    if (retained.length) source.extend(retained);
     return queued;
   }
 

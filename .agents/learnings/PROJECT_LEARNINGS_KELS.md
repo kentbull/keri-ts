@@ -34,13 +34,14 @@ owning writer, including bucket movement/removal before post-commit publication;
 same-bucket retries do not rewrite rows or emit additional cues.
 Busy/limit refusal leaves that decision unapplied; an unexpected infrastructure
 failure after writes is not a durable rollback or cue recovery guarantee.
-Ordinary Runtime Deck keeps its conservative acceptance/duplicate count guard
-until owned producers/consumers are fully ported; changing that boundary changes
+Ordinary Decks keep their conservative acceptance/duplicate count guard;
+changing that boundary changes
 ingress and escrow retry ownership even when the actual cue batch fits.
-KEL and reply producers use CuePublisher for preflight and prepared publication;
-queue consumption remains a separate responsibility during the composition migration.
-Registry and credential TSN receivers share that producer seam without changing
-their independent proof, trust, dependency, or Broker membership decisions.
+KEL, reply and TSN producers check ordinary Deck capacity and publish cue records
+directly after the owning writes. Admitted queues alone prepare real retention
+handles. Transactional reply handlers retain plain query records across commit;
+no synthetic publication owner is needed. Registry and credential TSN retain
+independent proof, trust, dependency and Broker membership decisions.
 KEL live/retried queries hold their concrete output batch before replay source-seal
 repair. Capture construction remains separate admission work; refusal cannot repair `aess`.
 
