@@ -25,6 +25,12 @@ remain incomplete.
 [ADR-0013](../docs/adr/adr-0013-simple-component-flows.md) governs component
 flows and explicit contracts and supersedes conflicting older blanket budget,
 reservation, and runtime-container guidance. Its implementation is incomplete.
+The 2026-10-15 decision requires complete removal of application accounting and
+unsupported outbox/mailbox-consumer/KRAM-ready durability. Only a minimal private
+socket constraint supported by production evidence may remain. No no-op policies,
+renamed ledgers or dormant hooks. Preserve real protocol state and resource cleanup;
+old keri-ts API/data compatibility is not required. Add no migration readers,
+upgrade machinery or new-to-old version tests.
 Use concrete semantic records, narrow validated input, and locally justified
 open boundaries. Diagnostic metadata must not drive domain control flow.
 
@@ -33,17 +39,15 @@ Effection adapter. KERI/Tufa own cancellable operations and joined cleanup.
 Composition points depend downward: transport lends bounded byte streams;
 application flows compose parsing/dispatch without an AgentRuntime dependency in transport.
 Consume-scoped hydration joins disposal and propagates cleanup failures before returning.
-Retryable handoff acknowledges after disposal; callback effects remain at least once.
 Parsed evidence, wrapper construction, verified acceptance and durable publication
 are separate boundaries. Validation returns delegation-hint repairs as data;
-the processing owner persists them after queue admission, never during lookup.
+the processing owner persists them in its transaction, never during lookup.
 Parent signatures never authenticate nested children.
 Public registry intake borrows issuer KEL state independently of local Hab aliases.
 Accepted legacy bytes remain readable; new intake requires full witnessed tuples.
 Raw evidence stays separate from opt-in strict seal projection.
 Native addon loading alone is not runtime compatibility; qualify large-row paths.
-Pinned nested-row preflight preserves active writers; shared copy admission remains separate.
-Finite retry credit precedes native row materialization and outlives joined transport/cursor cleanup.
+Native row lifetimes and active writers remain correct without copy billing.
 
 Active KERIpy parity targets `7143832813cac6a394ab1faf9be83bb3372be87c`.
 Keep historical 927 fixtures and fork/legacy compatibility results labeled by their actual sources.
@@ -56,11 +60,9 @@ infrastructure and caller-contract failures. Diagnostic messages stay separate
 from standard Error.cause, which preserves actual underlying failures,
 never a substitute metadata bag. Keep protocol compatibility and
 frozen-reference evidence explicit; no old TypeScript API shims are required.
-Finite local limits do not establish a shared in-flight memory bound.
-Baser fixes the deployment policy before reopen; runtime inherits it. This release
-bounds in-flight work and reports accepted-state growth separately. Streaming is
-required where KERIpy 714 supports it. New caches, accepted-state API redesign,
-further stack-wide streaming and exhaustive CBOR extension accounting are deferred.
+Logical accounting never established a process-memory guarantee. Remove its
+plumbing rather than transferring it to another owner. Streaming remains required
+where KERIpy supports it; native backpressure and real cleanup remain independent.
 KERIpy parity comes first; optional additions are proposals, not implementation gates.
 Selective inter-component streaming may reuse existing engines for a concrete
 benefit after parity priorities; it does not restore a stack-wide mandate.

@@ -26,7 +26,9 @@ aggregate accounting, reservation layers, or exact service-container identity.
 It does not declare those mechanisms removed or change protocol requirements.
 Conflicting migration plans must be reconciled before implementing affected work.
 Parser format rules, transaction correctness, and real resource cleanup remain
-requirements; optional runtime accounting is not automatically one of them.
+requirements. The 2026-10-15 removal decision supersedes all earlier local-budget
+exceptions and blanket outbox/durable-recovery preservation instructions. Existing
+implementation is transitional and must be removed before release.
 
 ## Decision
 
@@ -118,36 +120,32 @@ A queued frame must remain valid through consumption. Preserve the processing
 completion semantics of existing callers when replacing direct calls with flows.
 Do not build a general request/reply RPC layer to avoid a simple local operation.
 
-### 5. Start with simple flow control; bounds must earn their keep
+### 5. Remove application budgeting; use native socket backpressure
 
-Unbounded Decks are allowed. Pure actor semantics, universal backpressure, byte
-ledgers, and reservation handles are not default architecture requirements.
-Prefer the simplest queue/stream that supports the real workflow.
+Application-managed resource accounting is prohibited. Remove shared policies,
+byte estimates, reservations, credits, inspection charges, preparation floors and
+synthetic ownership of ordinary records. Parsers, codecs, domain processing,
+Decks, persistence, replay, orchestration and CLI contracts must not know about
+memory budgets. Do not rename the machinery, retain no-op policies, use Infinity,
+or keep dormant options for later.
 
-Production evidence of backlog or resource pressure is the preferred reason to
-strengthen internal flow control. A concrete protocol rule, reproduced excessive
-allocation defect, deployment requirement, or actual resource lifetime can also
-justify a local constraint. A hypothetical future overload or a test mirroring
-an invented accounting formula does not establish that need.
+The only possible exception is a small private TCP/HTTP/socket constraint for an
+observed production problem. Production performance evidence must show why native
+stream/socket backpressure is insufficient. The exception permits a necessary
+local solution; it does not require retaining a subsystem. No accounting type,
+configuration, callback or outcome may leak into other components. Hypothetical
+overload and tests reproducing invented formulas are not evidence.
 
-For each existing bound/accounting layer touched, briefly state its evidence,
-benefit, and complexity in the active plan or PR. Remove or simplify machinery
-without a sufficient benefit. A small local bound may remain when its benefit is
-concrete and its additional complexity is negligible; it must not force a general
-ownership framework onto domain code. Do not keep complex machinery merely
-because it already exists, and do not add dormant limit hooks for later use.
+Preserve wire framing and declared lengths, cryptographic validation, supported
+numeric representation, transactions, actual file/socket/iterator disposal, and
+KERIpy-supported protocol state. These are correctness requirements, not resource
+policy. Ordinary cues are records in Decks, without retain/transfer/release
+protocols for garbage-collected data.
 
-Distinguish queue policy from malformed-input validation, wire-format constraints,
-actual buffer lifetime, file/socket cleanup, and established durable retry rules.
-Retain the latter for their own reasons. Changing an optional limit is a deliberate
-behavior change after the structural refactor, not an accidental refactor effect.
-Update tests and documented guarantees accordingly; do not claim a shared memory
-bound after removing the mechanism that established it.
-
-Where bounds remain, refusal preserves retryable work and ownership is explicit.
-Never wait for downstream capacity while holding a transaction or state turn that
-downstream needs. Do not implement silent eviction of protocol work or a generic
-deadlock-management framework.
+Refactor mixed functions so real work and cleanup belong to their existing owner
+before removing accounting behavior. Do not invent staging abstractions. Remove
+formula-only tests while retaining independent protocol and cleanup regressions.
+Do not claim a process-memory bound from logical estimates or their removal.
 
 ### 6. Define queue consumers and route cues explicitly
 
@@ -173,12 +171,25 @@ only for demonstrated shared-state ordering that cannot be eliminated simply.
 owners added only to satisfy a uniform interface should disappear. Legitimate
 library teardown contracts, cancellation, disposal, and joined cleanup remain.
 
-### 8. Preserve durable recovery where the workflow needs it
+### 8. Retain KERIpy protocol state; remove unsupported delivery guarantees
 
-Decks carry live work; existing outboxes and escrows remain authoritative for
-recoverable work. Specify consumption/failure/restart behavior at affected
-boundaries. Do not replace durable work with transient queues or make every queue
-durable. Keep exact-wire retry when the protocol/workflow requires it.
+Remove the outbox completely, including disabled implementations, storage,
+workers, runtime/CLI integration, flags, exports and dedicated tests. Also remove
+durable mailbox consumer acknowledgements/deadletters and KRAM ready/snapshot
+handoff acknowledgements. Do not alter KERIpy to justify TypeScript-only delivery
+guarantees or preserve them merely because they have tests.
+
+Keep KERIpy-supported escrows, replay/timeliness caches, mailbox provider messages
+and polling cursors, accepted evidence and protocol receipts. KRAM acceptance is
+not downstream business acknowledgement. Local transport completion is not remote
+application acceptance. Use the pinned reference to distinguish them.
+
+Stop creating/opening retired stores and delete their code outright. Compatibility
+with previous keri-ts versions and their data is not a requirement. Do not build
+migration/export/recovery paths, compatibility readers, disabled implementations
+or new-to-old version tests. Current KERIpy protocol interoperability remains the
+target. The deferred outbox roadmap is an unimplemented idea, never retention
+authority. Removing code does not require touching unrelated live databases.
 
 ## KERIpy grounding and deliberate differences
 

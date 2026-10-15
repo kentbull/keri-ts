@@ -94,8 +94,12 @@ chronology unless they are themselves durable operational knowledge.
   live state/cues after commit. Reactor is not a general callback scheduler.
 - Open metadata bags require a specific local justification. Never drive domain
   behavior from diagnostic keys; validate unknown input and preserve known types.
-- Unbounded Decks are allowed. Bounds, accounting, and reservation machinery
-  must earn their complexity through concrete benefit, as the ADR describes.
+- No application memory budgeting: parsers, codecs, domain, queues, storage,
+  replay, runtime and CLI must not carry policies, credits or estimates. Only a
+  minimal private socket constraint with production evidence may remain.
+- Remove outboxes and unsupported mailbox/KRAM acknowledgement durability. Keep
+  KERIpy protocol state and actual cleanup. Old keri-ts API/data compatibility
+  is not required: no shims, migration readers or new-to-old version tests.
 - Refactor ownership/contracts first; change behavior in a cohesive follow-up.
 
 ### State-Machine Control Flow

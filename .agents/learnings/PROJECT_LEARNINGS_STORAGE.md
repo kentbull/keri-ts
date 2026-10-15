@@ -1,5 +1,16 @@
 # Storage learnings
 
+## Removal precedence (2026-10-15)
+
+[ADR-0013](../../docs/adr/adr-0013-simple-component-flows.md) now requires removal
+of all application budgeting and unsupported outbox, mailbox consumer-ack and
+KRAM ready/snapshot durability. Any descriptions below of credits, reservations,
+capacity admission or those delivery guarantees describe transitional code, not
+instructions to preserve it. Remove those passages with their owning code rounds.
+Preserve independent wire/crypto/transaction correctness and actual cleanup.
+Only a minimal private socket constraint justified by production evidence may
+remain; no parser, domain, storage, runtime or CLI accounting exception exists.
+
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
 do not cast the native environment or infer commit completion from a nested return.
