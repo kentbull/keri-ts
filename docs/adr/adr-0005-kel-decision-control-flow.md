@@ -83,12 +83,19 @@ processing orchestrator controls acceptance, persistence and publication. This
 keeps the KERIpy mental model while making the control surface explicit in
 TypeScript.
 
+Kevery uses plain EventMetadata for finalized first-seen/log coordinates, clone
+notices and accepted cache state. Its control flow explicitly admits the actual
+cue batch, writes decision data, publishes accepted state and publishes cues.
+Metadata has no write/publish/release methods; finally releases only acquired cue
+capacity. Repair-only rejection needs no fabricated lifecycle object.
+
 When `processEvent` owns the native writer, one synchronous transaction covers
 decision, concrete cue admission, first-seen preparation and durable effects.
 Live accepted state and cues publish only after that commit succeeds; failed
-writes or commits release unpublished cue ownership. Explicit `decideEvent` /
-`applyDecision` callers and `processEvent` within an already active writer retain
-caller-owned commit/publication ordering. An in-process Reactor guard alone does
+writes or commits release unpublished cue ownership. The remaining explicit
+`applyDecision` and already-active-writer paths currently publish synchronously
+without owning the outer commit. This is a known ordering gap, not an atomicity
+guarantee; transaction ownership must be resolved in the dedicated follow-up. An in-process Reactor guard alone does
 not serialize another process writing the same LMDB environment.
 Event escrow replay uses this same owning writer: promotion or bucket movement
 and original-row removal commit before publication. A retry remaining in its
