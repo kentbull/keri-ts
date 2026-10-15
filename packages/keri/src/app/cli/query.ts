@@ -46,11 +46,11 @@ const QueryTimeoutMs = 10_000;
 /** Load and validate one anchor JSON object for `--anchor` query mode. */
 function loadAnchor(path: string): Record<string, unknown> {
   const text = Deno.readTextFileSync(path);
-  const anchor = JSON.parse(text);
+  const anchor: unknown = JSON.parse(text);
   if (!anchor || typeof anchor !== "object" || Array.isArray(anchor)) {
     throw new ValidationError("Anchor file must contain a JSON object.");
   }
-  return anchor as Record<string, unknown>;
+  return { ...anchor };
 }
 
 /**
