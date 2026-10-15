@@ -27,8 +27,9 @@ are implemented. Their complete maintained workflow qualification
 remain open; do not infer completion from isolated receipt/cutoff tests.
 
 Cancellation, I/O, corruption and programming failures propagate. Normal intake
-refusals remain typed. Each remaining unit follows the roadmap's 300–500-line or
-smaller target and preserves published history.
+refusals remain typed. Each remaining unit follows the roadmap's allowance of
+1,000–3,000 changed lines for cohesive deletion/refactoring, with smaller cuts
+where appropriate. Preserve published history.
 
 ## Evidence preservation
 

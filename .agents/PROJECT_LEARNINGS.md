@@ -66,7 +66,10 @@ where KERIpy supports it; native backpressure and real cleanup remain independen
 KERIpy parity comes first; optional additions are proposals, not implementation gates.
 Selective inter-component streaming may reuse existing engines for a concrete
 benefit after parity priorities; it does not restore a stack-wide mandate.
-PRs target 300–500 added or removed lines or fewer, including verification.
+During deletion/refactoring, PRs may contain 1,000–3,000 changed lines when that
+completes one cohesive mechanism removal. Count verification and docs; avoid
+artificial slices that require temporary accounting interfaces or repeated caller
+edits. Smaller cuts remain appropriate at real ownership boundaries.
 Reuse tests; new maintained integration/end-to-end coverage needs strong
 justification. Exploratory probes may remain uncommitted. Choose narrow unit
 regressions with durable value, not new test scaffolding by default.
