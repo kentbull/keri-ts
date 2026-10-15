@@ -1034,10 +1034,12 @@ export class Tevery {
     if (serder.route !== "tels") return { kind: "drop", reason: "unsupportedRoute" };
     const dest = source?.qb64 ?? cigars?.[0]?.verfer?.qb64;
     if (!dest) return { kind: "drop", reason: "missingAuthentication" };
-    const query = serder.ked?.q as Record<string, unknown> | undefined;
+    const query = serder.ked?.q;
     if (
-      !query || typeof query.ri !== "string" || !query.ri || typeof query.src !== "string" || !query.src
-      || typeof query.i !== "string"
+      !query || typeof query !== "object" || Array.isArray(query)
+      || !("ri" in query) || typeof query.ri !== "string" || !query.ri
+      || !("src" in query) || typeof query.src !== "string" || !query.src
+      || !("i" in query) || typeof query.i !== "string"
     ) return { kind: "drop", reason: "invalidQuery" };
     const management = this.reger.replay(query.ri, { gvrsn: Vrsn_2_0, genusify: true });
     const credential = query.i ? this.reger.replay(query.i, { gvrsn: Vrsn_2_0, genusify: true }) : null;

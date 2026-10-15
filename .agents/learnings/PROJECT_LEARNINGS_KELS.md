@@ -80,7 +80,11 @@ before yielding, and preserves frozen v2 proof counters with an explicit genus
 selector. Requester material identifies the destination; upstream query signature
 validation is TODO. Internal TSN production calls actual `vcState(vci)`, correcting
 714's broken query keyword. Missing credentials retain the registry reply;
-credential receiving and ordered TSN query replies are implemented. Registry
+credential receiving and ordered TSN query replies are implemented. TEL/TSN
+query boundaries narrow their actual ri/i/src fields from unknown input before
+reading state; do not assert a metadata map. TSN preparation returns only the
+reply records or refusal actually consumed; missing credentials retain the
+registry reply without unused diagnostic result fields. Registry
 receiving verifies BADA/trust/TEL correspondence.
 State-record construction proves no acceptance. Complete-message caps do not prove native pre-read admission.
 Revery BADA preserves microseconds. Its bounded proof plan discovers the complete
