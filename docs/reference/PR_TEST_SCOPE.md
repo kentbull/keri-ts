@@ -31,6 +31,9 @@ Unit choices are the existing `required` owners in
 required owners), `tufa`, `cesr` and `ci-tools` (the scope contract tests). Interop choices are the concrete owners in
 `extended-interop`. No new inventory, arbitrary command or test-name filtering is
 introduced. Existing suite isolation and participant topology remain in force.
+`interop-ipex-disclosure` owns the maintained bidirectional v2 conversation and
+graph cases separately from the legacy `interop-acdc-deep` workflows, so disclosure
+changes can select that file alone. Full mode includes both owners.
 Empty arrays explicitly select no owners for that lane.
 
 For the periodic broad run, use:

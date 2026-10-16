@@ -20,6 +20,12 @@ representing graph edges, not unsupported child-owned nested streams.
 The selected reference is consolidated mailbox fork `331f32e4`; #485's initial
 eight cases passed all twelve selected CI owners; #486's eighteen cases passed
 the selected ACDC deep owner before the larger-graph extension.
+The file now has its own `interop-ipex-disclosure` owner, selected independently
+for focused PRs and included in full mode. The CLI helper and both manual platform/
+extended workflows take their functional peer pin from
+[`keripy-reference.json`](../../../scripts/ci/keripy-reference.json); the older
+workflow overrides no longer select a different fork revision. Frozen CESR table
+sources remain a separate reference.
 This does not cover all malformed-edge/schema controls,
 multiple/progressive attribute disclosures, multisig, witnesses/mailboxes, restart
 or presentation-registry KRAM cutoffs.

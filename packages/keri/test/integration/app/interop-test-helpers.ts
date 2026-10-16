@@ -5,6 +5,7 @@
  * of repeating process plumbing, temp-home setup, and compat-store inspection.
  */
 import { type Operation } from "npm:effection@^3.6.0";
+import keripyReference from "../../../../../scripts/ci/keripy-reference.json" with { type: "json" };
 import { t } from "../../../../cesr/mod.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { type KeripyRuntime, recordResolverRuntime, verifyKeripy } from "./keripy-runtime.ts";
@@ -157,7 +158,7 @@ const KERIPY_DEMO_WITNESS_NODES: readonly KeriPyWitnessNode[] = [
 ];
 
 /** Mailbox fork on main c102367e; an explicit verified source override takes precedence. */
-export const KERIPY_INTEROP_COMMIT = "331f32e4de13cc5cb699587c5b1f1e5bc4468035";
+export const KERIPY_INTEROP_COMMIT = keripyReference.commit;
 
 const KERIPY_INTEROP_REPO = "https://github.com/kentbull/keripy.git";
 const KERIPY_INTEROP_INSTALL = `git+${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}`;
