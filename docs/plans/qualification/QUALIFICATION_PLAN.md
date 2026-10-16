@@ -103,7 +103,10 @@ run final qualification against 714 and label retained fork/legacy targets separ
 
 Verify no shared accounting APIs, aliases, formula tests or retired store creators
 remain in source or built declarations. Test current supported state and actual
-cleanup; no old-version keri-ts data or new-to-old compatibility tests. Current
+cleanup; no old-version keri-ts data or new-to-old compatibility tests. The [graduated disclosure matrix](GRADUATED_DISCLOSURE_INTEROP.md) requires
+pairwise directions, complete apply/offer-through-admit conversations, dedicated
+spurn cases, chained credentials/edge operators and multiple blinded/revealed
+attributes. A standalone apply/grant probe does not close that gate. Current
 KERIpy interop remains mandatory: live graduated disclosure and KRAM in both
 directions, single-signature and multisig, with witnesses and mailboxes. Frozen
 fixtures or legacy ACDC cases cannot substitute for that topology. KRAM downstream
