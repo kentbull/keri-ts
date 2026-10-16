@@ -64,6 +64,24 @@ def graph_disclosures(hby, hab, graph_case):
     full, partial = disclosure(hab.pre)
     authority = hby.makeHab(name="authority") if graph_case else None
     nodes, bad_nodes = [partial], []
+    if authority and graph_case in ("multi-hop", "branching"):
+        ancestor = hby.makeHab(name="ancestor")
+        _, tail = disclosure(ancestor.pre, issuee=authority.pre)
+        _, middle = disclosure(authority.pre, issuee=hab.pre,
+                               edge=dict(d="", authority=dict(n=tail.said, o="I2I")))
+        edge = dict(d="", authority=dict(n=middle.said, o="I2I"))
+        nodes, issuers = [middle, tail], [hab, authority, ancestor]
+        if graph_case == "branching":
+            auditor = hby.makeHab(name="auditor")
+            _, audit = disclosure(auditor.pre, issuee=ancestor.pre,
+                                  edge=dict(d="", authority=dict(n=tail.said, o="NI2I")))
+            edge["audit"] = dict(n=audit.said, o="NI2I")
+            nodes = [middle, audit, tail]
+            issuers.append(auditor)
+        full, partial = disclosure(hab.pre, edge=edge)
+        nodes.insert(0, partial)
+        return DisclosureGraph(full, nodes, nodes[:-1] if graph_case == "multi-hop" else nodes,
+                               issuers, tail.said if graph_case == "branching" else None)
     if authority:
         _, far = disclosure(authority.pre, issuee=hab.pre if graph_case == "I2I" else authority.pre)
 
@@ -103,6 +121,10 @@ def main():
     if graph_case:
         plan.append([schema, "/e/authority/link/_/" if graph_case in ("AND", "OR") else
                      "/e/authority/_/", ["a/status/"]])
+    if graph_case == "branching":
+        plan.append([schema, "/e/audit/_/", ["a/status/"]])
+    if graph_case in ("multi-hop", "branching"):
+        plan.append([schema, "/e/authority/_/e/authority/_/", ["a/status/"]])
     with openCF(name="ipex-http", temp=True) as cf:
         cf.put(dict(kram=dict(enabled=True, denials=[], caches={
             "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000]})))
@@ -238,7 +260,7 @@ def main():
                 retained = []
                 if not mode.startswith("spurn"):
                     nests = loadParsedNestedSubstreams(hby, messages["/ipex/grant"].said)
-                    assert len(nests) == (2 if graph_case else 1)
+                    assert len(nests) == len(plan)
                     retained = [nest.serder.said for nest in nests]
                     for nest in nests:
                         assert nest.serder.sad["a"]["status"]["value"] == "citizen"

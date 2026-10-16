@@ -69,7 +69,7 @@ function disclosure(
   return { full, partial };
 }
 
-type GraphCase = "I2I" | "NI2I" | "E1E" | "AND" | "OR";
+type GraphCase = "I2I" | "NI2I" | "E1E" | "AND" | "OR" | "multi-hop" | "branching";
 /** Concrete credential bodies, issuer keys and the deliberately missing proof. */
 interface DisclosureGraph {
   full: SerderACDC;
@@ -84,6 +84,36 @@ function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): Disclos
   let { full, partial } = disclosure(hab.pre);
   const authority = graphCase ? hby.makeHab("authority") : undefined;
   let nodes = [partial], badNodes: SerderACDC[] = [];
+  if (authority && (graphCase === "multi-hop" || graphCase === "branching")) {
+    const ancestor = hby.makeHab("ancestor");
+    const tail = disclosure(ancestor.pre, { issuee: authority.pre });
+    const middle = disclosure(authority.pre, {
+      issuee: hab.pre,
+      edge: { d: "", authority: { n: tail.partial.said, o: "I2I" } },
+    });
+    const edge: MapperMap = { d: "", authority: { n: middle.partial.said, o: "I2I" } };
+    nodes = [middle.partial, tail.partial];
+    const issuers = [hab, authority, ancestor];
+    if (graphCase === "branching") {
+      const auditor = hby.makeHab("auditor");
+      const audit = disclosure(auditor.pre, {
+        issuee: ancestor.pre,
+        edge: { d: "", authority: { n: tail.partial.said, o: "NI2I" } },
+      });
+      edge.audit = { n: audit.partial.said, o: "NI2I" };
+      nodes = [middle.partial, audit.partial, tail.partial];
+      issuers.push(auditor);
+    }
+    const root = disclosure(hab.pre, { edge });
+    nodes.unshift(root.partial);
+    return {
+      full: root.full,
+      nodes,
+      issuers,
+      badNodes: graphCase === "multi-hop" ? nodes.slice(0, -1) : nodes,
+      unsigned: graphCase === "branching" ? tail.partial.said : null,
+    };
+  }
   if (authority) {
     const far = disclosure(authority.pre, { issuee: graphCase === "I2I" ? hab.pre : authority.pre });
     /** Vary relation truth while retaining independently signed node evidence. */
@@ -167,18 +197,14 @@ async function conversation(
           tsIssuer ? graphCase : undefined,
         );
         const schema = (full.sad!.s as { $id: string }).$id;
-        const plan: DisclosurePlan = [
-          [schema, "/", ["a/status/"]],
-          ...(graphCase
-            ? [
-              [
-                schema,
-                graphCase === "AND" || graphCase === "OR" ? "/e/authority/link/_/" : "/e/authority/_/",
-                ["a/status/"],
-              ] as const,
-            ]
-            : []),
-        ];
+        const paths = !graphCase
+          ? ["/"]
+          : graphCase === "multi-hop"
+          ? ["/", "/e/authority/_/", "/e/authority/_/e/authority/_/"]
+          : graphCase === "branching"
+          ? ["/", "/e/authority/_/", "/e/audit/_/", "/e/authority/_/e/authority/_/"]
+          : ["/", graphCase === "AND" || graphCase === "OR" ? "/e/authority/link/_/" : "/e/authority/_/"];
+        const plan: DisclosurePlan = paths.map((path) => [schema, path, ["a/status/"]]);
         const receivedGrants: { said: string; kind: string | undefined }[] = [];
         server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
           try {
@@ -387,7 +413,7 @@ async function conversation(
           } else {
             const grant = lineage.find((body) => body.route === "/ipex/grant")!;
             const nests = loadNests(hby.db, grant.said!);
-            assertEquals(nests.length, graphCase ? 2 : 1);
+            assertEquals(nests.length, plan.length);
             assertEquals(nests.map((nest) => nest.body.said!), result.nodes);
             for (const nest of nests) {
               assertInstanceOf(nest.body, SerderACDC);
@@ -426,6 +452,10 @@ for (const tsIssuer of [true, false]) {
   }
   for (const graphCase of ["I2I", "NI2I", "E1E", "AND", "OR"] as const) {
     Deno.test(`IPEX ${tsIssuer ? "TS → Py" : "Py → TS"}: ${graphCase} chain refusal then admission`, () =>
+      conversation(tsIssuer, "apply", graphCase));
+  }
+  for (const graphCase of ["multi-hop", "branching"] as const) {
+    Deno.test(`IPEX ${tsIssuer ? "TS → Py" : "Py → TS"}: ${graphCase} partial graph refusal then admission`, () =>
       conversation(tsIssuer, "apply", graphCase));
   }
 }
