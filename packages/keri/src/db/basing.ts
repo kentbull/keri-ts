@@ -320,7 +320,7 @@ export class Baser {
     signal?.throwIfAborted();
     if (!this.exchangeMeta.get([said])?.essr) {
       if (!this.exns.get([said]) && !this.epse.get([said]) && !this.hasSchemaEscrow(said)) return null;
-      const rows = [...this.essrRows(said, signal)];
+      const rows = [...this.essrRows(said)];
       return rows.length ? rows : null;
     }
     const wire = await (await this.openPayloads(signal)).get(`essr/${said}`, signal);
@@ -328,7 +328,6 @@ export class Baser {
     const bytes = await collectPayload(wire, signal);
     const texters: Texter[] = [];
     for (let offset = 0; offset < bytes.length;) {
-      signal?.throwIfAborted();
       const texter = parseTexter(bytes.subarray(offset), "txt");
       texters.push(texter);
       offset += texter.qb64b.length;
@@ -337,11 +336,9 @@ export class Baser {
   }
 
   /** Decode stored tokens in insertion order without assembling a complete ESSR message. */
-  private *essrRows(said: string, signal?: AbortSignal): Generator<Texter> {
-    signal?.throwIfAborted();
+  private *essrRows(said: string): Generator<Texter> {
     // Check the key prefix before reading so an adjacent owner is never hydrated.
     for (const key of this.essrs.sdb.getKeys({ start: suffix(b(said), 0) })) {
-      signal?.throwIfAborted();
       if (t(unsuffix(key)[0]) !== said) break;
       const wire = this.essrs.sdb.get(key);
       if (!wire) throw new Error("Stored ESSR row disappeared during traversal");

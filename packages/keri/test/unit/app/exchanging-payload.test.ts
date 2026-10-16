@@ -212,6 +212,12 @@ Deno.test("exchange replay streams v1 and v2 ESSR through a fresh buffered parse
         assertEquals(await collectPayload(essrRaw(frame.essrs!)), b(`v${gvrsn.major}`));
       }
       assertEquals(frames, 1);
+      const controller = new AbortController(), reason = new Error("stop before replayed ESSR");
+      const replay = exchanger.replay(serder.said!, controller.signal);
+      assertEquals((await replay.next()).done, false); // Publish the body, then cancel before ESSR.
+      controller.abort(reason);
+      assertStrictEquals(await assertRejects(() => replay.next()), reason);
+      await replay.return(undefined);
     }
   });
 });

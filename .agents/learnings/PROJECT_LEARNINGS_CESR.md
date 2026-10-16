@@ -30,8 +30,10 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
   check before/after pulls and stop buffered/waiting dispatch on cancellation.
   Benchmark cancellation is a direct operation signal, never parser configuration.
 - Files, crypto, sockets and actual Payload readers retain their own cleanup.
-  The optional Effection bridge remains transport removal work, not a parser
-  architecture requirement. Sources must cooperate with their owner's signal.
+  The Effection bridge and subpath are removed. Sources cooperate with their
+  owner's signal. Finite essrChunks/chunk formatting and stored-nest/resident-token
+  hydration have no lifetime options; Payload.open and replay owners check before
+  each publication. Archive/file-backed ESSR retrieval keeps its actual I/O signal.
 - Async parse wraps intrinsic wire failures; source, unexpected codec and abort
   failures retain identity. Finite parseBytes throws its underlying error.
 - MessagePack uses private standard extensions with key caching disabled. CBOR

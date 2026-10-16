@@ -98,7 +98,7 @@ Deno.test("flattened wrapper-local genera serialize as one legal attachment genu
   }
 });
 
-Deno.test("ESSR serialization derives genus counts from ordinary Texters and honors cancellation", async () => {
+Deno.test("ESSR serialization derives genus counts; the payload reader owns cancellation", async () => {
   for (const major of [1, 2] as const) {
     const value = fixture(major);
     const essrs = ["abc", "xyz"].map((raw) => new Texter({ raw: b(raw), code: "4B" }));
@@ -106,8 +106,10 @@ Deno.test("ESSR serialization derives genus counts from ordinary Texters and hon
     for await (const chunk of essrChunks(essrs, { gvrsn: value.gvrsn, domain: "bny" })) parts.push(chunk);
     assertEquals(concatBytes(...parts), decodeB64(value.essr));
     const controller = new AbortController();
-    const iterator = essrChunks(essrs, { gvrsn: value.gvrsn, domain: "bny", signal: controller.signal });
-    await iterator.next();
+    const frame = await read(b(value.wrap("BodyWithAttachmentGroup", value.body + value.essr)));
+    const iterator = attachmentPayload(frame, { domain: "bny" }).open(controller.signal)[Symbol.asyncIterator]();
+    await iterator.next(); // Attachment enclosure.
+    await iterator.next(); // ESSR header; abort before its first qualified fragment.
     controller.abort(new Error("stop serialization"));
     await assertRejects(() => iterator.next(), Error, "stop serialization");
   }
