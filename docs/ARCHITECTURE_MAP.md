@@ -58,13 +58,18 @@ reference material and historical reports.
 
 - `packages/keri/mod.ts`
   - Narrow browser-safe default library surface. This is one of exactly three
-    supported `keri-ts` entrypoints.
+    general-purpose `keri-ts` entrypoints.
 - `packages/keri/runtime.ts`
-  - Explicit runtime surface for runtime/file/network concerns. This is one of
-    exactly three supported `keri-ts` entrypoints.
+  - Deliberate operation/data exports for runtime/file/network concerns. Internal
+    module exports do not automatically expand this contract. This is one of
+    three general-purpose `keri-ts` entrypoints.
 - `packages/keri/db.ts`
-  - Explicit LMDB-backed persistence surface. This is one of exactly three
-    supported `keri-ts` entrypoints.
+  - Explicit LMDB-backed persistence surface. This is one of three general-purpose
+    `keri-ts` entrypoints.
+- `packages/keri/cli.ts`
+  - Separate command-helper boundary consumed by Tufa. It keeps CLI dependencies
+    out of the root/runtime surfaces. npm exports no app/core/db/vdr deep-import
+    patterns; implementation modules are not supported package entrypoints.
 
 ### `tufa`
 
@@ -160,8 +165,8 @@ reference material and historical reports.
 - Do not break `deno task kli ...` and `deno task tephra:annotate ...` UX.
 - Keep CESR parser behavior and fixture/test parity stable.
 - Treat `packages/cesr/mod.ts`, `packages/keri/mod.ts`,
-  `packages/keri/runtime.ts`, and `packages/keri/db.ts` as compatibility
-  boundaries.
+  `packages/keri/runtime.ts`, and `packages/keri/db.ts` as explicit package
+  boundaries. Prior keri-ts API/data compatibility is not required.
 - Keep KEL/reply/runtime verification primitive-driven: higher layers should
   call `Verfer.verify()`, and higher-layer signing should flow through
   `Signer.sign()` or `Manager` orchestration rather than importing concrete

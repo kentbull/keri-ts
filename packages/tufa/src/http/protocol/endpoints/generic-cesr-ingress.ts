@@ -6,7 +6,7 @@
  * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
  */
 import { Ilks, parse, ParserError, type SerderKERI } from "cesr-ts";
-import { call, ensure, type Operation, resource, run } from "effection";
+import { call, ensure, type Operation, resource, run, sleep } from "effection";
 import {
   type AgentRuntime,
   type CueEmission,
@@ -16,7 +16,6 @@ import {
   type QueryReply,
   requestBytes,
   rethrowCleanupFailure,
-  runtimeTurn,
   ValidationError,
 } from "keri-ts/runtime";
 import { jsonNoContentResponse, textResponse } from "../responses.ts";
@@ -146,7 +145,7 @@ function* deferredDirectQueryResponse(
     if (serder.route !== "logs") {
       return null;
     }
-    yield* runtimeTurn();
+    yield* sleep(0);
   } while (Date.now() < expires);
   return null;
 }

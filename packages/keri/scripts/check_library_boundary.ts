@@ -39,10 +39,6 @@ const EXPECTED_EXPORT_KEYS = [
   "./cli",
   "./runtime",
   "./db",
-  "./app/*",
-  "./core/*",
-  "./db/*",
-  "./vdr/*",
 ];
 
 interface SurfaceCheck {

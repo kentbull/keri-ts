@@ -84,6 +84,16 @@ from a few observations. Local drain, HTTP status and live queues do not establi
 remote protocol acceptance or durable recovery. DID/OOBI completion requires final
 validation. Retained file cleanup is for real storage consumers, not parser stages.
 
+## Installed declaration gate
+
+A strict TypeScript 5.9.3 NodeNext consumer currently fails in LMDB 3.5.3's ESM
+`index.d.ts`: that branch uses CommonJS `export =` (TS1203). The same failure
+reproduces before the runtime API narrowing. Runtime installation and source
+Deno checks do not close this declaration gate. Repair the concrete LMDB type
+import/emission boundary in a dedicated follow-up, then rerun the installed
+consumer without `skipLibCheck` before release. Do not add a forwarding interface
+or weaken the check to hide the dependency declaration failure.
+
 ## Final parity report
 
 Classify supported behavior, unfinished processing, intentional divergences,

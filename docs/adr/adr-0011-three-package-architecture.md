@@ -71,9 +71,15 @@ The supported package entrypoints are:
 - `packages/keri/mod.ts`
 - `packages/keri/runtime.ts`
 - `packages/keri/db.ts`
+- `packages/keri/cli.ts` (separate command-helper boundary consumed by Tufa)
 - `packages/tufa/mod.ts`
 
-Internal implementation zones remain internal unless explicitly exported:
+The runtime barrel names supported operations and data explicitly; module
+wildcards must not silently expand that contract. npm exposes the named root,
+runtime, db and cli entrypoints, with no app/core/db/vdr implementation patterns.
+Installed-package checks use those same named surfaces.
+
+Internal implementation zones remain internal unless deliberately exported:
 
 - `packages/tufa/src/**` is internal application implementation, not a stable
   public library surface

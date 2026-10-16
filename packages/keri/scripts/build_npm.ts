@@ -6,7 +6,6 @@
  * manifest targets instead of hard-coding the final tree layout.
  */
 import { build, emptyDir } from "@deno/dnt";
-import { dirname } from "jsr:@std/path/posix/dirname";
 import {
   assertPackagePathExists,
   findGeneratedEntrypoint,
@@ -205,23 +204,6 @@ function normalizeBuiltManifest(): void {
       types: targets.db.types,
     },
   };
-  // Internal scopes are siblings of the discovered npm entrypoint directory.
-  // DNT may emit a flat or nested tree, so derive both JS and declaration roots.
-  const sourceRoot = dirname(dirname(targets.root.import));
-  const typesRoot = dirname(dirname(targets.root.types));
-  for (const scope of ["app", "core", "db", "vdr"]) {
-    const source = `${sourceRoot}/${scope}`;
-    const declarations = `${typesRoot}/${scope}`;
-    for (const directory of [source, declarations]) {
-      if (!Deno.statSync(`${OUT_DIR}/${directory}`).isDirectory) {
-        throw new Error(`Missing generated npm scope directory: ${directory}`);
-      }
-    }
-    manifest.exports[`./${scope}/*`] = {
-      import: `${source}/*.js`,
-      types: `${declarations}/*.d.ts`,
-    };
-  }
   writeJsonFileSync(packageJsonPath, manifest);
 }
 

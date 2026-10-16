@@ -66,8 +66,10 @@ ownership and full qualification remain open.
   requires both implementation directions, full IPEX conversations through admit,
   dedicated spurns, credential chains/edge operators and multiple blinded/revealed
   attributes in focused maintained cases.
-- Narrow public runtime exports to supported operations/data. Remove optional
-  hooks and wrappers; condense contracts, learnings and plans to current decisions.
+- Runtime exports now name supported operations/data explicitly; npm implementation
+  deep-import patterns are removed. Keep actual Tufa composition and supported
+  library operations; a new internal export must not silently expand package API.
+  Finish residual facade/options and documentation review, then qualification.
 - One finite decoder shared by complete input and a small network input loop.
   Wait for complete counted enclosures before entering them. Remove progressive
   traversal, parser cursor, sink/EssrWriter staging and ordinary frame disposal.

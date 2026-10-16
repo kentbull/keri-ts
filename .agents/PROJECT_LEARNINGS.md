@@ -67,6 +67,9 @@ Parent signatures never authenticate nested children.
 Public registry intake borrows issuer KEL state independently of local Hab aliases.
 Accepted legacy bytes remain readable; new intake requires full witnessed tuples.
 Raw evidence stays separate from opt-in strict seal projection.
+Runtime exports are deliberate operations/data, not implementation-module
+wildcards. KERI npm has named root/runtime/db entrypoints and the separate Tufa cli
+helper boundary, without app/core/db/vdr deep-import patterns.
 Native addon loading alone is not runtime compatibility; qualify large-row paths.
 Native row lifetimes and active writers remain correct without copy billing.
 
