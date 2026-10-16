@@ -98,8 +98,8 @@ class TypeScriptPeer implements IpexPeer {
     this.info = {
       pre: this.hab.pre,
       url: `http://127.0.0.1:${this.server.addr.port}/`,
-      schema: (this.graph.full.sad!.s as { $id: string }).$id,
-      commitment: this.graph.full.said!,
+      schema: (this.graph.fullNodes[0].sad!.s as { $id: string }).$id,
+      commitment: this.graph.fullNodes[0].said!,
     };
   }
 
@@ -178,7 +178,7 @@ class TypeScriptPeer implements IpexPeer {
       message: invalid ? "invalid chain" : verb,
       prior: previous ?? undefined,
       recipient: this.remote.pre,
-      ...(!prior ? { xid: this.graph.full.said!, plan: this.plan } : {}),
+      ...(!prior ? { xid: this.graph.fullNodes[0].said!, plan: this.plan } : {}),
     });
     const frame = this.signed(body);
     frame.nests = carried.map((node) =>
@@ -197,7 +197,8 @@ class TypeScriptPeer implements IpexPeer {
     if (this.intakeFailure) throw this.intakeFailure;
     const db = this.hby.db;
     const messages = [...db.exns.getItemIter()].map(([, body]) => body);
-    const grant = messages.find((body) => body.route === "/ipex/grant");
+    const selected = inspect ? db.exns.get(inspect) : null;
+    const grant = selected?.route === "/ipex/grant" ? selected : messages.find((body) => body.route === "/ipex/grant");
     return Promise.resolve({
       messages: messages.map((body) => body.sad as unknown as PeerSnapshot["messages"][number]),
       received: this.received.map(({ said }) => said),

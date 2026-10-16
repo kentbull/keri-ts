@@ -22,27 +22,32 @@ function disclosure(
     },
     kind: Kinds.json,
   });
+  return { full, partial: partialDisclosure(full, ["a/status/"]) };
+}
+
+/** Derive one independent partial from the immutable full node; never merge earlier reveals. */
+export function partialDisclosure(full: SerderACDC, fields: readonly string[]): SerderACDC {
   const compactor = new Compactor({
     mad: structuredClone(full.sad!.a) as MapperMap,
-    kind: Kinds.json,
+    kind: full.kind,
     verify: false,
   });
-  compactor.compact(["a/status/"], "a");
-  const partial = acdcmap(issuer, {
+  compactor.compact([...fields], "a");
+  const partial = acdcmap(full.issuer!, {
     uuid: full.sad!.u as string,
     schema: full.sad!.s as MapperMap,
-    attribute: compactor.partials!["a/status/"].mad,
+    attribute: compactor.partials![fields.join("|")].mad,
     edge: full.sad!.e as MapperMap | undefined,
-    kind: Kinds.json,
+    kind: full.kind,
   });
   assertEquals(partial.said, full.said);
-  return { full, partial };
+  return partial;
 }
 
 export type GraphCase = "I2I" | "NI2I" | "E1E" | "AND" | "OR" | "multi-hop" | "branching";
 /** Concrete credential bodies, issuer keys and the deliberately missing proof. */
 export interface DisclosureGraph {
-  full: SerderACDC;
+  fullNodes: SerderACDC[];
   nodes: SerderACDC[];
   badNodes: SerderACDC[];
   issuers: Hab[];
@@ -53,7 +58,7 @@ export interface DisclosureGraph {
 export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): DisclosureGraph {
   if (!graphCase) {
     const { full, partial } = disclosure(hab.pre);
-    return { full, nodes: [partial], badNodes: [], issuers: [hab], unsigned: null };
+    return { fullNodes: [full], nodes: [partial], badNodes: [], issuers: [hab], unsigned: null };
   }
   if (graphCase === "multi-hop" || graphCase === "branching") return deepGraph(hby, hab, graphCase);
   return relationGraph(hby, hab, graphCase);
@@ -68,7 +73,9 @@ function deepGraph(hby: Habery, hab: Hab, graphCase: "multi-hop" | "branching"):
     edge: { d: "", authority: { n: tail.partial.said, o: "I2I" } },
   });
   const edge: MapperMap = { d: "", authority: { n: middle.partial.said, o: "I2I" } };
-  const nodes = [middle.partial, tail.partial], issuers = [hab, authority, ancestor];
+  const nodes = [middle.partial, tail.partial],
+    fullNodes = [middle.full, tail.full],
+    issuers = [hab, authority, ancestor];
   if (graphCase === "branching") {
     const auditor = hby.makeHab("auditor");
     const audit = disclosure(auditor.pre, {
@@ -77,13 +84,15 @@ function deepGraph(hby: Habery, hab: Hab, graphCase: "multi-hop" | "branching"):
     });
     edge.audit = { n: audit.partial.said, o: "NI2I" };
     nodes.splice(1, 0, audit.partial);
+    fullNodes.splice(1, 0, audit.full);
     issuers.push(auditor);
   }
   const root = disclosure(hab.pre, { edge });
   nodes.unshift(root.partial);
+  fullNodes.unshift(root.full);
   // Multi-hop omits the ancestor entirely; branching carries it without its issuer proof.
   return {
-    full: root.full,
+    fullNodes,
     nodes,
     issuers,
     badNodes: graphCase === "multi-hop" ? nodes.slice(0, -1) : nodes,
@@ -127,7 +136,13 @@ function relationGraph(hby: Habery, hab: Hab, graphCase: RelationCase): Disclosu
     badNodes = [near(badFar.partial).partial, badFar.partial];
   }
   // NI2I leaves the relation intact and removes the far node's proof instead.
-  return { full, nodes, badNodes, issuers: [hab, authority], unsigned: graphCase === "NI2I" ? far.partial.said : null };
+  return {
+    fullNodes: [full, far.full],
+    nodes,
+    badNodes,
+    issuers: [hab, authority],
+    unsigned: graphCase === "NI2I" ? far.partial.said : null,
+  };
 }
 
 /** Paths describe the disclosed graph, while each node retains only its status field. */

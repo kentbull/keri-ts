@@ -55,7 +55,7 @@ class IpexPeer:
 
     def info(self):
         return dict(pre=self.hab.pre, url=f"http://127.0.0.1:{self.server.servant.ha[1]}/",
-                    schema=self.graph.full.sad["s"]["$id"], commitment=self.graph.full.said)
+                    schema=self.graph.full_nodes[0].sad["s"]["$id"], commitment=self.graph.full_nodes[0].said)
 
     def stop(self):
         self.running = False
@@ -130,7 +130,9 @@ class IpexPeer:
         """Expose observations; scenario assertions belong to the calling test."""
         db = self.hby.db
         messages = [body for _, body in db.exns.getTopItemIter()]
-        accepted_grant = next((body for body in messages if body.route == "/ipex/grant"), None)
+        selected = db.exns.get(keys=(inspect,)) if inspect else None
+        accepted_grant = selected if selected and selected.route == "/ipex/grant" else next(
+            (body for body in messages if body.route == "/ipex/grant"), None)
         nests = loadParsedNestedSubstreams(self.hby, accepted_grant.said) if accepted_grant else []
         inspected = None if inspect is None else dict(
             accepted=db.exns.get(keys=(inspect,)) is not None,

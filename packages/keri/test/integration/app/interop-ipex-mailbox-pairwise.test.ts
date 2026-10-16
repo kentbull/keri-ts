@@ -174,8 +174,8 @@ for (const tsDiscloser of [true, false]) {
                     const ts: PeerInfo = {
                       pre: hab.pre,
                       url: urls[0],
-                      schema: (graph.full.sad!.s as { $id: string }).$id,
-                      commitment: graph.full.said!,
+                      schema: (graph.fullNodes[0].sad!.s as { $id: string }).$id,
+                      commitment: graph.fullNodes[0].said!,
                     };
                     const plan = disclosurePlan(tsDiscloser ? ts.schema : py.schema, graphCase);
                     // Exchange actual public KEL evidence through both production HTTP intake paths.
@@ -242,7 +242,7 @@ for (const tsDiscloser of [true, false]) {
                             message: invalid ? "invalid chain" : verb,
                             prior: previous ?? undefined,
                             recipient: py.pre,
-                            ...(!prior ? { xid: graph.full.said!, plan } : {}),
+                            ...(!prior ? { xid: graph.fullNodes[0].said!, plan } : {}),
                           });
                           const nests = carried.map((node) => {
                             const issuer = graph.issuers.find((issuer) => issuer.pre === node.issuer);

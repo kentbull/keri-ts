@@ -14,21 +14,25 @@ def disclosure(issuer, *, issuee=None, edge=None):
         d="", u=Noncer().qb64,
         status=dict(d="", u=Noncer().qb64, value="citizen"),
         private=dict(d="", u=Noncer().qb64, value="hidden-value")))
+    return full, partial_disclosure(full, ["a/status/"])
+
+
+def partial_disclosure(full, fields):
+    """Derive an independent partial from its full commitment, never an earlier reveal."""
     compactor = Compactor(mad=copy.deepcopy(full.sad["a"]),
-                          kind=Kinds.json, verify=False)
-    compactor.compact(paths=["a/status/"], root="a")
-    partial = acdcmap(issuer, uuid=full.sad["u"], schema=full.sad["s"],
-                      attribute=compactor.partials[("a/status/",)].mad,
+                          kind=full.kind, verify=False)
+    compactor.compact(paths=fields, root="a")
+    partial = acdcmap(full.israid, uuid=full.sad["u"], schema=full.sad["s"],
+                      attribute=compactor.partials[tuple(fields)].mad,
                       edge=full.sad.get("e"))
     assert partial.said == full.said
-
-    return full, partial
+    return partial
 
 
 @dataclass
 class DisclosureGraph:
     """Concrete credential bodies, issuer keys and the deliberately missing proof."""
-    full: SerderACDC
+    full_nodes: list[SerderACDC]
     nodes: list[SerderACDC]
     bad_nodes: list[SerderACDC]
     issuers: list[Hab]
@@ -39,7 +43,7 @@ def graph_disclosures(hby, hab, graph_case):
     """Select graph data without coupling it to the peer's role or conversation order."""
     if graph_case is None:
         full, partial = disclosure(hab.pre)
-        return DisclosureGraph(full, [partial], [], [hab], None)
+        return DisclosureGraph([full], [partial], [], [hab], None)
     if graph_case in ("multi-hop", "branching"):
         return deep_graph(hby, hab, graph_case)
     return relation_graph(hby, hab, graph_case)
@@ -48,22 +52,24 @@ def graph_disclosures(hby, hab, graph_case):
 def deep_graph(hby, hab, graph_case):
     """Root -> authority -> ancestor, optionally shared with an audit branch."""
     authority, ancestor = hby.makeHab(name="authority"), hby.makeHab(name="ancestor")
-    _, tail = disclosure(ancestor.pre, issuee=authority.pre)
-    _, middle = disclosure(authority.pre, issuee=hab.pre,
+    tail_full, tail = disclosure(ancestor.pre, issuee=authority.pre)
+    middle_full, middle = disclosure(authority.pre, issuee=hab.pre,
                            edge=dict(d="", authority=dict(n=tail.said, o="I2I")))
     edge = dict(d="", authority=dict(n=middle.said, o="I2I"))
-    nodes, issuers = [middle, tail], [hab, authority, ancestor]
+    nodes, full_nodes, issuers = [middle, tail], [middle_full, tail_full], [hab, authority, ancestor]
     if graph_case == "branching":
         auditor = hby.makeHab(name="auditor")
-        _, audit = disclosure(auditor.pre, issuee=ancestor.pre,
+        audit_full, audit = disclosure(auditor.pre, issuee=ancestor.pre,
                               edge=dict(d="", authority=dict(n=tail.said, o="NI2I")))
         edge["audit"] = dict(n=audit.said, o="NI2I")
         nodes.insert(1, audit)
+        full_nodes.insert(1, audit_full)
         issuers.append(auditor)
     full, partial = disclosure(hab.pre, edge=edge)
     nodes.insert(0, partial)
+    full_nodes.insert(0, full)
     # Multi-hop omits the ancestor; branching carries it without its issuer proof.
-    return DisclosureGraph(full, nodes, nodes[:-1] if graph_case == "multi-hop" else nodes,
+    return DisclosureGraph(full_nodes, nodes, nodes[:-1] if graph_case == "multi-hop" else nodes,
                            issuers, tail.said if graph_case == "branching" else None)
 
 
@@ -81,7 +87,7 @@ def relation_edge(graph_case, far, invalid):
 def relation_graph(hby, hab, graph_case):
     """Two nodes vary a relation or proof while retaining independent issuer keys."""
     authority = hby.makeHab(name="authority")
-    _, far = disclosure(authority.pre, issuee=hab.pre if graph_case == "I2I" else authority.pre)
+    far_full, far = disclosure(authority.pre, issuee=hab.pre if graph_case == "I2I" else authority.pre)
 
     def near(far, invalid=False):
         return disclosure(hab.pre, issuee=authority.pre, edge=relation_edge(graph_case, far, invalid))
@@ -95,5 +101,5 @@ def relation_graph(hby, hab, graph_case):
         _, bad_far = disclosure(authority.pre, issuee=authority.pre if graph_case == "I2I" else hab.pre)
         bad_nodes = [near(bad_far)[1], bad_far]
     # NI2I leaves the relation intact and removes the far node's proof instead.
-    return DisclosureGraph(full, nodes, bad_nodes, [hab, authority],
+    return DisclosureGraph([full, far_full], nodes, bad_nodes, [hab, authority],
                            far.said if graph_case == "NI2I" else None)
