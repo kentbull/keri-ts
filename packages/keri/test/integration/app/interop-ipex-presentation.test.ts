@@ -1,0 +1,395 @@
+/** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
+import {
+  type CesrFrame,
+  Compactor,
+  concatBytes,
+  Counter,
+  Diger,
+  Kinds,
+  type MapperMap,
+  NonceDex,
+  Noncer,
+  NumberPrimitive,
+  parseBytes,
+  Prefixer,
+  type SealEvent,
+  SerderACDC,
+  type SerderKERI,
+  Vrsn_2_0,
+} from "cesr-ts";
+import { call, type Operation, run } from "effection";
+import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
+import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
+import { acdcmap } from "../../../src/acdc/messaging.ts";
+import { RegistryObserver } from "../../../src/acdc/observing.ts";
+import { type Registry } from "../../../src/acdc/registraring.ts";
+import {
+  type AgentRuntime,
+  createAgentRuntime,
+  runAgentRuntimeUntil,
+  runtimeOobiTerminalState,
+} from "../../../src/app/agent-runtime.ts";
+import { requestFrame } from "../../../src/app/cesr-egress.ts";
+import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
+import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { ipexExnBody } from "../../../src/app/ipex-building.ts";
+import { WitnessReceiptor } from "../../../src/app/witnessing.ts";
+import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
+import { loadNests } from "../../../src/db/exchange-nests.ts";
+import { makeNowIso8601 } from "../../../src/time/mod.ts";
+import { createInteropContext, startKeriPyWitnessHarness } from "./interop-test-helpers.ts";
+import { assertKeriPyWitnessStores } from "./interop-witness-helpers.ts";
+
+/** Fresh commitment salts keep independent test runs and hidden fields distinct. */
+function nonce(): string {
+  return new Noncer({ code: NonceDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
+}
+
+/** Actual detached-header egress; transport success is followed by store assertions. */
+async function post(url: string, frame: CesrFrame): Promise<void> {
+  await run(function*() {
+    const response = yield* requestFrame(url, frame, { signal: AbortSignal.timeout(10_000) });
+    const body = yield* call(() => response.text());
+    assertEquals(response.status, 204, body);
+  });
+}
+
+/** Replay accepted KEL evidence, including authentic witness receipts, through HTTP. */
+async function introduce(url: string, hby: Habery, pre: string): Promise<void> {
+  const state = hby.db.getKever(pre);
+  assertExists(state);
+  for (let sn = 0; sn <= state.sn; sn++) {
+    const { message } = acceptedEventReplayMessage(hby, pre, sn);
+    for (const frame of parseBytes(message)) await post(url, frame);
+  }
+}
+
+/** Each independent member contributes only its own controller signature. */
+function signed(body: SerderKERI, signers: readonly Hab[], nests: CesrFrame[] = []): CesrFrame {
+  const hab = signers[0];
+  return {
+    body,
+    gvrsn: Vrsn_2_0,
+    nests,
+    attachments: messageAttachmentGroups({
+      tsgs: [
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: hab.pre }),
+          NumberPrimitive.fromNum(BigInt(hab.kever!.lastEst.s)),
+          new Diger({ qb64: hab.kever!.lastEst.d }),
+          signers.flatMap((signer) => signer.sign(body.raw, true)),
+        ),
+      ],
+    }, Vrsn_2_0),
+  };
+}
+
+/** Publish a full registry anchor and collect receipts before declaring it accepted. */
+function* anchor(
+  event: SerderACDC,
+  signers: readonly Hab[],
+  runtimes: readonly AgentRuntime[],
+): Operation<SealEvent> {
+  const data = [{ i: event.regid ?? event.said, s: event.sad!.n, d: event.said }];
+  if (signers.length === 1) signers[0].interact({ data });
+  else {
+    const partials = runtimes.map((runtime) => runtime.hby.interactGroupHab(signers[0].name, undefined, { data }));
+    for (const [index, runtime] of runtimes.entries()) {
+      // Both members approve this locally authored interaction; HTTP intake remains unprotected.
+      yield* runtime.reactor.processBytes(partials[1 - index].message, { local: true });
+      runtime.hby.kevery.processEscrows();
+      assertEquals(signers[index].kever!.serder.said, partials[index].serder.said);
+    }
+  }
+  const hab = signers[0], runtime = runtimes[0];
+  yield* new WitnessReceiptor(runtime.hby, { reactor: runtime.reactor, services: runtime.services }).submit(hab.pre);
+  const serder = hab.kever!.serder;
+  assertEquals(hab.db.wigs.get([hab.pre, serder.said!]).map((signature) => signature.index).sort(), [0, 1, 2]);
+  return { i: new Prefixer({ qb64: hab.pre }), s: serder.sner!, d: new Diger({ qb64: serder.said! }) };
+}
+
+/** Check a local registry's actual accepted head after its witnessed KEL dependency arrives. */
+function accepted(registry: Registry, event: SerderACDC): void {
+  registry.processEscrows();
+  assertEquals(registry.head?.qb64, event.said);
+}
+
+for (const count of [1, 2]) {
+  Deno.test(`IPEX presentation cutoff: ${count}-signer TS holder, independent stores, three KERIpy witnesses`, async () => {
+    const ctx = await createInteropContext();
+    const aliases = ["wan", "wil", "wes"];
+    try {
+      const witnesses = await startKeriPyWitnessHarness(ctx, { aliases });
+      try {
+        await run(function*() {
+          const hbys: Habery[] = [], runtimes: AgentRuntime[] = [];
+          const listeners: {
+            server: Deno.HttpServer<Deno.NetAddr>;
+            handler: ReturnType<typeof createProtocolHandler>;
+          }[] = [];
+          let now = Date.now();
+          let receiverNow = now;
+          const sent = makeNowIso8601(new Date(now));
+          const receipt = makeNowIso8601(new Date(now + count - 1));
+          const earlier = makeNowIso8601(new Date(now - 1000));
+          try {
+            for (let index = 0; index < count + 2; index++) {
+              const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+              hbys.push(hby);
+              runtimes.push(
+                yield* createAgentRuntime(hby, {
+                  kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+                  services: {
+                    clock: {
+                      now: () => index === 1 ? receiverNow : now,
+                      setTimeout,
+                      clearTimeout: (timer) => clearTimeout(timer as number),
+                    },
+                  },
+                }),
+              );
+            }
+            const [issuerHby, receiverHby, ...holderHbys] = hbys;
+            const [issuerRuntime, receiverRuntime, ...holderRuntimes] = runtimes;
+            const wit = { wits: witnesses.nodes.map((node) => node.pre), toad: 2 };
+            const issuer = issuerHby.makeHab("issuer", undefined, wit);
+            const receiver = receiverHby.makeHab("receiver");
+            const members = holderHbys.map((hby) => hby.makeHab("member", undefined, count === 1 ? wit : {}));
+            let holders = members;
+            if (count === 2) {
+              const inceptions = holderHbys.map((hby, i) => acceptedEventReplayMessage(hby, members[i].pre, 0).message);
+              for (const [i, runtime] of holderRuntimes.entries()) {
+                yield* runtime.reactor.processBytes(inceptions[1 - i]);
+              }
+              const mids = members.map((hab) => hab.pre);
+              const groups = holderHbys.map((hby, i) =>
+                hby.makeGroupHab("holder", members[i], mids, mids, undefined, { isith: "2", nsith: "2", ...wit })
+              );
+              for (const [i, runtime] of holderRuntimes.entries()) {
+                yield* runtime.reactor.processBytes(groups[1 - i].message);
+                runtime.hby.kevery.processEscrows();
+                assertExists(groups[i].hab.kever);
+              }
+              holders = groups.map(({ hab }) => hab);
+            }
+            const holder = holders[0], holderRuntime = holderRuntimes[0];
+            for (const [runtime, signer] of [[issuerRuntime, issuer], [holderRuntime, members[0]]] as const) {
+              for (const node of witnesses.nodes) runtime.oobiery.resolve(node.controllerOobi);
+              yield* runAgentRuntimeUntil(
+                runtime,
+                () =>
+                  witnesses.nodes.every((node) =>
+                    runtimeOobiTerminalState(runtime, node.controllerOobi).status !== "pending"
+                  ),
+                { hab: signer, timeoutMs: 20_000, pollMailbox: false },
+              );
+              for (const node of witnesses.nodes) {
+                assertEquals(runtimeOobiTerminalState(runtime, node.controllerOobi).status, "resolved");
+              }
+            }
+
+            // Establish both controllers at every witness before publishing subsequent anchors.
+            for (const [runtime, hab] of [[issuerRuntime, issuer], [holderRuntime, holder]] as const) {
+              yield* new WitnessReceiptor(runtime.hby, { reactor: runtime.reactor, services: runtime.services }).submit(
+                hab.pre,
+              );
+            }
+            const issuerRegistry = issuerRuntime.acdc!.makeRegistry("issuance", issuer.pre, { stamp: earlier });
+            const presentation = holderRuntime.acdc!.makeRegistry("presentation", holder.pre, { stamp: earlier });
+            const irip = issuerRuntime.acdc!.store.event(issuerRegistry.regk!)!;
+            const prip = holderRuntime.acdc!.store.event(presentation.regk!)!;
+            yield* anchor(irip, [issuer], [issuerRuntime]);
+            accepted(issuerRegistry, irip);
+            yield* anchor(prip, holders, holderRuntimes);
+            accepted(presentation, prip);
+
+            const credential = acdcmap(issuer.pre, {
+              regid: irip.said!,
+              uuid: nonce(),
+              attribute: {
+                d: "",
+                u: nonce(),
+                i: holder.pre,
+                rd: prip.said!,
+                status: { d: "", u: nonce(), value: "citizen" },
+                private: { d: "", u: nonce(), value: "hidden-value" },
+              },
+            });
+            const compactor = new Compactor({
+              mad: structuredClone(credential.sad!.a) as MapperMap,
+              kind: Kinds.json,
+              verify: false,
+            });
+            compactor.compact(["a/status/"], "a");
+            const partial = acdcmap(issuer.pre, {
+              regid: irip.said!,
+              uuid: credential.sad!.u as string,
+              schema: credential.sad!.s as MapperMap,
+              attribute: compactor.partials!["a/status/"].mad,
+            });
+            assertEquals(partial.said, credential.said);
+            const [issuance, issued] = issuerRegistry.blind(credential, "issued", { stamp: earlier });
+            yield* anchor(issued, [issuer], [issuerRuntime]);
+            accepted(issuerRegistry, issued);
+
+            const urls: string[] = [];
+            for (const [runtime, hab] of [[holderRuntime, holder], [receiverRuntime, receiver]] as const) {
+              const handler = createProtocolHandler(runtime, { serviceHab: hab });
+              const observer = new RegistryObserver(runtime.hby.db, runtime.acdc!.store);
+              const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
+                if (new URL(request.url).pathname !== "/_registry") return await handler(request);
+                // Explicit application composition: RegistryObserver installs no automatic runtime route.
+                for (const frame of parseBytes(await readCesrRequestBytes(request))) {
+                  assertInstanceOf(frame.body, SerderACDC);
+                  assertEquals(observer.processEvent(frame.body).kind, "accept");
+                }
+                return new Response(null, { status: 204 });
+              });
+              listeners.push({ server, handler });
+              urls.push(`http://127.0.0.1:${server.addr.port}/`);
+            }
+            const [holderUrl, receiverUrl] = urls;
+            for (const url of urls) {
+              yield* call(() => introduce(url, issuerHby, issuer.pre));
+              for (const [i, hby] of holderHbys.entries()) yield* call(() => introduce(url, hby, members[i].pre));
+              if (count === 2) yield* call(() => introduce(url, holderHbys[0], holder.pre));
+              yield* call(() => introduce(url, receiverHby, receiver.pre));
+              for (const body of [irip, issued]) {
+                yield* call(() => post(`${url}_registry`, { body, attachments: [], gvrsn: Vrsn_2_0 }));
+              }
+            }
+            const offer = ipexExnBody(holder.pre, "/ipex/offer", [partial], {
+              message: "status disclosure",
+              recipient: receiver.pre,
+              xid: credential.said!,
+              stamp: sent,
+              plan: [[(credential.schema as { $id: string }).$id, "/", ["a/status/"]]],
+            });
+            const agree = ipexExnBody(receiver.pre, "/ipex/agree", [], {
+              message: "agree",
+              prior: offer,
+              stamp: sent,
+            });
+            for (const body of [offer, agree]) {
+              const frame = signed(
+                body,
+                body === offer ? holders : [receiver],
+                body === offer ? [{ body: partial, attachments: [], gvrsn: Vrsn_2_0 }] : [],
+              );
+              for (const url of urls) yield* call(() => post(url, frame));
+              for (const hby of [holderHbys[0], receiverHby]) {
+                assertExists(hby.db.exns.get(body.said!), `${body.route} accepted by ${hby.name}`);
+              }
+            }
+            const grant = ipexExnBody(holder.pre, "/ipex/grant", [partial], {
+              message: "grant",
+              prior: agree,
+              stamp: sent,
+            });
+            const [presentationProof, presented] = presentation.present(grant, "presented", { stamp: receipt });
+            const source = yield* anchor(presented, holders, holderRuntimes);
+            accepted(presentation, presented);
+            yield* call(() => introduce(receiverUrl, holderHbys[0], holder.pre));
+            const proofs = [issuance, presentationProof].map((proof) =>
+              Counter.enclose({
+                code: "BlindedStateQuadruples",
+                version: Vrsn_2_0,
+                qb64: concatBytes(proof.d.qb64b, proof.u.qb64b, proof.td.qb64b, proof.ts.qb64b),
+              })
+            );
+            // Parsing the real nested wire constructs attachment records and preserves all proof domains.
+            const [node] = parseBytes(
+              messagize(
+                partial,
+                concatBytes(
+                  ...proofs,
+                  ...messageAttachmentGroups({ sourceSeals: [source] }, Vrsn_2_0).map((group) => group.raw),
+                ),
+                { gvrsn: Vrsn_2_0, genusify: true },
+              ),
+            );
+            const frame = signed(grant, holders, [node]);
+            now += count - 1;
+            yield* call(() => post(holderUrl, frame));
+            assertExists(holderHbys[0].db.exns.get(grant.said!));
+            for (const [index, signer] of holders.entries()) {
+              yield* call(() => post(receiverUrl, signed(grant, [signer], [node])));
+              if (index < holders.length - 1) {
+                assertExists(receiverHby.db.pmkm.get([holder.pre, grant.said!]));
+                assertEquals(receiverHby.db.exns.get(grant.said!), null);
+                assertEquals(receiverHby.db.tmsc.get([holder.pre, credential.said!, grant.said!])?.rdt, "");
+                receiverNow = now;
+              }
+            }
+            assertExists(receiverHby.db.epse.get(grant.said!));
+            assertEquals(receiverHby.db.exchangeMeta.get(grant.said!)?.receiverTime, receipt);
+            assertEquals(receiverHby.db.tmsc.get([holder.pre, credential.said!, grant.said!])?.rdt, receipt);
+            assertEquals(receiverHby.db.exns.get(grant.said!), null);
+
+            now += 2000;
+            receiverNow = now;
+            yield* receiverRuntime.acdc!.baser.reopen();
+            yield* receiverHby.db.reopen();
+            const [, later] = presentation.present(credential.said!, "revoked", {
+              stamp: makeNowIso8601(new Date(now)),
+            });
+            yield* anchor(later, holders, holderRuntimes);
+            accepted(presentation, later);
+            yield* call(() => introduce(receiverUrl, holderHbys[0], holder.pre));
+            for (const body of [prip, presented, later]) {
+              yield* call(() => post(`${receiverUrl}_registry`, { body, attachments: [], gvrsn: Vrsn_2_0 }));
+            }
+            assertEquals(receiverRuntime.acdc!.store.head(prip.said!)?.qb64, later.said);
+            yield* receiverRuntime.reactor.exchanger.processEscrows();
+            assertExists(
+              receiverHby.db.exns.get(grant.said!),
+              "the binding at receipt time survives later TEL updates",
+            );
+            assertEquals(receiverHby.db.exchangeMeta.get(grant.said!)?.receiverTime, receipt);
+            const stored = loadNests(receiverHby.db, grant.said!);
+            assertEquals(stored.length, 1);
+            assertEquals(stored[0].body.said, credential.said);
+            assertEquals(new TextDecoder().decode(stored[0].body.raw).includes("hidden-value"), false);
+            assertEquals(
+              receiverHby.db.exns.get(credential.said!),
+              null,
+              "parent acceptance does not dispatch its credential",
+            );
+            yield* call(() => post(receiverUrl, frame));
+            assertEquals(
+              receiverHby.db.tmsc.get([holder.pre, credential.said!, grant.said!])?.rdt,
+              receipt,
+              "replay cannot refresh the receipt",
+            );
+            const admit = ipexExnBody(receiver.pre, "/ipex/admit", [], {
+              message: "admit",
+              prior: grant,
+              stamp: makeNowIso8601(new Date(now)),
+            });
+            for (const url of urls) yield* call(() => post(url, signed(admit, [receiver])));
+            for (const hby of [holderHbys[0], receiverHby]) {
+              assertExists(hby.db.exns.get(admit.said!));
+              assertEquals(hby.db.erpy.get(grant.said!)?.qb64, admit.said);
+            }
+            yield* call(() => assertKeriPyWitnessStores(ctx, witnesses, aliases, issuer.pre, issuer.kever!.sn, 3));
+            yield* call(() => assertKeriPyWitnessStores(ctx, witnesses, aliases, holder.pre, holder.kever!.sn, 3));
+          } finally {
+            for (const { server, handler } of listeners.reverse()) {
+              yield* call(() => server.shutdown());
+              yield* call(() => handler.close?.());
+            }
+            for (const runtime of runtimes.reverse()) yield* runtime.close();
+            for (const hby of hbys.reverse()) yield* hby.close(true);
+          }
+        });
+      } finally {
+        await witnesses.close();
+        await Deno.remove(witnesses.home, { recursive: true });
+        await Deno.remove(witnesses.configRoot, { recursive: true });
+      }
+    } finally {
+      await Deno.remove(ctx.home, { recursive: true });
+    }
+  });
+}

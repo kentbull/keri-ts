@@ -13,11 +13,11 @@ recoverable evidence, not a merge target.
 
 ## Implemented boundaries requiring composed qualification
 
-| Unit | Boundary                       | Remaining evidence                                |
-| ---- | ------------------------------ | ------------------------------------------------- |
-| K10a | Optional runtime/HTTP intake   | Final workflow qualification                      |
-| K10b | Scoped receipt into EXN escrow | KERIpy receipt timing and cache semantics         |
-| K10c | IPEX presentation cutoff       | Actual presentation verification and dependencies |
+| Unit | Boundary                       | Remaining evidence                                                            |
+| ---- | ------------------------------ | ----------------------------------------------------------------------------- |
+| K10a | Optional runtime/HTTP intake   | Final workflow qualification                                                  |
+| K10b | Scoped receipt into EXN escrow | KERIpy receipt timing and cache semantics                                     |
+| K10c | IPEX presentation cutoff       | Witnessed TS HTTP workflow covered; final composed/peer qualification remains |
 
 Remove branded KramReceipt authority and downstream acknowledgement machinery.
 Use KERIpy receiver-observed acceptance time and replay/cache semantics; sender
@@ -25,6 +25,12 @@ input cannot supply authoritative receiver time. K10c belongs to
 the [IPEX plan](IPEX_PLAN.md); child proof, registry and receiver-cutoff checks
 are implemented. Their complete maintained workflow qualification
 remain open; do not infer completion from isolated receipt/cutoff tests.
+The `interop-kram` owner includes independent-store TS presentations with single
+and two-of-two holders, three live KERIpy witnesses and offer-through-admit HTTP
+traffic. Missing registry evidence survives reopen; inclusive completed receipt
+time survives later TEL updates and replay. Explicit RegistryObserver intake uses
+the public engine, never accepted-row seeding. Credential peers are TS; Python
+witness participation does not establish pairwise presentation-registry parity.
 
 Cancellation, I/O, corruption and programming failures propagate. Normal intake
 refusals remain typed. Each remaining unit follows the roadmap's allowance of

@@ -52,7 +52,11 @@ IPEX borrows RegistryStore and collects accepted updates without an event quota.
 Ordinals must remain exactly representable by the numeric storage API; an existing
 head with missing accepted rows is corruption.
 Supplied chain authentication does not prove global freshness. IPEX
-presentation cutoffs require receiver-observed KRAM time, still pending.
+presentation cutoffs use completed receiver-observed KRAM time, retained through
+dependency escrow and reopen. Partial group signatures do not complete that time;
+later TEL updates and replay cannot refresh it. Independent-store HTTP workflows
+with real KERIpy witnesses qualify the TS path; label credential-peer and mailbox
+delivery evidence separately.
 Share parsed rip/bup field validation across observer and local processing, but
 retain their anchor rules: observer digest seals do not satisfy the local full
 tuple plus witness-receipt requirement. Field validity is not TEL acceptance.
@@ -108,9 +112,6 @@ Notifier visibility. Webhook retries/acks live in a separate sidecar, not Reger.
 Bounded runs rescan persisted revocation state; issuance ack cannot suppress a
 revocation, and rack prevents repeated revocation delivery. Verifier run sends;
 hook demo is only a sample receiver.
-VerifierAgent's guarded finite scan transfers existing revoked-cue owners.
-Unrelated owners preserve order; failed sidecar publication requeues original
-credit, while durable enqueue/duplicates release it before guard-free webhooks.
 
 ## Interoperability traps
 

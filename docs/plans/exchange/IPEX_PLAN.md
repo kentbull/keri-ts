@@ -34,6 +34,10 @@ accept size-dependent memory use; bounded-memory qualification is not a gate.
 1. Qualify composed presentations through the [registry services](../credentials/REGISTRY_PLAN.md)
    and [KRAM intake](KRAM_PLAN.md), including dependency retry, reopen and replay.
    Never substitute a sender timestamp or parent acceptance for child proofs.
+   The maintained witnessed-presentation cases now exercise independent TS stores,
+   single/two-of-two holders, HTTP offer-through-admit, real Python witnesses,
+   delayed observer intake and immutable completed receipts across reopen/retry.
+   They do not close pairwise Python registry processing or mailbox IPEX delivery.
 2. Keep unsupported deeper nests, registry compact-attribute cases and unfinished
    processing guarded. Label frozen edge/operator outcomes by reference rather
    than preserving implementation gaps as requirements. Implement DI2I/NOT where
