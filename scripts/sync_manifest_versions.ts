@@ -65,8 +65,7 @@ async function readPackageVersion(path: URL): Promise<string> {
   return version;
 }
 
-async function syncTarget(target: SyncTarget, check: boolean): Promise<void> {
-  const packageVersion = await readPackageVersion(target.packagePath);
+async function syncTarget(target: SyncTarget, packageVersion: string, check: boolean): Promise<void> {
   const raw = await Deno.readTextFile(target.denoPath);
   const denoManifest = JSON.parse(raw) as DenoManifest;
   const currentVersion = denoManifest.version?.trim();
@@ -91,7 +90,8 @@ async function syncTarget(target: SyncTarget, check: boolean): Promise<void> {
 async function main() {
   const { check } = parseArgs(Deno.args);
   for (const target of TARGETS) {
-    await syncTarget(target, check);
+    const version = await readPackageVersion(target.packagePath);
+    await syncTarget(target, version, check);
   }
 }
 
