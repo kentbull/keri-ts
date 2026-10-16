@@ -383,7 +383,7 @@ async function writeDidWebsArtifacts(
     });
     const runtime = yield* createAgentRuntime(hby);
     try {
-      const artifacts = generateDidWebsArtifacts(runtime, {
+      const artifacts = generateDidWebsArtifacts(runtime.vdr!, {
         alias: "team",
         did,
       });

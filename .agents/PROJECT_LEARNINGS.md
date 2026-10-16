@@ -28,7 +28,8 @@ then behavior. No runtime-shaped sibling bundles, generic execution gates or
 forwarding-only facades. Lower transport knows actual byte I/O, not AgentRuntime. Tevery owns TSN route
 admission/retries; Reactor composes and advances the processor without naming
 its registry/credential handlers.
-Finite commands run the host workers under elapsed deadlines and join them before
+Application boundaries select optional owners before effects; subordinate helpers receive
+concrete dependencies, not root lookup guards. Finite commands run the host workers under elapsed deadlines and join them before
 store teardown; phase-specific tests invoke actual component operations.
 
 No application accounting, quotas, estimates, synthetic leases or no-op policy

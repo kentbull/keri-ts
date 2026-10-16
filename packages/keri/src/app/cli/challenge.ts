@@ -226,7 +226,7 @@ function resolveSigner(
     return signer;
   }
 
-  const matches = new Organizer(hby).findExact("alias", signer);
+  const matches = new Organizer(hby.db, hby.signator).findExact("alias", signer);
   if (matches.length === 0) {
     throw new ValidationError(`no contact found with alias '${signer}'`);
   }

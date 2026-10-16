@@ -187,7 +187,7 @@ Deno.test("accepted IPEX grants create KERIpy-shaped notifier entries", async ()
         nsith: "1",
         toad: 0,
       });
-      const notifier = new Notifier(hby, { noter });
+      const notifier = new Notifier(hby.signator!, { noter });
       const exchanger = new Exchanger(hby);
       loadIpexHandlers(hby, exchanger, { notifier });
 

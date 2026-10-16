@@ -122,7 +122,7 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
   await run(function*() {
     const hby = yield* createHabery({ name: `ipex-vectors-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const noter = yield* openNoterForHabery(hby);
-    const notifier = new Notifier(hby, { noter });
+    const notifier = new Notifier(hby.signator!, { noter });
     const runtime = yield* createAgentRuntime(hby);
     const exchanger = new Exchanger(hby);
     loadIpexHandlers(hby, exchanger, { notifier });
@@ -229,7 +229,7 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
     const left = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const right = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const noter = yield* openNoterForHabery(left);
-    const notifier = new Notifier(left, { noter });
+    const notifier = new Notifier(left.signator!, { noter });
     const receiver = left.makeHab("recipient");
     const sender = right.makeHab("sender");
     const receiving = new Exchanger(left);

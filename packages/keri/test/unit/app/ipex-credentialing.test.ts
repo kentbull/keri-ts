@@ -22,6 +22,7 @@ import {
 import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexGrantExn, loadIpexHandlers } from "../../../src/app/ipexing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
+import { Revery } from "../../../src/core/routing.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger } from "../../../src/db/reger.ts";
 import { Credentialer, CredentialWallet, Regery } from "../../../src/vdr/credentialing.ts";
@@ -223,9 +224,11 @@ async function assertCredentialArtifactIntake(genus: Versionage, envelopeGenus =
         };
       }
 
-      const holderTvy = new Tevery({ db: holderHby.db, reger: holderReger });
+      const revery = new Revery(holderHby.db);
+      const holderTvy = new Tevery({ db: holderHby.db, reger: holderReger, rvy: revery });
       const holderVry = new Verifier(holderHby, { reger: holderReger });
       const holderReactor = new Reactor(holderHby, {
+        revery,
         tevery: holderTvy,
         verifier: holderVry,
       });

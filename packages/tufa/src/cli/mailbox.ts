@@ -534,7 +534,7 @@ function resolveMailboxAid(
     return mailbox;
   }
 
-  const matches = new Organizer(hby).findExact("alias", mailbox);
+  const matches = new Organizer(hby.db, hby.signator).findExact("alias", mailbox);
   if (matches.length === 0) {
     throw new ValidationError(`no contact found with alias '${mailbox}'`);
   }

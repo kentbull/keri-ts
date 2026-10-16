@@ -1,5 +1,11 @@
 # ACDC learnings
 
+Credential workflows borrow one Regery for its coherent Habery, Reger, Tevery and
+Verifier; delivery borrows Poster and import borrows Reactor/Reger. TEL row helpers
+receive Reger directly. Multisig VDR approval checks availability after malformed/
+declined proposal handling but before signing/intake. Group IPEX requires Reger for
+grant lead sending, not non-grant or approval-only operations.
+
 ## Commitments and disclosure
 
 Section identifiers are label-aware: schema $id, ordinary d, aggregate agid.

@@ -1,6 +1,7 @@
 import { type Cigar } from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
-import type { Habery } from "./habbing.ts";
+import type { Baser } from "../db/basing.ts";
+import type { Habery, Signator } from "./habbing.ts";
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
@@ -18,22 +19,19 @@ export interface ContactRecord extends Record<string, unknown> {
  * - no broader contact-management CLI surface yet
  */
 export class Organizer {
-  readonly hby: Habery;
-
-  constructor(hby: Habery) {
-    this.hby = hby;
-  }
+  /** Borrow contact storage and its optional signing authority without owning their lifetime. */
+  constructor(readonly db: Baser, readonly signator: Signator | null) {}
 
   /** Load one signed contact record by identifier prefix. */
   get(pre: string): ContactRecord | null {
-    const raw = this.hby.db.cons.get([pre]);
+    const raw = this.db.cons.get([pre]);
     if (raw === null) {
       return null;
     }
 
-    const cigar = this.hby.db.ccigs.get([pre]);
+    const cigar = this.db.ccigs.get([pre]);
     if (
-      cigar && this.hby.signator && !verifySignedContact(this.hby, raw, cigar)
+      cigar && this.signator && !verifySignedContact(this.signator, raw, cigar)
     ) {
       throw new ValidationError(`failed signature on ${pre} contact data`);
     }
@@ -56,7 +54,7 @@ export class Organizer {
     pre: string,
     data: Record<string, unknown>,
   ): void {
-    const signator = this.hby.signator;
+    const signator = this.signator;
     if (!signator) {
       throw new ValidationError(
         "Contact updates require an available habery signator.",
@@ -68,21 +66,21 @@ export class Organizer {
     delete next.id;
 
     const raw = JSON.stringify(next);
-    this.hby.db.cons.pin([pre], raw);
-    this.hby.db.ccigs.pin([pre], signator.sign(textEncoder.encode(raw)));
+    this.db.cons.pin([pre], raw);
+    this.db.ccigs.pin([pre], signator.sign(textEncoder.encode(raw)));
 
     for (const [field, value] of Object.entries(data)) {
       if (value === undefined || value === null) {
         continue;
       }
-      this.hby.db.cfld.pin([pre, field], String(value));
+      this.db.cfld.pin([pre, field], String(value));
     }
   }
 
   /** Find contacts whose indexed field exactly equals the provided value. */
   findExact(field: string, value: string): ContactRecord[] {
     const matches: ContactRecord[] = [];
-    for (const [keys, current] of this.hby.db.cfld.getTopItemIter()) {
+    for (const [keys, current] of this.db.cfld.getTopItemIter()) {
       const pre = keys[0];
       const currentField = keys[1];
       if (!pre || currentField !== field || current !== value) {
@@ -98,14 +96,10 @@ export class Organizer {
 }
 
 function verifySignedContact(
-  hby: Habery,
+  signator: Signator,
   raw: string,
   cigar: Cigar,
 ): boolean {
-  const signator = hby.signator;
-  if (!signator) {
-    return true;
-  }
   return signator.verify(textEncoder.encode(raw), cigar);
 }
 
@@ -133,14 +127,14 @@ export function persistResolvedContact(
     return;
   }
 
-  new Organizer(hby).update(pre, next);
+  new Organizer(hby.db, hby.signator).update(pre, next);
 }
 
 /** Debug helper kept local so organizer serialization stays reviewable. */
 export function signedContactJson(
-  hby: Habery,
+  db: Baser,
   pre: string,
 ): string | null {
-  const raw = hby.db.cons.get([pre]);
+  const raw = db.cons.get([pre]);
   return raw === null ? null : textDecoder.decode(textEncoder.encode(raw));
 }

@@ -2,6 +2,7 @@ import { concatBytes } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Reger } from "../../db/reger.ts";
+import type { Regery } from "../../vdr/credentialing.ts";
 import { type AgentRuntime } from "../agent-runtime.ts";
 import {
   createCredential,
@@ -13,7 +14,6 @@ import {
   inceptCredentialRegistry,
   listCredentials,
   pinSchemaBytes,
-  requireRegery,
   revocationRecipients,
   revokeCredential,
 } from "../credential-workflows.ts";
@@ -89,9 +89,9 @@ export function* vcSchemaImportCommand(args: Record<string, unknown>): Operation
 /** Implement `tufa vc registry incept` for single-sig or group registries. */
 export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = registryArgs(args);
-  yield* withVcRuntime(vcArgs, function*({ hby, runtime }) {
+  yield* withVcRuntime(vcArgs, function*({ hby, runtime, rgy }) {
     const hab = requireHab(hby, vcArgs.alias);
-    const result = yield* inceptCredentialRegistry(hby, runtime, hab, {
+    const result = yield* inceptCredentialRegistry(rgy, runtime.poster, hab, {
       registryName: vcArgs.registryName!,
       noBackers: vcArgs.noBackers,
       estOnly: vcArgs.estOnly,
@@ -114,8 +114,8 @@ export function* vcRegistryListCommand(args: Record<string, unknown>): Operation
 /** Implement `tufa vc registry status` from current TEL registry state. */
 export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = registryArgs(args, { aliasRequired: false });
-  yield* withVcRuntime(vcArgs, function*({ runtime, reger }) {
-    console.log(JSON.stringify(credentialRegistryStatus(runtime, reger, vcArgs.registryName!)));
+  yield* withVcRuntime(vcArgs, function*({ rgy }) {
+    console.log(JSON.stringify(credentialRegistryStatus(rgy, vcArgs.registryName!)));
   });
 }
 
@@ -136,11 +136,11 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
   requireNonEmpty(vcArgs.alias, "Alias");
   requireNonEmpty(vcArgs.registryName, "Registry name");
 
-  yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger }) {
+  yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger, rgy }) {
     const schema = vcArgs.schemaFile ? pinSchemaBytes(hby, Deno.readFileSync(vcArgs.schemaFile)) : vcArgs.schema;
     requireNonEmpty(schema, "Schema");
     const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : undefined;
-    const result = yield* createCredential(hby, runtime, reger, {
+    const result = yield* createCredential(rgy, runtime.poster, {
       registryName: vcArgs.registryName!,
       schema: schema!,
       recipient,
@@ -164,10 +164,10 @@ export function* vcListCommand(args: Record<string, unknown>): Operation<void> {
     schema: args.schema as string | undefined,
     issued: args.issued as boolean | undefined,
   };
-  yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger }) {
+  yield* withVcRuntime(vcArgs, function*({ hby, rgy }) {
     const aid = vcArgs.aid ?? (vcArgs.alias ? requireHab(hby, vcArgs.alias).pre : undefined);
     for (
-      const item of listCredentials(runtime, reger, { issued: vcArgs.issued ?? false, aid, schema: vcArgs.schema })
+      const item of listCredentials(rgy, { issued: vcArgs.issued ?? false, aid, schema: vcArgs.schema })
     ) {
       console.log(JSON.stringify(item));
     }
@@ -197,7 +197,7 @@ export function* vcImportCommand(args: Record<string, unknown>): Operation<void>
     inPath: args.inPath as string | undefined,
   };
   yield* withVcRuntime(vcArgs, function*({ runtime, reger }) {
-    console.log(JSON.stringify(yield* importCredentialStream(runtime, reger, readBytes(vcArgs.inPath))));
+    console.log(JSON.stringify(yield* importCredentialStream(runtime.reactor, reger, readBytes(vcArgs.inPath))));
   });
 }
 
@@ -215,14 +215,14 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
   };
   requireNonEmpty(vcArgs.registryName, "Registry name");
   requireNonEmpty(vcArgs.said, "Credential SAID");
-  yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger }) {
+  yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger, rgy }) {
     const [creder] = reger.cloneCred(vcArgs.said!);
     if ((vcArgs.send?.length ?? 0) > 0 && !vcArgs.alias) {
       throw new ValidationError("Alias is required when sending revocation events.");
     }
     const sendRecipients = revocationRecipients(creder, vcArgs.send ?? [], !!vcArgs.alias);
     const senderHab = sendRecipients.length > 0 ? requireHab(hby, vcArgs.alias) : undefined;
-    const result = yield* revokeCredential(hby, runtime, reger, {
+    const result = yield* revokeCredential(rgy, runtime.poster, {
       registryName: vcArgs.registryName!,
       credentialSaid: vcArgs.said!,
       sendRecipients,
@@ -278,6 +278,7 @@ interface VcHaberyContext {
 interface VcRuntimeContext extends VcHaberyContext {
   runtime: AgentRuntime;
   reger: Reger;
+  rgy: Regery;
 }
 
 function* withVcHabery<TResult>(
@@ -294,8 +295,10 @@ function* withVcRuntime<TResult>(
 ): Operation<TResult> {
   requireNonEmpty(args.name, "Name");
   return yield* withAgentRuntime(args, vcOpenOptions(args), function*({ hby, runtime }) {
-    const reger = requireRegery(runtime).reger;
-    return yield* use({ hby, runtime, reger });
+    const rgy = runtime.vdr;
+    if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
+    const reger = rgy.reger;
+    return yield* use({ hby, runtime, reger, rgy });
   });
 }
 

@@ -4,6 +4,7 @@ import {
   bindDesignatedAliases,
   createAgentRuntime,
   createHabery,
+  DESIGNATED_ALIASES_SCHEMA_SAID,
   generateDidWebsArtifacts,
   resolveDidWebs,
   runAgentRuntime,
@@ -90,11 +91,11 @@ Deno.test("tufa/dws - static artifacts resolve through the Tufa HTTP artifact ro
         toad: 0,
       });
       const did = `did:webs:127.0.0.1%3A${port}:dws:${hab.pre}`;
-      bindDesignatedAliases(issuerRuntime, {
+      bindDesignatedAliases(issuerRuntime.vdr!, {
         alias: "issuer",
         dids: [did, `did:keri:${hab.pre}`],
       });
-      const artifacts = generateDidWebsArtifacts(issuerRuntime, {
+      const artifacts = generateDidWebsArtifacts(issuerRuntime.vdr!, {
         alias: "issuer",
         did,
       });
@@ -130,10 +131,15 @@ Deno.test("tufa/dws - static artifacts resolve through the Tufa HTTP artifact ro
       });
       yield* waitForServer(port);
 
-      const resolved = yield* resolveDidWebs(resolverRuntime, {
-        did,
-        // Native HTTPS header failure falls back to this actual local HTTP artifact host.
-      });
+      const resolved = yield* resolveDidWebs(
+        resolverRuntime.vdr!,
+        resolverRuntime.reactor,
+        resolverRuntime.services.http,
+        {
+          did,
+          // Native HTTPS header failure falls back to this actual local HTTP artifact host.
+        },
+      );
       assertEquals(resolved.document.id, did);
       assertEquals(
         [...(resolved.document.alsoKnownAs as string[])].sort(),
@@ -188,3 +194,39 @@ function* fetchJson(url: string): Operation<unknown> {
   assertEquals(response.status, 200);
   return yield* promiseOp(response.json());
 }
+
+Deno.test("DID adapters reject absent registry before schema writes or introductions", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true });
+    let fetched = false;
+    const runtime = yield* createAgentRuntime(hby, {
+      services: {
+        http: {
+          fetch: () => {
+            fetched = true;
+            throw new Error("Registry absence must precede fetch");
+          },
+        },
+      },
+    });
+    try {
+      const hab = hby.makeHab("issuer");
+      const handler = createProtocolHandler({ ...runtime, vdr: null }, { dwsDynamic: true, hostedPrefixes: [hab.pre] });
+      for (const did of [`did:keri:${hab.pre}`, `did:webs:example.com:${hab.pre}`]) {
+        const response = yield* call(() =>
+          handler(new Request(`http://example.com/1.0/identifiers/${did}?oobi=https://example.com/oobi/test`))
+        );
+        assertEquals(response.status, 404);
+        assertEquals(hby.db.oobis.cnt(), 0);
+        assertEquals(hby.db.schema.get(DESIGNATED_ALIASES_SCHEMA_SAID), null);
+        assertEquals(fetched, false);
+      }
+      const artifact = yield* call(() => handler(new Request(`http://example.com/${hab.pre}/did.json`)));
+      assertEquals(artifact.status, 400);
+      assertEquals(hby.db.schema.get(DESIGNATED_ALIASES_SCHEMA_SAID), null);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});

@@ -39,7 +39,7 @@ Deno.test("notifications CLI list, mark-read, and remove round-trip local notice
         skipConfig: true,
       });
       const noter = yield* openNoterForHabery(hby);
-      const notifier = new Notifier(hby, { noter });
+      const notifier = new Notifier(hby.signator!, { noter });
 
       try {
         notifier.add({

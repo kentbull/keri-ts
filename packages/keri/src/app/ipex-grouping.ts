@@ -25,7 +25,9 @@ import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { serializeMessage } from "../core/protocol-exchanging.ts";
+import type { Reger } from "../db/reger.ts";
 import { type AgentRuntime } from "./agent-runtime.ts";
+import type { Poster } from "./forwarding.ts";
 import { groupSigningMembers, localGroupMember } from "./group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigChild, multisigChildGenusAttrs } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -72,6 +74,12 @@ export function* approveMultisigIpex(
   if (!groupHab) {
     throw new ValidationError(`Local group ${group} is missing member signing state.`);
   }
+  const reger = embedded.route === IPEX_GRANT_ROUTE && (options.sendLead ?? true)
+    ? runtime.vdr?.reger ?? null
+    : null;
+  if (embedded.route === IPEX_GRANT_ROUTE && (options.sendLead ?? true) && !reger) {
+    throw new ValidationError("VDR runtime did not open Reger.");
+  }
   if (peerAttachment.length > 0) {
     yield* runtime.reactor.processBytes(
       concatBytes(Counter.makeGVC(genus), embedded.raw, peerAttachment),
@@ -92,7 +100,9 @@ export function* approveMultisigIpex(
   ) {
     deliveries.push(
       ...(yield* sendCompletedGroupIpex(
-        runtime,
+        hby,
+        runtime.poster,
+        reger,
         groupHab,
         embedded,
         options.delivery,
@@ -225,7 +235,9 @@ export function findPendingMultisigIpex(hby: Habery, runtime: AgentRuntime): Ser
 
 /** Send a completed group IPEX message from the elected local lead. */
 export function* sendCompletedGroupIpex(
-  runtime: AgentRuntime,
+  hby: Habery,
+  poster: Poster,
+  reger: Reger | null,
   groupHab: Hab,
   embedded: SerderKERI,
   delivery?: IpexDeliveryPreference,
@@ -241,44 +253,46 @@ export function* sendCompletedGroupIpex(
 
   const messages: Uint8Array[] = [];
   let grantPathed: Uint8Array[] | undefined;
-  const reger = runtime.vdr?.reger;
   if (embedded.route === IPEX_GRANT_ROUTE) {
     if (!reger) {
       throw new ValidationError("VDR runtime did not open Reger.");
     }
-    const credentialSaid = credentialSaidFromGrant(embedded);
-    if (credentialSaid) {
-      const [creder] = reger.cloneCred(credentialSaid);
-      const artifacts = credentialPresentationArtifacts(
-        runtime.hby,
-        reger,
-        credentialSaid,
-        gvrsn,
-      );
-      grantPathed = grantPathedMaterials(artifacts);
-      messages.push(...credentialPresentationSupportMessages(
-        runtime.hby,
-        reger,
-        creder,
-        recipient,
-        gvrsn,
-      ));
-    }
+    const support = groupGrantSupport(hby, reger, embedded, recipient, gvrsn);
+    grantPathed = support.pathed;
+    messages.push(...support.messages);
   }
 
   messages.push(storedExchangeMessage(
-    runtime.hby,
-    requireStoredExchange(runtime.hby, embedded.said),
+    hby,
+    requireStoredExchange(hby, embedded.said),
     gvrsn,
     grantPathed,
   ));
   return yield* sendCredentialBytes(
-    runtime,
-    localGroupMember(runtime.hby, groupHab.pre),
+    poster,
+    localGroupMember(hby, groupHab.pre),
     recipient,
     messages,
     delivery,
   );
+}
+
+/** Build credential support from the explicitly selected legacy store. */
+function groupGrantSupport(
+  hby: Habery,
+  reger: Reger,
+  embedded: SerderKERI,
+  recipient: string,
+  gvrsn: Versionage,
+): { pathed?: Uint8Array[]; messages: Uint8Array[] } {
+  const credentialSaid = credentialSaidFromGrant(embedded);
+  if (!credentialSaid) return { messages: [] };
+  const [creder] = reger.cloneCred(credentialSaid);
+  const artifacts = credentialPresentationArtifacts(hby, reger, credentialSaid, gvrsn);
+  return {
+    pathed: grantPathedMaterials(artifacts),
+    messages: credentialPresentationSupportMessages(hby, reger, creder, recipient, gvrsn),
+  };
 }
 
 /** Load one accepted stored EXN by SAID. */
@@ -312,7 +326,7 @@ export function storedExchangeMessage(
 
 /** Send raw credential/IPEX bytes over the credential mailbox topic. */
 export function* sendCredentialBytes(
-  runtime: AgentRuntime,
+  poster: Poster,
   hab: Hab,
   recipient: string,
   messages: Uint8Array[],
@@ -320,7 +334,7 @@ export function* sendCredentialBytes(
 ): Operation<string[]> {
   const sent: string[] = [];
   for (const message of messages) {
-    const result = yield* runtime.poster.sendBytes(hab, {
+    const result = yield* poster.sendBytes(hab, {
       recipient,
       message,
       topic: CREDENTIAL_MAILBOX_TOPIC,

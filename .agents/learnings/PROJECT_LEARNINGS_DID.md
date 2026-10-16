@@ -6,7 +6,10 @@ acquisition only; host shutdown closes unconsumed bodies. File extent capture is
 
 DID Webs resolution ingests keri.cesr, reconstructs the document from KERI/VDR
 state and compares hosted did.json. Hosted JSON alone is not verification.
-CESR resolution streams through the runtime Reactor;
+Binding and artifact generation take the concrete legacy Regery and use its Habery.
+Resolution takes Regery, Reactor and the HTTP client explicitly. CLI/HTTP adapters
+check registry availability before schema writes, fetches or OOBI introductions.
+CESR resolution streams through the supplied Reactor;
 only genuine EOF followed by escrow processing permits full-document comparison.
 Late failure preserves independently accepted state. Native fetch-header failures
 and HTTP refusals may use the existing URL fallback; injected client, body/parser,

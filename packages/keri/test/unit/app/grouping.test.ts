@@ -130,7 +130,7 @@ Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote s
       const [wrapped] = multisigExn(group, remote, grant);
       hby.db.exns.pin([wrapped.said!], wrapped);
 
-      const notifier = new Notifier(hby, { noter });
+      const notifier = new Notifier(hby.signator!, { noter });
       const mux = new Multiplexor(hby, { notifier });
       for (const hint of [["2", 0], [2], [3, 0], [2, -1], [2, 4096]]) {
         const [invalid] = exchangeMessage(MULTISIG_EXN_ROUTE, { gid: group.pre, cgvrsn: hint }, {
