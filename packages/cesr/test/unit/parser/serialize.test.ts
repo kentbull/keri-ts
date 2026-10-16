@@ -125,15 +125,16 @@ Deno.test("opaque attachment content cannot be silently retagged to another genu
   assertEquals(attachmentPayload(frame, { gvrsn: value.gvrsn }).size > 0, true);
 });
 
-Deno.test("detached HTTP attachments use body-inferred enclosure genus before one initial selector", async () => {
-  // The JSON body declares v1 while its originally selected attachment stream uses v2.
-  const one = fixture(1);
+Deno.test("detached attachments retain the selected genus independently of the JSON body protocol", async () => {
   const two = fixture(2);
   const frame = await read(b(two.frame));
-  const payload = attachmentPayload(frame, { gvrsn: two.gvrsn, enclosingGvrsn: one.gvrsn });
-  const expected = one.wrap("AttachmentGroup", t(Counter.makeGVC(two.gvrsn)) + two.group + two.essr);
+  const payload = attachmentPayload(frame);
+  const expected = two.wrap("AttachmentGroup", two.group + two.essr);
   assertEquals(await collectPayload(payload), b(expected));
-  const roundtrip = await read(concatBytes(b(json), b(expected)));
+  // A detached receiver supplies its counter context, as KERIpy Parser(version=...) does.
+  const roundtrip = await read(concatBytes(Counter.makeGVC(two.gvrsn), b(json), b(expected)));
+  assertEquals(roundtrip.body.pvrsn, { major: 1, minor: 0 });
+  assertEquals(roundtrip.gvrsn, two.gvrsn);
   assertEquals(roundtrip.attachments[0].version, two.gvrsn);
   assertExists(roundtrip.essrs);
   assertEquals(await collectPayload(essrRaw(roundtrip.essrs)), b("abcxyz"));

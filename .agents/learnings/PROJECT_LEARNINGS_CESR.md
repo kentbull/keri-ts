@@ -47,6 +47,10 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
 - `gvrsn` is attachment genus; `pvrsn` is body protocol. Explicit selection and
   enclosure scope control decoding. Only unselected legacy streams infer genus.
   Never retry malformed data under another major version.
+- Detached HTTP framing preserves the selected frame genus, independent of JSON
+  protocol pvrsn. Header-mode peers share a counter context; do not infer it from
+  the body or restore a separate outer-genus option. Qualified body output keeps
+  its root GVC; unqualified replay bytes require an already-selected context.
 - V1 tuple/signature counts are items; v2 counts are payload quadlets/triplets.
   Sized wrappers still count payload units. Selectors carry versions, not sizes.
 - Hydrate native bodies once through Serder and known attachments through narrow

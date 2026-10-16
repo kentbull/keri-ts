@@ -14,6 +14,13 @@ parent proof separation and local genus scope. Parser support for v1 enclosure
 trees is distinct from completed v2 runtime routes. The full output tree uses
 one wire domain; each node can retain its own genus unless explicitly converted.
 
+Detached HTTP attachments retain the frame's selected genus; the body's protocol
+version cannot select their counter table. Header-mode peers must share that
+counter context, as with KERIpy Parser(version=...). Complete body framing keeps
+its root selector where the receiving endpoint supports it. The sender has no
+separate outer-genus override or body-version fallback. Nested scopes still own
+their legitimate local selectors.
+
 V1 item counts and v2 payload quadlet/triplet counts are not interchangeable.
 Reject misalignment and unsafe conversions at the framing boundary. Do not change
 stored event bytes merely to meet an output counter preference. Historical Sally

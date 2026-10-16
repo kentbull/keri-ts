@@ -20,12 +20,6 @@ export interface SerializeOptions {
   domain?: CesrDomain;
 }
 
-/** An HTTP header may need an enclosure matching body inference before selecting its inner genus. */
-export interface AttachmentOptions extends SerializeOptions {
-  /** Counter genus outside the optional initial GVC; defaults to the selected attachment genus. */
-  enclosingGvrsn?: Versionage;
-}
-
 /** Copy granularity for streamed qualified output. */
 const CHUNK_BYTES = 65536;
 
@@ -272,28 +266,18 @@ function attachmentContent(frame: CesrFrame, options: SerializeOptions): Payload
 }
 
 /** Enclose one tree's attachments; children use their own body boundary without another wrapper. */
-export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions = {}): Payload {
+export function attachmentPayload(frame: CesrFrame, options: SerializeOptions = {}): Payload {
   const gvrsn = frameGenus(frame, options.gvrsn);
   const domain = options.domain ?? "txt";
   const content = attachmentContent(frame, options);
-  const enclosing = options.enclosingGvrsn ?? gvrsn;
-  // KERIpy permits this selector only at the beginning of the attachment enclosure.
-  const selector = sameVersion(enclosing, gvrsn) ? new Uint8Array() : qualify(Counter.makeGVC(gvrsn), "txt", domain);
-  const header = counter(
-    "AttachmentGroup",
-    (selector.length + content.size) / (domain === "txt" ? 4 : 3),
-    enclosing,
-    domain,
-  );
+  const header = counter("AttachmentGroup", content.size / (domain === "txt" ? 4 : 3), gvrsn, domain);
   return {
-    size: header.length + selector.length + content.size,
+    size: header.length + content.size,
     /** The caller retains every owner until this complete attachment reader closes. */
     async *open(signal?: AbortSignal) {
-      for (const bytes of [header, selector]) {
-        for (const chunk of chunks(bytes)) {
-          signal?.throwIfAborted();
-          yield chunk;
-        }
+      for (const chunk of chunks(header)) {
+        signal?.throwIfAborted();
+        yield chunk;
       }
       yield* content.open(signal);
     },
