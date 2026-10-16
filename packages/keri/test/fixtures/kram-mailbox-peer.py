@@ -7,6 +7,7 @@ import base64
 from contextlib import ExitStack
 from datetime import timedelta
 import json
+import os
 import signal
 import sys
 import time
@@ -20,7 +21,7 @@ from hio.core import http
 from keri import Kinds, Vrsn_1_0, Vrsn_2_0
 from keri.app import openCF, openHby
 from keri.app.mailboxing import MailboxStart, setupMailbox
-from keri.app.storing import Respondant
+from keri.app.storing import Mailboxer
 from keri.cli.commands.mailbox.start import _prepareMailboxHabitat
 from keri.core import Diger, Kevery, Number, Parser, Salter, messagize, query
 from keri.help import helping
@@ -75,14 +76,18 @@ def controller_packets(stack, count):
 
 class Control:
     """Test-only storage observations and genuine Python HTTP client actions."""
-    def __init__(self, hby, host, mbx, bundle):
-        self.hby, self.host, self.mbx, self.bundle = hby, host, mbx, bundle
+    def __init__(self, hby, host, mbx, stack, count):
+        self.hby, self.host, self.mbx = hby, host, mbx
+        self.stack, self.count, self.bundle = stack, count, None
 
     def on_post(self, req, rep):
         try:
             command = req.media
             action = command["action"]
             if action == "info":
+                # Provider-only crash cases need no unrelated temporary controller stores.
+                if self.bundle is None:
+                    self.bundle = controller_packets(self.stack, self.count)
                 rep.media = self.bundle
             elif action == "store":
                 self.mbx.storeMsg(topic=f'{command["pre"]}/reply', msg=PAYLOAD.encode())
@@ -94,9 +99,11 @@ class Control:
                     cache = self.hby.db.kramMSGC.get(keys=(pre, said))
                     rows.append(dict(said=said, cached=cache is not None,
                         pending=self.hby.db.kramPMKM.get(keys=(pre, said)) is not None,
-                        stamp=cache.mdt if cache else None))
+                        stamp=cache.mdt if cache else None,
+                        proofs=[sig.index for sig in self.hby.db.kramPMKS.get(keys=(pre, said))]))
                 cues = list(self.host.cues) + list(self.host.queries)
-                rep.media = dict(known=pre in self.host.kvy.kevers, rows=rows,
+                rep.media = dict(pid=os.getpid(), provider=self.host.hab.pre,
+                    known=pre in self.host.kvy.kevers, rows=rows,
                     streams=[cue["serder"].said for cue in cues if cue["kin"] == "stream"])
             elif action == "send":
                 request = Request(command["url"], data=base64.b64decode(command["wire"]),
@@ -127,20 +134,21 @@ class Control:
 
 
 def main():
-    port, count = map(int, sys.argv[1:])
+    port, count, root = sys.argv[1:]
+    port, count = int(port), int(count)
     with ExitStack() as stack:
-        bundle = controller_packets(stack, count)
-        cf = stack.enter_context(openCF(name="provider", temp=True))
+        cf = stack.enter_context(openCF(name="provider", temp=False, headDirPath=root))
         cf.put(dict(relay=dict(dt=helping.nowIso8601(), curls=[f"http://127.0.0.1:{port}/"]),
                     kram=dict(enabled=True, denials=[], caches={"~": WINDOWS})))
-        hby = stack.enter_context(openHby(name="provider", temp=True, cf=cf, version=Vrsn_2_0))
+        hby = stack.enter_context(openHby(name="provider", temp=False, headDirPath=root, cf=cf, version=Vrsn_2_0))
         _prepareMailboxHabitat(hby=hby, alias="relay")
-        doers = setupMailbox(hby, alias="relay", httpPort=port)
+        mbx = Mailboxer(name="relay", base=hby.base, temp=False, headDirPath=root)
+        stack.callback(mbx.close, clear=False)
+        doers = setupMailbox(hby, alias="relay", mbx=mbx, httpPort=port)
         server = next(doer.server for doer in doers if isinstance(doer, http.ServerDoer))
         host = next(doer for doer in doers if isinstance(doer, MailboxStart))
-        mbx = next(doer.mbx for doer in doers if isinstance(doer, Respondant))
         assert server.servant.ha[1] == port, "HIO must bind the selected unprivileged port"
-        server.app.add_route("/_fixture", Control(hby, host, mbx, bundle))
+        server.app.add_route("/_fixture", Control(hby, host, mbx, stack, count))
         doist = doing.Doist(tock=.005, real=True, doers=doers)
         running = True
         def stop(*_):
@@ -155,7 +163,6 @@ def main():
         finally:
             doist.exit()
             server.close()
-            mbx.close(clear=True)
 
 
 if __name__ == "__main__":

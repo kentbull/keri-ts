@@ -8,14 +8,21 @@ import { createHabery } from "../../src/app/habbing.ts";
 type Command = { action: "store"; pre: string } | { action: "inspect"; pre: string; saids: string[] };
 
 await run(function*() {
-  const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-  yield* ensure(() => hby.close(true));
+  const root = Deno.args[1];
+  if (!root) throw new Error("A test-owned provider directory is required");
+  const hby = yield* createHabery({
+    name: "provider",
+    temp: false,
+    headDirPath: root,
+    skipConfig: true,
+  });
+  yield* ensure(() => hby.close());
   const runtime = yield* createAgentRuntime(hby, {
     enableMailboxStore: true,
     kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] } },
   });
   yield* ensure(() => runtime.close());
-  const hab = hby.makeHab("relay", undefined, { transferable: false });
+  const hab = hby.habByName("relay") ?? hby.makeHab("relay", undefined, { transferable: false });
   const handler = createProtocolHandler(runtime, { serviceHab: hab });
   yield* ensure(() => call(() => handler.close?.()));
   const server = Deno.serve({ hostname: "127.0.0.1", port: Number(Deno.args[0]), onListen() {} }, async (request) => {
@@ -29,6 +36,8 @@ await run(function*() {
       }
       if (command.action === "inspect") {
         return Response.json({
+          pid: Deno.pid,
+          provider: hab.pre,
           known: !!hby.db.getKever(command.pre),
           rows: command.saids.map((said) => {
             const cache = hby.db.msgc.get([command.pre, said]);
@@ -37,6 +46,7 @@ await run(function*() {
               cached: !!cache,
               pending: !!hby.db.pmkm.get([command.pre, said]),
               stamp: cache?.mdt ?? null,
+              proofs: hby.db.pmks.get([command.pre, said]).map((signature) => signature.index),
             };
           }),
           streams: [...runtime.mailboxDirector.queryCues].map((cue) => "serder" in cue ? cue.serder?.said! : ""),
