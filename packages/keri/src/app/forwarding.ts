@@ -394,7 +394,7 @@ export class Poster {
     for (let index = 0; index < route.targets.length; index++) {
       const endpoint = route.targets[index]!;
       try {
-        const target = this.prepareBytesTarget(hab, route, index, args.message);
+        const target = yield* this.prepareBytesTarget(hab, route, index, args.message);
         yield* sendPreparedCesrTarget(target, this.services, undefined, reactor ? { reactor } : undefined);
         deliveries.push(endpoint.url);
       } catch (error) {
@@ -457,17 +457,17 @@ export class Poster {
   }
 
   /** Prepare a target using the supplied wire and selected endpoint. */
-  prepareBytesTarget(
+  *prepareBytesTarget(
     hab: Hab,
     route: RawCesrRoute,
     index: number,
     message: Uint8Array,
-  ): PreparedCesrTarget {
+  ): Operation<PreparedCesrTarget> {
     if (hab.pre !== route.sender) throw new Error("CESR route belongs to another sender");
     const endpoint = route.targets[index];
     if (!Number.isSafeInteger(index) || !endpoint) throw new RangeError("Invalid CESR delivery target");
     if (route.kind !== "direct") {
-      const forwarded = this.prepareForwardedTarget(hab, route.recipient, route.topic, message, endpoint);
+      const forwarded = yield* this.prepareForwardedTarget(hab, route.recipient, route.topic, message, endpoint);
       return forwarded.kind === "http" ? { ...forwarded, bodyMode: route.bodyMode } : forwarded;
     }
     return remoteCesrTarget(endpoint, message, route.bodyMode);
@@ -535,18 +535,18 @@ export class Poster {
     endpoint: { eid: string; url: string },
     receiver?: TcpReplyReceiver,
   ): Operation<void> {
-    const target = this.prepareForwardedTarget(hab, recipient, topic, message, endpoint);
+    const target = yield* this.prepareForwardedTarget(hab, recipient, topic, message, endpoint);
     yield* sendPreparedCesrTarget(target, this.services, undefined, receiver);
   }
 
-  /** Local mailbox writes and signed introductions finish before any network work starts. */
-  private prepareForwardedTarget(
+  /** Capture signed introductions before payload preparation; no network work starts here. */
+  private *prepareForwardedTarget(
     hab: Hab,
     recipient: string,
     topic: string,
     message: Uint8Array,
     endpoint: { eid: string; url: string },
-  ): PreparedCesrTarget {
+  ): Operation<PreparedCesrTarget> {
     if (this.hby.db.prefixes.has(endpoint.eid)) {
       const stored = this.requireMailboxer().storeMsg(
         mailboxTopicKey(recipient, topic),
@@ -555,8 +555,8 @@ export class Poster {
       if (!stored) throw new Error("Mailbox publication did not complete");
       return { kind: "stored" };
     }
-    const forwarded = buildForwardedDelivery(hab, { recipient, topic, message });
     const intro = introduce(hab, endpoint.eid);
+    const forwarded = yield* buildForwardedDelivery(hab, { recipient, topic, message });
     return remoteCesrTarget(endpoint, concatBytes(intro, forwarded), this.hby.cesrBodyMode);
   }
 
@@ -946,14 +946,14 @@ interface MailboxPollTarget {
  * The caller is responsible for any surrounding introduction or end-role
  * material that should travel with the forwarded request.
  */
-function buildForwardedDelivery(
+function* buildForwardedDelivery(
   hab: Hab,
   args: {
     recipient: string;
     topic: string;
     message: Uint8Array;
   },
-): Uint8Array {
+): Operation<Uint8Array> {
   const [serder, attachments] = exchange(
     "/fwd",
     {},
