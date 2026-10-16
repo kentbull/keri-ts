@@ -45,14 +45,18 @@ interpretation where the local attester is known. Preserve exact required fields
 
 Hab.processCuesIter/interpretCue own cue semantics. CueSink receives the actual
 source queue. Composition wires respondantCueSink; Respondant does not receive
-a runtime-shaped delivery bundle. Current CueDelivery owns lazy iterators and
-exact pending targets; queued delivery applies outcomes and retains failed wire.
+a runtime-shaped delivery bundle. Respondant owns its private reply cursors,
+ordered correlation batches and exact failed packets. CueDelivery and
+DirectReplyDelivery are deleted; their routing/publication callbacks are gone.
+Respondant borrows the actual Poster, Reactor and ReplyStreams. RuntimeDeliveries
+now carries queries only and remains an input to the QueryCoordinator cleanup.
 Ordinary cues, routes, packets and reply batches have no synthetic lifecycle.
 Consumers perform interpretation/publication/source removal directly, without a
 generic callback-based cue publication helper. Failure preserves the source.
 Drains use the initial queue extent, and no-emission records do not stop the pass.
 Real iterator cleanup occurs once, even if it throws. Custom sinks run outside
-guarded interpretation. Existing wrappers remain removal inputs, not new abstractions.
+guarded interpretation. Optional CueSink hooks, the remaining query wrapper, the broad Reactor gate and
+duplicate whole-runtime driving remain removal inputs, not new abstractions.
 
 Reactor currently serializes dispatch, escrows and cue handling. Never reenter it
 from its guarded consumer. Remove this general callback guard only after moving

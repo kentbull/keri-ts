@@ -21,8 +21,9 @@ ownership and full qualification remain open.
 ## Accepted architecture; supersedes older preservation instructions
 
 - Plain cues and Decks; delete CueSink optional lifecycle, prepareCueEmission,
-  QueryReply admission callbacks and generic CueDelivery/RuntimeDeliveries wrappers.
-  Existing owners perform actual routing, signing and transmission.
+  QueryReply admission callbacks and generic delivery wrappers. CueDelivery and
+  DirectReplyDelivery are removed; Respondant owns actual reply state and output.
+  The query-only RuntimeDeliveries and optional CueSink hooks remain to remove.
 - Reactor has only justified protocol/connection responsibilities. Delete its
   general execution gate; no replacement universal executor, mutex or callback bus.
 - Choose concrete dependencies at construction. Remove vague service bags and

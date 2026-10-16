@@ -842,11 +842,13 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             assertEquals(forwarded.ked?.e, delivered.ked?.e);
             hby.db.rcts.rem(receiptKey);
             yield* runtime.reactor.settle(undefined, {}, function*() {
-              runtime.deliveries.enqueueCue(sender, new Deck([{ kin: "replay", messages: [message] }]), () => tcpRoute);
+              runtime.respondant.enqueueCue(
+                sender,
+                new Deck([{ kin: "replay", messages: [message], src: sender.pre, dest: recipient.pre }]),
+              );
             });
-            yield* runtime.deliveries.process(runtime);
-            yield* runtime.deliveries.process(runtime);
-            assertEquals(runtime.deliveries.hasPending, false);
+            for (let pass = 0; pass < 4 && runtime.respondant.hasPending; pass++) yield* runtime.respondant.process();
+            assertEquals(runtime.respondant.hasPending, false);
             assertEquals(hby.db.rcts.get(receiptKey).length, 1, "actual queue caller lends its receiver");
             assertEquals(concatBytes(...tcpBodies[1]).subarray(0, expectedIntro.length), expectedIntro);
 

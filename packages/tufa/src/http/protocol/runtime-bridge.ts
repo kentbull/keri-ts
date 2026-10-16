@@ -55,4 +55,5 @@ export function* drainRuntimeCues(
   yield* processCuesOnce(runtime, { hab, sink });
   // Network/capacity checks run after the synchronous guarded transfers.
   yield* runtime.deliveries.process(runtime);
+  yield* runtime.respondant.process();
 }

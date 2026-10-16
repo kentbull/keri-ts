@@ -132,7 +132,7 @@ function* deferredDirectQueryResponse(
       const first = habitats.next();
       const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
       if (hab) {
-        const stream = runtime.deliveries.openReply(runtime, hab, reply);
+        const stream = runtime.respondant.openReply(hab, reply);
         if (stream) {
           response = new Response(stream, {
             status: 200,
@@ -285,13 +285,14 @@ function* ingest(
                   const first = habitats.next();
                   const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
                   if (hab && query!.authorized) {
-                    runtime.deliveries.enqueueReply(runtime, hab, previous);
+                    runtime.respondant.enqueueReply(hab, previous);
                   }
                 } finally {
                   previous.close();
                 }
               });
               yield* runtime.deliveries.process(runtime);
+              yield* runtime.respondant.process();
             }
             query = undefined;
             seen = true;

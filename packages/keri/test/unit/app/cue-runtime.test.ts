@@ -2,7 +2,6 @@ import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
-import { CueDelivery } from "../../../src/app/cue-delivery.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
@@ -207,74 +206,59 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
   ]);
 });
 
-Deno.test("cue delivery accepts ordinary routes and preserves source on resolution failure", async () => {
+Deno.test("Respondant preserves source on interpretation/routing failure and opens replay only during delivery", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
     const runtime = yield* createAgentRuntime(hby);
-    const cue: AgentCue = { kin: "query", pre: hab.pre, src: hab.pre, route: "logs", q: {} };
+    const wire = hab.query(hab.pre, hab.pre, { route: "logs", q: {} });
+    const cue: AgentCue = { kin: "replay", messages: [wire], src: hab.pre, dest: hab.pre };
     const cues = new Deck([cue]);
     const failure = new Error("endpoint lookup failed");
+    const interpret = hab.interpretCue.bind(hab);
+    const route = {
+      sender: hab.pre,
+      recipient: hab.pre,
+      topic: "/reply",
+      kind: "direct" as const,
+      bodyMode: "header" as const,
+      targets: [] as { eid: string; url: string }[],
+    };
     try {
-      const interpret = hab.interpretCue;
       hab.interpretCue = () => {
         throw failure;
       };
-      assertStrictEquals(
-        assertThrows(() =>
-          runtime.deliveries.enqueueCue(hab, cues, () => {
-            throw new Error("routing must follow interpretation");
-          })
-        ),
-        failure,
-      );
-      assertStrictEquals(cues.peekHead(), cue);
-      assertEquals(runtime.deliveries.hasPending, false);
-      hab.interpretCue = interpret;
-      assertStrictEquals(
-        assertThrows(() =>
-          runtime.deliveries.enqueueCue(hab, cues, () => {
-            throw failure;
-          })
-        ),
-        failure,
-      );
-      assertStrictEquals(cues.peekHead(), cue);
-      assertEquals(runtime.deliveries.hasPending, false);
-      const route = {
-        sender: hab.pre,
-        recipient: hab.pre,
-        topic: "/reply",
-        kind: "direct" as const,
-        bodyMode: "header" as const,
-        targets: [],
+      runtime.poster.findBytesRoute = () => {
+        throw new Error("routing must follow interpretation");
       };
-      assertEquals(runtime.deliveries.enqueueCue(hab, cues, () => route), { kind: "prepared" });
-      assertEquals([cues.empty, runtime.deliveries.hasPending], [true, false]);
+      assertStrictEquals(assertThrows(() => runtime.respondant.enqueueCue(hab, cues)), failure);
+      assertStrictEquals(cues.peekHead(), cue);
+      assertEquals(runtime.respondant.hasPending, false);
+      hab.interpretCue = interpret;
+      runtime.poster.findBytesRoute = () => {
+        throw failure;
+      };
+      assertStrictEquals(assertThrows(() => runtime.respondant.enqueueCue(hab, cues)), failure);
+      assertStrictEquals(cues.peekHead(), cue);
+      assertEquals(runtime.respondant.hasPending, false);
+      runtime.poster.findBytesRoute = () => route;
+      assertEquals(runtime.respondant.enqueueCue(hab, cues), true);
+      assertEquals([cues.empty, runtime.respondant.hasPending], [true, false]);
       cues.push(cue);
       let resolutions = 0;
-      assertEquals(
-        runtime.deliveries.enqueueCue(hab, cues, () => {
-          resolutions++;
-          return {
-            ...route,
-            topic: "x".repeat(1024 ** 2),
-            targets: Array.from({ length: 4097 }, () => ({ eid: hab.pre, url: "https://peer.test/" })),
-          };
-        }),
-        { kind: "prepared" },
-      );
-      assertEquals([resolutions, cues.empty, runtime.deliveries.hasPending], [1, true, true]);
+      runtime.poster.findBytesRoute = () => {
+        resolutions++;
+        return { ...route, targets: [{ eid: hab.pre, url: "https://peer.test/" }] };
+      };
+      assertEquals(runtime.respondant.enqueueCue(hab, cues), true);
+      assertEquals([resolutions, cues.empty, runtime.respondant.hasPending], [1, true, true]);
       const messages = {
         [Symbol.iterator](): Iterator<Uint8Array> {
           throw new Error("replay opened during queue publication");
         },
       };
-      const replay = new Deck<AgentCue>([{ kin: "replay", messages }]);
-      runtime.deliveries.enqueueCue(hab, replay, () => ({
-        ...route,
-        targets: [{ eid: hab.pre, url: "https://peer.test/" }],
-      }));
+      const replay = new Deck<AgentCue>([{ kin: "replay", messages, src: hab.pre, dest: hab.pre }]);
+      runtime.respondant.enqueueCue(hab, replay);
       assertEquals(replay.empty, true);
     } finally {
       yield* runtime.close();
@@ -283,15 +267,24 @@ Deno.test("cue delivery accepts ordinary routes and preserves source on resoluti
   });
 });
 
-Deno.test("cue target preparation accepts wire views without backing quotas and closes its iterator", async () => {
+Deno.test("Respondant retains a wire view across retry and closes its actual iterator once", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    const runtime = yield* createAgentRuntime(hby);
+    const failure = new Error("transport unavailable");
+    const runtime = yield* createAgentRuntime(hby, {
+      services: {
+        http: {
+          fetch: () => {
+            throw failure;
+          },
+        },
+      },
+    });
     const wire = hab.query(hab.pre, hab.pre, { route: "logs", q: {} });
     const backing = new Uint8Array(9 * 1024 ** 2);
     backing.set(wire);
-    let closed = 0;
+    let closed = 0, preparations = 0;
     const messages = {
       *[Symbol.iterator]() {
         try {
@@ -301,7 +294,7 @@ Deno.test("cue target preparation accepts wire views without backing quotas and 
         }
       },
     };
-    const delivery = new CueDelivery({ cue: { kin: "replay", messages }, messages, kind: "wire" }, hab, {
+    runtime.poster.findBytesRoute = () => ({
       sender: hab.pre,
       recipient: hab.pre,
       topic: "/reply",
@@ -309,17 +302,25 @@ Deno.test("cue target preparation accepts wire views without backing quotas and 
       bodyMode: "header",
       targets: [{ eid: hab.pre, url: "https://peer.test/" }],
     });
+    const prepare = runtime.poster.prepareBytesTarget.bind(runtime.poster);
+    runtime.poster.prepareBytesTarget = (...args) => {
+      preparations++;
+      const packet = prepare(...args);
+      if (packet.kind !== "http") throw new Error("Expected HTTP packet");
+      assertEquals(packet.message, wire);
+      return packet;
+    };
     try {
-      const prepared = delivery.prepareTarget(runtime.poster);
-      if (prepared.kind !== "target" || prepared.target.kind !== "http") throw new Error("Expected HTTP packet");
-      assertEquals(prepared.target.message, wire);
-      assertEquals(delivery.prepareTarget(runtime.poster), prepared);
-      assertEquals(closed, 0);
-      delivery.release();
-      delivery.release();
+      runtime.cues.push({ kin: "replay", messages, src: hab.pre, dest: hab.pre });
+      assertEquals(runtime.respondant.enqueueCue(hab, runtime.cues), true);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        assertStrictEquals(yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))), failure);
+      }
+      assertEquals([preparations, closed], [1, 0]);
+      yield* runtime.respondant.close();
+      yield* runtime.respondant.close();
       assertEquals(closed, 1);
     } finally {
-      delivery.release();
       yield* runtime.close();
       yield* hby.close(true);
     }
@@ -351,7 +352,12 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
       preparationTurns++;
       return settle(...args);
     };
-    const cue = { kin: "query" as const, pre: sender.pre, src: sender.pre, route: "logs" as const, q: {} };
+    const cue = {
+      kin: "replay" as const,
+      messages: [sender.query(sender.pre, sender.pre, { route: "logs", q: {} })],
+      src: sender.pre,
+      dest: second.pre,
+    };
     const route = () => {
       routes++;
       return {
@@ -368,7 +374,8 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
     };
     try {
       runtime.cues.push(cue);
-      assertEquals(runtime.deliveries.enqueueCue(sender, runtime.cues, route), { kind: "prepared" });
+      runtime.poster.findBytesRoute = route;
+      assertEquals(runtime.respondant.enqueueCue(sender, runtime.cues), true);
       const query = sender.query(sender.pre, sender.pre, { route: "logs" as const, q: {} });
       for (let index = 0; index < 9; index++) {
         runtime.deliveries.enqueue({
@@ -379,36 +386,39 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
         });
       }
       assertStrictEquals(
-        yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
+        yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))),
         failed,
       );
-      assertEquals(runtime.deliveries.hasPending, true, "an unobserved typed transport failure preserves progress");
+      assertEquals(runtime.respondant.hasPending, true, "an unobserved typed transport failure preserves progress");
       failed = new Error("foreign transport busy");
       const previousTurns = preparationTurns;
       assertStrictEquals(
-        yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
+        yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))),
         failed,
       );
-      assertEquals(runtime.deliveries.hasPending, true, "foreign failure preserves pending delivery");
+      assertEquals(runtime.respondant.hasPending, true, "foreign failure preserves pending delivery");
       assertEquals(preparationTurns, previousTurns, "an exact packet retry cannot recapture protocol reply cues");
       injected = false;
-      assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 9, pending: true });
+      yield* runtime.respondant.process();
+      assertEquals(runtime.respondant.hasPending, true);
+      assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 9, pending: false });
       assertEquals(
         packets.query.length,
         9,
         "more than eight queued deliveries retain first-target failure and drain queries",
       );
-      for (let pass = 0; pass < 4; pass++) yield* runtime.deliveries.process(runtime);
+      for (let pass = 0; pass < 4; pass++) yield* runtime.respondant.process();
       assertEquals([packets.second.length, packets.third.length], [1, 1], "failed first target does not stop siblings");
       for (const wire of packets.first) assertEquals(wire, packets.first[0], "retries preserve the exact wire");
       injected = true;
       assertStrictEquals(
-        yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
+        yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))),
         failed,
       );
       injected = false;
       acceptFirst = true;
-      assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });
+      yield* runtime.respondant.process();
+      assertEquals(runtime.respondant.hasPending, false);
 
       const cleanupFailure = new Error("iterator cleanup failed");
       let returns = 0;
@@ -423,10 +433,11 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
         });
       };
       runtime.cues.push({ kin: "replay", messages, src: sender.pre, dest: second.pre });
-      runtime.deliveries.enqueueCue(sender, runtime.cues, () => ({ ...route(), targets: route().targets.slice(0, 1) }));
+      runtime.poster.findBytesRoute = () => ({ ...route(), targets: route().targets.slice(0, 1) });
+      runtime.respondant.enqueueCue(sender, runtime.cues);
       injected = true;
       assertStrictEquals(
-        yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
+        yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))),
         failed,
       );
       runtime.deliveries.enqueue({
@@ -436,9 +447,9 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
         destination: sender.pre,
       });
       const attempts = packets.first.length;
-      assertStrictEquals(yield* call(() => assertRejects(() => run(() => runtime.deliveries.close()))), cleanupFailure);
-      assertEquals([runtime.deliveries.hasPending, returns], [false, 1]);
-      yield* runtime.deliveries.close();
+      assertStrictEquals(yield* call(() => assertRejects(() => run(() => runtime.respondant.close()))), cleanupFailure);
+      assertEquals([runtime.respondant.hasPending, returns], [false, 1]);
+      yield* runtime.respondant.close();
       assertEquals(
         [packets.first.length, returns],
         [attempts, 1],
@@ -475,18 +486,24 @@ Deno.test("cue delivery releases its guarded turn but retains owners until HTTP 
         },
       },
     });
-    runtime.cues.push({ kin: "query", pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} });
-    runtime.deliveries.enqueueCue(hab, runtime.cues, () => ({
+    runtime.cues.push({
+      kin: "replay",
+      messages: [hab.query(hab.pre, hab.pre, { route: "logs", q: {} })],
+      src: hab.pre,
+      dest: hab.pre,
+    });
+    runtime.poster.findBytesRoute = () => ({
       sender: hab.pre,
       recipient: hab.pre,
       topic: "/reply",
       kind: "direct",
       bodyMode: "header",
       targets: [{ eid: hab.pre, url: "https://peer.test/" }],
-    }));
+    });
+    runtime.respondant.enqueueCue(hab, runtime.cues);
     const delivery = yield* spawn(function*() {
       try {
-        yield* runtime.deliveries.process(runtime);
+        yield* runtime.respondant.process();
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
       }
@@ -498,14 +515,14 @@ Deno.test("cue delivery releases its guarded turn but retains owners until HTTP 
         guarded = true;
       });
       const closing = yield* spawn(function*() {
-        yield* runtime.deliveries.close();
+        yield* runtime.respondant.close();
         closed = true;
       });
-      assertEquals([guarded, closed, runtime.deliveries.hasPending], [true, false, true]);
+      assertEquals([guarded, closed, runtime.respondant.hasPending], [true, false, true]);
       release();
       yield* closing;
       yield* delivery;
-      assertEquals([closed, runtime.deliveries.hasPending], [true, false]);
+      assertEquals([closed, runtime.respondant.hasPending], [true, false]);
     } finally {
       release();
       yield* delivery.halt();

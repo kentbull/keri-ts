@@ -95,12 +95,16 @@ Custom/ineligible sinks consume emissions
 outside the guarded turn. A pass consumes its initial extent, so newly appended
 work waits for the next pass. A cue with no emission is still consumed.
 
-Current CueDelivery/RuntimeDeliveries retain real lazy iterators, routing snapshots,
-once-signed packets and retry progress. They have no item/byte/metadata limits,
-preparation floor or release handle for record data. Route resolution happens once;
-failures precede source removal, and an empty route retires without sending. Iterator
-cleanup runs once, even when it fails. These existing preparation/delivery wrappers
-still require the concrete-owner simplification in the transport plan.
+Respondant owns lazy reply iterators, routing snapshots, once-signed packets and
+retry progress directly. CueDelivery and DirectReplyDelivery are deleted; no
+publication callback runs through a batch wrapper. HTTP openReply/enqueueReply
+interpret the complete correlation batch before publishing either destination and
+then take its records. Failed second-TSN interpretation leaves the pair pending.
+The HTTP reader and outbound delivery consume the same signed emissions independently;
+queue publication does not open replay. Actual cursor cleanup runs once, even if it
+fails, and active transport joins before stores close. RuntimeDeliveries now carries
+queries only. Its deletion into QueryCoordinator, optional CueSink hooks, the broad
+Reactor gate and duplicate whole-runtime driving remain unfinished.
 
 QueryCoordinator owns a private ordinary Deck of QueryRequest records. Its
 inspection surface exposes length/empty/peekHead. The selected local signer is
