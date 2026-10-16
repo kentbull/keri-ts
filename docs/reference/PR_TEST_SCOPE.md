@@ -33,7 +33,8 @@ required owners), `tufa`, `cesr` and `ci-tools` (the scope contract tests). Inte
 introduced. Existing suite isolation and participant topology remain in force.
 `interop-ipex-disclosure` owns the maintained bidirectional v2 conversation and
 graph cases separately from the legacy `interop-acdc-deep` workflows, so disclosure
-changes can select that file alone. Full mode includes both owners.
+changes can select that file alone. `interop-kram` separately owns the live
+single/group mailbox-authentication cases. Full mode includes all these owners.
 Empty arrays explicitly select no owners for that lane.
 
 For the periodic broad run, use:

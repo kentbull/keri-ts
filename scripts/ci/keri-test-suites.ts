@@ -232,6 +232,11 @@ export const suites: Record<string, TestSuite> = {
       "test/integration/app/interop-mailbox-kli-tufa.test.ts",
     ],
   },
+  "interop-kram": {
+    files: [
+      "test/integration/app/interop-kram-mailbox.test.ts",
+    ],
+  },
   "manual-delegation": {
     env: { KERI_LONG_MULTISIG_DELEGATION: "1" },
     files: [
@@ -272,6 +277,7 @@ export const interop = [
   "interop-witness-main",
   "interop-witness-cli",
   "interop-mailbox",
+  "interop-kram",
   "interop-did-webs",
 ] as const;
 
