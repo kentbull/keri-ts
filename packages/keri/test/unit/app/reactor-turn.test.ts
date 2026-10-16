@@ -1,6 +1,6 @@
-import { call, run, spawn, suspend } from "effection";
+import { call, ensure, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "../../../../cesr/mod.ts";
+import { concatBytes, ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "../../../../cesr/mod.ts";
 import { abortable } from "../../../src/app/abortable.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -324,48 +324,125 @@ Deno.test("runtime explicit close and scope exit release queued ingress and cue 
 });
 
 Deno.test("stream cancellation joins the actual source cleanup", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: `stream-cleanup-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+  for (const fail of [false, true]) {
+    const expected = fail ? new Error("late source cleanup failure") : undefined;
+    let failure: unknown;
     try {
-      const first = new Reactor(hby);
-      const second = new Reactor(hby);
-      const started = gate();
-      const cleaning = gate();
-      const cleanup = gate();
-      const task = yield* spawn(() =>
-        first.process(async function*(signal) {
-          try {
-            started.open();
-            await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
-            signal.throwIfAborted();
+      await run(function*() {
+        const hby = yield* createHabery({
+          name: `stream-cleanup-${crypto.randomUUID()}`,
+          temp: true,
+          skipConfig: true,
+        });
+        try {
+          const first = new Reactor(hby);
+          const second = new Reactor(hby);
+          const started = gate();
+          const cleaning = gate();
+          const cleanup = gate();
+          const task = yield* spawn(() =>
+            first.process(async function*(signal) {
+              try {
+                started.open();
+                await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+                signal.throwIfAborted();
+                yield new Uint8Array();
+              } finally {
+                cleaning.open();
+                await cleanup.wait;
+                if (fail) throw expected;
+              }
+            })
+          );
+          yield* call(() => started.wait);
+          let opened = false;
+          const source = async function*() {
+            opened = true;
             yield new Uint8Array();
+          };
+          let joined = false;
+          const halted = yield* spawn(function*() {
+            yield* task.halt();
+            joined = true;
+          });
+          yield* call(() => cleaning.wait);
+          try {
+            assertEquals(joined, false);
           } finally {
-            cleaning.open();
-            await cleanup.wait;
+            cleanup.open();
           }
-        })
-      );
-      yield* call(() => started.wait);
-      let opened = false;
-      const source = async function*() {
-        opened = true;
-        yield new Uint8Array();
-      };
-      let joined = false;
-      const halted = yield* spawn(function*() {
-        yield* task.halt();
-        joined = true;
+          yield* halted;
+          yield* second.process(source);
+          assertEquals(opened, true);
+        } finally {
+          yield* hby.close(true);
+        }
       });
-      yield* call(() => cleaning.wait);
-      assertEquals(joined, false);
-      cleanup.open();
-      yield* halted;
-      yield* second.process(source);
-      assertEquals(opened, true);
-    } finally {
-      yield* hby.close(true);
+    } catch (error) {
+      failure = error;
     }
-  });
+    assertStrictEquals(failure, expected);
+  }
+});
+
+Deno.test("input cancellation during dispatch joins source and handler cleanup without resuming the caller", async () => {
+  for (const mode of ["clean", "source-failure", "handler-failure"] as const) {
+    const expected = mode === "clean" ? undefined : new Error(mode);
+    let failure: unknown;
+    try {
+      await run(function*() {
+        const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+        try {
+          const hab = hby.makeHab("sender");
+          const bytes = acceptedEventReplayMessage(hby, hab.pre, 0).message;
+          const started = gate(), cleaning = gate(), cleanup = gate();
+          let resumed = false, joined = false, handlerClosed = false;
+          const task = yield* spawn(function*() {
+            yield* new Reactor(hby).process(
+              async function*() {
+                try {
+                  yield concatBytes(bytes, bytes); // The second body closes the first without source EOF.
+                  throw new Error("input read ahead of dispatch");
+                } finally {
+                  cleaning.open();
+                  await cleanup.wait;
+                  if (mode === "source-failure") throw expected;
+                }
+              },
+              {},
+              function*() {
+                yield* ensure(function*() {
+                  handlerClosed = true;
+                  if (mode === "handler-failure") throw expected;
+                });
+                started.open();
+                yield* suspend();
+              },
+            );
+            resumed = true;
+          });
+          yield* call(() => started.wait);
+          const halted = yield* spawn(function*() {
+            yield* task.halt();
+            joined = true;
+          });
+          yield* call(() => cleaning.wait);
+          try {
+            assertEquals([handlerClosed, joined, resumed], [true, false, false]);
+          } finally {
+            cleanup.open();
+          }
+          yield* halted;
+          assertEquals([joined, resumed], [true, false]);
+        } finally {
+          yield* hby.close(true);
+        }
+      });
+    } catch (error) {
+      failure = error;
+    }
+    assertStrictEquals(failure, expected);
+  }
 });
 
 Deno.test("OOBI CESR intake accepts before EOF and retains partial work through joined cancellation or failure", async () => {

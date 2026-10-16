@@ -74,8 +74,15 @@ failures without duplication.
 KERI/Tufa operations own lifecycle. Acquire source/frame/runtime resources before
 work children so cancellation aborts and joins I/O before releasing permits or
 owners. Promise adaptation belongs at real edges. FrameIntake is removed. The buffered
-CESR decoder has ordinary values; current transport adapters own source
-cancellation and joined cleanup while their concrete replacement remains pending.
+CESR decoder has ordinary values. Reactor owns its input iterator directly:
+abort before child teardown, join an outstanding read, then return the iterator.
+Keep dispatch in native Effection operations; an async loop awaiting Scope.run
+can confuse task halt with foreign I/O failure. Source and handler cleanup
+failures must survive cancellation during either reading or dispatch. Receipt
+inspection and approved finite legacy children use parseBytes; no channel or
+resource wrapper belongs around already hydrated values. CLI grant files use a
+cancellable parser scan through valid EOF, not first-match early return. Other
+transport adapters remain pending removal.
 Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 QueryCoordinator owns an ordinary private Deck of plain QueryRequest records.

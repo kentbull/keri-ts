@@ -30,7 +30,6 @@ import { Kevery } from "../core/eventing.ts";
 import { exchange, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { abortable } from "./abortable.ts";
-import { chunkBytes } from "./byte-source.ts";
 import { Exchanger, type ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
@@ -507,16 +506,8 @@ export class Multiplexor {
       }
       const event = new Serder({ sad });
       const { attachment, genus } = multisigChildEvidence(this.hby, wrapper, label, event);
-      const channel = yield* toEffectionFrames(async function*(signal) {
-        for (const bytes of [Counter.makeGVC(genus), event.raw, attachment]) {
-          yield* chunkBytes(bytes, { signal });
-        }
-      });
-      for (const frame of yield* each(channel.frames)) {
-        {
-          yield* dispatchEnvelope(envelopeFromFrame(frame, true), this.rvy, this.kvy);
-        }
-        yield* each.next();
+      for (const frame of parseBytes(concatBytes(Counter.makeGVC(genus), event.raw, attachment))) {
+        yield* dispatchEnvelope(envelopeFromFrame(frame, true), this.rvy, this.kvy);
       }
     }
   }
