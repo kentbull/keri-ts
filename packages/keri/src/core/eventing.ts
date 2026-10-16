@@ -747,7 +747,7 @@ export class Kevery {
     if (!serder) {
       return dropReceipt("staleReceipt");
     }
-    const wits = this.resolveAcceptedEventWitnesses(pre, said, serder);
+    const wits = this.db.acceptedEventWitnesses(serder);
     return wits
       ? { kind: "accept", event: { pre, said, serder, wits } }
       : escrowReceipt("missingReceiptedEvent");
@@ -791,11 +791,7 @@ export class Kevery {
     if (!replaySerder) {
       return dropReceipt("staleReceipt");
     }
-    const wits = this.resolveAcceptedEventWitnesses(
-      pre,
-      replaySaid,
-      replaySerder,
-    );
+    const wits = this.db.acceptedEventWitnesses(replaySerder);
     return wits
       ? {
         kind: "accept",
@@ -1843,7 +1839,7 @@ export class Kevery {
       }
       const witnessIndex = event.wits.indexOf(verfer.qb64);
       if (witnessIndex >= 0) {
-        // A detached non-transferable receipt from a current witness is
+        // A detached non-transferable receipt from an event-authorized witness is
         // promoted to an indexed witness signature before storage.
         this.db.wigs.add(
           dgkey,
@@ -1870,7 +1866,7 @@ export class Kevery {
         continue;
       }
       // Witness receipt verification assigns the verifier from the receipted
-      // event's current witness list, not from detached receipt material.
+      // event's historical witness list, not from detached receipt material.
       const verfer = new Verfer({ qb64: verferQb64 });
       if (verfer.transferable || !verfer.verify(wiger.raw, event.serder.raw)) {
         continue;
@@ -2056,7 +2052,7 @@ export class Kevery {
         `${scope} Invalid receipted evt reference at pre=${pre} sn=${snh}`,
       );
     }
-    const wits = this.resolveAcceptedEventWitnesses(pre, said, serder);
+    const wits = this.db.acceptedEventWitnesses(serder);
     if (!wits) {
       return keepEscrow("missingReceiptedEvent", `${scope} Kever not ready for receipted evt at pre=${pre} sn=${snh}`);
     }
@@ -2064,41 +2060,6 @@ export class Kevery {
       kind: "accept",
       event: { pre, said, serder, wits },
     };
-  }
-
-  /**
-   * Resolve the witness list used for accepted-event receipt processing.
-   *
-   * Order of preference:
-   * - witness state already logged with the accepted event in `wits.`
-   * - backers carried directly on inception/delegated inception events
-   * - current live key state for later event types
-   *
-   * KERIpy note:
-   * - accepted-event receipt handling is a different seam from
-   *   `_processEscrowFindUnver()`
-   * - partial-witness replay deliberately recomputes the witness list from the
-   *   escrowed event and current state instead of trusting this projection
-   *
-   * Translation note:
-   * - this helper is intentionally about accepted-event receipt handling only
-   * - if a maintainer is looking for the partial-witness replay logic, the
-   *   right seam is `resolvePartialWitnessEscrowWitnesses()`
-   */
-  private resolveAcceptedEventWitnesses(
-    pre: string,
-    said: string,
-    serder: SerderKERI,
-  ): string[] | null {
-    const stored = this.db.wits.get(dgKey(pre, said)).map((wit) => wit.qb64);
-    if (stored.length > 0) {
-      return stored;
-    }
-    if (serder.ilk === Ilks.icp || serder.ilk === Ilks.dip) {
-      return [...serder.backs];
-    }
-    const kever = this.db.getKever(pre);
-    return kever ? [...kever.wits] : null;
   }
 
   /**

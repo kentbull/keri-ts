@@ -968,7 +968,7 @@ export class Hab {
       );
     }
 
-    const wits = this.receiptedWitnesses(serder);
+    const wits = this.db.acceptedEventWitnesses(serder) ?? [];
     const index = wits.indexOf(this.pre);
     if (index < 0) {
       throw new ValidationError(
@@ -1176,33 +1176,6 @@ export class Hab {
   /** Collect explicitly finite OOBI output; incomplete delegated state still returns empty bytes. */
   replyToOobi(aid: string, role?: Role | string, eids: string[] = []): Uint8Array {
     return concatMessages([...this.replyToOobiMessages(aid, role, eids)]);
-  }
-
-  /**
-   * Resolve the witness list that governs receipts for one event.
-   *
-   * Preference order:
-   * - the durable event-level `wits.` projection when present
-   * - the event body's own backer list for inception events
-   * - the current accepted kever witness list as a last resort
-   */
-  private receiptedWitnesses(serder: SerderKERI): string[] {
-    const pre = serder.pre;
-    const said = serder.said;
-    if (!pre || !said) {
-      return [];
-    }
-
-    const stored = this.db.wits.get(dgKey(pre, said)).map((wit) => wit.qb64);
-    if (stored.length > 0) {
-      return stored;
-    }
-
-    if (serder.ilk === Ilks.icp || serder.ilk === Ilks.dip) {
-      return [...serder.backs];
-    }
-
-    return [...(this.db.getKever(pre)?.wits ?? [])];
   }
 
   /**

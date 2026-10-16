@@ -1258,6 +1258,24 @@ export class Baser {
   }
 
   /**
+   * Resolve an accepted event's receipt witnesses from its latest establishment.
+   * Mirrors KERIpy Kevery.fetchWitnessState: interactions inherit the preceding
+   * establishment's stored cohort, including an empty cohort. Never borrow live
+   * key state. Partial-witness escrows derive their cohort before acceptance.
+   */
+  acceptedEventWitnesses(serder: SerderKERI): string[] | null {
+    const pre = serder.pre;
+    const sn = serder.sn;
+    if (!pre || !serder.said || sn === null) return null;
+    for (const said of this.kels.getOnBackIter(pre, sn)) {
+      const event = this.getEvtSerder(pre, said);
+      if (!event) return null;
+      if (event.estive) return this.wits.get(dgKey(pre, said)).map((wit) => wit.qb64);
+    }
+    return null;
+  }
+
+  /**
    * Return true when `serder` currently satisfies the stored witness threshold.
    *
    * KERIpy correspondence:

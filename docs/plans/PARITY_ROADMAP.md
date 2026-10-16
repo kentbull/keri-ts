@@ -51,8 +51,10 @@ ownership and full qualification remain open.
   fanout uses only verified complementary indexed signatures. Real-HTTP regressions
   cover foreign/forged/wrong-event proof, valid retrieval, three-witness fanout
   and historical receipt selection/completion after a nonempty witness replacement.
-  The shared empty historical witness-list fallback to current witnesses remains
-  owner-level cleanup; close that gap before final qualification.
+  Baser now owns cohort lookup through the preceding establishment, including empty
+  rotations/interactions. Receipt classification and POST authorization cannot use
+  later witnesses; missing dependencies remain escrowed. Periodic broad and final
+  composed qualification remain required.
 - Narrow public runtime exports to supported operations/data. Remove optional
   hooks and wrappers; condense contracts, learnings and plans to current decisions.
 - One finite decoder shared by complete input and a small network input loop.

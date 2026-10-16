@@ -189,6 +189,9 @@ accepted proof; fanout uses only verified complementary indexed signatures, neve
 raw peer-supplied proof fields or unrelated non-witness receipts.
 Use the requested accepted event's witness list for retrieval, proof indexes and
 cached completion; later witness replacements cannot reinterpret older proof.
+Baser resolves interactions through their preceding establishment, including an
+empty cohort. POST authorization uses that accepted event; a missing dependency
+remains escrowed instead of signing against the current kever.
 Receiptor/catchup borrow a Reactor selected at construction or create one over the
 existing Habery. They never create AgentRuntime, extra stores or
 workers. Anchorer also selects its Reactor/services once; processAllOnce takes no
