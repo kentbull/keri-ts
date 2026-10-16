@@ -54,8 +54,10 @@ migration back to retired APIs.
   fanout uses only verified complementary indexed signatures. Real-HTTP regressions
   cover foreign/forged/wrong-event proof, valid retrieval, three-witness fanout
   and historical receipt selection/completion after a nonempty witness replacement.
-  Baser now owns cohort lookup through the preceding establishment, including empty
-  rotations/interactions. Receipt classification and POST authorization cannot use
+  Baser owns historical cohort and threshold lookup through the accepted event's
+  prior-digest ancestry, including empty cohorts and superseded interactions.
+  Later witness rotations/recoveries cannot change an old receipt requirement.
+  Receipt classification and POST authorization cannot use
   later witnesses; missing dependencies remain escrowed. Periodic broad and final
   composed qualification remain required.
 - Detached HTTP framing now preserves the selected frame genus instead of guessing
