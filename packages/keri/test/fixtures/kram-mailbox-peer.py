@@ -20,7 +20,10 @@ from hio.base import doing
 from hio.core import http
 from keri import Kinds, Vrsn_1_0, Vrsn_2_0
 from keri.app import openCF, openHby
+from keri.app.agenting import Receiptor
 from keri.app.mailboxing import MailboxStart, setupMailbox
+from keri.app.oobiing import Oobiery
+from keri.recording import OobiRecord
 from keri.app.storing import Mailboxer
 from keri.cli.commands.mailbox.start import _prepareMailboxHabitat
 from keri.core import Diger, Kevery, Number, Parser, Salter, messagize, query
@@ -30,11 +33,14 @@ WINDOWS = [1000, 60000, 120000, 300000, 60000, 120000, 300000]
 PAYLOAD = "authenticated-mailbox-payload"
 
 
-def controller_packets(stack, count):
+def controller_packets(stack, count, witnesses):
     """Independent member stores sign one controller or a real two-of-two group."""
     hbys = [stack.enter_context(openHby(name=f"member-{i}", temp=True,
             salt=Salter().qb64, version=Vrsn_1_0)) for i in range(count)]
-    members = [hby.makeHab(name="member", version=Vrsn_1_0) for hby in hbys]
+    wits = [witness["pre"] for witness in witnesses]
+    witness_args = dict(wits=wits, toad=2 if wits else 0)
+    members = [hby.makeHab(name="member", version=Vrsn_1_0,
+               **(witness_args if count == 1 else {})) for hby in hbys]
     kel = [bytes(hab.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_1_0)) for hab in members]
     signers = members
     if count == 2:
@@ -43,7 +49,7 @@ def controller_packets(stack, count):
             Parser(version=Vrsn_1_0).parse(ims=bytearray(kel[1-i]), kvy=kvy, local=True)
         mids = [hab.pre for hab in members]
         signers = [hby.makeGroupHab(group="group", mhab=members[i], smids=mids,
-                   rmids=mids, isith="2", nsith="2", toad=0, wits=[],
+                   rmids=mids, isith="2", nsith="2", **witness_args,
                    version=Vrsn_1_0, kind=Kinds.json) for i, hby in enumerate(hbys)]
         partials = [hab.msgOwnInception(allowPartiallySigned=True, framed=True,
                     gvrsn=Vrsn_1_0) for hab in signers]
@@ -53,8 +59,39 @@ def controller_packets(stack, count):
             assert signers[i].pre in kvy.kevers
         kel.append(bytes(signers[0].msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_1_0)))
     sender = signers[0]
+    if witnesses:
+        hby = hbys[0]
+        resolver = Oobiery(hby=hby, version=Vrsn_1_0)
+        receiptor = Receiptor(hby=hby)
+        for witness in witnesses:
+            hby.db.oobis.pin(keys=(witness["url"],), val=OobiRecord(date=helping.nowIso8601()))
+        doist = doing.Doist(tock=.005, real=True, doers=[*resolver.doers, receiptor])
+        deadline = time.monotonic() + 20
+        def recur():
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Witness introductions/receipts did not complete")
+            doist.recur()
+            time.sleep(.005)
+        try:
+            doist.enter()
+            while not all((record := hby.db.roobi.get(keys=(wit["url"],))) is not None
+                          and record.state == "resolved" for wit in witnesses):
+                recur()
+            assert all(wit["pre"] in hby.kevers for wit in witnesses)
+            receiptor.msgs.append(dict(pre=sender.pre, sn=0))
+            while not receiptor.cues:
+                recur()
+            assert sorted(sig.index for sig in hby.db.wigs.get(keys=(sender.pre, sender.kever.serder.said))) == [0, 1, 2]
+        finally:
+            doist.exit()
+        # Stored replay carries witness receipts; msgOwnEvent carries controller signatures only.
+        kel = [bytes(wire) for hab in members for wire in hab.db.clonePreIter(pre=hab.pre, gvrsn=Vrsn_1_0)]
+        if count == 2:
+            kel.extend(bytes(wire) for wire in sender.db.clonePreIter(pre=sender.pre, gvrsn=Vrsn_1_0))
     outsider = hbys[0].makeHab(name="outsider", version=Vrsn_1_0)
-    return dict(pre=sender.pre, members=[hab.pre for hab in members],
+    return dict(pre=sender.pre, event=sender.kever.serder.said, witnesses=list(sender.kever.wits),
+                receipts=sorted(sig.index for sig in sender.db.wigs.get(keys=(sender.pre, sender.kever.serder.said))),
+                members=[hab.pre for hab in members],
                 kel=[base64.b64encode(wire).decode() for wire in kel],
                 packets=query_packets(signers, outsider))
 
@@ -94,7 +131,7 @@ class Control:
             if action == "info":
                 # Provider-only crash cases need no unrelated temporary controller stores.
                 if self.bundle is None:
-                    self.bundle = controller_packets(self.stack, self.count)
+                    self.bundle = controller_packets(self.stack, self.count, command.get("witnesses", []))
                 rep.media = self.bundle
             elif action == "store":
                 self.mbx.storeMsg(topic=f'{command["pre"]}/reply', msg=PAYLOAD.encode())
@@ -109,8 +146,12 @@ class Control:
                         stamp=cache.mdt if cache else None,
                         proofs=[sig.index for sig in self.hby.db.kramPMKS.get(keys=(pre, said))]))
                 cues = list(self.host.cues) + list(self.host.queries)
+                sender = self.host.kvy.kevers[pre] if pre in self.host.kvy.kevers else None
+                state = None if sender is None else dict(event=sender.serder.said,
+                    witnesses=list(sender.wits), threshold=sender.toader.num,
+                    receipts=sorted(sig.index for sig in self.hby.db.wigs.get(keys=(pre, sender.serder.said))))
                 rep.media = dict(pid=os.getpid(), provider=self.host.hab.pre,
-                    known=pre in self.host.kvy.kevers, rows=rows,
+                    sender=state, rows=rows,
                     streams=[cue["serder"].said for cue in cues if cue["kin"] == "stream"])
             elif action == "send":
                 request = Request(command["url"], data=base64.b64decode(command["wire"]),

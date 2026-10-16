@@ -23,6 +23,11 @@ A default KLI inception may poll before the witness knows its KEL. The pinned
 KERIpy Poller reconnects after 30 seconds and retries one second later; its outer
 command deadline must include that cycle. Preserve authorization and full receipt
 assertions rather than treating the arrival order as a different topology.
+Finite Python witness preparation uses Oobiery and the current Receiptor's normal
+receipt endpoint. Legacy WitnessReceiptor expects mailbox receipt polling.
+Stored clone replay includes verified witness receipts; msgOwnEvent does not.
+KERIpy's lazy Kever map needs membership/indexed access after reopen; dict.get
+can bypass hydration and falsely report missing accepted state.
 
 Verify Python interpreter, revision and actually imported modules. Console entry
 exit status matters: python -m can ignore main's return. Explicitly select body
