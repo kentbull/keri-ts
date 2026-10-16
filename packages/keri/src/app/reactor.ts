@@ -11,7 +11,7 @@ import {
   Siger,
   Verfer,
 } from "cesr-ts";
-import { action, call, ensure, type Operation, resource } from "npm:effection@^3.6.0";
+import { action, call, ensure, on, type Operation, race, resource } from "npm:effection@^3.6.0";
 import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
@@ -36,15 +36,19 @@ import {
 import { QueryReplies } from "./query-replies.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
-/** Request-local provenance and input cancellation. */
-export interface IngressOptions {
-  signal?: AbortSignal;
+/** Protocol processing choices, independent of an input operation's lifetime. */
+export interface DispatchOptions {
   /** Treat witness/controller ingress as locally received protocol events. */
   local?: boolean;
   /** Hosted mailbox endpoint that received this source. */
   mailboxAid?: string | null;
   /** Advance escrows within the same turn before consuming its cues. */
   escrows?: boolean;
+}
+
+/** Input cancellation belongs to the consuming operation, never protocol dispatch. */
+export interface IngressOptions extends DispatchOptions {
+  signal?: AbortSignal;
 }
 
 /** Retained copy and transferable shared credit for one queued or processing record. */
@@ -173,7 +177,7 @@ export class Reactor {
   ): Operation<void> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
-    yield* call(function*() {
+    const input = call(function*() {
       const controller = new AbortController();
       const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
       try {
@@ -195,6 +199,7 @@ export class Reactor {
           }
         });
         while (true) {
+          signal.throwIfAborted();
           pending = frames.next();
           let result: Awaited<typeof pending>;
           try {
@@ -204,6 +209,7 @@ export class Reactor {
             throw error;
           }
           pending = undefined;
+          signal.throwIfAborted();
           if (result.done) return;
           yield* self.settle(result.value, options, consume);
         }
@@ -211,6 +217,18 @@ export class Reactor {
         controller.abort();
       }
     });
+    if (options.signal) {
+      const signal = options.signal;
+      yield* race([
+        input,
+        call(function*(): Operation<never> {
+          const abort = yield* on(signal, "abort");
+          signal.throwIfAborted();
+          yield* abort.next();
+          throw signal.reason;
+        }),
+      ]);
+    } else yield* input;
   }
   /**
    * Own one dispatch, optional escrow pass, and cue-consumption turn.
@@ -219,7 +237,7 @@ export class Reactor {
    */
   settle(
     frame?: CesrFrame,
-    { local = this.local, mailboxAid, escrows = false }: IngressOptions = {},
+    { local = this.local, mailboxAid, escrows = false }: DispatchOptions = {},
     consume?: (envelope?: KeriDispatchEnvelope, decision?: DispatchDecision) => Operation<void>,
   ): Operation<KeriDispatchEnvelope | undefined> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.

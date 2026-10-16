@@ -265,6 +265,7 @@ function* ingest(
           }
         });
         while (true) {
+          signal.throwIfAborted();
           pending = frames.next();
           let result: Awaited<typeof pending>;
           try {
@@ -274,6 +275,7 @@ function* ingest(
             throw error;
           }
           pending = undefined;
+          signal.throwIfAborted();
           if (result.done) break;
           const frame = result.value;
           yield* call(function*() {

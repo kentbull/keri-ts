@@ -9,7 +9,7 @@ import {
   type Payload,
   ResourceAdmissionError,
 } from "cesr-ts";
-import { call, ensure, type Operation, resource, scoped } from "npm:effection@^3.6.0";
+import { call, ensure, on, type Operation, race, resource, scoped } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { rethrowCleanupFailure } from "./abortable.ts";
 import {
@@ -287,7 +287,7 @@ export function attemptPostCesr(
   consume?: (response: Response) => Operation<void>,
 ): Operation<CesrPostResult> {
   // Isolate joining cleanup so a halt cannot resume a delegated caller after payload disposal.
-  return call(function*(): Operation<CesrPostResult> {
+  const posting = call(function*(): Operation<CesrPostResult> {
     const services = options.services ?? defaultRuntimeServices;
     const controller = new AbortController();
     const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
@@ -310,6 +310,7 @@ export function attemptPostCesr(
         }
       });
       while (true) {
+        signal.throwIfAborted();
         pending = frames.next();
         let result: Awaited<typeof pending>;
         try {
@@ -319,6 +320,7 @@ export function attemptPostCesr(
           throw error;
         }
         pending = undefined;
+        signal.throwIfAborted();
         if (result.done) break;
         const frame = result.value;
         // Each request closes before the next input frame; it owns its separate HTTP cancellation.
@@ -335,4 +337,15 @@ export function attemptPostCesr(
     }
     return { kind: "complete" };
   });
+  if (!options.signal) return posting;
+  const signal = options.signal;
+  return race([
+    posting,
+    call(function*(): Operation<never> {
+      const abort = yield* on(signal, "abort");
+      signal.throwIfAborted();
+      yield* abort.next();
+      throw signal.reason;
+    }),
+  ]);
 }

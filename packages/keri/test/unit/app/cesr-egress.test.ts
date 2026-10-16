@@ -13,7 +13,7 @@ import {
 import type { CesrFrame } from "cesr-ts";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
-import { call, run } from "npm:effection@^3.6.0";
+import { call, run, suspend } from "npm:effection@^3.6.0";
 import { essrRaw } from "../../../../cesr/src/parser/essr.ts";
 import { KERIPY_V1_JSON_ICP_BODY as json } from "../../../../cesr/test/fixtures/external-vectors.ts";
 import vectors from "../../../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
@@ -487,6 +487,51 @@ Deno.test("CESR input cancellation also aborts the request consuming its deliver
     assertEquals(aborted, true);
   } finally {
     await sending.halt();
+  }
+});
+
+Deno.test("external HTTP input cancellation stops an active response consumer", async () => {
+  for (const cleanupFailure of [undefined, new Error("late input cleanup failure")]) {
+    const ready = Promise.withResolvers<void>(), controller = new AbortController();
+    const reason = new Error("stop response consumer");
+    let closed = false, resumed = false;
+    const task = run(function*() {
+      yield* postCesr("https://peer.test/", async function*() {
+        try {
+          yield fixture();
+        } finally {
+          closed = true;
+          // deno-lint-ignore no-unsafe-finally -- A foreign cleanup failure must survive external abort.
+          if (cleanupFailure) throw cleanupFailure;
+        }
+      }, {
+        signal: controller.signal,
+        services: services(() => Promise.resolve(new Response(null, { status: 204 }))),
+      }, function*() {
+        ready.resolve();
+        yield* suspend();
+        resumed = true;
+      });
+      resumed = true;
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await ready.promise;
+      controller.abort(reason);
+      const failure = await assertRejects(() =>
+        Promise.race([
+          task,
+          new Promise<never>((_, reject) =>
+            timer = setTimeout(() => reject(new Error("response consumer still active")), 1000)
+          ),
+        ])
+      );
+      assertStrictEquals(failure, cleanupFailure ?? reason);
+      assertEquals([closed, resumed], [true, false]);
+    } finally {
+      clearTimeout(timer);
+      await task.halt().catch(() => {});
+    }
   }
 });
 

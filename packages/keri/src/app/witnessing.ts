@@ -378,6 +378,7 @@ export function* processWitnessIngressSource(
         }
       });
       while (true) {
+        signal.throwIfAborted();
         pending = frames.next();
         let result: Awaited<typeof pending>;
         try {
@@ -387,6 +388,7 @@ export function* processWitnessIngressSource(
           throw error;
         }
         pending = undefined;
+        signal.throwIfAborted();
         if (result.done) break;
         const frame = result.value;
         yield* runtime.reactor.settle(frame, { local, escrows: true });

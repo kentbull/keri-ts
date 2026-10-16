@@ -537,6 +537,7 @@ export class Multiplexor {
           }
         });
         while (true) {
+          signal.throwIfAborted();
           pending = frames.next();
           let result: Awaited<typeof pending>;
           try {
@@ -546,6 +547,7 @@ export class Multiplexor {
             throw error;
           }
           pending = undefined;
+          signal.throwIfAborted();
           if (result.done) break;
           const frame = result.value;
           const serder = frame.body as SerderKERI;
