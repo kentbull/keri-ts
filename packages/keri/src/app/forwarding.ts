@@ -720,15 +720,14 @@ function hasLocalStoreForwardHost(
  * Local/remote mailbox consumer for forwarded EXN topics.
  *
  * Current scope:
- * - replays locally stored mailbox topics for the active habitat prefix
+ * - replays locally stored mailbox topics for local habitat prefixes
  * - polls configured remote mailbox or witness endpoints with `mbx` queries
- * - ingests retrieved payloads back through the shared `Reactor`
+ * - lends retrieved records to the composed consumer; protocol intake stays outside
  */
 export class MailboxPoller {
   static readonly DefaultTimeoutPolicy: Readonly<MailboxPollingTimeoutPolicy> = Object.freeze({
     requestOpenTimeoutMs: 5_000,
     maxPollDurationMs: 30_000,
-    commandLocalBudgetMs: 5_000,
   });
   static readonly ReadIdleTimeoutMs = 500;
 
@@ -738,8 +737,6 @@ export class MailboxPoller {
   readonly services: RuntimeServices;
   readonly pollTransport: MailboxPollTransport;
   private readonly localCursors = new Map<string, Record<string, number>>();
-  /** One bounded command-local resume position; endpoint/habitat metadata stays borrowed. */
-  private readonly nextRemotePoll = { target: 0, endpoint: 0 };
 
   constructor(
     hby: Habery,
@@ -758,84 +755,16 @@ export class MailboxPoller {
     this.pollTransport = pollTransport;
   }
 
-  /** Configure mailbox polling state for future expansion; currently a no-op. */
-  configure(_args: { hab?: Hab } = {}): void {
-    return;
-  }
-
   /** Register one mailbox topic that this poller should retrieve. */
   registerTopic(topic: string): void {
     this.mailboxDirector.registerTopic(topic);
   }
 
   /**
-   * Drain one polling turn:
-   * - replay locally hosted mailbox traffic first
-   * - then query remote mailbox or witness endpoints using `mbx`
-   *
-   * The returned batches preserve per-source boundaries so callers can ingest
-   * one local or remote result set and run follow-on escrow/cue work before
-   * moving to the next source.
-   */
-  *processOnce(
-    {
-      budgetMs,
-    }: {
-      budgetMs?: number;
-    } = {},
-  ): Operation<MailboxPollBatch[]> {
-    const topics = this.mailboxDirector.registeredTopics();
-    if (topics.length === 0) {
-      return [];
-    }
-    const batches: MailboxPollBatch[] = [];
-    const deadline = this.services.clock.now() + positiveTimeoutMs(
-      budgetMs,
-      this.timeoutPolicy.commandLocalBudgetMs,
-    );
-
-    for (const pre of this.hby.prefixes) {
-      const local = this.readLocalMailbox(pre, topics);
-      if (local.length > 0) {
-        batches.push({ source: "local", pre, messages: local });
-      }
-    }
-
-    const targets = this.remotePollTargets();
-    if (targets.length === 0) return batches;
-    const firstTarget = this.nextRemotePoll.target % targets.length;
-    const firstEndpoint = this.nextRemotePoll.endpoint;
-    // Wrap to the earlier endpoints of the starting habitat without flattening peer metadata.
-    for (let visited = 0; visited <= targets.length; visited++) {
-      const targetIndex = (firstTarget + visited) % targets.length;
-      const target = targets[targetIndex];
-      const remoteEndpoints = mailboxPollEndpoints(this.hby, target.hab);
-      if (remoteEndpoints.length === 0) continue;
-      const resume = firstEndpoint % remoteEndpoints.length;
-      const start = visited === 0 ? resume : 0;
-      const end = visited === targets.length ? resume : remoteEndpoints.length;
-      for (let endpointIndex = start; endpointIndex < end; endpointIndex++) {
-        const remainingBudgetMs = deadline - this.services.clock.now();
-        if (remainingBudgetMs <= 0) return batches;
-        // Advance before the joined poll, so an empty, failed or cancelled long poll cannot monopolize the next turn.
-        const nextEndpoint = endpointIndex + 1;
-        this.nextRemotePoll.target = nextEndpoint < remoteEndpoints.length
-          ? targetIndex
-          : (targetIndex + 1) % targets.length;
-        this.nextRemotePoll.endpoint = nextEndpoint < remoteEndpoints.length ? nextEndpoint : 0;
-        const batch = yield* this.pollRemoteEndpointOnce(target, remoteEndpoints[endpointIndex], remainingBudgetMs);
-        if (batch) batches.push(batch);
-      }
-    }
-
-    return batches;
-  }
-
-  /**
    * Poll forever, streaming typed batches into one sink.
    *
-   * Long-lived runtime polling stays callback-based because concurrent remote
-   * workers do not have a natural finite return value.
+   * Each remote endpoint progresses independently, and awaits the consumer before
+   * reading the next event or advancing its persisted cursor.
    */
   *pollDo(
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
@@ -908,24 +837,13 @@ export class MailboxPoller {
     return created;
   }
 
-  /**
-   * Poll one remote mailbox or witness endpoint once and return one batch.
-   *
-   * Timeout ownership:
-   * - bounded callers pass their remaining command-local budget
-   * - long-lived workers pass the normal mailbox long-poll duration
-   */
+  /** Stream one remote response through its consumer before recording cursor progress. */
   private *pollRemoteEndpointOnce(
     target: MailboxPollTarget,
     endpoint: { eid: string; url: string },
-    budgetMs: number,
-    onBatch?: (batch: MailboxPollBatch) => void | Operation<void>,
-  ): Operation<MailboxPollBatch | null> {
-    const cursor = this.mailboxDirector.remoteQueryCursor(
-      target.targetPre,
-      endpoint.eid,
-    );
-    const messages: MailboxSseMessage[] = [];
+    onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
+  ): Operation<void> {
+    const cursor = this.mailboxDirector.remoteQueryCursor(target.targetPre, endpoint.eid);
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     yield* this.pollTransport.poll({
@@ -934,31 +852,14 @@ export class MailboxPoller {
       endpoint,
       topics: cursor,
       bodyMode: this.hby.cesrBodyMode,
-      timeouts: mailboxFetchTimeoutPolicy(this.timeoutPolicy, budgetMs),
+      timeouts: mailboxFetchTimeoutPolicy(this.timeoutPolicy),
       services: this.services,
     }, function*(message) {
-      if (onBatch) {
-        // Await the consumer before reading another SSE event or advancing its cursor.
-        yield* call(() =>
-          onBatch({ source: "remote", pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] })
-        );
-        self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
-        return;
-      }
-      messages.push(message);
+      yield* call(() =>
+        onBatch({ source: "remote", pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] })
+      );
+      self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
     });
-    if (messages.length === 0) {
-      return null;
-    }
-    for (const message of messages) {
-      this.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
-    }
-    return {
-      source: "remote",
-      pre: target.targetPre,
-      eid: endpoint.eid,
-      messages: messages.map((message) => message.msg),
-    };
   }
 
   /** Keep one long-lived worker running for each currently configured remote endpoint. */
@@ -1004,15 +905,7 @@ export class MailboxPoller {
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
   ): Operation<never> {
     while (true) {
-      const batch = yield* this.pollRemoteEndpointOnce(
-        target,
-        endpoint,
-        this.timeoutPolicy.maxPollDurationMs,
-        onBatch,
-      );
-      if (batch) {
-        yield* call(() => onBatch(batch));
-      }
+      yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
       yield* runtimeTurn();
     }
   }
@@ -1246,8 +1139,6 @@ export interface MailboxPollingTimeoutPolicy {
   requestOpenTimeoutMs: number;
   /** Stop reading one mailbox SSE response after this long-poll window. */
   maxPollDurationMs: number;
-  /** Bound one command-local polling turn across sequential remote endpoints. */
-  commandLocalBudgetMs: number;
 }
 
 /** One mailbox retrieval batch whose message boundaries should stay together. */
@@ -1396,27 +1287,15 @@ function normalizeMailboxPollingTimeoutPolicy(
       overrides?.maxPollDurationMs,
       defaults.maxPollDurationMs,
     ),
-    commandLocalBudgetMs: positiveTimeoutMs(
-      overrides?.commandLocalBudgetMs,
-      defaults.commandLocalBudgetMs,
-    ),
   });
 }
 
 function mailboxFetchTimeoutPolicy(
   timeouts: Readonly<MailboxPollingTimeoutPolicy>,
-  budgetMs: number,
 ): MailboxFetchTimeoutPolicy {
-  const boundedBudgetMs = Math.max(1, budgetMs);
   return {
-    requestOpenTimeoutMs: Math.min(
-      timeouts.requestOpenTimeoutMs,
-      boundedBudgetMs,
-    ),
-    maxReadDurationMs: Math.min(
-      timeouts.maxPollDurationMs,
-      boundedBudgetMs,
-    ),
+    requestOpenTimeoutMs: timeouts.requestOpenTimeoutMs,
+    maxReadDurationMs: timeouts.maxPollDurationMs,
     readIdleTimeoutMs: MailboxPoller.ReadIdleTimeoutMs,
   };
 }

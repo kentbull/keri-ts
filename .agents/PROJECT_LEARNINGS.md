@@ -39,8 +39,8 @@ routes directly to query, mailbox and reply owners; optional CueSink hooks and
 root adapters are removed. Reactor returns dispatch data, captures replies before
 publishing its protocol Deck, and offers no application callback gate. Default
 query transport cannot be a no-op sink. Finite commands await state/deadlines over
-the host workers, joining them before teardown; serial runtime pumping remains
-removal work. Local endpoint/startup intake uses direct protocol processing; host
+the host workers, joining them before teardown. Serial whole-runtime and finite
+mailbox polling APIs are removed; phase-specific tests invoke concrete owners. Local endpoint/startup intake uses direct protocol processing; host
 composition has no fake per-Hab seeding phase. Witness receipt/delegation/raw send owners borrow Reactor and transport services,
 not a parent runtime; standalone receipt processing opens no extra stores.
 HTTP status never proves witness receipt success: require accepted indexed proof

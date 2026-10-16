@@ -54,7 +54,6 @@ const sideEffectPatterns = new Map<string, RegExp>([
   ["habery setup", /\bsetupHby\s*\(/g],
   ["agent runtime", /\bcreateAgentRuntime\s*\(/g],
   ["runtime loop", /\bprocessRuntimeUntil\s*\(/g],
-  ["mailbox turn", /\bprocessMailboxTurn\s*\(/g],
 ]);
 
 const methodKeywords = new Set([

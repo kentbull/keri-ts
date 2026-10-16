@@ -35,8 +35,8 @@ ownership and full qualification remain open.
   replace the placeholder VDR/ACDC bags. Application entrypoints retain one check
   for genuine readonly registry absence. No speculative DI layer.
 - Finite CLI convergence now uses the host workers with elapsed deadlines and
-  joined shutdown. Delete remaining serial processRuntimeTurn/mailbox/approval
-  pumping to finish one shared driving model. Local endpoint/startup callers now
+  joined shutdown. Serial whole-runtime, finite mailbox and approval pumping are
+  removed; phase-specific tests use actual component operations. Local endpoint/startup callers now
   use direct protocol intake; hollow per-Hab seeding, the mailbox host forwarding
   wrapper and unused host context/no-HTTP branch are removed. Protocol-only
   fixtures use exact direct intake, retaining their actual assertions and topology.

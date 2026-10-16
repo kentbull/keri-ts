@@ -28,9 +28,11 @@ The hollow seedHabs loop and forwarding-only mailbox host wrapper are deleted. T
 passes only runtime to its TCP companion, and owns service/prefix selection once.
 Choose real dependencies at construction. Generic cue preparation/delivery
 wrappers and Reactor's application callback gate are removed. Finite CLI waits
-start the same workers as hosts and join them before returning; serial whole-
-runtime APIs and their remaining test callers still require removal. These cuts
-do not complete qualification.
+start the same workers as hosts and join them before returning. Serial whole-
+runtime and finite mailbox turn APIs are removed, including the command-local
+polling budget, resume index and no-op configure hook. Keep actual request-open
+and SSE read deadlines. Remote cursor progress follows consumer completion.
+These cuts do not complete qualification.
 
 ## Protocol records and publication
 
@@ -74,7 +76,7 @@ raw-packet/custom-emission injection are removed. Real I/O still aborts and join
 Consumers publish before removing source records. Preparation failure preserves the
 source, and finite passes use their initial queue extent. Ordinary cues, routes,
 packets and batches have no synthetic lifetime. Real iterator cleanup runs once.
-The broad Reactor gate and duplicate whole-runtime driving remain removal inputs.
+The broad Reactor gate and duplicate whole-runtime driver are removed.
 
 Reactor serializes only protocol dispatch and escrow passes. Dispatch returns the
 processed envelope and its exact decision; KRAM may combine earlier proofs.

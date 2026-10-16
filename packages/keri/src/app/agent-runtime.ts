@@ -20,7 +20,7 @@ import { createReger, Reger } from "../db/reger.ts";
 import { Regery as VdrRegery } from "../vdr/credentialing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
-import { cueDo, processCuesOnce } from "./cue-runtime.ts";
+import { cueDo } from "./cue-runtime.ts";
 import { Anchorer, loadDelegationHandlers } from "./delegating.ts";
 import {
   ForwardHandler,
@@ -495,73 +495,6 @@ export function* settleMailboxPollBatch(
 }
 
 /**
- * Drain one bounded mailbox polling turn and settle each returned batch.
- *
- * This keeps mailbox polling ownership inside the shared runtime surface so
- * commands do not need to know how mailbox ingress is parsed and escrowed.
- */
-export function* processMailboxTurn(
-  runtime: AgentRuntime,
-  options: {
-    hab?: Hab;
-    budgetMs?: number;
-  } = {},
-): Operation<MailboxPollBatch[]> {
-  runtime.mailboxPoller.configure({ hab: options.hab });
-  const batches = yield* runtime.mailboxPoller.processOnce({
-    budgetMs: options.budgetMs,
-  });
-  for (const batch of batches) {
-    yield* settleMailboxPollBatch(runtime, batch);
-  }
-  return batches;
-}
-
-/**
- * Drain one bounded runtime turn by delegating to component-owned flows.
- *
- * Turn order:
- * 1. `Reactor.processOnce()` drains queued ingress
- * 2. `Oobiery.processOnce()` resolves at most one durable OOBI record
- * 3. `Authenticator.processOnce()` advances one well-known auth step
- * 4. `processCuesOnce()` emits cues from fresh ingress/OOBI work into
- *    `QueryCoordinator`
- * 5. `QueryCoordinator.processPending()` resolves any newly correspondence-ready
- *    query work
- * 6. `Reactor.processEscrowsOnce()` runs KEL and reply escrow passes
- * 7. `processCuesOnce()` emits cues created during escrow progress
- * 8. `QueryCoordinator.processPending()` resolves any follow-on query work
- *
- * This helper remains because command-local CLI flows and focused tests need a
- * single deterministic step without having to spawn the long-lived doers.
- */
-export function* processRuntimeTurn(
-  runtime: AgentRuntime,
-  options: {
-    hab?: Hab;
-    pollMailbox?: boolean;
-  } = {},
-): Operation<void> {
-  runtime.querying.configure({ hab: options.hab });
-  yield* runtime.reactor.processOnce();
-  yield* runtime.oobiery.processOnce();
-  yield* runtime.authenticator.processOnce();
-  yield* runtime.delegating.processAllOnce();
-  runtime.signaler?.processOnce();
-  if (options.pollMailbox ?? true) {
-    yield* processMailboxTurn(runtime, { hab: options.hab });
-  }
-  yield* processCuesOnce(runtime, options);
-  yield* runtime.querying.processPending();
-  yield* runtime.reactor.processEscrowsOnce();
-  yield* runtime.delegating.processAllOnce();
-  yield* processCuesOnce(runtime, options);
-  yield* runtime.querying.processPending();
-  yield* runtime.querying.deliverOnce();
-  yield* runtime.respondant.process();
-}
-
-/**
  * Return the current pending-work summary for bounded command-local hosts.
  *
  * `queriesPending` is part of convergence because query continuations may still
@@ -712,7 +645,6 @@ export function* runAgentRuntime(
   } = {},
 ): Operation<void> {
   runtime.querying.configure({ hab: options.hab });
-  runtime.mailboxPoller.configure({ hab: options.hab });
   const tasks = [
     yield* spawn(function*() {
       while (true) {

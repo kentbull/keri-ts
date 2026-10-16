@@ -135,7 +135,7 @@ export interface CapturedMailboxPoll {
   timeouts: MailboxFetchTimeoutPolicy;
 }
 
-/** Deterministic mailbox poll transport for poller budget/cursor tests. */
+/** Deterministic mailbox poll transport for poller deadline/cursor tests. */
 export class FakeMailboxPollTransport implements MailboxPollTransport {
   readonly polls: CapturedMailboxPoll[] = [];
   private readonly results: FakeMailboxPollResult[];

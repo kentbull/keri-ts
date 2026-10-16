@@ -57,9 +57,10 @@ Concretely:
   - durable OOBI processing over `oobis.` / `coobi.` / `eoobi.` / `roobi.`
   - OOBI fetch/parse/persist flow
   - OOBI doer
-- `processRuntimeTurn()` remains as a bounded single-step helper for tests and
-  command-local flows, but it delegates to component-owned `processOnce()`
-  methods instead of owning the architecture itself
+- Hosts compose the component workers under one lifecycle. Finite commands use
+  the same workers until accepted state or an elapsed deadline, then join them.
+  Phase-specific tests call the actual component operation. Serial whole-runtime
+  and finite mailbox turn APIs are removed; do not restore a parallel driver.
 
 ## Effection Mapping To KERIpy
 
@@ -88,11 +89,6 @@ This is the preferred mental model for future Gate E/F work.
    root-level because it is genuinely cross-component runtime state, while
    habery-local cue ownership can still exist separately for non-runtime local
    habitat processing.
-
-5. It keeps the single-step test/CLI helper without turning it into the
-   architecture. `processRuntimeTurn()` is retained because tests and local
-   commands need a bounded step, but it is now explicitly a delegating helper
-   rather than the owner of runtime flows.
 
 ## Consequences
 
