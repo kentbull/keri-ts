@@ -1,5 +1,8 @@
 # Superseded resource policy plan
 
+The [accepted simplification](../PARITY_ROADMAP.md) governs architecture and takes precedence
+over conflicting older requirements here; existing protocol obligations remain.
+
 Status: superseded by the 2026-10-15 removal decision in
 [ADR-0013](../../adr/adr-0013-simple-component-flows.md). This document no longer supplies implementation or
 release requirements. Git history preserves the prior accounting design.

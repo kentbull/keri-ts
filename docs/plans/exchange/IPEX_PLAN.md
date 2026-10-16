@@ -1,8 +1,8 @@
 # IPEX plan
 
-Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
-application accounting and unsupported delivery durability, without old-version
-keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+Planning constraint: the [accepted simplification](../PARITY_ROADMAP.md) supersedes older
+architecture requirements. Concrete owners, one worker model and complete-enclosure
+buffering replace speculative frameworks; protocol correctness and real cleanup remain.
 
 Owner: roadmap **3e**. See the
 [design](../../design-docs/exchange/IPEX.md) and
@@ -26,8 +26,8 @@ exists; bare-SAID host discovery is an upstream integration gap.
 
 Evidence includes the frozen-upstream wire oracle, real two-Habery dependency
 retry/reopen, observer intake, independent child proofs, and cancellation
-that joins blocked reads and disposes owners. This is not full production-path
-or bounded-memory qualification.
+that joins blocked reads and disposes owners. This is not full composed production-path qualification. Buffered enclosures
+accept size-dependent memory use; bounded-memory qualification is not a gate.
 
 ## Remaining acceptance
 

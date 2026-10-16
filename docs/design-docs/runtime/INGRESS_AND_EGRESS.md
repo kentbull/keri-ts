@@ -1,4 +1,17 @@
-# Progressive runtime ingress
+# Runtime input, output and ownership transition
+
+[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) and
+[ADR-0013](../../adr/adr-0013-simple-component-flows.md) supersede the progressive,
+accounting, preparation and general Reactor-gate instructions below. Those sections
+are transitional descriptions and must be rewritten with the owning code removals.
+Buffer complete enclosures, deliver complete messages, and let concrete host scopes
+own actual I/O cancellation/cleanup. No replacement intake/delivery framework.
+
+Runtime construction has no host mode: provider mailbox storage is selected with
+enableMailboxStore or an injected Mailboxer. The same components serve commands
+and long-lived hosts; unifying their worker driving remains unfinished.
+
+## Transitional ingress
 
 `Reactor.process(source, options)` is an Effection operation. The source factory
 receives the operation's abort signal and supplies bounded, independently owned

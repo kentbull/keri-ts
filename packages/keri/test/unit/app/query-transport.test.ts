@@ -74,7 +74,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
           },
         );
 
-        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
             ingestKeriBytes(runtime, msg);
@@ -335,7 +335,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           [remoteController.pre, remoteController.kever!.said],
           remoteWitness.sign(remoteController.kever!.serder.raw, true),
         );
-        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
             ingestKeriBytes(runtime, msg);
@@ -529,7 +529,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
           },
         );
 
-        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
             ingestKeriBytes(runtime, msg);

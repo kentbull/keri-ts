@@ -263,7 +263,7 @@ function* reconcileMailboxIdentity(
   hab: Hab,
   startup: MailboxStartupMaterial,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+  const runtime = yield* createAgentRuntime(hby);
   try {
     ingestKeriBytes(
       runtime,

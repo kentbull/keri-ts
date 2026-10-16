@@ -193,7 +193,7 @@ Deno.test("Indirect runtime owns one shared Mailboxer and persists remote mailbo
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       const mailboxer = runtime.mailboxer;
       if (!mailboxer) {
         throw new Error("Expected indirect runtime mailboxer.");
@@ -251,7 +251,7 @@ Deno.test("Local runtime defaults to no provider mailbox store", async () => {
     });
 
     try {
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       assertEquals(runtime.mailboxer, null);
       assertEquals(runtime.mailboxDirector.mailboxer, null);
       assertEquals(runtime.poster.mailboxer, null);
@@ -278,7 +278,7 @@ Deno.test("Runtime exposes injected VDR services and registers /credential", asy
         vry: {},
         rgy: {},
       };
-      const runtime = yield* createAgentRuntime(hby, { mode: "local", vdr });
+      const runtime = yield* createAgentRuntime(hby, { vdr });
       assertEquals(runtime.vdr, vdr);
       assertEquals(runtime.reactor.vdr, vdr);
       assertEquals(
@@ -302,7 +302,7 @@ Deno.test("Indirect runtime closes the mailboxer it opened", async () => {
     });
 
     try {
-      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       const mailboxer = runtime.mailboxer;
       if (!mailboxer) {
         throw new Error("Expected indirect runtime mailboxer.");
@@ -329,7 +329,7 @@ Deno.test("Runtime close leaves injected mailboxers open", async () => {
     try {
       mailboxer = yield* openMailboxerForHabery(hby);
       const runtime = yield* createAgentRuntime(hby, {
-        mode: "indirect",
+        enableMailboxStore: true,
         mailboxer,
       });
       assertEquals(runtime.mailboxer, mailboxer);
@@ -372,7 +372,7 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       try {
         ingestKeriBytes(
           runtime,
@@ -480,7 +480,7 @@ Deno.test("Poster.sendExchange defaults IPEX delivery to /credential", async () 
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       try {
         ingestKeriBytes(
           runtime,
@@ -554,7 +554,6 @@ Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
       const director = new MailboxDirector(hby, { mailboxer });
       const handler = new ForwardHandler(director);
       const runtime = yield* createAgentRuntime(hby, {
-        mode: "local",
         mailboxer,
       });
       try {
@@ -632,7 +631,7 @@ Deno.test("Poster.sendExchange falls back to local witness mailbox storage", asy
         toad: 1,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       try {
         ingestKeriBytes(
           runtime,
@@ -732,9 +731,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           toad: 1,
         });
 
-        const runtime = yield* createAgentRuntime(hby, {
-          mode: "local",
-        });
+        const runtime = yield* createAgentRuntime(hby);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
             ingestKeriBytes(runtime, msg);
@@ -958,7 +955,7 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       try {
         ingestKeriBytes(
           runtime,
@@ -1065,7 +1062,7 @@ Deno.test("Poster.sendBytes with direct delivery does not fall back to witnesses
         toad: 1,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       try {
         ingestKeriBytes(
           runtime,
@@ -1147,7 +1144,7 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
         toad: 1,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       try {
         ingestKeriBytes(
           runtime,
@@ -1221,7 +1218,7 @@ Deno.test("Poster mailbox sends report partial failure and complete only after e
     await run(function*() {
       const hby = yield* createHabery({ name: `send-result-${crypto.randomUUID()}`, temp: true, skipConfig: true });
       const peer = yield* createHabery({ name: `send-peer-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       try {
         const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
         for (const name of ["good", "bad"]) {

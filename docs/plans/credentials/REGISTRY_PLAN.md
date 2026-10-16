@@ -1,8 +1,8 @@
 # V1/V2 registry qualification plan
 
-Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
-application accounting and unsupported delivery durability, without old-version
-keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+Planning constraint: the [accepted simplification](../PARITY_ROADMAP.md) supersedes older
+architecture requirements. Concrete owners, one worker model and complete-enclosure
+buffering replace speculative frameworks; protocol correctness and real cleanup remain.
 
 Owner: roadmap **3e registry**, alongside [IPEX][ipex]. R1–R12 are implemented:
 separate v2 storage, event engine, issuer services, public observer intake,
@@ -19,21 +19,26 @@ Earlier `927c0cb8` fixture results retain their historical provenance.
 
 ## Implemented ownership
 
-| Responsibility                    | Owner                      |
-| --------------------------------- | -------------------------- |
-| Layout/lifecycle                  | RegBaser                   |
-| Storage/aliases/ordered chains    | RegistryStore              |
-| Pure vetting                      | vet/vetBinds               |
-| Atomic decisions/escrows          | Registry engine            |
-| Local create/blind/present/vacate | Regery/Registry/Registrar  |
-| Public parsed intake              | RegistryObserver           |
-| Child and presentation proofs     | IPEX                       |
-| Scoped runtime installation       | acdc.rgy; separate vdr.rgy |
+| Responsibility                    | Owner                                                           |
+| --------------------------------- | --------------------------------------------------------------- |
+| Layout/lifecycle                  | RegBaser                                                        |
+| Storage/aliases/ordered chains    | RegistryStore                                                   |
+| Pure vetting                      | vet/vetBinds                                                    |
+| Atomic decisions/escrows          | Registry engine                                                 |
+| Local create/blind/present/vacate | Regery/Registry; audit forwarding-only v2 Registrar for removal |
+| Public parsed intake              | RegistryObserver                                                |
+| Child and presentation proofs     | IPEX                                                            |
+| Scoped runtime installation       | acdc.rgy; separate vdr.rgy                                      |
 
 RegistryStore reads do not authenticate evidence. Body presence does not establish
 accepted sequence/head state. Local engine acceptance requires full witnessed
 KEL tuples; observer digest-only vetting remains a separate proof boundary.
-Named services support reopen, earliest-anchor retention, deterministic retry,
+Choose concrete Reger/Regery/Tevery/Verifier dependencies at construction. Do not
+retain vague service bags or repeated runtime type checks. Delete a v2 Registrar
+facade if it only forwards; the legacy VDR Registrar has separate real workflow
+responsibilities and must be judged independently.
+
+Concrete owners support reopen, earliest-anchor retention, deterministic retry,
 protected accepted slots/heads and an unambiguous staged frontier. Pure constructors
 remain synchronous. Runtime-owned stores close on failure, cancellation and explicit
 shutdown; injected services remain borrowed and readonly Haberies acquire no
@@ -84,10 +89,10 @@ host-resolution path and is not an indefinitely blocking port requirement.
    unmodified upstream and mailbox-fork evidence separately, including imports.
 
 Safe-integer storage ordinals remain an explicit unsupported range; protocol
-NumberPrimitive precision does not extend the physical store API. Shared scan/copy
-admission, other native row allocation and crash recovery retain phases 4–5.
-TEL/TSN query processors, production transport and final resource measurements have
-their existing owners. None is closed by isolated registry tests.
+NumberPrimitive precision does not extend the physical store API. Scan/copy
+admission and native row billing are removed. Actual native buffer validity,
+transaction/reopen correctness, TEL/TSN query processing and real transport
+qualification retain their existing owners; isolated registry tests do not close them.
 
 Use the roadmap's review units: cohesive deletion/refactoring may span
 1,000–3,000 changed lines; keep individual discovered bug fixes narrowly scoped.

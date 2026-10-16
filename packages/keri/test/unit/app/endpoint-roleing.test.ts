@@ -30,7 +30,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const member = makeTransferableHab(hby, "member");
       const remote = makeTransferableHab(hby, "remote");
@@ -92,7 +92,7 @@ Deno.test("endpoint-roleing loads accepted group endpoint role replies", async (
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const member = makeTransferableHab(hby, "member");
       const mailbox = makeTransferableHab(hby, "mailbox");

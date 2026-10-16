@@ -114,7 +114,7 @@ Deno.test("TCP witness admission owns its socket through cancellation and permit
         const { witness, controller } = fixture(hby, "http://unused.test");
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url: `tcp://127.0.0.1:${address.port}` });
-        const runtime = yield* createAgentRuntime(hby, { mode: "local", services });
+        const runtime = yield* createAgentRuntime(hby, { services });
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
         const busy = services.resources.reserve({ streams: services.resources.limits.streams });
         if (busy.kind !== "reserve") throw new Error("Expected free test capacity");
@@ -191,7 +191,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         const { witness, controller } = fixture(hby, "http://unused.test");
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url });
-        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby);
         const submitter = new WitnessReceiptor(hby, { runtime });
         yield* call(() =>
           assertRejects(
@@ -403,7 +403,7 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
     const sender = producing.makeHab("sender", undefined, { transferable: true });
     const timers: number[] = [];
     const runtime = yield* createAgentRuntime(receiving, {
-      mode: "indirect",
+      enableMailboxStore: true,
       services: {
         clock: {
           ...defaultRuntimeServices.clock,

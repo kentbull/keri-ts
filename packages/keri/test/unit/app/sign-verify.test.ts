@@ -158,7 +158,7 @@ Deno.test("CLI verify fails against stale key state after source rotation", asyn
       headDirPath: observerHeadDir,
       skipSignator: true,
     });
-    const runtime = yield* createAgentRuntime(observer, { mode: "local" });
+    const runtime = yield* createAgentRuntime(observer);
     try {
       const hab = source.makeHab(alias, undefined, {
         transferable: true,

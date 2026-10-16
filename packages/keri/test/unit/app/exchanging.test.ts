@@ -96,7 +96,7 @@ Deno.test("Exchanger accepts signed challenge responses and records exchange sta
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       yield* call(() => ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9001")));
       yield* call(() =>
         ingestKeriBytes(
@@ -206,7 +206,7 @@ Deno.test("Exchanger replays partial-signature escrows once the missing signatur
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       yield* call(() => ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9011")));
       yield* call(() =>
         ingestKeriBytes(
@@ -299,7 +299,7 @@ Deno.test("Exchanger accepts nested weighted threshold combinations from partial
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       yield* call(() => ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9021")));
       yield* call(() =>
         ingestKeriBytes(

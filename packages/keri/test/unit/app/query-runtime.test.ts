@@ -49,7 +49,7 @@ Deno.test("tufa agent host stays protocol-only", async () => {
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -68,7 +68,7 @@ Deno.test("tufa agent host stays protocol-only", async () => {
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -125,7 +125,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         nsith: "1",
         toad: 0,
       });
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(baseUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -151,7 +151,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, {
         hab: hab ?? undefined,
@@ -318,12 +318,12 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
     const relayLoc = relay.makeLocScheme(relayUrl, relay.pre, "http");
     const witnessLoc = witness.makeLocScheme(witnessUrl, witness.pre, "http");
 
-    const proxyRuntime = yield* createAgentRuntime(proxyHby, { mode: "local" });
+    const proxyRuntime = yield* createAgentRuntime(proxyHby);
     const witnessRuntime = yield* createAgentRuntime(witnessHby, {
-      mode: "indirect",
+      enableMailboxStore: true,
     });
     const relayRuntime = yield* createAgentRuntime(relayHby, {
-      mode: "indirect",
+      enableMailboxStore: true,
     });
 
     const witnessSink = respondantCueSink(witnessRuntime, witness);
@@ -527,7 +527,7 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
       );
 
       const runtime = yield* createAgentRuntime(witnessHby, {
-        mode: "indirect",
+        enableMailboxStore: true,
       });
       try {
         const message = [...subjectHby.db.clonePreIter(subject.pre, 0)][0];
@@ -562,7 +562,7 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
       assertEquals(witnessHby.db.kevers.has(subjectPre), false);
 
       const runtime = yield* createAgentRuntime(witnessHby, {
-        mode: "indirect",
+        enableMailboxStore: true,
       });
       const emissions: Array<
         { kind: string; kin: string; messages: number; dest: string | null }

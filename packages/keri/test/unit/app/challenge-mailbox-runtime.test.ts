@@ -92,7 +92,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
       }
 
       const runtime = yield* createAgentRuntime(providerHby, {
-        mode: "indirect",
+        enableMailboxStore: true,
       });
       const mailboxer = runtime.mailboxer;
       if (!mailboxer) {

@@ -110,7 +110,7 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       const url = `http://127.0.0.1:${port}`;
       ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
       ingestKeriBytes(
@@ -195,7 +195,7 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -294,7 +294,7 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
       failingWellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?mode=fail`;
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -352,7 +352,7 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         skipConfig: true,
       });
       try {
-        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby);
         enqueueOobi(runtime, { url: controllerUrl });
         enqueueOobi(runtime, { url: wellKnownUrl });
 
@@ -505,7 +505,7 @@ Deno.test("controller and witness OOBIs generate and resolve through shared runt
         hab.kever.wits = [witnessPre];
       }
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -568,7 +568,7 @@ Deno.test("controller and witness OOBIs generate and resolve through shared runt
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -683,7 +683,7 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
       durl = `${url}/oobi/${dPre}/controller`;
       wurl = `${url}/.well-known/keri/oobi/${iPre}?name=Root`;
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       for (const hab of [iHab, dHab]) {
         ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
         ingestKeriBytes(
@@ -722,7 +722,7 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
       skipConfig: true,
     });
     const hab = hby.habByName("bootstrap-init");
-    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -739,9 +739,7 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
         skipSignator: true,
       });
       try {
-        const targetRuntime = yield* createAgentRuntime(target, {
-          mode: "local",
-        });
+        const targetRuntime = yield* createAgentRuntime(target);
         for (let i = 0; i < 6; i += 1) {
           yield* processRuntimeTurn(targetRuntime);
         }
@@ -800,7 +798,7 @@ Deno.test("init command waits for configured well-known auth before exit", async
       controllerUrl = `${hostUrl}/oobi/${pre}/controller`;
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -921,7 +919,7 @@ Deno.test("incept command waits for configured well-known auth before inception"
       controllerUrl = `${hostUrl}/oobi/${pre}/controller`;
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -1062,7 +1060,7 @@ Deno.test("reply-based `/oobi/controller` JSON fans out child OOBIs through moob
         `${hostUrl}/oobi/${pre}/controller?slot=2`,
       ];
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -1114,7 +1112,7 @@ Deno.test("reply-based `/oobi/controller` JSON fans out child OOBIs through moob
         skipConfig: true,
       });
       try {
-        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby);
         enqueueOobi(runtime, { url: parentUrl });
 
         yield* processRuntimeTurn(runtime);
@@ -1202,7 +1200,7 @@ Deno.test("reply-based `/oobi/witness` JSON fans out child OOBIs through moobi",
         hab.kever.wits = [witnessPre];
       }
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -1258,7 +1256,7 @@ Deno.test("reply-based `/oobi/witness` JSON fans out child OOBIs through moobi",
         skipConfig: true,
       });
       try {
-        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby);
         enqueueOobi(runtime, { url: parentUrl });
 
         yield* processRuntimeTurn(runtime);

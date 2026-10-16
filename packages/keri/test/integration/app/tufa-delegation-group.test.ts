@@ -368,12 +368,8 @@ for (const spec of MATRIX) {
         temp: true,
       });
 
-      const delegatorRuntime = yield* createAgentRuntime(delegatorHby, {
-        mode: "local",
-      });
-      const delegateRuntime = yield* createAgentRuntime(delegateHby, {
-        mode: "local",
-      });
+      const delegatorRuntime = yield* createAgentRuntime(delegatorHby);
+      const delegateRuntime = yield* createAgentRuntime(delegateHby);
 
       try {
         const delegatorWitnesses = spec.witnessed

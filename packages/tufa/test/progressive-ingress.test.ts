@@ -368,7 +368,7 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
 Deno.test("only the final query controls a multi-frame HTTP response", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-final-query-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
     try {
       const alice = hby.makeHab("alice");
       const bob = hby.makeHab("bob");

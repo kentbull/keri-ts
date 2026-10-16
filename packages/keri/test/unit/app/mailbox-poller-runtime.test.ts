@@ -430,7 +430,6 @@ Deno.test("processMailboxTurn settles local mailbox batches and returns them", a
       const senderA = makeTransferableHab(hby, "sender-a");
       const senderB = makeTransferableHab(hby, "sender-b");
       const runtime = yield* createAgentRuntime(hby, {
-        mode: "local",
         enableMailboxStore: true,
       });
       const mailboxer = runtime.mailboxer;

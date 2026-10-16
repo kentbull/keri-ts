@@ -1,8 +1,13 @@
 # ESSR plan
 
+The [accepted simplification](../PARITY_ROADMAP.md) governs architecture and takes precedence
+over conflicting older requirements here; existing protocol obligations remain.
+
 The recipient and outcome extraction exist (#133/#163). Apply
 [ADR-0013](../../adr/adr-0013-simple-component-flows.md) before final qualification;
-older recipient accounting requirements are superseded.
+older recipient accounting requirements are superseded. The accepted
+[buffered parser](../cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) also removes parser
+staging and progressive extraction; that replacement remains to be implemented.
 
 ## Removal and correctness
 
@@ -13,6 +18,11 @@ older recipient accounting requirements are superseded.
   size consistency. Crypto minimum lengths are format facts, not quotas.
 - Keep original qualified ciphertext as protocol evidence; authenticated plaintext
   is separate. No unsuccessful cryptographic outcome publishes plaintext.
+- Parse ESSR as ordinary Texter values and qualified/raw bytes. Delete parser
+  payloadSink factories, EssrWriter, pending-stage/owner registries and cursor
+  reopening. Maintain one authoritative parsed representation. Ordinary parsed
+  values need no disposal protocol; Texter fragments are not separate authenticated
+  messages. Keep actual storage payloads only for current storage consumers.
 - Relocate real ciphertext/plaintext/file disposal to its actual owner before
   deleting accounting wrappers. Cancellation and I/O/cleanup failures propagate.
 - No migration or new-to-old keri-ts tests. Qualify current supported evidence.

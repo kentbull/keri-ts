@@ -9,6 +9,11 @@
   - `packages/keri/src/app/oobiery.ts`
   - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
 
+Current direction: [ADR-0013](adr-0013-simple-component-flows.md) supersedes the
+older runtime/gate/worker preservation rules below. Host modes are removed;
+composition chooses concrete capabilities, including provider mailbox storage.
+The concrete-owner and single-driver migration remains incomplete.
+
 ## Context
 
 Gate E introduced a shared `AgentRuntime` seam so the same KERI runtime work
@@ -39,7 +44,6 @@ Concretely:
 
 - `AgentRuntime` keeps only truly shared state:
   - `hby`
-  - host `mode`
   - shared `cues` deck
 - `Reactor` owns:
   - transient ingress deck

@@ -62,7 +62,7 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
         headDirPath: provider.headDirPath,
         skipConfig: true,
       });
-      const providerRuntime = yield* createAgentRuntime(providerHby, { mode: "indirect" });
+      const providerRuntime = yield* createAgentRuntime(providerHby, { enableMailboxStore: true });
       const providerHab = providerHby.habByName(provider.alias);
       const runtimeTask = yield* spawn(function*() {
         yield* runAgentRuntime(providerRuntime, { hab: providerHab ?? undefined });
@@ -160,7 +160,7 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
           headDirPath: `${headRoot}/dws-resolver`,
           skipConfig: true,
         });
-        const dwsRuntime = yield* createAgentRuntime(dwsHby, { mode: "local" });
+        const dwsRuntime = yield* createAgentRuntime(dwsHby);
         const dwsServerTask = yield* spawn(function*() {
           yield* startServer(dwsPort, undefined, dwsRuntime, {
             dwsStaticFilesDir: webRoot,
@@ -198,7 +198,7 @@ async function seedMailboxProvider(headRoot: string, url: string): Promise<Mailb
 
   await run(function*(): Operation<void> {
     const hby = yield* createHabery({ name, headDirPath, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const hab = hby.makeHab(alias, undefined, {
         transferable: false,
@@ -311,7 +311,7 @@ async function issueMailboxRole(
       headDirPath: store.headDirPath,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       for (const message of providerKel) {
         ingestKeriBytes(runtime, message);
@@ -339,7 +339,7 @@ async function ingestSharedState(
 ): Promise<void> {
   await run(function*(): Operation<void> {
     const hby = yield* createHabery({ name, headDirPath, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const hab = hby.habByName(alias);
       for (const message of messages) {
@@ -392,7 +392,7 @@ async function writeDidWebsArtifacts(
       headDirPath: store.headDirPath,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const artifacts = generateDidWebsArtifacts(runtime, {
         alias: "team",

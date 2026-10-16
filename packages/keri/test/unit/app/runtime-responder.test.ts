@@ -211,7 +211,7 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
         toad: 1,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       try {
         ingestKeriBytes(
           runtime,
@@ -300,7 +300,7 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
       assertEquals(provider.db.getKever(controller.pre), null, "the receiver has no controller state yet");
       const first = acceptedEventReplayMessage(source, controller.pre, 0).message;
       const later = controller.interact();
-      const runtime = yield* createAgentRuntime(provider, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(provider, { enableMailboxStore: true });
       const seen = Promise.withResolvers<void>(), returning = Promise.withResolvers<void>();
       const cleanup = Promise.withResolvers<void>();
       const callbackClosing = Promise.withResolvers<void>(), callbackCleanup = Promise.withResolvers<void>();
@@ -351,16 +351,10 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
         const halt = task.halt().then(() => halted = true);
         yield* call(() => callbackClosing.promise);
         assertEquals(halted, false);
-        assertEquals(
-          runtime.resources.used.bytes >= 17 * 1024 ** 2,
-          true,
-          "joined callback cleanup retains the interpreted proof and parser",
-        );
         yield* runtime.reactor.settle(undefined, {}, function*() {});
         callbackCleanup.resolve();
         yield* call(() => returning.promise);
         assertEquals(halted, false);
-        assertEquals(runtime.resources.used.streams, 1, "source cleanup retains parser admission");
         cleanup.resolve();
         yield* call(() => halt);
         assertEquals(continued, false);
@@ -411,7 +405,7 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
       const sender = hby.makeHab("sender"),
         recipient = hby.makeHab("recipient"),
         controller = remote.makeHab("controller");
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       try {
         ingestKeriBytes(
           runtime,

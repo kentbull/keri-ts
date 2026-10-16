@@ -52,7 +52,6 @@ function* seedWitnessHostState(
   hostUrl: string,
 ): Operation<void> {
   const runtime = yield* createAgentRuntime(hby, {
-    mode: "both",
     enableMailboxStore: true,
   });
   try {
@@ -84,7 +83,7 @@ function* seedRemoteWitnessLocation(
   url: string,
   scheme: string,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+  const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
   try {
     for (const message of witness.db.clonePreIter(witness.pre, 0)) {
       ingestKeriBytes(runtime, message);
@@ -142,7 +141,6 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
 
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
       const runtime = yield* createAgentRuntime(providerHby, {
-        mode: "both",
         enableMailboxStore: true,
       });
       const serverTask = yield* spawn(function*() {
@@ -275,7 +273,6 @@ Deno.test("Witness runtime returns 202 for receipting before the prior KEL state
 
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
       const runtime = yield* createAgentRuntime(providerHby, {
-        mode: "both",
         enableMailboxStore: true,
       });
       const serverTask = yield* spawn(function*() {
@@ -349,7 +346,6 @@ Deno.test("Witness runtime rejects receipting when the hosted witness is not aut
 
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
       const runtime = yield* createAgentRuntime(providerHby, {
-        mode: "both",
         enableMailboxStore: true,
       });
       const serverTask = yield* spawn(function*() {
@@ -436,7 +432,6 @@ Deno.test("Witness runtime accepts root-path catchup before synchronous receipti
 
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
       const runtime = yield* createAgentRuntime(providerHby, {
-        mode: "both",
         enableMailboxStore: true,
       });
       const serverTask = yield* spawn(function*() {
@@ -529,7 +524,6 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
 
       const drains: number[] = [];
       const runtime = yield* createAgentRuntime(providerHby, {
-        mode: "local",
         services: {
           clock: {
             ...defaultRuntimeServices.clock,
@@ -557,7 +551,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         }
       };
       let tcpTask = yield* spawn(serve);
-      const receiver = yield* createAgentRuntime(sourceHby, { mode: "indirect" });
+      const receiver = yield* createAgentRuntime(sourceHby, { enableMailboxStore: true });
       let replayed = 0, foreignReplay = false;
       let driver: Task<never> | undefined;
       let stoppingReceiver = false, receiveTask: Task<void> | undefined;
@@ -671,14 +665,11 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
           "same-socket receipt is verified and persisted before client EOF",
         );
         assertEquals(active.writableEnded, false);
-        assertEquals(runtime.resources.used.streams, 1);
         const idle = createConnection({ port: tcpPort, host: "127.0.0.1" });
         sockets.push(idle);
         idle.on("error", () => {});
         idle.resume();
         yield* call(() => once(idle, "connect"));
-        for (let attempt = 0; attempt < 200 && runtime.resources.used.streams !== 2; attempt++) yield* sleepOp(10);
-        assertEquals(runtime.resources.used.streams, 2, "two receives consume exactly two parser permits");
         controller.interact();
         const next = controller.kever!.serder;
         active.write(acceptedEventReplayMessage(sourceHby, controller.pre, 2).message);
@@ -690,13 +681,12 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         assertEquals(
           sourceHby.db.wigs.get(dgKey(controller.pre, next.said!)).length,
           1,
-          "TX borrows its connection permit while both RX slots are occupied",
+          "same-socket receipts progress while the second connection remains idle",
         );
         active.write(controller.query(controller.pre, witness.pre, { route: "logs", q: { s: "0" } }));
         for (let attempt = 0; attempt < 200 && replayed !== 3; attempt++) yield* sleepOp(10);
         assertEquals(replayed, 3, "correlated query replay drains on its existing socket before EOF");
         assertEquals(foreignReplay, false, "shared cues from another request cannot leak to this socket");
-        assertEquals(runtime.resources.used.streams, 2);
         const excess = createConnection({ port: tcpPort, host: "127.0.0.1" });
         sockets.push(excess);
         excess.on("error", () => {});
@@ -708,7 +698,6 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
             throw new Error("Saturation did not close");
           })(),
         ]);
-        assertEquals(runtime.resources.used.streams, 2);
         assertEquals(refusals, ["busy", "wire", "peer", "busy"]);
         const priorDrains = drains.length;
         driver = yield* spawn(() =>
@@ -732,8 +721,15 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         active.end();
         yield* receiveTask;
 
-        for (let attempt = 0; attempt < 200 && runtime.resources.used.streams !== 1; attempt++) yield* sleepOp(10);
-        assertEquals(runtime.resources.used.streams, 1, "genuine EOF ends replies before returning connection credit");
+        if (!active.destroyed) {
+          yield* race([
+            call(() => once(active, "close")),
+            (function*() {
+              yield* sleepOp(2000);
+              throw new Error("Receive EOF did not close the drained socket");
+            })(),
+          ]);
+        }
         assertEquals(drains.length, priorDrains + 1, "one absolute deadline starts at genuine receive EOF");
         // A missing query keeps TX available after RX EOF; a native reset stays connection-local.
         const reset = createConnection({ port: tcpPort, host: "127.0.0.1" });

@@ -1,8 +1,11 @@
 # Historical CESR Atomic Bounded Parser Architecture
 
-Historical plan: the [2026-10-15 removal boundary](../../../adr/adr-0013-simple-component-flows.md)
-supersedes accounting, outbox and unsupported delivery-ack preservation here.
-Do not resume these mechanisms or add old-version keri-ts API/data compatibility.
+Historical plan: the [accepted simplification](../../../plans/PARITY_ROADMAP.md) supersedes its
+architecture instructions. Do not restore progressive parsing/cursors, parser
+staging/intake frameworks, delivery preparation, general Reactor gates, application
+accounting, outboxes or unsupported acknowledgements. Concrete construction and
+one worker model govern; old keri-ts API/data compatibility is not required.
+Historical implementation descriptions below are evidence, not active directions.
 
 > Historical record retained from the pre-reorganization tree at
 > `691998a2317881db484f216c00e81a68030dc3a2`. Status, paths and proposed

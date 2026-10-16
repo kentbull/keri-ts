@@ -23,8 +23,8 @@ Deno.test("tufa/dws - static artifacts resolve through the Tufa HTTP artifact ro
       name: `dws-static-resolver-${crypto.randomUUID()}`,
       temp: true,
     });
-    const issuerRuntime = yield* createAgentRuntime(issuerHby, { mode: "local" });
-    const resolverRuntime = yield* createAgentRuntime(resolverHby, { mode: "local" });
+    const issuerRuntime = yield* createAgentRuntime(issuerHby);
+    const resolverRuntime = yield* createAgentRuntime(resolverHby);
     let serverTask;
     try {
       const hab = issuerHby.makeHab("issuer", undefined, {

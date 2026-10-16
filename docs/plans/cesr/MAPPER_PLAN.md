@@ -1,8 +1,8 @@
 # Mapper commitment and schema qualification
 
-Planning constraint: [ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of
-application accounting and unsupported delivery durability, without old-version
-keri-ts API/data compatibility. Protocol correctness and real cleanup remain.
+Planning constraint: the [accepted simplification](../PARITY_ROADMAP.md) supersedes older
+architecture requirements. Concrete owners, one worker model and complete-enclosure
+buffering replace speculative frameworks; protocol correctness and real cleanup remain.
 
 Owner: final qualification in the [parity roadmap](../PARITY_ROADMAP.md).
 Claim verification (#223) and bundled schema identities (#226) are implemented;

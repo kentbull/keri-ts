@@ -34,7 +34,7 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
       const state = hby.db.getState(hab.pre)!;
       const said = state.d!;
       const event = hby.db.getEvtSerder(hab.pre, said)!;
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       runtime.cues.push({
         kin: "receipt",
         serder: event,
@@ -119,7 +119,7 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
         nsith: "1",
         toad: 0,
       });
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby);
       runtime.cues.push({
         kin: "stream",
         serder: event,
@@ -277,7 +277,7 @@ Deno.test("cue delivery accepts ordinary routes and preserves source on resoluti
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     const cue: AgentCue = { kin: "query", pre: hab.pre, src: hab.pre, route: "logs", q: {} };
     const cues = new Deck([cue]);
     const failure = new Error("endpoint lookup failed");
@@ -327,7 +327,7 @@ Deno.test("cue target preparation accepts wire views without backing quotas and 
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby);
     const wire = hab.query(hab.pre, hab.pre, { route: "logs", q: {} });
     const backing = new Uint8Array(9 * 1024 ** 2);
     backing.set(wire);

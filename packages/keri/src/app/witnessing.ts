@@ -977,7 +977,7 @@ export class Receiptor {
       return { witnesses: [], statuses: {} };
     }
 
-    const runtime = this.runtime ?? (yield* createAgentRuntime(this.hby, { mode: "local" }));
+    const runtime = this.runtime ?? (yield* createAgentRuntime(this.hby, {}));
     try {
       if (serder.ilk === Ilks.rot || serder.ilk === Ilks.drt) {
         for (const witness of serder.adds) {
@@ -1130,7 +1130,7 @@ export class Receiptor {
       return false;
     }
 
-    const runtime = this.runtime ?? (yield* createAgentRuntime(this.hby, { mode: "local" }));
+    const runtime = this.runtime ?? (yield* createAgentRuntime(this.hby, {}));
     try {
       yield* settleRuntimeIngress(runtime, [response.body], { local: false });
       return true;
@@ -1155,7 +1155,7 @@ export class Receiptor {
       throw new ValidationError(`${pre} not a valid local AID.`);
     }
 
-    const runtime = borrowed ?? (yield* createAgentRuntime(this.hby, { mode: "local" }));
+    const runtime = borrowed ?? (yield* createAgentRuntime(this.hby, {}));
     try {
       const kever = hab.kever;
       if (kever?.delegated) {

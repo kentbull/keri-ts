@@ -1,7 +1,7 @@
 import type { ResourcePolicy } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../../core/errors.ts";
-import { type AgentRuntime, type AgentRuntimeOptions, createAgentRuntime } from "../../agent-runtime.ts";
+import { type AgentRuntime, createAgentRuntime } from "../../agent-runtime.ts";
 import type { CesrBodyMode } from "../../cesr-http.ts";
 import type { Hab, Habery } from "../../habbing.ts";
 import { setupHby } from "./existing.ts";
@@ -113,7 +113,6 @@ export function* withAgentRuntime<TResult>(
   return yield* withExistingHabery(args, options, function*({ hby }) {
     const runtime = yield* (options.dependencies?.createAgentRuntime ?? createAgentRuntime)(
       hby,
-      localRuntimeOptions(),
     );
     try {
       return yield* use({ hby, runtime });
@@ -152,8 +151,4 @@ function requireAlias(alias: string | undefined): string {
     throw new ValidationError("Alias is required and cannot be empty");
   }
   return alias;
-}
-
-function localRuntimeOptions(): AgentRuntimeOptions {
-  return { mode: "local" };
 }

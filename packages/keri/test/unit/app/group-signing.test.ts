@@ -9,7 +9,7 @@ Deno.test("group query signs only its local member at current index3", async () 
   await run(function*() {
     const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipSignator: true, skipConfig: true });
     const local = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipSignator: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(local, { mode: "local" });
+    const runtime = yield* createAgentRuntime(local);
     try {
       const peers = [0, 1, 2].map((i) => remote.makeHab(`peer${i}`));
       for (const peer of peers) {
