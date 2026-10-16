@@ -7,7 +7,7 @@ import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { RegBaser } from "../../../src/acdc/regbasing.ts";
 import { vetBinds } from "../../../src/acdc/regeventing.ts";
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
-import { createRegery, Regery, Registrar } from "../../../src/acdc/registraring.ts";
+import { createRegery, Regery } from "../../../src/acdc/registraring.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
@@ -295,33 +295,30 @@ Deno.test("registry storage facade preserves aliases, earliest anchors, accepted
     }
   });
 });
-Deno.test("v2 Registrar stages presentation and vacuous bindings through instances, keys and aliases", async () => {
+Deno.test("v2 Registry stages presentation and vacuous bindings across reopen", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
     try {
       const issuer = hby.makeHab("issuer"), presenter = hby.makeHab("presenter");
-      let rgy = yield* createRegery({ hby, baser }), registrar = new Registrar(rgy);
-      const issuing = registrar.makeRegistry("issuing", issuer.pre),
-        presenting = registrar.makeRegistry("presenting", presenter.pre);
+      let rgy = yield* createRegery({ hby, baser });
+      const issuing = rgy.makeRegistry("issuing", issuer.pre),
+        presenting = rgy.makeRegistry("presenting", presenter.pre);
       const options = { raw: b("0123456789abcdef"), stamp: "2026-10-13T01:00:00.000001Z" };
       const target = new SerderACDC({ raw: b(fixture.bodies.acdc) }).said!;
-      assertThrows(() => registrar.present(presenting, target, undefined, options), Error, "must be anchored");
+      assertThrows(() => presenting.present(target, undefined, options), Error, "must be anchored");
       issuer.interact({ data: [{ i: issuing.regk!, s: "0", d: issuing.regk! }] });
       presenter.interact({ data: [{ i: presenting.regk!, s: "0", d: presenting.regk! }] });
       rgy.processEscrows();
       const acdc = acdcmap(issuer.pre, { regid: issuing.regk, attribute: { d: "", name: "Alice" } });
-      const [issued] = registrar.issue("issuing", acdc, undefined, options);
+      const [issued] = issuing.blind(acdc, "issued", options);
       assertEquals([issued.td.nonce, issued.ts.text], [acdc.said, "issued"]);
       const bodies = [...baser.evts.getTopItemIter()].length;
-      assertThrows(() => registrar.present("unknown", target), Error, "Unknown registry");
-      assertThrows(() => registrar.vacate("unknown"), Error, "Unknown registry");
-      assertThrows(() => registrar.issue("unknown", acdc), Error, "Unknown registry");
-      assertThrows(() => registrar.present(presenting, "bad"), Error, "valid grant SAID");
-      assertThrows(() => registrar.present(presenting, { said: null }), Error, "valid grant SAID");
-      assertEquals([...baser.evts.getTopItemIter()].length, bodies, "bad references/targets publish nothing");
+      assertThrows(() => presenting.present("bad"), Error, "valid grant SAID");
+      assertThrows(() => presenting.present({ said: null }), Error, "valid grant SAID");
+      assertEquals([...baser.evts.getTopItemIter()].length, bodies, "bad targets publish nothing");
       // A grant SAID is a syntactic target; its controller need not issue the credential or grant.
-      const [presented, first] = registrar.present(presenting, { said: target }, undefined, options);
+      const [presented, first] = presenting.present({ said: target }, undefined, options);
       // These exact BLIDs/UUIDs were observed through frozen 927 Registrar.present/vacate.
       assertEquals([presented.d.nonce, presented.u.nonce, presented.td.nonce, presented.ts.text], [
         "EPxHsUaiDFVpr1YK9D5JJc9UyJeSvGDuUVNxb4MkLe_V",
@@ -329,13 +326,11 @@ Deno.test("v2 Registrar stages presentation and vacuous bindings through instanc
         target,
         "presented",
       ]);
-      rgy.names.set(presenting.regk!, issuing);
-      const [vacuous, second] = registrar.vacate(presenting.regk!, options);
-      rgy.names.delete(presenting.regk!);
+      const [vacuous, second] = presenting.vacate(options);
       assertEquals(
         [second.sad!.rd, second.sad!.n, second.sad!.p],
         [presenting.regk, "2", first.said],
-        "registry keys precede aliases",
+        "vacuous binding extends the same presentation registry",
       );
       assertEquals([vacuous.d.nonce, vacuous.u.nonce, vacuous.td.nonce, vacuous.ts.text], [
         "EAaemVlIFj33uXb4CugKMSFgu7iPiXYYPjICvb5roVl-",
@@ -347,9 +342,8 @@ Deno.test("v2 Registrar stages presentation and vacuous bindings through instanc
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true });
       rgy = yield* createRegery({ hby, baser });
-      registrar = new Registrar(rgy);
       const reopened = rgy.registryByName("presenting")!;
-      const [bound, third] = registrar.present("presenting", target, "shared", {
+      const [bound, third] = reopened.present(target, "shared", {
         ...options,
         bound: true,
         bsn: 2n,
@@ -395,29 +389,28 @@ Deno.test("v2 Registrar stages presentation and vacuous bindings through instanc
       const latest = vetBinds({ ...evidence, updates: [first, second, third], blinders: [presented, vacuous, bound] });
       assertEquals(latest.kind, "verified");
       if (latest.kind === "verified") assertEquals(latest.state.state, "shared");
-      // Direct instances from another manager remain valid borrowed references, as in KERIpy.
-      const borrowed = new Registrar(new Regery(hby, baser));
       const put = reopened.store.putEvent;
       try {
         reopened.store.putEvent = () => {
           throw new Error("presentation storage failed");
         };
-        assertThrows(() => borrowed.vacate(reopened, options), Error, "presentation storage failed");
+        assertThrows(() => reopened.vacate(options), Error, "presentation storage failed");
       } finally {
         reopened.store.putEvent = put;
       }
       assertEquals(baser.maes!.get(reopened.regk!, 4), []);
       assertEquals(reopened.sn, 3n);
       const [grant] = exchange("/ipex/grant", {}, { sender: issuer.pre, stamp: options.stamp });
-      const [grantProof, fourth] = borrowed.present(reopened, grant, undefined, options);
+      const [grantProof, fourth] = reopened.present(grant, undefined, options);
       assertEquals([grantProof.td.nonce, fourth.sad!.rd], [grant.said, reopened.regk]);
       assertEquals(fourth.sad!.n, "4", "a grant sender need not control the presentation registry");
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true, readonly: true });
-      registrar = new Registrar(yield* createRegery({ hby, baser }));
-      assertEquals(registrar.rgy.registryByName("presenting")!.sn, 3n);
-      assertThrows(() => registrar.vacate("presenting", options), Error);
-      assertEquals(registrar.rgy.registryByName("presenting")!.sn, 3n);
+      rgy = yield* createRegery({ hby, baser });
+      const readonly = rgy.registryByName("presenting")!;
+      assertEquals(readonly.sn, 3n);
+      assertThrows(() => readonly.vacate(options), Error);
+      assertEquals(readonly.sn, 3n);
     } finally {
       yield* baser.close(true);
       yield* hby.close(true);
