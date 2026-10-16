@@ -34,8 +34,13 @@ own partials and unrelated postcode/private values stay hidden. Actual stored
 replay preserves those partials without adding conversation rows. Dedicated
 extra-field, missing-field and altered-plaintext/wrong-commitment-proof grants
 are refused before a matching valid control in each direction.
-Remaining malformed-edge/schema and conversation-refusal controls still need
-qualification. Separate topology and presentation cases below retain their own
+Twelve cases in `interop-ipex-edge-refusals.test.ts` cover both directions for
+unknown leaf/group operators, unexpected leaf fields, direct/inherited far-node
+schema mismatches and a self-addressed schema with an invalid profile version.
+Both issuers authenticate the bad graph: refusal is the named edge/schema gate.
+A valid signed two-node counterpart then completes through admit; refused rows
+and child evidence remain absent on both stores before and after that control.
+Remaining conversation-link/spurn refusal controls still need qualification. Separate topology and presentation cases below retain their own
 limits; passing these cases alone does not close every family gate.
 
 ## Pairwise cases
@@ -114,8 +119,9 @@ This does not add Python NOT parity or imply global registry freshness. See the
 Kent's execution priority is complete disclosure/operator acceptance first, then
 KRAM/composed mailbox acceptance, then residual architecture cleanup, before
 final qualification and publications. Multiple/nested blinding and progressive
-reveal have dedicated maintained cases. Remaining pairwise malformed/schema and
-conversation-refusal controls must close before disclosure is complete.
+reveal and pairwise malformed-edge/schema controls have dedicated maintained
+cases. Conversation-link/spurn refusal controls must close before disclosure is
+complete.
 
 ## Transport, KRAM and topology
 

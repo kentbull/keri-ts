@@ -4,6 +4,7 @@ import { assertEquals } from "jsr:@std/assert";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
 import type { Hab, Habery } from "../../../../src/app/habbing.ts";
 import type { DisclosurePlan } from "../../../../src/app/ipex-graph.ts";
+import { Schemer } from "../../../../src/core/scheming.ts";
 
 /** Build a full commitment and its status-only partial with identical SAIDs. */
 function disclosure(
@@ -52,7 +53,14 @@ export function partialDisclosure(full: SerderACDC, fields: readonly string[]): 
   return partial;
 }
 
-export type GraphCase = "I2I" | "NI2I" | "E1E" | "AND" | "OR" | "multi-hop" | "branching";
+export type EdgeRefusalCase =
+  | "unknown-leaf"
+  | "unknown-group"
+  | "malformed-leaf"
+  | "edge-schema"
+  | "inherited-schema"
+  | "malformed-schema";
+export type GraphCase = "I2I" | "NI2I" | "E1E" | "AND" | "OR" | "multi-hop" | "branching" | EdgeRefusalCase;
 /** Concrete credential bodies, issuer keys and the deliberately missing proof. */
 export interface DisclosureGraph {
   fullNodes: SerderACDC[];
@@ -69,7 +77,16 @@ export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): 
     return { fullNodes: [full], nodes: [partial], badNodes: [], issuers: [hab], unsigned: null };
   }
   if (graphCase === "multi-hop" || graphCase === "branching") return deepGraph(hby, hab, graphCase);
-  return relationGraph(hby, hab, graphCase);
+  switch (graphCase) {
+    case "I2I":
+    case "NI2I":
+    case "E1E":
+    case "AND":
+    case "OR":
+      return relationGraph(hby, hab, graphCase);
+    default:
+      return edgeRefusalGraph(hby, hab, graphCase);
+  }
 }
 
 /** Root → authority → ancestor, optionally sharing the ancestor with an audit branch. */
@@ -153,10 +170,53 @@ function relationGraph(hby: Habery, hab: Hab, graphCase: RelationCase): Disclosu
   };
 }
 
+/** Signed controls vary only malformed edge syntax or a declared far-node schema constraint. */
+function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): DisclosureGraph {
+  const authority = hby.makeHab("authority");
+  const far = disclosure(authority.pre, { issuee: hab.pre });
+  const pin = (value: string, version = "1.0.0") =>
+    new Schemer({
+      sed: {
+        $id: "",
+        version,
+        type: "object",
+        properties: { a: { properties: { status: { properties: { value: { const: value } } } } } },
+      },
+    }).sed as MapperMap;
+  const near = (invalid: boolean) => {
+    const leaf: MapperMap = { n: far.partial.said, o: "I2I" };
+    let edge: MapperMap = { d: "", authority: leaf };
+    if (graphCase === "unknown-leaf" && invalid) leaf.o = "UNKNOWN";
+    if (graphCase === "unknown-group") edge.o = invalid ? "UNKNOWN" : "AND";
+    if (graphCase === "malformed-leaf" && invalid) leaf.unexpected = true;
+    if (graphCase === "edge-schema") leaf.s = pin(invalid ? "visitor" : "citizen");
+    if (graphCase === "inherited-schema") {
+      edge = {
+        d: "",
+        authority: { o: "AND", s: pin(invalid ? "visitor" : "citizen"), link: leaf },
+      };
+    }
+    if (graphCase === "malformed-schema") leaf.s = pin("citizen", invalid ? "invalid-version" : "1.0.0");
+    return disclosure(hab.pre, { edge });
+  };
+  const good = near(false), bad = near(true);
+  return {
+    fullNodes: [good.full, far.full],
+    nodes: [good.partial, far.partial],
+    badNodes: [bad.partial, far.partial],
+    issuers: [hab, authority],
+    unsigned: null,
+  };
+}
+
 /** Paths describe the disclosed graph, while each node retains only its status field. */
 export function disclosurePlan(schema: string, graph?: GraphCase): DisclosurePlan {
   const paths = ["/"];
-  if (graph) paths.push(graph === "AND" || graph === "OR" ? "/e/authority/link/_/" : "/e/authority/_/");
+  if (graph) {
+    paths.push(
+      graph === "AND" || graph === "OR" || graph === "inherited-schema" ? "/e/authority/link/_/" : "/e/authority/_/",
+    );
+  }
   if (graph === "branching") paths.push("/e/audit/_/");
   if (graph === "multi-hop" || graph === "branching") paths.push("/e/authority/_/e/authority/_/");
   return paths.map((path) => [schema, path, ["a/status/"]]);

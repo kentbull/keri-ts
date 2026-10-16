@@ -136,8 +136,11 @@ each progressive reveal from the full node, never an earlier partial; validate
 unchanged commitments and each grant's actual retained evidence. Later larger or
 smaller selections and stored replay must not expand historical partials. Extra
 or missing fields and plaintext carrying the original different commitment's
-proof are independent refusal boundaries. The test README routes to the peer and
-graph fixture modules.
+proof are independent refusal boundaries. Edge/schema refusal fixtures retain
+both issuer proofs and vary only the named semantic defect; complete a valid
+counterpart afterward and assert refused parent/child rows remain absent. This
+separates actual edge/schema refusal from missing authentication setup. The test
+README routes to the peer and graph fixture modules.
 
 ## Remaining work
 

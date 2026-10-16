@@ -83,15 +83,18 @@ a 600-second process limit and at most two jobs running concurrently. Its full
 
 ## Graduated disclosure peer fixtures
 
-[`interop-ipex-disclosure.test.ts`](integration/app/interop-ipex-disclosure.test.ts)
-and [`interop-ipex-progressive.test.ts`](integration/app/interop-ipex-progressive.test.ts)
+[`interop-ipex-disclosure.test.ts`](integration/app/interop-ipex-disclosure.test.ts),
+[`interop-ipex-progressive.test.ts`](integration/app/interop-ipex-progressive.test.ts),
+and [`interop-ipex-edge-refusals.test.ts`](integration/app/interop-ipex-edge-refusals.test.ts)
 are the scenario entry points. Each test spells out who sends apply, offer, agree,
 grant, admit or spurn; every test starts fresh independent peers. The seven graph
 cases name the invalid evidence they reject before admitting a valid partial graph.
 The progressive cases retain four distinct disclosures of the same two-node chain,
 including a later smaller subset, actual stored replay and separate extra/missing/
 altered disclosure controls. Full commitments remain local construction inputs;
-receivers only receive negotiated partials and independent issuer proofs.
+receivers only receive negotiated partials and independent issuer proofs. Edge
+refusal cases isolate unknown operators, malformed leaf fields, direct/inherited
+schema mismatches and invalid schema profiles, each with a valid chain control.
 
 [`ipex/peers.ts`](integration/app/ipex/peers.ts) owns listener/process startup,
 KEL introduction, signing, delivery, observations and cleanup. `withIpexPeers`
@@ -116,7 +119,7 @@ without changing a peer's responder state machine; neither peer has one. Keep
 protocol assertions visible in the test, including failed-grant absence before
 and after successful admission, lineage, independent proofs and hidden fields.
 
-Run both scenario files with their maintained owner:
+Run these scenario files with their maintained owner:
 `deno task test:quality:keri:interop-ipex-disclosure`. PR scope can select
 `"interop":["interop-ipex-disclosure"]` independently of legacy ACDC workflows.
 
