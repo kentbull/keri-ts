@@ -12,25 +12,58 @@ implementations reversed. Both peers own independent stores, keys and protocol
 processors. Every case must identify which implementation produced each message
 and which implementation verified it. Keep cases named by direction and concern.
 
-| Family                           | Positive path                                                                                                              | Refusal or independent control                                                                                                                       |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Apply-first conversation         | apply → offer → agree → grant → admit, with authenticated nested credential evidence and accepted state at every recipient | Wrong prior, exchange ID or recipient cannot advance the conversation; matching valid traffic must still work                                        |
-| Offer-first conversation         | offer → agree → grant → admit with no fabricated apply                                                                     | A later disclosure cannot exceed the offer's negotiated plan                                                                                         |
-| I2I chain                        | A signed near/far credential chain whose near issuer equals the far issuee                                                 | Validly signed chain with a mismatched relationship is refused                                                                                       |
-| NI2I chain                       | A signed chain with differing near issuer/far issuee is accepted under NI2I                                                | Missing far node or invalid far-node proof cannot become success                                                                                     |
-| E1E chain                        | Near and far issuees match                                                                                                 | Different issuees fail the relation                                                                                                                  |
-| Grouped edges                    | Nested AND/OR with differing child truth values; schema pins are checked                                                   | Unsatisfied AND, all-false OR, malformed/unknown operator and wrong schema are refused                                                               |
-| Recognized unsupported operators | Record the current reference's explicit refusal of DI2I and NOT                                                            | Do not claim those relations are implemented or change KERIpy to manufacture support                                                                 |
-| Multiple blinded attributes      | Multiple distinct and nested fields remain commitments while the negotiated subset is disclosed                            | Extra disclosed fields, missing requested fields and altered values are refused; hidden values do not leak in transmitted or stored partials         |
-| Progressive disclosure           | Separate valid conversations reveal different or increasing subsets of the same credential and chain                       | Credential commitments remain unchanged; unrelated attributes stay blinded; prior stored partial evidence does not silently become a full credential |
-| Chained disclosure               | At least a multi-hop chain and a branching origin graph, with partial disclosure at more than one node                     | Edge evaluation uses authenticated disclosed evidence; parent signatures cannot authenticate unsigned children                                       |
-| Spurn                            | Dedicated legal spurn cases after apply and offer, in both implementation directions                                       | No admit/credential acceptance from the refused conversation; wrong-sender or wrong-prior spurn is refused                                           |
-| Opening-grant refusal            | Spurn an unsolicited flow-starting grant where the reference permits it                                                    | A negotiated non-opening grant cannot be spurned through that special rule                                                                           |
+| Family                      | Positive path                                                                                                              | Refusal or independent control                                                                                                                       |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Apply-first conversation    | apply → offer → agree → grant → admit, with authenticated nested credential evidence and accepted state at every recipient | Wrong prior, exchange ID or recipient cannot advance the conversation; matching valid traffic must still work                                        |
+| Offer-first conversation    | offer → agree → grant → admit with no fabricated apply                                                                     | A later disclosure cannot exceed the offer's negotiated plan                                                                                         |
+| I2I chain                   | A signed near/far credential chain whose near issuer equals the far issuee                                                 | Validly signed chain with a mismatched relationship is refused                                                                                       |
+| NI2I chain                  | A signed chain with differing near issuer/far issuee is accepted under NI2I                                                | Missing far node or invalid far-node proof cannot become success                                                                                     |
+| E1E chain                   | Near and far issuees match                                                                                                 | Different issuees fail the relation                                                                                                                  |
+| Grouped edges               | Nested AND/OR with differing child truth values; schema pins are checked                                                   | Unsatisfied AND, all-false OR, malformed/unknown operator and wrong schema are refused                                                               |
+| Multiple blinded attributes | Multiple distinct and nested fields remain commitments while the negotiated subset is disclosed                            | Extra disclosed fields, missing requested fields and altered values are refused; hidden values do not leak in transmitted or stored partials         |
+| Progressive disclosure      | Separate valid conversations reveal different or increasing subsets of the same credential and chain                       | Credential commitments remain unchanged; unrelated attributes stay blinded; prior stored partial evidence does not silently become a full credential |
+| Chained disclosure          | At least a multi-hop chain and a branching origin graph, with partial disclosure at more than one node                     | Edge evaluation uses authenticated disclosed evidence; parent signatures cannot authenticate unsigned children                                       |
+| Spurn                       | Dedicated legal spurn cases after apply and offer, in both implementation directions                                       | No admit/credential acceptance from the refused conversation; wrong-sender or wrong-prior spurn is refused                                           |
+| Opening-grant refusal       | Spurn an unsolicited flow-starting grant where the reference permits it                                                    | A negotiated non-opening grant cannot be spurned through that special rule                                                                           |
 
-`I2I`, `NI2I`, `E1E`, AND/OR and fail-closed DI2I/NOT expectations come from
-KERIpy `71438328` `src/keri/acdc/ipexing.py`; audit the selected reference before
-asserting a changed expectation. An operator/schema failure is distinct from a
-missing dependency. Preserve actual escrow semantics and positive controls.
+`I2I`, `NI2I`, `E1E` and AND/OR expectations come from KERIpy `71438328`
+`src/keri/acdc/ipexing.py`; audit the selected reference before asserting a changed
+expectation. An operator/schema failure is distinct from a missing dependency.
+Preserve actual escrow semantics and positive controls.
+
+## TypeScript operator support, separate from interop
+
+DI2I and NOT belong in dedicated keri-ts tests, not KERIpy interop tests, until
+the selected Python reference supports them. This exclusion applies to refusal
+cases too: do not add an interop scenario asserting the current Python stub.
+KERIpy `71438328` and inspected main `c102367e` leave both operators unsatisfied
+in `src/keri/acdc/ipexing.py`. That is a reference limitation, not a requirement
+to preserve refusal in TypeScript. Implement support when KERIpy supports it or
+the semantics are sufficiently established; an upstream merge is not required
+for TypeScript-only support. Do not modify KERIpy outside the authorized minimal
+mailbox fixes. Claim pairwise operator coverage only after actual Python support
+and successful independent peer tests.
+
+The [ACDC operator specification](https://trustoverip.github.io/kswg-acdc-specification/)
+defines delegation and negation. [KERIpy #1559](https://github.com/WebOfTrust/keripy/issues/1559)
+and [open #1564](https://github.com/WebOfTrust/keripy/pull/1564) clarify DI2I at any
+delegation depth. Test identity, multiple approved hops, unrelated issuers, absent
+approvals and DND-forbidden hops with a disinterested verifier. Each hop needs the
+delegator's anchored approval, not just the delegate's delpre assertion. Include
+a witness-held KEL whose delegated inception precedes delegator approval. Avoid
+an arbitrary depth cap or requiring approval of a later rotation to prove the
+inception relationship.
+
+For NOT, refactor authenticated node evidence, known validity/invalidity and
+missing dependencies before changing behavior. The current grant pipeline
+rejects every invalid node before edge evaluation; negating a relation boolean
+would not implement NOT. [KERIpy #1554](https://github.com/WebOfTrust/keripy/issues/1554)
+and [discussion #1571](https://github.com/WebOfTrust/keripy/discussions/1571) identify
+revocation, freshness and reevaluation questions. Define the supported invalidity
+evidence and time basis explicitly, then test known-valid and proved-invalid far
+nodes, missing/stale evidence, operator composition and state changes. A missing
+node or unauthenticated input must not become a successful negation. Report any
+unresolved semantics precisely instead of treating blanket refusal as completion.
 
 ## Transport, KRAM and topology
 
@@ -59,7 +92,10 @@ actual stored representation, not a separately retained producer object.
 1. Bring the proven pairwise single-controller HTTP path into maintained tests,
    extending it through offer/agree/admit and adding dedicated spurn cases. Refresh
    the consolidated mailbox reference pin and verify its actual imports.
-2. Add focused chained-credential and leaf/group edge cases in both directions.
+2. Add focused chained-credential and supported leaf/group edge cases in both
+   directions. In separate keri-ts-only cases, refactor operator/node-validity
+   decisions first, then implement DI2I and sufficiently defined NOT semantics in
+   cohesive follow-ups. Keep both operators out of Python interop until supported.
 3. Add multiple/nested blinding and progressive reveal cases, including leakage,
    commitment and stored-replay checks at multiple graph nodes.
 4. Add multisig witness/mailbox conversations and KRAM restart/failure cases in
