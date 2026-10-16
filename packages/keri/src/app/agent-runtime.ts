@@ -285,7 +285,7 @@ export function* createAgentRuntime(
       yield* coordinator.close();
     }
   });
-  const delegating = new Anchorer(hby, { poster, querying, services });
+  const delegating = new Anchorer(hby, { poster, querying, services, reactor });
   const oobiery = new Oobiery(hby, reactor, { cues, services });
   oobiery.registerReplyRoutes(reactor.router);
   const authenticator = new Authenticator(hby, { services });
@@ -546,7 +546,7 @@ export function* processRuntimeTurn(
   yield* runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
   yield* runtime.authenticator.processOnce();
-  yield* runtime.delegating.processAllOnce(runtime);
+  yield* runtime.delegating.processAllOnce();
   runtime.signaler?.processOnce();
   if (options.pollMailbox ?? true) {
     yield* processMailboxTurn(runtime, { hab: options.hab });
@@ -554,7 +554,7 @@ export function* processRuntimeTurn(
   yield* processCuesOnce(runtime, options);
   yield* runtime.querying.processPending();
   yield* runtime.reactor.processEscrowsOnce();
-  yield* runtime.delegating.processAllOnce(runtime);
+  yield* runtime.delegating.processAllOnce();
   yield* processCuesOnce(runtime, options);
   yield* runtime.querying.processPending();
   yield* runtime.querying.deliverOnce();
@@ -752,7 +752,7 @@ export function* runAgentRuntime(
       : []),
     yield* spawn(function*() {
       while (true) {
-        yield* runtime.delegating.processAllOnce(runtime);
+        yield* runtime.delegating.processAllOnce();
         yield* runtimeTurn();
       }
     }),

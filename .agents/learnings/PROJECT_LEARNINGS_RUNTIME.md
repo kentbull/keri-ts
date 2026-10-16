@@ -42,8 +42,8 @@ body and target. Its optional signer selects a local AID; src names the remote
 attester. Pending work retains identifiers, not Hab objects. QueryCoordinator
 resolves the explicit signer from Habery; unavailable selections stay pending.
 Hab interpretation defers cues selected for another signer, and transport's ambient
-Hab cannot supply another identity's introduction. Anchorer receives only concrete
-enqueue access. Do not restore aliases, duplicated body targets or generic route/data
+Hab cannot supply another identity's introduction. Anchorer's query dependency is
+only concrete enqueue access. Do not restore aliases, duplicated body targets or generic route/data
 bags. Schema/credential notices stay notify-only with canonical hint fields.
 TEL recovery requires registry/credential fields, issuer only where needed.
 Prebuilt reply routes live in their serder; typed TSN state serializes at Hab
@@ -184,7 +184,11 @@ callback/drain before another pull. Source-EOF starts an absolute drain deadline
 reply activity cannot extend it. Directional failure stops and joins its sibling.
 Local transmission/dispatch counts prove neither authenticated reply nor remote
 acceptance. WitnessReceiptor requires persisted wigs at the selected witness index
-before fanout. Receiptor/catchup borrow explicit runtime or own one scoped receiver.
+before fanout. Receiptor/catchup borrow a Reactor selected at construction or create
+one over the existing Habery. They never create AgentRuntime, extra stores or
+workers. Anchorer also selects its Reactor/services once; processAllOnce takes no
+parent. Raw witness/Poster sends accept the actual Reactor for TCP reply intake.
+The HTTP/TCP operations retain actual cancellation and joined cleanup.
 
 Tufa tracks accepted handles/connection scopes until actual close without count
 caps, shared allowances or busy/drop callbacks. Wire/recognized peer failure is

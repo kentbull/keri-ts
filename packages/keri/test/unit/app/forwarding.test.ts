@@ -830,7 +830,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
               recipient: recipient.pre,
               message,
               topic: "/receipt",
-            }, runtime);
+            }, runtime.reactor);
             assertEquals(sent.deliveries, [url]);
             assertEquals(hby.db.rcts.get(receiptKey).length, 1, "explicit receiver persists the same-socket receipt");
             assertEquals(concatBytes(...tcpBodies[0]).subarray(0, expectedIntro.length), expectedIntro);

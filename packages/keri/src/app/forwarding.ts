@@ -32,7 +32,6 @@ import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import { abortable } from "./abortable.ts";
-import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { attemptPostCesr, postCesr } from "./cesr-egress.ts";
 import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
@@ -49,6 +48,7 @@ import {
   mailboxTopicKey,
 } from "./mailboxing.ts";
 import { Organizer } from "./organizing.ts";
+import type { Reactor } from "./reactor.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { converseCesrTcp, type TcpReplyReceiver } from "./tcp-conversation.ts";
@@ -376,7 +376,7 @@ export class Poster {
    *
    * This is used by delegation workflows where correctness depends on the
    * actual KEL bytes reaching the delegator or delegate, not on an EXN wrapper.
-   * Optional runtime lends TCP intake; caller owns preparation/retention before transport.
+   * Optional Reactor lends TCP intake; caller owns preparation/retention before transport.
    */
   *sendBytes(
     hab: Hab,
@@ -386,7 +386,7 @@ export class Poster {
       topic?: string;
       delivery?: ExchangeDeliveryPreference;
     },
-    runtime?: AgentRuntime,
+    reactor?: Reactor,
   ): Operation<RawCesrSendResult> {
     const route = this.resolveBytesRoute(hab, args);
     const deliveries: string[] = [];
@@ -395,7 +395,7 @@ export class Poster {
       const endpoint = route.targets[index]!;
       try {
         const target = this.prepareBytesTarget(hab, route, index, args.message);
-        yield* sendPreparedCesrTarget(target, this.services, undefined, runtime);
+        yield* sendPreparedCesrTarget(target, this.services, undefined, reactor ? { reactor } : undefined);
         deliveries.push(endpoint.url);
       } catch (error) {
         if (route.kind !== "mailbox") throw error;

@@ -41,8 +41,9 @@ publishing its protocol Deck, and offers no application callback gate. Default
 query transport cannot be a no-op sink. Finite commands await state/deadlines over
 the host workers, joining them before teardown; serial runtime pumping remains
 removal work. Local endpoint/startup intake uses direct protocol processing; host
-composition has no fake per-Hab seeding phase. Local protocol fixtures use the
-same intake and preserve semantic assertions instead of driving unrelated work.
+composition has no fake per-Hab seeding phase. Witness receipt/delegation/raw send owners borrow Reactor and transport services,
+not a parent runtime; standalone receipt processing opens no extra stores.
+Local protocol fixtures use the same intake and preserve semantic assertions instead of driving unrelated work.
 Publish after owning writes/commit; preserve real iterator, reader and payload cleanup. Do not
 restore queue credit, capacity, inspection or synthetic retain/release handles.
 Use concrete semantic records, narrow validated input, and locally justified

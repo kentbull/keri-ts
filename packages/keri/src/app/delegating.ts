@@ -19,11 +19,11 @@ import { ValidationError } from "../core/errors.ts";
 import { DELEGATE_MAILBOX_TOPIC, REPLAY_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { Schemes } from "../core/schemes.ts";
 import { dgKey } from "../db/core/keys.ts";
-import type { AgentRuntime } from "./agent-runtime.ts";
 import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import { type Poster } from "./forwarding.ts";
 import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
+import type { Reactor } from "./reactor.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { sendWitnessMessage } from "./witnessing.ts";
 
@@ -374,18 +374,22 @@ export class Anchorer {
   /** Query producer port; composition owns the consuming coordinator and its lifetime. */
   readonly querying: { enqueue(request: QueryRequest): void };
   readonly services: RuntimeServices;
+  readonly reactor?: Reactor;
   readonly communicationHabPins = new Map<string, string>();
   readonly anchorQueryRetryPasses = new Map<string, number>();
 
   constructor(
     hby: Habery,
-    { poster, querying, services = defaultRuntimeServices }: {
+    { poster, querying, services = defaultRuntimeServices, reactor }: {
       poster: Poster;
       querying: Anchorer["querying"];
       services?: RuntimeServices;
+      reactor?: Reactor;
     },
   ) {
+    if (reactor && reactor.hby !== hby) throw new RangeError("Anchorer Reactor must own the same Habery");
     this.hby = hby;
+    this.reactor = reactor;
     this.poster = poster;
     this.querying = querying;
     this.services = services;
@@ -484,9 +488,8 @@ export class Anchorer {
     return false;
   }
 
-  /** Process delegation escrows; an active runtime lends its same-socket TCP reply receiver. */
-  *processAllOnce(runtime?: AgentRuntime): Operation<DelegationWorkflowResult[]> {
-    if (runtime && runtime.hby !== this.hby) throw new RangeError("Anchorer requires its owning runtime");
+  /** Advance delegation escrows using the protocol receiver selected at construction. */
+  *processAllOnce(): Operation<DelegationWorkflowResult[]> {
     const results: DelegationWorkflowResult[] = [];
     for (
       const [keys, serder] of [...this.hby.db.dpwe.getTopItemIter()] as Array<
@@ -503,7 +506,7 @@ export class Anchorer {
       >
     ) {
       results.push(
-        yield* this.processUnanchoredEscrow(escrowContext(keys, serder), runtime),
+        yield* this.processUnanchoredEscrow(escrowContext(keys, serder)),
       );
     }
     for (
@@ -615,7 +618,6 @@ export class Anchorer {
 
   private *processUnanchoredEscrow(
     context: DelegationEscrowContext,
-    runtime?: AgentRuntime,
   ): Operation<DelegationWorkflowResult> {
     const [keys, serder, pre, said] = context;
 
@@ -673,7 +675,7 @@ export class Anchorer {
       };
     }
 
-    yield* this.publishDelegator(serder, runtime);
+    yield* this.publishDelegator(serder);
     this.hby.db.dpub.pin(keys, serder);
     return {
       kind: "advance",
@@ -831,7 +833,7 @@ export class Anchorer {
     return localGroupMember(this.hby, hab.pre) ?? this.communicationHab(serder, hab);
   }
 
-  private *publishDelegator(serder: SerderKERI, runtime?: AgentRuntime): Operation<void> {
+  private *publishDelegator(serder: SerderKERI): Operation<void> {
     const pre = workflowPre(serder);
     const hab = localHabByPre(this.hby, pre, "Delegation witness publication");
     const transportHab = this.publicationTransportHab(serder, hab);
@@ -846,7 +848,7 @@ export class Anchorer {
     // matches the witness-visible material KERIpy sends for delegated approval.
     for (const msg of this.hby.db.cloneDelegation(kever)) {
       for (const witness of kever.wits) {
-        yield* sendWitnessMessage(transportHab, witness, msg, undefined, runtime?.services ?? this.services, runtime);
+        yield* sendWitnessMessage(transportHab, witness, msg, undefined, this.services, this.reactor);
       }
     }
 
@@ -864,8 +866,8 @@ export class Anchorer {
         witness,
         approvedEvent,
         undefined,
-        runtime?.services ?? this.services,
-        runtime,
+        this.services,
+        this.reactor,
       );
     }
   }

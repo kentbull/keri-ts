@@ -43,6 +43,9 @@ ownership and full qualification remain open.
   Audit remaining
   forwarding-only facades for actual responsibilities. AgentMode/runtimeMode are removed;
   hosts choose provider mailbox construction explicitly.
+- Witness receipt, delegation and raw transport entrypoints now borrow actual
+  Reactor/services instead of a parent runtime. Standalone receipting constructs
+  only a protocol processor over the existing Habery, with no extra stores/workers.
 - Narrow public runtime exports to supported operations/data. Remove optional
   hooks and wrappers; condense contracts, learnings and plans to current decisions.
 - One finite decoder shared by complete input and a small network input loop.
