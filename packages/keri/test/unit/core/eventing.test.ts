@@ -12,7 +12,7 @@ import {
   type Tier,
   Tiers,
 } from "../../../../cesr/mod.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
@@ -1158,7 +1158,7 @@ Deno.test("Kevery.processAttachedReceiptCouples stores accepted replayed witness
         isith: "1",
         toad: 0,
       });
-      const controller = source.makeHab("controller", undefined, {
+      const controller = remote.makeHab("controller", undefined, {
         transferable: true,
         icount: 1,
         isith: "1",
@@ -1167,13 +1167,14 @@ Deno.test("Kevery.processAttachedReceiptCouples stores accepted replayed witness
         wits: [witness.pre],
         toad: 1,
       });
-      const event = source.db.getEvtSerder(
+      const event = remote.db.getEvtSerder(
         controller.pre,
         controller.kever?.said ?? "",
       );
       assertExists(event);
       assertExists(event.said);
-      makeAcceptedReceiptReference(remote.db, event);
+      // Local controller acceptance writes its cohort without preloading a witness receipt.
+      assertEquals(remote.db.wigs.get(dgKey(controller.pre, event.said)).length, 0);
 
       const kvy = new Kevery(remote.db);
       kvy.processAttachedReceiptCouples({
@@ -2098,9 +2099,11 @@ Deno.test("Kevery.processReceipt skips own witness receipts on own and nonlocal 
       );
       assertExists(remoteEvent);
       assertExists(remoteEvent.said);
-      makeAcceptedReceiptReference(remote.db, remoteEvent);
+      const reactor = new Reactor(remote);
+      yield* reactor.processBytes(acceptedEventReplayMessage(source, remoteController.pre, 0).message, { local: true });
 
       const strictRemote = new Kevery(remote.db, { lax: false, local: true });
+      assertEquals(remote.db.acceptedEventWitnesses(remoteEvent), [remoteWitness.pre]);
       strictRemote.processReceipt(
         witnessReceiptEnvelope(remoteWitness, remoteEvent, false),
       );
@@ -2109,6 +2112,8 @@ Deno.test("Kevery.processReceipt skips own witness receipts on own and nonlocal 
           .length,
         0,
       );
+      strictRemote.processReceipt(witnessReceiptEnvelope(remoteWitness, remoteEvent, true));
+      assertEquals(remote.db.wigs.get(dgKey(remoteController.pre, remoteEvent.said)).length, 1);
     } finally {
       yield* remote.close(true);
       yield* source.close(true);
