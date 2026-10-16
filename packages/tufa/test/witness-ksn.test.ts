@@ -4,8 +4,7 @@ import { assertEquals, assertExists } from "jsr:@std/assert";
 import {
   createAgentRuntime,
   createHabery,
-  ingestKeriBytes,
-  processRuntimeTurn,
+  settleRuntimeIngress,
   witnessReceiptPost,
 } from "keri-ts/runtime";
 import { createProtocolHandler } from "../src/http/protocol-handler.ts";
@@ -106,12 +105,10 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
         });
         const verifier = yield* createAgentRuntime(observer);
         try {
-          for (const message of hby.db.clonePreIter(witness.pre)) ingestKeriBytes(verifier, message);
-          yield* processRuntimeTurn(verifier, { pollMailbox: false });
+          yield* settleRuntimeIngress(verifier, hby.db.clonePreIter(witness.pre));
           const evidence = bytes.slice();
           if (tamper) evidence[evidence.length - 8] = evidence[evidence.length - 8] === 65 ? 66 : 65;
-          ingestKeriBytes(verifier, evidence);
-          yield* processRuntimeTurn(verifier, { pollMailbox: false });
+          yield* settleRuntimeIngress(verifier, [evidence]);
           const saved = observer.db.knas.get([controller.pre, witness.pre]);
           if (tamper) assertEquals(saved, null, "changed signature must not save state");
           else {

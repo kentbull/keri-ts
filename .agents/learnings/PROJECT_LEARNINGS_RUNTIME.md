@@ -19,8 +19,9 @@ RuntimeServices contains only clock/HTTP. Baser and CLI carry no shared policy.
 Local endpoint commands and witness/mailbox startup submit their signed records
 through settleRuntimeIngress, then verify accepted state; they do not drive OOBI,
 mailbox or output workers. Host operators validate/reconcile required endpoint
-state before entering the kernel. The hollow seedHabs loop and forwarding-only
-mailbox host wrapper are deleted. The kernel requires actual HTTP configuration,
+state before entering the kernel. Protocol-only fixtures likewise pass their exact
+records/replays through direct intake; do not restore a whole-runtime test pump.
+The hollow seedHabs loop and forwarding-only mailbox host wrapper are deleted. The kernel requires actual HTTP configuration,
 passes only runtime to its TCP companion, and owns service/prefix selection once.
 Choose real dependencies at construction. Generic cue preparation/delivery
 wrappers and Reactor's application callback gate are removed. Finite CLI waits

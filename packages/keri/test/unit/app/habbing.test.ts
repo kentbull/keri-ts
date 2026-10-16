@@ -24,7 +24,7 @@ import {
   Verfer,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, processRuntimeTurn, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { introduce, type Poster } from "../../../src/app/forwarding.ts";
@@ -1058,10 +1058,7 @@ Deno.test("Habery rotateGroupHab preserves accepted member metadata while rotati
         nsith: "1",
         toad: 0,
       });
-      for (const message of remoteHby.db.clonePreIter(remote.pre, 0)) {
-        ingestKeriBytes(runtime, message);
-      }
-      yield* processRuntimeTurn(runtime, { pollMailbox: false });
+      yield* settleRuntimeIngress(runtime, remoteHby.db.clonePreIter(remote.pre, 0));
       assertExists(hby.db.getKever(remote.pre));
 
       const group = hby.makeGroupHab(
@@ -1339,9 +1336,22 @@ Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues",
       assertStrictEquals(hab.kevery, hby.kevery);
       assertStrictEquals(hby.kevery.local, true);
       assertStrictEquals(hby.kevery.lax, false);
-      assertStrictEquals(runtime.reactor.kevery.cues, runtime.cues);
       assertEquals(runtime.reactor.kevery === hby.kevery, false);
+      assertEquals(runtime.reactor.kevery.cues === runtime.cues, false);
       assertEquals(runtime.cues === hby.kevery.cues, false);
+      const localCues = hby.kevery.cues.toArray();
+      const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      try {
+        const peer = remote.makeHab("peer");
+        yield* settleRuntimeIngress(runtime, remote.db.clonePreIter(peer.pre));
+        assertEquals(hby.db.getKever(peer.pre)?.said, peer.kever!.said);
+        assertEquals(runtime.reactor.kevery.cues.empty, true);
+        assertEquals(runtime.cues.toArray().map((cue) => cue.kin), ["receipt", "keyStateSaved"]);
+        assertEquals(hby.kevery.cues.toArray(), localCues);
+      } finally {
+        yield* runtime.close();
+        yield* remote.close(true);
+      }
     } finally {
       yield* hby.close();
     }
@@ -2089,8 +2099,7 @@ Deno.test("Habery rotateGroupHab repeatedly replaces an inaccessible user with t
         assertEquals(group.hab.kever?.sn, generation * 2 + 2);
         oldUser = user.pre;
       }
-      for (const message of hby.db.clonePreIter(root, 0)) ingestKeriBytes(runtime, message);
-      yield* processRuntimeTurn(runtime, { pollMailbox: false });
+      yield* settleRuntimeIngress(runtime, hby.db.clonePreIter(root, 0));
       assertEquals(observer.db.getKever(root)?.sn, 6);
       assertEquals(observer.db.getKever(root)?.said, group.hab.kever?.said);
     } finally {

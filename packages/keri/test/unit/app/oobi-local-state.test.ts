@@ -10,7 +10,7 @@ import {
   SerderKERI,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -162,10 +162,8 @@ Deno.test("OOBI local state - transferable controller OOBI reply seal attachment
       const pre = hab.pre;
 
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, pre, "http"));
       const endRole = hab.makeEndRole(pre, EndpointRoles.controller, true);
-      ingestKeriBytes(runtime, endRole);
-      yield* processRuntimeTurn(runtime, { hab });
+      yield* settleRuntimeIngress(runtime, [hab.makeLocScheme(hostUrl, pre, "http"), endRole]);
 
       const stream = textDecoder.decode(
         hab.replyToOobi(pre, EndpointRoles.controller, [pre]),
@@ -258,10 +256,8 @@ Deno.test("OOBI local state - non-transferable mailbox OOBI replies use reply ci
       const pre = hab.pre;
 
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, pre, "http"));
       const endRole = hab.makeEndRole(pre, EndpointRoles.mailbox, true);
-      ingestKeriBytes(runtime, endRole);
-      yield* processRuntimeTurn(runtime, { hab });
+      yield* settleRuntimeIngress(runtime, [hab.makeLocScheme(hostUrl, pre, "http"), endRole]);
 
       const stream = textDecoder.decode(
         hab.replyToOobi(pre, EndpointRoles.mailbox, [pre]),

@@ -7,8 +7,6 @@ import {
   createHabery,
   EndpointRoles,
   generateDidWebsArtifacts,
-  ingestKeriBytes,
-  processRuntimeTurn,
   runAgentRuntime,
   settleRuntimeIngress,
 } from "keri-ts/runtime";
@@ -209,10 +207,11 @@ async function seedMailboxProvider(headRoot: string, url: string): Promise<Mailb
       });
       pre = hab.pre;
       loc = new Uint8Array(hab.makeLocScheme(url, hab.pre, "http"));
-      ingestKeriBytes(runtime, loc);
-      ingestKeriBytes(runtime, hab.makeEndRole(hab.pre, EndpointRoles.controller, true));
-      ingestKeriBytes(runtime, hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true));
-      yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+      yield* settleRuntimeIngress(runtime, [
+        loc,
+        hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
+        hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true),
+      ]);
     } finally {
       yield* runtime.close();
       yield* hby.close();
@@ -314,16 +313,11 @@ async function issueMailboxRole(
     });
     const runtime = yield* createAgentRuntime(hby);
     try {
-      for (const message of providerKel) {
-        ingestKeriBytes(runtime, message);
-      }
-      ingestKeriBytes(runtime, provider.loc);
-      yield* processRuntimeTurn(runtime, { pollMailbox: false });
+      yield* settleRuntimeIngress(runtime, [...providerKel, provider.loc]);
       const hab = hby.habByName(store.alias);
       assertExists(hab);
       reply = new Uint8Array(hab.makeEndRole(provider.pre, EndpointRoles.mailbox, true));
-      ingestKeriBytes(runtime, reply);
-      yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+      yield* settleRuntimeIngress(runtime, [reply]);
     } finally {
       yield* runtime.close();
       yield* hby.close();

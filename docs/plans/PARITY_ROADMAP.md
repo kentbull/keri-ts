@@ -38,7 +38,9 @@ ownership and full qualification remain open.
   joined shutdown. Delete remaining serial processRuntimeTurn/mailbox/approval
   pumping to finish one shared driving model. Local endpoint/startup callers now
   use direct protocol intake; hollow per-Hab seeding, the mailbox host forwarding
-  wrapper and unused host context/no-HTTP branch are removed. Audit remaining
+  wrapper and unused host context/no-HTTP branch are removed. Protocol-only
+  fixtures use exact direct intake, retaining their actual assertions and topology.
+  Audit remaining
   forwarding-only facades for actual responsibilities. AgentMode/runtimeMode are removed;
   hosts choose provider mailbox construction explicitly.
 - Narrow public runtime exports to supported operations/data. Remove optional
