@@ -23,6 +23,13 @@ from keri.peer import Exchanger
 from keri.peer.exchanging import loadParsedNestedSubstreams
 
 
+def publish_observation(path, observation):
+    """Expose a complete JSON observation atomically to the polling parent."""
+    pending = path.with_suffix(".pending")
+    pending.write_text(json.dumps(observation))
+    pending.replace(path)
+
+
 class Recorder:
     """Observe notifications after durable acceptance without a UI service."""
     def __init__(self):
@@ -165,8 +172,8 @@ def main():
 
             doist.enter()
             try:
-                (root / "ready.json").write_text(json.dumps(dict(
-                    pre=hab.pre, port=server.servant.ha[1])))
+                publish_observation(root / "ready.json", dict(
+                    pre=hab.pre, port=server.servant.ha[1]))
                 for issuer in graph.issuers:
                     post(issuer.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
                 deadline = time.monotonic() + 30
@@ -270,9 +277,9 @@ def main():
                     credential = node.said
                     if role == "issuer":
                         assert node.said == full.said
-                (root / "result.json").write_text(json.dumps(dict(
+                publish_observation(root / "result.json", dict(
                     lineage=[body.said for body in lineage], credential=credential,
-                    nodes=retained, rejected=rejected)))
+                    nodes=retained, rejected=rejected))
             finally:
                 doist.exit()
                 server.close()
