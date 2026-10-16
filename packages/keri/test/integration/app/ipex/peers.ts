@@ -3,6 +3,8 @@ import {
   type CesrFrame,
   collectPayload,
   concatBytes,
+  Counter,
+  DigDex,
   Diger,
   framePayload,
   type MapperMap,
@@ -20,10 +22,11 @@ import { acdcmap } from "../../../../src/acdc/messaging.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../../src/app/cesr-http.ts";
-import { createHabery, type Hab, type Habery } from "../../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../../src/app/habbing.ts";
 import { ipexExnBody } from "../../../../src/app/ipex-building.ts";
 import type { DisclosurePlan } from "../../../../src/app/ipex-graph.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { exchange } from "../../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
 import { loadNests } from "../../../../src/db/exchange-nests.ts";
 import {
@@ -43,6 +46,9 @@ import {
 
 const PEER = fromFileUrl(new URL("../../../fixtures/ipex-http-peer.py", import.meta.url));
 export type Implementation = "TypeScript" | "KERIpy";
+export type ReplyDefect = { kind: "prior"; said: string } | {
+  kind: "exchange-id" | "recipient" | "sender" | "non-opening";
+};
 export type DisclosureDefect = "extra" | "missing" | "altered";
 export type Verb = "apply" | "offer" | "agree" | "grant" | "admit" | "spurn";
 
@@ -60,7 +66,7 @@ export interface PeerSnapshot {
   received: string[];
   known: string[];
   notifications?: number;
-  inspected: { accepted: boolean; escrowed: boolean; nests: number; decision?: string } | null;
+  inspected: { accepted: boolean; escrowed: boolean; nests: number; decision?: string; reason?: string } | null;
   nodes: {
     said: string;
     attributes: { status: { value: string }; private: unknown; contact: unknown; role: unknown };
@@ -75,6 +81,7 @@ export interface IpexPeer {
   readonly info: PeerInfo;
   connect(remote: PeerInfo, plan: DisclosurePlan): Promise<void>;
   send(verb: Verb, prior?: string, invalid?: boolean | DisclosureDefect): Promise<string>;
+  invalidReply(verb: "grant" | "spurn", prior: string, defect: ReplyDefect): Promise<{ said: string; sender: string }>;
   replay(said: string): Promise<void>;
   snapshot(inspect?: string): Promise<PeerSnapshot>;
 }
@@ -97,7 +104,7 @@ class TypeScriptPeer implements IpexPeer {
   readonly info: PeerInfo;
   private readonly graph: DisclosureGraph;
   private readonly hab: Hab;
-  private readonly received: { said: string; decision: string | undefined }[] = [];
+  private readonly received: { said: string; decision: string | undefined; reason?: string }[] = [];
   private remote?: PeerInfo;
   private plan?: DisclosurePlan;
   private intakeFailure?: unknown;
@@ -118,7 +125,11 @@ class TypeScriptPeer implements IpexPeer {
     try {
       for (const frame of await parseBytes(await readCesrRequestBytes(request))) {
         const result = await run(() => this.runtime.reactor.dispatch(frame));
-        this.received.push({ said: frame.body.said!, decision: result.decision ? result.decision.kind : undefined });
+        this.received.push({
+          said: frame.body.said!,
+          decision: result.decision ? result.decision.kind : undefined,
+          reason: result.decision && "reason" in result.decision ? result.decision.reason : undefined,
+        });
       }
       return new Response(null, { status: 204 });
     } catch (error) {
@@ -156,10 +167,10 @@ class TypeScriptPeer implements IpexPeer {
   }
 
   /** A nested credential carries its own issuer's proof, not the outer sender's. */
-  private signed(body: SerderACDC | SerderKERI, proofBody = body): CesrFrame {
-    const owner = body instanceof SerderACDC
+  private signed(body: SerderACDC | SerderKERI, proofBody = body, signer?: Hab): CesrFrame {
+    const owner = signer ?? (body instanceof SerderACDC
       ? this.graph.issuers.find((issuer) => issuer.pre === body.issuer)
-      : this.hab;
+      : this.hab);
     assertExists(owner, "fixture node issuer");
     return {
       body,
@@ -222,7 +233,7 @@ class TypeScriptPeer implements IpexPeer {
         ? this.signed(node, invalid === "altered" && !i ? this.disclosed(false)[0] : node)
         : { body: node, attachments: [], gvrsn: Vrsn_2_0 }
     );
-    return this.deliver(frame, !invalid);
+    return await this.deliver(frame, !invalid);
   }
 
   /** Local protocol processing and public delivery share the same signed frame. */
@@ -232,6 +243,40 @@ class TypeScriptPeer implements IpexPeer {
     assertEquals(Boolean(this.hby.db.exns.get(frame.body.said!)), accepted, `local outcome of ${frame.body.ilk}`);
     await this.post(frame);
     return frame.body.said!;
+  }
+
+  /** Build authenticated protocol-invalid replies without weakening the guarded public builders. */
+  async invalidReply(
+    verb: "grant" | "spurn",
+    prior: string,
+    defect: ReplyDefect,
+  ): Promise<{ said: string; sender: string }> {
+    const previous = this.hby.db.exns.get(prior);
+    assertExists(previous);
+    const owner = defect.kind === "sender" ? this.hby.makeHab("other-party") : this.hab;
+    if (owner !== this.hab) {
+      // The stored KEL replay is body-first; select its actual attachment genus before decoding.
+      const wire = acceptedEventReplayMessage(this.hby, owner.pre, 0, Vrsn_2_0).message;
+      for (const frame of parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire))) await this.post(frame);
+    }
+    const nodes = verb === "grant" ? this.disclosed(false) : [];
+    const [body] = exchange(`/ipex/${verb}`, { m: "invalid reply", ...(nodes.length ? { o: [nodes[0].said] } : {}) }, {
+      sender: owner.pre,
+      recipient: defect.kind === "recipient" ? this.hab.pre : previous.pre!,
+      xid: defect.kind === "exchange-id"
+        ? new Diger({
+          code: DigDex.Blake3_256,
+          raw: Diger.digest(new TextEncoder().encode("other conversation"), DigDex.Blake3_256),
+        }).qb64
+        : previous.sad!.x as string,
+      dig: defect.kind === "prior" ? defect.said : prior,
+      modifiers: verb === "grant" ? { dp: [[]] } : {},
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+    });
+    const frame = this.signed(body, body, owner);
+    frame.nests = nodes.map((node) => this.signed(node));
+    return { said: await this.deliver(frame, false), sender: owner.pre };
   }
 
   /** Replay actual retained exchange evidence through ordinary HTTP ingress. */
@@ -257,6 +302,7 @@ class TypeScriptPeer implements IpexPeer {
           escrowed: db.epse.get(inspect) !== null,
           nests: db.enst.get(inspect).length,
           decision: this.received.find(({ said }) => said === inspect)?.decision,
+          reason: this.received.find(({ said }) => said === inspect)?.reason,
         }
         : null,
       nodes: (grant ? loadNests(db, grant.said!) : []).map(({ body }) => {
@@ -294,6 +340,9 @@ class PythonPeer implements IpexPeer {
   }
   send(verb: Verb, prior?: string, invalid: boolean | DisclosureDefect = false): Promise<string> {
     return this.command("send", { verb, prior, invalid });
+  }
+  invalidReply(verb: "grant" | "spurn", prior: string, defect: ReplyDefect): Promise<{ said: string; sender: string }> {
+    return this.command("invalid_reply", { verb, prior, defect });
   }
   async replay(said: string): Promise<void> {
     await this.command("replay", { said });
