@@ -18,10 +18,10 @@ interface ReplyCursor {
   prepared?: PreparedCesrTarget;
 }
 
-/** A correlated reply batch stays ordered; refused packets retain their exact wire. */
+/** Reply batches advance in order; refused targets retry independently with their exact wire. */
 type OutboundReply =
-  | { kind: "cues"; cues: ReplyCursor[]; index: number }
-  | { kind: "packet"; packet: PreparedCesrTarget };
+  | { kind: "reply-batch"; cues: ReplyCursor[]; index: number }
+  | { kind: "retry-packet"; packet: PreparedCesrTarget };
 
 /**
  * Shared host-side responder for indirect and witness runtimes.
@@ -87,7 +87,7 @@ export class Respondant {
     if (emission?.kind !== "wire") throw new RangeError("Cue delivery requires wire");
     const route = this.poster.findBytesRoute(sender, { recipient, recipientIsPrefix: true, topic });
     if (route?.targets.length) {
-      this.outgoing.push({ kind: "cues", cues: [{ emission, hab: sender, route, targetIndex: 0 }], index: 0 });
+      this.outgoing.push({ kind: "reply-batch", cues: [{ emission, hab: sender, route, targetIndex: 0 }], index: 0 });
     }
     source.pull();
     return true;
@@ -99,7 +99,7 @@ export class Respondant {
     const route = this.routeForEmission(emission, hab);
     if (route?.targets.length) {
       const sender = this.hby.habs.get(route.sender) ?? hab;
-      this.outgoing.push({ kind: "cues", cues: [{ emission, hab: sender, route, targetIndex: 0 }], index: 0 });
+      this.outgoing.push({ kind: "reply-batch", cues: [{ emission, hab: sender, route, targetIndex: 0 }], index: 0 });
     }
   }
 
@@ -114,7 +114,7 @@ export class Respondant {
         for (const emission of emissions) yield* emission.messages;
       },
     });
-    if (cues.length) this.outgoing.push({ kind: "cues", cues, index: 0 });
+    if (cues.length) this.outgoing.push({ kind: "reply-batch", cues, index: 0 });
     reply.takeAll();
     return stream;
   }
@@ -125,7 +125,7 @@ export class Respondant {
     const captured = reply.peekAll();
     if (!captured) return false;
     const { cues } = this.interpretReplies(hab, captured.cues);
-    if (cues.length) this.outgoing.push({ kind: "cues", cues, index: 0 });
+    if (cues.length) this.outgoing.push({ kind: "reply-batch", cues, index: 0 });
     reply.takeAll();
     return true;
   }
@@ -171,7 +171,7 @@ export class Respondant {
   }
 
   private closeReply(reply: OutboundReply): void {
-    if (reply.kind === "packet") return;
+    if (reply.kind === "retry-packet") return;
     const errors: unknown[] = [];
     for (const cue of reply.cues.splice(0)) {
       try {
@@ -184,7 +184,7 @@ export class Respondant {
     if (errors.length) throw new AggregateError(errors, "Reply cursor cleanup failed");
   }
 
-  /** Advance each captured batch once; concrete target preparation and transport remain owned operations. */
+  /** Own cancellation and joined cleanup for one finite outgoing pass. */
   process(): Operation<void> {
     // deno-lint-ignore no-this-alias -- The operation owns this finite output pass.
     const self = this;
@@ -204,54 +204,70 @@ export class Respondant {
           complete();
         }
       });
-      const count = self.outgoing.length;
-      for (let index = 0; index < count && !self.closed; index++) {
-        const reply = self.outgoing.peekHead();
-        if (!reply) break;
-        active.signal.throwIfAborted();
-        let done = true;
-        if (reply.kind === "packet") {
-          done = (yield* attemptPreparedCesrTarget(reply.packet, self.poster.services, active.signal, {
-            reactor: self.reactor,
-          })) === "complete";
-        } else {
-          const cue = reply.cues[reply.index];
-          const next = yield* self.prepareReplyTarget(reply);
-          done = next.kind === "done";
-          if (next.kind === "target") {
-            const target = next.target;
-            const outcome = yield* attemptPreparedCesrTarget(target, self.poster.services, active.signal, {
-              reactor: self.reactor,
-            });
-            if (outcome === "complete" || outcome === "refused" && !self.closed) {
-              active.signal.throwIfAborted();
-              if (outcome === "refused") self.outgoing.push({ kind: "packet", packet: target });
-              cue.prepared = undefined;
-              if (++cue.targetIndex === cue.route.targets.length) {
-                cue.targetIndex = 0;
-                cue.message = undefined;
-              }
-            }
-          }
-        }
-        active.signal.throwIfAborted();
-        if (done) {
-          try {
-            self.closeReply(reply);
-          } finally {
-            self.outgoing.pull();
-          }
-        } else {
-          self.outgoing.pull();
-          self.outgoing.push(reply);
-        }
-      }
+      yield* self.processOutgoingPass(active.signal);
     });
   }
 
+  /** Advance each initially queued item once; preparation/transport failures retain the head and additions wait. */
+  private *processOutgoingPass(signal: AbortSignal): Operation<void> {
+    const count = this.outgoing.length;
+    for (let index = 0; index < count && !this.closed; index++) {
+      const reply = this.outgoing.peekHead();
+      if (!reply) break;
+      signal.throwIfAborted();
+      let progress: "finished" | "pending";
+      if (reply.kind === "retry-packet") {
+        const outcome = yield* attemptPreparedCesrTarget(reply.packet, this.poster.services, signal, {
+          reactor: this.reactor,
+        });
+        progress = outcome === "complete" ? "finished" : "pending";
+      } else {
+        progress = yield* this.advanceReplyBatch(reply, signal);
+      }
+      signal.throwIfAborted();
+      if (progress === "finished") {
+        try {
+          this.closeReply(reply);
+        } finally {
+          this.outgoing.pull();
+        }
+      } else {
+        this.outgoing.pull();
+        this.outgoing.push(reply);
+      }
+    }
+  }
+
+  /** Attempt one batch target, retaining refused packets separately so other destinations can progress. */
+  private *advanceReplyBatch(
+    reply: Extract<OutboundReply, { kind: "reply-batch" }>,
+    signal: AbortSignal,
+  ): Operation<"finished" | "pending"> {
+    const next = yield* this.prepareReplyTarget(reply);
+    if (next.kind === "done") return "finished";
+    if (next.kind === "more") return "pending";
+
+    const outcome = yield* attemptPreparedCesrTarget(next.target, this.poster.services, signal, {
+      reactor: this.reactor,
+    });
+    if (outcome === "refused" && this.closed) return "pending";
+    signal.throwIfAborted();
+
+    // Retry the exact prepared packet independently while the batch advances to its next target.
+    if (outcome === "refused") this.outgoing.push({ kind: "retry-packet", packet: next.target });
+    const cue = reply.cues[reply.index];
+    cue.prepared = undefined;
+    if (++cue.targetIndex === cue.route.targets.length) {
+      cue.targetIndex = 0;
+      cue.message = undefined;
+    }
+    return "pending";
+  }
+
+  /** Prepare one target lazily; exhausting a cue defers the next cue to another pass. */
   private *prepareReplyTarget(
-    reply: Extract<OutboundReply, { kind: "cues" }>,
-  ): Operation<{ kind: "target"; target: PreparedCesrTarget } | { kind: "done" | "more" }> {
+    reply: Extract<OutboundReply, { kind: "reply-batch" }>,
+  ): Operation<{ kind: "target"; target: PreparedCesrTarget } | { kind: "done" } | { kind: "more" }> {
     const cue = reply.cues[reply.index];
     if (!cue) return { kind: "done" };
     if (cue.prepared) return { kind: "target", target: cue.prepared };

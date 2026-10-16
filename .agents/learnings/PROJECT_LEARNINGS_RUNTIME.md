@@ -64,6 +64,9 @@ preparation and retains the exact prepared packet for retry; no replacement code
 or generic output executor is needed.
 Finite passes use their initial extent. Respondant owns lazy cursors, ordered reply
 batches and once-signed retry packets through actual Poster/Reactor/ReplyStreams.
+Within Respondant, process owns operation lifetime, processOutgoingPass owns queue
+rotation, and advanceReplyBatch owns target progress. Refused targets become
+independent retry packets; batch traversal order does not guarantee remote acceptance order.
 QueryCoordinator owns plain requests, signed packets and joined response I/O.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
 query sender remains. QueryReply peek/take returns data; request owners publish
