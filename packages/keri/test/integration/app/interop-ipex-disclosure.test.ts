@@ -35,6 +35,40 @@ import { createInteropContext, randomPort, spawnChild, stopChild } from "./inter
 const PEER = fromFileUrl(new URL("../../fixtures/ipex-http-peer.py", import.meta.url));
 type Mode = "apply" | "offer" | "spurn-apply" | "spurn-offer";
 
+/** Build a full commitment and its status-only partial with identical SAIDs. */
+function disclosure(
+  issuer: string,
+  options: { issuee?: string; edge?: MapperMap } = {},
+): { full: SerderACDC; partial: SerderACDC } {
+  const nonce = () => new Noncer({ code: NonceDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
+  const full = acdcmap(issuer, {
+    ...options,
+    uuid: nonce(),
+    attribute: {
+      d: "",
+      u: nonce(),
+      status: { d: "", u: nonce(), value: "citizen" },
+      private: { d: "", u: nonce(), value: "hidden-value" },
+    },
+    kind: Kinds.json,
+  });
+  const compactor = new Compactor({
+    mad: structuredClone(full.sad!.a) as MapperMap,
+    kind: Kinds.json,
+    verify: false,
+  });
+  compactor.compact(["a/status/"], "a");
+  const partial = acdcmap(issuer, {
+    uuid: full.sad!.u as string,
+    schema: full.sad!.s as MapperMap,
+    attribute: compactor.partials!["a/status/"].mad,
+    edge: full.sad!.e as MapperMap | undefined,
+    kind: Kinds.json,
+  });
+  assertEquals(partial.said, full.said);
+  return { full, partial };
+}
+
 /** Wait on observed peer state with an elapsed deadline; no whole-runtime pumping. */
 async function observed<T>(label: string, read: () => T | null | undefined): Promise<T> {
   const deadline = performance.now() + 35_000;
@@ -57,7 +91,11 @@ function jsonFile<T>(path: string): T | null {
 }
 
 /** One direction and conversation family, with fresh independent key stores and listeners. */
-async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
+async function conversation(
+  tsIssuer: boolean,
+  mode: Mode,
+  operator?: "I2I" | "NI2I" | "E1E" | "AND" | "OR",
+): Promise<void> {
   const context = await createInteropContext();
   let child: ReturnType<typeof spawnChild> | undefined;
   let server: Deno.HttpServer<Deno.NetAddr> | undefined;
@@ -71,37 +109,63 @@ async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
       });
       try {
         const hab = hby.makeHab("typescript");
-        const nonce = () =>
-          new Noncer({ code: NonceDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
-        const full = acdcmap(hab.pre, {
-          uuid: nonce(),
-          attribute: {
-            d: "",
-            u: nonce(),
-            status: { d: "", u: nonce(), value: "citizen" },
-            private: { d: "", u: nonce(), value: "hidden-value" },
-          },
-          kind: Kinds.json,
-        });
-        const compactor = new Compactor({
-          mad: structuredClone(full.sad!.a) as MapperMap,
-          kind: Kinds.json,
-          verify: false,
-        });
-        compactor.compact(["a/status/"], "a");
-        const partial = acdcmap(hab.pre, {
-          uuid: full.sad!.u as string,
-          schema: full.sad!.s as MapperMap,
-          attribute: compactor.partials!["a/status/"].mad,
-          kind: Kinds.json,
-        });
-        assertEquals(partial.said, full.said);
+        let { full, partial } = disclosure(hab.pre);
+        const authority = operator && tsIssuer ? hby.makeHab("authority") : undefined;
+        let nodes = [partial], badNodes: SerderACDC[] = [];
+        if (authority) {
+          const far = disclosure(authority.pre, { issuee: operator === "I2I" ? hab.pre : authority.pre });
+          /** Vary relation truth while retaining independently signed node evidence. */
+          const near = (far: SerderACDC, invalid = false) =>
+            disclosure(hab.pre, {
+              issuee: authority.pre,
+              edge: operator === "AND" || operator === "OR"
+                ? {
+                  d: "",
+                  o: operator,
+                  authority: {
+                    o: operator === "AND" ? "OR" : "AND",
+                    link: { n: far.said, o: invalid && operator === "OR" ? "I2I" : "NI2I" },
+                    sameIssuee: { n: far.said, o: operator === "AND" ? "I2I" : "E1E" },
+                  },
+                  check: { n: far.said, o: operator === "AND" && !invalid ? "E1E" : "I2I" },
+                }
+                : { d: "", authority: { n: far.said, o: operator! } },
+            });
+          ({ full, partial } = near(far.partial));
+          nodes = [partial, far.partial];
+          if (operator === "NI2I") badNodes = nodes;
+          else if (operator === "AND" || operator === "OR") badNodes = [near(far.partial, true).partial, far.partial];
+          else {
+            const badFar = disclosure(authority.pre, { issuee: operator === "I2I" ? authority.pre : hab.pre });
+            badNodes = [near(badFar.partial).partial, badFar.partial];
+          }
+        }
         const schema = (full.sad!.s as { $id: string }).$id;
-        const plan: DisclosurePlan = [[schema, "/", ["a/status/"]]];
+        const plan: DisclosurePlan = [
+          [schema, "/", ["a/status/"]],
+          ...(operator
+            ? [
+              [
+                schema,
+                operator === "AND" || operator === "OR" ? "/e/authority/link/_/" : "/e/authority/_/",
+                ["a/status/"],
+              ] as const,
+            ]
+            : []),
+        ];
+        const receivedGrants: { said: string; kind: string | undefined }[] = [];
         server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
           try {
             const wire = await readCesrRequestBytes(request);
-            await run(() => runtime.reactor.processBytes(wire));
+            for (const frame of await parseBytes(wire)) {
+              const result = await run(() => runtime.reactor.dispatch(frame));
+              if (result.envelope.serder.route === "/ipex/grant") {
+                receivedGrants.push({
+                  said: frame.body.said!,
+                  kind: result.decision ? result.decision.kind : undefined,
+                });
+              }
+            }
             return new Response(null, { status: 204 });
           } catch (error) {
             intakeFailure = error;
@@ -119,6 +183,7 @@ async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
             `http://127.0.0.1:${server.addr.port}/`,
             schema,
             String(randomPort()),
+            operator ?? "-",
           ],
           context.env,
           context.repoRoot,
@@ -160,6 +225,16 @@ async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
             genusify: true,
           });
           await post((await parseBytes(kel))[0]);
+          if (authority) {
+            const inception = authority.kever!.serder;
+            const kel = messagize(inception, {
+              sigers: authority.sign(inception.raw, true),
+              gvrsn: Vrsn_2_0,
+              pipelined: true,
+              genusify: true,
+            });
+            await post((await parseBytes(kel))[0]);
+          }
           await observed("verified Python KEL", () => read(() => hby.db.getKever(peer.pre)));
           const received = (verb: string) =>
             observed(`accepted peer ${verb}`, () =>
@@ -169,39 +244,48 @@ async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
                 }
                 return null;
               }));
-          const signed = (body: SerderACDC | SerderKERI): CesrFrame => ({
-            body,
-            gvrsn: Vrsn_2_0,
-            attachments: messageAttachmentGroups({
-              tsgs: [
-                new TransIdxSigGroup(
-                  new Prefixer({ qb64: hab.pre }),
-                  NumberPrimitive.fromNum(BigInt(hab.kever!.lastEst.s)),
-                  new Diger({ qb64: hab.kever!.lastEst.d }),
-                  hab.sign(body.raw, true),
-                ),
-              ],
-            }, Vrsn_2_0),
-          });
-          const send = async (verb: string, prior?: SerderKERI) => {
-            const nodes = verb === "offer" || verb === "grant" ? [partial] : [];
-            const body = ipexExnBody(hab.pre, `/ipex/${verb}` as IpexRoute, nodes, {
-              message: verb,
+          /** Sign a child with its issuer's key, independently of the outer sender. */
+          const signed = (body: SerderACDC | SerderKERI): CesrFrame => {
+            const owner = body instanceof SerderACDC && body.issuer === authority?.pre ? authority! : hab;
+            return ({
+              body,
+              gvrsn: Vrsn_2_0,
+              attachments: messageAttachmentGroups({
+                tsgs: [
+                  new TransIdxSigGroup(
+                    new Prefixer({ qb64: owner.pre }),
+                    NumberPrimitive.fromNum(BigInt(owner.kever!.lastEst.s)),
+                    new Diger({ qb64: owner.kever!.lastEst.d }),
+                    owner.sign(body.raw, true),
+                  ),
+                ],
+              }, Vrsn_2_0),
+            });
+          };
+          let rejected: string | undefined;
+          const send = async (verb: string, prior?: SerderKERI, invalid = false) => {
+            const carried = verb === "grant"
+              ? invalid ? badNodes : nodes
+              : verb === "offer" && !operator
+              ? nodes
+              : [];
+            const body = ipexExnBody(hab.pre, `/ipex/${verb}` as IpexRoute, carried, {
+              message: invalid ? "invalid chain" : verb,
               prior,
               recipient: peer.pre,
               ...(!prior ? { xid: full.said!, plan } : {}),
             });
             const frame = signed(body);
-            if (nodes.length) {
-              frame.nests = nodes.map((node) =>
-                verb === "grant"
+            if (carried.length) {
+              frame.nests = carried.map((node, index) =>
+                verb === "grant" && !(invalid && operator === "NI2I" && index === 1)
                   ? signed(node)
                   : { body: node, attachments: [], gvrsn: Vrsn_2_0 }
               );
             }
             const wire = await collectPayload(framePayload(frame));
             await run(() => runtime.reactor.processBytes(wire));
-            assertExists(hby.db.exns.get(body.said!), `local acceptance of ${verb}`);
+            assertEquals(Boolean(hby.db.exns.get(body.said!)), !invalid, `local outcome of ${verb}`);
             await post(frame);
             return body;
           };
@@ -213,6 +297,7 @@ async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
               if (mode === "spurn-offer") await received("spurn");
               else {
                 const agree = await received("agree");
+                if (operator) rejected = (await send("grant", agree, true)).said!;
                 await send("grant", agree);
                 await received("admit");
               }
@@ -232,7 +317,15 @@ async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
           }
           const result = await observed(
             "Python assertions",
-            () => read(() => jsonFile<{ lineage: string[]; credential: string | null }>(`${context.home}/result.json`)),
+            () =>
+              read(() =>
+                jsonFile<{
+                  lineage: string[];
+                  credential: string | null;
+                  nodes: string[];
+                  rejected: string | null;
+                }>(`${context.home}/result.json`)
+              ),
           );
           assertEquals((await child!.status).success, true, diagnostics.join("\n"));
           const verbs = mode === "spurn-apply"
@@ -248,6 +341,19 @@ async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
             return body;
           });
           assertEquals(lineage.map((body) => body.said!), result.lineage);
+          if (operator) {
+            if (tsIssuer) assertEquals(result.rejected, rejected);
+            else {
+              rejected = result.rejected!;
+              const observation = receivedGrants.find((grant) => grant.said === rejected);
+              assertExists(observation, "the invalid grant reached actual protocol dispatch");
+              assertEquals(observation.kind, "reject");
+            }
+            assertExists(rejected);
+            assertEquals(hby.db.exns.get(rejected), null);
+            assertEquals(hby.db.epse.get(rejected), null);
+            assertEquals(hby.db.enst.get(rejected), []);
+          }
           assertEquals(lineage[0].sad!.p, "");
           for (let i = 1; i < lineage.length; i++) {
             const prior = lineage[i - 1], reply = lineage[i];
@@ -262,19 +368,23 @@ async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
           } else {
             const grant = lineage.find((body) => body.route === "/ipex/grant")!;
             const nests = loadNests(hby.db, grant.said!);
-            assertEquals(nests.length, 1);
+            assertEquals(nests.length, operator ? 2 : 1);
+            assertEquals(nests.map((nest) => nest.body.said!), result.nodes);
+            for (const nest of nests) {
+              assertInstanceOf(nest.body, SerderACDC);
+              assertEquals((nest.body.sad!.a as { status: { value: string } }).status.value, "citizen");
+              assertEquals(typeof (nest.body.sad!.a as { private: unknown }).private, "string");
+              assertEquals(new TextDecoder().decode(nest.body.raw).includes("hidden-value"), false);
+              assertEquals(
+                hby.db.exns.get(nest.body.said!),
+                null,
+                "a parent does not independently accept its children",
+              );
+            }
             const node = nests[0].body;
             assertInstanceOf(node, SerderACDC);
             assertEquals(node.said, result.credential);
-            assertEquals((node.sad!.a as { status: { value: string } }).status.value, "citizen");
-            assertEquals(typeof (node.sad!.a as { private: unknown }).private, "string");
-            assertEquals(new TextDecoder().decode(node.raw).includes("hidden-value"), false);
             if (tsIssuer) assertEquals(node.said, full.said);
-            assertEquals(
-              hby.db.exns.get(node.said!),
-              null,
-              "grant acceptance does not independently accept a credential",
-            );
           }
         });
       } finally {
@@ -294,5 +404,9 @@ async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
 for (const tsIssuer of [true, false]) {
   for (const mode of ["apply", "offer", "spurn-apply", "spurn-offer"] as const) {
     Deno.test(`IPEX ${tsIssuer ? "TS → Py" : "Py → TS"}: ${mode} over HTTP`, () => conversation(tsIssuer, mode));
+  }
+  for (const operator of ["I2I", "NI2I", "E1E", "AND", "OR"] as const) {
+    Deno.test(`IPEX ${tsIssuer ? "TS → Py" : "Py → TS"}: ${operator} chain refusal then admission`, () =>
+      conversation(tsIssuer, "apply", operator));
   }
 }

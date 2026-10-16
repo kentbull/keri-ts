@@ -3,12 +3,20 @@
 This is the acceptance matrix for the cleanup/release goal, extended by Kent's
 2026-10-15 request. The single-controller HTTP apply/grant probe passes at
 `366808c8`; it is standalone evidence and does not satisfy this maintained matrix.
-The maintained `interop-ipex-disclosure.test.ts` now covers both single-controller
+The maintained `interop-ipex-disclosure.test.ts` covers both single-controller
 HTTP directions for apply-first and offer-first conversations through admit, plus
-spurn after apply and offer. Both stores assert accepted lineage and retained
-partial nodes. The local eight-case run uses consolidated mailbox fork `331f32e4`.
-This does not cover chained edges, multiple/progressive attribute disclosures,
-multisig, witnesses/mailboxes, restart or presentation-registry KRAM cutoffs.
+spurn after apply and offer. Its ten additional edge cases exercise two-node
+chains with I2I, NI2I, E1E and nested AND/OR. Each sends a failing grant followed by
+a valid grant in the same conversation. I2I/E1E reject identity mismatches; NI2I
+relaxes identity without allowing an unsigned far node; groups distinguish mixed
+true/false reductions. Two independent issuer keys authenticate the chain nodes.
+Both peers' stores assert accepted lineage, refused-grant absence and retained
+partial nodes. Both nodes reveal status while retaining a private commitment.
+The selected reference is consolidated mailbox fork `331f32e4`; #485's initial
+eight cases passed all twelve selected CI owners before the chain extension.
+This does not cover multi-hop/branching graphs, all malformed-edge/schema controls,
+multiple/progressive attribute disclosures, multisig, witnesses/mailboxes, restart
+or presentation-registry KRAM cutoffs.
 The broader family gates below remain open until their real assertions pass.
 
 ## Pairwise cases
@@ -98,8 +106,9 @@ actual stored representation, not a separately retained producer object.
 1. Qualify the maintained pairwise single-controller HTTP cases and refreshed
    consolidated mailbox reference pin in CI. Local real-peer coverage now includes
    offer/agree/admit and dedicated spurn cases in both directions.
-2. Add focused chained-credential and supported leaf/group edge cases in both
-   directions. In separate keri-ts-only cases, refactor operator/node-validity
+2. Qualify the focused two-node leaf/group cases in both directions, then extend
+   to multi-hop/branching graphs and malformed-edge/schema controls. In separate
+   keri-ts-only cases, refactor operator/node-validity
    decisions first, then implement DI2I and sufficiently defined NOT semantics in
    cohesive follow-ups. Keep both operators out of Python interop until supported.
 3. Add multiple/nested blinding and progressive reveal cases, including leakage,
