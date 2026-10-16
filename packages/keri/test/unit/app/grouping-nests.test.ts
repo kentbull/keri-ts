@@ -46,7 +46,7 @@ import {
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { approveMultisigIpex, groupIpexPartial } from "../../../src/app/ipex-grouping.ts";
 import { ipexApplyExn } from "../../../src/app/ipexing.ts";
-import { publishProposal, waitForOneApproval } from "../../../src/app/multisig-workflows.ts";
+import { approvePendingMultisigProposal, publishProposal } from "../../../src/app/multisig-workflows.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
@@ -225,9 +225,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         yield* runtime.reactor.processBytes(concatBytes(bob.endorse(peer, { pipelined: false }), paths), {
           local: true,
         });
-        const result = yield* waitForOneApproval(left, runtime, {
-          pollTurns: 1,
-          pollBudgetMs: 1,
+        const result = yield* approvePendingMultisigProposal(left, runtime, {
           callbacks: {
             approveProposal: () => true,
             chooseGroupAlias: () => "group",
@@ -249,9 +247,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         yield* runtime.reactor.processBytes(concatBytes(bob.endorse(rpyWrapper, { pipelined: false }), rpyPaths), {
           local: true,
         });
-        const replyResult = yield* waitForOneApproval(left, runtime, {
-          pollTurns: 1,
-          pollBudgetMs: 1,
+        const replyResult = yield* approvePendingMultisigProposal(left, runtime, {
           callbacks: {
             approveProposal: () => true,
             chooseGroupAlias: () => "group",
@@ -276,9 +272,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         yield* runtime.reactor.processBytes(concatBytes(bob.endorse(vcpWrapper, { pipelined: false }), vcpPaths), {
           local: true,
         });
-        const registryResult = yield* waitForOneApproval(left, runtime, {
-          pollTurns: 1,
-          pollBudgetMs: 1,
+        const registryResult = yield* approvePendingMultisigProposal(left, runtime, {
           callbacks: {
             approveProposal: () => true,
             chooseGroupAlias: () => "group",
@@ -324,9 +318,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         yield* runtime.reactor.processBytes(concatBytes(bob.endorse(issWrapper, { pipelined: false }), issPaths), {
           local: true,
         });
-        const issueResult = yield* waitForOneApproval(left, runtime, {
-          pollTurns: 1,
-          pollBudgetMs: 1,
+        const issueResult = yield* approvePendingMultisigProposal(left, runtime, {
           callbacks: {
             approveProposal: () => true,
             chooseGroupAlias: () => "group",
@@ -784,9 +776,7 @@ for (const route of ["ixn", "vcp"] as const) {
           });
           assertNotEquals(left.db.getKever(b.hab.pre)?.said, event.serder.said);
           let prompted = "";
-          const result = yield* waitForOneApproval(left, runtime, {
-            pollTurns: 1,
-            pollBudgetMs: 1,
+          const result = yield* approvePendingMultisigProposal(left, runtime, {
             callbacks: {
               approveProposal: ({ group }) => {
                 prompted = group;
@@ -827,9 +817,7 @@ Deno.test("multisig issuance missing its credential neither prompts nor accepts 
         });
         assertNotEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
         let prompted = false;
-        const result = yield* waitForOneApproval(left, runtime, {
-          pollTurns: 1,
-          pollBudgetMs: 1,
+        const result = yield* approvePendingMultisigProposal(left, runtime, {
           callbacks: {
             approveProposal: () => {
               prompted = true;

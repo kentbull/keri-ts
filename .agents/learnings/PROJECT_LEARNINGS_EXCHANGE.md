@@ -80,6 +80,9 @@ so later peer proofs can replay without another approval prompt. Endpoint-role
 initiation likewise records each recipient-specific wrapper before delivery and
 returns those actual proposal identities. Preserve first-notice behavior or retries
 can republish approval unnecessarily.
+Direct stored-proposal approval is `approvePendingMultisigProposal`; it accepts
+only proposal selection and immediate UI decisions. Timed waits and delegated-group
+completion are private CLI orchestration, not exported workflow scheduling APIs.
 
 Normalization and Exchanger share supportsNestedExchange for the structural v2
 route gate. Handler opt-in, route-local child validation and independent proofs

@@ -7,12 +7,14 @@
  * - `join` polls mailbox notifications, signs the embedded event with local
  *   member keys, and republishes the approval EXN
  */
-import { type ThresholdSith } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { type SerderKERI, type ThresholdSith } from "cesr-ts";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
-import { type AgentRuntime } from "../agent-runtime.ts";
+import { type AgentRuntime, processMailboxTurn, runAgentRuntimeUntil } from "../agent-runtime.ts";
+import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import {
+  endpointRoleAccepted,
   groupSigningMembers,
   localGroupMember,
   proposeGroupEndpointRole,
@@ -28,13 +30,12 @@ import type { Hab, Habery } from "../habbing.ts";
 import {
   type ApprovalPromptContext,
   type ApprovalResult,
-  completeDelegationIfNeeded,
+  approvePendingMultisigProposal,
+  eventAccepted,
   type MultisigApprovalCallbacks,
+  type MultisigApprovalOptions,
   publishProposal,
-  waitForGroupAcceptance,
-  waitForLocalGroupCompletion,
-  waitForOneApproval,
-  waitForReplyAcceptance,
+  routeForKelEvent,
 } from "../multisig-workflows.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { withAgentRuntime } from "./common/context.ts";
@@ -725,4 +726,146 @@ function printIdentifier(
   if (delegationPhase) {
     console.log(`Delegation status  ${delegationPhase}`);
   }
+}
+
+/** Poll until a specific group KEL event is accepted or attempts expire. */
+function* waitForGroupAcceptance(
+  hby: Habery,
+  runtime: AgentRuntime,
+  serder: SerderKERI,
+  options: MultisigApprovalOptions & { pollTurns: number; pollBudgetMs: number },
+): Operation<boolean> {
+  if (eventAccepted(hby, serder)) {
+    return true;
+  }
+  for (let turn = 0; turn < options.pollTurns; turn++) {
+    yield* approvePendingMultisigProposal(hby, runtime, options);
+    if (eventAccepted(hby, serder)) {
+      return true;
+    }
+    yield* processMailboxTurn(runtime, { budgetMs: options.pollBudgetMs });
+    yield* runtime.reactor.processEscrowsOnce();
+    yield* sleep(250);
+  }
+  return eventAccepted(hby, serder);
+}
+
+/** Poll for and approve one pending multisig notification. */
+function* waitForOneApproval(
+  hby: Habery,
+  runtime: AgentRuntime,
+  options: MultisigApprovalOptions & { pollTurns: number; pollBudgetMs: number },
+): Operation<ApprovalResult | null> {
+  for (let turn = 0; turn < options.pollTurns; turn++) {
+    const result = yield* approvePendingMultisigProposal(hby, runtime, options);
+    if (result) {
+      return result;
+    }
+    yield* processMailboxTurn(runtime, { budgetMs: options.pollBudgetMs });
+    yield* runtime.reactor.processEscrowsOnce();
+    yield* sleep(250);
+  }
+  return null;
+}
+
+/** Wait for a locally authored group event to complete through stored approvals. */
+function* waitForLocalGroupCompletion(
+  hby: Habery,
+  runtime: AgentRuntime,
+  options: MultisigApprovalOptions & { pollTurns: number; pollBudgetMs: number },
+): Operation<ApprovalResult | null> {
+  if (!options.group || options.said) {
+    return null;
+  }
+  const groupHab = groupHabByAliasOrPrefix(hby, options.group);
+  if (!groupHab?.pre) {
+    return null;
+  }
+  const serder = localGroupJoinSerder(hby, groupHab.pre);
+  if (!serder) {
+    return null;
+  }
+  const route = routeForKelEvent(serder);
+  if (!route) {
+    return null;
+  }
+  const accepted = yield* waitForGroupAcceptance(hby, runtime, serder, options);
+  return {
+    route,
+    said: "",
+    embedded: serder.said ?? "",
+    group: groupHab.pre,
+    accepted,
+    deliveries: [],
+  };
+}
+
+/** Poll for endpoint-role reply state after a group RPY proposal. */
+function* waitForReplyAcceptance(
+  hby: Habery,
+  runtime: AgentRuntime,
+  groupPre: string,
+  role: string,
+  eid: string,
+  options: MultisigApprovalOptions & { pollTurns: number; pollBudgetMs: number },
+): Operation<boolean> {
+  if (endpointRoleAccepted(hby, groupPre, role, eid)) {
+    return true;
+  }
+  for (let turn = 0; turn < options.pollTurns; turn++) {
+    yield* approvePendingMultisigProposal(hby, runtime, options);
+    if (endpointRoleAccepted(hby, groupPre, role, eid)) {
+      return true;
+    }
+    yield* processMailboxTurn(runtime, { budgetMs: options.pollBudgetMs });
+    yield* runtime.reactor.processEscrowsOnce();
+    yield* sleep(250);
+  }
+  return endpointRoleAccepted(hby, groupPre, role, eid);
+}
+
+/** Complete the delegation workflow for an accepted delegated group event. */
+function* completeDelegationIfNeeded(
+  hby: Habery,
+  runtime: AgentRuntime,
+  pre: string,
+  proxy?: string,
+): Operation<string | null> {
+  const kever = hby.db.getKever(pre);
+  if (!kever?.delpre) {
+    return null;
+  }
+  const communicationHab = resolveDelegationCommunicationHab(hby, proxy);
+  if (!communicationHab) {
+    throw new ValidationError(
+      `Delegated group event for ${pre} requires --proxy <alias>.`,
+    );
+  }
+  runtime.delegating.beginLatest(pre, kever.sn, { communicationHab });
+
+  yield* runAgentRuntimeUntil(
+    runtime,
+    () => runtime.delegating.complete(pre, kever.sn),
+    { hab: communicationHab, timeoutMs: 120_000, pollMailbox: true },
+  );
+  return runtime.delegating.workflowStatus(pre, kever.sner.numh).phase;
+}
+
+function groupHabByAliasOrPrefix(hby: Habery, group: string): Hab | null {
+  return hby.habByName(group) ?? hby.habs.get(group) ?? null;
+}
+
+function localGroupJoinSerder(hby: Habery, groupPre: string): SerderKERI | null {
+  const kever = hby.db.getKever(groupPre);
+  if (kever?.serder) {
+    return kever.serder;
+  }
+  return hby.db.getEvtSerder(groupPre, groupPre);
+}
+
+function* sleep(ms: number): Operation<void> {
+  yield* action<void>((resolve) => {
+    const id = setTimeout(resolve, ms);
+    return () => clearTimeout(id);
+  });
 }
