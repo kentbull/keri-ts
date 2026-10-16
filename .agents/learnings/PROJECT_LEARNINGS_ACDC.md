@@ -9,7 +9,11 @@ enclosure; non-native count is null. Issuee projection needs disclosed attribute
 or the first aggregate member; a compact commitment does not disclose a recipient.
 
 V2 compactable ACDCs verify most-compact top-level commitments while visible raw
-still round-trips from visible SAD. Partial section-message ilks keep the section
+still round-trips from visible SAD. Preserve supplied canonical a/e/r section
+commitments, including partial roots; do not rehash their visible disclosure.
+Compute the credential's most-compact commitment independently, as KERIpy does.
+Blank semantic section mappings still need construction before disclosure.
+Partial section-message ilks keep the section
 expanded and verify embedded identifiers. V1 registry credentials use expanded-body
 top-level SAIDs after subject saidification. Extend the shared native matrix rather
 than creating a second ACDC parser.

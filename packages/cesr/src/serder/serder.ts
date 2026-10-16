@@ -1027,26 +1027,30 @@ function computeAcdcFieldVariants(
         };
       }
     }
-    const expanded = new Compactor({
-      mad: withAcdcSectionPlaceholder(label, value as SadMap) as MapperMap,
-      kind,
-      verify: false,
-      saidive: true,
-      strict: sectionConfig.strict,
-      saids: sectionConfig.saids,
-      makify: true,
-    });
-    expanded.trace(true);
-    if (label === "s" && verifySections && JSON.stringify(expanded.mad) !== JSON.stringify(value)) {
-      throw new DeserializeError("Invalid schema section commitment.");
+    const section = value as SadMap;
+    let display: unknown;
+    if (topLevelCompactable && label !== "s" && typeof section.d === "string" && section.d) {
+      // A disclosed section already carries its canonical commitment. Rehashing
+      // its visible partial would change that evidence without changing the credential SAID.
+      display = cloneDefault(section);
+    } else {
+      const expanded = new Compactor({
+        mad: withAcdcSectionPlaceholder(label, value as SadMap) as MapperMap,
+        kind,
+        verify: false,
+        saidive: true,
+        strict: sectionConfig.strict,
+        saids: sectionConfig.saids,
+        makify: true,
+      });
+      expanded.trace(true);
+      if (label === "s" && verifySections && JSON.stringify(expanded.mad) !== JSON.stringify(value)) {
+        throw new DeserializeError("Invalid schema section commitment.");
+      }
+      display = expanded.mad;
     }
 
-    if (!topLevelCompactable) {
-      return {
-        display: expanded.mad,
-        compact: expanded.mad,
-      };
-    }
+    if (!topLevelCompactable) return { display, compact: display };
 
     const compacted = new Compactor({
       mad: withAcdcSectionPlaceholder(label, value as SadMap) as MapperMap,
@@ -1059,7 +1063,7 @@ function computeAcdcFieldVariants(
     });
     compacted.compact();
     return {
-      display: compactify ? (compacted.said ?? compacted.mad) : expanded.mad,
+      display: compactify ? (compacted.said ?? compacted.mad) : display,
       compact: compacted.said ?? compacted.mad,
     };
   }
