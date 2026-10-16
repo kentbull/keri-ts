@@ -537,13 +537,15 @@ already propagated by this invocation are suppressed; foreign AbortErrors remain
 failures. Distinct consumer/read and cleanup failures propagate together. Successful
 idle/deadline expiry still ends a poll without accepting its incomplete event.
 
-Provider SSE performs no mailbox reads without HTTP demand, releases each LMDB
-iterator before suspension, and copies at most 64 KiB per transport pull from one
-admitted 4 MiB stored message. A blocked consumer cannot accumulate a mailbox
-replay in the platform stream queue. Provider responses reserve shared message,
-chunk and bounded topic-metadata credit before acquisition, with one stream slot
-across query correlation and nested output. Native row preflight checks the 4 MiB
-ceiling before copying. Director/runtime close joins cancellation before stores.
+Provider SSE performs no mailbox reads without HTTP demand and releases each LMDB
+iterator before suspension. One demanded row is framed as SSE and copied in
+64 KiB transport chunks; this granularity does not reject larger messages.
+Responses carry no byte/stream/topic/metadata limits or synthetic release callback.
+A query response correlates its selected cue, owns its nested reader, and cancels
+and joins that reader during cleanup. Unmatched/duplicate cues retain their order.
+Direct responses are tracked by the director itself. Director close wakes pending
+polls and rejects new direct and query responses before backing stores close.
+Keep nonnegative safe cursor ordinals and protocol cursor persistence.
 
 OOBI CESR responses enter the progressive Reactor directly, including canonical
 `application/cesr`, legacy `application/json+cesr` and `application/cesr+json`.
@@ -600,13 +602,13 @@ further JSON preparation and streamed CESR generation/export changes are deferre
 The Node host terminates a failing post-header body and reports its original error;
 it cannot replace already transmitted 200 headers with a new status.
 Finite JSON documents and receipt proofs retain whole-document semantics with
-bounded admission and joined cancellation. Mailbox admin response metadata admits
-1 MiB, and the raw operator SSE diagnostic report admits 16 MiB. Those finite
+bounded admission and joined cancellation. Mailbox admin response metadata still carries a 1 MiB ceiling scheduled for
+removal; the raw operator SSE diagnostic report has no byte ceiling. Those finite
 collectors use the same owned, cancellable byte reader.
 
-Provider connections and per-request topics now share finite runtime admission.
-Configured remote-worker counts and retained query cues still need their own
-handle/metadata boundary; these leases do not bound accepted configuration/state.
+Provider responses and per-request topics have no shared accounting. Remaining
+listener/runtime policy is removal work, not justification for new worker or query
+metadata bounds.
 
 Stored endpoint reply reconstruction reads through the typed reply store. It has
 no byte/proof-row limits or parallel counter-size estimator. Missing bodies return

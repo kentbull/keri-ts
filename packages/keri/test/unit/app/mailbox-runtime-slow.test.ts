@@ -1304,7 +1304,6 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
       const pollingHby = yield* createHabery({ name: clientName, headDirPath: clientHeadDirPath, skipConfig: true });
       const polls: Array<{ abort: AbortController; reader: ReadableStreamDefaultReader<Uint8Array> }> = [];
       try {
-        assertEquals(runtime.resources.limits.streams, 8);
         const requester = pollingHby.habByName("alice")!;
         for (let i = 0; i < 2; i++) {
           const abort = new AbortController();
@@ -1318,8 +1317,8 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
           polls.push({ abort, reader });
           assertStringIncludes(textDecoder.decode((yield* call(() => reader.read())).value), "retry:");
         }
-        assertEquals(runtime.resources.used.streams, 2);
-        assertEquals(yield* postForward(url, authorized), 204, "two live SSE polls leave ingress headroom");
+        assertEquals(polls.length, 2);
+        assertEquals(yield* postForward(url, authorized), 204, "two live SSE polls do not block ingress");
         assertEquals(mailboxer.getTopicMsgs(mailboxTopicKey(recipientPre, "/challenge")).length, 2);
       } finally {
         for (const { abort, reader } of polls) {
