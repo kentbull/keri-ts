@@ -48,5 +48,6 @@ body protocol. Selected input never retries under another major version.
 Validate frozen vectors, text/binary domains, fragmented input, terminal shortages,
 scoped genus and nested proofs. Generated tables target KERIpy
 7143832813cac6a394ab1faf9be83bb3372be87c; live fork pins remain explicitly separate.
-The optional Effection bridge/TcpRead migration belongs to the
+The Effection bridge/TcpRead and scheduler subpath are removed. Applications own
+actual I/O and consume parse(source) directly; see the
 [parser plan](../../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md).

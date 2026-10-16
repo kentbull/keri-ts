@@ -51,8 +51,8 @@ import {
 import { Organizer } from "./organizing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
-import { attemptConverseCesrTcp, converseCesrTcp, type TcpReplyReceiver } from "./tcp-conversation.ts";
-import { attemptSendCesrTcp, sendCesrTcp } from "./tcp-egress.ts";
+import { converseCesrTcp, type TcpReplyReceiver } from "./tcp-conversation.ts";
+import { sendCesrTcp } from "./tcp-egress.ts";
 
 /** Delivery preference accepted by CLI and runtime exchange send helpers. */
 export type ExchangeDeliveryPreference = "auto" | "direct" | "indirect";
@@ -105,11 +105,11 @@ export function* sendPreparedCesrTarget(
   if (target.kind === "tcp") {
     if (receiver) {
       yield* converseCesrTcp(target.url, target.message, {
-        services,
+        clock: services.clock,
         signal,
-        replies: { services: receiver.services, reactor: receiver.reactor, local: true },
+        replies: { reactor: receiver.reactor, local: true },
       });
-    } else yield* sendCesrTcp(target.url, target.message, { services, signal });
+    } else yield* sendCesrTcp(target.url, target.message, { clock: services.clock, signal });
   } else if (target.kind === "http") {
     yield* postCesrMessage(
       target.url,
@@ -156,17 +156,15 @@ export function* attemptPreparedCesrTarget(
     signal?.throwIfAborted();
     return "complete";
   }
-  const result = receiver
-    ? yield* attemptConverseCesrTcp(target.url, target.message, {
-      services,
+  receiver
+    ? yield* converseCesrTcp(target.url, target.message, {
+      clock: services.clock,
       signal,
       replies: { ...receiver, local: true },
     })
-    : yield* attemptSendCesrTcp(target.url, target.message, { services, signal });
+    : yield* sendCesrTcp(target.url, target.message, { clock: services.clock, signal });
   signal?.throwIfAborted();
-  if (result.kind !== "refuse") return "complete";
-  if (result.error.reason === "busy") return "busy";
-  throw result.error;
+  return "complete";
 }
 
 interface PosterOptions {

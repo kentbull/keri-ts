@@ -832,38 +832,6 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
               "TCP preserves signed introduction",
             );
             assertEquals(poster.prepareBytesTarget(sender, { ...tcpRoute, kind: "direct" }, 0, message).kind, "tcp");
-            const busy = runtime.resources.reserve({ streams: runtime.resources.limits.streams - 1 });
-            if (busy.kind !== "reserve") throw new Error("Expected free stream credit");
-            try {
-              const remaining = runtime.resources.reserve({ streams: 1 });
-              if (remaining.kind !== "reserve") throw new Error("Expected last stream credit");
-              try {
-                assertEquals(yield* attemptPreparedCesrTarget(tcpTarget, runtime.services), "busy");
-                assertEquals(connections, 0, "TX refusal must precede socket acquisition");
-              } finally {
-                remaining.reservation.release();
-              }
-            } finally {
-              busy.reservation.release();
-            }
-            assertEquals(runtime.resources.used.streams, 0);
-            const reserve = runtime.resources.reserve,
-              foreign = new ResourceAdmissionError("foreign owner failure", "busy");
-            runtime.resources.reserve = () => {
-              throw foreign;
-            };
-            try {
-              assertStrictEquals(
-                yield* call(() =>
-                  assertRejects(() =>
-                    run(() => attemptPreparedCesrTarget(tcpTarget, runtime.services, undefined, runtime))
-                  )
-                ),
-                foreign,
-              );
-            } finally {
-              runtime.resources.reserve = reserve;
-            }
             const sent = yield* poster.sendBytes(sender, {
               recipient: recipient.pre,
               message,

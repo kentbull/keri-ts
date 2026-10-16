@@ -5,7 +5,6 @@
   "description": "Monorepo metadata for cesr-ts versioning and release tooling",
   "license": "Apache-2.0",
   "exports": {
-    ".": "./mod.ts",
-    "./effection": "./effection.ts"
+    ".": "./mod.ts"
   }
 }

@@ -55,10 +55,12 @@ export {
   type TcpReplyReceiver,
 } from "../app/tcp-conversation.ts";
 export {
+  openTcpConnection,
   sendCesrTcp,
   sendCesrTcpFrame,
+  sendCesrTcpSocket,
   streamCesrTcp,
-  type TcpRead,
+  type TcpConnection,
   type TcpSendOptions,
   type TcpSocketWriteOptions,
   type TcpSourceFactory,

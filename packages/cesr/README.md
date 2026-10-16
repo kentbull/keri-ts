@@ -15,58 +15,33 @@ npm install cesr-ts
 import { annotate, parseBytes } from "cesr-ts";
 
 const text = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
-const frames = await parseBytes(new TextEncoder().encode(text));
+const frames = parseBytes(new TextEncoder().encode(text));
 console.log(frames[0].body.ilk);
-const annotated = await annotate(text, { pretty: true });
+const annotated = annotate(text, { pretty: true });
 ```
 
-## Progressive parsing and optional Effection integration
+## Buffered decoding
 
-`parse(source, options)` consumes an async byte iterable and yields complete
-frames with pull backpressure. Pass an AbortSignal to the parser and the source
-when cancellation must interrupt pending I/O. This core API requires no Effection
-installation.
+`parse(source)` consumes an async byte iterable and yields complete frames with
+pull backpressure. Counted enclosures are buffered completely before their children
+are decoded. Consuming operations own cancellation; actual byte readers interrupt
+pending I/O and join their cleanup. CESR has no scheduler integration or Effection
+subpath.
 
-`parseBytes(bytes, options)` is the async complete-input convenience API, with
-an 8 MiB input budget by default. It returns frames and rejects malformed input.
-Both APIs transfer ownership of each successful frame's `essr` payload to the
-caller; call `frame.essr?.discard()` after consumption. The finite helper cleans
-up collected payloads if parsing fails before returning.
-
-Applications using Effection can install Effection and import the supported
-supplementary adapter from `cesr-ts/effection`:
-
-```ts
-import { call, each } from "effection";
-import { toEffectionFrames } from "cesr-ts/effection";
-
-// Inside an Operation, readChunks must honor the supplied signal.
-const channel = yield* toEffectionFrames((signal) => readChunks(signal));
-for (const frame of yield* each(channel.frames)) {
-  try {
-    yield* handleFrame(frame);
-  } finally {
-    if (frame.essr) yield* call(() => frame.essr.discard());
-  }
-  yield* each.next();
-}
-```
-
-A channel permits one subscription and does not queue frames ahead of demand.
-Leaving its scope aborts pending input and joins source cleanup. KERI and Tufa
-use this Operation model while the standalone CESR API stays framework-neutral.
+`parseBytes(bytes)` synchronously decodes complete finite input. Hydrated frames,
+including ordered ESSR Texters and nested children, are ordinary values that need
+no disposal. Both APIs reject malformed or truncated framing.
 
 ## Finite annotation and benchmark helpers
 
-`annotate()` and `annotateFrames()` are asynchronous and validate with the same
-progressive engine as `parse()`. Wire sniffing selects text or binary automatically. Annotation retains its input and rendered output.
-`annotate()` releases temporary ESSR payloads; successful `annotateFrames()` callers
-own each returned tree and call `discardFrame()` when finished.
+`annotate()` and `annotateFrames()` synchronously validate with the same finite
+decoder. Wire sniffing selects text or binary automatically. Annotation retains
+its input and rendered output and has no cancellation option.
 
 `benchmarkParser()` and `countFrames()` are asynchronous. The benchmark retains
 one replayable corpus and rejects malformed or truncated runs instead of reporting
 partial throughput. Annotation, collection and benchmark helpers have no input
-quota or max-bytes flag. `tephra validate` reads incrementally and releases each
+quota or max-bytes flag. `tephra validate` reads incrementally and validates each
 frame before requesting the next.
 
 ## CLI usage

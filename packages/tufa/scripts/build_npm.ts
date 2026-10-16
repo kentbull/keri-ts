@@ -91,7 +91,6 @@ function dntPackageMappings(
     "../keri/cli.ts": { name: "keri-ts", version: keriVersion, subPath: "cli" },
     "../keri/runtime.ts": { name: "keri-ts", version: keriVersion, subPath: "runtime" },
     "../cesr/mod.ts": { name: "cesr-ts", version: cesrVersion },
-    "../cesr/effection.ts": { name: "cesr-ts", version: cesrVersion, subPath: "effection" },
   };
 }
 

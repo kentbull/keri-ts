@@ -60,9 +60,9 @@ whole-enclosure database transaction or rollback framework.
 ## Migration and qualification
 
 Finite decoding and ordinary ESSR evidence replace the progressive engine.
-TcpRead and the Effection bridge remain transport migration work. First establish finite
-decoding responsibility, then switch behavior and delete its cursor/staging and
-dependent contracts in cohesive cuts. Keep one engine, no compatibility aliases
+TcpRead and the Effection bridge/export are removed; application scopes compose
+actual TCP sockets, receive processing and output. Finite decoding responsibility
+is established and its cursor/staging and dependent contracts are deleted. Keep one engine, no compatibility aliases
 or alternate strategy. The old early-delivery tests must become complete-enclosure
 checks when production behavior switches; retain fragmentation, framing, evidence,
 real network cleanup and current KERIpy interoperability coverage.

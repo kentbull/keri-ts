@@ -31,8 +31,7 @@ exceptions and blanket outbox/durable-recovery preservation instructions. Existi
 implementation is transitional and must be removed before release.
 
 ADR-0012 now requires buffered complete-enclosure decoding. Progressive parsing,
-its cursor/staging, FrameIntake/TcpRead and custom frame channels are transitional
-removal work. Early child delivery and giant-transfer memory/performance gates
+its cursor/staging, FrameIntake/TcpRead and custom frame channels are removed. Early child delivery and giant-transfer memory/performance gates
 are superseded; preserve incremental network input and concrete I/O cleanup.
 
 ## Decision
@@ -110,7 +109,7 @@ It does not defer domain preparation through a runtime, habitat, or callback
 embedded in the record. Incoming transport bytes enter the separately composed
 intake/protocol flow. Transport does not discover or invoke sibling processors.
 
-Reuse existing pull streams and frame channels; do not introduce a buffer solely
+Reuse existing pull byte streams; do not introduce a buffer solely
 to make the diagram look uniform. Actual payload/source handles may cross a flow
 when their concrete lifetime requires it; they are not deferred domain commands.
 

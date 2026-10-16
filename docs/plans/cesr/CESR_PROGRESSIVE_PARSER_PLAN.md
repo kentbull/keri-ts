@@ -15,15 +15,16 @@ use ordered Texter evidence. Existing file storage/crypto cleanup remains real.
 PR #459 merged the decoder after scoped validation. PR #461 moved Reactor,
 finite receipt/legacy multisig inspection and CLI grant scans off the custom
 frame channel. HTTP, witness and stored-replay inputs now own their iterators
-at the composition point; the two TCP bridge callers remain transitional.
+at the composition point. TCP applications now compose real connections with
+native receive/send tasks; the frame bridge, TcpRead and exported adapter are removed.
 
 ## Remaining cuts
 
 1. Input owners now bind external cancellation to native operations and check
    pulls/results before EOF or dispatch. Parser, finite annotation and benchmark
    parser-options forwarding are removed; benchmark operations own a direct signal.
-   Remove the remaining TcpRead and two TCP frame-channel callers, preserving
-   concrete blocked I/O interruption and joined cleanup.
+   TCP callers also own blocked I/O interruption and joined cleanup directly;
+   no custom parser/channel bridge remains.
 2. Remove remaining runtime/transport accounting and delivery/pump indirection
    under ADR-0013 without weakening actual socket/file cleanup.
 3. Resolve the reverse HTTP KERIpy genus contract and qualify successive messages,
