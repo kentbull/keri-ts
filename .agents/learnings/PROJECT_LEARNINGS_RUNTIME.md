@@ -48,7 +48,8 @@ source queue. Composition wires respondantCueSink; Respondant does not receive
 a runtime-shaped delivery bundle. Current CueDelivery owns lazy iterators and
 exact pending targets; queued delivery applies outcomes and retains failed wire.
 Ordinary cues, routes, packets and reply batches have no synthetic lifecycle.
-Source removal follows successful interpretation/transfer; failure preserves it.
+Consumers perform interpretation/publication/source removal directly, without a
+generic callback-based cue publication helper. Failure preserves the source.
 Drains use the initial queue extent, and no-emission records do not stop the pass.
 Real iterator cleanup occurs once, even if it throws. Custom sinks run outside
 guarded interpretation. Existing wrappers remain removal inputs, not new abstractions.
@@ -74,6 +75,8 @@ it before display/close; serial mailbox polling must not exhaust the query windo
 
 QueryReplies reserves SAIDs for correlation, not capacity. Capture matching replies
 before background consumption; duplicates may iterate the same readonly replay.
+QueryReply exposes peekAll/takeAll data, not an executable admit callback; the
+response owner publishes both concrete replies before taking the records.
 Only the final HTTP query controls its response. Earlier authorized replies transfer
 to ordinary delivery using their own frame's exact dispatch authorization. Final TSN
 pairs transfer atomically before slot removal, with independent response and queued

@@ -151,8 +151,10 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
         false,
         "No first-cue publication on second-cue failure",
       );
+      assertEquals(slot.peekAll()?.cues, pair, "failed preparation leaves the whole pair visible");
       failPrepare = false;
       const response = runtime.deliveries.openReply(runtime, sender, slot)!;
+      assertEquals(slot.peekAll(), undefined);
       assertEquals(slot.takeAll(), undefined);
       slot.close();
       const preparedCount = interpretations;
