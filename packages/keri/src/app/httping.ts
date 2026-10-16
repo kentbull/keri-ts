@@ -1,5 +1,5 @@
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import { defaultRuntimeServices, type RuntimeServices, type RuntimeTimer } from "./runtime-services.ts";
 
 /** One live HTTP response plus the controller that can still abort its body. */
 export interface HttpResponseHandle {
@@ -103,16 +103,28 @@ function* fetchResponseHandleInternal(
   return yield* resource<HttpResponseHandle | null>(function*(provide) {
     // The response body remains owned after headers settle and until this resource's scope exits.
     const controller = new AbortController();
+    // Forward the caller's signal into the actual request/body owner, preserving its reason.
+    const upstream = init.signal;
+    const cancel = () => controller.abort(upstream!.reason);
+    upstream?.addEventListener("abort", cancel, { once: true });
     let timedOut = false;
-    const timeoutId = timeoutMs === undefined ? undefined : services.clock.setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, timeoutMs);
+    let timeoutId: RuntimeTimer | undefined;
     /** A header timeout ends when fetch settles; body limits belong to its consumer. */
     const clearTimer = () => {
       if (timeoutId !== undefined) services.clock.clearTimeout(timeoutId);
     };
     try {
+      if (upstream?.aborted) cancel();
+      controller.signal.throwIfAborted();
+      if (timeoutMs !== undefined) {
+        timeoutId = services.clock.setTimeout(() => {
+          // A later deadline must not reclassify an earlier external cancellation as a timeout.
+          if (!controller.signal.aborted) {
+            timedOut = true;
+            controller.abort();
+          }
+        }, timeoutMs);
+      }
       let response: Response;
       try {
         const owner = yield* ownHttpResponse(
@@ -131,6 +143,7 @@ function* fetchResponseHandleInternal(
       clearTimer();
       yield* provide({ response, controller });
     } finally {
+      upstream?.removeEventListener("abort", cancel);
       clearTimer();
     }
   });

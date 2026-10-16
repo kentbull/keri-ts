@@ -204,7 +204,7 @@ async function handleNodeRequest(
     if (res.headersSent) {
       // A streamed body can fail after 200 headers; terminate that transfer instead of rewriting its status.
       res.destroy();
-      if (!(error instanceof DOMException && error.name === "AbortError" && signal.aborted)) options.onError(error);
+      if (!signal.aborted || error !== signal.reason) options.onError(error);
     } else if (!res.destroyed) {
       const fallback = options.onError(error);
       await writeNodeResponse(res, fallback);
