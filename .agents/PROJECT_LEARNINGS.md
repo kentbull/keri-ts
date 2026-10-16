@@ -2,10 +2,9 @@
 
 Routing and durable rules only. Current source, tests and normative contracts
 outrank these summaries. The [parity roadmap](../docs/plans/PARITY_ROADMAP.md)
-owns remaining work; do not duplicate its checklist here. Parser structure,
-nested consumers and optional KRAM intake are implemented. Explicit contracts,
-component ownership, storage/transport reconciliation and final qualification
-remain incomplete.
+owns remaining work. Buffered parsing, accounting/durability removal, concrete
+component ownership and the public runtime API reduction are implemented; final
+composed and installed-package qualification remains open.
 
 ## Read by subject
 
@@ -22,90 +21,59 @@ remain incomplete.
 
 ## Cross-topic rules
 
-[ADR-0013](../docs/adr/adr-0013-simple-component-flows.md) governs component
-flows and explicit contracts and supersedes conflicting older blanket budget,
-reservation, and runtime-container guidance. Its implementation is incomplete.
-The 2026-10-15 decision requires complete removal of application accounting and
-unsupported outbox/mailbox-consumer/KRAM-ready durability. Only a minimal private
-socket constraint supported by production evidence may remain. No no-op policies,
-renamed ledgers or dormant hooks. Preserve real protocol state and resource cleanup;
-old keri-ts API/data compatibility is not required. Add no migration readers,
-upgrade machinery or new-to-old version tests.
-ResourcePolicy, accounting errors and constructor plumbing are removed throughout
-CESR/KERI/Tufa; RuntimeServices contains only clock/HTTP. Queue/client/listener and
-reply-proof work caps are removed; intrinsic numeric guards use RangeError.
-Cue queues and reply correlations now carry ordinary Deck records. Composition
-routes directly to query, mailbox and reply owners; optional CueSink hooks and
-root adapters are removed. Reactor returns dispatch data, captures replies before
-publishing its protocol Deck, and offers no application callback gate. Default
-query transport cannot be a no-op sink. Finite commands await state/deadlines over
-the host workers, joining them before teardown. Serial whole-runtime and finite
-mailbox polling APIs are removed; phase-specific tests invoke concrete owners. Local endpoint/startup intake uses direct protocol processing; host
-composition has no fake per-Hab seeding phase. Witness receipt/delegation/raw send owners borrow Reactor and transport services,
-not a parent runtime; standalone receipt processing opens no extra stores.
-HTTP status never proves witness receipt success: require accepted indexed proof
-for the requested event and fan out only verified complementary signatures.
-Local protocol fixtures use the same intake and preserve semantic assertions instead of driving unrelated work.
-Publish after owning writes/commit; preserve real iterator, reader and payload cleanup. Do not
-restore queue credit, capacity, inspection or synthetic retain/release handles.
-Use concrete semantic records, narrow validated input, and locally justified
-open boundaries. Diagnostic metadata must not drive domain control flow.
+[ADR-0013](../docs/adr/adr-0013-simple-component-flows.md) governs concrete
+KERIpy-shaped owners, records and Decks. Refactor responsibility/contracts first,
+then behavior. No runtime-shaped sibling bundles, generic execution gates or
+forwarding-only facades. Lower transport knows actual byte I/O, not AgentRuntime.
+Finite commands run the host workers under elapsed deadlines and join them before
+store teardown; phase-specific tests invoke actual component operations.
 
-ADR-0012 now requires one buffered finite decoder. The progressive engine, cursor and parser-owned staging are removed.
-The custom Effection frame bridge and TcpRead are removed.
-Buffer complete counted enclosures before synchronous decoding; accept the group
-memory/latency tradeoff. Parsing/finite annotation have no cancellation options;
-KERI/Tufa input operations stop buffered or waiting work and concrete I/O owns
-interruption and joined cleanup.
-Composition points depend downward: transport lends actual sockets/byte streams;
-application flows compose parsing/dispatch without an AgentRuntime dependency in transport.
-Ordinary hydrated frames require no disposal; actual I/O owners join cleanup.
-Parsed evidence, wrapper construction, verified acceptance and durable publication
-are separate boundaries. Validation returns delegation-hint repairs as data;
-the processing owner persists them in its transaction, never during lookup.
-Parent signatures never authenticate nested children.
-Public registry intake borrows issuer KEL state independently of local Hab aliases.
-Accepted legacy bytes remain readable; new intake requires full witnessed tuples.
-Raw evidence stays separate from opt-in strict seal projection.
-Runtime exports are deliberate operations/data, not implementation-module
-wildcards. KERI npm has named root/runtime/db entrypoints and the separate Tufa cli
-helper boundary, without app/core/db/vdr deep-import patterns.
-Native addon loading alone is not runtime compatibility; qualify large-row paths.
-Native row lifetimes and active writers remain correct without copy billing.
+No application accounting, quotas, estimates, synthetic leases or no-op policy
+hooks. Only a minimal private socket constraint with observed production evidence
+could be justified. Outboxes and unsupported mailbox-consumer/KRAM business
+acknowledgements are removed. Keep protocol escrows/caches, accepted evidence,
+mailbox messages/cursors, transactions and real cleanup. No old keri-ts API/data
+compatibility, migration readers or new-to-old tests.
 
-Active KERIpy parity targets `7143832813cac6a394ab1faf9be83bb3372be87c`.
-Keep historical 927 fixtures and fork/legacy compatibility results labeled by their actual sources.
+[ADR-0012](../docs/adr/adr-0012-progressive-nested-parser.md) requires complete
+counted enclosures before synchronous decoding. Progressive engines, cursors,
+parser-owned staging, FrameIntake and TcpRead are removed. Ordinary hydrated frames
+need no disposal. Concrete inputs own cancellation and joined I/O cleanup; native
+backpressure is not a process-memory guarantee. Streaming remains where supported
+by KERIpy; selective new streaming needs a concrete benefit, not a stack-wide rule.
 
-Kever returns decisions and describes follow-up work without a queue. Baser owns
-accepted event/FEL row persistence; Kevery keeps processing and publication policy.
+Parsed evidence, construction, verification and durable publication are separate
+boundaries. Parent signatures never authenticate children. Decisions return data;
+owners persist within their transactions and publish live state/cues after commit.
+Kever decides; Kevery owns routing/publication; Baser owns accepted event/FEL rows.
+Validation lookup must not persist delegation repairs. Independent DB environments
+are not one atomic transaction. Raw partial registry evidence remains distinct from
+accepted witnessed tuples; issuer KEL access does not require a local Hab alias.
 
-Normal remote outcomes use typed decisions. Exceptions retain invariant,
-infrastructure and caller-contract failures. Diagnostic messages stay separate
-from standard Error.cause, which preserves actual underlying failures,
-never a substitute metadata bag. Keep protocol compatibility and
-frozen-reference evidence explicit; no old TypeScript API shims are required.
-Logical accounting never established a process-memory guarantee. Remove its
-plumbing rather than transferring it to another owner. Streaming remains required
-where KERIpy supports it; native backpressure and real cleanup remain independent.
-KERIpy parity comes first; optional additions are proposals, not implementation gates.
-Selective inter-component streaming may reuse existing engines for a concrete
-benefit after parity priorities; it does not restore a stack-wide mandate.
-During deletion/refactoring, PRs may contain 1,000–3,000 changed lines when that
-completes one cohesive mechanism removal. Count verification and docs; avoid
-artificial slices that require temporary accounting interfaces or repeated caller
-edits. Smaller cuts remain appropriate at real ownership boundaries.
-Reuse tests; new maintained integration/end-to-end coverage needs strong
-justification. Exploratory probes may remain uncommitted. Choose narrow unit
-regressions with durable value, not new test scaffolding by default.
+Use semantic records, validated unknown input and locally justified open boundaries.
+Normal remote outcomes use typed decisions; invariant, infrastructure and caller
+failures remain exceptions. Diagnostics never drive domain behavior or replace an
+actual Error.cause. CESR owns shared KERI CBOR encoding and exact byte parity.
+
+Public exports are supported operations/data, not module wildcards. Named KERI
+root/runtime/db entrypoints and the separate Tufa cli helper boundary replace
+app/core/db/vdr deep imports. Source smoke or native addon loading alone does not
+qualify installed packages, strict declarations or real LMDB large-row behavior.
+
+Recorded KERIpy reference: `7143832813cac6a394ab1faf9be83bb3372be87c`.
+Keep historical fixtures, current upstream and mailbox-fork results labeled by
+actual source. Protocol parity and qualification outrank optional additions.
+Green narrow tests do not establish final composed interoperability.
 
 ## Maintenance and handoff
 
-Read `AGENTS.md`, this index, relevant topics and their contracts at session start.
-Update the owning topic in place when a durable rule changes. Keep plans in
-`docs/plans`, behavior in `docs/design-docs`, dated evidence in `docs/reports`,
-and examples/inventories in `docs/reference`. Do not append session or milestone
-diaries to learnings; Git history retains superseded text.
+Read AGENTS, this index and relevant topics/contracts at session start. Rewrite the
+owning topic in place; keep execution in docs/plans, behavior in docs/design-docs,
+dated evidence in docs/reports and examples in docs/reference. Git retains earlier
+chronology; do not append milestone diaries or duplicate the execution tracker.
 
 Kickoff: ten concise current-state bullets, then a concise execution plan.
-Handoff: result, changed contracts, checks, remaining blocker/risk. Record only
-the durable substance and why future work needs it; link detailed evidence.
+Handoff: result, changed contracts, checks and unfinished work/risk. Cohesive
+1,000–3,000-line deletion/refactoring PRs are allowed; avoid temporary APIs merely
+to split a cut. Reuse meaningful tests, preserve topology and independent protocol/
+cleanup assertions, and prefer narrow regressions over new scaffolding.

@@ -1,240 +1,141 @@
-# ADR-0013: Simple Component Flows and Explicit Ownership
+# ADR-0013: Simple component flows and explicit ownership
 
-- Status: Accepted policy; implementation migration is incomplete
+- Status: Accepted; final composed qualification remains open
 - Date: 2026-10-14
-- Scope: Component interaction, scheduling, decisions, resource lifetime, and
-  runtime complexity across CESR, KERI, and Tufa
-- Related: [ADR-0003](adr-0003-agent-runtime-composition-root.md),
-  [ADR-0004](adr-0004-cue-runtime-portability.md),
-  [ADR-0005](adr-0005-kel-decision-control-flow.md)
+- Scope: Component interaction, decisions, scheduling and actual resource lifetime
+- Related: [composition](adr-0003-agent-runtime-composition-root.md),
+  [cues](adr-0004-cue-runtime-portability.md),
+  [KEL decisions](adr-0005-kel-decision-control-flow.md)
 
-## Context and precedence
+## Governing model
 
-The cleanup exposed child workers receiving `AgentRuntime` to discover siblings,
-Reactor being borrowed as a general callback scheduler, executable decision
-wrappers, and admission/ownership machinery spreading into domain contracts.
-Moving these dependencies into smaller containers does not repair ownership.
+Use recognizable KERIpy composition: concrete components, ordinary records, cues,
+Decks, receive buffers and explicit local operations. KERIpy also shares domain
+objects and calls subordinates directly; this is not a pure actor architecture.
+Choose the design that cuts future cost in this codebase. Refactor responsibility
+and contracts first, then change behavior.
 
-The preferred model is recognizable KERIpy composition: specific workers,
-ordinary data records, cues, Decks, receive buffers, and explicit local operations.
-This is not a pure actor architecture. Every abstraction and constraint must earn
-its maintenance cost in this codebase, rather than follow an abstract best practice.
+This ADR supersedes older instructions to preserve accounting, delivery preparation,
+general Reactor gates, runtime-shaped service bundles or duplicate command drivers.
+[ADR-0012](adr-0012-progressive-nested-parser.md) requires buffered complete-enclosure
+decoding. The retired mechanisms are not compatibility requirements.
 
-This ADR refines ADR-0003/0004 and supplements ADR-0005. It supersedes blanket
-requirements in older plans and runtime guidance to retain bounded queues,
-aggregate accounting, reservation layers, or exact service-container identity.
-It does not declare those mechanisms removed or change protocol requirements.
-Conflicting migration plans must be reconciled before implementing affected work.
-Parser format rules, transaction correctness, and real resource cleanup remain
-requirements. The 2026-10-15 removal decision supersedes all earlier local-budget
-exceptions and blanket outbox/durable-recovery preservation instructions. Existing
-implementation is transitional and must be removed before release.
+## Concrete ownership and communication
 
-ADR-0012 now requires buffered complete-enclosure decoding. Progressive parsing,
-its cursor/staging, FrameIntake/TcpRead and custom frame channels are removed. Early child delivery and giant-transfer memory/performance gates
-are superseded; preserve incremental network input and concrete I/O cleanup.
+Identify each worker's state, input/output records and existing durable recovery
+authority before changing a flow. Keep change-together work together. Do not make
+a component or queue for every function or protocol kind.
 
-## Decision
+Independently progressing siblings receive their actual dependencies, not an
+AgentRuntime, a smaller runtime-shaped context or a bundle used to discover peers.
+They exchange concrete records through flows wired at composition. Records do not
+hide component references or deferred domain callbacks. Direct calls to subordinate
+parsers, stores, signers and cohesive helpers are appropriate.
 
-### 1. Establish ownership before adding communication machinery
+Composition creates the concrete graph and owns its lifetimes. It does not justify
+a DI registry, repository-interface hierarchy, universal executor or event bus.
+Application entrypoints may orchestrate through the root; lower transports do not
+know the root or how its components are assembled. Unsupported forwarding facades,
+hollow modes and unused hooks are removed rather than renamed.
 
-Identify the mutable state, input records, output records, and existing durable
-recovery authority of each affected worker. Keep change-together responsibilities
-together. Do not create a component or queue for every function or protocol kind.
+A shared Deck is not broadcast. Define its consumer and routing; fan out only when
+actual consumers require it. Preserve demonstrated ordering without global ordering.
 
-Independently progressing sibling workers must not receive `AgentRuntime`, a
-runtime-shaped context, or sibling bundles. They exchange concrete records through
-Decks, channels, or existing streams wired by application composition. Messages
-must not hide component references or executable domain work.
+## Decisions, contracts and commits
 
-Composition constructs components, supplies their actual dependencies, connects
-flows, and owns their lifetimes. Direct calls to subordinate parsers, signers,
-stores, and cohesive helpers are appropriate. Constructor injection does not
-justify an oversized dependency, and no new repository-interface framework is
-required around concrete stores. Application entrypoints may use the runtime to
-orchestrate a workflow; they must not pass it down into worker internals.
+State machines decide with plain domain data. Processing owners apply decisions,
+persist in their own transactions and publish live state/cues after commit. A
+helper returning inside a caller's transaction does not prove commit completion.
+Independent Baser/Reger environments are not one atomic transaction.
 
-### 2. Give state changes explicit processing and transaction owners
+Keep state-sensitive evaluation/application in the required uninterrupted owner
+turn. Do not wait on network I/O while holding a transaction or protocol turn.
+Reactor serializes actual dispatch/escrows, captures replies before application
+publication and returns decision data. It exposes no arbitrary callback gate.
+Output owners sign, route and consume request slots directly.
 
-Protocol decisions carry plain domain data. Kevery and corresponding processing
-owners explicitly apply decisions and persist inside the owning transaction.
-Plain data must also be a precise semantic contract. Use named fields and
-discriminated alternatives for the outcomes we control; require each field where
-its variant requires it. Do not replace an arbitrary bag with a large interface
-of unrelated optional properties. Remove unused fields and avoid duplicating
-knowledge already represented by an instruction or another authoritative field.
+Use named fields and discriminated alternatives; require variant-specific data.
+Do not replace a bag with an interface of unrelated optional fields or duplicate
+knowledge already represented by an instruction. Domain behavior must never read
+policy from diagnostic keys. Exceptions retain invariant, infrastructure and
+caller-contract failures; normal remote outcomes use typed decisions.
 
-Open-ended metadata bags are prohibited unless the particular problem cannot be
-solved another explicit, reasonable way. This applies to `Record<string, unknown>`,
-`Record<string, any>`, broad index signatures, maps of unknown values, aliases,
-casts, and generic extension/context slots used to evade a concrete contract.
-Domain control flow must never depend on keys hidden in diagnostic metadata.
+Open metadata bags, index signatures, maps of unknown values and casts need a
+specific local justification. Explain why an explicit type, closed union, concrete
+dictionary value or existing schema/protocol model cannot represent the boundary.
+Validate unknown input before domain use. Schema-defined attributes, generic
+serialization and third-party formats may justify open values; preserve actual
+non-JSON codec semantics. Renaming a bag JsonObject or building a new schema
+framework does not establish an explicit contract.
 
-For a necessary open boundary, document locally why explicit fields, a closed
-union, a concrete dictionary value type, or an existing protocol/schema type
-cannot reasonably represent it. Confine unknown input to decoding/validation;
-narrow before domain use. Truly schema-defined credential attributes, generic
-serialization, or third-party extension formats may justify open keys, but not
-an unexamined escape hatch throughout their consumers. Use an existing suitable
-value model where possible; do not rename the bag `JsonObject` and declare it
-fixed or invent a schema/type framework merely to avoid the spelling. Preserve
-actual wire/schema semantics, including supported non-JSON codec values.
+Executable decision protocols such as write/publish/release or callback-bearing
+proof admission do not replace ordinary sequencing. Immediate transaction callbacks
+and genuine scoped-resource callbacks remain legitimate.
 
-Publish live state and cues only after that transaction commits. A helper returning
-inside a caller-owned transaction does not establish commit completion.
+## Flow and completion
 
-Keep state-sensitive evaluation/application within the required uninterrupted
-turn. Do not suspend for network I/O while holding a database transaction or a
-shared-state turn. Before removing a guard, identify the state it protects and
-preserve necessary ordering at its owner. Do not centralize all application state
-into a universal actor or pretend independent database environments are atomic.
+Owners interpret/prepare/sign synchronously against committed state, publish
+concrete output, then remove source records. Network delivery and its outcome
+belong to actual transport/workflow owners. Incoming bytes use the separately
+composed protocol intake. Reuse existing pull streams; do not add buffering merely
+to make every flow look uniform.
 
-Remove executable decision protocols such as `write/publish/release` and
-`applyProofs/publishQueries/release` when they merely obscure ordinary sequencing.
-Named owner operations and plain metadata are sufficient. Immediate transaction
-callbacks and genuine scoped-resource callbacks remain appropriate.
+Requests ask for work; cues convey facts or follow-up work; outcomes say what
+completed. Queued, locally transmitted, stream-processed, protocol-accepted and
+remotely acknowledged are different claims. Add correlation only for actual
+concurrency. Preserve existing completion semantics without a general RPC layer.
+Actual source/payload handles can cross a flow when their lifetime requires it;
+ordinary records do not need a synthetic resource protocol.
 
-### 3. Separate preparation, transmission, and outcome application
+CLI and long-lived hosts start the same workers. Finite commands use accepted-state
+predicates and elapsed deadlines, then join workers before returning or closing
+stores. Phase-specific tests invoke the operation under test. No serial whole-runtime
+pump, turn-count completion formula or second scheduler replaces this model.
 
-Where these are independent responsibilities, the flow is:
+## Resource and durability boundary
 
-```text
-request/cue -> owner prepares/signs -> delivery data -> transport -> outcome
-                                                                    |
-                                                        workflow/persistence owner
-```
+No application memory budgeting belongs in parsers, codecs, domain, queues,
+storage/replay, runtime or CLI. Shared policies, estimates, credits, accounting
+reservations, inspection charges and synthetic retain/transfer/release machinery
+are removed. No no-op policy, Infinity setting or dormant option preserves them.
+A request SAID reservation is correlation, not such accounting.
 
-Delivery work contains the target, wire/source data, and necessary provenance.
-It does not defer domain preparation through a runtime, habitat, or callback
-embedded in the record. Incoming transport bytes enter the separately composed
-intake/protocol flow. Transport does not discover or invoke sibling processors.
+Only a minimal private socket constraint could be justified by an observed
+production problem and evidence that native backpressure is insufficient. It
+must not spread configuration, callbacks or outcomes upward. Hypothetical overload
+and tests mirroring invented formulas are not evidence.
 
-Reuse existing pull byte streams; do not introduce a buffer solely
-to make the diagram look uniform. Actual payload/source handles may cross a flow
-when their concrete lifetime requires it; they are not deferred domain commands.
+Preserve wire framing/declared extents, crypto checks, supported numeric ranges,
+transactions, native backpressure and real reader/socket/file/iterator/DB cleanup.
+Effection scopes start, cancel and join work. External input abort stops waiting
+dispatch and active consumers as well as reads; finite parser/transforms take no
+lifetime options. Cleanup preserves genuine failures, including failures during halt.
 
-### 4. Distinguish requests, facts, and completion
+Keep KERIpy protocol escrows, replay/timeliness caches, accepted evidence, mailbox
+provider messages/cursors and protocol receipts. Outbox storage/workers/flags,
+durable consumer acknowledgements/deadletters and KRAM ready/snapshot handoff
+acknowledgements are removed. KRAM acceptance is not downstream business acceptance.
+Do not modify KERIpy to justify TypeScript-only delivery guarantees.
 
-Requests ask for work; cues convey domain facts or follow-up work; outcomes state
-what an operation accomplished. Use concrete types and add correlation only where
-actual concurrent work requires it. Queued, locally transmitted, receive-stream
-processed, protocol accepted, and remotely acknowledged are different claims.
+No previous keri-ts API/data compatibility, migration/export/recovery readers,
+disabled duplicate implementation or new-to-old tests are required. Removing code
+does not authorize changes to unrelated live databases.
 
-A queued frame must remain valid through consumption. Preserve the processing
-completion semantics of existing callers when replacing direct calls with flows.
-Do not build a general request/reply RPC layer to avoid a simple local operation.
+## Grounding and acceptance
 
-### 5. Remove application budgeting; use native socket backpressure
+Recorded protocol reference: KERIpy `7143832813cac6a394ab1faf9be83bb3372be87c`.
+Directing composes parser/connection/processors; Hab owns cue interpretation;
+Respondant composes reply output; query doers and Decks carry correspondence.
+The separately declared mailbox fork adds its own mailbox host. Verify current
+imports/pins using [reference environments](../plans/qualification/REFERENCE_ENVIRONMENTS.md).
 
-Application-managed resource accounting is prohibited. Remove shared policies,
-byte estimates, reservations, credits, inspection charges, preparation floors and
-synthetic ownership of ordinary records. Parsers, codecs, domain processing,
-Decks, persistence, replay, orchestration and CLI contracts must not know about
-memory budgets. Do not rename the machinery, retain no-op policies, use Infinity,
-or keep dormant options for later.
+The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md) owns concrete
+operational invariants. The [roadmap](../plans/PARITY_ROADMAP.md) owns remaining
+cleanup, composed tests and release gates. Acceptance requires real event/receipt,
+TCP, HTTP/SSE, OOBI, retry, failure and restart evidence plus installed packages;
+a renamed class or green narrow test is not architectural or release completion.
 
-The only possible exception is a small private TCP/HTTP/socket constraint for an
-observed production problem. Production performance evidence must show why native
-stream/socket backpressure is insufficient. The exception permits a necessary
-local solution; it does not require retaining a subsystem. No accounting type,
-configuration, callback or outcome may leak into other components. Hypothetical
-overload and tests reproducing invented formulas are not evidence.
-
-Preserve wire framing and declared lengths, cryptographic validation, supported
-numeric representation, transactions, actual file/socket/iterator disposal, and
-KERIpy-supported protocol state. These are correctness requirements, not resource
-policy. Ordinary cues are records in Decks, without retain/transfer/release
-protocols for garbage-collected data.
-
-Refactor mixed functions so real work and cleanup belong to their existing owner
-before removing accounting behavior. Do not invent staging abstractions. Remove
-formula-only tests while retaining independent protocol and cleanup regressions.
-Do not claim a process-memory bound from logical estimates or their removal.
-
-### 6. Define queue consumers and route cues explicitly
-
-A shared Deck is not broadcast. Give each queue a defined consumer; use a small
-domain-specific routing loop or existing distinct queues when work has multiple
-destinations. Define fanout only where multiple consumers actually need it.
-Preserve existing ordering requirements without imposing global ordering.
-
-Do not add a general event bus, broker, schema registry, per-type estimator
-registry, or arbitrary callback job queue.
-
-### 7. Keep scheduling separate from protocol semantics
-
-Effection and application lifecycle code start, cancel, and join workers. External
-input cancellation must stop waiting dispatch and active consumers, not only byte
-reads. Parser and finite transformations take no lifetime options; DispatchOptions
-contains protocol choices only. Reactor and protocol processors do protocol work. Reactor returns dispatch data
-and captures reserved replies before publishing its protocol Deck to application
-consumers. Its private serialization covers only actual dispatch and escrow work.
-Sibling workers sign, prepare deliveries, consume request slots and clean up their
-own cursors directly. The former arbitrary settle callback is removed; do not
-restore it as a universal `runExclusive` or scheduler callback API.
-
-Use short owner turns and explicit flows. Retain a local synchronization mechanism
-only for demonstrated shared-state ordering that cannot be eliminated simply.
-`finally` releases real acquired resources. No-op lifecycle methods and synthetic
-owners added only to satisfy a uniform interface should disappear. Legitimate
-library teardown contracts, cancellation, disposal, and joined cleanup remain.
-
-### 8. Retain KERIpy protocol state; remove unsupported delivery guarantees
-
-Remove the outbox completely, including disabled implementations, storage,
-workers, runtime/CLI integration, flags, exports and dedicated tests. Also remove
-durable mailbox consumer acknowledgements/deadletters and KRAM ready/snapshot
-handoff acknowledgements. Do not alter KERIpy to justify TypeScript-only delivery
-guarantees or preserve them merely because they have tests.
-
-Keep KERIpy-supported escrows, replay/timeliness caches, mailbox provider messages
-and polling cursors, accepted evidence and protocol receipts. KRAM acceptance is
-not downstream business acknowledgement. Local transport completion is not remote
-application acceptance. Use the pinned reference to distinguish them.
-
-Stop creating/opening retired stores and delete their code outright. Compatibility
-with previous keri-ts versions and their data is not a requirement. Do not build
-migration/export/recovery paths, compatibility readers, disabled implementations
-or new-to-old version tests. Current KERIpy protocol interoperability remains the
-target. The deferred outbox roadmap is an unimplemented idea, never retention
-authority. Removing code does not require touching unrelated live databases.
-
-## KERIpy grounding and deliberate differences
-
-Reference: KERIpy commit `7143832813cac6a394ab1faf9be83bb3372be87c`.
-
-- `src/keri/app/directing.py`: Reactor/Reactant compose parser, connection,
-  protocol processors, message/cue/escrow doers; they are not general callback locks.
-- `src/keri/app/indirecting.py`: setupWitness wires receive buffers and reply,
-  response, and query Decks; WitnessStart routes cue records between those flows.
-- `src/keri/app/agenting.py`: WitnessReceiptor consumes messages and emits cues;
-  messenger workers have message/sent queues and subordinate parser lifecycles.
-- `src/keri/app/storing.py`: Respondant consumes reply/cue Decks and composes Poster.
-- HIO `src/hio/base/doing.py` and `src/hio/help/decking.py`: cooperative scheduling
-  and ordinary deque-based flow, often without configured bounds.
-
-KERIpy also shares domain/database objects and uses direct calls. This ADR adopts
-its recognizable flow model while applying a stricter sibling-message boundary;
-it does not claim KERIpy is a pure actor system or has universal bounded admission.
-
-## Adoption and acceptance
-
-Refactor to the principle first, then change behavior in a cohesive follow-up.
-Use cohesive reviewable cuts. During deletion/refactoring, 1,000–3,000 changed
-lines per PR are permitted when they complete a mechanism removal and avoid
-temporary interfaces or repeated caller edits. Smaller cuts remain appropriate
-at real ownership boundaries. Count tests and docs, and give reviewers a reading
-order for cross-file changes. These are allowances, not quotas.
-
-Reconcile existing cleanup rounds with this policy. In each affected real flow,
-identify ownership, record contracts, completion, cancellation, and recovery;
-record limit decisions without creating another maintained inventory framework.
-Remove replaced paths rather than adding runtime-shaped adapters or compatibility
-layers without a real requirement. No name, file move, or wrapper-to-class
-conversion alone demonstrates architectural completion.
-
-Validate representative event/receipt, TCP reply, HTTP/SSE, OOBI, and retry flows,
-including relevant failure and restart cases. Preserve protocol/interoperability
-regressions; retire implementation-mirroring tests when their machinery is deleted.
-Final integration, interop, installed-package, and release qualification remains
-required. Acceptance of this ADR is not a claim that the migration is complete.
+Keep one implementation PR active. Cohesive 1,000–3,000-line removals are permitted
+when they avoid temporary interfaces or repeated migrations; smaller cuts remain
+appropriate. Count tests/docs and give a reading order. Retire formula-only tests,
+retain independent protocol/cleanup regressions and preserve participant topology.

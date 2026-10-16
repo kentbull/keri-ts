@@ -1,44 +1,34 @@
 # Simple transport and complete-message ingestion plan
 
-Accepted direction: 2026-10-15; implementation/qualification remain pending.
-The [roadmap](../PARITY_ROADMAP.md) and [buffered parser](../cesr/CESR_PROGRESSIVE_PARSER_PLAN.md)
-supersede progressive intake, general Reactor gates and delivery preparation.
-The [runtime contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md) must be
-reconciled before affected implementation; it is not preservation authority.
+Buffered intake, concrete input/output owners, protocol-only Reactor serialization
+and shared host workers are implemented. Final composed and installed-package
+qualification remains open. The [roadmap](../PARITY_ROADMAP.md) owns the remaining
+sequence; the [runtime contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md)
+owns delivered operational invariants. Historical progressive and accounting
+instructions are not preservation authority.
 
-## Ownership
+## Delivered ownership
 
-- Concrete HTTP/TCP readers receive bytes, observe EOF/failure and close actual
-  I/O. The parser buffers complete counted enclosures and decodes synchronously.
-  Complete messages pass to concrete protocol processors. The parser and finite
-  annotation accept no cancellation options. Consuming operations check before
-  and after pulls and halt waiting dispatch/active consumers on external abort;
-  concrete readers still interrupt and join actual I/O.
-- Existing host operation scopes start, cancel and join readers, dispatch and
-  output. FrameIntake, TcpRead.open, FrameChannel/toEffectionFrames and parser
-  lifetime options are removed. TCP lends a real connection and composes native
-  RX/TX at the application. Remove remaining admission/delivery hooks without
-  introducing another intake framework. Generic HTTP requests, Fetch input, client
-  SSE and static artifact responses now have no accounting or size ceilings.
-  Provider mailbox responses own readers directly without byte/stream/topic/metadata
-  policies. Remaining client, Reactor queue, listener and reply-proof accounting,
-  shared ResourcePolicy/errors and constructor plumbing are removed;
-  retain deadlines, actual I/O chunking, regular-file extents and joined cleanup.
-- Callback-based cue publication and QueryReply.admit are removed. Existing
-  consumers inspect data and synchronously publish before source removal.
-  Respondant now owns lazy reply cursors, ordered batches and retry packets;
-  CueDelivery/DirectReplyDelivery and their publication callbacks are removed.
-  RuntimeDeliveries is deleted into QueryCoordinator with actual Reactor/services
-  dependencies. CueSink, optional hooks and root adapters are deleted; composition
-  routes records directly and default queries use concrete output. Real routing, signing, correlation and
-  retry bytes stay with those owners. Reactor does no unrelated execution.
-- Choose actual dependencies at construction; CLI and hosts use the same workers.
-  Network waits occur outside transactions and state-sensitive protocol turns.
+- Concrete HTTP/TCP readers own bytes, EOF/failure, cancellation and joined I/O.
+  One buffered finite decoder waits for complete counted enclosures. Parser lifetime
+  options, FrameIntake/TcpRead and custom frame/channel bridges are removed.
+- Composition routes plain cues directly to QueryCoordinator, MailboxDirector and
+  Respondant. Query/reply owners prepare/sign/publish before source removal and own
+  exact retry packets and actual output I/O. No CueSink, delivery preparation layer,
+  callback-based reply admission or generic Reactor application gate remains.
+- Reactor orders dispatch/escrows, captures correlated replies before publication
+  and returns decision data. Network waits stay outside protocol turns/transactions.
+- CLI and hosts start the same component workers. Finite commands use accepted-state
+  predicates and elapsed deadlines, then join workers. Phase-specific tests use
+  actual owners; no serial runtime or finite mailbox polling API remains.
+- Lower TCP lends actual sockets. Application composition owns parsing/dispatch
+  and concurrent native RX/TX without an AgentRuntime dependency in byte transport.
 
-Use native stream/socket backpressure. Application estimates, quotas, leases and
-credits are removed. A minimal private socket constraint needs an observed
-production problem and evidence; it must not spread policy or options upward.
-Ordinary records have no synthetic resource lifecycle.
+Use native stream/socket backpressure. No application estimates, quotas, leases,
+credits, no-op policy or synthetic record lifecycle. Only an observed production
+problem could justify a minimal private socket constraint; it must not spread
+configuration or outcomes upward. Keep real deadlines, I/O granularity, file
+extents and reader/socket/store cleanup.
 
 ## TCP and HTTP semantics to retain
 
@@ -83,18 +73,13 @@ JSON endpoint, export, mailbox command or cache to streaming. Preserve unpublish
 lazy-DID work without activating or publishing it. No new outbox, unsupported
 acknowledgement, accepted-state eviction or borrowing framework is in scope.
 
-## Review units and acceptance
+## Remaining acceptance
 
-1. Move actual cue routing/signing/correlation to existing owners and delete the
-   preparation framework, general Reactor gate and vague service contracts. These
-   removals are implemented: Reactor publishes protocol cues after correlation
-   capture and returns decision data; actual output owners work directly.
-2. Integrate the finite decoder with concrete receive loops; remove intake/cursor/
-   channel bridges and options throughout their callers in a cohesive cut.
-3. Qualify real HTTP/TCP/SSE callers and shared CLI/host worker lifetimes.
-
-Combine units where splitting creates temporary APIs. Keep one implementation PR
-active under the roadmap's 1,000–3,000-line deletion/refactoring allowance.
+Ownership migration is not a second workstream to recreate. Audit residual
+facades/options only for a demonstrated current responsibility, and retain the
+above boundaries while qualifying composed HTTP/TCP/SSE and command workflows.
+Keep one implementation PR active; use cohesive cuts under the roadmap's review
+allowance rather than temporary replacement APIs.
 
 Use existing real-path tests for:
 

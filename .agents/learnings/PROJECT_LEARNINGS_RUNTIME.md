@@ -1,292 +1,162 @@
 # Runtime and mailbox learnings
 
-## Architecture and removal boundary
+The [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) owns
+operational detail. [ADR-0013](../../docs/adr/adr-0013-simple-component-flows.md)
+owns architectural constraints; the [roadmap](../../docs/plans/PARITY_ROADMAP.md)
+owns remaining qualification. Keep this routing memory concise, not a removal log.
 
-[ADR-0013](../../docs/adr/adr-0013-simple-component-flows.md) governs concrete
-KERIpy-shaped component flows. Application accounting, ResourcePolicy/errors,
-reservations/estimates and constructor plumbing are removed. Do not restore
-client/queue/listener/proof quotas, no-op policies or renamed ledgers. Only a
-minimal private socket constraint with production evidence may be considered.
-Native backpressure and actual cleanup remain. Outbox, consumer acknowledgement
-and KRAM ready/snapshot handoff durability are removed. Keep protocol caches,
-escrows, accepted evidence, mailbox storage/cursors and transaction ordering.
-No old keri-ts API/data compatibility, migration readers or new-to-old tests.
+## Composition and execution
 
-One runtime serves a Habery or command invocation. No AgentMode/runtimeMode:
-hosts select enableMailboxStore or borrow a Mailboxer. Hosted-AID selection is
-separate; do not auto-host every Hab or expose signatory/AEID as normal identity.
-RuntimeServices contains only clock/HTTP. Baser and CLI carry no shared policy.
-Local endpoint commands and witness/mailbox startup submit their signed records
-through settleRuntimeIngress, then verify accepted state; they do not drive OOBI,
-mailbox or output workers. Host operators validate/reconcile required endpoint
-state before entering the kernel. Protocol-only fixtures likewise pass their exact
-records/replays through direct intake; do not restore a whole-runtime test pump.
-Phase-specific unit checks invoke the component operation under test. Keep fixture
-setup cues distinct from the later operation's cues; clearing setup records must
-not erase the new facts asserted by that operation's regression.
-The hollow seedHabs loop and forwarding-only mailbox host wrapper are deleted. The kernel requires actual HTTP configuration,
-passes only runtime to its TCP companion, and owns service/prefix selection once.
-Choose real dependencies at construction. Generic cue preparation/delivery
-wrappers and Reactor's application callback gate are removed. Finite CLI waits
-start the same workers as hosts and join them before returning. Serial whole-
-runtime and finite mailbox turn APIs are removed, including the command-local
-polling budget, resume index and no-op configure hook. Keep actual request-open
-and SSE read deadlines. Remote cursor progress follows consumer completion.
-These cuts do not complete qualification.
+One runtime serves a Habery or command invocation. Hosted AID selection is
+separate from listener topology; never auto-host all Habs or expose signatory/AEID
+as normal identities. Provider storage is explicit enableMailboxStore or a borrowed
+Mailboxer, not AgentMode/runtimeMode. RuntimeServices contains only clock/HTTP.
+Choose concrete dependencies at construction; no parent-runtime discovery in
+Respondant, QueryCoordinator, Anchorer, receipt owners or lower TCP transport.
 
-## Protocol records and publication
+runAgentRuntime and runAgentRuntimeUntil use the same workers. Finite completion
+observes accepted state and elapsed deadlines, then joins work before store close.
+A blocked mailbox/OOBI request cannot serialize ingress or other endpoints. No
+serial runtime pump, finite mailbox turn, polling budget/resume index or test alias
+remains. Phase-specific tests call actual operations; preserve later-operation cues
+when separating fixture setup. Protocol-only local endpoint/startup intake uses
+settleRuntimeIngress and verifies accepted records, without unrelated host work.
 
-Kever decides, Kevery owns KEL routing, Revery owns BADA/reply escrows and Oobiery
-owns introductions. Local Habery.kevery and runtime processors have distinct cue
-Decks. Publish ordinary cues after owning writes/commit. Domain decisions carry
-data; diagnostic keys must not drive behavior. Endpoint bootstrap uses alias config
-dt/curls, then accepted endpoints; synthesize localhost only when both are absent.
-Use signed loc/scheme through Revery rather than direct locs/lans writes.
+DID, challenge, delegation, multisig and IPEX commands observe the host workers.
+The did:keri resolver projects accepted state; CLI owns introduction waits and HTTP
+uses its existing host. Group approval selects the member signer; join shares one
+elapsed deadline with local-completion fallback. IPEX poll owns one settled-batch
+consumer while the host omits a second poller. Normal completion waits for delivered
+batches; deadlines join cancellation. The supervisor suspends rather than pumping.
+The HTTP kernel selects serviceHab/hostedPrefixes once and owns actual listeners;
+startup reconciles required signed endpoints before listening. Bootstrap uses alias
+dt/curls, then accepted endpoints, with localhost only if both are absent. Location
+and role changes use signed Revery intake, not direct locs/lans mutation.
 
-QueryRequest is the canonical routed record with one required KERIpy-shaped q
-body and target. Its optional signer selects a local AID; src names the remote
-attester. Pending work retains identifiers, not Hab objects. QueryCoordinator
-resolves the explicit signer from Habery; unavailable selections stay pending.
-Hab interpretation defers cues selected for another signer, and transport's ambient
-Hab cannot supply another identity's introduction. Anchorer's query dependency is
-only concrete enqueue access. Do not restore aliases, duplicated body targets or generic route/data
-bags. Schema/credential notices stay notify-only with canonical hint fields.
-TEL recovery requires registry/credential fields, issuer only where needed.
-Prebuilt reply routes live in their serder; typed TSN state serializes at Hab
-interpretation where the local attester is known. Preserve exact required fields.
+## Protocol and output owners
 
-## Cues, queries and state turns
+Kever returns decision/follow-up data; Kevery applies KEL policy, Revery owns BADA
+and reply escrows, Oobiery owns introduction jobs. Three cue scopes remain distinct:
+Habery-local, runtime protocol output before reply capture, and application routing.
+Composition routes query to QueryCoordinator, stream to MailboxDirector, and reply/
+receipt/replay work to Respondant/Hab interpretation. A Deck is not broadcast.
+See the [cue graph](../../docs/design-docs/runtime/CUES.md).
 
-Hab.processCuesIter/interpretCue own cue semantics. Composition routes the actual
-cue Deck directly: QueryCoordinator prepares or defers routed query records,
-MailboxDirector retains stream correlation, and Respondant owns reply/receipt/replay
-routing. CueSink, optional admission/preparation hooks and root sink adapters are
-deleted, with no replacement callbacks. Default queued queries use actual transport;
-notifications cannot silently select a no-op sender. Schema/credential notices do
-not become invented query requests. Unresolved identities/endpoints stay deferred.
+Reactor serializes only dispatch/escrows. It returns the processed envelope, exact
+decision and mailbox authorization; KRAM may accumulate threshold proofs. It
+captures request replies before application publication, including synchronous
+capture when a new correlation claims already-published output. No application
+callback gate remains. Waiting cancellation removes the waiter; active ownership
+joins handler cleanup before passing the protocol turn. Queued ingress copies
+bytes, then pulls/processes without reinsertion on failure. clearIngress clears
+queued data, not active I/O. Explicit close and scope exit clear ingress/cues.
 
-Respondant owns private lazy reply cursors, ordered correlation batches and exact
-failed packets through actual Poster/Reactor/ReplyStreams dependencies. It has no
-mailbox stream-routing or emission-sink facade. CueDelivery/DirectReplyDelivery and
-RuntimeDeliveries are deleted. QueryCoordinator owns actual signed packets and
-joined response I/O through concrete Reactor/clock/HTTP dependencies. Query signing
-and introductions are synchronous owner work; producer task/halt state and public
-raw-packet/custom-emission injection are removed. Real I/O still aborts and joins.
+Prepare/sign/publish before source removal; preparation failure retains the record.
+Finite passes use their initial extent. Respondant owns lazy cursors, ordered reply
+batches and once-signed retry packets through actual Poster/Reactor/ReplyStreams.
+QueryCoordinator owns plain requests, signed packets and joined response I/O.
+No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
+query sender remains. QueryReply peek/take returns data; request owners publish
+both TSN replies before taking records. Current authorization defeats old matching
+cues. Only the final HTTP query controls its response; earlier authorized output
+uses ordinary delivery. Missing routes can permit response-only output.
 
-Consumers publish before removing source records. Preparation failure preserves the
-source, and finite passes use their initial queue extent. Ordinary cues, routes,
-packets and batches have no synthetic lifetime. Real iterator cleanup runs once.
-The broad Reactor gate and duplicate whole-runtime driver are removed.
+QueryRequest has one required q body and target. signer is a local AID resolved
+from Habery; src is the remote attester. An unavailable explicit signer never falls
+back. Otherwise choose the configured Hab or sole Hab; never guess among several.
+Keep pending identifiers, not Hab objects. Query preparation captures that signer's
+introduction, endpoint and exact bytes. Failed/cancelled sends retain their head,
+unresolved requests rotate, and close joins output before clearing. Anchor queries
+ask each eligible attester once, or retain one deferred request. Completion uses
+accepted seal/key/TEL state. Schema/credential hints stay notify-only; prebuilt reply
+routes stay in their serder and typed TSN state serializes at Hab interpretation.
+See [query contracts](../../docs/design-docs/runtime/QUERY_REPLY.md).
 
-Reactor serializes only protocol dispatch and escrow passes. Dispatch returns the
-processed envelope and its exact decision; KRAM may combine earlier proofs.
-Protocol processors share a separate Deck wired with legacy TEL/verifier producers.
-Reactor captures correlated replies there before publishing ordinary cues to the
-application Deck. New reservations synchronously claim already-published matching
-replies. Mailbox authorization is returned from the exact protocol state.
-Application interpretation, signing, routing, slot consumption
-and verifier sidecars are synchronous owner work, outside protocol serialization.
-There is no arbitrary callback/settle API. A cancelled protocol owner joins actual
-handler cleanup before granting a waiter; waiting input cancellation removes it.
-Queued ingress copies producer bytes into a private Deck, then pulls/processes
-without quotas or capacity retry. Copy failure publishes nothing; processing failure
-does not reinsert. clearIngress discards queued data, not an active I/O lifetime.
-Runtime explicit close and scope exit clear queued ingress/cues.
+## Cancellation, stores and replay
 
-QueryCoordinator prepares synchronously against committed state without a parent
-runtime callback. Its private Deck exposes length/empty/peekHead inspection only.
-Signing, introductions and route snapshots precede source removal; delivery never
-re-signs on retry. Failed/cancelled sends retain the head, unresolved records rotate,
-and appended work waits for another pass. Close joins consumption before clearing.
-Anchor continuations ask each eligible attester once; one retired witness must not
-strand recovery. Ordinary query selection stays first-choice. Completion uses actual
-accepted seal/key/TEL state. OOBI convergence excludes background reply delivery:
-a static OOBI server may refuse unsolicited receipts without invalidating accepted
-resolution. Ingress/query/escrow work still blocks completion; close joins real I/O.
-Finite command convergence uses runAgentRuntimeUntil over the same concrete
-workers as runAgentRuntime, with a caller-owned elapsed deadline and completion
-predicate. There is no max-turn policy or compatibility alias. Blocked mailbox/
-OOBI I/O cannot serialize unrelated ingress progress; success, deadline, failure
-and cancellation join workers before caller/store teardown. A genuine command may
-omit mailbox polling. Query and challenge verification keep their own completion/
-display policy over the same runner. Challenge verification observes accepted
-responses while host workers poll mailboxes; even an empty-mailbox deadline joins
-those workers before stores close. The supervisor suspends; component loops own
-progress. Delegation approval likewise owns one host lifetime across all selected
-events; its phase predicates never pump workers. Group approvals select the local
-member as query/cue signer. Direct seal pinning and delegation escrow processing
-retain protocol ordering. Multisig commands own one host too; stored approvals
-and endpoint/KEL acceptance wait under elapsed deadlines, including delegated-group
-completion without a nested host. Join shares its deadline with local-completion
-fallback and uses `--approval-timeout`, not poll-turn/budget knobs. IPEX group
-completion and pending-proposal waits likewise observe the host workers. IPEX poll
-owns the existing mailbox batch consumer while the other host workers run without
-another poller; counts describe fully settled batches and messages. Normal state
-completion waits for delivered batches to settle, and deadlines join cancellation.
-Production serial pumps are gone; fixture callers and obsolete pump APIs still
-require removal before claiming one driving model is complete.
+Acquire resources before their work children. Abort I/O, join children and return
+iterators before releasing stores. Register Promise cleanup before leaves start;
+bare yielding finally blocks can lose late failures during Effection halt. Suppress
+only exact owned abort reasons/already-reported errors; preserve a lone foreign
+failure's identity and aggregate distinct failures. Readers cancel once, join and
+always attempt lock release. Unacquired bodies must expose cleanup failure too.
+External input abort stops waiting dispatch and active consumers, as well as reads;
+check before pull and after results. Finite parser/codec APIs have no lifetime options.
 
-QueryReplies reserves SAIDs for correlation, not capacity. Capture matching replies
-before background consumption; duplicates may iterate the same readonly replay.
-QueryReply exposes peekAll/takeAll data, not an executable admit callback; the
-response owner publishes both concrete replies before taking the records.
-Only the final HTTP query controls its response. Earlier authorized replies transfer
-to ordinary delivery using their own frame's exact dispatch authorization. Final TSN
-pairs transfer atomically before slot removal, with independent response and queued
-iterator cleanup. Missing routes allow response-only output. An old cue never
-overrides current sender refusal. Keep actual reader lifetime and exact correlation.
+Runtime borrows Habery/injected stores; defaults are owned. Readonly Haberies
+create neither default registry. Legacy Regery owns Reger/Tevery/Verifier; v2 Regery
+owns the RegBaser shared by IPEX/Reactor. Inject actual processors, not service bags
+or optional-method probes. Check genuine registry absence at application entry.
+Factories own failed/unreturned acquisitions before reopen suspends; repeated close
+and scope exit are harmless. Default Noter/Mailboxer use Habery's temp policy.
+Acquire output after DBs so reverse teardown joins it first.
 
-## Cancellation and actual owners
+Replay captures prefix/FEL horizons; later events cannot extend them. Hydrate current
+proofs on consumption and close cursors before yield. Witness SN replay preserves
+insertion proems and excludes later FEL ordinals. Cyclic delegation/corrupt rows
+still fail; numeric representation guards remain RangeErrors. Endpoint proof order
+and original seals are canonical; exactly one cigar contributes a couple and no
+proof fails. ReplyStreams tracks actual readers through EOF/cancel/shutdown. One
+pull yields one source message; openNonEmpty settles empty-source cleanup before
+null. Finite wrappers close their source iterators. Ordinary records need no leases.
 
-Acquire real resources before work children. Abort pending I/O, join children, then
-return iterators/close stores. Register Promise cleanup before starting leaves;
-a bare yielding finally can lose late cleanup errors during Effection halt.
-Suppress only exact owned abort reasons and already-reported objects. Preserve
-single foreign-error identity; aggregate distinct failures, including during halt.
-Readers cancel once, join cancellation and always attempt lock release. Unacquired
-request/response body cleanup failures propagate too.
+## Transport and protocol completion
 
-External input abort stops waiting state turns and active consumers, not merely
-byte reads. Register watchers before checking state; check before pull and after
-results, before interpreting done or dispatching another frame. DispatchOptions
-contains protocol policy, IngressOptions input lifetime. Promise adaptation belongs
-at actual edges; an async Scope.run parser loop confuses halt and foreign failure.
+Lower TCP lends sockets/bytes without AgentRuntime/Reactor knowledge;
+tcp-conversation composes application RX/TX. HTTP-first/TCP fallback, direct/mailbox
+routing and signed introductions remain. Explicit replies enable duplex; standalone
+send is transmit-only. Never open a second runtime just to receive replies.
+Native callback/drain precedes the next outbound pull. socketBytes owns exclusive
+reads and one pending pull; 64 KiB is granularity, not a memory guarantee. RX EOF
+leaves TX alive; abort/failure/return destroy and join close. Drain deadlines are
+absolute, not extended by activity. Shutdown stops acceptance and joins both
+directions/listeners before stores. Recognized wire/peer failures stay connection-
+local; infrastructure/cleanup failures reach the host.
 
-CESR uses one complete-enclosure buffered decoder. FrameIntake, TcpRead, custom
-frame channels, progressive staging and ordinary-frame disposal are removed.
-KERI/Tufa concrete inputs own their parser iterator and source cancellation.
-Ordinary hydrated values need no resource wrapper. CLI grant scans validate to EOF,
-not first-match return. Nested/ESSR payload storage retains actual files and readers.
+HTTP scopes own upload/fetch/body and preserve signal reasons. Pre-abort acquires
+no fetch; only the owned header timeout becomes mailbox null. Positive peer HTTP
+refusal is distinct from parser/source/storage/cleanup failure. postCesr sends
+successive framed POSTs; KERIpy714 bulk PUT is a documented wire difference.
+Preserve authentication through media retries. Post-header failure terminates the
+body and reports the original error. Signals must wake the host supervisor.
 
-## Stores and replay
+Local transmission/status proves no remote acceptance. Receipt completion requires
+persisted indexed wigs for the requested event's accepted witness cohort, including
+historical retrieval after witness replacement. Baser resolves interactions through
+their preceding establishment, even empty cohorts. Missing dependencies remain
+escrowed. GET without matching proof returns false; complementary fanout reads
+verified indexed proof, never raw peer fields or unrelated receipts. Receipt owners
+borrow Reactor or construct only protocol processing over the existing Habery.
 
-AgentRuntime borrows Habery and injected services/stores. Default v2 Regery owns
-one RegBaser shared by IPEX/Reactor; legacy VDR remains separate. Runtime.vdr is
-the existing concrete legacy Regery, which owns Reger/Tevery/Verifier; runtime.acdc
-is the concrete v2 Regery. Reactor receives the actual processors, not placeholder
-object/service bags or optional-method interfaces. Application entrypoints check
-genuine registry absence once and use its typed members. An injected Reger remains
-borrowed while runtime composition creates its processors with the protocol producer Deck.
-Readonly Haberies create neither default store. Factories own failed/unreturned acquisitions before
-cancellable reopen. Explicit close and scope exit both join cleanup; repeated close
-is harmless. Created Noter/Mailboxer use Habery's temp policy; injected sidecars stay
-borrowed. Acquire output after databases so reverse teardown closes output first.
+## OOBI, DID, mailbox and notices
 
-Replay captures prefix/FEL horizons without depth/message/proof quotas; cyclic
-delegation still fails. Close each cursor before hydration/yield; later accepted
-events cannot extend captures. Current proofs hydrate on consumption. Witness SN
-replay seeks physical insertion proems and excludes later FEL ordinals, retaining
-existing missing/corrupt-row behavior. Safe numeric representation guards remain
-RangeErrors. Endpoint replies reconstruct canonical ordered transferable groups
-and original seals; compact SN keys pad for ordering without rewriting tables.
-Exactly one cigar contributes a couple; no authenticators must fail.
+OOBI keeps its durable job row until terminal intake and joined cleanup. Failure
+clears in-flight markers but retains retry ownership and accepted events. Validate
+all child URLs before writes, then publish cues. Retrieval completion is not universal
+acceptance; accepted resolution convergence excludes unsolicited receipt delivery
+to static OOBI servers. Ingress/query/escrow dependencies still matter. Authenticator
+uses status-only GET; cleanup failure cannot publish authorization.
 
-ReplyStreams tracks actual lazy readers through EOF/cancel/shutdown before DB
-close. Pull yields one whole source message. openNonEmpty primes one nonempty
-message; empty-source cleanup precedes null. Iterator/acquisition/cleanup failures
-propagate. Finite witness/forwarding wrappers close real iterators and retain signed
-framing/introduction order; no output credit or collection policy applies.
+DID resolution completes KERI/VDR input and escrows before hosted JSON/projection;
+compare complete generated/hosted documents. Only default native fetch-header
+TypeError or non-ok status permits alternate URL fallback; injected TypeError,
+body/parser/storage/cancellation/cleanup failure propagates. Static files capture
+regular-file extents, ignore growth, reject truncation and join close. Dynamic
+did.json opens no replay; broader lazy generation/export is deferred.
 
-## Transport
+Mailboxer lives above Habery. fwd stores the inner message under recipient
+authorization; reading requires current requester proof/threshold, not correlation
+alone. Keep protocol messages/cursors, not unsupported consumer inbox/acks. Poll
+HTTP(S); TCP-only explicit mailbox roles retain precedence while awaiting HTTP.
+Without explicit mailbox routing, poll all eligible witnesses concurrently.
+Consumer completion precedes cursor advancement and the next SSE read. EOF/timeout/
+cancel discards unfinished events. Provider reads on demand, closes each LMDB
+iterator before suspension and frames a row in 64 KiB chunks without a message cap.
+Director close wakes polls/rejects new streams before stores close.
 
-Concrete lower TCP lends sockets and writes bytes without AgentRuntime/Reactor
-knowledge. tcp-conversation composes native RX/TX and owns application parsing.
-HTTP/HTTPS priority, TCP fallback, mailbox/direct routing and signed introductions
-remain. Explicit replies enable duplex; standalone sends remain transmit-only.
-Never open a second runtime over a borrowed runtime's Habery just to receive replies.
-
-socketBytes owns exclusive binary reads and one pending pull. It returns independent
-backing, normally in at most 64 KiB chunks; this is I/O granularity, not a memory
-bound. Abort/failure/return destroy and join close; genuine RX EOF leaves TX alive.
-Connection owners observe socket errors outside the read lifetime. Writers await
-callback/drain before another pull. Source-EOF starts an absolute drain deadline;
-reply activity cannot extend it. Directional failure stops and joins its sibling.
-Local transmission/dispatch counts prove neither authenticated reply nor remote
-acceptance. Both HTTP and TCP receipt success require persisted wigs for the
-requested event at the selected witness index. GET returns false without matching
-accepted proof; fanout uses only verified complementary indexed signatures, never
-raw peer-supplied proof fields or unrelated non-witness receipts.
-Use the requested accepted event's witness list for retrieval, proof indexes and
-cached completion; later witness replacements cannot reinterpret older proof.
-Baser resolves interactions through their preceding establishment, including an
-empty cohort. POST authorization uses that accepted event; a missing dependency
-remains escrowed instead of signing against the current kever.
-Receiptor/catchup borrow a Reactor selected at construction or create one over the
-existing Habery. They never create AgentRuntime, extra stores or
-workers. Anchorer also selects its Reactor/services once; processAllOnce takes no
-parent. Raw witness/Poster sends accept the actual Reactor for TCP reply intake.
-The HTTP/TCP operations retain actual cancellation and joined cleanup.
-
-Tufa tracks accepted handles/connection scopes until actual close without count
-caps, shared allowances or busy/drop callbacks. Wire/recognized peer failure is
-connection-local; infrastructure/cleanup failure reaches the host. Each socket
-keeps one pending parser pull plus deferred-query readiness. Host runtime drives
-escrows; standalone listener borrowers must provide that driving. Shutdown stops
-acceptance, joins RX/dispatch/TX/socket/listener, then closes stores.
-
-HTTP scopes own upload/fetch/body through joined cleanup. RequestInit.signal keeps
-its reason; pre-abort acquires no fetch. Only owned header timeout becomes mailbox
-null. Foreign AbortErrors remain failures. No HTTP/header/diagnostic byte policy
-or local capacity refusal exists. Strict and internal attempt senders share owners;
-only positive peer HTTP refusals yield expected refusal outcomes. postCesr sends
-successive framed POSTs; KERIpy714 StreamMessenger bulk PUT is a documented wire
-choice, not authority to change the endpoint. Preserve auth through media retries.
-HTTP shutdown closes runtime response/SSE streams before listener drain. Signals
-must wake the supervisor; task halt alone does not qualify signal shutdown.
-Post-header body failure terminates the transfer and reports the original error.
-
-## OOBI, DID and mailbox
-
-OOBI complete messages may commit before response EOF. Keep the original durable
-queue row through intake and joined cleanup; errors clear in-flight markers while
-retaining retry ownership and accepted events. The active-job guard is an earlier
-scope resource, not a bare finally flag. No busy/limit requeue path remains.
-Stage/validate all child URLs before queue/moobi writes, then publish cues.
-Introductions evaluate proof and queue changes in one synchronous owner turn.
-Resolved means retrieval complete, not universal event acceptance. JSON/schema
-collection has no byte policy. Authenticator performs status-only GETs with real
-clock/HTTP services; response cleanup failure cannot publish authorization.
-
-DID resolution waits for KERI/VDR EOF plus escrow convergence before hosted JSON
-or result. Compare complete generated/hosted documents. Only default native
-fetch-header TypeError or non-ok status permits alternate URL fallback; injected
-TypeError/body/parser/storage/cancellation failure propagates. Failed cleanup blocks
-fallback. Finite documents/receipt proofs keep validation and joined cancellation,
-without quotas. Static artifacts capture a regular-file extent, ignore growth,
-reject truncation and close after joined reads; 64 KiB chunks are no size guarantee.
-Dynamic did.json opens no CESR replay. Further lazy generation/export is deferred.
-
-Provider Mailboxer lives above Habery; recipient topic cursors remain protocol
-state. fwd stores the inner message. Recipient authorization gates storage; reading
-requires requester identity/current signature threshold, not correlation alone.
-Check exact signatures, cigars, old keys, duplicates and current sender refusal.
-Mailbox polling chooses HTTP(S); TCP-only explicit roles retain precedence while
-awaiting HTTP. With no explicit route, poll all eligible witness endpoints in stable
-order so an answer at a different witness remains recoverable.
-
-SSE awaits each complete event's consumer before another read. Timeout/EOF/cancel
-discard unfinished events for retry. Command-local polling resumes using endpoint/
-habitat indices after its absolute time window; no flattened peer queue is added.
-Continuous sinks finish before cursor advancement. There is no consumer inbox/ack.
-Provider reads only on demand and closes LMDB iterators before suspension. One
-row frames in 64 KiB output chunks, without a message cap. Query responses own
-nested readers; direct responses remain tracked. Director close wakes polls and
-rejects new direct/query responses before stores close. Keep exact nonnegative safe
-cursor ordinals, unmatched order and independent cleanup failures.
-
-## CLI and follow-ups
-
-Tufa owns CLI, role hosts and listeners; KERI exposes library/runtime/DB. Existing
-store commands use withExistingHabery/withAgentRuntime/withHabAndAgentRuntime;
-ensureHby is create-if-missing startup. Bootstrap uses explicit config paths.
-Respect the advertised Node floor with ordinary Promise construction; source Deno
-or newer-Node smoke alone does not qualify packed minimum-Node behavior.
-
-Signaler holds ordinary transient collapse/expiry hints, following KERIpy. Notifier
-publishes only after durable mutation; false/throw emits no hint. Later signal
-failure does not roll back the notice. Created producers close, injected ones stay
-borrowed. Full composed failure/restart and real cross-language disclosure/KRAM
-qualification remain open. See [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md),
-[transport plan](../../docs/plans/runtime/TRANSPORT_PLAN.md),
-[cue design](../../docs/design-docs/runtime/CUES.md),
-[mailbox design](../../docs/design-docs/mailbox/MAILBOX.md).
+Notifier publishes transient Signaler hints only after durable mutation; false/
+throw emits no hint and later signaling failure cannot roll back a notice. Borrowed
+producers stay borrowed. Tufa owns CLI/role hosts/listeners; KERI owns library/runtime/
+DB. Bootstrap uses explicit config paths. Packed minimum-Node, strict declarations,
+real native rows and composed failure/restart/disclosure/KRAM tests remain release
+gates; source Deno or addon-loading smoke alone does not qualify them.

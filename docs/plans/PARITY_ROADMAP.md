@@ -2,10 +2,11 @@
 
 Current direction (2026-10-15): concrete KERIpy-shaped runtime composition and
 complete-enclosure buffered parsing, alongside application-accounting and unsupported
-delivery-durability removal. These accepted targets remain to be implemented and
-qualified; recording them does not certify current source. The
-previous source checkpoint and resource guarantees are superseded, not proof of
-current completion. [ADR-0013](../adr/adr-0013-simple-component-flows.md) is normative.
+delivery-durability removal. Buffered decoding, concrete cue/output owners,
+protocol-only Reactor serialization, shared host workers and the public API
+reduction are implemented. Final composed and installed-package qualification
+remains open; source architecture does not certify release readiness. Older
+resource guarantees are superseded. [ADR-0013](../adr/adr-0013-simple-component-flows.md) is normative.
 KERIpy reference: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 
 Structural parsing and substantial protocol foundations exist. Full composed
@@ -15,8 +16,9 @@ records; actual files, sockets, iterators and payloads retain explicit cleanup.
 Existing accepted-state APIs need no eviction redesign for this removal.
 Shared ResourcePolicy, its errors and constructor plumbing are removed, along with
 remaining client, Reactor queue/waiter, listener and reply-proof quotas. Buffered
-decoder integration and accounting deletion are implemented; concrete cue/runtime
-ownership and full qualification remain open.
+decoder integration, accounting deletion and concrete cue/runtime ownership are
+implemented. This roadmap owns residual review and qualification, not a second
+migration back to retired APIs.
 
 ## Accepted architecture; supersedes older preservation instructions
 
@@ -70,11 +72,12 @@ ownership and full qualification remain open.
   deep-import patterns are removed. Keep actual Tufa composition and supported
   library operations; a new internal export must not silently expand package API.
   Finish residual facade/options and documentation review, then qualification.
-- One finite decoder shared by complete input and a small network input loop.
-  Wait for complete counted enclosures before entering them. Remove progressive
-  traversal, parser cursor, sink/EssrWriter staging and ordinary frame disposal.
-- Delete FrameIntake/TcpRead and custom parser/channel bridges. Host scopes own
-  real I/O cancellation/join. No ParseOptions/CursorOptions or socket mechanics
+- One finite decoder is shared by complete input and a small network input loop.
+  It waits for complete counted enclosures before entering them. Progressive
+  traversal, parser cursors, sink/EssrWriter staging and ordinary frame disposal
+  are removed.
+- FrameIntake/TcpRead and custom parser/channel bridges are removed. Host scopes
+  own real I/O cancellation/join. No ParseOptions/CursorOptions or socket mechanics
   in higher layers. Keep framing, qualified evidence and real storage consumers.
 
 Memory and latency proportional to the enclosing group are accepted. No early
@@ -104,28 +107,23 @@ preserving removed accounting or delivery guarantees.
 
 ## Publication sequence
 
-1. Remove application accounting and unsupported delivery durability under
-   [ADR-0013](../adr/adr-0013-simple-component-flows.md). Parser/codecs/domain,
-   ordinary Decks, storage/replay, runtime and CLI must not expose budgets,
-   estimates, reservations, credits or capacity-refusal protocols. Only a minimal
-   private socket control justified by production evidence may remain.
-2. Delete outbox storage/workers/wiring/CLI/tests completely; remove durable mailbox
-   consumer acknowledgements/deadletters and KRAM ready/snapshot acknowledgement
-   machinery. Keep KERIpy-supported escrows, caches, mailbox storage/cursors,
-   accepted evidence, transactions and real cleanup. No old-version keri-ts API or
-   data compatibility, migration/recovery readers, or new-to-old tests.
-3. Complete the accepted runtime and buffered-parser removals above, including
-   their transport callers, public API and documentation. Refactor real ownership
-   first; retain framing, cryptographic checks and transaction ordering. No
-   replacement framework, generic gate, no-op policy or compatibility layer.
-4. Establish live graduated-disclosure and KRAM interop in both directions,
+1. Keep delivered removals absent: application accounting, outboxes, unsupported
+   mailbox/KRAM acknowledgements, progressive parser machinery and generic runtime
+   execution/delivery layers. Preserve wire/crypto checks, protocol state, actual
+   cleanup and the concrete owners above. No compatibility implementation or
+   replacement framework is required.
+2. Finish residual facade/options review against real callers. Keep contracts,
+   learnings and plans aligned with the resulting source, without duplicating
+   completed migration work as new tasks.
+3. Establish live graduated-disclosure and KRAM interop in both directions,
    single-signature and multisig with witnesses and mailboxes. Existing frozen
    fixtures and legacy ACDC tests do not close this gate. `xip/pro/bar` reference
    processing stubs remain labeled; do not invent upstream support.
-5. Run the full maintained integration/e2e/interop inventory, representative real-path/lifecycle
-   checks and exact installed-package checks. Preserve participant topology.
-6. Refresh the held version PR only after those gates pass; publish CESR, KERI and
-   Tufa in dependency order and verify actual registry artifacts. No release yet.
+4. Run the full maintained integration/e2e/interop inventory, representative real-path/
+   lifecycle checks and exact installed-package checks. Preserve participant topology.
+5. Refresh the held version PR only after those gates pass; publish CESR, KERI and
+   Tufa in dependency order and verify actual registry artifacts under the
+   [final release gate](#final-release-gate), including its version floor. No release yet.
 
 Historical resource PRs are removal inputs, not a stack to finish or preserve.
 The runtime, storage, parser, KRAM and ESSR subject plans own meaningful remaining
