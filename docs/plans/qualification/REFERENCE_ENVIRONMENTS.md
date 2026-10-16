@@ -71,9 +71,9 @@ references; one result must not be attributed to another.
 ## Current qualification evidence
 
 The 2026-10-16 clean source candidate `7217902a` completed all 25 KERI owners:
-785 cases over 142 files, including pairwise graduated disclosure, KRAM, composed
+943 cases over 142 files, including pairwise graduated disclosure, KRAM, composed
 mailbox, DID resolution and the local manual delegation/witness owners. Together
-with CESR, Tufa and tooling, 1,351 cases passed with none ignored. Package
+with CESR, Tufa and tooling, 1,509 cases passed with none ignored. Package
 implementation/test inputs were unchanged through merged #519 (`b1b3d8dc`).
 
 The shared mailbox CLI imported the selected `331f32e4` source with verified Git
@@ -88,7 +88,9 @@ execution. A clean exact-source retry passed all other owners but found that the
 resolver cannot run on Python 3.14. Installing its supported interpreter and
 rerunning the same four cases resolved those environment failures. Raw failures,
 771-file source proofs, actual-import records and the transparent aggregate are
-retained in the dated cleanup qualification artifacts. This is an aggregate after
+retained in the dated cleanup qualification artifacts. The original count omitted
+a 158-passed summary containing child-step notation; the corrected count does
+not change execution or source evidence. This is an aggregate after
 environment repair, not a claim that the first command succeeded. Final versioned
 artifacts, package dependencies, CI and publication still require their own gates.
 
