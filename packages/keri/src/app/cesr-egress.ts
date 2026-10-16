@@ -4,7 +4,6 @@ import {
   byteString,
   type CesrFrame,
   collectPayload,
-  discardFrame,
   framePayload,
   type ParseOptions,
   type Payload,
@@ -64,7 +63,6 @@ interface RequestBody {
   /** Join the last read and iterator cleanup after its owning signal aborts. */
   close(): Promise<void>;
 }
-
 /** Adapt an already admitted payload to the platform fetch boundary without collecting it. */
 function requestBody(payload: Payload, upstream: AbortSignal): RequestBody {
   // Fetch can cancel the upload independently of the surrounding response scope.
@@ -105,7 +103,6 @@ function requestBody(payload: Payload, upstream: AbortSignal): RequestBody {
     close,
   };
 }
-
 /** Read only a finite failed-response prefix and cancel any unread tail. */
 async function errorText(response: Response, limit: number, signal: AbortSignal): Promise<string> {
   if (!response.body) return "";
@@ -143,32 +140,25 @@ async function errorText(response: Response, limit: number, signal: AbortSignal)
     }
   }
 }
-
 /** Reject invalid budgets before allocating buffers or opening a remote connection. */
 function byteLimit(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 0) throw new RangeError(`${name} must be a non-negative safe integer`);
   return value;
 }
-
 /**
  * Open one frame response as an Effection resource owned by the caller's scope.
  *
  * The caller supplies a complete frame tree. Body mode streams the frame; header mode qualifies
  * attachments as text. Scope exit aborts fetch and its body iterator, joins pending I/O,
- * and closes the response. The caller retains ownership of frame.essr.
+ * and closes the response. The frame contains ordinary ESSR evidence.
  */
 export function* requestFrame(url: string, frame: CesrFrame, options: EgressOptions = {}): Operation<Response> {
   const result = yield* openFrameResponse(url, frame, options);
   if (result.kind === "refuse") throw result.error;
   return result.response;
 }
-
 /** Each actual HTTP request owns its transport scope independently of source parsing. */
-function openFrameResponse(
-  url: string,
-  frame: CesrFrame,
-  options: EgressOptions,
-): Operation<FrameResponse> {
+function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions): Operation<FrameResponse> {
   return resource<FrameResponse>(function*(provide) {
     // One controller owns fetch, payload reads, and the response body until the resource closes.
     const controller = new AbortController();
@@ -285,7 +275,6 @@ function openFrameResponse(
     }
   });
 }
-
 /** Strict source sender; callers wanting retry/refusal policy use the joined attempt result. */
 export function* postCesr(
   url: string,
@@ -296,7 +285,6 @@ export function* postCesr(
   const result = yield* attemptPostCesr(url, source, options, consume);
   if (result.kind === "refuse") throw result.error;
 }
-
 /** Post through the same lifetime owner, returning only this invocation's expected refusal after joined cleanup. */
 export function attemptPostCesr(
   url: string,
@@ -318,7 +306,7 @@ export function attemptPostCesr(
       signal,
     });
     for (const frame of yield* each(channel.frames)) {
-      try {
+      {
         // Each request is closed before another frame or request can become resident.
         const result = yield* scoped(function*(): Operation<CesrPostResult> {
           const response = yield* openFrameResponse(url, frame, { ...options, services, signal });
@@ -327,8 +315,6 @@ export function attemptPostCesr(
           return { kind: "complete" };
         });
         if (result.kind === "refuse") return result;
-      } finally {
-        yield* call(() => discardFrame(frame));
       }
       yield* each.next();
     }

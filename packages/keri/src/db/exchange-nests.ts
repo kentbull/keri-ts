@@ -3,10 +3,10 @@ import {
   b,
   type CesrFrame,
   collectPayload,
+  concatBytes,
   Counter,
-  discardFrame,
   nestedPayload,
-  parse,
+  parseBytes,
   t,
   Vrsn_2_0,
 } from "cesr-ts";
@@ -94,62 +94,18 @@ export function publishNests(db: Baser, said: string, stage: string): void {
   db.enstStaging.rem([stage]);
 }
 
-/** Select a stored wrapper's genus without copying its entire qualified wire row. */
-async function* rowSource(wire: Uint8Array, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
-  yield Counter.makeGVC(Vrsn_2_0);
-  for (let offset = 0; offset < wire.length; offset += 65536) {
-    signal?.throwIfAborted();
-    yield wire.slice(offset, offset + 65536);
-  }
-}
-
-/**
- * Hydrate stored substreams with file-backed ESSR staging owned by the caller.
- * No private metadata is required, so unchanged Python-origin rows reopen through the same path.
- */
-export async function loadNests(
-  db: Baser,
-  said: string,
-  signal?: AbortSignal,
-): Promise<CesrFrame[]> {
+/** Hydrate each stored wrapper through the finite decoder without parser-owned files. */
+export function loadNests(db: Baser, said: string, signal?: AbortSignal): CesrFrame[] {
   const nests: CesrFrame[] = [];
   let ordinal = 0;
-  try {
-    for (;;) {
-      signal?.throwIfAborted();
-      const row = nextRow(db, db.enst, said, ordinal);
-      if (!row) break;
-      ordinal = row.next;
-      const archive = await db.openPayloads(signal);
-      let count = 0;
-      for await (
-        const frame of parse(rowSource(row.wire, signal), {
-          signal,
-          payloadSink: (stageSignal) => archive.files.stage(stageSignal),
-        })
-      ) {
-        // Claim every owner before checking cardinality so failures dispose all reopened files.
-        nests.push(frame);
-        if (++count > 1) throw new Error("Stored nested row must contain exactly one child substream");
-      }
-      if (count !== 1) throw new Error("Stored nested row must contain exactly one child substream");
-    }
-    return nests;
-  } catch (error) {
-    try {
-      await discardNests(nests);
-    } catch (cleanup) {
-      throw new AggregateError([error, cleanup], "Nested loading and cleanup failed", { cause: error });
-    }
-    throw error;
+  for (;;) {
+    signal?.throwIfAborted();
+    const row = nextRow(db, db.enst, said, ordinal);
+    if (!row) break;
+    ordinal = row.next;
+    const frames = parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), row.wire));
+    if (frames.length !== 1) throw new Error("Stored nested row must contain exactly one child substream");
+    nests.push(frames[0]);
   }
-}
-
-/** Release every temporary reopened descendant, even if one owner's cleanup fails. */
-export async function discardNests(nests: readonly CesrFrame[]): Promise<void> {
-  const results = await Promise.allSettled(nests.map((frame) => discardFrame(frame)));
-  const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
-  if (failures.length) {
-    throw new AggregateError(failures.map((result) => result.reason), "Nested payload cleanup failed");
-  }
+  return nests;
 }

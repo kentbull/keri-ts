@@ -1,85 +1,52 @@
 # CESR Parser Maintainer Guide
 
-The parser has one progressive engine. The
-[state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) defines completion
-and genus selection; the [progressive contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md)
-defines payload ownership and limits.
+Read the [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) for
+completion/genus rules and the [evidence contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md)
+for codec and ESSR semantics. One finite decoder serves complete input and the
+buffered receiving loop.
 
-## Read the code in this order
+| Module                    | Responsibility                                                            |
+| ------------------------- | ------------------------------------------------------------------------- |
+| parser/decoder.ts         | Decode complete finite ranges, enclosure bounds and local genus scopes.   |
+| parser/parser.ts          | Accumulate fragments and request more bytes on shortage; join the source. |
+| parser/complete.ts        | Synchronous parseBytes through the same finite decoder.                   |
+| parser/body.ts            | Decode native, non-native or opaque body framing.                         |
+| parser/attachments.ts     | Hydrate finite v1/v2 evidence leaves and tuples.                          |
+| parser/essr.ts            | Derive raw/qualified byte views from ordered Texters.                     |
+| primitives/texter.ts      | Validate qualification and zero lead padding.                             |
+| parser/serialize.ts       | Derive output counters and lengths from complete evidence.                |
+| annotate/render.ts        | Render each node within its original wire scope.                          |
+| keri/src/app/parsering.ts | Project hydrated values into protocol envelopes.                          |
 
-| Module                                    | Responsibility                                                                                              |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `packages/cesr/src/parser/progressive.ts` | Generator locals own nested progress and scoped genus; `yield*` emits complete GenericGroup children early. |
-| `packages/cesr/src/parser/cursor.ts`      | Segmented input, bounded scopes, cancellation, and input limits.                                            |
-| `packages/cesr/src/parser/body.ts`        | Hydrate one admitted native, non-native, or opaque body.                                                    |
-| `packages/cesr/src/parser/attachments.ts` | Direct v1/v2 handlers hydrate finite attachment leaves and known primitive roles.                           |
-| `packages/cesr/src/parser/essr.ts`        | Await payload sinks while streaming ESSR wire and expose reopenable wire/raw views.                         |
-| `packages/cesr/src/parser/complete.ts`    | Collect finite input with the same engine and release all collected payloads on failure.                    |
-| `packages/cesr/src/adapters/effection.ts` | Optional scope-owned frame stream; abort and join source cleanup before releasing input.                    |
-| `packages/cesr/src/parser/common.ts`      | Frame-family names, default genus, and selector code.                                                       |
-| `packages/cesr/src/core/domain.ts`        | Text/binary token and count-unit widths.                                                                    |
-| `packages/cesr/src/serder/serdery.ts`     | Hydrate the body once, including native fields.                                                             |
-| `packages/cesr/src/annotate/render.ts`    | Annotation-only token walking and rendering.                                                                |
-| `packages/keri/src/app/parsering.ts`      | Project parsed values into runtime envelopes without decoding their bytes again.                            |
+## Follow a message
 
-`CesrFrame` contains `body`, ordinary `attachments`, and an optional owned `essr`
-payload and parent-owned `nests`. Errors reject parsing. A `GroupTuple` is an ordered recursive tuple;
-`OpaqueSpan` holds original wire bytes and their domain.
+1. For finite bytes, call parseBytes. For transport input, parse receives fragments
+   from a source that cooperates with its owner's cancellation signal.
+2. Receive a complete counted enclosure before decoding its first child. Open
+   attachments need a following body, a closed enclosure or applicable real EOF.
+3. Decode local finite scopes and exact count units. Parent-owned nests retain
+   independent bodies/signatures; their proofs are never inherited from parents.
+4. Carry ESSR as ordered Texters. No parser sink, cursor, owner registry or ordinary
+   frame disposal exists. Storage and crypto own their actual file work.
+5. Dispatch verifies policy/proofs and publishes protocol state. Parsing alone
+   authenticates nothing. A received group creates no database transaction.
 
-## Follow one frame
+Async parse marks intrinsic wire failures with WireParseError and preserves the
+finite cause. Source, codec infrastructure and abort failures retain identity.
+Finite parseBytes throws directly. Annotation is synchronous and retains ordinary
+parsed values after rendering. Buffering accepts enclosure-sized memory/latency;
+no early-child or giant-transfer performance gate applies.
 
-1. Pull `parse(source, options)` for the next complete frame. The cursor reads
-   input on demand; empty chunks and chunk boundaries do not complete messages.
-2. Read a selector or body, then traverse attachments inside exact bounded scopes.
-   GenericGroup children can finish before their siblings arrive. A
-   BodyWithAttachmentGroup must contain one complete parent-owned tree before it can yield.
-3. Finish an open attachment set at a following body, a closed attachment
-   enclosure, or valid source EOF. A partial terminal token rejects the parse.
-4. Finish any ESSR stage immediately before delivery. The caller now owns that
-   frame's payload and must discard it after consumption. Cancellation releases
-   undelivered stages and joins cooperative input cleanup.
-5. Runtime envelopes reuse hydrated body and attachment values. Runtime dispatch
-   owns authorization and verification; parsing alone accepts no protocol event.
+## Extend only at existing boundaries
 
-Use `parseBytes(bytes, options)` for finite collection. Its default 8 MiB input
-budget is separate from per-frame limits; successful callers own all returned
-payloads. A later failure discards every collected frame's payload before rejecting.
+Check pinned KERIpy first. Add finite leaves to HANDLERS_V1/HANDLERS_V2 and
+structural framing to decoder.ts. Use narrow primitive readers and actual tuple
+helpers, without a descriptor factory, parser strategy or compatibility engine.
+Keep item counts separate from quadlet/triplet counts and genus separate from
+body protocol. Selected input never retries under another major version.
 
-## Version and boundary rules
-
-- `gvrsn` is CESR genus; `pvrsn` is message protocol. They are distinct layers.
-- A selected genus controls attachment decoding exactly once. Unknown codes and
-  malformed primitives do not cause cross-major retries.
-- Null selection permits legacy frame-start inference. An explicit selector
-  persists; enclosure selectors remain local to their bounded scope.
-- V1 signature/tuple counters count items. V2 counters count payload quadlets
-  (`txt`) or triplets (`bny`). Sized v1 wrappers also count payload units.
-- An impossible child extent is a `GroupSizeError`; no reader borrows bytes from
-  the next group. Ordinary leaves are finite admitted values; ESSR transfers are
-  separately bounded and awaited.
-- Known roles hydrate narrow primitives such as Siger, Verfer/Cigar,
-  NumberPrimitive, Diger, and Texter. Preserve canonical protocol counter names.
-- Malformed wrappers are errors, not opaque recovery paths. Non-native opaque
-  bodies remain an explicit behavior after metadata passes genus validation.
-
-## Adding a group
-
-Check the pinned KERIpy source first. Add a direct `HANDLERS_V1` or `HANDLERS_V2`
-entry for a finite leaf. Structural wrappers belong to progressive traversal;
-payload transfers belong to the ESSR sink path. Use tuple helpers for actual
-fixed tuples, with small named readers for nested or variable shapes.
-
-Validate real text and binary wire, count units, primitive roles, enclosure
-bounds, and split input. Update the lifecycle contract when behavior changes.
-Generated tables target KERIpy `7143832813cac6a394ab1faf9be83bb3372be87c`;
-[the interop guide](../../../packages/keri/test/README.md) records the live fork
-pin and its exact upstream provenance. Changing either baseline is a coordinated
-protocol task.
-
-## Deliberate cuts
-
-There is no synchronous stream engine, push API, frame/error event wrapper, or
-atomic ESSR adapter. New sources start new parser invocations. Keep ordinary
-attachment dispatch in direct maps; do not restore descriptor factories,
-version fallback, observers, or aliases for old keri-ts APIs. Supported
-KERI/CESR/ACDC v1/v2 wire behavior remains required.
+Validate frozen vectors, text/binary domains, fragmented input, terminal shortages,
+scoped genus and nested proofs. Generated tables target KERIpy
+7143832813cac6a394ab1faf9be83bb3372be87c; live fork pins remain explicitly separate.
+The optional Effection bridge/TcpRead migration belongs to the
+[parser plan](../../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md).

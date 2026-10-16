@@ -12,15 +12,7 @@
  *   full CESR payload is sent in the body instead of splitting attachments into
  *   the header
  */
-import {
-  discardFrame,
-  parseBytes,
-  parseSerder,
-  requireFlatFrame,
-  ResourceLimitError,
-  SerderKERI,
-  smell,
-} from "cesr-ts";
+import { parseBytes, parseSerder, requireFlatFrame, ResourceLimitError, SerderKERI, smell } from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
 import { collectBytes, type SourceOptions, streamBytes } from "./byte-source.ts";
 
@@ -91,7 +83,6 @@ export function cesrBodyModeFromGlobal(
 ): CesrBodyMode {
   return normalizeCesrBodyMode(value ?? undefined);
 }
-
 /**
  * Build one HTTP request payload for a CESR message.
  *
@@ -104,11 +95,7 @@ export function cesrBodyModeFromGlobal(
  */
 export function buildCesrRequest(
   message: Uint8Array,
-  {
-    bodyMode = DEFAULT_CESR_BODY_MODE,
-    contentType = CESR_CONTENT_TYPE,
-    destination,
-  }: {
+  { bodyMode = DEFAULT_CESR_BODY_MODE, contentType = CESR_CONTENT_TYPE, destination }: {
     bodyMode?: CesrBodyMode;
     contentType?: string;
     destination?: string;
@@ -118,7 +105,6 @@ export function buildCesrRequest(
   const headers: Record<string, string> = {
     "Content-Type": contentType,
   };
-
   if (destination) {
     headers[CESR_DESTINATION_HEADER] = destination;
   }
@@ -140,21 +126,15 @@ export function buildCesrRequest(
     body: arrayBufferFromBytes(message.slice(0, serder.size)),
   };
 }
-
 /**
  * Build one raw CESR-body HTTP request.
  *
  * This is the right helper for endpoints that accept an already assembled CESR
  * payload or a multi-message CESR stream in the body.
  */
-export function buildCesrStreamRequest(
-  bytes: Uint8Array,
-  {
-    destination,
-  }: {
-    destination?: string;
-  } = {},
-): { headers: Record<string, string>; body: ArrayBuffer } {
+export function buildCesrStreamRequest(bytes: Uint8Array, { destination }: {
+  destination?: string;
+} = {}): { headers: Record<string, string>; body: ArrayBuffer } {
   const headers: Record<string, string> = {
     "Content-Type": CESR_CONTENT_TYPE,
   };
@@ -166,7 +146,6 @@ export function buildCesrStreamRequest(
     body: arrayBufferFromBytes(bytes),
   };
 }
-
 /**
  * Reconstruct one logical CESR payload from an incoming HTTP request.
  *
@@ -178,7 +157,6 @@ export function requestBytes(
   { maxHeaderBytes = 64 * 1024, ...options }: SourceOptions & { maxHeaderBytes?: number } = {},
 ): AsyncIterable<Uint8Array> {
   return read();
-
   /** Acquire the body lazily, after validating the separately bounded attachment header. */
   async function* read(): AsyncGenerator<Uint8Array> {
     const attachment = req.headers.get(CESR_ATTACHMENT_HEADER);
@@ -296,11 +274,10 @@ export async function inspectCesrTerminalMessage(
 ): Promise<SerderKERI | null> {
   return (await inspectCesrStream(bytes)).terminal;
 }
-
 /** Parse one entire CESR request body and return every message plus the last. */
 export async function inspectCesrStream(bytes: Uint8Array): Promise<CesrStreamInspection> {
   const frames = await parseBytes(bytes);
-  try {
+  {
     const messages = frames.map((frame) => {
       requireFlatFrame(frame, "HTTP message inspection");
       const { body } = frame;
@@ -308,9 +285,6 @@ export async function inspectCesrStream(bytes: Uint8Array): Promise<CesrStreamIn
       return body;
     });
     return { messages, terminal: messages.at(-1) ?? null };
-  } finally {
-    // Inspection returns body metadata only; it must not retain discarded attachment payloads.
-    for (const frame of frames) await discardFrame(frame);
   }
 }
 

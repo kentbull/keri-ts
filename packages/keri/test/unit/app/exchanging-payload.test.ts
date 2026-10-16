@@ -5,8 +5,6 @@ import {
   Dater,
   Diger,
   Encrypter,
-  type EssrPayload,
-  essrPayload,
   MtrDex,
   NumberPrimitive,
   parse,
@@ -19,6 +17,7 @@ import {
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";
+import { essrRaw, essrWire } from "../../../../cesr/src/parser/essr.ts";
 import { EssrRecipient } from "../../../src/app/essr.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
@@ -46,16 +45,9 @@ async function scenario(test: (hby: Habery, sender: Hab) => Promise<void>): Prom
   });
 }
 
-/** Stage small independent Texters under one logical commitment, without a parser fixture. */
-async function payload(hby: Habery, parts = ["abc", "xyz"], gvrsn = Vrsn_1_0): Promise<EssrPayload> {
-  const sink = await (await hby.db.openPayloads()).files.stage();
-  let size = 0;
-  for (const part of parts) {
-    const texter = new Texter({ raw: b(part), code: MtrDex.Bytes_L0 });
-    await sink.write(texter.qb64b);
-    size += texter.raw.length;
-  }
-  return essrPayload(await sink.finish(), parts.length, size, gvrsn);
+/** Ordinary fragments share one signed concatenated-byte commitment. */
+function payload(parts = ["abc", "xyz"]): Texter[] {
+  return parts.map((part) => new Texter({ raw: b(part), code: MtrDex.Bytes_L0 }));
 }
 
 /** The EXN commits concatenated bytes, so legal fragment boundaries may change on replay. */
@@ -78,26 +70,25 @@ function signatures(sender: Hab, serder: SerderKERI): TransIdxSigGroup[] {
   ];
 }
 
-Deno.test("exchange payload references survive request disposal and preserve readable wire evidence", async () => {
+Deno.test("exchange persists ordinary fragments and preserves the first accepted wire representation", async () => {
   await scenario(async (hby, sender) => {
     const serder = message(sender);
-    const incoming = await payload(hby);
+    const incoming = payload();
     const exchanger = new Exchanger(hby);
     assertEquals(
-      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: incoming }))).kind,
+      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essrs: incoming }))).kind,
       "accept",
     );
-    await incoming.discard(); // A published same-store wire owner has been transferred.
-    const stored = await hby.db.getEssr(serder.said!);
+
+    const stored = await hby.db.getEssrs(serder.said!);
     assertExists(stored);
-    assertEquals(await collectPayload(stored.raw), b("abcxyz"));
+    assertEquals(await collectPayload(essrRaw(stored)), b("abcxyz"));
     assertEquals([...hby.db.essrs.getIter([serder.said!])].map((item) => item.text), ["abc", "xyz"]);
-    const reframed = await payload(hby, ["ab", "cxyz"]);
+    const reframed = payload(["ab", "cxyz"]);
     assertEquals(
-      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: reframed }))).kind,
+      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essrs: reframed }))).kind,
       "accept",
     );
-    await reframed.discard();
     assertEquals([...hby.db.essrs.getIter([serder.said!])].map((item) => item.text), ["abc", "xyz"]);
     // An incomplete attempt remains pending but cannot downgrade accepted ownership.
     assertEquals((await run(() => exchanger.processEvent({ serder }))).kind, "escrow");
@@ -110,7 +101,7 @@ Deno.test("exchange payload references survive request disposal and preserve rea
 Deno.test("exchange escrow reopens owned wire and retains mailbox provenance on acceptance", async () => {
   await scenario(async (hby, sender) => {
     const serder = message(sender);
-    const incoming = await payload(hby);
+    const incoming = payload();
     const seen: string[] = [];
     let missing = true;
     const schema = new Diger({ raw: Diger.digest(b("pending schema"), "E"), code: "E" }).qb64;
@@ -126,10 +117,9 @@ Deno.test("exchange escrow reopens owned wire and retains mailbox provenance on 
       }],
     });
     assertEquals(
-      (await run(() => exchanger.processEvent({ serder, essr: incoming, mailboxAid: sender.pre }))).kind,
+      (await run(() => exchanger.processEvent({ serder, essrs: incoming, mailboxAid: sender.pre }))).kind,
       "escrow",
     );
-    await incoming.discard();
     assertEquals(hby.db.exns.get([serder.said!]), null);
     const group = signatures(sender, serder)[0];
     // Later signatures can arrive independently; retry must use the stored ESSR owner.
@@ -141,13 +131,13 @@ Deno.test("exchange escrow reopens owned wire and retains mailbox provenance on 
       yield* hby.db.close();
       yield* hby.db.reopen({ reuse: true });
     });
-    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw), b("abcxyz"));
+    assertEquals(await collectPayload(essrRaw((await hby.db.getEssrs(serder.said!))!)), b("abcxyz"));
     missing = false;
     await run(() => exchanger.processEscrows());
     assertEquals(seen, [sender.pre]);
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertExists(hby.db.exns.get([serder.said!]));
-    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw), b("abcxyz"));
+    assertEquals(await collectPayload(essrRaw((await hby.db.getEssrs(serder.said!))!)), b("abcxyz"));
   });
 });
 
@@ -155,28 +145,14 @@ Deno.test("exchange escrow retry preserves evidence when its stored payload read
   await scenario(async (hby, sender) => {
     const serder = message(sender);
     const said = serder.said!;
-    const incoming = await payload(hby);
+    const incoming = payload();
     const exchanger = new Exchanger(hby);
-    assertEquals((await run(() => exchanger.processEvent({ serder, essr: incoming }))).kind, "escrow");
-    await incoming.discard();
+    assertEquals((await run(() => exchanger.processEvent({ serder, essrs: incoming }))).kind, "escrow");
     const group = signatures(sender, serder)[0];
     for (const siger of group.sigers) hby.db.esigs.add([said, group.pre, group.snh, group.said], siger);
     const failure = new Deno.errors.PermissionDenied("stored ESSR reader cannot open its file");
-    const getEssr = hby.db.getEssr;
-    hby.db.getEssr = async (said, signal) => {
-      const stored = await getEssr.call(hby.db, said, signal);
-      if (!stored) return null;
-      return {
-        ...stored,
-        raw: {
-          size: stored.raw.size,
-          /** Fail at the lazy read boundary after durable metadata was successfully opened. */
-          async *open() {
-            throw failure;
-          },
-        },
-      };
-    };
+    const getEssrs = hby.db.getEssrs;
+    hby.db.getEssrs = () => Promise.reject(failure);
     try {
       assertStrictEquals(await assertRejects(() => run(() => exchanger.processEscrows())), failure);
       assertExists(hby.db.epse.get([said]));
@@ -185,19 +161,19 @@ Deno.test("exchange escrow retry preserves evidence when its stored payload read
       assertExists(await (await hby.db.openPayloads()).get(`essr/${said}`));
       assertEquals(exchanger.complete(said), false);
     } finally {
-      hby.db.getEssr = getEssr;
+      hby.db.getEssrs = getEssrs;
     }
     await run(() => exchanger.processEscrows());
     assertEquals(exchanger.complete(said), true);
     assertEquals(hby.db.epse.get([said]), null);
-    assertEquals(await collectPayload((await hby.db.getEssr(said))!.raw), b("abcxyz"));
+    assertEquals(await collectPayload(essrRaw((await hby.db.getEssrs(said))!)), b("abcxyz"));
   });
 });
 
 Deno.test("exchange rejects digest failures before publishing wire or invoking handlers", async () => {
   await scenario(async (hby, sender) => {
     const serder = message(sender);
-    const incoming = await payload(hby, ["wrong"]);
+    const incoming = payload(["wrong"]);
     let handled = 0;
     const exchanger = new Exchanger(hby, {
       handlers: [{
@@ -208,57 +184,39 @@ Deno.test("exchange rejects digest failures before publishing wire or invoking h
       }],
     });
     assertEquals(
-      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: incoming }))).kind,
-      "reject",
-    );
-    const lying = {
-      ...incoming,
-      raw: {
-        size: 6,
-        /** Advertise valid decoded bytes while the canonical wire remains tampered. */
-        async *open() {
-          yield b("abcxyz");
-        },
-      },
-    };
-    // Raw bytes supplied separately cannot authenticate different canonical wire bytes.
-    assertEquals(
-      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: lying }))).kind,
+      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essrs: incoming }))).kind,
       "reject",
     );
     assertEquals(handled, 0);
     assertEquals(hby.db.exns.get([serder.said!]), null);
     assertEquals(hby.db.essrs.get([serder.said!]), []);
-    assertEquals(await hby.db.getEssr(serder.said!), null);
-    await incoming.discard();
-    assertEquals(names(join(hby.db.path!, "payloads", "objects")), []);
+    assertEquals(await hby.db.getEssrs(serder.said!), null);
   });
 });
 
-Deno.test("exchange replay streams v1 and v2 ESSR into a fresh progressive parser", async () => {
+Deno.test("exchange replay streams v1 and v2 ESSR through a fresh buffered parser", async () => {
   await scenario(async (hby, sender) => {
     for (const gvrsn of [Vrsn_1_0, Vrsn_2_0]) {
       const serder = message(sender, `v${gvrsn.major}`);
-      const incoming = await payload(hby, [`v${gvrsn.major}`], gvrsn);
+      const incoming = payload([`v${gvrsn.major}`]);
       const exchanger = new Exchanger(hby);
       assertEquals(
-        (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: incoming }))).kind,
+        (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essrs: incoming, gvrsn })))
+          .kind,
         "accept",
       );
-      await incoming.discard();
       let frames = 0;
       for await (const frame of parse(exchanger.replay(serder.said!))) {
         frames++;
         assertEquals(frame.body.raw, serder.raw);
-        assertEquals(await collectPayload(frame.essr!.raw), b(`v${gvrsn.major}`));
-        await frame.essr!.discard();
+        assertEquals(await collectPayload(essrRaw(frame.essrs!)), b(`v${gvrsn.major}`));
       }
       assertEquals(frames, 1);
     }
   });
 });
 
-Deno.test("exchange replay borrows bounded KERIpy ESSR rows without private metadata", async () => {
+Deno.test("exchange replay reads KERIpy ESSR rows without private metadata", async () => {
   await scenario(async (hby, sender) => {
     const serder = message(sender);
     hby.db.exns.pin([serder.said!], serder);
@@ -273,31 +231,13 @@ Deno.test("exchange replay borrows bounded KERIpy ESSR rows without private meta
     let frames = 0;
     for await (const frame of parse(exchanger.replay(serder.said!))) {
       frames++;
-      assertEquals(frame.essr!.count, 2);
-      assertEquals(await collectPayload(frame.essr!.raw), b("abcxyz"));
-      await frame.essr!.discard();
+      assertEquals(frame.essrs!.length, 2);
+      assertEquals(await collectPayload(essrRaw(frame.essrs!)), b("abcxyz"));
     }
     assertEquals(frames, 1);
     assertEquals(hby.db.exchangeMeta.get([serder.said!]), null); // Replay does not introduce a second publication path.
-    // Borrowing and disposing the view never transfers ownership of KERIpy rows.
-    const borrowed = (await hby.db.getEssr(serder.said!))!;
-    for await (const chunk of borrowed.wire.open()) assertEquals(chunk.buffer.byteLength <= 65536, true);
-    await borrowed.discard();
+    assertEquals((await hby.db.getEssrs(serder.said!))!.map((texter) => texter.text), ["abc", "xyz"]);
     assertEquals(hby.db.essrs.get([serder.said!]).map((texter) => texter.text), ["abc", "xyz"]);
-    // One stored token crosses the read target, proving chunks cannot retain its whole backing buffer.
-    const text = "x".repeat(65537);
-    const large = message(sender, text);
-    hby.db.exns.pin([large.said!], large);
-    hby.db.essrs.add([large.said!], new Texter({ raw: b(text), code: MtrDex.Bytes_L0 }));
-    const split = (await hby.db.getEssr(large.said!))!;
-    let chunks = 0;
-    for await (const chunk of split.wire.open()) {
-      chunks++;
-      assertEquals(chunk.buffer.byteLength <= 65536, true);
-    }
-    assertEquals(chunks > 1, true);
-    assertEquals(await collectPayload(split.raw), b(text));
-    await split.discard();
   });
 });
 
@@ -309,32 +249,29 @@ Deno.test("exchange imports preserve valid first fragments and reject corrupt re
       hby.db.essrs.add([serder.said!], new Texter({ raw: b(text), code: MtrDex.Bytes_L0 }));
     }
     const exchanger = new Exchanger(hby);
-    const invalid = await payload(hby, ["bad"]);
+    const invalid = payload(["bad"]);
     assertEquals(
-      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: invalid }))).kind,
+      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essrs: invalid }))).kind,
       "reject",
     );
-    await invalid.discard();
     assertEquals(hby.db.exchangeMeta.get([serder.said!]), null);
-    const supplied = await payload(hby, ["ab", "cxyz"]);
+    const supplied = payload(["ab", "cxyz"]);
     assertEquals(
-      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: supplied }))).kind,
+      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essrs: supplied }))).kind,
       "accept",
     );
-    await supplied.discard();
     // Identical decoded bytes permit different fragmentation, but the first representation remains evidence.
     const original = hby.db.essrs.get([serder.said!]).map((texter) => texter.qb64).join("");
-    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.wire), b(original));
+    assertEquals(await collectPayload(essrWire((await hby.db.getEssrs(serder.said!))!)), b(original));
 
     const corrupt = message(sender, "uvwxyz");
     hby.db.epse.pin([corrupt.said!], corrupt);
     hby.db.essrs.add([corrupt.said!], new Texter({ raw: b("bad"), code: MtrDex.Bytes_L0 }));
-    const valid = await payload(hby, ["uvw", "xyz"]);
+    const valid = payload(["uvw", "xyz"]);
     const decision = await run(() =>
-      exchanger.processEvent({ serder: corrupt, tsgs: signatures(sender, corrupt), essr: valid })
+      exchanger.processEvent({ serder: corrupt, tsgs: signatures(sender, corrupt), essrs: valid })
     );
     assertEquals(decision.kind, "reject");
-    await valid.discard();
     // Valid new wire cannot bless corrupt imported evidence or create contradictory accepted representations.
     assertEquals(hby.db.exns.get([corrupt.said!]), null);
     assertEquals(hby.db.exchangeMeta.get([corrupt.said!]), null);
@@ -370,9 +307,9 @@ Deno.test("exchange escrow retry imports KERIpy ESSR rows through ordinary publi
     await run(() => new Exchanger(hby).processEscrows());
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertExists(hby.db.exns.get([serder.said!]));
-    assertEquals(hby.db.exchangeMeta.get([serder.said!])!.essr!.count, 2);
+    assertEquals((await hby.db.getEssrs(serder.said!))!.length, 2);
     // Retry snapshots borrowed rows and publishes through the same archive path.
-    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw), b("abcxyz"));
+    assertEquals(await collectPayload(essrRaw((await hby.db.getEssrs(serder.said!))!)), b("abcxyz"));
     assertEquals(hby.db.essrs.get([serder.said!]).map((texter) => texter.text), ["abc", "xyz"]);
   });
 });
@@ -380,9 +317,9 @@ Deno.test("exchange escrow retry imports KERIpy ESSR rows through ordinary publi
 Deno.test("plaintext references reopen the inner stream separately from ciphertext evidence", async () => {
   await scenario(async (hby, sender) => {
     const serder = message(sender);
-    const wire = await payload(hby);
+    const wire = payload();
     const exchanger = new Exchanger(hby);
-    await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: wire }));
+    await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essrs: wire }));
     const archive = await hby.db.openPayloads();
     const sink = await archive.files.stage();
     await sink.write(concatBytes(b("header"), b("inside")));
@@ -397,70 +334,12 @@ Deno.test("plaintext references reopen the inner stream separately from cipherte
     const reopened = await hby.db.getPlaintext(serder.said!);
     assertExists(reopened);
     assertEquals(await collectPayload(reopened.body), b("inside"));
-    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw), b("abcxyz"));
+    assertEquals(await collectPayload(essrRaw((await hby.db.getEssrs(serder.said!))!)), b("abcxyz"));
     await assertRejects(() => hby.db.savePlaintext("unaccepted", reopened.plaintext, 6), Error, "unaccepted");
   });
 });
 
-Deno.test("active exchange reads exclude escrow expiry and halt joins stage cleanup", async () => {
-  await scenario(async (hby, sender) => {
-    const exchanger = new Exchanger(hby);
-    const expiring = message(sender, "stale");
-    const stale = await payload(hby, ["stale"]);
-    await run(() => exchanger.processEvent({ serder: expiring, essr: stale }));
-    await stale.discard();
-    hby.db.epsd.pin([expiring.said!], new Dater({ qb64: encodeDateTimeToDater("2020-01-01T00:00:00.000000+00:00") }));
-    const serder = message(sender);
-    const source = await payload(hby);
-    let entered!: () => void;
-    const reading = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    let closed = false;
-    const pending: EssrPayload = {
-      ...source,
-      wire: {
-        size: source.wire.size,
-        /** Remain in a cooperative read until the owning Effection task is halted. */
-        async *open(signal) {
-          try {
-            entered();
-            await new Promise<void>((_resolve, reject) => {
-              signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
-            });
-            yield new Uint8Array();
-          } finally {
-            closed = true;
-          }
-        },
-      },
-    };
-    let continued = false;
-    const task = run(function*() {
-      yield* exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: pending });
-      continued = true;
-    });
-    await reading;
-    // Even expired wire remains owned while a different admission holds the runtime.
-    await assertRejects(() => run(() => exchanger.processEscrows()), Error, "active admission");
-    assertEquals(await collectPayload((await hby.db.getEssr(expiring.said!))!.raw), b("stale"));
-    await task.halt();
-    assertEquals(closed, true);
-    assertEquals(continued, false); // Joining cleanup must not resume the cancelled caller.
-    await run(() => exchanger.processEscrows());
-    assertEquals(await hby.db.getEssr(expiring.said!), null);
-    assertEquals(hby.db.exns.get([serder.said!]), null);
-    // The original parser-owned stage remains; only the interrupted snapshot was removed.
-    assertEquals((names(join(hby.db.path!, "payloads", "staging"))).length, 1);
-    assertEquals(
-      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: source }))).kind,
-      "accept",
-    );
-    await source.discard();
-  });
-});
-
-Deno.test("accepted ESSR decrypts, persists, and reopens as a progressive inner CESR source", async () => {
+Deno.test("accepted ESSR decrypts, persists, and reopens as a inner CESR source", async () => {
   await scenario(async (hby, sender) => {
     const recipient = hby.makeHab("recipient");
     const inner = exchange("/inner", { message: "hello" }, { sender: sender.pre })[0];
@@ -474,21 +353,21 @@ Deno.test("accepted ESSR decrypts, persists, and reopens as a progressive inner 
       modifiers: { src: sender.pre, dest: recipient.pre },
     })[0];
     const archive = await hby.db.openPayloads();
-    const sink = await archive.files.stage();
-    // Two Texters still carry one sealed-box ciphertext and one signed digest.
-    for (const part of [cipher.subarray(0, 13), cipher.subarray(13)]) {
-      await sink.write(new Texter({ raw: part, code: MtrDex.Bytes_L0 }).qb64b);
-    }
-    const incoming = essrPayload(await sink.finish(), 2, cipher.length, Vrsn_1_0);
+    // Two Texters carry one sealed-box ciphertext and one signed digest.
+    const incoming = [cipher.subarray(0, 13), cipher.subarray(13)].map((raw) =>
+      new Texter({ raw, code: MtrDex.Bytes_L0 })
+    );
     const exchanger = new Exchanger(hby);
     assertEquals(
-      (await run(() => exchanger.processEvent({ serder: outer, tsgs: signatures(sender, outer), essr: incoming })))
+      (await run(() => exchanger.processEvent({ serder: outer, tsgs: signatures(sender, outer), essrs: incoming })))
         .kind,
       "accept",
     );
-    await incoming.discard();
-    const retained = await hby.db.getEssr(outer.said!);
-    const decision = await run(() => new EssrRecipient(recipient, archive.files).decrypt(outer.said!, retained!.raw));
+
+    const retained = await hby.db.getEssrs(outer.said!);
+    const decision = await run(() =>
+      new EssrRecipient(recipient, archive.files).decrypt(outer.said!, essrRaw(retained!))
+    );
     switch (decision.kind) {
       case "accept":
         break;
@@ -512,17 +391,16 @@ Deno.test("accepted ESSR decrypts, persists, and reopens as a progressive inner 
       assertEquals(frame.body.raw, inner.raw);
     }
     assertEquals(seen, 1);
-    assertEquals(await collectPayload((await hby.db.getEssr(outer.said!))!.raw), cipher);
+    assertEquals(await collectPayload(essrRaw((await hby.db.getEssrs(outer.said!))!)), cipher);
   });
 });
 
 Deno.test("exchange retries preserve first escrow time and expiration releases payload ownership", async () => {
   await scenario(async (hby, sender) => {
     const serder = message(sender);
-    const incoming = await payload(hby);
+    const incoming = payload();
     const exchanger = new Exchanger(hby);
-    assertEquals((await run(() => exchanger.processEvent({ serder, essr: incoming }))).kind, "escrow");
-    await incoming.discard();
+    assertEquals((await run(() => exchanger.processEvent({ serder, essrs: incoming }))).kind, "escrow");
     // KERIpy Dater uses six fractional digits and an explicit UTC offset.
     const first = new Dater({
       qb64: encodeDateTimeToDater(new Date(Date.now() - 1000).toISOString().replace("Z", "000+00:00")),
@@ -535,8 +413,7 @@ Deno.test("exchange retries preserve first escrow time and expiration releases p
     await run(() => exchanger.processEscrows());
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertEquals(hby.db.essrs.get([serder.said!]), []);
-    assertEquals(await hby.db.getEssr(serder.said!), null);
-    assertEquals(names(join(hby.db.path!, "payloads", "objects")), []);
+    assertEquals(await hby.db.getEssrs(serder.said!), null);
   });
 });
 
@@ -567,7 +444,7 @@ Deno.test("EXN pending cues follow persisted escrow transitions without duplicat
   await scenario(async (hby, sender) => {
     const schema = new Diger({ raw: Diger.digest(b("pending schema"), "E"), code: "E" }).qb64;
     for (const outcome of ["sender", "proof", "schema"] as const) {
-      const incoming = await payload(hby, [outcome]);
+      const incoming = payload([outcome]);
       const serder = message(sender, outcome), said = serder.said!;
       const cues = new Deck<AgentCue>();
       const exchanger = new Exchanger(hby, {
@@ -591,7 +468,7 @@ Deno.test("EXN pending cues follow persisted escrow transitions without duplicat
           groups[0].sigers,
         );
       }
-      const input = { serder, tsgs: groups, essr: incoming, mailboxAid: sender.pre };
+      const input = { serder, tsgs: groups, essrs: incoming, mailboxAid: sender.pre };
       assertEquals((await run(() => exchanger.processEvent(input))).kind, "escrow");
       const cue = cues.pull()!;
       assertEquals(cue.kin, outcome === "proof" ? "proof" : "query");
@@ -611,7 +488,6 @@ Deno.test("EXN pending cues follow persisted escrow transitions without duplicat
         assertExists(hby.db.epse.get([said]));
         assertEquals(hby.db.emsd!.get([said])!.dts, date);
       }
-      await incoming.discard();
     }
   });
 });

@@ -1,6 +1,6 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
-import { b, Diger, essrPayload, Prefixer, Texter, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
+import { b, Diger, Prefixer, Texter, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import {
   CHALLENGE_RESPONSE_ROUTE,
@@ -417,33 +417,17 @@ Deno.test("Exchanger verifies an ESSR string digest before accepting payload sta
       ];
       // Separate fragments make order and completeness observable without a giant fixture.
       const essrs = ["abc", "xyz"].map((text) => new Texter({ raw: b(text), code: "4B" }));
-      /** Tiny resident fixture exposes the same canonical wire contract as streamed ingress. */
-      const payload = (parts: Texter[]) =>
-        essrPayload(
-          {
-            size: parts.reduce((size, part) => size + part.qb64.length, 0),
-            /** Keep fragment order observable to the signed concatenated-byte commitment. */
-            async *open() {
-              for (const part of parts) yield part.qb64b;
-            },
-            /** This fixture borrows resident primitives and owns no external resource. */
-            async discard() {},
-          },
-          parts.length,
-          parts.reduce((size, part) => size + part.raw.length, 0),
-          Vrsn_1_0,
-        );
       const exchanger = new Exchanger(hby);
       // This projection intentionally distinguishes string ESSR seals from array-valued seals.
       assertEquals(serder.a, digest.qb64);
       assertEquals(serder.seals, []);
       for (const parts of [[], [essrs[0]], [...essrs].reverse()]) {
-        assertEquals((yield* exchanger.processEvent({ serder, tsgs, essr: payload(parts) })).kind, "reject");
+        assertEquals((yield* exchanger.processEvent({ serder, tsgs, essrs: parts })).kind, "reject");
         assertEquals(hby.db.exns.get([serder.said!]), null);
         assertEquals(hby.db.essrs.get([serder.said!]), []);
       }
       // Concatenation order is semantic even though fragment boundaries are not hashed.
-      assertEquals((yield* exchanger.processEvent({ serder, tsgs, essr: payload(essrs) })).kind, "accept");
+      assertEquals((yield* exchanger.processEvent({ serder, tsgs, essrs })).kind, "accept");
       assertEquals(hby.db.exns.get([serder.said!])?.said, serder.said);
       assertEquals(hby.db.essrs.get([serder.said!]).map((item) => item.text), ["abc", "xyz"]);
     } finally {

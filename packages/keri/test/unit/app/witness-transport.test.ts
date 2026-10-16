@@ -4,7 +4,6 @@ import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "j
 import { once } from "node:events";
 import { createConnection, createServer, type Socket } from "node:net";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { FrameIntake } from "../../../src/app/frame-intake.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { socketBytes } from "../../../src/app/socket-source.ts";
@@ -436,7 +435,6 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
       // The connection owns its intake and borrows only the protocol processor from the host.
       const replies = {
         services: runtime.services,
-        intake: new FrameIntake(undefined),
         reactor: runtime.reactor,
       };
       const options = { replies, connectTimeoutMs: 1000, drainTimeoutMs: 40 };

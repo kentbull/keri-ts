@@ -1,16 +1,13 @@
 import { call, type Operation, resource, type Stream } from "npm:effection@^3.6.0";
-import { discardFrame } from "../core/frame.ts";
 import type { CesrFrame } from "../core/types.ts";
-import { parse, type ParseOptions } from "../parser/progressive.ts";
-
-/** One pull-only Effection subscription; frame consumption supplies the next input credit. */
+import { parse, type ParseOptions } from "../parser/parser.ts";
+/** One pull-only Effection subscription; consumption requests the next complete frame. */
 export interface FrameChannel {
   /** Consume with `yield* each(...)`; each channel permits one subscription only. */
   readonly frames: Stream<CesrFrame, void>;
 }
-
 /**
- * Own a progressive parser in the caller's Effection scope.
+ * Own a buffered parser in the caller's Effection scope.
  *
  * The source factory receives the same signal as the parser and must cancel its
  * pending I/O when that signal aborts. Scope exit aborts first, then joins the
@@ -43,7 +40,6 @@ export function* toEffectionFrames(
     let pending: Promise<IteratorResult<CesrFrame, void>> | undefined;
     let closing: Promise<void> | undefined;
     let reported: { error: unknown } | undefined;
-
     /** Abort before joining, allowing a blocked cooperative source to finish its finally block. */
     function close(): Promise<void> {
       return closing ??= (async () => {
@@ -53,7 +49,9 @@ export function* toEffectionFrames(
         const collectReported = (error: unknown): void => {
           if (reportedErrors.has(error)) return;
           reportedErrors.add(error);
-          if (error instanceof AggregateError) for (const child of error.errors) collectReported(child);
+          if (error instanceof AggregateError) {
+            for (const child of error.errors) collectReported(child);
+          }
         };
         if (reported) {
           collectReported(reported.error);
@@ -67,18 +65,12 @@ export function* toEffectionFrames(
         const note = (error: unknown) => {
           if (visited.has(error) || reportedErrors.has(error) || error === controller.signal.reason) return;
           visited.add(error);
-          if (error instanceof AggregateError) for (const child of error.errors) note(child);
-          else errors.push(error);
+          if (error instanceof AggregateError) {
+            for (const child of error.errors) note(child);
+          } else errors.push(error);
         };
-        let unclaimed: IteratorResult<CesrFrame, void> | undefined;
         try {
-          unclaimed = await pending;
-        } catch (error) {
-          note(error);
-        }
-        // Parsing can complete while cancellation wins; this owner must dispose the undelivered frame.
-        try {
-          if (unclaimed && !unclaimed.done) await discardFrame(unclaimed.value);
+          await pending;
         } catch (error) {
           note(error);
         }
@@ -98,7 +90,6 @@ export function* toEffectionFrames(
         if (errors.length) throw new AggregateError(errors, "Frame channel cleanup failed");
       })();
     }
-
     try {
       yield* provide({
         frames: {

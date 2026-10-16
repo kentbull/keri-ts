@@ -1,12 +1,12 @@
 import {
   type CesrFrame,
-  discardFrame,
   Ilks,
   ResourceAdmissionError,
   ResourceLimitError,
   type ResourceReservation,
   WireParseError,
 } from "cesr-ts";
+import { toEffectionFrames } from "cesr-ts/effection";
 import { action, call, createScope, type Operation, race, resource, useScope } from "effection";
 import {
   type AgentRuntime,
@@ -39,7 +39,6 @@ const PEER_ERRORS = new Set(["ECONNRESET", "ECONNABORTED", "EPIPE", "ETIMEDOUT"]
 function isPeerError(error: Error): boolean {
   return PEER_ERRORS.has((error as NodeJS.ErrnoException).code ?? "");
 }
-
 /** Join one parser/watcher/socket lifetime before returning its connection credit. */
 function* processWitnessSocket(
   socket: Socket,
@@ -72,15 +71,21 @@ function* processWitnessSocket(
   let receiveSignal: AbortSignal | undefined;
   let returning = false;
   const error = (error: Error) => {
-    if ((receiveSignal?.aborted && !socket.readableEnded) || returning) return;
-    if (isPeerError(error)) peers.add(error);
+    if ((receiveSignal?.aborted && !socket.readableEnded) || returning) {
+      return;
+    }
+    if (isPeerError(error)) {
+      peers.add(error);
+    }
     rejectFailure(error);
   };
   const close = () => {
     if (
       (socket.readableEnded && socket.writableFinished) || (receiveSignal?.aborted && !socket.readableEnded)
       || returning
-    ) return;
+    ) {
+      return;
+    }
     const error = new Error("TCP peer closed before directional drain completed");
     peers.add(error);
     rejectFailure(error);
@@ -109,7 +114,7 @@ function* processWitnessSocket(
   try {
     yield* race([
       call(function*() {
-        const channel = yield* runtime.intake.frames((signal) => {
+        const channel = yield* toEffectionFrames((signal) => {
           receiveSignal = signal;
           const input = socketBytes(socket, { signal });
           const source: AsyncIterableIterator<Uint8Array> = {
@@ -123,7 +128,7 @@ function* processWitnessSocket(
             },
           };
           return source;
-        }, { classifyWireErrors: true });
+        });
         let pending: QueryReply | undefined;
         let next: IteratorResult<CesrFrame, void> | undefined,
           readFailure: { error: unknown; reported?: boolean } | undefined;
@@ -140,7 +145,6 @@ function* processWitnessSocket(
           }
           try {
             const unclaimed = next;
-            if (unclaimed && !unclaimed.done) yield* call(() => discardFrame(unclaimed.value));
           } catch (error) {
             errors.push(error);
           }
@@ -181,13 +185,6 @@ function* processWitnessSocket(
         }
         /** Settle current input and retain at most one authorized missing-state query on this connection. */
         function* processFrame(frame: CesrFrame): Operation<void> {
-          yield* resource<void>(function*(provide) {
-            try {
-              yield* provide();
-            } finally {
-              yield* call(() => discardFrame(frame));
-            }
-          });
           const body = frame.body;
           if (body.ilk === Ilks.qry && pending) {
             const error = new Error("TCP connection already has an unresolved query");
@@ -253,13 +250,6 @@ function* processWitnessSocket(
             } else {
               // Register ownership before the pending pull transfers its one complete frame.
               yield* call(function*() {
-                yield* resource<void>(function*(provide) {
-                  try {
-                    yield* provide();
-                  } finally {
-                    yield* call(() => discardFrame(result.value));
-                  }
-                });
                 next = undefined;
                 yield* processFrame(result.value);
               });
@@ -308,7 +298,6 @@ function* processWitnessSocket(
     else throw error;
   }
 }
-
 /** Keep connection children inside an isolated listener lifetime so fatal failures reach its caller. */
 function* witnessTcpListener(
   port: number,
@@ -347,14 +336,18 @@ function* witnessTcpListener(
       const closed = new Promise<void>((resolve) => socket.once("close", resolve));
       // Refused handles have no parser/task; their native close still belongs to server.close().
       const nativeError = (error: Error) => {
-        if (!isPeerError(error)) rejectCompletion(error);
+        if (!isPeerError(error)) {
+          rejectCompletion(error);
+        }
       };
       socket.on("error", nativeError);
       socket.once("close", () => socket.off("error", nativeError));
       try {
         if (stopping || sockets.size >= maxConnections) {
           socket.destroy();
-          if (!stopping) onRefusal("busy");
+          if (!stopping) {
+            onRefusal("busy");
+          }
           return;
         }
         const decision = runtime.resources.reserve({ bytes: CONNECTION_BYTES });

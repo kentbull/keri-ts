@@ -2,7 +2,7 @@ import type { CesrFrame } from "../core/types.ts";
 
 /** Rendering options for maintainer-facing CESR annotation output. */
 export interface AnnotateOptions {
-  /** Cancel parsing and release annotation-owned ESSR stages. */
+  /** Reject annotation when already cancelled. */
   signal?: AbortSignal;
   /** Place comments beside or above each rendered token. */
   commentMode?: "inline" | "above";
@@ -19,7 +19,7 @@ export type RenderOptions = Required<Omit<AnnotateOptions, "signal">>;
 export interface AnnotatedFrame {
   /** One-based root ordinal in parser delivery order. */
   index: number;
-  /** Parsed root; the caller owns the complete tree and releases it with discardFrame. */
+  /** Parsed complete root and parent-owned evidence. */
   frame: CesrFrame;
   /** Rendered original wire, including wrapper headers and all descendant lines. */
   lines: string[];

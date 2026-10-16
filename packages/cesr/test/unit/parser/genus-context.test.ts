@@ -1,8 +1,8 @@
-import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../../src/core/bytes.ts";
 import { VersionError } from "../../../src/core/errors.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { parse } from "../../../src/parser/progressive.ts";
+import { parse } from "../../../src/parser/parser.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
 import { versify } from "../../../src/serder/smell.ts";
@@ -91,7 +91,7 @@ Deno.test("enclosed genus is inherited, inner selectors stay local, and ordered 
   }
 });
 
-Deno.test("explicit genus cannot be replaced by body metadata or alternate-major counter probing", async () => {
+Deno.test("explicit genus cannot be replaced by body metadata or alternate-major counter probing", () => {
   const incompatible = [
     gvc(1) + json2,
     gvc(1) + native,
@@ -102,15 +102,15 @@ Deno.test("explicit genus cannot be replaced by body metadata or alternate-major
   ];
   for (const raw of [json2, json2.replace("{", "[")]) {
     const payload = new Texter({ raw: encode(raw), code: "4B" }).qb64;
-    await assertRejects(() => parseBytes(encode(gvc(1) + counterV1("-W", payload.length / 4) + payload)), VersionError);
+    assertThrows(() => parseBytes(encode(gvc(1) + counterV1("-W", payload.length / 4) + payload)), VersionError);
   }
-  for (const wire of incompatible) await assertRejects(() => parseBytes(encode(wire)));
+  for (const wire of incompatible) assertThrows(() => parseBytes(encode(wire)));
   for (const suffix of ["DAA", "CAB", "CBA"]) {
     for (const cesr of [encode, decodeB64]) {
       for (const wrapped of [false, true]) {
         const selector = "-_AAA" + suffix;
         const wire = wrapped ? native + groupV2("-C", selector + sig2) : selector + native;
-        const error = await assertRejects(() => parseBytes(cesr(wire)), VersionError);
+        const error = assertThrows(() => parseBytes(cesr(wire)), VersionError);
         assertStringIncludes(error.message, suffix === "DAA" ? "major version 3" : suffix === "CAB" ? "2.1" : "2.64");
       }
     }
@@ -121,6 +121,6 @@ Deno.test("independent parse invocations start with fresh genus inference after 
   await parseBytes(encode(gvc(2) + json1));
   const frames = await parseBytes(encode(json1 + sig1 + json2 + sig2));
   assertEquals(frames.map((frame) => frame.attachments[0].code), ["-A", "-K"]);
-  await assertRejects(() => parseBytes(encode(gvc(1) + json2)), VersionError);
+  assertThrows(() => parseBytes(encode(gvc(1) + json2)), VersionError);
   assertEquals((await parseBytes(encode(json2 + sig2)))[0].attachments[0].code, "-K");
 });

@@ -1,5 +1,5 @@
 /** Non-event policy gates precede real route acceptance and retain borrowed ownership. */
-import { b, Diger, discardFrame, essrPayload, parseBytes, Prefixer, SerderKERI, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
+import { b, Diger, parseBytes, Prefixer, SerderKERI, Texter, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
@@ -16,7 +16,6 @@ import { Revery } from "../../../src/core/routing.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-admission-vectors.json" with { type: "json" };
 import ipex from "../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
-
 Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prerequisite refusals", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -24,7 +23,7 @@ Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prereq
       assertEquals(fixture.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
       for (const row of fixture.cases) {
         const [frame] = yield* call(() => parseBytes(b(row.wire)));
-        try {
+        {
           const observed: { target: string; source: string | null; sigers: string[] }[] = [];
           /** Record delegation, without representing it as route verification. */
           const record = (target: string, query?: QueryEnvelope) => {
@@ -76,8 +75,6 @@ Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prereq
               );
             }
           }
-        } finally {
-          yield* call(() => discardFrame(frame));
         }
       }
     } finally {
@@ -85,7 +82,6 @@ Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prereq
     }
   });
 });
-
 Deno.test("runtime sender policy blocks v2 effects while KEL and legacy traffic retain their own verification", async () => {
   await run(function*() {
     const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -98,7 +94,9 @@ Deno.test("runtime sender policy blocks v2 effects while KEL and legacy traffic 
     });
     try {
       // The claimed-sender policy is not a KEL ingestion or cryptographic trust policy.
-      for (const wire of source.db.clonePreIter(sender.pre)) yield* runtime.reactor.processBytes(wire);
+      for (const wire of source.db.clonePreIter(sender.pre)) {
+        yield* runtime.reactor.processBytes(wire);
+      }
       assertExists(target.db.getKever(sender.pre));
       const [parent] = exchange("/challenge/response", { words: ["sender", "policy"] }, {
         sender: sender.pre,
@@ -134,59 +132,23 @@ Deno.test("runtime sender policy blocks v2 effects while KEL and legacy traffic 
     }
   });
 });
-
-Deno.test("refused nested evidence is disposed with joined cleanup and infrastructure failures still propagate", async () => {
+Deno.test("refused nested evidence has no public effects and infrastructure failures propagate", async () => {
   const [frame] = await parseBytes(b(ipex.cases[0].wire));
   const parent = frame.body as SerderKERI;
-  let read = false;
-  let discarded = 0;
-  let begin!: () => void;
-  let release!: () => void;
-  const cleaning = new Promise<void>((resolve) => {
-    begin = resolve;
-  });
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  frame.nests![0].essr = essrPayload(
-    {
-      size: 8,
-      async *open() {
-        read = true;
-        yield b("4BABYWJj");
-      },
-      async discard() {
-        discarded++;
-        begin();
-        await gate;
-      },
-    },
-    1,
-    3,
-    Vrsn_2_0,
-  );
+  frame.nests![0].essrs = [new Texter({ raw: b("abc"), code: "4B" })];
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const reactor = new Reactor(hby, { messagePolicy: { denyList: new Set([parent.pre!]) } });
-    let finished = false;
     try {
-      const task = yield* spawn(function*() {
-        yield* reactor.settle(frame, {}, function*(_envelope, decision) {
-          assertEquals(decision, { kind: "drop", reason: "deniedSender" });
-        });
-        finished = true;
+      yield* reactor.settle(frame, {}, function*(_envelope, decision) {
+        assertEquals(decision, { kind: "drop", reason: "deniedSender" });
       });
-      yield* call(() => cleaning);
-      assertEquals(finished, false);
-      assertEquals(read, false);
       assertEquals(hby.db.enst.get(parent.said!), []);
-      release();
-      yield* task;
-      assertEquals(discarded, 1);
+      assertEquals(frame.nests![0].essrs![0].text, "abc");
       const [signed] = yield* call(() =>
         parseBytes(b(fixture.cases.find((row) => row.name === "signed exchange")!.wire))
       );
-      try {
+      {
         reactor.kevery.denyList.clear();
         yield* call(() =>
           assertRejects(
@@ -202,11 +164,8 @@ Deno.test("refused nested evidence is disposed with joined cleanup and infrastru
             "storage unavailable",
           )
         );
-      } finally {
-        yield* call(() => discardFrame(signed));
       }
     } finally {
-      release();
       yield* hby.close(true);
     }
   });

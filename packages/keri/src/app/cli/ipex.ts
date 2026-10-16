@@ -1,4 +1,4 @@
-import { concatBytes, Counter, discardFrame, SerderKERI, type Versionage } from "cesr-ts";
+import { concatBytes, Counter, SerderKERI, type Versionage } from "cesr-ts";
 import { toEffectionFrames } from "cesr-ts/effection";
 import { call, each, type Operation } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
@@ -123,7 +123,6 @@ export function* ipexAgreeCommand(args: Record<string, unknown>): Operation<void
 export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void> {
   yield* sendPriorResponse(args, IPEX_SPURN_ROUTE, "prior");
 }
-
 /** Implement `tufa ipex grant` and optional grant artifact export/delivery. */
 export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs: IpexGrantArgs = {
@@ -194,13 +193,10 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       if (ipexArgs.out) {
         Deno.writeFileSync(ipexArgs.out, stream);
       } else if (runtime.reactor.exchanger.lead(hab, completedGrant.said!)) {
-        yield* sendCredentialBytes(
-          runtime,
-          localGroupMember(hby, hab.pre),
-          recipient,
-          [...grant.support, completedGrantWire],
-          ipexArgs.delivery,
-        );
+        yield* sendCredentialBytes(runtime, localGroupMember(hby, hab.pre), recipient, [
+          ...grant.support,
+          completedGrantWire,
+        ], ipexArgs.delivery);
       }
       console.log(JSON.stringify({
         said: completedGrant.said,
@@ -555,7 +551,6 @@ function parseJsonArg(value: string | undefined): Record<string, unknown> | unde
   const text = value.startsWith("@") ? Deno.readTextFileSync(value.slice(1)) : value;
   return JSON.parse(text) as Record<string, unknown>;
 }
-
 /** Read a grant from bounded progressive file input or its already persisted exchange record. */
 function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<SerderKERI> {
   if (args.grantFile) {
@@ -563,15 +558,13 @@ function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<SerderKERI> {
       const channel = yield* toEffectionFrames((signal) => fileBytes(args.grantFile!, { signal }));
       let grant: SerderKERI | undefined;
       for (const frame of yield* each(channel.frames)) {
-        // Only the hydrated grant body escapes this scope; its ESSR payload remains owned here.
-        try {
+        {
           if (!grant && frame.body instanceof SerderKERI && frame.body.route === IPEX_GRANT_ROUTE) grant = frame.body;
-        } finally {
-          yield* call(() => discardFrame(frame));
         }
         yield* each.next();
       }
       if (grant) return grant; // Require valid EOF before accepting the selected grant.
+      // Require valid EOF before accepting the selected grant.
       throw new ValidationError(`Grant file ${args.grantFile} does not contain an IPEX grant.`);
     });
   }

@@ -1,5 +1,4 @@
 // @file-test-lane app-fast-parallel
-
 import {
   b,
   collectPayload,
@@ -7,7 +6,6 @@ import {
   Counter,
   CtrDexV1,
   Diger,
-  discardFrame,
   NumberPrimitive,
   parseBytes,
   Prefixer,
@@ -97,8 +95,7 @@ function essrChild(sender: Hab, text: string): { serder: SerderKERI; wire: Uint8
     wire: enclose(CtrDexV1.BodyWithAttachmentGroup, concatBytes(body, signed.subarray(serder.size), payload)),
   };
 }
-
-Deno.test("HTTP ingress accepts the first nested child while its sibling remains unavailable", async () => {
+Deno.test("HTTP ingress waits for the complete enclosing group before accepting children", async () => {
   await run(function*() {
     const source = yield* createHabery({ name: `http-source-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const target = yield* createHabery({ name: `http-target-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -116,6 +113,7 @@ Deno.test("HTTP ingress accepts the first nested child while its sibling remains
         enclose(CtrDexV1.GenericGroup, concatBytes(first, second)),
       );
       let release!: () => void;
+      const waiting = Promise.withResolvers<void>();
       const tail = new Promise<void>((resolve) => {
         release = resolve;
       });
@@ -124,7 +122,8 @@ Deno.test("HTTP ingress accepts the first nested child while its sibling remains
         async pull(controller) {
           if (reads++ === 0) controller.enqueue(wire.slice(0, -second.length));
           else {
-            // Fetch may prefetch this pull, but the second child remains unavailable until acceptance is observed.
+            // The upload is blocked after the first child, inside an incomplete enclosure.
+            waiting.resolve();
             await tail;
             controller.enqueue(second);
             controller.close();
@@ -148,14 +147,14 @@ Deno.test("HTTP ingress accepts the first nested child while its sibling remains
         return response.status;
       });
       try {
-        // Bound the assertion wait; observing accepted KEL state is stronger than observing parser delivery.
-        for (let attempt = 0; attempt < 200 && !target.db.kevers.has(alice.pre); attempt++) yield* sleep(10);
-        assertEquals(target.db.kevers.has(alice.pre), true);
+        yield* call(() => promptly(waiting.promise));
+        assertEquals(target.db.kevers.has(alice.pre), false);
         assertEquals(target.db.kevers.has(bob.pre), false);
       } finally {
         release();
       }
       assertEquals(yield* upload, 204);
+      assertEquals(target.db.kevers.has(alice.pre), true);
       assertEquals(target.db.kevers.has(bob.pre), true);
     } finally {
       yield* call(() => server.shutdown());
@@ -276,7 +275,6 @@ Deno.test("HTTP cancellation closes a blocked body and joins its parser task", a
     }
   });
 });
-
 Deno.test("concurrent HTTP queries keep their own replay while background cues drain", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-replies-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -364,7 +362,6 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
     }
   });
 });
-
 Deno.test("only the final query controls a multi-frame HTTP response", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-final-query-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -445,8 +442,7 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
     }
   });
 });
-
-Deno.test("HTTP ESSR ownership survives a later truncated sibling and leaves no partial file", async () => {
+Deno.test("HTTP truncated enclosure accepts neither ESSR sibling", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-essr-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const runtime = yield* createAgentRuntime(hby);
@@ -469,20 +465,15 @@ Deno.test("HTTP ESSR ownership survives a later truncated sibling and leaves no 
         )
       );
       assertEquals(response.status, 400);
-      const stored = yield* call(() => hby.db.getEssr(first.serder.said!));
-      assertExists(stored, yield* call(() => response.text()));
-      assertEquals(yield* call(() => collectPayload(stored.raw)), b("first-payload"));
-      assertEquals(yield* call(() => hby.db.getEssr(second.serder.said!)), null);
-      assertEquals(Array.from(Deno.readDirSync(join(hby.db.path!, "payloads", "objects"))).length, 1);
-      assertEquals(Array.from(Deno.readDirSync(join(hby.db.path!, "payloads", "staging"))).length, 0);
+      assertEquals(yield* call(() => hby.db.getEssrs(first.serder.said!)), null);
+      assertEquals(yield* call(() => hby.db.getEssrs(second.serder.said!)), null);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
     }
   });
 });
-
-Deno.test("HTTP cancellation removes an in-progress ESSR stage before returning", async () => {
+Deno.test("HTTP cancellation closes an incomplete ESSR request before returning", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-essr-cancel-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const runtime = yield* createAgentRuntime(hby);
@@ -494,7 +485,9 @@ Deno.test("HTTP cancellation removes an in-progress ESSR stage before returning"
       const body = new ReadableStream<Uint8Array>({
         pull(controller) {
           if (reads++ === 0) controller.enqueue(wire.slice(0, -3));
-          else ready.resolve(); // The file sink exists before parsing requests the missing token tail.
+          else {
+            ready.resolve(); // The reader is waiting for the declared enclosure tail.
+          }
         },
       }, { highWaterMark: 0 });
       const controller = new AbortController();
@@ -508,13 +501,11 @@ Deno.test("HTTP cancellation removes an in-progress ESSR stage before returning"
       );
       try {
         yield* call(() => promptly(ready.promise));
-        assertEquals(Array.from(Deno.readDirSync(join(hby.db.path!, "payloads", "staging"))).length, 1);
       } finally {
         controller.abort();
       }
       assertEquals((yield* call(() => promptly(response))).status, 408);
-      assertEquals(Array.from(Deno.readDirSync(join(hby.db.path!, "payloads", "staging"))).length, 0);
-      assertEquals(yield* call(() => hby.db.getEssr(frame.serder.said!)), null);
+      assertEquals(yield* call(() => hby.db.getEssrs(frame.serder.said!)), null);
       assertEquals(body.locked, false);
     } finally {
       yield* runtime.close();
@@ -564,7 +555,6 @@ Deno.test("v2 sender refusal cannot reopen a previously authorized HTTP mailbox 
     }
   });
 });
-
 Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and refuses pending, denied and replayed requests", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -636,7 +626,7 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
       const [valid] = yield* call(() =>
         parseBytes(messagize(body, { sigers: sender.sign(body.raw, true), gvrsn: Vrsn_2_0 }))
       );
-      try {
+      {
         runtime.reactor.kevery.processQuery(queryEnvelopeFromDispatch(envelopeFromFrame(valid)));
         const source = SealEvent.fromTuple([
           new Prefixer({ qb64: sender.pre }),
@@ -666,10 +656,8 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
           "normal transport sends its KEL/location/role introduction before the recovery query",
         );
         const queryFrames = yield* call(() => parseBytes(outgoing.at(-1)!));
-        try {
+        {
           assertEquals((queryFrames.at(-1)!.body.ked?.q as Record<string, unknown>).s, "63");
-        } finally {
-          yield* call(() => Promise.all(queryFrames.map(discardFrame)));
         }
         assertEquals(runtime.querying.hasPendingWork(), false);
         const accepted = runtime.reactor.kevery.kramer!.intake(envelopeFromFrame(valid));
@@ -677,8 +665,6 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
         const duplicate = yield* call(() => post(0));
         assertEquals(duplicate.status, 403, "synchronous intake completes acceptance before later HTTP work");
         yield* call(() => duplicate.text());
-      } finally {
-        yield* call(() => discardFrame(valid));
       }
     } finally {
       yield* runtime.close();
@@ -686,7 +672,6 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
     }
   });
 });
-
 Deno.test("direct HTTP TSN query retains both independently verifiable replies", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -732,15 +717,13 @@ Deno.test("direct HTTP TSN query retains both independently verifiable replies",
           "Complete response releases source ownership",
         );
         const frames = yield* call(() => parseBytes(bytes));
-        try {
+        {
           assertEquals(
             frames.map((frame) => (frame.body as SerderKERI).route),
             id === credential
               ? [`/tsn/registry/${issuer.pre}`, `/tsn/credential/${issuer.pre}`]
               : [`/tsn/registry/${issuer.pre}`],
           );
-        } finally {
-          for (const frame of frames) yield* call(() => discardFrame(frame));
         }
         if (id === credential) {
           assertEquals(

@@ -2,7 +2,7 @@ import { assertEquals, assertInstanceOf, assertStrictEquals, assertThrows } from
 import { b, concatBytes, decodeB64 } from "../../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
-import { parse } from "../../../src/parser/progressive.ts";
+import { parse } from "../../../src/parser/parser.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Dater } from "../../../src/primitives/dater.ts";
 import { Noncer } from "../../../src/primitives/noncer.ts";

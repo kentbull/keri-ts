@@ -1,35 +1,17 @@
 import { run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { b, essrPayload, MemoryPayloadSink, parseBytes } from "../../../../cesr/mod.ts";
+import { b, parseBytes, Texter } from "../../../../cesr/mod.ts";
 import vectors from "../../../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
 import { inspectCesrStream } from "../../../src/app/cesr-http.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 
-Deno.test("nested runtime boundaries reject before processing and release child-only ESSR", async () => {
+Deno.test("nested runtime boundaries reject unsupported trees before processing", async () => {
   const [frame] = await parseBytes(b(vectors.rows[0].qb64));
   assertThrows(() => envelopeFromFrame(frame), Error, "nested message trees");
   await assertRejects(() => inspectCesrStream(b(vectors.rows[0].qb64)), Error, "nested message trees");
-  const sink = new MemoryPayloadSink();
-  await sink.write(b("4BABYWJj"));
-  const owner = await sink.finish();
-  let discarded = 0;
-  frame.nests![0].essr = essrPayload(
-    {
-      size: owner.size,
-      /** Delegate reads to the real finite owner. */
-      open: (signal) => owner.open(signal),
-      /** Confirm runtime scope teardown releases the child exactly once. */
-      async discard() {
-        discarded++;
-        await owner.discard();
-      },
-    },
-    1,
-    3,
-    { major: 2, minor: 0 },
-  );
+  frame.nests![0].essrs = [new Texter({ raw: b("abc"), code: "4B" })];
   await assertRejects(
     () =>
       run(function*() {
@@ -47,5 +29,5 @@ Deno.test("nested runtime boundaries reject before processing and release child-
     Error,
     "nested message trees",
   );
-  assertEquals(discarded, 1);
+  assertEquals(frame.nests![0].essrs[0].text, "abc");
 });

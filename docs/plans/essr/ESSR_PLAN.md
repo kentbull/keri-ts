@@ -7,7 +7,8 @@ The recipient and outcome extraction exist (#133/#163). Apply
 [ADR-0013](../../adr/adr-0013-simple-component-flows.md) before final qualification;
 older recipient accounting requirements are superseded. The accepted
 [buffered parser](../cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) also removes parser
-staging and progressive extraction; that replacement remains to be implemented.
+staging and progressive extraction; ordinary Texter evidence and finite decoding now replace that parser lifecycle.
+Transport bridge removal and composed qualification remain.
 
 ## Removal and correctness
 

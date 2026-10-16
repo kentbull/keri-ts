@@ -1,10 +1,11 @@
-import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import { annotate, annotateFrames } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
 import { tephraCli } from "../../src/cli/main.ts";
 import { decodeB64 } from "../../src/core/bytes.ts";
 import { ResourceLimitError, VersionError } from "../../src/core/errors.ts";
 import { collectPayload } from "../../src/core/payload.ts";
+import { essrRaw, essrWire } from "../../src/parser/essr.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { Texter } from "../../src/primitives/texter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
@@ -146,10 +147,10 @@ Deno.test("native fixture annotation preserves primitive categories without a pa
   }
 });
 
-Deno.test("annotation validates both selector minor sextets and unsupported majors", async () => {
+Deno.test("annotation validates both selector minor sextets and unsupported majors", () => {
   for (const countB64 of ["CAB", "CBA", "DAA"]) {
     const selector = new Counter({ code: CtrDexV2.KERIACDCGenusVersion, countB64 });
-    await assertRejects(() => annotate(selector.qb64 + KERIPY_NATIVE_V2_ICP_FIX_BODY), VersionError);
+    assertThrows(() => annotate(selector.qb64 + KERIPY_NATIVE_V2_ICP_FIX_BODY), VersionError);
   }
 });
 
@@ -174,14 +175,11 @@ Deno.test("annotation preserves non-native bodies and ESSR wire through nested e
       assertEquals(TEXT_DECODER.decode(denot(annotated)), wire);
       assertStringIncludes(annotated, "ESSRPayloadGroup");
       const [owned] = await annotateFrames(source);
-      try {
-        assertEquals(owned.frame.essr?.count, 1);
-        assertEquals(TEXT_DECODER.decode(await collectPayload(owned.frame.essr!.raw)), "one ESSR item");
-      } finally {
-        // Programmatic annotation transfers payload ownership; plain annotate releases it internally.
-        await owned.frame.essr?.discard();
-      }
-      await assertRejects(() => collectPayload(owned.frame.essr!.wire));
+
+      assertEquals(owned.frame.essrs?.length, 1);
+      assertEquals(TEXT_DECODER.decode(await collectPayload(essrRaw(owned.frame.essrs!))), "one ESSR item");
+
+      assertEquals(await collectPayload(essrWire(owned.frame.essrs!)), TEXT_ENCODER.encode(payload));
     }
   }
 });

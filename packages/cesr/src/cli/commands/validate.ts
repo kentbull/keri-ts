@@ -1,5 +1,5 @@
-import { discardFrame } from "../../core/frame.ts";
-import { parse } from "../../parser/progressive.ts";
+import { WireParseError } from "../../core/errors.ts";
+import { parse } from "../../parser/parser.ts";
 import type { CliIo } from "../types.ts";
 
 /** Input selection and report format for streaming validation. */
@@ -42,13 +42,11 @@ interface ValidationReport {
 
 /** Supported streaming validation flags. */
 const VALIDATE_USAGE = "Usage: tephra validate [--in <path>] [--json]";
-
 /** Parse `tephra validate` command-line flags without performing IO. */
 function parseArgs(args: string[]): ValidateCliOptions {
   const out: ValidateCliOptions = {
     json: false,
   };
-
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--in") {
@@ -92,7 +90,6 @@ function describeError(error: Error): ValidationErrorReport {
   }
   return detail;
 }
-
 /**
  * Count frames, attachment groups, and parser errors for one input stream.
  *
@@ -116,15 +113,14 @@ async function validateSource(source: AsyncIterable<Uint8Array>, label: string):
   }
   try {
     for await (const frame of parse(counted())) {
-      try {
+      {
         frameCount++;
-        attachmentGroupCount += frame.attachments.length + (frame.essr ? 1 : 0);
-      } finally {
-        await discardFrame(frame);
+        attachmentGroupCount += frame.attachments.length + (frame.essrs ? 1 : 0);
       }
     }
   } catch (error) {
-    errors.push(describeError(error instanceof Error ? error : new Error(String(error))));
+    const cause = error instanceof WireParseError ? error.cause : error;
+    errors.push(describeError(cause instanceof Error ? cause : new Error(String(cause))));
   }
   if (frameCount === 0 && errors.length === 0) errors.push({ name: "NoFramesError", message: "No CESR frames parsed" });
   return {

@@ -16,12 +16,8 @@ import { EndpointRoles } from "../../../src/core/roles.ts";
 async function expectedMessages(bytes: Uint8Array): Promise<Uint8Array[]> {
   const messages: Uint8Array[] = [];
   for await (const frame of parse(chunkBytes(bytes))) {
-    try {
-      // HTTP joins the signed body with its counted attachment enclosure, without a stream-level GVC.
-      messages.push(concatBytes(frame.body.raw, await collectPayload(attachmentPayload(frame))));
-    } finally {
-      await frame.essr?.discard();
-    }
+    // HTTP joins the signed body with its counted attachment enclosure, without a stream-level GVC.
+    messages.push(concatBytes(frame.body.raw, await collectPayload(attachmentPayload(frame))));
   }
   return messages;
 }

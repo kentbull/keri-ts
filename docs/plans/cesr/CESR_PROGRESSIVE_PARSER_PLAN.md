@@ -7,25 +7,23 @@ and data compatibility is not required.
 
 ## Current state
 
-The single progressive engine remains production code. Codec estimators, parser
-quotas, source slots and frame-credit side tables are removed. This is an interim
-removal checkpoint, not completion of the buffered replacement. Real sources,
-payload stages and readers still need their current cleanup until callers move.
+One synchronous finite decoder now serves parseBytes and the small buffered
+receiving loop. Counted groups arrive completely before decoding children.
+Cursor, EssrWriter, parser sink factories/staging, ordinary-frame disposal and
+FrameIntake are removed. Dispatch, serialization, annotation and exchange storage
+use ordered Texter evidence. Existing file storage/crypto cleanup remains real.
+The implementation branch still requires its scoped validation and merge.
 
 ## Remaining cuts
 
-1. Establish synchronous finite decoding responsibility using existing primitive,
-   counter, body and attachment correctness. Do not restore the old parser wholesale.
-2. Feed partial input into one buffered boundary. Decode counted enclosures only
-   when complete; complete-byte and network input share that decoder. Delete
-   progressive recursive traversal, its cursor and suspended parse state.
-3. Choose one ordinary ESSR evidence representation. Remove parser sink factories,
-   pending trees/stage registries and parser-only reopening/disposal wrappers.
-   Retain storage files and cleanup only for demonstrated storage consumers.
-4. Remove FrameIntake, TcpRead, frame channels and caller parser-option forwarding.
-   The host scope owns concrete transport cancellation and joined cleanup.
-5. Condense contracts, learnings and exports; replace early-delivery tests with
-   complete-enclosure delivery checks. No second engine or compatibility aliases.
+1. Remove TcpRead, custom frame channels and caller parser-option forwarding.
+   Concrete transport scopes own cancellation, blocked reads and joined cleanup.
+2. Remove remaining runtime/transport accounting and delivery/pump indirection
+   under ADR-0013 without weakening actual socket/file cleanup.
+3. Resolve the reverse HTTP KERIpy genus contract and qualify successive messages,
+   same-socket replies, half-close and failure paths.
+4. Complete maintained composed disclosure/KRAM interoperability and final release
+   qualification from the parity roadmap.
 
 Combine cuts where separation would require temporary interfaces. Refactor
 responsibilities before changing behavior. Buffering accepts memory and latency

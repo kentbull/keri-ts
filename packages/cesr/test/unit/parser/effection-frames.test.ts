@@ -11,15 +11,15 @@ import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 const frame = counterV2(CtrDexV2.BodyWithAttachmentGroup, KERIPY_NATIVE_V2_ICP_FIX_BODY.length / 4)
   + KERIPY_NATIVE_V2_ICP_FIX_BODY;
 
-Deno.test("Effection frames: early consumer return closes input without pulling siblings", async () => {
+Deno.test("Effection frames: consumer return closes input without pulling the next enclosure", async () => {
   let pulls = 0;
   let closed = false;
   await run(function*() {
     const channel = yield* toEffectionFrames(async function*(signal) {
       try {
         pulls++;
-        // Declare both children but deliver only the first before the next output credit.
-        yield encode(counterV2(CtrDexV2.GenericGroup, frame.length / 2) + frame);
+        // The whole counted group arrives before either child is decoded.
+        yield encode(counterV2(CtrDexV2.GenericGroup, frame.length / 2) + frame + frame);
         signal.throwIfAborted();
         pulls++;
         yield encode(frame);

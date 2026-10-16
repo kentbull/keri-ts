@@ -3,16 +3,16 @@
 import {
   b,
   Cigar,
+  collectPayload,
   concatBytes,
   Dater,
   Diger,
-  type EssrPayload,
-  essrPayload,
   Ilks,
   Labeler,
   Noncer,
   NumberPrimitive,
   NumDex,
+  parseTexter,
   type Payload,
   Prefixer,
   ResourceLimitError,
@@ -254,7 +254,7 @@ export class Baser {
   public ends!: Komer<EndpointRecord>; // Service endpoint authorization records.
   public locs!: Komer<LocationRecord>; // Service endpoint locations keyed by endpoint and scheme.
   public obvs!: Komer<ObservedRecord>; // Observed identifier records keyed by controller, watcher, and observed ID.
-  /** One lazily opened file owner, shared by parser staging and runtime storage. */
+  /** One lazily opened archive owner for durable ciphertext and authenticated plaintext. */
   private archive?: Promise<PayloadArchive>;
   /** Private accepted/escrow provenance; protocol evidence stays in KERIpy tables. */
   private exchangeMetadata?: Komer<ExchangeRecord>;
@@ -315,64 +315,25 @@ export class Baser {
     }
   }
 
-  /** Reopen private wire or borrow KERIpy rows when no private metadata exists. */
-  async getEssr(
-    said: string,
-    signal?: AbortSignal,
-  ): Promise<EssrPayload | null> {
+  /** Read ordered qualified fragments from owned archive bytes or current KERIpy evidence rows. */
+  async getEssrs(said: string, signal?: AbortSignal): Promise<Texter[] | null> {
     signal?.throwIfAborted();
-    const metadata = this.exchangeMeta.get([said])?.essr;
-    if (!metadata) return this.borrowEssr(said, signal);
+    if (!this.exchangeMeta.get([said])?.essr) {
+      if (!this.exns.get([said]) && !this.epse.get([said]) && !this.hasSchemaEscrow(said)) return null;
+      const rows = [...this.essrRows(said, signal)];
+      return rows.length ? rows : null;
+    }
     const wire = await (await this.openPayloads(signal)).get(`essr/${said}`, signal);
     if (!wire) throw new Error("Exchange ESSR reference is missing");
-    return essrPayload(
-      {
-        size: wire.size,
-        /** Reopen the archive's immutable wire object for each decoded read. */
-        open: (signal) => wire.open(signal),
-        /** The archive retains ownership when a consumer releases this view. */
-        discard: async () => {},
-      },
-      metadata.count,
-      metadata.size,
-      metadata.gvrsn,
-    );
-  }
-
-  /** Preserve the insertion order and deduplication already represented by KERIpy rows. */
-  private borrowEssr(said: string, signal?: AbortSignal): EssrPayload | null {
-    if (!this.exns.get([said]) && !this.epse.get([said]) && !this.hasSchemaEscrow(said)) return null;
-    let count = 0;
-    let size = 0;
-    let wireSize = 0;
-    for (const texter of this.essrRows(said, signal)) {
-      count++;
-      size += texter.raw.length;
-      wireSize += texter.qb64.length;
+    const bytes = await collectPayload(wire, signal);
+    const texters: Texter[] = [];
+    for (let offset = 0; offset < bytes.length;) {
+      signal?.throwIfAborted();
+      const texter = parseTexter(bytes.subarray(offset), "txt");
+      texters.push(texter);
+      offset += texter.qb64b.length;
     }
-    if (!count) return null;
-    /** Revisit current rows without retaining tokens or an item-size manifest. */
-    const rows = (signal?: AbortSignal) => this.essrRows(said, signal);
-    return essrPayload(
-      {
-        size: wireSize,
-        /** Copy bounded chunks so a stored large token never supplies an oversized backing buffer. */
-        async *open(signal?: AbortSignal) {
-          for (const texter of rows(signal)) {
-            const wire = texter.qb64b;
-            for (let offset = 0; offset < wire.length; offset += 65536) {
-              signal?.throwIfAborted();
-              yield wire.slice(offset, offset + 65536);
-            }
-          }
-        },
-        /** Releasing a borrowed view never deletes protocol evidence. */
-        async discard() {},
-      },
-      count,
-      size,
-      Vrsn_1_0,
-    ); // The wire table records no original frame genus.
+    return texters;
   }
 
   /** Decode stored tokens in insertion order without assembling a complete ESSR message. */

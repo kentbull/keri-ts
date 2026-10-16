@@ -6,13 +6,10 @@ import {
   concatBytes,
   Counter,
   Diger,
-  discardFrame,
-  essrPayload,
   framePayload,
   Kinds,
   makeBlindState,
   type MapperMap,
-  MemoryPayloadSink,
   NumberPrimitive,
   parseBytes,
   Prefixer,
@@ -40,18 +37,14 @@ import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-s
 import { Schemer } from "../../../src/core/scheming.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
-
 /** Feed signed public KEL bytes through normal event verification. */
 async function learn(hby: Habery, wire: string | Uint8Array): Promise<void> {
   for (const frame of await parseBytes(typeof wire === "string" ? b(wire) : wire)) {
-    try {
+    {
       await run(() => dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery));
-    } finally {
-      await discardFrame(frame);
     }
   }
 }
-
 Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned authenticated disclosures", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `ipex-vectors-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -66,7 +59,7 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
       for (const row of fixture.cases) {
         while (through < row.through) yield* call(() => learn(hby, fixture.wires[through++]));
         const frames = yield* call(() => parseBytes(b(row.wire)));
-        try {
+        {
           assertEquals(frames.length, 1, row.name);
           let decision: ExchangeDecision | undefined;
           let childDispatches = 0;
@@ -93,7 +86,7 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
               for await (const chunk of exchanger.replay(row.said)) replayed.push(chunk);
             });
             const restored = yield* call(() => parseBytes(concatBytes(...replayed)));
-            try {
+            {
               assertEquals(restored.length, 1);
               assertEquals(restored[0].body.raw, frames[0].body.raw, row.name);
               assertEquals(
@@ -107,16 +100,12 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
                 assertEquals(after, before, "replay retains each child's own proof enclosure");
                 assertEquals(hby.db.exns.get(child.body.said!), null);
               }
-            } finally {
-              yield* call(() => Promise.all(restored.map(discardFrame)));
             }
           } else {
             assertEquals(hby.db.exns.get(row.said), null, row.name);
             assertEquals(hby.db.enst.get(row.said), [], row.name);
           }
           assertEquals(notifier.list().length, notifications, row.name);
-        } finally {
-          yield* call(() => Promise.all(frames.map(discardFrame)));
         }
       }
     } finally {
@@ -125,11 +114,10 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
     }
   });
 });
-
 Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation preserves frozen commitments", async () => {
   const row = fixture.cases[0];
   const [frame] = await parseBytes(b(row.wire));
-  try {
+  {
     const parent = frame.body as SerderKERI;
     const nodes = frame.nests!.map((child) => child.body as SerderACDC);
     const opts = {
@@ -149,16 +137,11 @@ Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation
     assertEquals(nested.length > 0, true);
     assertEquals(prepared.gvrsn, Vrsn_2_0);
     const childAgain = await parseBytes(nested);
-    try {
+    {
       assertEquals(childAgain[0].body.raw, nodes[0].raw);
-    } finally {
-      await Promise.all(childAgain.map(discardFrame));
     }
-  } finally {
-    await discardFrame(frame);
   }
 });
-
 Deno.test("nested IPEX between two Haberies retains missing issuer evidence for joined reopen and retry", async () => {
   await run(function*() {
     const left = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -222,12 +205,12 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
         const wire = yield* call(() => collectPayload(framePayload(frame)));
         for (const [hby, exn] of [[left, receiving], [right, sending]] as const) {
           const [parsed] = yield* call(() => parseBytes(wire));
-          try {
+          {
             yield* dispatchEnvelope(envelopeFromFrame(parsed), hby.rvy, hby.kevery, exn);
-          } finally {
-            yield* call(() => discardFrame(parsed));
           }
-          if (body !== grant || hby === right) assertExists(hby.db.exns.get(body.said!));
+          if (body !== grant || hby === right) {
+            assertExists(hby.db.exns.get(body.said!));
+          }
         }
       }
       assertEquals(left.db.exns.get(grant.said!), null);
@@ -246,14 +229,12 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
       assertEquals(left.db.exns.get(node.body.said!), null);
       assertEquals(Array.from(Deno.readDirSync(`${left.db.path}/payloads/staging`)).length, 0);
     } finally {
-      yield* call(() => discardFrame(reference));
       yield* noter.close(true);
       yield* right.close(true);
       yield* left.close(true);
     }
   });
 });
-
 Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutoff across observer retry", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -360,14 +341,12 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
       assertEquals(verify(child, receipt.replace("123000", "122999")), false, "one microsecond before binding");
       assertEquals(verify(child, makeNowIso8601(new Date(now))), false, "later time cannot use the old disclosure");
       const continued = yield* node([iblind, pblind, vacant]);
-      try {
+      {
         assertEquals(
           verify(continued, vacantTime),
           true,
           "one authentic vacuous disclosure preserves the preceding binding",
         );
-      } finally {
-        yield* call(() => discardFrame(continued));
       }
       const otherGrant = ipexExnBody(sender.pre, "/ipex/grant", [credential], {
         kind: Kinds.json,
@@ -385,37 +364,28 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
         }], [{ ...source, s: NumberPrimitive.fromNum(1n) }]]
       ) {
         const bad = yield* node([iblind, pblind], sources);
-        try {
+        {
           assertEquals(verify(bad), false);
-        } finally {
-          yield* call(() => discardFrame(bad));
         }
       }
       const noIssuer = yield* node([pblind]);
       const duplicate = yield* node([iblind, pblind, pblind]);
-      try {
+      {
         assertEquals(verify(noIssuer), false, "parent and Issuee proofs cannot replace the child's issuer proof");
         assertEquals(verify(duplicate), false, "exactly one disclosure must match each selected BLID");
-      } finally {
-        yield* call(() => discardFrame(noIssuer));
-        yield* call(() => discardFrame(duplicate));
       }
       for (const sn of [99n, 9007199254740993n]) {
         const unavailable = yield* node([iblind, pblind], [{ ...source, s: NumberPrimitive.fromNum(sn) }]);
-        try {
+        {
           assertEquals((verify(unavailable) as { kind: string }).kind, "escrow");
-        } finally {
-          yield* call(() => discardFrame(unavailable));
         }
       }
     } finally {
-      yield* call(() => discardFrame(child));
       yield* runtime.close();
       yield* hby.close(true);
     }
   });
 });
-
 Deno.test("registry-backed IPEX retries only after public observer intake accepts foreign anchored evidence", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -532,84 +502,11 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
       assertEquals(hby.db.exns.get(noProof.said!), null);
       assertEquals(hby.db.exns.get(credential.said!), null);
     } finally {
-      yield* call(() => discardFrame(node));
       yield* source.close(true);
       yield* store.close(true);
       yield* hby.close(true);
     }
   });
-});
-
-Deno.test("IPEX byte preparation cancels its read and joins payload-owner disposal", async () => {
-  const [parent] = await parseBytes(b(fixture.cases[0].wire));
-  const node = parent.nests![0];
-  const sink = new MemoryPayloadSink();
-  await sink.write(b("4BABYWJj"));
-  node.essr = essrPayload(await sink.finish(), 1, 3, Vrsn_2_0);
-  const wire = await collectPayload(framePayload(node));
-  const body = parent.body as SerderKERI;
-  const options = { kind: body.kind, message: "cancel", recipient: body.sad!.ri as string, xid: body.sad!.x as string };
-  await discardFrame(parent);
-  const original = MemoryPayloadSink.prototype.finish;
-  let entered!: () => void;
-  const reading = new Promise<void>((resolve) => {
-    entered = resolve;
-  });
-  let release!: () => void;
-  const cleanup = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let closed = false;
-  let discarded = 0;
-  let continued = false;
-  MemoryPayloadSink.prototype.finish = async function() {
-    const owner = await original.call(this);
-    return {
-      size: owner.size,
-      /** Stop the real parser-owned payload read at the cancellation boundary. */
-      async *open(signal) {
-        try {
-          entered();
-          await new Promise<void>((_resolve, reject) => {
-            signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
-          });
-          yield* owner.open(signal);
-        } finally {
-          await cleanup;
-          closed = true;
-        }
-      },
-      /** Cleanup must follow the joined reader, never race it. */
-      async discard() {
-        assertEquals(closed, true);
-        discarded++;
-        await owner.discard();
-      },
-    };
-  };
-  const task = run(function*() {
-    yield* prepareIpexExn(body.pre!, "/ipex/grant", wire, options);
-    continued = true;
-  });
-  try {
-    await reading;
-    let halted = false;
-    const halt = task.halt().then(() => {
-      halted = true;
-    });
-    await Promise.resolve();
-    assertEquals(halted, false);
-    assertEquals(discarded, 0);
-    release();
-    await halt;
-    assertEquals(closed, true);
-    assertEquals(discarded, 1);
-    assertEquals(continued, false);
-  } finally {
-    release();
-    await task.halt();
-    MemoryPayloadSink.prototype.finish = original;
-  }
 });
 
 Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every edge pin", async () => {

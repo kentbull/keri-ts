@@ -11,7 +11,6 @@ import {
   collectPayload,
   concatBytes,
   Counter,
-  discardFrame,
   type Kind,
   nestedPayload,
   parseBytes,
@@ -303,7 +302,6 @@ export function multisigExn(
     embeds: { exn: rawMessage(exn) },
   });
 }
-
 /**
  * Construct only the v2 parent body from an already parsed KERI child.
  * This synchronous boundary checks the route/ilk and commits the child's SAID;
@@ -338,12 +336,11 @@ export function multisigChildGenusAttrs(
     ? { cgvrsn: [genus.major, genus.minor] }
     : {};
 }
-
 /**
- * Own finite byte-input preparation, construction, wire consumption and disposal.
+ * Prepare finite child input, construct the parent and serialize its nested evidence.
  * The v1 pathed path retains its established encoding; v2 delegates parsing to parseBytes
  * once and borrows the resulting child only until nestedPayload has been fully consumed.
- * No lazy owner escapes. Effection cancellation aborts reads and joins finally cleanup.
+ * Parsed child evidence consists of ordinary values; serialization observes cancellation.
  * Sending v2 requires enclosing these bytes and the parent's signatures together.
  */
 export function* prepareMultisigEventExn(
@@ -370,31 +367,14 @@ export function* prepareMultisigEventExn(
   return yield* abortable(async (signal) => {
     // Let the parser infer body genus; only an explicit counter override adds a selector.
     const selector = options.childGvrsn ? Counter.makeGVC(options.childGvrsn) : new Uint8Array();
-    if (wire.length > 8 * 1024 ** 2 - selector.length) {
-      throw new ResourceLimitError("Multisig input exceeds collection limit");
-    }
     const input = selector.length ? concatBytes(selector, wire) : wire;
-    const frames = await parseBytes(input, { signal });
-    const errors: unknown[] = [];
-    try {
-      const child = frames[0];
-      if (frames.length !== 1 || !(child.body instanceof SerderKERI) || child.nests?.length) {
-        throw new Error("Multisig proposal requires one supported direct child.");
-      }
-      const serder = multisigExnBody(sender, captured, child.body, options);
-      return [serder, await collectPayload(nestedPayload(child, Vrsn_2_0), signal)] as const;
-    } catch (error) {
-      errors.push(error);
-      throw error;
-    } finally {
-      // Even rejected multi-frame input must join every owner's cleanup if one discard fails.
-      const results = await Promise.allSettled(frames.map(discardFrame));
-      const failures = results.filter((result) => result.status === "rejected");
-      if (failures.length) {
-        // deno-lint-ignore no-unsafe-finally -- Retain construction failure alongside every joined cleanup failure.
-        throw new AggregateError([...errors, ...failures.map((result) => result.reason)], "Multisig cleanup failed");
-      }
+    const frames = parseBytes(input);
+    const child = frames[0];
+    if (frames.length !== 1 || !(child.body instanceof SerderKERI) || child.nests?.length) {
+      throw new Error("Multisig proposal requires one supported direct child.");
     }
+    const serder = multisigExnBody(sender, captured, child.body, options);
+    return [serder, await collectPayload(nestedPayload(child, Vrsn_2_0), signal)] as const;
   });
 }
 
@@ -437,7 +417,6 @@ export function loadMultisigHandlers(
   }
   return mux;
 }
-
 /**
  * KERIpy `Multiplexor` analogue.
  *
@@ -466,7 +445,6 @@ export class Multiplexor {
     this.kvy.registerReplyRoutes(router);
     this.replay = new Exchanger(hby);
   }
-
   /** Index an authenticated proposal; child acceptance still requires local approval and its own proofs. */
   *add(serder: SerderKERI, nests: readonly CesrFrame[] = []): Operation<MultisigDecision> {
     const inspection = this.inspect(serder, nests);
@@ -519,13 +497,14 @@ export class Multiplexor {
       yield* dispatchEnvelope(envelopeFromFrame(child, true), this.rvy, this.kvy);
     }
   }
-
   /** Replay v1 children with their own stored proofs and signed attachment genus, as KERIpy does. */
   private *processLegacyApproved(wrapper: SerderKERI): Operation<void> {
     const embeds = embeddedSection(wrapper.ked!);
     for (const label of Object.keys(embeds ?? {})) {
       const sad = embeds?.[label];
-      if (!isRecord(sad)) continue;
+      if (!isRecord(sad)) {
+        continue;
+      }
       const event = new Serder({ sad });
       const { attachment, genus } = multisigChildEvidence(this.hby, wrapper, label, event);
       const channel = yield* toEffectionFrames(async function*(signal) {
@@ -534,29 +513,22 @@ export class Multiplexor {
         }
       });
       for (const frame of yield* each(channel.frames)) {
-        try {
+        {
           yield* dispatchEnvelope(envelopeFromFrame(frame, true), this.rvy, this.kvy);
-        } finally {
-          yield* call(() => discardFrame(frame));
         }
         yield* each.next();
       }
     }
   }
-
-  /** Reopen original evidence through the exchange replay owner; cancellation joins all temporary files. */
+  /** Reopen stored evidence and revalidate it before approved protocol processing. */
   private *replayApproved(said: string): Operation<void> {
-    const channel = yield* toEffectionFrames((signal) => this.replay.replay(said, signal), {
-      payloadSink: async (signal) => (await this.hby.db.openPayloads(signal)).files.stage(signal),
-    });
+    const channel = yield* toEffectionFrames((signal) => this.replay.replay(said, signal));
     for (const frame of yield* each(channel.frames)) {
-      try {
+      {
         const serder = frame.body as SerderKERI;
         if (!this.verify(serder, frame.nests)) throw new Error("Stored multisig proposal failed revalidation.");
         if (serder.pvrsn.major === 1) yield* this.processLegacyApproved(serder);
         else yield* this.processApproved(frame.nests ?? []);
-      } finally {
-        yield* call(() => discardFrame(frame));
       }
       yield* each.next();
     }
@@ -670,11 +642,12 @@ export interface MultisigChild {
   attachment: Uint8Array;
   genus: Versionage;
 }
-
 /** Read one stored v1 child at the wire boundary, without authenticating its independent proof. */
 export function multisigChild(hby: Habery, wrapper: SerderKERI, label: string): MultisigChild | null {
   const sad = embeddedSection(wrapper.ked ?? {})?.[label];
-  if (!isRecord(sad)) return null;
+  if (!isRecord(sad)) {
+    return null;
+  }
   const event = new SerderKERI({ sad });
   return { event, ...multisigChildEvidence(hby, wrapper, label, event) };
 }
@@ -753,7 +726,6 @@ function embeddedSection(ked: Record<string, unknown>): Record<string, unknown> 
   const attrs = payloadSection(ked);
   return isRecord(attrs.e) && typeof attrs.e.d === "string" ? attrs.e : null;
 }
-
 /** Decode the signed legacy child-genus hint before it can select attachment parsing. */
 function childGenusHint(attrs: unknown): Versionage | null | undefined {
   if (!isRecord(attrs) || attrs.cgvrsn === undefined) return undefined;
@@ -762,7 +734,9 @@ function childGenusHint(attrs: unknown): Versionage | null | undefined {
     !Array.isArray(hint) || hint.length !== 2
     || (hint[0] !== 1 && hint[0] !== 2)
     || typeof hint[1] !== "number" || !Number.isInteger(hint[1]) || hint[1] < 0 || hint[1] > 4095
-  ) return null;
+  ) {
+    return null;
+  }
   return { major: hint[0], minor: hint[1] };
 }
 

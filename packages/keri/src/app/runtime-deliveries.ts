@@ -291,7 +291,7 @@ function* postQueryMessage(
     yield* converseCesrTcp(delivery.url, delivery.body, {
       services: runtime.services,
       signal: controller.signal,
-      replies: { services: runtime.services, intake: runtime.intake, reactor: runtime.reactor, local: true },
+      replies: { services: runtime.services, reactor: runtime.reactor, local: true },
     });
     return;
   }

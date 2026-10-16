@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { decodeB64, t } from "../../../src/core/bytes.ts";
 import { DeserializeError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
@@ -115,10 +115,10 @@ Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with att
   assertEquals(bny[0].attachments.length, txt[0].attachments.length);
 });
 
-Deno.test("top-level native MapBodyGroup without version field is rejected as non-message", async () => {
+Deno.test("top-level native MapBodyGroup without version field is rejected as non-message", () => {
   const payload = KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(4);
   const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${payload.slice(12, 16)}0J_d${payload.slice(16)}`;
   const mapBody = counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4) + mapPayload;
   // Lower-level maps are useful primitive fixtures, but no protocol body exists without v.
-  await assertRejects(() => parseBytes(encode(mapBody)), DeserializeError);
+  assertThrows(() => parseBytes(encode(mapBody)), DeserializeError);
 });

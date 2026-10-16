@@ -34,9 +34,7 @@ The ownership sequence is:
    promoting their file.
 
 Aborting a finished sink does not revoke the payload. Closing a store aborts its
-unfinished sinks but does not delete completed caller-owned files. A parser can
-therefore abort an incomplete later sibling without deleting a previously
-emitted child.
+unfinished sinks but does not delete completed caller-owned files. Storage abort therefore cannot revoke an already transferred file.
 
 Readers open independent descriptors and close them on EOF, failure, or early
 iterator return. An optional `AbortSignal` reaches reads and collection; source
@@ -98,18 +96,18 @@ Archive views expose only reads. Existing readers must finish before reference
 removal; removal does not provide reader leases. KERIpy-readable wire tables
 remain separate from private file references and retain their protocol schema.
 
-`Baser.getEssr` also reads KERIpy-origin exchanges that have `.essrs` rows but no
-private metadata. It borrows their stored insertion order and deduplication,
-and reopens chunks without byte/item quotas or retaining a
-token list. Replay stays read-only; escrow retry snapshots the borrowed bytes and
-uses normal archive publication. Imported rows and any supplied duplicate must
-both match the signed commitment; valid duplicate fragmentation preserves the
-first stored representation. Corrupt retained evidence is never silently blessed
-by a valid new payload. The wire table does not retain the original
-frame genus, so its reconstruction starts with v1 and replay raises the counter
-genus when required by the body. Repetitions already deduplicated by KERIpy cannot
-be reconstructed; the signed digest still decides whether the retained bytes
-are valid.
+`Baser.getEssrs` returns ordinary ordered Texters. Private archive bytes retain
+exact qualified codes, fragment order and multiplicity; KERIpy IoSet rows alone
+cannot represent repeated equal fragments. KERIpy-origin accepted/escrow rows
+remain readable without private metadata, with their actual insertion order and
+deduplication. Replay is read-only. Retry uses normal archive publication.
+
+Retained evidence and a supplied duplicate must both match the signed commitment.
+A legal duplicate fragmentation keeps the first representation. Already
+KERIpy-deduplicated fragments cannot be reconstructed; the signed digest still
+decides validity. Private metadata retains attachment genus independently of the
+body protocol. ESSR rows, reference metadata and accepted/escrow evidence publish
+in the same transaction after the archive's actual file work completes.
 
 ## Nested exchange substreams
 
@@ -125,21 +123,13 @@ owned rows require no private metadata.
 Nested staging comparisons, publication and hydration read one physical row at a
 time through ordinary owned native copies. Key cursors close before suspension.
 Publication belongs to the caller's transaction, so a write failure rolls back to
-the previous public evidence. Loading requires exactly one child per row and
-claims each reopened frame before checking cardinality; later-row corruption
-therefore disposes all previously hydrated descendants.
+the previous public evidence. Loading requires exactly one finite child per row. Decoding creates ordinary
+values with no parser files or disposal obligations.
 
 Exchanger has no resource policy, recursive tree budget or storage-copy reservation.
-Nested loading supplies cancellation and a file-backed payload sink to the parser;
-parser-internal quotas and frame credit remain separate removal work. Route
-handlers borrow hydrated descendants through handler completion. Actual payload
-owners survive until joined admission/replay cleanup, including cancellation and
-cleanup failure. The admission guard protects unfinished publication and archive
-recovery, not hypothetical capacity.
-
-Fresh parsed children remain hydrated through verification and handler execution.
-Escrow retry and replay reopen stored child frames; their temporary ESSR stages
-are released on completion, rejection, cancellation, or later-row corruption.
+Handlers consume hydrated descendants through route processing. Admission guards
+protect unfinished publication and archive recovery. Fresh parsed children remain
+hydrated; retry and replay decode stored rows through the same finite decoder.
 Successful verified duplicates replace the child row set and invoke forwarding
 again, matching frozen Python `927c0cb8`. Failed replacement rolls back to the
 previous public rows. Parent `/fwd` verification checks exactly one child's valid
@@ -150,4 +140,4 @@ KRAM ready/partial snapshots and their copy-admission helpers are removed.
 KERIpy-supported partial factors, replay caches and actual accepted payload
 ownership remain distinct. Ordinary database row reads have no byte ceiling or
 before-copy callback. ESSR storage and recipient crypto have no byte/item or
-concurrency quotas; parser-internal accounting remains removal work.
+concurrency quotas; application accounting must not be reintroduced.

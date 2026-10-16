@@ -1,4 +1,4 @@
-import { assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
 import { decodeB64 } from "../../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError, UnknownCodeError, VersionError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
@@ -46,7 +46,7 @@ Deno.test("genus selectors reject unsupported majors and both minor sextets at e
   for (const domain of domains) {
     for (const suffix of ["AAA", "DAA", "CAB", "CBA"]) {
       const selector = "-_AAA" + suffix;
-      await assertRejects(() => parseBytes(bytes(selector + KERIPY_NATIVE_V2_ICP_FIX_BODY, domain)), VersionError);
+      assertThrows(() => parseBytes(bytes(selector + KERIPY_NATIVE_V2_ICP_FIX_BODY, domain)), VersionError);
       for (const stream of [selector, groupV2("-C", selector)]) {
         assertThrows(() => parseAttachmentGroup(bytes(stream, domain), V2, domain), VersionError);
       }

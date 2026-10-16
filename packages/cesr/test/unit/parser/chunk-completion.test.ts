@@ -2,10 +2,11 @@ import { assertEquals, assertRejects } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../../src/core/bytes.ts";
 import { ColdStartError, GroupSizeError, ShortageError } from "../../../src/core/errors.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { parse } from "../../../src/parser/progressive.ts";
+import { parse } from "../../../src/parser/parser.ts";
 import { CtrDexV1, CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV1, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY as body } from "../../fixtures/external-vectors.ts";
+import { assertWireError } from "../../fixtures/parser-test-helpers.ts";
 import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 import { v1ify } from "../../fixtures/versioned-body-fixtures.ts";
 
@@ -79,7 +80,7 @@ Deno.test("complete enclosures emit promptly and never absorb bytes outside thei
         // The orphan attachment is outside the closed frame and must fail on the next pull.
         const parser = parse(chunks(...parts, bytes(groupV2("-L", sigerToken()))));
         assertEquals((await parser.next()).value, expected[0]);
-        await assertRejects(() => parser.next(), ColdStartError);
+        await assertWireError(() => parser.next(), ColdStartError);
       }
       const parser = parse(bounded(input));
       try {
@@ -97,7 +98,7 @@ Deno.test("terminal partial attachments never expose their pending message as co
   const wire = encode(body + groupV2("-K", sigerToken()) + "-LAWAAAA");
   for (const parts of [Array.from(wire, (byte) => Uint8Array.of(byte)), [wire]]) {
     const parser = parse(chunks(...parts));
-    await assertRejects(() => parser.next(), ShortageError);
+    await assertWireError(() => parser.next(), ShortageError);
     assertEquals((await parser.next()).done, true);
   }
 });
@@ -123,7 +124,7 @@ Deno.test("v1 attachment enclosures close at their declared boundary in both dom
 Deno.test("complete frame enclosures reject incomplete inner attachments without waiting", async () => {
   for (const code of ["-A", "-B"]) {
     const parser = parse(bounded(encode(groupV2(code, body + "-LAWAAAA"))));
-    await assertRejects(() => parser.next(), GroupSizeError);
+    await assertWireError(() => parser.next(), GroupSizeError);
     assertEquals((await parser.next()).done, true);
   }
 });
@@ -135,7 +136,7 @@ Deno.test("complete v1 attachment enclosures reject truncated items without wait
     for (const bytes of [encode, decodeB64]) {
       const wrapper = bytes(counterV1(code, truncated.length / 4) + truncated);
       const parser = parse(bounded(concatBytes(bodyBytes, wrapper)));
-      await assertRejects(() => parser.next(), GroupSizeError);
+      await assertWireError(() => parser.next(), GroupSizeError);
       assertEquals((await parser.next()).done, true);
     }
   }
@@ -149,7 +150,7 @@ Deno.test("complete non-native body enclosures reject truncated matter without w
     for (const bytes of [encode, decodeB64]) {
       for (const peer of ["", body]) {
         const parser = parse(bounded(bytes(wire + peer)));
-        await assertRejects(() => parser.next(), GroupSizeError);
+        await assertWireError(() => parser.next(), GroupSizeError);
         assertEquals((await parser.next()).done, true);
       }
     }

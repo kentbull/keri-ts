@@ -7,8 +7,8 @@ export interface ExchangeRecordShape {
   mailboxAid: string | null;
   /** First qualified receiver receipt, distinct from the signed message timestamp. */
   receiverTime?: string;
-  /** Canonical Texter count, decoded byte length, and replay genus. */
-  essr?: { count: number; size: number; gvrsn: Versionage };
+  /** Owned qualified ESSR archive and its original replay genus. */
+  essr?: { gvrsn: Versionage };
 }
 
 /** Private metadata; the ordinary KERIpy exchange tables retain their wire schema. */
@@ -17,7 +17,7 @@ export class ExchangeRecord extends RawRecord<ExchangeRecordShape> implements Ex
   declare mailboxAid: string | null;
   /** Retained through proof escrow/reopen and subsequent accepted duplicates. */
   declare receiverTime?: string;
-  /** Constant-size canonical wire reconstruction metadata. */
+  /** Owned ciphertext archive provenance. */
   declare essr?: ExchangeRecordShape["essr"];
 }
 

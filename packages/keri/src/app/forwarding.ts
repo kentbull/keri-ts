@@ -107,7 +107,7 @@ export function* sendPreparedCesrTarget(
       yield* converseCesrTcp(target.url, target.message, {
         services,
         signal,
-        replies: { services: receiver.services, intake: receiver.intake, reactor: receiver.reactor, local: true },
+        replies: { services: receiver.services, reactor: receiver.reactor, local: true },
       });
     } else yield* sendCesrTcp(target.url, target.message, { services, signal });
   } else if (target.kind === "http") {

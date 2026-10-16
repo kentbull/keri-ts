@@ -1,10 +1,9 @@
 import { encode as encodeMsgpack, ExtData, ExtensionCodec } from "@msgpack/msgpack";
 import { Encoder as CborEncoder } from "cbor-x/encode";
-import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { decodeHex } from "jsr:@std/encoding/hex";
 import { concatBytes } from "../../../src/core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../../../src/core/cbor.ts";
-import { discardFrame } from "../../../src/core/frame.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
 import { SerderKERI } from "../../../src/serder/serder.ts";
@@ -105,7 +104,6 @@ function tokenBody(token: Uint8Array, kind: "MGPK" | "CBOR" = "MGPK"): Uint8Arra
   raw.set(new TextEncoder().encode(raw.length.toString(16).padStart(6, "0")), 14);
   return raw;
 }
-
 Deno.test("MGPK keeps pinned 714 bytes/SAIDs and standard binary/extension semantics", async () => {
   assertEquals(saidVectors.reference, "7143832813cac6a394ab1faf9be83bb3372be87c");
   for (const row of saidVectors.rows.filter((row) => row.sad.v.includes("MGPK"))) {
@@ -114,7 +112,6 @@ Deno.test("MGPK keeps pinned 714 bytes/SAIDs and standard binary/extension seman
     assertEquals(frame.body.raw, raw);
     assertEquals(frame.body.ked, row.sad);
     assertEquals(frame.body.said, row.sad.d);
-    await discardFrame(frame);
   }
   // Payload bytes that resemble a huge array header are opaque to resource token inspection.
   const value = {
@@ -155,13 +152,11 @@ Deno.test("wrapped MGPK preserves intrinsic opaque fallback", async () => {
     assertEquals((await parseSingle(wrap(raw))).body.ked, null);
   }
 });
-
 Deno.test("CBOR preserves pinned 714 bytes/SAIDs, indefinite shapes and standard tags", async () => {
   for (const row of saidVectors.rows.filter((row) => row.sad.v.includes("CBOR"))) {
     const raw = decodeHex(row.raw);
     const [frame] = await parseBytes(raw);
     assertEquals([frame.body.raw.slice(), frame.body.ked, frame.body.said], [raw, row.sad, row.sad.d]);
-    await discardFrame(frame);
   }
   const rootMap = concatBytes(Uint8Array.of(0xd9, 1, 3), tokenBody(Uint8Array.of(0x80), "CBOR"));
   rootMap.set(new TextEncoder().encode(rootMap.length.toString(16).padStart(6, "0")), 17);
@@ -197,17 +192,13 @@ Deno.test("CBOR preserves pinned 714 bytes/SAIDs, indefinite shapes and standard
     } else assertEquals((await parseSingle(raw)).body.ked, decodeKeriCbor(raw));
   }
 });
-
 Deno.test("wrapped CBOR distinguishes known syntax boundaries from tag failures", async () => {
   const wrap = (token: Uint8Array) =>
     new TextEncoder().encode(groupV2("-H", new Texter({ raw: tokenBody(token, "CBOR"), code: "4B" }).qb64));
   for (const token of [Uint8Array.of(0x81), Uint8Array.of(0x9a, 0), Uint8Array.of(0x5f, 0xff), Uint8Array.of(0x1c)]) {
     assertEquals((await parseSingle(wrap(token))).body.ked, null);
   }
-  await assertRejects(() =>
-    parseBytes(wrap(Uint8Array.of(0xd8, 29, 0)), {
-      classifyWireErrors: true,
-    }), TypeError); // Unqualified tag failure is not mislabeled malformed wire.
+  assertThrows(() => parseBytes(wrap(Uint8Array.of(0xd8, 29, 0))), TypeError); // Unqualified tag failure is not mislabeled malformed wire.
 });
 
 Deno.test("CBOR accepts native codec values without a speculative expansion allowlist", async () => {

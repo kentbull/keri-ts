@@ -1,5 +1,5 @@
 import { encode as encodeMsgpack } from "@msgpack/msgpack";
-import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import { concatBytes, decodeB64, decoder, t } from "../../../src/core/bytes.ts";
 import { encodeKeriCbor } from "../../../src/core/cbor.ts";
 import {
@@ -10,10 +10,9 @@ import {
   ShortageError,
   WireParseError,
 } from "../../../src/core/errors.ts";
-import { discardFrame } from "../../../src/core/frame.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { parse } from "../../../src/parser/progressive.ts";
+import { parse } from "../../../src/parser/parser.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Siger } from "../../../src/primitives/siger.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
@@ -25,7 +24,6 @@ import {
 } from "../../fixtures/external-vectors.ts";
 import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 import { v1ify } from "../../fixtures/versioned-body-fixtures.ts";
-
 /** Build a real wrapped message with version-specific attachment count semantics. */
 function vector(major: 1 | 2) {
   const gvrsn = { major, minor: 0 } as const;
@@ -47,19 +45,18 @@ function vector(major: 1 | 2) {
     selector: t(Counter.makeGVC(gvrsn)),
   };
 }
-
 /** Yield supplied chunks as a finite record, including deliberate empty chunks. */
 async function* chunks(...values: Uint8Array[]): AsyncGenerator<Uint8Array> {
   yield* values;
 }
-
 /** Collect small test results explicitly; production bulk consumers iterate. */
 async function collect(source: AsyncIterable<CesrFrame>): Promise<CesrFrame[]> {
   const result: CesrFrame[] = [];
-  for await (const frame of source) result.push(frame);
+  for await (const frame of source) {
+    result.push(frame);
+  }
   return result;
 }
-
 /** Bound a deterministic blocked-input assertion without hanging a failed test. */
 async function promptly<T>(operation: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -74,38 +71,37 @@ async function promptly<T>(operation: Promise<T>): Promise<T> {
     clearTimeout(timer);
   }
 }
-
-Deno.test("progressive wire classification preserves source and cancellation failure identity", async () => {
+Deno.test("buffered wire classification preserves source and cancellation failure identity", async () => {
   const wire = encode(vector(2).selector + vector(2).frame.slice(0, -4));
-  const original = await assertRejects(() => collect(parse(chunks(wire))), ParserError);
-  assert(!(original instanceof WireParseError));
-  const classified = await assertRejects(
-    () => collect(parse(chunks(wire), { classifyWireErrors: true })),
-    WireParseError,
-  );
-  assertInstanceOf(classified.cause, original.constructor as typeof ParserError);
+  const classified = await assertRejects(() => collect(parse(chunks(wire))), WireParseError);
+  assertInstanceOf(classified.cause, ShortageError);
   const external = new ParserError("source contract failure");
   const source = async function*() {
     yield await Promise.reject(external);
   };
-  assert(await assertRejects(() => collect(parse(source(), { classifyWireErrors: true }))) === external);
+  assert(await assertRejects(() => collect(parse(source()))) === external);
   const controller = new AbortController();
   controller.abort(external);
   assert(
-    await assertRejects(
-      () => collect(parse(chunks(wire), { classifyWireErrors: true, signal: controller.signal })),
-    ) === external,
+    await assertRejects(() => collect(parse(chunks(wire), { signal: controller.signal })))
+      === external,
   );
+  const afterDelivery = new AbortController();
+  const delivered = parse(chunks(encode(vector(2).frame)), { signal: afterDelivery.signal });
+  assertEquals((await delivered.next()).done, false);
+  afterDelivery.abort(external);
+  assert(await assertRejects(() => delivered.next()) === external);
 });
-
-Deno.test("progressive GenericGroup emits a complete child before receiving its siblings in both genera/domains", async () => {
+Deno.test("buffered GenericGroup waits for the complete enclosure in both genera/domains", async () => {
   for (const major of [1, 2] as const) {
     const { group, frame, selector } = vector(major);
     for (const bytes of [encode, decodeB64]) {
       // The gate withholds B while all enclosing counters and complete A arrive.
       for (const depth of [1, 3]) {
         let wire = frame + frame;
-        for (let i = 0; i < depth; i++) wire = group("GenericGroup", wire);
+        for (let i = 0; i < depth; i++) {
+          wire = group("GenericGroup", wire);
+        }
         const prefix = bytes(selector + wire.slice(0, -frame.length)); // Remove only B, retaining its declared extent.
         let pulled = 0;
         let closed = 0;
@@ -123,11 +119,16 @@ Deno.test("progressive GenericGroup emits a complete child before receiving its 
         };
         const parser = parse(source());
         try {
-          // A must resolve while the source cannot supply B.
-          const first = await promptly(parser.next());
-          assertEquals(first.done, false);
+          let delivered = false;
+          const pending = parser.next().then((result) => {
+            delivered = true;
+            return result;
+          });
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          assertEquals(delivered, false);
           assertEquals(pulled, 1);
           gate.resolve();
+          assertEquals((await promptly(pending)).done, false);
           assertEquals((await parser.next()).done, false);
           assertEquals((await parser.next()).done, true);
           assertEquals(closed, 1);
@@ -139,8 +140,7 @@ Deno.test("progressive GenericGroup emits a complete child before receiving its 
     }
   }
 });
-
-Deno.test("progressive traversal matches finite frames with partial edges and single-byte chunks", async () => {
+Deno.test("buffered traversal matches finite frames with partial edges and single-byte chunks", async () => {
   for (const major of [1, 2] as const) {
     const { selector, group, frame, body, sig } = vector(major);
     const wire = selector + group("GenericGroup", frame + group("GenericGroup", body + sig)) + frame;
@@ -179,8 +179,7 @@ Deno.test("progressive traversal matches finite frames with partial edges and si
     }
   }
 });
-
-Deno.test("earlier children survive malformed siblings and truncated enclosures", async () => {
+Deno.test("complete groups retain earlier children on malformed siblings; truncated groups deliver none", async () => {
   const { group, frame, body } = vector(2);
   for (const bytes of [encode, decodeB64]) {
     // -LAW counts an 88-character signature, but only four payload characters fit.
@@ -188,16 +187,14 @@ Deno.test("earlier children survive malformed siblings and truncated enclosures"
       chunks(bytes(group("GenericGroup", frame + group("BodyWithAttachmentGroup", body + "-LAWAAAA")))),
     );
     assertEquals((await bad.next()).done, false);
-    await assertRejects(() => bad.next(), GroupSizeError);
+    await assertRejects(() => bad.next(), WireParseError);
     assertEquals((await bad.next()).done, true);
-    // A survives even when actual input ends before B's declared extent.
+    // An incomplete outer extent is never entered, even if its first child is complete.
     const truncated = parse(chunks(bytes(group("GenericGroup", frame + frame).slice(0, -4))));
-    assertEquals((await truncated.next()).done, false);
-    await assertRejects(() => truncated.next(), ShortageError);
+    await assertRejects(() => truncated.next(), WireParseError);
     assertEquals((await truncated.next()).done, true);
   }
 });
-
 Deno.test("completed enclosed siblings remain delivered before a truncated following body", async () => {
   const signed = native + groupV2("-K", sigerToken());
   const complete = groupV2("-A", native + signed);
@@ -205,10 +202,9 @@ Deno.test("completed enclosed siblings remain delivered before a truncated follo
   // The first body's boundary is the next body; the second closes with its GenericGroup.
   assertEquals((await parser.next()).value?.attachments.length, 0);
   assertEquals((await parser.next()).value?.attachments.length, 1);
-  await assertRejects(() => parser.next(), ShortageError);
+  await assertRejects(() => parser.next(), WireParseError);
   assertEquals((await parser.next()).done, true);
 });
-
 Deno.test("single-frame enclosures validate exact contents before exposing any child", async () => {
   for (const major of [1, 2] as const) {
     const { selector, group, frame } = vector(major);
@@ -216,13 +212,12 @@ Deno.test("single-frame enclosures validate exact contents before exposing any c
       // An outer one-frame promise applies even when its payload nests a generic list.
       for (const payload of ["", frame + frame, group("GenericGroup", frame + frame)]) {
         const parser = parse(chunks(bytes(selector + group("BodyWithAttachmentGroup", payload))));
-        await assertRejects(() => parser.next(), ColdStartError);
+        await assertRejects(() => parser.next(), WireParseError);
         assertEquals((await parser.next()).done, true);
       }
     }
   }
 });
-
 Deno.test("impossible child extents fail without pulling missing outer bytes", async () => {
   const { group } = vector(2);
   let reads = 0;
@@ -244,11 +239,10 @@ Deno.test("impossible child extents fail without pulling missing outer bytes", a
       };
     },
   };
-  await assertRejects(() => promptly(parse(source).next()), GroupSizeError);
+  await assertRejects(() => promptly(parse(source).next()), WireParseError);
   assertEquals(reads, 1);
   assertEquals(closes, 1);
 });
-
 Deno.test("open attachment sets wait for lookahead or real EOF, never a network chunk", async () => {
   const { body, sig } = vector(2);
   const gate = Promise.withResolvers<void>();
@@ -274,9 +268,8 @@ Deno.test("open attachment sets wait for lookahead or real EOF, never a network 
   assertEquals((await first).done, false);
   assertEquals((await parser.next()).done, false);
   assertEquals((await parser.next()).done, true);
-  await assertRejects(() => collect(parse(chunks(encode(body + sig + "-LAWAAAA")))), ShortageError);
+  await assertRejects(() => collect(parse(chunks(encode(body + sig + "-LAWAAAA")))), WireParseError);
 });
-
 Deno.test("nested selectors restore the enclosing genus and selected failures never retry", async () => {
   const one = vector(1);
   const two = vector(2);
@@ -287,15 +280,14 @@ Deno.test("nested selectors restore the enclosing genus and selected failures ne
     const frames = await collect(parse(chunks(bytes(wire))));
     assertEquals(frames.map((frame) => frame.attachments[0].code), ["-K", "-A", "-K", "-K"]);
     // Selected v1 must reject the v2 body code without alternate-major retry.
-    await assertRejects(() => collect(parse(chunks(bytes(one.selector + native)))), ColdStartError);
-    await assertRejects(() => collect(parse(chunks(bytes(two.selector + two.body + one.sig)))), ParserError);
+    await assertRejects(() => collect(parse(chunks(bytes(one.selector + native)))), WireParseError);
+    await assertRejects(() => collect(parse(chunks(bytes(two.selector + two.body + one.sig)))), WireParseError);
     // Explicit v2 counters remain v2 even when each body declares protocol v1.
     const mixed = concatBytes(bytes(two.selector), encode(one.json), bytes(two.sig), encode(one.json), bytes(two.sig));
     assertEquals((await collect(parse(chunks(mixed)))).map((frame) => frame.attachments[0].code), ["-K", "-K"]);
   }
 });
-
-Deno.test("progressive cancellation interrupts blocked input and consumer return stops pulling", async () => {
+Deno.test("cancellation joins a cooperating source and consumer return stops pulling", async () => {
   const { group, frame } = vector(2);
   const controller = new AbortController();
   const waiting = Promise.withResolvers<void>();
@@ -305,7 +297,9 @@ Deno.test("progressive cancellation interrupts blocked input and consumer return
       return {
         next() {
           waiting.resolve();
-          return new Promise<IteratorResult<Uint8Array>>(() => {});
+          return new Promise<IteratorResult<Uint8Array>>((_, reject) => {
+            controller.signal.addEventListener("abort", () => reject(controller.signal.reason), { once: true });
+          });
         },
         return() {
           closes++;
@@ -315,7 +309,7 @@ Deno.test("progressive cancellation interrupts blocked input and consumer return
     },
   };
   const parser = parse(blocked, { signal: controller.signal });
-  // The source deliberately never settles next(); local abort must still settle parsing.
+  // The actual input owner aborts its pending read. Parsing joins source cleanup.
   const pending = parser.next();
   await waiting.promise;
   const reason = new Error("cancel blocked parser");
@@ -327,27 +321,25 @@ Deno.test("progressive cancellation interrupts blocked input and consumer return
   async function* source() {
     try {
       pulls++;
-      yield encode(group("GenericGroup", frame + frame).slice(0, -frame.length));
+      yield encode(group("GenericGroup", frame + frame));
       pulls++;
       yield encode(frame);
     } finally {
       ended = true;
     }
   }
-  // Returning after A closes upstream without ever pulling B.
+  // Returning after A skips the remaining decoded sibling and closes upstream.
   const early = parse(source());
   assertEquals((await early.next()).done, false);
   await early.return(undefined);
   assertEquals(pulls, 1);
   assertEquals(ended, true);
 });
-
 /** Build a small versioned JSON body shared by mixed-codec framing cases. */
 function tinyJson(count: number): string {
   return v1ify("{\"v\":\"KERI10JSON000000_\",\"a\":[" + Array(count).fill("0").join(",") + "]}");
 }
-
-Deno.test("JSON parent and descendants preserve framing and joined disposal through cancellation", async () => {
+Deno.test("JSON parent and descendants preserve framing through cancellation", async () => {
   const body = tinyJson(0);
   const wrap = (value: string) =>
     vector(1).group("NonNativeBodyGroup", new Texter({ raw: encode(value), code: "4B" }).qb64);
@@ -362,11 +354,8 @@ Deno.test("JSON parent and descendants preserve framing and joined disposal thro
     v: "KERI10JSON000020_",
     a: [],
   }]);
-  await discardFrame(frame.nests![0]);
-  await discardFrame(frame);
-  await discardFrame(frame);
   await parser.return(undefined);
-  await assertRejects(() => parseBytes(encode(wire.slice(0, -4)), options), ShortageError);
+  assertThrows(() => parseBytes(encode(wire.slice(0, -4))), ShortageError);
   const controller = new AbortController();
   const cancellation = new Error("cancel after admitted JSON parent");
   const source = async function*() {
@@ -376,29 +365,7 @@ Deno.test("JSON parent and descendants preserve framing and joined disposal thro
   assert(
     await assertRejects(() => collect(parse(source(), { ...options, signal: controller.signal }))) === cancellation,
   );
-
-  const essr = counterV1(CtrDexV1.ESSRPayloadGroup, 1) + "4BABYWJj";
-  const payloadWire = vector(1).group(
-    "BodyWithAttachmentGroup",
-    parent
-      + vector(1).group("BodyWithAttachmentGroup", parent + essr),
-  );
-  const [owned] = await parseBytes(encode(payloadWire), options);
-  const gate = Promise.withResolvers<void>();
-  const failure = new Error("child disposal failed");
-  const discard = owned.nests![0].essr!.discard;
-  owned.nests![0].essr!.discard = async () => {
-    await gate.promise;
-    await discard();
-    throw failure;
-  };
-  const disposal = discardFrame(owned);
-  gate.resolve();
-  const cleanup = await assertRejects(() => disposal, AggregateError);
-  assertEquals(cleanup.errors, [failure]);
-  await discardFrame(owned);
 });
-
 Deno.test("wrapped JSON retains intrinsic opaque fallback and propagates decoder failures unchanged", async () => {
   const wrap = (body: string) =>
     vector(1).group("NonNativeBodyGroup", new Texter({ raw: encode(body), code: "4B" }).qb64);
@@ -409,7 +376,7 @@ Deno.test("wrapped JSON retains intrinsic opaque fallback and propagates decoder
     throw infrastructure;
   };
   try {
-    assert(await assertRejects(() => parseBytes(encode(wire), { classifyWireErrors: true })) === infrastructure);
+    assert(assertThrows(() => parseBytes(encode(wire))) === infrastructure);
   } finally {
     JSON.parse = original;
   }
@@ -420,7 +387,6 @@ Deno.test("wrapped JSON retains intrinsic opaque fallback and propagates decoder
   assertEquals(accepted.body.ked, original(json));
   assertEquals(accepted.body.said, original(json).d);
 });
-
 Deno.test("JSON and MGPK descendants hydrate mixed codec children and cancel incomplete attachments", async () => {
   const jsonBody = tinyJson(0);
   const msgpackBody = encodeMsgpack({ v: "KERI10MGPK000018_", a: [] });
@@ -435,9 +401,6 @@ Deno.test("JSON and MGPK descendants hydrate mixed codec children and cancel inc
   assertEquals(frame.nests![0].body.raw, msgpackBody);
   assertEquals(frame.body.ked?.a, []);
   assertEquals(frame.nests![0].body.ked?.a, []);
-  await discardFrame(frame.nests![0]);
-  await discardFrame(frame);
-  await discardFrame(frame);
   await parser.return(undefined);
   const controller = new AbortController();
   const cancellation = new Error("cancel after admitted binary child");
@@ -466,9 +429,6 @@ Deno.test("JSON and CBOR descendants hydrate mixed codec children and cancel inc
   assertEquals(frame.nests![0].body.raw.slice(), cborBody);
   assertEquals(frame.body.ked?.a, []);
   assertEquals(frame.nests![0].body.ked?.a, []);
-  await discardFrame(frame.nests![0]);
-  await discardFrame(frame);
-  await discardFrame(frame);
   await parser.return(undefined);
   const controller = new AbortController();
   const cancellation = new Error("cancel after admitted binary child");

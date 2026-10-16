@@ -6,18 +6,15 @@ import {
   concatBytes,
   Counter,
   Diger,
-  discardFrame,
-  essrPayload,
   framePayload,
-  MemoryPayloadSink,
   nestedPayload,
   NumberPrimitive,
-  type OwnedPayload,
   parseBytes,
   Prefixer,
   SerderACDC,
   SerderKERI,
   Siger,
+  Texter,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
@@ -92,15 +89,12 @@ function proposal(sender: Hab, route: string, child: CesrFrame, payload: Record<
   })[0];
   return { serder, nests: [child], tsgs: proof(sender, serder) };
 }
-
 /** Admit complete public KEL evidence without sharing private member stores. */
 async function learn(target: Habery, member: Hab): Promise<void> {
   for (const wire of member.db.clonePreIter(member.pre, 0)) {
     for (const frame of await parseBytes(wire)) {
-      try {
+      {
         await run(() => dispatchEnvelope(envelopeFromFrame(frame, true), target.rvy, target.kevery));
-      } finally {
-        await discardFrame(frame);
       }
     }
   }
@@ -178,7 +172,6 @@ Deno.test("multisig publication records its actual local proposal before deliver
     });
   });
 });
-
 Deno.test("multisig approval honors signed child genus through KEL, replies, registry and credential issuance", async () => {
   await participants(async (left, right, alice, bob, notifier) => {
     const mids = [alice.pre, bob.pre];
@@ -210,13 +203,11 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
             const child = new SerderACDC({ sad: sad.acdc as Record<string, unknown> });
             const proof = multisigPathedAttachment(left, args.serder.said!, "acdc");
             const frames = yield* call(() => parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), child.raw, proof)));
-            try {
+            {
               assertEquals(frames.length, 1);
               const seals = envelopeFromFrame(frames[0]).ssts;
               assertEquals(seals.length, 1);
               assertEquals([seals[0].i.qb64, seals[0].s.num, seals[0].d.qb64], [issuance.pre, 0n, issuance.said]);
-            } finally {
-              for (const frame of frames) yield* call(() => discardFrame(frame));
             }
           }
           return { serder: args.serder, deliveries: ["test"], queued: [] };
@@ -351,7 +342,6 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
     });
   });
 });
-
 for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
   for (const remoteFirst of [false, true]) {
     Deno.test(`v1 multisig replays genus ${genus.major} children after approval (${remoteFirst ? "remote" : "local"} first)`, async () => {
@@ -371,13 +361,11 @@ for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
           );
           const message = concatBytes(sender.endorse(wrapper, { pipelined: false }), paths);
           for (const frame of await parseBytes(message)) {
-            try {
+            {
               const decision = await run(() =>
                 dispatchEnvelope(envelopeFromFrame(frame, true), left.rvy, left.kevery, exchanger)
               );
               assertEquals(decision?.kind, "accept");
-            } finally {
-              await discardFrame(frame);
             }
           }
         }
@@ -414,7 +402,6 @@ for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
     });
   }
 }
-
 for (const remoteFirst of [false, true]) {
   Deno.test(`nested multisig merges real child signatures after approval (${remoteFirst ? "remote" : "local"} first)`, async () => {
     await participants(async (left, right, alice, bob, notifier) => {
@@ -428,7 +415,7 @@ for (const remoteFirst of [false, true]) {
       const [other] = await parseBytes(
         messagize(remote.serder, { sigers: remote.sigers, gvrsn: Vrsn_2_0, genusify: true }),
       );
-      try {
+      {
         const attrs = { gid: local.hab.pre, smids: mids, rmids: mids };
         const approval = proposal(alice, "/multisig/icp", own, attrs);
         const offered = proposal(bob, "/multisig/icp", other, attrs);
@@ -459,7 +446,6 @@ for (const remoteFirst of [false, true]) {
           assertEquals(left.db.getSigs(local.hab.pre, local.serder.said!).map((s) => new Siger({ qb64: s }).index), [
             0,
           ]);
-          await discardFrame(invalid);
         }
         assertEquals((await run(() => exchanger.processEvent(remoteFirst ? approval : offered))).kind, "accept");
         assertEquals(
@@ -476,18 +462,14 @@ for (const remoteFirst of [false, true]) {
         assertEquals(left.db.enst.get([offered.serder.said!]), rows);
         assertEquals(left.db.meids.get([local.serder.said!]).length, 2);
         assertEquals(Array.from(Deno.readDirSync(`${left.db.path}/payloads/staging`)).length, 0);
-      } finally {
-        await discardFrame(own);
-        await discardFrame(other);
       }
     });
   });
 }
-
 Deno.test("nested multisig rejects bad commitments and parent signatures before publication", async () => {
   await participants(async (left, _right, alice, bob, notifier) => {
     const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
-    try {
+    {
       const attrs = { smids: [alice.pre, bob.pre], rmids: [] };
       const input = proposal(bob, "/multisig/icp", child, attrs);
       const exchanger = new Exchanger(left);
@@ -517,12 +499,9 @@ Deno.test("nested multisig rejects bad commitments and parent signatures before 
       assertEquals((await run(() => exchanger.processEvent({ ...input, nests: [mismatch] }))).kind, "reject");
       assertEquals(left.db.enst.get([input.serder.said!]), rows);
       assertEquals(left.db.enstStaging.getTopItemIter().next().done, true);
-    } finally {
-      await discardFrame(child);
     }
   });
 });
-
 Deno.test("nested multisig builders and public normalization preserve all four route commitments", async () => {
   await participants(async (left, _right, alice, bob, notifier) => {
     const exchanger = new Exchanger(left);
@@ -565,7 +544,7 @@ Deno.test("nested multisig builders and public normalization preserve all four r
         }),
       );
       const frames = await parseBytes(wire);
-      try {
+      {
         assertEquals(frames.length, 1);
         const frame = frames[0];
         const normalized = envelopeFromFrame(frame);
@@ -588,8 +567,6 @@ Deno.test("nested multisig builders and public normalization preserve all four r
         await run(() => dispatchEnvelope(normalized, left.rvy, left.kevery, exchanger));
         assertEquals(exchanger.complete(serder.said!), true);
         assertEquals(left.db.enst.get([serder.said!]).length, 1);
-      } finally {
-        for (const frame of frames) await discardFrame(frame);
       }
     }
   });
@@ -621,11 +598,10 @@ Deno.test("v1 multisig wrappers match canonical KERIpy for v2 child attachments"
     assertEquals(supplemental, b(vector.supplemental), request.route);
   }
 });
-
 Deno.test("nested multisig sender escrow survives reopen and rejects invalid commitments on retry", async () => {
   await participants(async (left, _right, alice, bob, notifier) => {
     const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
-    try {
+    {
       const exchanger = new Exchanger(left);
       loadMultisigHandlers(left, exchanger, { notifier });
       const good = proposal(bob, "/multisig/icp", child, { smids: [alice.pre, bob.pre] });
@@ -648,16 +624,13 @@ Deno.test("nested multisig sender escrow survives reopen and rejects invalid com
       assertEquals(left.db.enst.get([bad.serder.said!]), []);
       assertEquals(left.db.epse.get([bad.serder.said!]), null);
       assertEquals(notifier.list().length, 1);
-    } finally {
-      await discardFrame(child);
     }
   });
 });
-
 Deno.test("nested multisig publication failure preserves rows and cannot record local approval", async () => {
   await participants(async (left, _right, alice, bob, notifier) => {
     const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
-    try {
+    {
       const exchanger = new Exchanger(left);
       loadMultisigHandlers(left, exchanger, { notifier });
       const input = proposal(bob, "/multisig/icp", child, { smids: [alice.pre, bob.pre] });
@@ -685,66 +658,9 @@ Deno.test("nested multisig publication failure preserves rows and cannot record 
       assertEquals(left.db.maids.get([child.body.said!]).map((member) => member.qb64), [bob.pre]);
       assertEquals(Array.from(left.db.enstStaging.sdb.getKeys()).length, 0);
       assertEquals(notifier.list().length, 1);
-    } finally {
-      await discardFrame(child);
     }
   });
 });
-
-Deno.test("cancelled nested multisig publication releases its stage without recording approval", async () => {
-  await participants(async (left, _right, alice, bob, notifier) => {
-    const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
-    const wire = b("4BABYWJj");
-    const sink = new MemoryPayloadSink();
-    await sink.write(wire);
-    const payload = essrPayload(await sink.finish(), 1, 3, Vrsn_2_0);
-    let entered!: () => void;
-    const reading = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    let closed = false;
-    child.essr = {
-      ...payload,
-      wire: {
-        size: wire.length,
-        /** Hold the actual nested serializer at owned I/O until scope cancellation. */
-        async *open(signal) {
-          try {
-            entered();
-            await new Promise<void>((_resolve, reject) =>
-              signal!.addEventListener("abort", () => reject(signal!.reason), { once: true })
-            );
-            yield wire;
-          } finally {
-            closed = true;
-          }
-        },
-      },
-    };
-    const exchanger = new Exchanger(left);
-    loadMultisigHandlers(left, exchanger, { notifier });
-    const input = proposal(alice, "/multisig/icp", child, { smids: [alice.pre, bob.pre] });
-    let continued = false;
-    const task = run(function*() {
-      yield* exchanger.processEvent(input);
-      continued = true;
-    });
-    try {
-      await reading;
-      await task.halt();
-      assertEquals(closed, true);
-      assertEquals(continued, false);
-      assertEquals(left.db.exns.get([input.serder.said!]), null);
-      assertEquals(left.db.enst.get([input.serder.said!]), []);
-      assertEquals(left.db.maids.get([child.body.said!]), []);
-      assertEquals(Array.from(left.db.enstStaging.sdb.getKeys()).length, 0);
-    } finally {
-      await task.halt();
-      await discardFrame(child);
-    }
-  });
-});
-
 Deno.test("approved nested rotation interaction and reply use child verification and dependency escrows", async () => {
   await participants(async (left, right, alice, bob, notifier) => {
     const subject = right.makeHab("subject");
@@ -755,7 +671,7 @@ Deno.test("approved nested rotation interaction and reply use child verification
     const exchanger = new Exchanger(left);
     const mux = loadMultisigHandlers(left, exchanger, { notifier });
     const frames: CesrFrame[] = [];
-    try {
+    {
       for (const wire of [rotation, interaction, reply]) frames.push((await parseBytes(wire))[0]);
       // Approve an interaction before its prior rotation exists: the child belongs in ordinary KEL escrow.
       for (const child of [frames[1], frames[0], frames[2]]) {
@@ -772,37 +688,14 @@ Deno.test("approved nested rotation interaction and reply use child verification
       assertEquals(left.db.ends.get([subject.pre, "controller", alice.pre])?.allowed, true);
       assertEquals(left.db.getEvtSerder(subject.pre, frames[0].body.said!)?.raw, frames[0].body.raw);
       assertEquals(left.db.getEvtSerder(subject.pre, frames[1].body.said!)?.raw, frames[1].body.raw);
-    } finally {
-      for (const frame of frames) await discardFrame(frame);
     }
   });
 });
-
 Deno.test("multisig body construction borrows a parsed child without reading or authenticating its evidence", async () => {
   await participants(async (_left, _right, alice, bob) => {
     const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
-    const sink = new MemoryPayloadSink();
-    await sink.write(b("4BABYWJj"));
-    const owner = await sink.finish();
-    let readable = false;
-    let reads = 0;
-    child.essr = essrPayload(
-      {
-        size: owner.size,
-        /** Fail if construction attempts to read borrowed evidence. */
-        async *open(signal) {
-          if (!readable) throw new Error("Premature payload read");
-          reads++;
-          yield* owner.open(signal);
-        },
-        /** Only the owning frame's final disposal may release this evidence. */
-        discard: () => owner.discard(),
-      },
-      1,
-      3,
-      child.gvrsn!,
-    );
-    try {
+    child.essrs = [new Texter({ raw: b("abc"), code: "4B" })];
+    {
       const request: MultisigEventProposal = {
         route: "/multisig/icp",
         attrs: { smids: [alice.pre, bob.pre], rmids: [alice.pre, bob.pre] },
@@ -812,7 +705,6 @@ Deno.test("multisig body construction borrows a parsed child without reading or 
       const options = { stamp: "2026-10-13T00:00:00.000000+00:00" };
       const parent = multisigExnBody(bob.pre, request, body, options);
       const borrowed = nestedPayload(child, Vrsn_2_0);
-      assertEquals(reads, 0);
       assertEquals(parent.a, {
         gid: bob.pre,
         smids: [alice.pre, bob.pre],
@@ -838,9 +730,7 @@ Deno.test("multisig body construction borrows a parsed child without reading or 
         Error,
         "child kind",
       );
-      readable = true;
       const nested = await collectPayload(borrowed);
-      assertEquals(reads, 1);
       // A borrowed serializer never disposes the frame; a second read remains valid.
       assertEquals(await collectPayload(borrowed), nested);
       const wire = await collectPayload(framePayload(child));
@@ -849,96 +739,7 @@ Deno.test("multisig body construction borrows a parsed child without reading or 
       );
       assertEquals(prepared.raw, parent.raw);
       assertEquals(preparedNested, nested);
-      assertEquals(await collectPayload(owner), b("4BABYWJj"));
-    } finally {
-      await discardFrame(child);
-    }
-    await assertRejects(() => collectPayload(owner), Error, "discarded");
-  });
-});
-
-Deno.test("multisig byte preparation aborts payload reads and joins disposal before cancellation returns", async () => {
-  await participants(async (_left, _right, alice, bob) => {
-    const [child] = await parseBytes(bob.db.clonePreIter(bob.pre, 0).next().value!);
-    const sink = new MemoryPayloadSink();
-    await sink.write(b("4BABYWJj"));
-    child.essr = essrPayload(await sink.finish(), 1, 3, child.gvrsn!);
-    const wire = await collectPayload(framePayload(child));
-    await discardFrame(child);
-    const finish = MemoryPayloadSink.prototype.finish;
-    const owners: OwnedPayload[] = [];
-    let entered!: () => void;
-    const reading = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    let release!: () => void;
-    const cleanup = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let closed = false;
-    let discarded = 0;
-    let continued = false;
-    // Observe the real default sink; no test-only parser or payload factory is introduced.
-    MemoryPayloadSink.prototype.finish = async function() {
-      const owner = await finish.call(this);
-      owners.push(owner);
-      return {
-        size: owner.size,
-        /** Hold the serializer's actual read until its Effection scope aborts. */
-        async *open(signal) {
-          try {
-            entered();
-            await new Promise<void>((_resolve, reject) => {
-              signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
-            });
-            yield* owner.open(signal);
-          } finally {
-            await cleanup;
-            closed = true;
-          }
-        },
-        /** Count owner release only after the aborted reader has joined. */
-        async discard() {
-          assertEquals(closed, true);
-          discarded++;
-          await owner.discard();
-        },
-      };
-    };
-    const task = run(function*() {
-      yield* prepareMultisigEventExn(
-        bob.pre,
-        {
-          route: "/multisig/icp",
-          attrs: { smids: [alice.pre, bob.pre], rmids: [alice.pre, bob.pre] },
-        },
-        wire,
-        {
-          pvrsn: Vrsn_2_0,
-        },
-      );
-      continued = true;
-    });
-    try {
-      await reading;
-      let halted = false;
-      const halt = task.halt().then(() => {
-        halted = true;
-      });
-      await Promise.resolve();
-      assertEquals(halted, false);
-      assertEquals(discarded, 0);
-      release();
-      await halt;
-      assertEquals(closed, true);
-      assertEquals(discarded, 1);
-      assertEquals(continued, false);
-      assertEquals(owners.length, 1);
-      await assertRejects(() => collectPayload(owners[0]), Error, "discarded");
-    } finally {
-      release();
-      await task.halt();
-      MemoryPayloadSink.prototype.finish = finish;
+      assertEquals(child.essrs[0].text, "abc");
     }
   });
 });

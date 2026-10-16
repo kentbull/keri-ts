@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { cpuUsage } from "node:process";
 import type { CesrFrame } from "../../packages/cesr/src/core/types.ts";
-import { parse } from "../../packages/cesr/src/parser/progressive.ts";
+import { essrRaw } from "../../packages/cesr/src/parser/essr.ts";
+import { parse } from "../../packages/cesr/src/parser/parser.ts";
 import { corpus, type CorpusOptions } from "./cesr-corpus.ts";
 
 /** One isolated benchmark case supplied by the supervising process. */
@@ -40,14 +41,14 @@ async function consume(frame: CesrFrame) {
     firstFrameMs = performance.now() - start;
     firstFrameBytes = received;
   }
-  const essr = frame.essr;
-  if (!essr || essr.count !== 1 || frame.attachments.length) throw new Error("Unexpected ESSR graph");
+  const essr = frame.essrs;
+  if (!essr || essr.length !== 1 || frame.attachments.length) throw new Error("Unexpected ESSR graph");
   // Only the sequence prefix is retained; every decoded block goes straight into the oracle hash.
   const prefix = new Uint8Array(8);
   const hash = createHash("sha256");
   let size = 0;
-  try {
-    for await (const chunk of essr.raw.open()) {
+  {
+    for await (const chunk of essrRaw(essr).open()) {
       const take = Math.min(chunk.length, Math.max(0, 8 - size));
       if (take) {
         prefix.set(chunk.subarray(0, take), size);
@@ -64,9 +65,6 @@ async function consume(frame: CesrFrame) {
     if (size < 8 || hash.digest("hex") !== manifest.itemSha256) throw new Error("Wrong payload digest");
     payloadBytes += size;
     frames++;
-  } finally {
-    // One output credit owns one payload; releasing it prevents benchmark history from accumulating.
-    await essr.discard();
   }
 }
 
@@ -83,7 +81,7 @@ async function* source(): AsyncGenerator<Uint8Array> {
 }
 
 try {
-  // One next() is one output credit; no array of sibling frames is retained.
+  // Consume each result without retaining an output history.
   for await (const frame of parse(source())) await consume(frame);
   if (frames !== manifest.items || payloadBytes !== options.payloadBytes) throw new Error("Incomplete parse output");
 } catch (cause) {

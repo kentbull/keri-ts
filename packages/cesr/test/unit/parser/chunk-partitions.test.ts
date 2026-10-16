@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
 import { decodeB64 } from "../../../src/core/bytes.ts";
-import { parse } from "../../../src/parser/progressive.ts";
+import { parse } from "../../../src/parser/parser.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
