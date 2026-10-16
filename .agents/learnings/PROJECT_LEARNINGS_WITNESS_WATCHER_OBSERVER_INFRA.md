@@ -90,9 +90,9 @@ image (including macOS); run the installed Tufa bin without npx fallback. Source
 tests do not qualify package resolution or Node hosting. Require Node >=20.3 in
 all generated manifests; qualify the declared floor and current runtime without
 compatibility flags. Node 18 is a historical target, not a release gate.
-Installing CESR as a separate global root for Tufa smoke tests requires its
-declared optional Effection peer at that root; an ordinary Tufa-only installation
-owns the dependency tree. Keep the CESR core dependency graph framework-neutral.
+Keep the CESR core dependency graph framework-neutral. Tufa global-install smoke
+uses the declared dependency graphs; do not require or reinstall the removed
+CESR Effection adapter peer. Actual CLI/runtime imports qualify that topology.
 
 Npm publish and GitHub Release creation are separate seams. Reruns skip existing
 exact versions, use the uploaded tarball's dependency metadata, edit existing
