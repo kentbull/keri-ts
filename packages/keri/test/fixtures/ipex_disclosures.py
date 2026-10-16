@@ -13,6 +13,11 @@ def disclosure(issuer, *, issuee=None, edge=None):
     full = acdcmap(issuer, uuid=Noncer().qb64, iseaid=issuee, edge=edge, attribute=dict(
         d="", u=Noncer().qb64,
         status=dict(d="", u=Noncer().qb64, value="citizen"),
+        contact=dict(d="", u=Noncer().qb64,
+                     city=dict(d="", u=Noncer().qb64, value="Denver"),
+                     email=dict(d="", u=Noncer().qb64, value="person@example.test"),
+                     postcode=dict(d="", u=Noncer().qb64, value="hidden-postcode")),
+        role=dict(d="", u=Noncer().qb64, value="engineer"),
         private=dict(d="", u=Noncer().qb64, value="hidden-value")))
     return full, partial_disclosure(full, ["a/status/"])
 

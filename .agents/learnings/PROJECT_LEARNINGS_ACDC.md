@@ -131,7 +131,13 @@ peers own only startup, signing, transport, state observations and cleanup; Pyth
 test-control commands never substitute for public CESR ingestion. Graph data is
 separate from peer lifetime. Preserve independent stores and per-node issuer
 proofs, both refusal and admission, and hidden-field assertions when extending
-scenarios. The test README routes to the peer and graph fixture modules.
+scenarios. Full graph commitments stay separate from negotiated partials. Derive
+each progressive reveal from the full node, never an earlier partial; validate
+unchanged commitments and each grant's actual retained evidence. Later larger or
+smaller selections and stored replay must not expand historical partials. Extra
+or missing fields and plaintext carrying the original different commitment's
+proof are independent refusal boundaries. The test README routes to the peer and
+graph fixture modules.
 
 ## Remaining work
 

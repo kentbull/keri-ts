@@ -84,15 +84,21 @@ a 600-second process limit and at most two jobs running concurrently. Its full
 ## Graduated disclosure peer fixtures
 
 [`interop-ipex-disclosure.test.ts`](integration/app/interop-ipex-disclosure.test.ts)
-is the scenario entry point. Each test spells out who sends apply, offer, agree,
+and [`interop-ipex-progressive.test.ts`](integration/app/interop-ipex-progressive.test.ts)
+are the scenario entry points. Each test spells out who sends apply, offer, agree,
 grant, admit or spurn; every test starts fresh independent peers. The seven graph
 cases name the invalid evidence they reject before admitting a valid partial graph.
+The progressive cases retain four distinct disclosures of the same two-node chain,
+including a later smaller subset, actual stored replay and separate extra/missing/
+altered disclosure controls. Full commitments remain local construction inputs;
+receivers only receive negotiated partials and independent issuer proofs.
 
 [`ipex/peers.ts`](integration/app/ipex/peers.ts) owns listener/process startup,
 KEL introduction, signing, delivery, observations and cleanup. `withIpexPeers`
 selects which implementation is the issuer; scenarios use the same small peer
 contract in either direction. `send` originates a signed message, while
-`snapshot` reads acceptance, retained evidence and actual ingress observations.
+`snapshot(grantSaid)` reads acceptance, the selected grant's retained evidence and
+actual ingress observations. `replay` serializes accepted evidence from storage.
 The test's `exchange` helper waits for the receiving peer's accepted message.
 The Python server lives in [`ipex_peer.py`](fixtures/ipex_peer.py), with a small
 [`launcher`](fixtures/ipex-http-peer.py). Its loopback `/_fixture` endpoint accepts
@@ -110,7 +116,7 @@ without changing a peer's responder state machine; neither peer has one. Keep
 protocol assertions visible in the test, including failed-grant absence before
 and after successful admission, lineage, independent proofs and hidden fields.
 
-Run this file's maintained owner with
+Run both scenario files with their maintained owner:
 `deno task test:quality:keri:interop-ipex-disclosure`. PR scope can select
 `"interop":["interop-ipex-disclosure"]` independently of legacy ACDC workflows.
 

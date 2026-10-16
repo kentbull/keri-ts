@@ -2,8 +2,10 @@
 import {
   type CesrFrame,
   collectPayload,
+  concatBytes,
   Diger,
   framePayload,
+  type MapperMap,
   NumberPrimitive,
   parseBytes,
   Prefixer,
@@ -14,6 +16,7 @@ import {
 import { call, run, scoped } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
+import { acdcmap } from "../../../../src/acdc/messaging.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../../src/app/cesr-http.ts";
@@ -30,10 +33,17 @@ import {
   spawnChild,
   stopChild,
 } from "../interop-test-helpers.ts";
-import { type DisclosureGraph, disclosurePlan, type GraphCase, graphDisclosures } from "./disclosures.ts";
+import {
+  type DisclosureGraph,
+  disclosurePlan,
+  type GraphCase,
+  graphDisclosures,
+  partialDisclosure,
+} from "./disclosures.ts";
 
 const PEER = fromFileUrl(new URL("../../../fixtures/ipex-http-peer.py", import.meta.url));
 export type Implementation = "TypeScript" | "KERIpy";
+export type DisclosureDefect = "extra" | "missing" | "altered";
 export type Verb = "apply" | "offer" | "agree" | "grant" | "admit" | "spurn";
 
 /** Public coordinates only; each peer keeps its private keys and stores. */
@@ -53,7 +63,7 @@ export interface PeerSnapshot {
   inspected: { accepted: boolean; escrowed: boolean; nests: number; decision?: string } | null;
   nodes: {
     said: string;
-    attributes: { status: { value: string }; private: unknown };
+    attributes: { status: { value: string }; private: unknown; contact: unknown; role: unknown };
     raw: string;
     independentlyAccepted: boolean;
   }[];
@@ -64,7 +74,8 @@ export interface IpexPeer {
   readonly implementation: Implementation;
   readonly info: PeerInfo;
   connect(remote: PeerInfo, plan: DisclosurePlan): Promise<void>;
-  send(verb: Verb, prior?: string, invalid?: boolean): Promise<string>;
+  send(verb: Verb, prior?: string, invalid?: boolean | DisclosureDefect): Promise<string>;
+  replay(said: string): Promise<void>;
   snapshot(inspect?: string): Promise<PeerSnapshot>;
 }
 
@@ -145,7 +156,7 @@ class TypeScriptPeer implements IpexPeer {
   }
 
   /** A nested credential carries its own issuer's proof, not the outer sender's. */
-  private signed(body: SerderACDC | SerderKERI): CesrFrame {
+  private signed(body: SerderACDC | SerderKERI, proofBody = body): CesrFrame {
     const owner = body instanceof SerderACDC
       ? this.graph.issuers.find((issuer) => issuer.pre === body.issuer)
       : this.hab;
@@ -159,21 +170,46 @@ class TypeScriptPeer implements IpexPeer {
             new Prefixer({ qb64: owner.pre }),
             NumberPrimitive.fromNum(BigInt(owner.kever!.lastEst.s)),
             new Diger({ qb64: owner.kever!.lastEst.d }),
-            owner.sign(body.raw, true),
+            owner.sign(proofBody.raw, true),
           ),
         ],
       }, Vrsn_2_0),
     };
   }
 
-  async send(verb: Verb, prior?: string, invalid = false): Promise<string> {
+  /** Derive negotiated partials afresh; defects change only the evidence sent by this test peer. */
+  private disclosed(defect: boolean | DisclosureDefect): SerderACDC[] {
+    assertExists(this.plan);
+    if (defect === true) return this.graph.badNodes;
+    const nodes = this.graph.fullNodes.map((full, i) => {
+      const fields = [...this.plan![i][2]];
+      if (defect === "extra") fields.push("a/private/");
+      if (defect === "missing") fields.pop();
+      return partialDisclosure(full, fields);
+    });
+    if (defect === "altered") {
+      const node = nodes[0], attributes = structuredClone(node.sad!.a) as MapperMap;
+      attributes.d = "";
+      (attributes.status as MapperMap).d = "";
+      (attributes.status as MapperMap).value = "forged-value";
+      nodes[0] = acdcmap(node.issuer!, {
+        uuid: node.sad!.u as string,
+        schema: node.sad!.s as MapperMap,
+        edge: node.sad!.e as MapperMap | undefined,
+        attribute: attributes,
+      });
+    }
+    return nodes;
+  }
+
+  async send(verb: Verb, prior?: string, invalid: boolean | DisclosureDefect = false): Promise<string> {
     assertExists(this.remote);
     assertExists(this.plan);
     const previous = prior ? this.hby.db.exns.get(prior) : undefined;
     if (prior) assertExists(previous, `Missing prior exchange: ${prior}`);
     let carried: SerderACDC[] = [];
-    if (verb === "grant") carried = invalid ? this.graph.badNodes : this.graph.nodes;
-    if (verb === "offer" && !this.graphCase) carried = this.graph.nodes;
+    if (verb === "grant") carried = this.disclosed(invalid);
+    if (verb === "offer" && !this.graphCase) carried = this.disclosed(false);
     const body = ipexExnBody(this.hab.pre, `/ipex/${verb}`, carried, {
       message: invalid ? "invalid chain" : verb,
       prior: previous ?? undefined,
@@ -181,9 +217,9 @@ class TypeScriptPeer implements IpexPeer {
       ...(!prior ? { xid: this.graph.fullNodes[0].said!, plan: this.plan } : {}),
     });
     const frame = this.signed(body);
-    frame.nests = carried.map((node) =>
+    frame.nests = carried.map((node, i) =>
       verb === "grant" && !(invalid && node.said === this.graph.unsigned)
-        ? this.signed(node)
+        ? this.signed(node, invalid === "altered" && !i ? this.disclosed(false)[0] : node)
         : { body: node, attachments: [], gvrsn: Vrsn_2_0 }
     );
     const wire = await collectPayload(framePayload(frame));
@@ -191,6 +227,13 @@ class TypeScriptPeer implements IpexPeer {
     assertEquals(Boolean(this.hby.db.exns.get(body.said!)), !invalid, `local outcome of ${verb}`);
     await this.post(frame);
     return body.said!;
+  }
+
+  /** Replay actual retained exchange evidence through ordinary HTTP ingress. */
+  async replay(said: string): Promise<void> {
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of this.runtime.reactor.exchanger.replay(said)) chunks.push(chunk);
+    for (const frame of parseBytes(concatBytes(...chunks))) await this.post(frame);
   }
 
   snapshot(inspect?: string): Promise<PeerSnapshot> {
@@ -244,8 +287,11 @@ class PythonPeer implements IpexPeer {
   async connect(remote: PeerInfo, plan: DisclosurePlan): Promise<void> {
     await this.command("connect", { remote, plan });
   }
-  send(verb: Verb, prior?: string, invalid = false): Promise<string> {
+  send(verb: Verb, prior?: string, invalid: boolean | DisclosureDefect = false): Promise<string> {
     return this.command("send", { verb, prior, invalid });
+  }
+  async replay(said: string): Promise<void> {
+    await this.command("replay", { said });
   }
   snapshot(inspect?: string): Promise<PeerSnapshot> {
     return this.command("snapshot", { inspect });

@@ -20,16 +20,23 @@ representing graph edges, not unsupported child-owned nested streams.
 The selected reference is consolidated mailbox fork `331f32e4`; #485's initial
 eight cases passed all twelve selected CI owners; #486's eighteen cases passed
 the selected ACDC deep owner before the larger-graph extension.
-The file now has its own `interop-ipex-disclosure` owner, selected independently
+These cases share the `interop-ipex-disclosure` owner, selected independently
 for focused PRs and included in full mode. The CLI helper and both manual platform/
 extended workflows take their functional peer pin from
 [`keripy-reference.json`](../../../scripts/ci/keripy-reference.json); the older
 workflow overrides no longer select a different fork revision. Frozen CESR table
 sources remain a separate reference.
-This does not cover all malformed-edge/schema controls,
-multiple/progressive attribute disclosures. Separate topology and presentation
-cases below cover narrower composed paths; their remaining limits stay explicit.
-The broader family gates below remain open until their real assertions pass.
+Eight additional cases in `interop-ipex-progressive.test.ts` exercise both
+independent implementations with two signed I2I nodes. Four separate apply-through-
+admit conversations reveal status, then a nested city, then email/role, then a
+smaller status/role subset. All commitments stay identical; each grant retains its
+own partials and unrelated postcode/private values stay hidden. Actual stored
+replay preserves those partials without adding conversation rows. Dedicated
+extra-field, missing-field and altered-plaintext/wrong-commitment-proof grants
+are refused before a matching valid control in each direction.
+Remaining malformed-edge/schema and conversation-refusal controls still need
+qualification. Separate topology and presentation cases below retain their own
+limits; passing these cases alone does not close every family gate.
 
 ## Pairwise cases
 
@@ -106,9 +113,9 @@ This does not add Python NOT parity or imply global registry freshness. See the
 
 Kent's execution priority is complete disclosure/operator acceptance first, then
 KRAM/composed mailbox acceptance, then residual architecture cleanup, before
-final qualification and publications. Multiple/nested blinding, progressive
-reveal and remaining pairwise malformed/schema controls still need dedicated
-maintained cases before disclosure can be called complete.
+final qualification and publications. Multiple/nested blinding and progressive
+reveal have dedicated maintained cases. Remaining pairwise malformed/schema and
+conversation-refusal controls must close before disclosure is complete.
 
 ## Transport, KRAM and topology
 
