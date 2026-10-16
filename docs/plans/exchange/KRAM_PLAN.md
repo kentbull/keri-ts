@@ -13,11 +13,11 @@ recoverable evidence, not a merge target.
 
 ## Implemented boundaries requiring composed qualification
 
-| Unit | Boundary                       | Remaining evidence                                                            |
-| ---- | ------------------------------ | ----------------------------------------------------------------------------- |
-| K10a | Optional runtime/HTTP intake   | Final workflow qualification                                                  |
-| K10b | Scoped receipt into EXN escrow | KERIpy receipt timing and cache semantics                                     |
-| K10c | IPEX presentation cutoff       | Witnessed TS HTTP workflow covered; final composed/peer qualification remains |
+| Unit | Boundary                       | Remaining evidence                                                         |
+| ---- | ------------------------------ | -------------------------------------------------------------------------- |
+| K10a | Optional runtime/HTTP intake   | Final workflow qualification                                               |
+| K10b | Scoped receipt into EXN escrow | KERIpy receipt timing and cache semantics                                  |
+| K10c | IPEX presentation cutoff       | Witnessed TS HTTP/mailbox grants covered; final full qualification remains |
 
 Remove branded KramReceipt authority and downstream acknowledgement machinery.
 Use KERIpy receiver-observed acceptance time and replay/cache semantics; sender
@@ -27,7 +27,9 @@ are implemented. Their complete maintained workflow qualification
 remain open; do not infer completion from isolated receipt/cutoff tests.
 The `interop-kram` owner includes independent-store TS presentations with single
 and two-of-two holders, three live KERIpy witnesses and offer-through-admit HTTP
-traffic. Missing registry evidence survives reopen; inclusive completed receipt
+traffic. Two companion cases forward each grant contribution and replay through
+the Python mailbox, inspect actual KRAM query caches and verify preserved signed
+bodies/ordered registry proofs. Missing registry evidence survives reopen; inclusive completed receipt
 time survives later TEL updates and replay. Explicit RegistryObserver intake uses
 the public engine, never accepted-row seeding. Credential peers are TS; Python
 witness participation does not establish pairwise presentation-registry parity.

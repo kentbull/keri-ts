@@ -181,8 +181,12 @@ signed unregistered chain/branch partials. Delivered missing/unsigned ancestors
 are refused before valid grants complete through admit. Exchange signed mailbox
 endpoint authorization as well as KELs; otherwise routing may choose a witness
 mailbox. Keep v1 witness KEL/OOBI context separate from v2 mailbox/IPEX framing.
-Python presentation-registry intake, mailbox presentation cutoffs and witnessed
-crash recovery remain unqualified; separate HTTP presentation-cutoff and provider
-SIGKILL cases retain their assertions.
+TS presentation-cutoff cases preserve HTTP controls and add mailbox-carried grant
+contributions/replay, delayed observer evidence and reopen with immutable receipt
+time. Python may coalesce attachment groups and reorder group kinds: compare exact
+signed bodies/signatures, ordered blind-state proofs and source seals rather than
+incidental outer wrapper bytes. Missing proof material is not normalization.
+Python public presentation-registry intake and witnessed process-crash combinations
+remain unqualified; provider SIGKILL cases retain their separate assertions.
 Packed minimum-Node, strict declarations, real native rows and composed disclosure/KRAM tests remain release
 gates; source Deno or addon-loading smoke alone does not qualify them.

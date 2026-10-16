@@ -125,8 +125,10 @@ preserving removed accounting or delivery guarantees.
    fixtures and legacy ACDC tests do not close this gate. Maintained signed
    unregistered IPEX now crosses a Python mailbox between actual TS/Python
    credential processors in both directions, including independently signing TS
-   groups and three witnesses. Presentation-registry intake and mailbox cutoff/
-   witnessed crash combinations remain distinct qualification limits.
+   groups and three witnesses. TS presentation grants/replay also cross the Python
+   mailbox with witnessed single/group holders, delayed observer evidence and
+   immutable receipt cutoffs. Python public presentation-registry intake and
+   witnessed process-crash combinations remain distinct qualification limits.
    `xip/pro/bar` reference
    processing stubs remain labeled; do not invent upstream support.
 4. Run the full maintained integration/e2e/interop inventory, representative real-path/

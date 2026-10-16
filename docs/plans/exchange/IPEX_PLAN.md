@@ -37,17 +37,21 @@ accept size-dependent memory use; bounded-memory qualification is not a gate.
    The maintained witnessed-presentation cases now exercise independent TS stores,
    single/two-of-two holders, HTTP offer-through-admit, real Python witnesses,
    delayed observer intake and immutable completed receipts across reopen/retry.
-   They do not close pairwise Python registry processing or mailbox IPEX delivery.
+   Companion cases forward grant contributions/replay through the real Python
+   mailbox while preserving the HTTP controls. Full mailbox conversations have
+   separate pairwise TS/Python signed-chain and TS issuance-proof evidence.
+   Python public foreign-registry intake remains a labeled reference gap.
 2. Keep unsupported deeper nests, registry compact-attribute cases and unfinished
    processing guarded. Label frozen edge/operator outcomes by reference rather
    than preserving implementation gaps as requirements. TS DI2I's approval-chain
    profile and authenticated-node NOT validity are implemented with dedicated TS
    regressions. NOT uses receiver-accepted issued/revoked facts at fresh validation;
    unknown or malformed evidence is never negative authorization. Exclude both
-   operators from Python interop until the reference supports them. Complete the
-   remaining progressive/multiple-blinding and failure controls in the
+   operators from Python interop until the reference supports them. Preserve the
+   qualified progressive/multiple/nested blinding and refusal controls in the
    [operator acceptance matrix](../qualification/GRADUATED_DISCLOSURE_INTEROP.md)
-   before closing KRAM/composed mailbox and residual architecture acceptance.
+   while closing KRAM/composed mailbox and residual architecture acceptance.
+   Final-source full qualification must rerun the maintained cases.
 3. Exercise actual grant/admit coordination, dependencies, escrow/retry,
    duplicates, durable replay and failure cleanup in the complete maintained
    workflow inventory. Match route-specific Python commitments and signatures.
