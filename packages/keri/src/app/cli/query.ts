@@ -130,7 +130,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
       skipConfig: true,
       skipSignator: true,
     },
-    function*({ runtime, hab }) {
+    function*({ hby, runtime, hab }) {
       const sink = queryTransportSink(runtime, hab);
 
       let watchDone = () => false;

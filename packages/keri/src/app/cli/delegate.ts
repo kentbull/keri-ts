@@ -299,7 +299,7 @@ export function* performDelegationApproval(
       const witnesses = delegateWitnesses(hby, serder).sort();
       const selectedWitness = witnesses[0];
       const member = localGroupMember(hby, hab.pre);
-      const memberSink = delegateConfirmSink(runtime, hby, member);
+      const memberSink = delegateConfirmSink(runtime, member);
 
       pinApprovalSeal(hby, hab, serder, approving);
       yield* processRuntimeTurn(runtime, {
