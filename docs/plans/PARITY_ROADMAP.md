@@ -66,6 +66,9 @@ migration back to retired APIs.
   refuses over-disclosure with KRAM enabled, without header rewriting or seeded
   issuer state. Convert this scoped evidence into maintained composed coverage;
   witnesses/mailboxes, multisig, restart and final qualification remain open.
+  Poster now constructs v2 nested forwarding envelopes through the shared codec;
+  qualified messages cannot be treated as body-first legacy embeds. Concrete
+  target preparation is an owned operation, with source retention on failure.
   The [disclosure acceptance matrix](qualification/GRADUATED_DISCLOSURE_INTEROP.md)
   requires both implementation directions, full IPEX conversations through admit,
   dedicated spurns, credential chains/edge operators and multiple blinded/revealed

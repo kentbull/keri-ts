@@ -11,9 +11,13 @@ import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createServer } from "node:net";
 import {
+  collectPayload,
   concatBytes,
+  framePayload,
   parseBytes,
   SerderKERI,
+  Vrsn_1_0,
+  Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
@@ -636,10 +640,12 @@ Deno.test("Poster.sendExchange falls back to local witness mailbox storage", asy
         const route = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: DELEGATE_MAILBOX_TOPIC });
         mailboxer.storeMsg = () => false;
         try {
-          assertThrows(
-            () => poster.prepareBytesTarget(sender, route, 0, stored[0]!),
-            Error,
-            "publication did not complete",
+          yield* call(() =>
+            assertRejects(
+              () => run(() => poster.prepareBytesTarget(sender, route, 0, stored[0]!)),
+              Error,
+              "publication did not complete",
+            )
           );
         } finally {
           mailboxer.storeMsg = publish;
@@ -728,7 +734,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
 
           const poster = new Poster(hby, { services: runtime.services });
           const route = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
-          const prepared = poster.prepareBytesTarget(sender, route, 0, message);
+          const prepared = yield* poster.prepareBytesTarget(sender, route, 0, message);
           assertEquals(prepared.kind, "http");
           if (prepared.kind !== "http") throw new Error("Expected HTTP target");
           assertEquals(bodies.length, 0);
@@ -794,7 +800,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             );
             hby.db.locs.rem([remoteWitness.pre, "http"]);
             const tcpRoute = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
-            const tcpTarget = poster.prepareBytesTarget(sender, tcpRoute, 0, message);
+            const tcpTarget = yield* poster.prepareBytesTarget(sender, tcpRoute, 0, message);
             assertEquals(tcpTarget.kind, "tcp");
             if (tcpTarget.kind !== "tcp") throw new Error("Expected TCP target");
             assertEquals(
@@ -802,7 +808,10 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
               expectedIntro,
               "TCP preserves signed introduction",
             );
-            assertEquals(poster.prepareBytesTarget(sender, { ...tcpRoute, kind: "direct" }, 0, message).kind, "tcp");
+            assertEquals(
+              (yield* poster.prepareBytesTarget(sender, { ...tcpRoute, kind: "direct" }, 0, message)).kind,
+              "tcp",
+            );
             const sent = yield* poster.sendBytes(sender, {
               recipient: recipient.pre,
               message,
@@ -1182,4 +1191,56 @@ Deno.test("Poster mailbox sends report partial failure and complete only after e
   } finally {
     await server.shutdown();
   }
+});
+
+Deno.test("Poster prepares qualified legacy and v2 messages with their actual forwarding shape", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
+      const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      try {
+        const provider = remote.makeHab("provider", undefined, { transferable: false });
+        const poster = new Poster(hby);
+        for (const version of [Vrsn_1_0, Vrsn_2_0]) {
+          const [body] = exchangeMessage("/application/message", { value: "retained" }, {
+            sender: sender.pre,
+            pvrsn: version,
+          });
+          const [child] = parseBytes(sender.endorse(body, { pipelined: false, gvrsn: version }));
+          const message = yield* call(() => collectPayload(framePayload(child)));
+          // Resolve policy separately; this contract check isolates complete-wire construction.
+          const target = yield* poster.prepareBytesTarget(
+            sender,
+            {
+              kind: "mailbox",
+              sender: sender.pre,
+              recipient: recipient.pre,
+              topic: "/credential",
+              bodyMode: "header",
+              targets: [{ eid: provider.pre, url: "https://mailbox.test/" }],
+            },
+            0,
+            message,
+          );
+          assertEquals(target.kind, "http");
+          if (target.kind !== "http") throw new Error("Expected a remote prepared target");
+          const forwarded = parseBytes(target.message).at(-1)!;
+          assertEquals((forwarded.body as SerderKERI).route, "/fwd");
+          assertEquals(forwarded.body.ked!.q, { pre: recipient.pre, topic: "credential" });
+          if (version.major === 2) {
+            assertEquals(forwarded.nests!.length, 1);
+            assertEquals(forwarded.nests![0].body.raw, body.raw);
+            assertEquals(forwarded.nests![0].attachments.map((a) => a.raw), child.attachments.map((a) => a.raw));
+          } else {
+            assertEquals((forwarded.body.ked!.e as { evt: unknown }).evt, body.ked);
+          }
+        }
+      } finally {
+        yield* remote.close(true);
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });

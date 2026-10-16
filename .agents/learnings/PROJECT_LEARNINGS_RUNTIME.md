@@ -52,6 +52,12 @@ bytes, then pulls/processes without reinsertion on failure. clearIngress clears
 queued data, not active I/O. Explicit close and scope exit clear ingress/cues.
 
 Prepare/sign/publish before source removal; preparation failure retains the record.
+Poster accepts one complete CESR message. Target preparation is an owned operation
+using the shared codec: v2 bodies/genera use a signed body-digest `/fwd` with one
+independently authenticated nested message; legacy messages use pathed embeds.
+Qualified selectors must not reach the legacy body-only reaper. Respondant awaits
+preparation and retains the exact prepared packet for retry; no replacement codec
+or generic output executor is needed.
 Finite passes use their initial extent. Respondant owns lazy cursors, ordered reply
 batches and once-signed retry packets through actual Poster/Reactor/ReplyStreams.
 QueryCoordinator owns plain requests, signed packets and joined response I/O.
@@ -164,6 +170,11 @@ both directions, including partial thresholds, replay, stale and foreign proofs.
 SIGKILL/reopen cases retain provider/sender identity, exact pending proofs and
 accepted cache state across actual processes; only the remaining member proof
 completes the group, and post-restart replay cannot redispatch. Payloads are fixture
-data; witnessed delivery and presentation-registry workflows remain separate gates.
+data. Separate witnessed TS IPEX cases complete apply through admit over the
+KERIpy mailbox with single/two-of-two holders, three Python witnesses and real
+issuance proofs. Group grant proof remains incomplete after one contribution,
+then completes with the second; provider and recipient acceptance stay distinct.
+These are TS credential processors, not Python credential verification. Separate
+HTTP presentation-cutoff and provider SIGKILL cases retain their own assertions.
 Packed minimum-Node, strict declarations, real native rows and composed disclosure/KRAM tests remain release
 gates; source Deno or addon-loading smoke alone does not qualify them.

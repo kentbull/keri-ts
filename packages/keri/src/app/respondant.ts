@@ -184,7 +184,7 @@ export class Respondant {
     if (errors.length) throw new AggregateError(errors, "Reply cursor cleanup failed");
   }
 
-  /** Advance each captured batch once; signing/routing stays synchronous and transport runs outside the state turn. */
+  /** Advance each captured batch once; concrete target preparation and transport remain owned operations. */
   process(): Operation<void> {
     // deno-lint-ignore no-this-alias -- The operation owns this finite output pass.
     const self = this;
@@ -216,7 +216,7 @@ export class Respondant {
           })) === "complete";
         } else {
           const cue = reply.cues[reply.index];
-          const next = self.prepareReplyTarget(reply);
+          const next = yield* self.prepareReplyTarget(reply);
           done = next.kind === "done";
           if (next.kind === "target") {
             const target = next.target;
@@ -249,9 +249,9 @@ export class Respondant {
     });
   }
 
-  private prepareReplyTarget(
+  private *prepareReplyTarget(
     reply: Extract<OutboundReply, { kind: "cues" }>,
-  ): { kind: "target"; target: PreparedCesrTarget } | { kind: "done" | "more" } {
+  ): Operation<{ kind: "target"; target: PreparedCesrTarget } | { kind: "done" | "more" }> {
     const cue = reply.cues[reply.index];
     if (!cue) return { kind: "done" };
     if (cue.prepared) return { kind: "target", target: cue.prepared };
@@ -265,7 +265,7 @@ export class Respondant {
       cue.message = next.value;
       if (!(cue.message instanceof Uint8Array)) throw new TypeError("Cue message must be binary");
     }
-    cue.prepared = this.poster.prepareBytesTarget(cue.hab, cue.route, cue.targetIndex, cue.message);
+    cue.prepared = yield* this.poster.prepareBytesTarget(cue.hab, cue.route, cue.targetIndex, cue.message);
     return { kind: "target", target: cue.prepared };
   }
 
