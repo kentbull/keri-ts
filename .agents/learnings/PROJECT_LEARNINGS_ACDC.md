@@ -123,6 +123,13 @@ credit, while durable enqueue/duplicates release it before guard-free webhooks.
 - Revocation can travel as raw credential support. Repeated recipient delivery and
   webhook idempotence require durable state, including process restarts.
 
+The bidirectional HTTP disclosure tests own their conversation steps. Reusable
+peers own only startup, signing, transport, state observations and cleanup; Python
+test-control commands never substitute for public CESR ingestion. Graph data is
+separate from peer lifetime. Preserve independent stores and per-node issuer
+proofs, both refusal and admission, and hidden-field assertions when extending
+scenarios. The test README routes to the peer and graph fixture modules.
+
 ## Remaining work
 
 The [registry foundation](../../docs/plans/credentials/REGISTRY_PLAN.md) owns

@@ -61,6 +61,7 @@ endurance cases.
 | `interop-acdc-verifier`    | Credential verification workflow.                           |
 | `interop-acdc-extended`    | Tufa issuer to KLI holder.                                  |
 | `interop-acdc-deep`        | Both existing deep mixed-credential chains.                 |
+| `interop-ipex-disclosure`  | Bidirectional IPEX v2 conversations and partial graphs.     |
 | `interop-delegation`       | Existing single/group cross-language delegation.            |
 | `interop-witness-main`     | Existing live witness matrix.                               |
 | `interop-witness-cli`      | Witness CLI behavior.                                       |
@@ -79,6 +80,36 @@ Individual scenario timeouts remain in their test bodies. The separate
 `essr-qualification` target runs one benchmark sample per 15-minute job, with
 a 600-second process limit and at most two jobs running concurrently. Its full
 108-sample matrix remains manual-only and is never a required PR check. Manual workflows are dispatched explicitly by the maintainer.
+
+## Graduated disclosure peer fixtures
+
+[`interop-ipex-disclosure.test.ts`](integration/app/interop-ipex-disclosure.test.ts)
+is the scenario entry point. Each test spells out who sends apply, offer, agree,
+grant, admit or spurn; every test starts fresh independent peers. The seven graph
+cases name the invalid evidence they reject before admitting a valid partial graph.
+
+[`ipex/peers.ts`](integration/app/ipex/peers.ts) owns listener/process startup,
+KEL introduction, signing, delivery, observations and cleanup. `withIpexPeers`
+selects which implementation is the issuer; scenarios use the same small peer
+contract in either direction. `send` originates a signed message, while
+`snapshot` reads acceptance, retained evidence and actual ingress observations.
+The test's `exchange` helper waits for the receiving peer's accepted message.
+The Python server lives in [`ipex_peer.py`](fixtures/ipex_peer.py), with a small
+[`launcher`](fixtures/ipex-http-peer.py). Its loopback `/_fixture` endpoint accepts
+only test commands; all KELs, exchanges and nested proofs still cross the public
+CESR endpoint and normal verification. Private keys and stores remain local.
+
+Credential construction is separate in
+[`ipex/disclosures.ts`](integration/app/ipex/disclosures.ts) and
+[`ipex_disclosures.py`](fixtures/ipex_disclosures.py): full/partial commitments,
+relation truth tables, and deep/shared-ancestor graphs. Extend conversation tests
+without changing a peer's responder state machine; neither peer has one. Keep
+protocol assertions visible in the test, including failed-grant absence before
+and after successful admission, lineage, independent proofs and hidden fields.
+
+Run this file's maintained owner with
+`deno task test:quality:keri:interop-ipex-disclosure`. PR scope can select
+`"interop":["interop-ipex-disclosure"]` independently of legacy ACDC workflows.
 
 ## Verified KERIpy selection
 
