@@ -5,8 +5,12 @@ retain their pathed protocol. Offer may disclose a reachable metadata subgraph.
 Grant must satisfy the negotiated single-DAG plan in breadth-first order and
 supply an independent issuer proof for every child. A declared registry takes
 precedence over direct issuer anchors, which take precedence over current issuer
-signatures. Parent proofs never authenticate children. `NOT`/`DI2I` remain
-recognized but unsatisfied, matching the reference. Deeper child-owned nests are
+signatures. Parent proofs never authenticate children. `NOT`/`DI2I` are currently
+recognized but unsatisfied, matching the inspected reference. This is a gap, not
+a contract requiring refusal. The [operator acceptance plan](../../plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md)
+requires support when semantics are sufficiently established, with keri-ts tests
+and no Python interop cases until the selected reference supports the operators.
+Deeper child-owned nests are
 guarded until their processing is defined.
 
 `ipexExnBody` synchronously accepts parsed credential bodies and explicit route

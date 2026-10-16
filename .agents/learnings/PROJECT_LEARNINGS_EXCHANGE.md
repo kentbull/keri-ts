@@ -13,6 +13,14 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
 
 ## Proof and persistence boundaries
 
+The [disclosure acceptance matrix](../../docs/plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md)
+separates TypeScript operator support from Python interoperability. DI2I/NOT may
+be implemented from established semantics without waiting for Python, but neither
+belongs in Python interop cases until the selected reference supports it. A
+reference stub is not a permanent product contract. NOT must distinguish proved
+invalidity from unknown evidence before inversion; missing or unauthenticated
+input cannot establish a negative authorization predicate.
+
 Exchanger separates sender authentication, supplemental selection and route
 verification. `verifyEvidence`, `acceptsEvidence`, `acceptsSscs` and
 `acceptsMissingEvidence` are independent capabilities. Sender source seals can

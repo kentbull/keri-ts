@@ -35,8 +35,12 @@ accept size-dependent memory use; bounded-memory qualification is not a gate.
    and [KRAM intake](KRAM_PLAN.md), including dependency retry, reopen and replay.
    Never substitute a sender timestamp or parent acceptance for child proofs.
 2. Keep unsupported deeper nests, registry compact-attribute cases and unfinished
-   processing guarded. Preserve frozen edge/operator outcomes and document any
-   narrower TypeScript API rather than claiming unsupported operators work.
+   processing guarded. Label frozen edge/operator outcomes by reference rather
+   than preserving implementation gaps as requirements. Implement DI2I/NOT where
+   reference support or established semantics suffice, with dedicated keri-ts
+   tests. Exclude them from Python interop until the selected reference supports
+   them. Follow the [operator acceptance matrix](../qualification/GRADUATED_DISCLOSURE_INTEROP.md),
+   refactoring validity/dependency decisions before changing NOT behavior.
 3. Exercise actual grant/admit coordination, dependencies, escrow/retry,
    duplicates, durable replay and failure cleanup in the complete maintained
    workflow inventory. Match route-specific Python commitments and signatures.
