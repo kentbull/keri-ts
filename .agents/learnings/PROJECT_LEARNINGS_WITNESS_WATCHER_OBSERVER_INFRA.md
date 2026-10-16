@@ -14,7 +14,8 @@ coalesced/semantic edges, retaining version/domain/error facts and blocked-sourc
 assertions. Configurable integration limits may be small when native threshold
 behavior has its own retained regression.
 
-Witness harnesses use temporary copied configs and bind-checked randomized ports.
+Witness harnesses use temporary copied configs and bind-checked randomized ports,
+with a shared exclusion set for all HTTP/TCP endpoints in each topology.
 Track children before readiness waits and report their output on startup failure.
 Probe OOBIs, not nonexistent health endpoints; resolve both controller and witness
 OOBIs. Proved controller/witness combinations do not imply untested KLI replacement
