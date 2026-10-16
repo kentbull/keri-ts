@@ -110,7 +110,14 @@ not authority. Missing KEL/approval evidence stays in proof escrow. Later rotati
 or witness changes do not renew the relationship, and lookup does not write hints.
 The last explicit I2I/NI2I/DI2I wins. Targeted far nodes default to I2I, untargeted
 to NI2I; the reference E1E extension retains entity-only matching when identity is
-not explicit. NOT needs authenticated node validity, not an inverted relation.
+not explicit. NOT inverts authenticated far-node validity after all issuer/own
+schema prerequisites, in dependency order independent of BFS disclosure order.
+Near identity/extra schema constraints are not inverted. Issued/revoked is the
+only supported issuer-state vocabulary, evaluated from accepted observer state
+at each fresh validation/retry. Missing/stale/forged proofs, malformed schemas or
+operators and unknown custom states cannot satisfy negation. Own schema failure
+is refusal; a valid edge schema can disprove a relationship. Historical accepted
+grants remain evidence; no automatic revalidation or global freshness is implied.
 Conversation acceptance is not wallet acceptance. Observer registry import
 is separate from issuer registry processing. Presentation registries still require
 receiver-owned KRAM time, node-local BLIDs and explicit fully witnessed Issuee

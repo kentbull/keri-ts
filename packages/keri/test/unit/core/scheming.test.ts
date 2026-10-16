@@ -1,5 +1,5 @@
 import { Diger, dumps, type MapperMap } from "cesr-ts";
-import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import { validateSchema } from "../../../src/acdc/scheming.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
@@ -82,6 +82,15 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
   expect(make({ properties: { name: { pattern: "[" } } }), "invalid");
   expect(simple, "valid");
   expect(simple, "invalid", 7);
+  for (
+    const [result, subject] of [
+      [validateSchema(credential(make({ properties: { name: { pattern: "[" } } }).sed), db), "schema"],
+      [validateSchema(credential(simple.sed, 7), db), "credential"],
+    ] as const
+  ) {
+    assert(result.kind === "invalid");
+    assertEquals(result.subject, subject, "malformed schema is not proved credential invalidity");
+  }
   assertEquals(validateSchema(credential(simple.said), db), { kind: "missing", said: simple.said });
   cache.set(simple.said, simple);
   assertEquals(validateSchema(credential(simple.said), db), { kind: "valid" });
