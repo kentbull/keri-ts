@@ -1,5 +1,241 @@
 # keri-ts
 
+## 0.12.0
+
+### Minor Changes
+
+- 8c93bac: Remove duplicate metadata inspection and reservations from cue interpretation and direct reply preparation. Keep real source ownership, prepared-wire limits, and fanout cleanup.
+- ae90b33: Replace progressive CESR traversal with one finite decoder that buffers complete
+  counted enclosures before delivery. Carry ESSR as ordinary ordered Texters through
+  dispatch, verification, persistence and replay; remove parser staging, Cursor,
+  FrameIntake and ordinary-frame disposal. Preserve framing, padding, genus scopes,
+  independent nested proofs and actual transport/storage cleanup.
+- ad45310: Use one required KERIpy-shaped q field for query cues and pending requests, remove the query alias and redundant copying helpers, and give TEL recovery cues concrete registry and credential fields. Update callers from query to q; wire query bodies and deferred signer/attester selection are unchanged.
+- 047cd5f: Remove codec allocation estimates, decoded-body budgets, capacity callbacks and
+  speculative CBOR extension refusals. Preserve exact body ownership, native codec
+  semantics, malformed-wire provenance and actual CBOR decoder-state cleanup.
+- 34c2555: Compose admitted cue storage from owned handles and expose legal cue queue operations instead of inheriting destructive Deck methods.
+- 7b5f2f7: Compose pending query ownership around a private queue and remove inherited operations that bypass admission or completion.
+- c1b4392: Route cue records directly to query, mailbox and reply owners. Remove optional cue sink hooks and adapters; default queued queries now use concrete transport instead of silently retiring through a no-op sink.
+- b6680be: Require route-specific query instructions through cues, pending requests and Hab signing, with one authoritative target. Hab.query now accepts an instruction object instead of separate arbitrary body and route arguments.
+
+  Keep unresolved schema and credential recovery notices notify-only instead of falling back to KEL queries, and emit canonical sequence filters without redundant route or digest hints.
+
+- c83a00a: Replace placeholder runtime VDR/ACDC service bags with the existing concrete registry owners. Reactor and dispatch borrow actual processors; caller-injected registry storage remains caller-owned, and readonly runtimes retain explicit registry absence.
+- 107fd21: Remove the unused generic cue-byte admission API and copy/floor options. CueDeck owns its existing inspection and retention checks directly.
+- 9daa55c: Return cue-byte and runtime query-delivery admission outcomes directly, preserving strict protocol producers and plain pending-query records.
+- 6525359: Return cue interpretation, route, and delivery admission outcomes directly while restoring source ownership on expected refusal and preserving foreign failures.
+- 6e73cca: Pass the actual cue source to sink admission and compose responder delivery in respondantCueSink at the runtime root. Replace Respondant.forHab callers with the root composition function. QueryCoordinator prepares pending queries without a parent runtime or Reactor callback scheduling; its processPending and queryDo methods take no runtime argument.
+- 39c1ad6: Separate cue target preparation from queued transmission and outcome application; preserve exact retry packets and joined cleanup.
+- 055d170: Keep delegation hint repairs in event decisions and apply them through Kevery after queue admission. Remove the internal delegation lookup from Kever's public API.
+- c34df00: Delete the unused sender outbox store, disabled implementation, records, and exports.
+- 0951bd9: Support DI2I issuer relationships using approved delegated inception chains, with retryable missing KEL evidence and inception-based DND checks. Apply targeted-edge defaults and ordered identity-operator precedence.
+- eac30e2: Make did:keri resolution a synchronous accepted-state projection. CLI commands own
+  finite introduction workers, and HTTP requests observe their existing host's work
+  with an elapsed deadline instead of pumping the runtime for five turns.
+- 3ed065b: Make DID document projection depend on accepted Habery and registry state instead
+  of AgentRuntime. Active designated-alias queries now take their registry owner.
+- 5e26f8a: Process local endpoint and host startup records directly through protocol intake.
+  Remove hollow per-Hab host seeding, the forwarding-only mailbox host wrapper and
+  unused host context/no-HTTP configuration; retain explicit hosted-prefix selection.
+- 857101c: Remove the generic cue-publication helper and callback-based QueryReply.admit. Concrete consumers
+  prepare/publish directly before removing source records; query correspondence
+  exposes its ordered data through peekAll/takeAll. Preserve failure retention,
+  paired replies and lazy replay without publication lifecycle callbacks.
+- bea8455: Keep cue sources and routes with their actual queue or reply-batch owners; remove fake borrowed owners and queued cleanup wrappers.
+- d733e52: Endpoint-role proposal results and CLI JSON now return `proposals: [{ recipient, said }]` identifying actual signed exchanges, replacing the misleading single `said` and `attachmentBytes` fields. Register each recipient-specific proposal before delivery and preserve separate durable retry routing.
+- bc28782: Replace branded KRAM receipt tokens with explicit local receiver-time data through intake and dispatch.
+- e850883: Remove AgentMode metadata and mode configuration. Hosts explicitly construct
+  provider mailbox storage with enableMailboxStore or borrow an injected Mailboxer;
+  ordinary command runtimes omit it. Use the same concrete components in every host.
+- 0362bcb: Make reply cues disjoint: prebuilt replies carry only their authoritative serder, while TSN replies carry the matching complete state record and destination. Serialize TSN records at Hab interpretation and preserve registry-first tuple types. Remove duplicate prebuilt route fields and optional empty-body fallbacks; update cue callers to the explicit forms.
+- e58bbc4: Curate the runtime API with explicit operation and data exports, and remove npm deep-import patterns for implementation directories. Use the package root, runtime or db entrypoints; cli remains the separate Tufa command-helper boundary.
+- 5f526b8: Separate demand-driven source/parser lifetime into the runtime FrameIntake owner and remove Reactor.frames; migrate HTTP, witness and TCP edges to the same owner.
+- fdebe94: Resolve historical witness receipts and thresholds from the accepted event's governing establishment, preserving its proof requirements after witness rotation or recovery.
+- a4a4364: Separate IPEX group coordination from CLI timing and worker ownership. Timed
+  completion and pending-proposal waits are private CLI orchestration.
+
+  Use the ordinary host workers for IPEX waits and report fully settled mailbox
+  batches/messages. Poll now uses `--timeout` seconds and join uses
+  `--approval-timeout` seconds instead of polling turn counts and per-turn budgets.
+
+- d1b8b6e: Evaluate NOT edges over authenticated credential validity while retaining proof dependencies, schema checks and receiver-owned registry evidence.
+- 2411980: Remove Kever's unused cue queue property and constructor/evaluation option; keep follow-up descriptions in typed decisions and publication in Kevery.
+- 7fac347: Move accepted-event row and first-seen log preparation/persistence from Kever to Baser; keep clone notifications and publication sequencing in Kevery.
+- b57c2ec: Separate direct multisig approval from CLI scheduling. Timed waits and delegation
+  completion belong to CLI orchestration; direct proposal approval does not start
+  or drive background workers.
+
+  Run each multisig command under one joined host lifetime. Multisig join now uses
+  `--approval-timeout` in seconds instead of polling turn counts and per-turn budgets.
+
+- d2e39f6: Use a correlated MultisigEventProposal for the four multisig event routes across byte preparation and parsed-child body construction. Derive inception identity and child commitments from the child instead of accepting an open attributes record. Preserve existing v1/v2 encoding and frame lifetime.
+- 3c0386b: Remove nested exchange tree/copy budgets, stored ESSR byte/item caps and recipient
+  crypto/concurrency quotas. Keep authentication, qualified framing, transactions,
+  exact declared payload sizes and joined file/reader cleanup.
+- d44aa3a: Remove cue-output reservations, combined preparation floors and prepared-emission ownership handles. Publish ordinary emission records after synchronous preparation, retain retryable wire and actual iterator/reader cleanup, and allow finite witness snapshots without application output quotas.
+- 4b12067: Remove query-request byte reservations, preparation floors, metadata quotas and synthetic busy/refused admission. RuntimeDeliveries accepts concrete query records directly; signing and endpoint selection precede source removal, while failed transport and cancellation retain their existing retry and cleanup behavior.
+- 6216130: Require Kevery to own KEL transactions and publish only after commit. Remove the unused public applyDecision entrypoint and refuse nested writer calls before effects.
+- d097b1b: Remove parser cursor/tree/ESSR/input quotas, frame-credit ownership and intake
+  source slots. Annotation, benchmark and byte collectors no longer accept input
+  caps. Keep wire counts/extents, independent signatures, actual payload ownership,
+  native backpressure, cooperative cancellation and joined source/file cleanup.
+- 075f015: Remove payload collection and memory/file staging quotas and quota-bearing sink callbacks. Preserve exact declared lengths, owned byte/file lifetimes and joined cancellation cleanup.
+- cd84470: Replace cue ownership and capacity accounting with ordinary Deck records across protocol producers, runtime consumers, query replies and mailbox correlation. Preserve post-commit publication, lazy replay and joined I/O cleanup; remove the former cue-credit and queue-limit APIs.
+- 791a9fa: Read plain cue Decks directly instead of manufacturing borrowed ownership handles; preserve actual admitted-source transfer and retry.
+- bbe3eab: Remove OOBI, forwarding and KEL replay accounting limits and duplicate stored-reply size formulas. Preserve lazy replay horizons, proof ordering, framing and actual reader cleanup.
+- ed0991a: Use a private ordinary Deck for pending QueryRequest records. Remove unused pending-query/continuation caps and metadata byte reservations while preserving failed-send retry, finite processing passes, signer deferral and joined shutdown. Keep actual wire and transport ownership separate.
+- c590d5c: Remove HTTP reply accounting and configured chunk copies. Keep pull-driven message streams and joined reader cleanup.
+- 08bd4f4: Remove TEL replay limits, canonical pair inspection and native row size billing APIs. Preserve real wire settings, replay horizons, ordered iteration and owned native byte copies.
+- 021cdbe: Remove Reactor's application callback gate. Dispatch returns processed evidence
+  and its exact decision; protocol cues are correlated before application publication.
+  Reply, query and request owners prepare and consume their own output directly.
+- c527351: Require the existing CESR event-seal shape for anchor queriers. Validate anchor-file JSON and CESR fields before opening controller state or scheduling queries; preserve valid supplied seal values and owned snapshots while emitting the i/s/d key order required by KERIpy anchor lookup.
+
+  Ask each eligible anchor-query attester once through the existing queue, preserving unqueued alternatives on capacity refusal. A stale retired witness no longer strands anchor recovery; ordinary query selection is unchanged.
+
+  Run command-local query and mailbox workers concurrently through the existing runtime runner, then halt and join before displaying state and closing stores. Empty mailbox polls no longer consume the query window before query transmission and other endpoints progress.
+
+- e013d92: Delete RuntimeDeliveries and give QueryCoordinator ownership of signed query packets, route preparation and joined HTTP/TCP/SSE response I/O. Construct it with actual Reactor and clock/HTTP dependencies, include pending output in query convergence, and remove the runtime delivery field and unused delivery counters.
+- 46ead95: Stop recursively charging borrowed query metadata during delivery admission. Preserve held source credit, prepared-wire limits, and exact-wire retry cleanup.
+- e8e9458: Use signer AID identifiers in query requests and continuations instead of retained Hab references. Resolve explicitly selected local signers through Habery before signing, preserve selections through routed cues, and defer unavailable identities without substituting the ambient signer.
+
+  Use the selected query signer for transport introductions. Poll every eligible witness mailbox when no explicit mailbox route exists, so an unresponsive or retired first witness cannot hide replies stored at other witnesses.
+
+- 43701cd: Remove CuePublisher and its synthetic plain-Deck publication adapter. Protocol producers use ordinary Decks directly and retain preparation handles only for admitted queues.
+- 18d6a5a: Remove prepared cue-route ownership, metadata estimates and target-count quotas. Pass ordinary routing records directly to delivery while preserving source cues on route failure and actual iterator cleanup.
+- c08859e: Remove cue-target credit reservations, backing-size quotas and packet ownership wrappers. Pass ordinary prepared packets through delivery and preserve actual replay iterator cleanup.
+- f98953b: Remove KRAM factor byte/item accounting and signature-pool quotas while preserving exact factor deduplication and authentication.
+- 3887bea: Remove durable KRAM ready acknowledgements. Completed authentication retires partial state before downstream consumption while preserving replay protection.
+- a12a40b: Remove private KRAM snapshots and asynchronous handoff ownership. Intake returns synchronous decisions and borrows child frames and ESSR from the current input while preserving persisted scalar proofs and replay rejection.
+- e73aa86: Remove durable consumer inbox admission, acknowledgements, deadletters and quotas. Pollers hand off ordinary message bytes and record topic cursors.
+- 3919b4f: Remove outbox sidecar acquisition, CLI flags, database selectors, and mailbox debug backlog output.
+- e9eb1bf: Remove automatic durable outbox enqueue/retry and queued delivery results. Mailbox sends attempt each target and report any failure, including partial delivery, to the caller.
+- a0e10d1: Remove the unused legacy and v2 Registrar forwarding facades. Call Regery for registry creation and escrow processing, and Registry for issuance, presentation, revocation and completion operations.
+- d4eedda: Remove RegistryObserver and IPEX event-count quotas. Preserve accepted-chain proof checks, transactions and exact ordinal representation at the database boundary.
+- 22cee38: Open current registry anchor and escrow tables directly, removing old-layout fallbacks and lazy initialization. Preserve readonly duplicate replay and reject writes at transaction boundaries.
+- 39a7ba1: Remove the shared ResourcePolicy, accounting errors and constructor options.
+  Delete remaining client, Reactor queue/waiter, TCP listener and reply-proof work
+  quotas. Preserve actual I/O cleanup, protocol state ordering and numeric guards.
+- dc5795c: Remove ACDC schema byte, depth, value, reference and resource-count quotas. Preserve SAID verification, local static reference resolution and Draft 2020-12 validation.
+- 281e1d5: Replace prepared signal reservations and JSON/queue quotas with ordinary transient collapse/expiry signals. Publish notification hints after successful durable notice changes, without coupling Signaler to runtime resource policy.
+- bee6567: Remove transport refusal observer hooks after delivery attempts adopt direct outcomes; keep internal attempt helpers out of the runtime package exports.
+- 8dee897: Delete unused alias metadata accounting and callback-only credential hydration. Designated aliases continue to use ordinary wallet selection and credential reads.
+- efae49a: Move queued reply interpretation, atomic correlation publication, live replay cursors and exact retry packets into Respondant. Remove the generic cue/direct-reply delivery classes and their callbacks; runtime construction and hosts drive the concrete reply owner and join its output before stores close.
+- 3c3f81b: Remove serial whole-runtime and finite mailbox polling APIs. Commands and hosts use the same component workers, while mailbox retrieval retains endpoint concurrency, real I/O deadlines and cursor updates after consumer completion.
+- 5c33e8c: Run finite CLI convergence through the same concurrent component workers as hosts.
+  Use explicit elapsed deadlines instead of serial runtime turn counts, join workers
+  before returning, and suspend the supervisor while its children progress.
+- def36e3: Move TCP reply parsing and dispatch into an application conversation flow. The TCP engine now exposes a bounded byte stream instead of depending on AgentRuntime. Use converseCesrTcp or streamCesrTcpConversation for parsed same-socket replies; lower send adapters retain transmit-only results.
+- 43ec20d: Give witness receipt, delegation and raw transport owners their actual Reactor
+  and transport dependencies. Remove parent-runtime injection and standalone
+  receipting's construction of unrelated stores and workers.
+- e57e2f1: Forward complete v2 CESR messages through authenticated mailboxes using a signed nested envelope, preserving the recipient's independent IPEX and credential proof checks.
+
+### Patch Changes
+
+- 5429fdb: Replace application error context bags with diagnostic messages and standard causes for actual underlying failures.
+- ea8b5cc: Compose TCP receive/send tasks over actual socket resources in the application,
+  remove TcpRead and the CESR Effection adapter/export, and delete TCP output quota
+  formulas. Preserve half-close, native write backpressure, fixed deadlines and joined
+  cleanup, including late source failures during cancellation.
+- 819b027: Preserve canonical partial attribute, edge and rule commitments when rebuilding
+  compactable ACDC credentials. Compute the credential commitment separately so
+  serialization does not silently rewrite negotiated disclosure evidence.
+- 77708da: Use the shared HTTP response owner for CESR delivery, preserving unexpected late fetch and diagnostic cleanup failures while retaining admission credit through joined cleanup.
+- c5cd6c8: Run challenge verification over joined host workers so mailbox polling progresses
+  independently of the command's response deadline.
+- 3c8f7b3: Share the known challenge word-list contract between response production, decoded EXN validation and verifier lookup. Validate unknown decoded attributes without open-record casts while preserving the authenticated EXN sender and existing wire projection.
+- 018cea3: Own Reactor input cancellation and cleanup directly, decode finite receipts and
+  approved legacy multisig children synchronously, and scan grant files without
+  a frame-channel bridge while still requiring valid EOF.
+- 3d0de4d: Carry the concrete integer-sequence KEL anchor through credential state records and builders.
+- dd99e26: Carry known registry seal fields through raw credential state without open metadata maps.
+- 72ef73f: Use an explicit cue reader contract for interpretation and query delivery, preserving queue credit through transfer and retry.
+- da25894: Route KEL and reply cue production through a narrow publication contract while preserving ordinary and owned queue admission behavior.
+- 5340711: Decode required multisig issuance credentials before prompting, signing or accepting the KEL anchor. Incomplete proposals return without partially applying approval.
+- dfa9052: Re-publish KEL approvals from the decoded route-specific proposal instead of copying arbitrary peer attributes. Preserve the local child attachment genus when building the new signed wrapper.
+- 46bf809: Run delegation approval under one joined host worker lifetime instead of serial
+  runtime turns, preserving witness-backed commitment and authorizer seal ordering.
+- ebd9768: Narrow DID schema, registry and artifact-fetching helpers to their concrete store and HTTP dependencies. Preserve application workflows, alias replacement and transport fallback behavior.
+- 4596c98: Move HTTP, witness and multisig replay parsing into their concrete input scopes.
+  Remove the HTTP parser-options bag and preserve foreign cleanup failures while
+  joining cancellation, without an Effection frame-channel dependency.
+- f8fbd32: Remove open escrow diagnostic metadata and retain useful replay details in messages.
+- b3881f0: Propagate unexpected ESSR payload read failures so escrow retry retains pending evidence instead of deleting it as invalid remote input.
+- c6f86f5: Separate ESSR commitment construction from asynchronous payload verification while preserving current rejection outcomes.
+- ac4278d: Replace executable KEL decision wrappers with plain metadata and explicit Kevery persistence and publication.
+- 5ccedc6: Keep finite nested/ESSR hydration and wire formatting independent of cancellation.
+  Payload readers and replay operations own cancellation before publishing bytes;
+  archive/file readers retain their actual I/O signals.
+- 266bc16: Decode ACDC children during approved multisig issuance replay instead of requiring every child to be a KERI event.
+- 9087eaa: Resolve accepted-event receipt witnesses from the preceding establishment event,
+  including an empty cohort. Do not authorize historical receipts with a later
+  witness list, and keep receipt POSTs for unaccepted events in escrow.
+- 948f254: Honor the caller HTTP signal through headers and response-body ownership, keeping
+  external cancellation distinct from timeout. Report late foreign AbortError body
+  failures from the Node host instead of mistaking them for its own cancellation.
+- 891bbe5: Return joined expected HTTP/admission refusals directly to prepared delivery attempts while preserving strict send APIs and foreign cleanup failures.
+- 3519b55: Preserve the selected frame genus in detached HTTP attachment framing instead of
+  inferring it from the message body protocol version. Remove the unused separate
+  outer-genus override from attachment serialization.
+- 24f2c1f: Remove HTTP request reservations, client Fetch/SSE and attachment-header size
+  ceilings, and static-artifact allowances. Retain native backpressure, poll
+  and request cancellation, file extent correctness and joined I/O cleanup.
+- 085fb07: Fix strict installed TypeScript NodeNext consumers by selecting LMDB's valid CommonJS type declarations while retaining the ESM runtime binding. Preserve Baser's environment type through its concrete LMDBer owner.
+- f2c2c20: Preserve the embedded attachment genus through multisig IPEX approval, partial signatures, and outgoing proposals, including CLI group grants.
+- f772d43: Preserve the configured attachment genus across credential grant construction and stored artifact intake. Add `--gvrsn` to holder polling and verifier runs so legacy grant envelopes can carry genus-2 child proofs through verification.
+- 7dc80c5: Separate IPEX issuer authentication and accepted registry evidence from conversation policy, preserving current proof precedence and retry behavior.
+- 433ced2: Preserve independent I/O failures reported while a cancelled operation joins its
+  cleanup. Abort the concrete source before child teardown, join its pending work
+  through the resource lifetime, and suppress only that operation's own abort reason.
+- a6dff7c: Decode multisig KEL approval inputs before local member selection, joining and signing, preserving existing event and publication behavior.
+- 648ec57: Remove unused attachment and KEL decision metadata contracts; preserve invalid-prefix failure detail in the decision message.
+- 5afedd3: Move local blind/present/vacate construction and staged-frontier selection into Registry while retaining shared observer/local acceptance in RegistryEventer.
+- 34a9255: Honor signed child attachment versions when approving multisig KEL events and endpoint replies, keeping local signatures and peer proofs in the same CESR genus.
+- 1831205: Reject multisig KEL and VDR proposals whose selected group differs from the embedded KEL event or anchor before prompting or signing. Groups sharing participants must not be interchangeable during approval.
+- 1cf589b: Emit the canonical KERIpy cgvrsn hint when a v1 multisig wrapper carries a legacy child body with a different explicit attachment genus. Derive the hint from child framing instead of caller metadata, preserving supplemental bytes and omitting unnecessary hints.
+- 490415a: Decode multisig membership attributes into concrete requests before applying local group policy, preserving existing membership and route behavior.
+- 72975ce: Use the existing route-correlated multisig builder for local KEL publication. Derive child labels and inception identity from the proposal and child, preserving recipient-specific registration and delivery.
+- 95463bd: Preserve the signed attachment genus when approving multisig registry and credential anchors, so local and peer signatures can combine correctly.
+- 2eedce8: Keep group endpoint-role publication at its workflow owner and validate decoded reply attributes without open-record assertions.
+- 9197016: Consolidate structural nested exchange route/version support while preserving handler opt-in and independent child verification.
+- d8a96a7: Publish OOBI cues directly to ordinary Decks without synthetic resource handles; preserve admitted queue reservations and durable retry ordering.
+- ae663a9: Bind external input cancellation to the consuming operation so waiting protocol
+  turns and active HTTP response consumers stop and join cleanup. Separate dispatch
+  choices from input lifetime and check cancellation at input consumption boundaries.
+
+  Remove parser and finite annotation cancellation options. Benchmark and CLI
+  consumers own cancellation directly; protocol decoding takes only its byte source.
+
+- 74f852e: Pin audited MessagePack 3.1.3 and cbor-x 1.6.0 dependencies in source and emitted npm packages without changing the resolved decoder implementations.
+- 6338964: Replace executable reply preparations with plain proof plans and caller-owned cue batches.
+- 132fad7: Prepare signed multisig exchanges at the workflow owner and deliver the exact wire through Poster, preserving delivery and durable retry behavior.
+- f0b799e: Reject new direct mailbox streams after their owning director has closed. Remove
+  provider stream reservations and message/topic/metadata quotas while preserving
+  demand-driven output, query correlation, exact cursors and joined reader cleanup.
+- e424a7c: Register the signed local multisig proposal before delivery so subsequent peer proofs can complete approved group events without another approval prompt.
+- 9ae2297: Use the cue publication contract across exchange, OOBI, credential, and TEL producers without changing their retained-admission or standalone queue behavior.
+- c4fb6f6: Use the ownership reader for direct-reply capture and revocation scans while preserving existing queue order and held-credit behavior.
+- e93f557: Commit endpoint authorization/location projections with their authenticating reply proofs, and publish queries only after commit. Refuse caller-owned writers and confine native writer inspection to storage.
+- 6c878b6: Make pending reply proofs and TSN escrow dependencies explicit typed outcomes instead of diagnostic metadata.
+- a1ebe55: Consolidate cue delivery byte allowances and use explicit admitted charges while preserving current capacity boundaries.
+- 7dee8d8: Extract the shared pending-fetch and response owner while preserving generic HTTP timeout and cancellation behavior.
+- 77dedf6: Use one v2 IPEX predecessor table for construction and verification while preserving the distinct v1 conversation rules.
+- 61d53ed: Keep one typed Broker retry path and remove the unused exception adapter.
+- d65bb18: Return joined TCP capacity outcomes directly to prepared delivery while preserving one socket/source/reply owner and strict send APIs.
+- d609188: Narrow TEL and transaction-state query fields before state access and remove unconsumed TSN preparation metadata.
+- 13f81df: Use the shared cue publication contract for registry and credential state-notice processing while preserving independent proof and dependency admission.
+- 9a03310: Publish only known multisig reply and VDR attributes, and encode republished credential proofs in the advertised CESR genus.
+- 7ed9e95: Replay independently signed v1 multisig children after local approval, including remote-first arrival, database reopen, and signed attachment-genus selection.
+- 171cd0d: Preserve credential-state field guarantees through production and validate incoming notice fields without metadata-map assertions. Reject coerced event kinds before acquiring dependency escrow.
+- a3972bb: Preserve required registry notice fields and validated array types through TSN receiving.
+- 29ea095: Require verified persisted witness signatures before reporting HTTP receipt
+  success or retrieval, and fan out only accepted complementary witness evidence.
+  Select witness identities and proof indexes from the requested event, including
+  retrieval and cached completion after witness replacement.
+- f5164a3: Allow locally prepared multisig groups to establish accepted state before gathering witness receipts, without relaxing remote witness validation.
+
 ## 0.11.0
 
 ### Minor Changes
