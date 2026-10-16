@@ -13,6 +13,7 @@ import {
   runtimeOobiConverged,
   runtimeOobiTerminalState,
   runtimePendingState,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
@@ -112,20 +113,12 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
       pre = hab.pre;
       const runtime = yield* createAgentRuntime(hby);
       const url = `http://127.0.0.1:${port}`;
-      ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      ingestKeriBytes(
-        runtime,
         hab.makeEndRole(hab.pre, EndpointRoles.agent, true),
-      );
-      ingestKeriBytes(
-        runtime,
         hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
       const handler = createProtocolHandler(runtime);
       const request = new Request(`${url}/oobi/${pre}/agent/${pre}`);
       const read = hby.db.getEvt;
@@ -295,12 +288,10 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
       failingWellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?mode=fail`;
 
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(hostUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
 
       controllerBytes = new Uint8Array(
         hab.replyToOobi(pre, EndpointRoles.controller),

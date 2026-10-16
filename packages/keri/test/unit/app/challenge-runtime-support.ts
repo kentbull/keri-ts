@@ -1,5 +1,5 @@
 import { type Operation, run } from "effection";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
@@ -37,18 +37,11 @@ export async function seedHostedIdentifier(
       pre = hab.pre;
 
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      if (mailbox) {
-        ingestKeriBytes(
-          runtime,
-          hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true),
-        );
-      }
-      yield* processRuntimeTurn(runtime, { hab });
+        ...(mailbox ? [hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true)] : []),
+      ]);
 
       controllerBytes = new Uint8Array(
         hab.replyToOobi(pre, EndpointRoles.controller),

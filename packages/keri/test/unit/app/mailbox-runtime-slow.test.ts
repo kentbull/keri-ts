@@ -14,6 +14,7 @@ import {
   ingestKeriBytes,
   processRuntimeTurn,
   runAgentRuntime,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest, inspectCesrRequest } from "../../../src/app/cesr-http.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
@@ -204,16 +205,11 @@ async function seedMailboxHost(
       });
       pre = hab.pre;
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      ingestKeriBytes(
-        runtime,
         hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
     } finally {
       yield* hby.close();
     }
@@ -392,17 +388,11 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
     const runtime = yield* createAgentRuntime(providerHby, {
       enableMailboxStore: true,
     });
-    const hab = providerHby.habByName("relay");
-    ingestKeriBytes(runtime, mailbox.makeLocScheme(url, mailbox.pre, "http"));
-    ingestKeriBytes(
-      runtime,
+    yield* settleRuntimeIngress(runtime, [
+      mailbox.makeLocScheme(url, mailbox.pre, "http"),
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.controller, true),
-    );
-    ingestKeriBytes(
-      runtime,
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
-    );
-    yield* processRuntimeTurn(runtime, { hab: hab ?? undefined });
+    ]);
     const http = new FakeRuntimeHttpClient();
     new InProcessRuntimeHost(http, { runtime, origin: url });
 
@@ -628,17 +618,11 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
     const runtime = yield* createAgentRuntime(providerHby, {
       enableMailboxStore: true,
     });
-    const hab = providerHby.habByName("relay");
-    ingestKeriBytes(runtime, mailbox.makeLocScheme(url, mailbox.pre, "http"));
-    ingestKeriBytes(
-      runtime,
+    yield* settleRuntimeIngress(runtime, [
+      mailbox.makeLocScheme(url, mailbox.pre, "http"),
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.controller, true),
-    );
-    ingestKeriBytes(
-      runtime,
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
-    );
-    yield* processRuntimeTurn(runtime, { hab: hab ?? undefined });
+    ]);
     const http = new FakeRuntimeHttpClient();
     new InProcessRuntimeHost(http, { runtime, origin: url });
 

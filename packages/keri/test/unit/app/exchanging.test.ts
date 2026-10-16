@@ -1,7 +1,7 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { b, Diger, Prefixer, Texter, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import {
   CHALLENGE_RESPONSE_ROUTE,
   findVerifiedChallengeResponse,
@@ -97,26 +97,12 @@ Deno.test("Exchanger accepts signed challenge responses and records exchange sta
       });
 
       const runtime = yield* createAgentRuntime(hby);
-      yield* call(() => ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9001")));
-      yield* call(() =>
-        ingestKeriBytes(
-          runtime,
-          sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
-        )
-      );
-      yield* call(() =>
-        ingestKeriBytes(
-          runtime,
-          recipient.makeLocScheme("http://127.0.0.1:9002"),
-        )
-      );
-      yield* call(() =>
-        ingestKeriBytes(
-          runtime,
-          recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
-        )
-      );
-      yield* processRuntimeTurn(runtime, { hab: sender });
+      yield* settleRuntimeIngress(runtime, [
+        sender.makeLocScheme("http://127.0.0.1:9001"),
+        sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
+        recipient.makeLocScheme("http://127.0.0.1:9002"),
+        recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+      ]);
 
       const exchanger = new Exchanger(hby);
       loadChallengeHandlers(hby.db, exchanger);
@@ -207,26 +193,12 @@ Deno.test("Exchanger replays partial-signature escrows once the missing signatur
       });
 
       const runtime = yield* createAgentRuntime(hby);
-      yield* call(() => ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9011")));
-      yield* call(() =>
-        ingestKeriBytes(
-          runtime,
-          sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
-        )
-      );
-      yield* call(() =>
-        ingestKeriBytes(
-          runtime,
-          recipient.makeLocScheme("http://127.0.0.1:9012"),
-        )
-      );
-      yield* call(() =>
-        ingestKeriBytes(
-          runtime,
-          recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
-        )
-      );
-      yield* processRuntimeTurn(runtime, { hab: sender });
+      yield* settleRuntimeIngress(runtime, [
+        sender.makeLocScheme("http://127.0.0.1:9011"),
+        sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
+        recipient.makeLocScheme("http://127.0.0.1:9012"),
+        recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+      ]);
 
       const exchanger = new Exchanger(hby);
       loadChallengeHandlers(hby.db, exchanger);
@@ -300,26 +272,12 @@ Deno.test("Exchanger accepts nested weighted threshold combinations from partial
       });
 
       const runtime = yield* createAgentRuntime(hby);
-      yield* call(() => ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9021")));
-      yield* call(() =>
-        ingestKeriBytes(
-          runtime,
-          sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
-        )
-      );
-      yield* call(() =>
-        ingestKeriBytes(
-          runtime,
-          recipient.makeLocScheme("http://127.0.0.1:9022"),
-        )
-      );
-      yield* call(() =>
-        ingestKeriBytes(
-          runtime,
-          recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
-        )
-      );
-      yield* processRuntimeTurn(runtime, { hab: sender });
+      yield* settleRuntimeIngress(runtime, [
+        sender.makeLocScheme("http://127.0.0.1:9021"),
+        sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
+        recipient.makeLocScheme("http://127.0.0.1:9022"),
+        recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+      ]);
 
       const exchanger = new Exchanger(hby);
       loadChallengeHandlers(hby.db, exchanger);

@@ -5,6 +5,7 @@ import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
@@ -112,11 +113,9 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
 
       const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       try {
-        ingestKeriBytes(
-          runtime,
+        yield* settleRuntimeIngress(runtime, [
           witness.makeLocScheme("http://127.0.0.1:9137", witness.pre, "http"),
-        );
-        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+        ]);
 
         const message = new Uint8Array([8, 8, 8]);
         runtime.respondant.enqueueEmission(witness, {

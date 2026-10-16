@@ -1,7 +1,7 @@
 import { run } from "effection";
 import { assertEquals, assertNotEquals, assertStringIncludes } from "jsr:@std/assert";
 import { Siger } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -170,10 +170,7 @@ Deno.test("CLI verify fails against stale key state after source rotation", asyn
       });
       pre = hab.pre;
 
-      for (const evt of source.db.clonePreIter(hab.pre, 0)) {
-        ingestKeriBytes(runtime, evt);
-      }
-      yield* processRuntimeTurn(runtime, { pollMailbox: false });
+      yield* settleRuntimeIngress(runtime, source.db.clonePreIter(hab.pre, 0));
       assertEquals(observer.db.getKever(hab.pre)?.sn, 0);
 
       const oldKey = hab.kever?.verfers[0]?.qb64 ?? "";

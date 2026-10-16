@@ -24,9 +24,8 @@ import {
 import { spawnTufa, stopChild } from "../../../../tufa/test/test-helpers.ts";
 import {
   createAgentRuntime,
-  ingestKeriBytes,
   processMailboxTurn,
-  processRuntimeTurn,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
@@ -361,16 +360,11 @@ async function seedMailboxHost(
       });
       pre = hab.pre;
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      ingestKeriBytes(
-        runtime,
         hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
     } finally {
       yield* hby.close();
     }
@@ -409,12 +403,10 @@ async function seedHostedController(
       });
       pre = hab.pre;
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
       controllerBytes = new Uint8Array(
         hab.replyToOobi(pre, EndpointRoles.controller),
       );
@@ -616,19 +608,11 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
       enableMailboxStore: true,
     });
     const hab = providerHby.habByName("relay");
-    ingestKeriBytes(
-      runtime,
+    yield* settleRuntimeIngress(runtime, [
       mailbox.makeLocScheme(advertisedUrl, mailbox.pre, "http"),
-    );
-    ingestKeriBytes(
-      runtime,
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.controller, true),
-    );
-    ingestKeriBytes(
-      runtime,
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
-    );
-    yield* processRuntimeTurn(runtime, { hab: hab ?? undefined });
+    ]);
     const http = new FakeRuntimeHttpClient();
     new InProcessRuntimeHost(http, {
       runtime,

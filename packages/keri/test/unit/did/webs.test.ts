@@ -1,7 +1,7 @@
 import { ShortageError, WireParseError } from "cesr-ts";
 import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
@@ -383,15 +383,10 @@ Deno.test("did/webs - keri.cesr replays controller KEL once and appends DA mater
         toad: 0,
       });
       const did = `did:webs:example.com:dws:${hab.pre}`;
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme("http://127.0.0.1:7723/dws/mailbox", hab.pre, "http"),
-      );
-      ingestKeriBytes(
-        runtime,
         hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
 
       bindDesignatedAliases(runtime, {
         alias: "issuer",

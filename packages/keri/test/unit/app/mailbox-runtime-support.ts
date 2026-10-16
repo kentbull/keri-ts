@@ -1,6 +1,6 @@
 import { type Operation, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -130,12 +130,10 @@ export async function seedHostedController(
       });
       pre = hab.pre;
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
       controllerBytes = new Uint8Array(
         hab.replyToOobi(pre, EndpointRoles.controller),
       );
