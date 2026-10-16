@@ -32,7 +32,6 @@ import {
   exchange,
   type Hab,
   type Habery,
-  processRuntimeTurn,
   query,
   queryEnvelopeFromDispatch,
   readCesrRequestBytes,
@@ -638,10 +637,9 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
         );
         yield* runtime.reactor.processBytes(sender.makeEndRole(sender.pre, "controller", true));
         yield* runtime.reactor.processBytes(sender.makeLocScheme("http://example.test/", sender.pre, "http"));
-        yield* processRuntimeTurn(runtime, {
-          hab: sender,
-          pollMailbox: false,
-        });
+        runtime.querying.configure({ hab: sender });
+        yield* runtime.querying.processPending();
+        yield* runtime.querying.deliverOnce();
         assertEquals(
           outgoing.length,
           5,

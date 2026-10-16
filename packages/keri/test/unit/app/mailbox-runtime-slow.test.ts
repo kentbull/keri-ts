@@ -11,14 +11,13 @@ import {
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import {
   createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
   runAgentRuntime,
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest, inspectCesrRequest } from "../../../src/app/cesr-http.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
+import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { parseMailboxSse, readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
@@ -1358,8 +1357,8 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
           },
         });
         const query = inspectCesrRequest(validWire)!;
-        ingestKeriBytes(runtime, validWire);
-        yield* processRuntimeTurn(runtime, { hab: hab!, pollMailbox: false });
+        yield* settleRuntimeIngress(runtime, [validWire]);
+        yield* processCuesOnce(runtime, { hab: hab! });
         assertEquals(runtime.mailboxDirector.hasQueryCue(query.said!), true);
         const forged = buildCesrRequest(senderHby.habByName("sender")!.endorse(query), { destination: providerPre });
         const response = yield* fetchOp(url, {
