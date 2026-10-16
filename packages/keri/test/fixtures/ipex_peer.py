@@ -33,7 +33,7 @@ class Recorder:
 
 class IpexPeer:
     """Own one key store, protocol receiver and listener, independent of scenario order."""
-    def __init__(self, hby, cf, graph_case):
+    def __init__(self, hby, cf, graph_case, port):
         self.hby = hby
         self.hab = hby.makeHab(name="peer", version=Vrsn_2_0, kind=Kinds.json)
         self.graph_case = graph_case
@@ -49,7 +49,7 @@ class IpexPeer:
         app = falcon.App()
         app.add_route("/", HttpEnd(rxbs=self.parser.ims))
         app.add_route("/_fixture", PeerControl(self))
-        self.server = createHttpServer("127.0.0.1", 0, app)
+        self.server = createHttpServer("127.0.0.1", port, app)
         self.doist = doing.Doist(tock=.005, real=True,
                                 doers=[http.ServerDoer(server=self.server)])
 
@@ -169,15 +169,17 @@ class PeerControl:
 
 
 @contextmanager
-def open_peer(graph_case=None):
+def open_peer(port, graph_case=None):
     """Fresh KRAM-enabled keys, stores and listener for each independent scenario."""
     with openCF(name="ipex-http", temp=True) as cf:
         cf.put(dict(kram=dict(enabled=True, denials=[], caches={
             "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000]})))
         with openHby(name="python-peer", base="test", temp=True, version=Vrsn_2_0, cf=cf) as hby:
-            peer = IpexPeer(hby, cf, graph_case)
-            peer.doist.enter()
+            peer = IpexPeer(hby, cf, graph_case, port)
             try:
+                peer.doist.enter()
+                if not peer.server.servant.opened:
+                    raise RuntimeError("IPEX peer listener failed to open")
                 yield peer
             finally:
                 peer.doist.exit()
