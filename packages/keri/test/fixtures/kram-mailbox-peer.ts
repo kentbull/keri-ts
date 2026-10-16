@@ -35,10 +35,18 @@ await run(function*() {
         return Response.json({ stored: true });
       }
       if (command.action === "inspect") {
+        const sender = hby.db.getKever(command.pre);
         return Response.json({
           pid: Deno.pid,
           provider: hab.pre,
-          known: !!hby.db.getKever(command.pre),
+          sender: sender
+            ? {
+              event: sender.serder.said,
+              witnesses: sender.wits,
+              threshold: Number(sender.toader.num),
+              receipts: hby.db.wigs.get([command.pre, sender.serder.said!]).map((sig) => sig.index).sort(),
+            }
+            : null,
           rows: command.saids.map((said) => {
             const cache = hby.db.msgc.get([command.pre, said]);
             return {
