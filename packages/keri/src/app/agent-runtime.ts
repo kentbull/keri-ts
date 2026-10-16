@@ -195,7 +195,8 @@ export function* createAgentRuntime(
       owned.clear();
     }
   });
-  const vdr = reger ? new VdrRegery(hby, { reger, cues }) : null;
+  const protocolCues = new Deck<AgentCue>();
+  const vdr = reger ? new VdrRegery(hby, { reger, cues: protocolCues }) : null;
   // Reverse scope teardown joins borrowed output evidence before its backing stores close.
   const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
     const streams = new ReplyStreams();
@@ -207,6 +208,7 @@ export function* createAgentRuntime(
   });
   const reactor = new Reactor(hby, {
     cues,
+    protocolCues,
     tevery: vdr?.tvy,
     verifier: vdr?.vry,
     registry: acdc ?? undefined,

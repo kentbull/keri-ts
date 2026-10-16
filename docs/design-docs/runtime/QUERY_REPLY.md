@@ -200,8 +200,12 @@ Query preparation, signing and admission are synchronous operations over accepte
 state published by its processing owner after commit. They do not suspend between
 state lookup and signing. Network waits happen after preparation; failed delivery,
 refusal and cancellation retain the pending head and its real lifetime through
-joined cleanup. Reactor still owns protocol dispatch and reply capture; this does
-not remove guards from other workers or declare the full flow migration complete.
+joined cleanup. Reactor owns protocol dispatch and captures reserved replies before
+publishing ordinary cues to the application Deck. A reservation also claims
+already-published matching replies synchronously; exact dispatch authorization
+still controls whether that request may use them. Request owners consume slots
+and Respondant prepares output directly, without borrowing a Reactor callback gate.
+Duplicate runtime driving and final qualification remain separate work.
 
 Respondant owns reply output directly; there is no forHab/emission-sink facade.
 QueryCoordinator prepares its signed packets directly without public custom-emission

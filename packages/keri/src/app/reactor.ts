@@ -1,9 +1,8 @@
-import { type CesrFrame, Cigar, Ilks, parse, SerderKERI, Siger, Verfer } from "cesr-ts";
+import { type CesrFrame, parse } from "cesr-ts";
 import { action, call, ensure, on, type Operation, race, resource } from "npm:effection@^3.6.0";
 import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
 import { Kevery, type MessagePolicy } from "../core/eventing.ts";
 import { type KramConfig, Kramer } from "../core/kraming.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
@@ -15,9 +14,10 @@ import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
 import type { Habery } from "./habbing.ts";
 import {
-  type DispatchDecision,
   dispatchEnvelope,
+  type DispatchResult,
   envelopeFromFrame,
+  queryEnvelopeFromDispatch,
 } from "./parsering.ts";
 import { QueryReplies } from "./query-replies.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -29,8 +29,13 @@ export interface DispatchOptions {
   local?: boolean;
   /** Hosted mailbox endpoint that received this source. */
   mailboxAid?: string | null;
-  /** Advance escrows within the same turn before consuming its cues. */
+  /** Advance escrows before publishing this dispatch's protocol cues. */
   escrows?: boolean;
+}
+
+/** Exact dispatch evidence plus mailbox authorization observed before releasing protocol state. */
+export interface ReactorDispatchResult extends DispatchResult {
+  mailboxQueryAuthorized: boolean;
 }
 
 /** Input cancellation belongs to the consuming operation, never protocol dispatch. */
@@ -47,14 +52,16 @@ export interface IngressOptions extends DispatchOptions {
  *
  * Ownership model:
  * - `Reactor` owns transient ingress bytes plus the parser and dispatch seams
- * - the shared cue deck is injected so higher-level hosts can preserve the
- *   KERIpy shared-cues mental model
+ * - protocol processors write a separate Deck; Reactor captures request replies
+ *   before publishing ordinary cues to the application flow
  * - durable event/reply state still lives in the `Habery` database, not in
  *   this component
  */
 export class Reactor {
   readonly hby: Habery;
   readonly cues: Deck<AgentCue>;
+  /** Protocol output stays private until dispatch/escrow processing finishes. */
+  private readonly protocolCues: Deck<AgentCue>;
   /** Ordinary complete-record queue; callers enter through ingest(). */
   private readonly ingress: Deck<Uint8Array>;
   readonly router: Router;
@@ -63,9 +70,9 @@ export class Reactor {
   readonly kevery: Kevery;
   readonly exchanger: Exchanger;
   readonly local: boolean;
-  /** Bounded direct-response reservations, captured before any guarded cue consumer runs. */
+  /** Direct request correlation, captured before protocol cues reach application consumers. */
   readonly replies: QueryReplies;
-  /** Whether one dispatch/escrow/cue turn currently owns shared runtime state. */
+  /** Async protocol handlers and escrow passes share one sequential processor. */
   private busy = false;
   /** Waiting operations retain their position until granted or cancelled. */
   private readonly waiting = new Set<() => void>();
@@ -78,6 +85,7 @@ export class Reactor {
     hby: Habery,
     {
       cues,
+      protocolCues,
       local = false,
       tevery,
       verifier,
@@ -87,6 +95,8 @@ export class Reactor {
       now,
     }: {
       cues?: Deck<AgentCue>;
+      /** The actual TEL/verifier producer flow when composed outside Reactor. */
+      protocolCues?: Deck<AgentCue>;
       local?: boolean;
       tevery?: Tevery;
       verifier?: Verifier;
@@ -98,18 +108,20 @@ export class Reactor {
       now?: () => number;
     } = {},
   ) {
-    this.replies = new QueryReplies();
     this.hby = hby;
     this.cues = cues ?? new Deck();
+    this.replies = new QueryReplies(this.cues);
+    this.protocolCues = protocolCues ?? new Deck();
+    if (this.protocolCues === this.cues) throw new TypeError("Protocol and application cue flows must be distinct");
     this.ingress = new Deck();
     this.router = new Router();
-    this.revery = new Revery(hby.db, { rtr: this.router, cues: this.cues });
+    this.revery = new Revery(hby.db, { rtr: this.router, cues: this.protocolCues });
     this.replyRoutes = new BasicReplyRouteHandler(this.revery);
     this.replyRoutes.registerReplyRoutes(this.router);
-    const kramer = kram ? new Kramer(hby.db, { config: kram, cues: this.cues, now }) : undefined;
-    this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery, messagePolicy, kramer });
+    const kramer = kram ? new Kramer(hby.db, { config: kram, cues: this.protocolCues, now }) : undefined;
+    this.kevery = new Kevery(hby.db, { cues: this.protocolCues, rvy: this.revery, messagePolicy, kramer });
     this.kevery.registerReplyRoutes(this.router);
-    this.exchanger = new Exchanger(hby, { cues: this.cues, now });
+    this.exchanger = new Exchanger(hby, { cues: this.protocolCues, now });
     this.local = local;
     this.tevery = tevery;
     this.verifier = verifier;
@@ -130,7 +142,6 @@ export class Reactor {
   *process(
     source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
     options: IngressOptions = {},
-    consume?: (envelope?: KeriDispatchEnvelope, decision?: DispatchDecision) => Operation<void>,
   ): Operation<void> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
@@ -168,7 +179,7 @@ export class Reactor {
           pending = undefined;
           signal.throwIfAborted();
           if (result.done) return;
-          yield* self.settle(result.value, options, consume);
+          yield* self.dispatch(result.value, options);
         }
       } finally {
         controller.abort();
@@ -187,88 +198,79 @@ export class Reactor {
       ]);
     } else yield* input;
   }
-  /**
-   * Own one dispatch, optional escrow pass, and cue-consumption turn.
-   * The callback runs under the same guard and must not call another guarded Reactor method.
-   * Parser sources remain independent; only shared protocol state and its cue deck are serialized.
-   */
-  settle(
-    frame?: CesrFrame,
+  /** Process one frame and publish its committed protocol cues before returning decision data. */
+  dispatch(
+    frame: CesrFrame,
     { local = this.local, mailboxAid, escrows = false }: DispatchOptions = {},
-    consume?: (envelope?: KeriDispatchEnvelope, decision?: DispatchDecision) => Operation<void>,
-  ): Operation<KeriDispatchEnvelope | undefined> {
+  ): Operation<ReactorDispatchResult> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     return call(function*() {
-      return yield* self.turn(function*() {
-        let envelope: KeriDispatchEnvelope | undefined;
-        let decision: DispatchDecision = undefined;
-        const finish = function*(ready: KeriDispatchEnvelope | undefined, current: DispatchDecision) {
-          if (escrows) yield* self.advanceEscrows();
-          self.replies.capture(self.cues);
-          if (consume) yield* consume(ready, current);
-        };
-        let consumed = false;
-        if (frame) {
-          envelope = envelopeFromFrame(frame, local);
-          decision = yield* dispatchEnvelope(
-            envelope,
+      yield* self.acquireProtocol();
+      return yield* call(function*() {
+        try {
+          const result = yield* dispatchEnvelope(
+            envelopeFromFrame(frame, local),
             self.revery,
             self.kevery,
             self.exchanger,
             self.tevery,
             self.verifier,
             mailboxAid,
-            function*(ready, current) {
-              consumed = true;
-              yield* finish(ready, current);
-            },
           );
+          if (escrows) yield* self.advanceEscrows();
+          return {
+            ...result,
+            mailboxQueryAuthorized: result.envelope.serder.route === "mbx"
+              && self.kevery.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope)),
+          };
+        } finally {
+          self.publishCues();
         }
-        if (!consumed) yield* finish(envelope, decision);
-        // Only the original borrowed input escapes; hydrated ready owners stay inside finish().
-        return envelope;
       });
     });
   }
-  /** Acquire a runtime state turn; cancellation removes waiters and always releases acquired ownership. */
-  private turn<T>(work: () => Operation<T>): Operation<T> {
+
+  /** Capture direct replies before handing ordinary protocol records to the application consumer. */
+  private publishCues(): void {
+    this.replies.capture(this.protocolCues);
+    while (!this.protocolCues.empty) this.cues.push(this.protocolCues.pull()!);
+  }
+
+  /** Serialize only protocol processing; cancellation removes waiters and joins active handlers before release. */
+  private *acquireProtocol(): Operation<void> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
-    return call(function*() {
-      yield* resource<void>(function*(provide) {
-        let acquired = false;
-        try {
-          if (self.busy) {
-            yield* action<void>((resolve) => {
-              const grant = () => {
-                acquired = true;
-                resolve();
-              };
-              self.waiting.add(grant);
-              return () => {
-                self.waiting.delete(grant);
-              };
-            });
+    yield* resource<void>(function*(provide) {
+      let acquired = false;
+      try {
+        if (self.busy) {
+          yield* action<void>((resolve) => {
+            const grant = () => {
+              acquired = true;
+              resolve();
+            };
+            self.waiting.add(grant);
+            return () => {
+              self.waiting.delete(grant);
+            };
+          });
+        } else {
+          self.busy = true;
+          acquired = true;
+        }
+        yield* provide();
+      } finally {
+        if (acquired) {
+          const next = self.waiting.values().next().value;
+          if (next) {
+            self.waiting.delete(next);
+            next();
           } else {
-            self.busy = true;
-            acquired = true;
-          }
-          yield* provide();
-        } finally {
-          if (acquired) {
-            const next = self.waiting.values().next().value;
-            if (next) {
-              self.waiting.delete(next);
-              next();
-            } else {
-              self.busy = false;
-            }
+            self.busy = false;
           }
         }
-      });
-      // This later child joins before the earlier state-turn owner grants the next waiter.
-      return yield* call(work);
+      }
     });
   }
 
@@ -311,10 +313,21 @@ export class Reactor {
    * - reply escrows through `Revery.processEscrowReply()`
    */
   *processEscrowsOnce(): Operation<void> {
-    yield* this.settle(undefined, { escrows: true });
+    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
+    const self = this;
+    yield* call(function*() {
+      yield* self.acquireProtocol();
+      yield* call(function*() {
+        try {
+          yield* self.advanceEscrows();
+        } finally {
+          self.publishCues();
+        }
+      });
+    });
   }
 
-  /** Advance component escrows while the caller already owns the runtime turn. */
+  /** Advance component escrows while this protocol operation owns serialization. */
   private *advanceEscrows(): Operation<void> {
     this.kevery.kramer?.prune();
     this.kevery.processEscrows();

@@ -94,10 +94,11 @@ Important code seams:
 The `keri-ts` mental model keeps the same architecture, but makes ownership
 explicit:
 
-- `createAgentRuntime()` creates one shared `Deck<AgentCue>` for runtime-hosted
-  cue production
-- `Reactor`, runtime `Kevery`, `Revery`, `Oobiery`, and `Exchanger` push typed
-  `AgentCue` values
+- `createAgentRuntime()` wires a protocol producer Deck and an application Deck
+- Runtime `Kevery`, `Revery`, `Exchanger` and legacy TEL/verifier processors share
+  the protocol Deck; Reactor captures direct request replies before publishing
+  the remaining records to `AgentRuntime.cues`
+- Oobiery and application producers publish their own committed records directly
 - `Hab.processCuesIter()` is the habitat-owned interpretation seam
 - `processCuesOnce()` and `cueDo()` route records directly to concrete query,
   mailbox and reply owners
@@ -124,7 +125,8 @@ Important code seams:
 
 - KERIpy: Shared deck passed into hosted stacks such as witness and mailbox hosts
 - `keri-ts`: `AgentRuntime.cues` created in `createAgentRuntime()`
-- Why it matters: Cross-component signals must be visible to every host component that depends on them
+- Why it matters: The composition routes each record to its owner; a Deck is not broadcast.
+  Request correlation consumes protocol replies before application routing.
 
 **Habery-local cue scope**
 

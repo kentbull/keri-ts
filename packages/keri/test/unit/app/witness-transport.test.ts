@@ -435,29 +435,24 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
             if (mode === "cancel") await txCleanup.promise;
           }
         };
+        runtime.reactor.exchanger.processEscrows = function*() {
+          assertEquals(receiving.db.getKever(sender.pre)?.sn, expectedSn);
+          verified.resolve();
+          if (mode === "rxFault") throw fault;
+          if (mode === "cancel") {
+            yield* resource<void>(function*(provide) {
+              try {
+                yield* provide();
+              } finally {
+                rxReturning.resolve();
+                yield* call(() => rxCleanup.promise);
+              }
+            });
+            yield* suspend();
+          }
+        };
         const task = run(function*() {
-          const result = yield* streamCesrTcpConversation(url, source, {
-            ...options,
-            replies: {
-              ...replies,
-              consume: function*() {
-                assertEquals(receiving.db.getKever(sender.pre)?.sn, expectedSn);
-                verified.resolve();
-                if (mode === "rxFault") throw fault;
-                if (mode === "cancel") {
-                  yield* resource<void>(function*(provide) {
-                    try {
-                      yield* provide();
-                    } finally {
-                      rxReturning.resolve();
-                      yield* call(() => rxCleanup.promise);
-                    }
-                  });
-                  yield* suspend();
-                }
-              },
-            },
-          });
+          const result = yield* streamCesrTcpConversation(url, source, options);
           continued = true;
           return result;
         });

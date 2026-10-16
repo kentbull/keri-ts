@@ -248,7 +248,7 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
         const halt = task.halt().then(() => halted = true);
         yield* call(() => callbackClosing.promise);
         assertEquals(halted, false);
-        yield* runtime.reactor.settle(undefined, {}, function*() {});
+        yield* runtime.reactor.processEscrowsOnce();
         callbackCleanup.resolve();
         yield* call(() => returning.promise);
         assertEquals(halted, false);

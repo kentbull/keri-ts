@@ -216,15 +216,10 @@ export class Respondant {
           })) === "complete";
         } else {
           const cue = reply.cues[reply.index];
-          let next: { kind: "target"; target: PreparedCesrTarget } | { kind: "done" | "more" };
-          if (cue && !cue.prepared) {
-            yield* self.reactor.settle(undefined, {}, function*() {
-              next = self.prepareReplyTarget(reply);
-            });
-          } else next = self.prepareReplyTarget(reply);
-          done = next!.kind === "done";
-          if (next!.kind === "target") {
-            const target = next!.target;
+          const next = self.prepareReplyTarget(reply);
+          done = next.kind === "done";
+          if (next.kind === "target") {
+            const target = next.target;
             const outcome = yield* attemptPreparedCesrTarget(target, self.poster.services, active.signal, {
               reactor: self.reactor,
             });

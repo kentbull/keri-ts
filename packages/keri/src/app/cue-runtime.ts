@@ -16,29 +16,21 @@ export function* processCuesOnce(
   runtime: AgentRuntime,
   { hab }: { hab?: Hab } = {},
 ): Operation<void> {
-  let interpreter: Hab | null = null, count = 0;
-  yield* runtime.reactor.settle(undefined, {}, function*() {
-    interpreter = resolveCueHab(runtime, hab);
-    count = runtime.cues.length;
-  });
+  const interpreter = resolveCueHab(runtime, hab);
+  const count = runtime.cues.length;
   for (let index = 0; index < count; index++) {
-    let available = false;
-    yield* runtime.reactor.settle(undefined, {}, function*() {
-      const cue = runtime.cues.peekHead();
-      if (!cue) return;
-      available = true;
-      if (cue.kin === "query") {
-        runtime.querying.enqueueCue(cue, interpreter);
-      } else if (cue.kin === "stream") {
-        runtime.mailboxDirector.retainQueryCue(cue);
-      } else if (interpreter && runtime.respondant.enqueueCue(interpreter, runtime.cues, hab)) {
-        runtime.querying.observeCue(cue);
-        return;
-      }
+    const cue = runtime.cues.peekHead();
+    if (!cue) break;
+    if (cue.kin === "query") {
+      runtime.querying.enqueueCue(cue, interpreter);
+    } else if (cue.kin === "stream") {
+      runtime.mailboxDirector.retainQueryCue(cue);
+    } else if (interpreter && runtime.respondant.enqueueCue(interpreter, runtime.cues, hab)) {
       runtime.querying.observeCue(cue);
-      runtime.cues.pull();
-    });
-    if (!available) break;
+      continue;
+    }
+    runtime.querying.observeCue(cue);
+    runtime.cues.pull();
   }
 }
 

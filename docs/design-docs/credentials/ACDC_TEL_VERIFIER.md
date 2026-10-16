@@ -51,7 +51,8 @@ responsibilities into one vague "VC" layer.
   saved credential indexes, and verifier cue sidecars.
 - VerifierAgent scans only the initial Deck extent, preserves unrelated cue order,
   and requeues records when durable verifier publication fails. Webhook waits
-  remain outside the guard. Duplicate revocations produce no second webhook.
+  occur in its concrete I/O operation. Verifier sidecars do not borrow Reactor's
+  protocol serialization. Duplicate revocations produce no second webhook.
 
 ## V2 Registry Evidence
 

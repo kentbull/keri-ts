@@ -591,18 +591,15 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         const active = createConnection({ port: tcpPort, host: "127.0.0.1" });
         sockets.push(active);
         active.on("error", () => {});
+        const processEvent = receiver.reactor.kevery.processEvent.bind(receiver.reactor.kevery);
+        receiver.reactor.kevery.processEvent = (envelope) => {
+          if (envelope.serder.pre === controller.pre) replayed++;
+          else foreignReplay = true;
+          return processEvent(envelope);
+        };
         receiveTask = yield* spawn(function*() {
           try {
-            yield* receiver.reactor.process(
-              (signal) => socketBytes(active, { signal }),
-              { local: true },
-              function*(envelope) {
-                if (envelope?.serder.ilk !== "rct") {
-                  if (envelope?.serder.pre === controller.pre) replayed++;
-                  else foreignReplay = true;
-                }
-              },
-            );
+            yield* receiver.reactor.process((signal) => socketBytes(active, { signal }), { local: true });
           } catch (error) {
             if (!stoppingReceiver) throw error;
           }

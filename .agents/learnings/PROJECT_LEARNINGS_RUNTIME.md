@@ -17,8 +17,8 @@ hosts select enableMailboxStore or borrow a Mailboxer. Hosted-AID selection is
 separate; do not auto-host every Hab or expose signatory/AEID as normal identity.
 RuntimeServices contains only clock/HTTP. Baser and CLI carry no shared policy.
 Choose real dependencies at construction. Generic cue preparation/delivery
-wrappers, Reactor's callback gate and duplicate runtime driving still require
-simplification; ledger removal does not complete those architecture tasks.
+wrappers and Reactor's application callback gate are removed. Duplicate runtime driving still requires simplification; these cuts
+do not complete the architecture or qualification work.
 
 ## Protocol records and publication
 
@@ -64,10 +64,16 @@ source, and finite passes use their initial queue extent. Ordinary cues, routes,
 packets and batches have no synthetic lifetime. Real iterator cleanup runs once.
 The broad Reactor gate and duplicate whole-runtime driving remain removal inputs.
 
-Reactor currently serializes dispatch, escrows and cue handling. Never reenter it
-from its guarded consumer. Remove this general callback guard only after moving
-remaining state-sensitive cue work. Its active owner joins children before granting
-an ordinary waiter; cancellation removes waiting operations. There is no waiter cap.
+Reactor serializes only protocol dispatch and escrow passes. Dispatch returns the
+processed envelope and its exact decision; KRAM may combine earlier proofs.
+Protocol processors share a separate Deck wired with legacy TEL/verifier producers.
+Reactor captures correlated replies there before publishing ordinary cues to the
+application Deck. New reservations synchronously claim already-published matching
+replies. Mailbox authorization is returned from the exact protocol state.
+Application interpretation, signing, routing, slot consumption
+and verifier sidecars are synchronous owner work, outside protocol serialization.
+There is no arbitrary callback/settle API. A cancelled protocol owner joins actual
+handler cleanup before granting a waiter; waiting input cancellation removes it.
 Queued ingress copies producer bytes into a private Deck, then pulls/processes
 without quotas or capacity retry. Copy failure publishes nothing; processing failure
 does not reinsert. clearIngress discards queued data, not an active I/O lifetime.
@@ -126,7 +132,7 @@ the existing concrete legacy Regery, which owns Reger/Tevery/Verifier; runtime.a
 is the concrete v2 Regery. Reactor receives the actual processors, not placeholder
 object/service bags or optional-method interfaces. Application entrypoints check
 genuine registry absence once and use its typed members. An injected Reger remains
-borrowed while runtime composition creates its processors with the shared cue deck.
+borrowed while runtime composition creates its processors with the protocol producer Deck.
 Readonly Haberies create neither default store. Factories own failed/unreturned acquisitions before
 cancellable reopen. Explicit close and scope exit both join cleanup; repeated close
 is harmless. Created Noter/Mailboxer use Habery's temp policy; injected sidecars stay

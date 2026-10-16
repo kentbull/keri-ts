@@ -149,12 +149,6 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
         },
       },
     });
-    let preparationTurns = 0;
-    const settle = runtime.reactor.settle.bind(runtime.reactor);
-    runtime.reactor.settle = (...args) => {
-      preparationTurns++;
-      return settle(...args);
-    };
     const cue = {
       kin: "replay" as const,
       messages: [sender.query(sender.pre, sender.pre, { route: "logs", q: {} })],
@@ -197,13 +191,11 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
       );
       assertEquals(runtime.respondant.hasPending, true, "an unobserved typed transport failure preserves progress");
       failed = new Error("foreign transport busy");
-      const previousTurns = preparationTurns;
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))),
         failed,
       );
       assertEquals(runtime.respondant.hasPending, true, "foreign failure preserves pending delivery");
-      assertEquals(preparationTurns, previousTurns, "an exact packet retry cannot recapture protocol reply cues");
       injected = false;
       yield* runtime.respondant.process();
       assertEquals(runtime.respondant.hasPending, true);
@@ -273,7 +265,7 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
   });
 });
 
-Deno.test("cue delivery releases its guarded turn but retains owners until HTTP cleanup joins", async () => {
+Deno.test("cue delivery allows application progress while retaining actual HTTP cleanup", async () => {
   let cleaning!: () => void, release!: () => void;
   const cleanup = new Promise<void>((resolve) => cleaning = resolve);
   const gate = new Promise<void>((resolve) => release = resolve);
@@ -321,15 +313,12 @@ Deno.test("cue delivery releases its guarded turn but retains owners until HTTP 
     });
     try {
       yield* call(() => cleanup);
-      let guarded = false, closed = false;
-      yield* runtime.reactor.settle(undefined, {}, function*() {
-        guarded = true;
-      });
+      let closed = false;
       const closing = yield* spawn(function*() {
         yield* runtime.respondant.close();
         closed = true;
       });
-      assertEquals([guarded, closed, runtime.respondant.hasPending], [true, false, true]);
+      assertEquals([closed, runtime.respondant.hasPending], [false, true]);
       release();
       yield* closing;
       yield* delivery;

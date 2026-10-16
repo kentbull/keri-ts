@@ -113,11 +113,7 @@ export class VerifierAgent {
     };
 
     result.grantsQueued += yield* this.scanAcceptedGrants();
-    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
-    const self = this;
-    yield* this.reactor.settle(undefined, {}, function*() {
-      result.revocationsQueued += self.processRevokedCues();
-    });
+    result.revocationsQueued += this.processRevokedCues();
     yield* this.reactor.processEscrowsOnce();
     result.revocationsQueued += this.scanPersistedRevocations();
     result.presentationsReady += this.processPresentations();

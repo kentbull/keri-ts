@@ -1,10 +1,8 @@
 /** Application composition of actual TCP receive and transmit lifetimes. */
 import { parse } from "cesr-ts";
 import { call, ensure, on, type Operation, race, spawn } from "npm:effection@^3.6.0";
-import type { KeriDispatchEnvelope } from "../core/dispatch.ts";
 import { rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
-import type { DispatchDecision } from "./parsering.ts";
 import type { Reactor } from "./reactor.ts";
 import { socketBytes } from "./socket-source.ts";
 import {
@@ -24,8 +22,6 @@ export interface TcpReplyReceiver {
 export interface TcpConversationOptions extends TcpSendOptions {
   replies: TcpReplyReceiver & {
     local?: boolean;
-    /** Borrow guarded envelopes only for this call; never reenter Reactor or implicitly drain cues. */
-    consume?: (envelope?: KeriDispatchEnvelope, decision?: DispatchDecision) => Operation<void>;
   };
 }
 
@@ -98,10 +94,9 @@ function conversation(
               pending = undefined;
               signal.throwIfAborted();
               if (next.done) return;
-              yield* replies.reactor.settle(
+              yield* replies.reactor.dispatch(
                 next.value,
                 { local: replies.local ?? true, escrows: true },
-                replies.consume,
               );
               processedFrames++;
             }
