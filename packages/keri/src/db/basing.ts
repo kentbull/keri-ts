@@ -506,7 +506,7 @@ export class Baser {
   }
 
   /** Expose the raw LMDB environment for low-level tests and debugging only. */
-  get env() {
+  get env(): LMDBer["env"] {
     return this.lmdber.env;
   }
 

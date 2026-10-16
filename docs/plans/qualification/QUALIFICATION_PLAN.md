@@ -86,13 +86,14 @@ validation. Retained file cleanup is for real storage consumers, not parser stag
 
 ## Installed declaration gate
 
-A strict TypeScript 5.9.3 NodeNext consumer currently fails in LMDB 3.5.3's ESM
-`index.d.ts`: that branch uses CommonJS `export =` (TS1203). The same failure
-reproduces before the runtime API narrowing. Runtime installation and source
-Deno checks do not close this declaration gate. Repair the concrete LMDB type
-import/emission boundary in a dedicated follow-up, then rerun the installed
-consumer without `skipLibCheck` before release. Do not add a forwarding interface
-or weaken the check to hide the dependency declaration failure.
+Run the installed consumer through strict TypeScript NodeNext checking without
+`skipLibCheck`, alongside actual runtime/storage/CLI smoke. The maintained probe
+installs pinned compiler tools only after runtime checks and compiles public
+manager, host, ingress, credential and storage operations from packed entrypoints.
+LMDB 3.5.3's ESM declaration contains a CommonJS export assignment; package emission
+selects its valid CommonJS type branch while retaining the ESM runtime binding.
+Keep type-only imports separate and preserve Baser.env through LMDBer's own type.
+Do not weaken checks or add a forwarding interface to hide declaration failures.
 
 ## Final parity report
 

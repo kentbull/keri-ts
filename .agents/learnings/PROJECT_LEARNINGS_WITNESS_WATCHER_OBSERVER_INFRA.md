@@ -69,7 +69,12 @@ patterns to expose implementation internals. Installed probes use named surfaces
 Derive every manifest export/bin
 from DNT output, including host/kernel and protocol-handler imports/declarations;
 fixed layout guesses can break advertised subpaths while the CLI still works.
-Assert packed targets. Install all three local tarballs once per runtime
+Assert packed targets. Strict installed NodeNext checking must pass without
+skipLibCheck. LMDB 3.5.3's ESM declaration uses export assignment; normalize emitted
+type-only imports to its valid CommonJS declaration branch, preserving ESM values.
+DNT omits source resolution attributes. Keep Baser.env tied to LMDBer's own type.
+Install compiler tools after runtime smoke so they cannot mask missing dependencies.
+Install all three local tarballs once per runtime
 image (including macOS); run the installed Tufa bin without npx fallback. Source
 tests do not qualify package resolution or Node hosting. Require Node >=20.3 in
 all generated manifests; qualify the declared floor and current runtime without
