@@ -91,18 +91,24 @@ lookup neither repairs hints nor imposes a depth cap. Identity operator preceden
 and targeted/untargeted defaults are also covered; the reference E1E entity-only
 extension remains explicit. These are TS tests, not Python DI2I interop.
 
-Node issuer authentication now returns concrete authenticated evidence, a missing
-dependency or refusal independently of conversation policy. Verified registrations
-retain their bound state. This extraction preserves existing grant outcomes; it
-does not implement NOT. Next separate known node validity/invalidity from missing
-evidence before changing edge behavior. The current grant pipeline rejects every
-invalid node before edge evaluation; negating a relation boolean is insufficient. [KERIpy #1554](https://github.com/WebOfTrust/keripy/issues/1554)
-and [discussion #1571](https://github.com/WebOfTrust/keripy/discussions/1571) identify
-revocation, freshness and reevaluation questions. Define the supported invalidity
-evidence and time basis explicitly, then test known-valid and proved-invalid far
-nodes, missing/stale evidence, operator composition and state changes. A missing
-node or unauthenticated input must not become a successful negation. Report any
-unresolved semantics precisely instead of treating blanket refusal as completion.
+Node issuer authentication returns concrete authenticated evidence, a missing
+dependency or refusal independently of conversation policy. TS NOT uses a
+separate far-before-parent node-validity pass after every issuer and own schema
+passes. Its accepted issuance vocabulary is `issued`/`revoked`, using receiver-
+accepted observer evidence at each fresh validation. Known false relationships
+and revoked far nodes may satisfy NOT; missing/stale/forged evidence, malformed
+operators/schema resources and custom states cannot. Identity and additional
+schema constraints remain independent. Dedicated TS tests cover both truth
+values, nested AND/OR and NOT, actual observer state changes, missing KEL/schema/
+TEL retry across reopen, stale disclosure refusal and retained historical grants.
+This does not add Python NOT parity or imply global registry freshness. See the
+[IPEX contract](../../design-docs/exchange/IPEX.md) for the precise boundaries.
+
+Kent's execution priority is complete disclosure/operator acceptance first, then
+KRAM/composed mailbox acceptance, then residual architecture cleanup, before
+final qualification and publications. Multiple/nested blinding, progressive
+reveal and remaining pairwise malformed/schema controls still need dedicated
+maintained cases before disclosure can be called complete.
 
 ## Transport, KRAM and topology
 

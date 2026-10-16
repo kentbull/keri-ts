@@ -28,7 +28,7 @@ import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { type ExchangeDecision, Exchanger } from "../../../src/app/exchanging.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody, prepareIpexExn } from "../../../src/app/ipex-building.ts";
-import { verifyIpexRelations, walkIpexGraph } from "../../../src/app/ipex-graph.ts";
+import { verifyIpexRelations as verifyRelations, walkIpexGraph } from "../../../src/app/ipex-graph.ts";
 import { authenticateIpexNode } from "../../../src/app/ipex-node-authentication.ts";
 import { IpexV2Handler } from "../../../src/app/ipex-v2.ts";
 import { type IpexRoute, loadIpexHandlers } from "../../../src/app/ipexing.ts";
@@ -39,6 +39,10 @@ import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-s
 import { Schemer } from "../../../src/core/scheming.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
+/** These relation fixtures are unregistered; signed grants exercise authentication separately. */
+const verifyIpexRelations = (graph: Parameters<typeof verifyRelations>[0], db: Habery["db"]) =>
+  verifyRelations(graph, db, new Map());
+
 /** Feed signed public KEL bytes through normal event verification. */
 async function learn(hby: Habery, wire: string | Uint8Array): Promise<void> {
   for (const frame of await parseBytes(typeof wire === "string" ? b(wire) : wire)) {
@@ -686,7 +690,17 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
       const alternative = credential("Near", {
         d: "",
         o: "OR",
-        bad: { n: valid.said, s: false },
+        bad: {
+          n: valid.said,
+          s: new Schemer({
+            sed: {
+              $id: "",
+              version: "1.0.0",
+              type: "object",
+              properties: { a: { properties: { name: { const: "Other" } } } },
+            },
+          }).sed as MapperMap,
+        },
         good: { n: valid.said },
       });
       assertEquals(

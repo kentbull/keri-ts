@@ -5,11 +5,11 @@ retain their pathed protocol. Offer may disclose a reachable metadata subgraph.
 Grant must satisfy the negotiated single-DAG plan in breadth-first order and
 supply an independent issuer proof for every child. A declared registry takes
 precedence over direct issuer anchors, which take precedence over current issuer
-signatures. Parent proofs never authenticate children. `NOT`/`DI2I` are currently
-recognized but unsatisfied, matching the inspected reference. This is a gap, not
-a contract requiring refusal. The [operator acceptance plan](../../plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md)
-requires support when semantics are sufficiently established, with keri-ts tests
-and no Python interop cases until the selected reference supports the operators.
+signatures. Parent proofs never authenticate children. TS supports DI2I and NOT
+under the profiles below. The inspected Python reference leaves both unsatisfied;
+neither operator enters Python interop until that reference supports it. The
+[operator acceptance plan](../../plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md)
+keeps TS operator qualification distinct from pairwise evidence.
 Deeper child-owned nests are
 guarded until their processing is defined.
 
@@ -47,11 +47,31 @@ proof dependency, not a permanent invalidity verdict; lookup never repairs stora
 Identity operators I2I/NI2I/DI2I conflict in wire order, with the last operative one
 winning. Without one, targeted far nodes default to I2I and untargeted nodes to NI2I.
 E1E remains the reference entity-comparison extension: on its own it does not
-imply I2I; an explicit identity operator adds that separate requirement. NOT
-needs its separate authenticated node-validity model.
+imply I2I; an explicit identity operator adds that separate requirement.
 This profile follows the [operator specification](https://trustoverip.github.io/kswg-acdc-specification/#operator-o-field)
 and the approval boundary clarified in [KERIpy #1559](https://github.com/WebOfTrust/keripy/issues/1559);
 it is not Python IPEX DI2I parity.
+
+NOT inverts the authenticated far node's validity, independently of the near
+edge's identity and additional schema constraints. Evaluate far nodes before
+parents in dependency order; keep breadth-first disclosure order unchanged,
+including shared ancestors. All nodes must first authenticate and pass their own
+schemas. A disproved far-node edge relationship or authenticated revoked issuance
+can supply false; missing/forged evidence, malformed graphs/operators/schemas and
+unknown state cannot. Valid edge schemas may disprove a payload constraint;
+invalid schema resources remain refusal, distinguished by typed validation facts.
+AND/OR reductions never hide malformed input or dependencies behind a sibling.
+
+The issuance vocabulary is only `issued`/`revoked`, from the receiver's accepted
+RegistryObserver evidence at each fresh validation, including escrow retries.
+This is local accepted knowledge, not a global freshness guarantee. Obsolete
+blinders against a newer accepted head fail authentication before negation.
+The origin's own issuance status is not a wallet-acceptance gate for transporting
+that disclosed message; referenced far nodes carry the validity requirement.
+Later updates do not rewrite accepted conversation history. New grants and
+explicit validation re-evaluate current evidence; no background invalidation,
+policy scheduler or new persistence is implied. Presentation checks retain their
+separate frozen KRAM receiver cutoff.
 
 Explicit `RegistryObserver` intake delegates parsed public rip/bup events to the
 normal engine with full witnessed tuple anchors and per-event atomic acceptance.

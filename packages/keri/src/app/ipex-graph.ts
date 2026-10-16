@@ -1,5 +1,6 @@
 /** Borrowed ACDC disclosure DAGs: structure, negotiated paths and edge semantics. */
 import { type CesrFrame, Compactor, makePather, type MapperMap, Saider, SealEvent, SerderACDC } from "cesr-ts";
+import type { RegistryState } from "../acdc/regeventing.ts";
 import { type SchemaValidation, validateSchema } from "../acdc/scheming.ts";
 import type { Baser } from "../db/basing.ts";
 
@@ -15,7 +16,9 @@ export interface IpexGraph {
 type MissingSchema = Extract<SchemaValidation, { kind: "missing" }>;
 /** Absent edge evidence remains distinct from a disproved relationship. */
 type RelationDependency = MissingSchema | { kind: "missingKel"; pre: string };
-type Relation = boolean | null | RelationDependency;
+type UnknownNodeState = { kind: "unknownState"; said: string; state: string | null };
+type RelationIssue = RelationDependency | UnknownNodeState;
+type Relation = boolean | null | RelationIssue;
 const sectionLabels = new Set(["d", "u", "o", "w"]);
 const groupLabels = new Set([...sectionLabels, "s"]);
 const nodeLabels = new Set(["d", "u", "n", "s", "o", "w"]);
@@ -262,8 +265,6 @@ function identityRelation(
   far: SerderACDC,
   db: Baser,
 ): boolean | RelationDependency {
-  // NOT needs authenticated node validity, not a negated identity comparison.
-  if (operators.includes("NOT")) return false;
   if (operators.includes("E1E") && (!near.issuee || !far.issuee || near.issuee !== far.issuee)) return false;
   // Preserve the reference E1E extension's entity-only path unless identity is explicit.
   let relation: "I2I" | "NI2I" | "DI2I" = far.issuee && !operators.includes("E1E") ? "I2I" : "NI2I";
@@ -283,6 +284,7 @@ function leafRelation(
   graph: IpexGraph,
   inheritedSchema: unknown,
   db: Baser,
+  validities: ReadonlyMap<string, boolean>,
 ): Relation {
   if (Object.keys(group).some((key) => !nodeLabels.has(key)) || typeof group.n !== "string") return null;
   const far = graph.nodes.get(group.n)?.body;
@@ -297,12 +299,21 @@ function leafRelation(
     : null;
   if (!operators || operators.some((item) => !unaryOps.has(item))) return null;
   const identity = identityRelation(operators, near, far, db);
-  if (identity !== true) return identity;
+  if (typeof identity === "object") return identity;
   const schema = Object.hasOwn(group, "s") ? group.s : inheritedSchema;
-  if (schema == null) return true;
-  if (typeof schema !== "string" && !record(schema)) return false;
-  const result = validateSchema(far, db, schema);
-  return result.kind === "missing" ? result : result.kind === "valid";
+  let schemaMatches = true;
+  if (schema != null) {
+    if (typeof schema !== "string" && !record(schema)) return null;
+    const result = validateSchema(far, db, schema);
+    if (result.kind === "missing") return result;
+    if (result.kind === "invalid") {
+      if (result.subject === "schema") return null;
+      schemaMatches = false;
+    }
+  }
+  const valid = validities.get(group.n);
+  if (valid === undefined) return null;
+  return identity && schemaMatches && (operators.includes("NOT") ? !valid : valid);
 }
 
 /** Evaluate AND/OR edge groups; malformed members cannot be hidden by a passing sibling. */
@@ -313,6 +324,7 @@ function groupRelation(
   inheritedSchema: unknown,
   nested: boolean,
   db: Baser,
+  validities: ReadonlyMap<string, boolean>,
 ): Relation {
   const op = group.o ?? "AND";
   if (op !== "AND" && op !== "OR") return null;
@@ -323,8 +335,8 @@ function groupRelation(
     if (labels.has(key)) continue;
     if (!record(node)) return null;
     const result = Object.hasOwn(node, "n")
-      ? leafRelation(node, near, graph, schema, db)
-      : groupRelation(node, near, graph, schema, true, db);
+      ? leafRelation(node, near, graph, schema, db, validities)
+      : groupRelation(node, near, graph, schema, true, db, validities);
     if (result === null) return null;
     if (typeof result === "object") return result;
     results.push(result);
@@ -333,24 +345,50 @@ function groupRelation(
 }
 
 /** Preserve malformed/dependency outcomes separately from a disproved node relationship. */
-function nodeRelations(near: SerderACDC, graph: IpexGraph, db: Baser): Relation {
+function nodeRelations(
+  near: SerderACDC,
+  graph: IpexGraph,
+  db: Baser,
+  validities: ReadonlyMap<string, boolean>,
+): Relation {
   const edges = blocks(near.sad!.e);
   if (!edges) return null;
+  let valid = true;
   for (const edge of edges) {
     const matched = Object.hasOwn(edge, "n")
-      ? leafRelation(edge, near, graph, null, db)
-      : groupRelation(edge, near, graph, null, false, db);
-    if (matched !== true) return matched;
+      ? leafRelation(edge, near, graph, null, db, validities)
+      : groupRelation(edge, near, graph, null, false, db, validities);
+    if (matched === null || typeof matched === "object") return matched;
+    valid &&= matched;
   }
-  return true;
+  return valid;
 }
 
-/** Validate edge blocks against authenticated nodes; unavailable schemas remain typed dependencies. */
-export function verifyIpexRelations(graph: IpexGraph, db: Baser): boolean | RelationDependency {
-  for (const said of graph.order) {
-    const matched = nodeRelations(graph.nodes.get(said)!.body, graph, db);
-    if (matched !== null && typeof matched === "object") return matched;
-    if (matched !== true) return false;
+/**
+ * Evaluate authenticated far-node validity before its parents. The issuance profile
+ * uses the receiver's accepted observer state at this validation: issued/revoked.
+ * Unknown vocabularies, malformed input and dependencies are never negated. The
+ * origin is a disclosed message, not wallet acceptance of its own issuance state.
+ */
+export function verifyIpexRelations(
+  graph: IpexGraph,
+  db: Baser,
+  registrations: ReadonlyMap<string, RegistryState>,
+): boolean | RelationIssue {
+  const validities = new Map<string, boolean>();
+  const origin = graph.order[0];
+  for (const said of graph.dependencyOrder) {
+    const near = graph.nodes.get(said)!.body;
+    const matched = nodeRelations(near, graph, db, validities);
+    if (matched === null) return false;
+    if (typeof matched === "object") return matched;
+    let valid = matched;
+    if (said !== origin && near.regid) {
+      const state = registrations.get(said)?.state ?? null;
+      if (state !== "issued" && state !== "revoked") return { kind: "unknownState", said, state };
+      valid &&= state === "issued";
+    }
+    validities.set(said, valid);
   }
-  return true;
+  return validities.get(origin) ?? false;
 }

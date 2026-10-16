@@ -16,11 +16,15 @@ import { acdcmap } from "../../../src/acdc/messaging.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex-building.ts";
-import { verifyIpexRelations, walkIpexGraph } from "../../../src/app/ipex-graph.ts";
+import { verifyIpexRelations as verifyRelations, walkIpexGraph } from "../../../src/app/ipex-graph.ts";
 import { loadIpexHandlers } from "../../../src/app/ipexing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
+
+/** These relation fixtures are unregistered; signed grants exercise authentication separately. */
+const verifyIpexRelations = (graph: Parameters<typeof verifyRelations>[0], db: Habery["db"]) =>
+  verifyRelations(graph, db, new Map());
 
 /** Use the production witness local-ingress contract; an ordinary validator selects remote ingress. */
 function* learn(hby: Habery, wire: Uint8Array, local = true): Operation<void> {
@@ -125,6 +129,11 @@ for (const missing of [0, 1, 2]) {
       assertExists(validator.db.getKever(chain[missing + 1].pre), "witness acceptance is not delegator approval");
       const evidence = graph(chain[3].pre, chain[0].pre);
       assertEquals(verifyIpexRelations(evidence, validator.db), { kind: "missingKel", pre: chain[missing].pre });
+      assertEquals(
+        verifyIpexRelations(graph(chain[3].pre, chain[0].pre, ["NOT", "DI2I"]), validator.db),
+        { kind: "missingKel", pre: chain[missing].pre },
+        "NOT must not invert a missing delegation approval",
+      );
       yield* learn(validator, approvals[missing]);
       assertEquals(verifyIpexRelations(evidence, validator.db), true, "the approval event alone closes the gap");
     });
