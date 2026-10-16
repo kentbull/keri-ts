@@ -6,6 +6,7 @@ from keri import Kinds
 from keri.acdc import acdcmap
 from keri.app import Hab
 from keri.core import Compactor, Noncer, SerderACDC
+from keri.core.scheming import Schemer
 
 
 def disclosure(issuer, *, issuee=None, edge=None):
@@ -51,7 +52,11 @@ def graph_disclosures(hby, hab, graph_case):
         return DisclosureGraph([full], [partial], [], [hab], None)
     if graph_case in ("multi-hop", "branching"):
         return deep_graph(hby, hab, graph_case)
-    return relation_graph(hby, hab, graph_case)
+    if graph_case in ("I2I", "NI2I", "E1E", "AND", "OR"):
+        return relation_graph(hby, hab, graph_case)
+    if graph_case in ("unknown-leaf", "unknown-group", "malformed-leaf", "edge-schema", "inherited-schema", "malformed-schema"):
+        return edge_refusal_graph(hby, hab, graph_case)
+    raise ValueError(f"Unknown fixture graph: {graph_case}")
 
 
 def deep_graph(hby, hab, graph_case):
@@ -108,3 +113,35 @@ def relation_graph(hby, hab, graph_case):
     # NI2I leaves the relation intact and removes the far node's proof instead.
     return DisclosureGraph([full, far_full], nodes, bad_nodes, [hab, authority],
                            far.said if graph_case == "NI2I" else None)
+
+
+def edge_refusal_graph(hby, hab, graph_case):
+    """Vary signed malformed edge syntax or a declared far-node schema constraint."""
+    authority = hby.makeHab(name="authority")
+    far_full, far = disclosure(authority.pre, issuee=hab.pre)
+
+    def pin(value, version="1.0.0"):
+        return Schemer(sed={"$id": "", "version": version, "type": "object",
+                            "properties": {"a": {"properties": {"status": {
+                                "properties": {"value": {"const": value}}}}}}}).sed
+
+    def near(invalid):
+        leaf = dict(n=far.said, o="I2I")
+        edge = dict(d="", authority=leaf)
+        if graph_case == "unknown-leaf" and invalid:
+            leaf["o"] = "UNKNOWN"
+        if graph_case == "unknown-group":
+            edge["o"] = "UNKNOWN" if invalid else "AND"
+        if graph_case == "malformed-leaf" and invalid:
+            leaf["unexpected"] = True
+        if graph_case == "edge-schema":
+            leaf["s"] = pin("visitor" if invalid else "citizen")
+        if graph_case == "inherited-schema":
+            edge = dict(d="", authority=dict(o="AND", s=pin("visitor" if invalid else "citizen"), link=leaf))
+        if graph_case == "malformed-schema":
+            leaf["s"] = pin("citizen", "invalid-version" if invalid else "1.0.0")
+        return disclosure(hab.pre, edge=edge)
+
+    full, partial = near(False)
+    _, bad = near(True)
+    return DisclosureGraph([full, far_full], [partial, far], [bad, far], [hab, authority], None)
