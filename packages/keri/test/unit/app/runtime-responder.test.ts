@@ -3,8 +3,6 @@ import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "j
 import { SerderKERI } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -303,13 +301,12 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
         controller = remote.makeHab("controller");
       const runtime = yield* createAgentRuntime(hby);
       try {
-        ingestKeriBytes(
-          runtime,
+        yield* settleRuntimeIngress(runtime, [
           recipient.makeLocScheme(`http://127.0.0.1:${server.addr.port}`, recipient.pre, "http"),
-        );
-        ingestKeriBytes(runtime, recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true));
-        ingestKeriBytes(runtime, acceptedEventReplayMessage(remote, controller.pre, 0).message);
-        yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+          recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+          acceptedEventReplayMessage(remote, controller.pre, 0).message,
+        ]);
+        runtime.cues.clear(); // Endpoint/KEL fixture setup is separate from the cue under test.
         const cue = {
           kin: "reply" as const,
           src: sender.pre,
@@ -342,11 +339,9 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
           }
         }
         let returned = false;
+        yield* processCuesOnce(active, { hab: sender });
         const sending = yield* spawn(function*() {
-          yield* processRuntimeTurn(active, {
-            hab: sender,
-            pollMailbox: false,
-          });
+          yield* active.respondant.process();
           returned = true;
         });
         let progress!: () => void;

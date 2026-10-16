@@ -24,7 +24,7 @@ import {
   Verfer,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, processRuntimeTurn, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { introduce, type Poster } from "../../../src/app/forwarding.ts";
@@ -548,16 +548,16 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
           try {
             runtime.poster.sendBytes = poster.sendBytes; // Reuse the fixture's delegator mailbox sink; witness TCP is real.
             runtime.delegating.beginLatest(witnessed.pre, 0, { communicationHab: proxy });
-            // Start at the already-receipted anchor-waiting frontier; publication runs in the default runtime turn.
+            // Start at the already-receipted anchor-waiting frontier; publication runs through the concrete Anchorer.
             hby.db.dpwe.rem([witnessed.pre, "0"]);
             hby.db.dune.pin([witnessed.pre, "0"], event);
             assertEquals(hby.db.getKever(peer.pre), null);
-            yield* processRuntimeTurn(runtime, { pollMailbox: false });
+            yield* runtime.delegating.processAllOnce();
             assertEquals(publications > 0, true);
             assertEquals(
               hby.db.getKever(peer.pre)?.sn,
               0,
-              "Anchorer borrows the default runtime for verified TCP reply intake",
+              "Anchorer uses its borrowed protocol receiver for verified TCP reply intake",
             );
             assertEquals(runtime.delegating.complete(witnessed.pre, 0), true);
 

@@ -17,8 +17,7 @@ import {
 } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
@@ -368,19 +367,14 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
 
       const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       try {
-        ingestKeriBytes(
-          runtime,
+        yield* settleRuntimeIngress(runtime, [
           recipient.makeLocScheme(
             "http://127.0.0.1:9123",
             recipient.pre,
             "http",
           ),
-        );
-        ingestKeriBytes(
-          runtime,
           recipient.makeEndRole(recipient.pre, EndpointRoles.mailbox, true),
-        );
-        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+        ]);
 
         const said = sender.kever?.said;
         if (!said) {
@@ -476,19 +470,14 @@ Deno.test("Poster.sendExchange defaults IPEX delivery to /credential", async () 
 
       const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       try {
-        ingestKeriBytes(
-          runtime,
+        yield* settleRuntimeIngress(runtime, [
           recipient.makeLocScheme(
             "http://127.0.0.1:9126",
             recipient.pre,
             "http",
           ),
-        );
-        ingestKeriBytes(
-          runtime,
           recipient.makeEndRole(recipient.pre, EndpointRoles.mailbox, true),
-        );
-        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+        ]);
 
         const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
         const { serder } = yield* poster.sendExchange(sender, {
@@ -551,11 +540,7 @@ Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
         mailboxer,
       });
       try {
-        ingestKeriBytes(
-          runtime,
-          recipient.makeEndRole(provider.pre, EndpointRoles.mailbox, true),
-        );
-        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+        yield* settleRuntimeIngress(runtime, [recipient.makeEndRole(provider.pre, EndpointRoles.mailbox, true)]);
 
         const [serder, rawAttachments] = exchangeMessage("/fwd", {}, {
           sender: sender.pre,
@@ -627,11 +612,7 @@ Deno.test("Poster.sendExchange falls back to local witness mailbox storage", asy
 
       const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       try {
-        ingestKeriBytes(
-          runtime,
-          witness.makeLocScheme("http://127.0.0.1:9124", witness.pre, "http"),
-        );
-        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+        yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9124", witness.pre, "http")]);
 
         const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
         const { serder, deliveries } = yield* poster.sendExchange(sender, {
@@ -728,17 +709,13 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
         const runtime = yield* createAgentRuntime(hby);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
-            ingestKeriBytes(runtime, msg);
+            yield* settleRuntimeIngress(runtime, [msg]);
           }
-          ingestKeriBytes(
-            runtime,
-            remoteWitness.makeLocScheme(
-              `http://127.0.0.1:${port}`,
-              remoteWitness.pre,
-              "http",
-            ),
-          );
-          yield* processRuntimeTurn(runtime, { pollMailbox: false });
+          yield* settleRuntimeIngress(runtime, [remoteWitness.makeLocScheme(
+            `http://127.0.0.1:${port}`,
+            remoteWitness.pre,
+            "http",
+          )]);
 
           const message = sender.query(
             recipient.pre,
@@ -918,15 +895,10 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
 
       const runtime = yield* createAgentRuntime(hby);
       try {
-        ingestKeriBytes(
-          runtime,
+        yield* settleRuntimeIngress(runtime, [
           sender.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
-        );
-        ingestKeriBytes(
-          runtime,
           sender.makeEndRole(witness.pre, EndpointRoles.witness, true),
-        );
-        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+        ]);
 
         const expected = concatBytes(
           ...hby.db.clonePreIter(sender.pre),
@@ -969,8 +941,7 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
           ),
           true,
         );
-        ingestKeriBytes(runtime, remote.receipt(sender.kever!.serder));
-        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+        yield* settleRuntimeIngress(runtime, [remote.receipt(sender.kever!.serder)]);
         const capture = hby.db.replay;
         hby.db.replay = () => {
           throw new Error("suppressed introduction must not capture");
@@ -1025,11 +996,7 @@ Deno.test("Poster.sendBytes with direct delivery does not fall back to witnesses
 
       const runtime = yield* createAgentRuntime(hby);
       try {
-        ingestKeriBytes(
-          runtime,
-          witness.makeLocScheme("http://127.0.0.1:9126", witness.pre, "http"),
-        );
-        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+        yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9126", witness.pre, "http")]);
 
         const poster = new Poster(hby);
         yield* poster.sendBytes(sender, {
@@ -1107,23 +1074,15 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
 
       const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
       try {
-        ingestKeriBytes(
-          runtime,
+        yield* settleRuntimeIngress(runtime, [
           recipient.makeEndRole(mailboxHost.pre, EndpointRoles.mailbox, true),
-        );
-        ingestKeriBytes(
-          runtime,
           recipient.makeEndRole(agentHost.pre, EndpointRoles.agent, true),
-        );
-        ingestKeriBytes(
-          runtime,
           recipient.makeEndRole(
             controllerHost.pre,
             EndpointRoles.controller,
             true,
           ),
-        );
-        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+        ]);
 
         const forwarded = sender.query(
           recipient.pre,

@@ -8,7 +8,7 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { action, type Operation, run } from "npm:effection@^3.6.0";
 import type { SerderKERI } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, processRuntimeTurn, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { buildCesrStreamRequest } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { createHabery, eventPayloadMessage } from "../../../src/app/habbing.ts";
@@ -729,10 +729,6 @@ async function postTufaGroupDelegationRequest(args: {
           recipient: args.delegatorPre,
           topic: DELEGATE_MAILBOX_TOPIC,
           message: wireMessage,
-        });
-        yield* processRuntimeTurn(runtime, {
-          hab: member1,
-          pollMailbox: true,
         });
         return group;
       } finally {

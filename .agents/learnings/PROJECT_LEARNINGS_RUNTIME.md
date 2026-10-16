@@ -21,12 +21,16 @@ through settleRuntimeIngress, then verify accepted state; they do not drive OOBI
 mailbox or output workers. Host operators validate/reconcile required endpoint
 state before entering the kernel. Protocol-only fixtures likewise pass their exact
 records/replays through direct intake; do not restore a whole-runtime test pump.
+Phase-specific unit checks invoke the component operation under test. Keep fixture
+setup cues distinct from the later operation's cues; clearing setup records must
+not erase the new facts asserted by that operation's regression.
 The hollow seedHabs loop and forwarding-only mailbox host wrapper are deleted. The kernel requires actual HTTP configuration,
 passes only runtime to its TCP companion, and owns service/prefix selection once.
 Choose real dependencies at construction. Generic cue preparation/delivery
 wrappers and Reactor's application callback gate are removed. Finite CLI waits
 start the same workers as hosts and join them before returning; serial whole-
-runtime pumping still requires removal. These cuts do not complete qualification.
+runtime APIs and their remaining test callers still require removal. These cuts
+do not complete qualification.
 
 ## Protocol records and publication
 

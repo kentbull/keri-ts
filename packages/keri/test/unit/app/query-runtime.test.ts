@@ -4,15 +4,15 @@ import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/asser
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import {
   createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
   runAgentRuntime,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 
 import { createHabery } from "../../../src/app/habbing.ts";
 import { fetchResponseHandle } from "../../../src/app/httping.ts";
 import { readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 
+import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { witnessReceiptPost } from "../../../src/app/witnessing.ts";
 
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -48,12 +48,10 @@ Deno.test("tufa agent host stays protocol-only", async () => {
       });
       pre = hab.pre;
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
     } finally {
       yield* hby.close();
     }
@@ -124,18 +122,11 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         toad: 0,
       });
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(baseUrl, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(baseUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      ingestKeriBytes(
-        runtime,
         hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true),
-      );
-      yield* processRuntimeTurn(runtime, {
-        hab,
-      });
+      ]);
     } finally {
       yield* hby.close();
     }
@@ -345,33 +336,19 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
 
     try {
       for (const msg of relayHby.db.clonePreIter(relay.pre)) {
-        ingestKeriBytes(proxyRuntime, msg);
+        yield* settleRuntimeIngress(proxyRuntime, [msg]);
       }
-      ingestKeriBytes(proxyRuntime, proxyMailboxAuth);
-      ingestKeriBytes(proxyRuntime, relayLoc);
-      ingestKeriBytes(proxyRuntime, witnessLoc);
-      yield* processRuntimeTurn(proxyRuntime, {
-        hab: proxy,
-        pollMailbox: false,
-      });
+      yield* settleRuntimeIngress(proxyRuntime, [proxyMailboxAuth, relayLoc, witnessLoc]);
 
       for (const msg of proxyHby.db.clonePreIter(proxy.pre)) {
-        ingestKeriBytes(relayRuntime, msg);
+        yield* settleRuntimeIngress(relayRuntime, [msg]);
       }
-      ingestKeriBytes(relayRuntime, proxyMailboxAuth);
-      ingestKeriBytes(relayRuntime, relayLoc);
-      ingestKeriBytes(
-        relayRuntime,
+      yield* settleRuntimeIngress(relayRuntime, [
+        proxyMailboxAuth,
+        relayLoc,
         relay.makeEndRole(relay.pre, EndpointRoles.controller, true),
-      );
-      ingestKeriBytes(
-        relayRuntime,
         relay.makeEndRole(relay.pre, EndpointRoles.mailbox, true),
-      );
-      yield* processRuntimeTurn(relayRuntime, {
-        hab: relay,
-        pollMailbox: false,
-      });
+      ]);
 
       yield* waitForServer(witnessPort);
       yield* waitForServer(relayPort);
@@ -565,11 +542,8 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
         return emission;
       };
       try {
-        ingestKeriBytes(runtime, queryBytes);
-        yield* processRuntimeTurn(runtime, {
-          hab: witness,
-          pollMailbox: false,
-        });
+        yield* settleRuntimeIngress(runtime, [queryBytes]);
+        yield* processCuesOnce(runtime, { hab: witness });
 
         assertEquals(
           emissions.some((emission) =>
