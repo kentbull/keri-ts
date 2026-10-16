@@ -4,6 +4,7 @@
 through /, HttpEnd and the normal KERIpy parser/verification path.
 """
 from contextlib import contextmanager
+import copy
 import time
 import traceback
 from urllib.request import Request, urlopen
@@ -12,14 +13,14 @@ import falcon
 from hio.base import doing
 from hio.core import http
 from keri import Kinds, Vrsn_2_0
-from keri.acdc import admit, agree, apply, grant, loadHandlers, offer, spurn
+from keri.acdc import acdcmap, admit, agree, apply, grant, loadHandlers, offer, spurn
 from keri.app import openCF, openHby
 from keri.app.indirecting import HttpEnd, createHttpServer
 from keri.core import Diger, Kevery, Number, Parser, messagize
 from keri.peer import Exchanger
-from keri.peer.exchanging import loadParsedNestedSubstreams
+from keri.peer.exchanging import loadParsedNestedSubstreams, serializeMessage
 
-from ipex_disclosures import graph_disclosures
+from ipex_disclosures import graph_disclosures, partial_disclosure
 
 
 class Recorder:
@@ -55,7 +56,7 @@ class IpexPeer:
 
     def info(self):
         return dict(pre=self.hab.pre, url=f"http://127.0.0.1:{self.server.servant.ha[1]}/",
-                    schema=self.graph.full.sad["s"]["$id"], commitment=self.graph.full.said)
+                    schema=self.graph.full_nodes[0].sad["s"]["$id"], commitment=self.graph.full_nodes[0].said)
 
     def stop(self):
         self.running = False
@@ -86,20 +87,46 @@ class IpexPeer:
         for issuer in self.graph.issuers:
             self.post(issuer.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
 
-    def signed(self, node):
+    def signed(self, node, proof_body=None):
         """Each child is signed by its own issuer, independently of the outer sender."""
         owner = next(issuer for issuer in self.graph.issuers if issuer.pre == node.israid)
         return messagize(node, tsgs=[(
             owner.kever.prefixer, Number(sn=owner.kever.lastEst.s),
-            Diger(qb64=owner.kever.lastEst.d), owner.sign(ser=node.raw, indexed=True))],
+            Diger(qb64=owner.kever.lastEst.d), owner.sign(ser=(proof_body if proof_body is not None else node).raw, indexed=True))],
             gvrsn=Vrsn_2_0)
+
+    def disclosed(self, defect=False):
+        """Derive negotiated partials afresh; test defects affect only carried evidence."""
+        if defect is True:
+            return self.graph.bad_nodes
+        nodes = []
+        for full, (_, _, fields) in zip(self.graph.full_nodes, self.plan, strict=True):
+            fields = list(fields)
+            if defect == "extra":
+                fields.append("a/private/")
+            if defect == "missing":
+                fields.pop()
+            nodes.append(partial_disclosure(full, fields))
+        if defect == "altered":
+            node = nodes[0]
+            attributes = copy.deepcopy(node.sad["a"])
+            attributes["d"] = ""
+            attributes["status"]["d"] = ""
+            attributes["status"]["value"] = "forged-value"
+            nodes[0] = acdcmap(node.israid, uuid=node.sad["u"], schema=node.sad["s"],
+                               attribute=attributes, edge=node.sad.get("e"))
+        return nodes
+
+    def replay(self, said):
+        """Send actual retained exchange evidence through the public CESR endpoint."""
+        self.post(serializeMessage(self.hby, said))
 
     def message(self, verb, prior, invalid):
         recipient = self.remote["pre"]
         if verb == "apply":
             return apply(self.hab, recipient, "status only", modifiers=dict(dp=[self.plan]))
         if verb == "offer":
-            return offer(self.hab, "status only", origin=None if self.graph_case else self.graph.nodes[0],
+            return offer(self.hab, "status only", origin=None if self.graph_case else self.disclosed()[0],
                          artifacts=None if self.graph_case else [], apply=prior, recp=recipient,
                          modifiers=dict(dp=[self.plan]) if prior is None else None)
         if verb == "agree":
@@ -109,9 +136,10 @@ class IpexPeer:
         if verb == "admit":
             return admit(self.hab, "accepted", prior)
         if verb == "grant":
-            nodes = self.graph.bad_nodes if invalid else self.graph.nodes
-            proofs = [node if invalid and node.said == self.graph.unsigned else self.signed(node)
-                      for node in nodes]
+            nodes = self.disclosed(invalid)
+            proofs = [node if invalid and node.said == self.graph.unsigned else
+                      self.signed(node, self.disclosed()[0] if invalid == "altered" and i == 0 else node)
+                      for i, node in enumerate(nodes)]
             return grant(self.hab, recipient, "status only", origin=proofs[0],
                          artifacts=proofs[1:], agree=prior)
         raise ValueError(f"Unknown IPEX verb: {verb}")
@@ -130,7 +158,9 @@ class IpexPeer:
         """Expose observations; scenario assertions belong to the calling test."""
         db = self.hby.db
         messages = [body for _, body in db.exns.getTopItemIter()]
-        accepted_grant = next((body for body in messages if body.route == "/ipex/grant"), None)
+        selected = db.exns.get(keys=(inspect,)) if inspect else None
+        accepted_grant = selected if selected and selected.route == "/ipex/grant" else next(
+            (body for body in messages if body.route == "/ipex/grant"), None)
         nests = loadParsedNestedSubstreams(self.hby, accepted_grant.said) if accepted_grant else []
         inspected = None if inspect is None else dict(
             accepted=db.exns.get(keys=(inspect,)) is not None,
@@ -159,6 +189,9 @@ class PeerControl:
                 rep.media = dict(connected=True)
             elif action == "send":
                 rep.media = self.peer.send(**command)
+            elif action == "replay":
+                self.peer.replay(**command)
+                rep.media = dict(replayed=True)
             elif action == "snapshot":
                 rep.media = self.peer.snapshot(**command)
             else:
