@@ -23,7 +23,7 @@ import { acdcmap } from "../../../src/acdc/messaging.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex-building.ts";
 import type { DisclosurePlan } from "../../../src/app/ipex-graph.ts";
 import type { IpexRoute } from "../../../src/app/ipexing.ts";
@@ -69,6 +69,88 @@ function disclosure(
   return { full, partial };
 }
 
+type GraphCase = "I2I" | "NI2I" | "E1E" | "AND" | "OR" | "multi-hop" | "branching";
+/** Concrete credential bodies, issuer keys and the deliberately missing proof. */
+interface DisclosureGraph {
+  full: SerderACDC;
+  nodes: SerderACDC[];
+  badNodes: SerderACDC[];
+  issuers: Hab[];
+  unsigned: string | null;
+}
+
+/** Build the issuer-side graph independently of transport and conversation state. */
+function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): DisclosureGraph {
+  let { full, partial } = disclosure(hab.pre);
+  const authority = graphCase ? hby.makeHab("authority") : undefined;
+  let nodes = [partial], badNodes: SerderACDC[] = [];
+  if (authority && (graphCase === "multi-hop" || graphCase === "branching")) {
+    const ancestor = hby.makeHab("ancestor");
+    const tail = disclosure(ancestor.pre, { issuee: authority.pre });
+    const middle = disclosure(authority.pre, {
+      issuee: hab.pre,
+      edge: { d: "", authority: { n: tail.partial.said, o: "I2I" } },
+    });
+    const edge: MapperMap = { d: "", authority: { n: middle.partial.said, o: "I2I" } };
+    nodes = [middle.partial, tail.partial];
+    const issuers = [hab, authority, ancestor];
+    if (graphCase === "branching") {
+      const auditor = hby.makeHab("auditor");
+      const audit = disclosure(auditor.pre, {
+        issuee: ancestor.pre,
+        edge: { d: "", authority: { n: tail.partial.said, o: "NI2I" } },
+      });
+      edge.audit = { n: audit.partial.said, o: "NI2I" };
+      nodes = [middle.partial, audit.partial, tail.partial];
+      issuers.push(auditor);
+    }
+    const root = disclosure(hab.pre, { edge });
+    nodes.unshift(root.partial);
+    return {
+      full: root.full,
+      nodes,
+      issuers,
+      badNodes: graphCase === "multi-hop" ? nodes.slice(0, -1) : nodes,
+      unsigned: graphCase === "branching" ? tail.partial.said : null,
+    };
+  }
+  if (authority) {
+    const far = disclosure(authority.pre, { issuee: graphCase === "I2I" ? hab.pre : authority.pre });
+    /** Vary relation truth while retaining independently signed node evidence. */
+    const near = (far: SerderACDC, invalid = false) =>
+      disclosure(hab.pre, {
+        issuee: authority.pre,
+        edge: graphCase === "AND" || graphCase === "OR"
+          ? {
+            d: "",
+            o: graphCase,
+            authority: {
+              o: graphCase === "AND" ? "OR" : "AND",
+              link: { n: far.said, o: invalid && graphCase === "OR" ? "I2I" : "NI2I" },
+              sameIssuee: { n: far.said, o: graphCase === "AND" ? "I2I" : "E1E" },
+            },
+            check: { n: far.said, o: graphCase === "AND" && !invalid ? "E1E" : "I2I" },
+          }
+          : { d: "", authority: { n: far.said, o: graphCase! } },
+      });
+    ({ full, partial } = near(far.partial));
+    nodes = [partial, far.partial];
+    if (graphCase === "NI2I") badNodes = nodes;
+    else if (graphCase === "AND" || graphCase === "OR") badNodes = [near(far.partial, true).partial, far.partial];
+    else {
+      const badFar = disclosure(authority.pre, { issuee: graphCase === "I2I" ? authority.pre : hab.pre });
+      badNodes = [near(badFar.partial).partial, badFar.partial];
+    }
+  }
+  return {
+    full,
+    nodes,
+    badNodes,
+    issuers: authority ? [hab, authority] : [hab],
+    unsigned: graphCase === "NI2I" ? nodes[1].said : null,
+  };
+}
+
 /** Wait on observed peer state with an elapsed deadline; no whole-runtime pumping. */
 async function observed<T>(label: string, read: () => T | null | undefined): Promise<T> {
   const deadline = performance.now() + 35_000;
@@ -94,7 +176,7 @@ function jsonFile<T>(path: string): T | null {
 async function conversation(
   tsIssuer: boolean,
   mode: Mode,
-  operator?: "I2I" | "NI2I" | "E1E" | "AND" | "OR",
+  graphCase?: GraphCase,
 ): Promise<void> {
   const context = await createInteropContext();
   let child: ReturnType<typeof spawnChild> | undefined;
@@ -109,50 +191,20 @@ async function conversation(
       });
       try {
         const hab = hby.makeHab("typescript");
-        let { full, partial } = disclosure(hab.pre);
-        const authority = operator && tsIssuer ? hby.makeHab("authority") : undefined;
-        let nodes = [partial], badNodes: SerderACDC[] = [];
-        if (authority) {
-          const far = disclosure(authority.pre, { issuee: operator === "I2I" ? hab.pre : authority.pre });
-          /** Vary relation truth while retaining independently signed node evidence. */
-          const near = (far: SerderACDC, invalid = false) =>
-            disclosure(hab.pre, {
-              issuee: authority.pre,
-              edge: operator === "AND" || operator === "OR"
-                ? {
-                  d: "",
-                  o: operator,
-                  authority: {
-                    o: operator === "AND" ? "OR" : "AND",
-                    link: { n: far.said, o: invalid && operator === "OR" ? "I2I" : "NI2I" },
-                    sameIssuee: { n: far.said, o: operator === "AND" ? "I2I" : "E1E" },
-                  },
-                  check: { n: far.said, o: operator === "AND" && !invalid ? "E1E" : "I2I" },
-                }
-                : { d: "", authority: { n: far.said, o: operator! } },
-            });
-          ({ full, partial } = near(far.partial));
-          nodes = [partial, far.partial];
-          if (operator === "NI2I") badNodes = nodes;
-          else if (operator === "AND" || operator === "OR") badNodes = [near(far.partial, true).partial, far.partial];
-          else {
-            const badFar = disclosure(authority.pre, { issuee: operator === "I2I" ? authority.pre : hab.pre });
-            badNodes = [near(badFar.partial).partial, badFar.partial];
-          }
-        }
+        const { full, nodes, badNodes, issuers, unsigned } = graphDisclosures(
+          hby,
+          hab,
+          tsIssuer ? graphCase : undefined,
+        );
         const schema = (full.sad!.s as { $id: string }).$id;
-        const plan: DisclosurePlan = [
-          [schema, "/", ["a/status/"]],
-          ...(operator
-            ? [
-              [
-                schema,
-                operator === "AND" || operator === "OR" ? "/e/authority/link/_/" : "/e/authority/_/",
-                ["a/status/"],
-              ] as const,
-            ]
-            : []),
-        ];
+        const paths = !graphCase
+          ? ["/"]
+          : graphCase === "multi-hop"
+          ? ["/", "/e/authority/_/", "/e/authority/_/e/authority/_/"]
+          : graphCase === "branching"
+          ? ["/", "/e/authority/_/", "/e/audit/_/", "/e/authority/_/e/authority/_/"]
+          : ["/", graphCase === "AND" || graphCase === "OR" ? "/e/authority/link/_/" : "/e/authority/_/"];
+        const plan: DisclosurePlan = paths.map((path) => [schema, path, ["a/status/"]]);
         const receivedGrants: { said: string; kind: string | undefined }[] = [];
         server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
           try {
@@ -183,7 +235,7 @@ async function conversation(
             `http://127.0.0.1:${server.addr.port}/`,
             schema,
             String(randomPort()),
-            operator ?? "-",
+            graphCase ?? "-",
           ],
           context.env,
           context.repoRoot,
@@ -217,18 +269,10 @@ async function conversation(
               })
             );
           };
-          const inception = hab.kever!.serder;
-          const kel = messagize(inception, {
-            sigers: hab.sign(inception.raw, true),
-            gvrsn: Vrsn_2_0,
-            pipelined: true,
-            genusify: true,
-          });
-          await post((await parseBytes(kel))[0]);
-          if (authority) {
-            const inception = authority.kever!.serder;
+          for (const issuer of issuers) {
+            const inception = issuer.kever!.serder;
             const kel = messagize(inception, {
-              sigers: authority.sign(inception.raw, true),
+              sigers: issuer.sign(inception.raw, true),
               gvrsn: Vrsn_2_0,
               pipelined: true,
               genusify: true,
@@ -246,7 +290,8 @@ async function conversation(
               }));
           /** Sign a child with its issuer's key, independently of the outer sender. */
           const signed = (body: SerderACDC | SerderKERI): CesrFrame => {
-            const owner = body instanceof SerderACDC && body.issuer === authority?.pre ? authority! : hab;
+            const owner = body instanceof SerderACDC ? issuers.find((issuer) => issuer.pre === body.issuer) : hab;
+            assertExists(owner, "fixture node issuer");
             return ({
               body,
               gvrsn: Vrsn_2_0,
@@ -266,7 +311,7 @@ async function conversation(
           const send = async (verb: string, prior?: SerderKERI, invalid = false) => {
             const carried = verb === "grant"
               ? invalid ? badNodes : nodes
-              : verb === "offer" && !operator
+              : verb === "offer" && !graphCase
               ? nodes
               : [];
             const body = ipexExnBody(hab.pre, `/ipex/${verb}` as IpexRoute, carried, {
@@ -277,8 +322,8 @@ async function conversation(
             });
             const frame = signed(body);
             if (carried.length) {
-              frame.nests = carried.map((node, index) =>
-                verb === "grant" && !(invalid && operator === "NI2I" && index === 1)
+              frame.nests = carried.map((node) =>
+                verb === "grant" && !(invalid && node.said === unsigned)
                   ? signed(node)
                   : { body: node, attachments: [], gvrsn: Vrsn_2_0 }
               );
@@ -297,7 +342,7 @@ async function conversation(
               if (mode === "spurn-offer") await received("spurn");
               else {
                 const agree = await received("agree");
-                if (operator) rejected = (await send("grant", agree, true)).said!;
+                if (graphCase) rejected = (await send("grant", agree, true)).said!;
                 await send("grant", agree);
                 await received("admit");
               }
@@ -341,7 +386,7 @@ async function conversation(
             return body;
           });
           assertEquals(lineage.map((body) => body.said!), result.lineage);
-          if (operator) {
+          if (graphCase) {
             if (tsIssuer) assertEquals(result.rejected, rejected);
             else {
               rejected = result.rejected!;
@@ -368,7 +413,7 @@ async function conversation(
           } else {
             const grant = lineage.find((body) => body.route === "/ipex/grant")!;
             const nests = loadNests(hby.db, grant.said!);
-            assertEquals(nests.length, operator ? 2 : 1);
+            assertEquals(nests.length, plan.length);
             assertEquals(nests.map((nest) => nest.body.said!), result.nodes);
             for (const nest of nests) {
               assertInstanceOf(nest.body, SerderACDC);
@@ -405,8 +450,12 @@ for (const tsIssuer of [true, false]) {
   for (const mode of ["apply", "offer", "spurn-apply", "spurn-offer"] as const) {
     Deno.test(`IPEX ${tsIssuer ? "TS → Py" : "Py → TS"}: ${mode} over HTTP`, () => conversation(tsIssuer, mode));
   }
-  for (const operator of ["I2I", "NI2I", "E1E", "AND", "OR"] as const) {
-    Deno.test(`IPEX ${tsIssuer ? "TS → Py" : "Py → TS"}: ${operator} chain refusal then admission`, () =>
-      conversation(tsIssuer, "apply", operator));
+  for (const graphCase of ["I2I", "NI2I", "E1E", "AND", "OR"] as const) {
+    Deno.test(`IPEX ${tsIssuer ? "TS → Py" : "Py → TS"}: ${graphCase} chain refusal then admission`, () =>
+      conversation(tsIssuer, "apply", graphCase));
+  }
+  for (const graphCase of ["multi-hop", "branching"] as const) {
+    Deno.test(`IPEX ${tsIssuer ? "TS → Py" : "Py → TS"}: ${graphCase} partial graph refusal then admission`, () =>
+      conversation(tsIssuer, "apply", graphCase));
   }
 }

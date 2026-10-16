@@ -76,8 +76,10 @@ export const suites: Record<string, TestSuite> = {
     files: [
       "test/integration/app/interop-acdc-mixed-chain-i2i.test.ts",
       "test/integration/app/interop-acdc-mixed-chain-ni2i.test.ts",
-      "test/integration/app/interop-ipex-disclosure.test.ts",
     ],
+  },
+  "interop-ipex-disclosure": {
+    files: ["test/integration/app/interop-ipex-disclosure.test.ts"],
   },
   "interop-acdc-extended": {
     files: [
@@ -264,6 +266,7 @@ export const interop = [
   "interop-acdc-verifier",
   "interop-acdc-extended",
   "interop-acdc-deep",
+  "interop-ipex-disclosure",
   "interop-delegation",
   "interop-witness-main",
   "interop-witness-cli",

@@ -83,7 +83,8 @@ a 600-second process limit and at most two jobs running concurrently. Its full
 ## Verified KERIpy selection
 
 The default CLI runtime is the published `kentbull/keripy` `mailbox-impl` branch
-at `8c272ac192837d8b64048192d45448f28356e409`, rebased on upstream main
+selected by [`scripts/ci/keripy-reference.json`](../../../scripts/ci/keripy-reference.json),
+currently `331f32e4de13cc5cb699587c5b1f1e5bc4468035`, rebased on upstream main
 `c102367ea0b8416ffb3c01403d18b3fd4a6a38bf` plus mailbox commands, admission
 checks, explicit protocol/genus selection for mailbox startup and authorization,
 the transferable receipt-table lookup repair, and explicit VC export genus
@@ -128,7 +129,7 @@ For the maintained mailbox-on-main qualification, select its exact checkout and 
 
 ```bash
 export KERIPY_INTEROP_ROOT=/Users/kbull/enc/keri/worktrees/keripy/mailbox-impl
-export KERIPY_INTEROP_EXPECTED_COMMIT=8c272ac192837d8b64048192d45448f28356e409
+export KERIPY_INTEROP_EXPECTED_COMMIT=$(node -p 'require("./scripts/ci/keripy-reference.json").commit')
 export KERIPY_INTEROP_PYTHON="$KERIPY_INTEROP_ROOT/venv/bin/python"
 export LMDB_DATA_V1=true
 export KERI_TEST_TIMINGS_DIR=/tmp/keri-mailbox-main-qualification

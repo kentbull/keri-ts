@@ -24,10 +24,14 @@ Deno.test("PR scope preserves path and release defaults without an override", ()
 });
 
 Deno.test("PR scope credits local units only for the exact head and retains selected interop", () => {
-  const body = block({ unit: { local: head }, interop: ["interop-delegation"], package: false });
+  const body = block({
+    unit: { local: head },
+    interop: ["interop-delegation", "interop-ipex-disclosure"],
+    package: false,
+  });
   assertEquals(requestedScope(body, head), {
     unit: { kind: "local", head },
-    interop: ["interop-delegation"],
+    interop: ["interop-delegation", "interop-ipex-disclosure"],
     packageSmoke: false,
   });
   assertThrows(() => requestedScope(body, "b".repeat(40)), Error, "exact head");

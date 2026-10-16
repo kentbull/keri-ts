@@ -12,9 +12,21 @@ relaxes identity without allowing an unsigned far node; groups distinguish mixed
 true/false reductions. Two independent issuer keys authenticate the chain nodes.
 Both peers' stores assert accepted lineage, refused-grant absence and retained
 partial nodes. Both nodes reveal status while retaining a private commitment.
+Four larger-graph cases add a three-node I2I chain and a branching four-node
+graph with a shared ancestor, in both directions. A missing descendant and an
+unsigned shared ancestor are refused before complete controls succeed through
+admit. Every node retains a partial disclosure. These are flat sibling artifacts
+representing graph edges, not unsupported child-owned nested streams.
 The selected reference is consolidated mailbox fork `331f32e4`; #485's initial
-eight cases passed all twelve selected CI owners before the chain extension.
-This does not cover multi-hop/branching graphs, all malformed-edge/schema controls,
+eight cases passed all twelve selected CI owners; #486's eighteen cases passed
+the selected ACDC deep owner before the larger-graph extension.
+The file now has its own `interop-ipex-disclosure` owner, selected independently
+for focused PRs and included in full mode. The CLI helper and both manual platform/
+extended workflows take their functional peer pin from
+[`keripy-reference.json`](../../../scripts/ci/keripy-reference.json); the older
+workflow overrides no longer select a different fork revision. Frozen CESR table
+sources remain a separate reference.
+This does not cover all malformed-edge/schema controls,
 multiple/progressive attribute disclosures, multisig, witnesses/mailboxes, restart
 or presentation-registry KRAM cutoffs.
 The broader family gates below remain open until their real assertions pass.
@@ -106,8 +118,8 @@ actual stored representation, not a separately retained producer object.
 1. Qualify the maintained pairwise single-controller HTTP cases and refreshed
    consolidated mailbox reference pin in CI. Local real-peer coverage now includes
    offer/agree/admit and dedicated spurn cases in both directions.
-2. Qualify the focused two-node leaf/group cases in both directions, then extend
-   to multi-hop/branching graphs and malformed-edge/schema controls. In separate
+2. Qualify the maintained two-node leaf/group and multi-hop/branching cases in
+   both directions, then extend malformed-edge/schema controls. In separate
    keri-ts-only cases, refactor operator/node-validity
    decisions first, then implement DI2I and sufficiently defined NOT semantics in
    cohesive follow-ups. Keep both operators out of Python interop until supported.
