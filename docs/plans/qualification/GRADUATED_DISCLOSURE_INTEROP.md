@@ -27,8 +27,8 @@ extended workflows take their functional peer pin from
 workflow overrides no longer select a different fork revision. Frozen CESR table
 sources remain a separate reference.
 This does not cover all malformed-edge/schema controls,
-multiple/progressive attribute disclosures, multisig, witnesses/mailboxes, restart
-or presentation-registry KRAM cutoffs.
+multiple/progressive attribute disclosures. Separate topology and presentation
+cases below cover narrower composed paths; their remaining limits stay explicit.
 The broader family gates below remain open until their real assertions pass.
 
 ## Pairwise cases
@@ -165,6 +165,23 @@ registry proofs authenticate the credential, retained partials hide plaintext an
 nested children never become independently dispatched credentials. This qualifies
 mailbox-carried TS IPEX with a Python provider, not Python credential processors,
 presentation cutoffs over mailbox delivery or a witnessed process crash.
+
+`interop-ipex-mailbox-pairwise.test.ts` adds independent Python and TypeScript
+credential processors in both disclosure directions through the real Python
+mailbox. The TS controller is single-signer or two-of-two with separate member
+stores; both controllers have three Python witnesses with threshold two. Python
+adds its witnesses by a receipted rotation. Actual Python StreamPoster/Poller and
+TS Poster/signed KRAM queries carry the complete apply-through-admit lineage.
+Three-node I2I chains and four-node I2I/NI2I branching graphs reject a delivered
+missing/unsigned ancestor before the valid grant. Both processors retain the
+same partial nodes and commitments without hidden plaintext or independent child
+dispatch. Provider KEL/receipt/cache observations and each witness store establish
+actual authentication and witnessing, separately from HTTP status.
+
+These cases use signed unregistered credentials. They do not qualify Python
+presentation-registry intake, mailbox presentation cutoffs or witnessed crash
+recovery. The v1 witness KEL/OOBI context is explicit and independent of v2 IPEX
+and mailbox framing. No reference source or accepted protocol rows are patched.
 
 Check accepted exchange lineage and both parties' state through admit, verified
 credential/root/chain commitments, retained partial nests, absence of private

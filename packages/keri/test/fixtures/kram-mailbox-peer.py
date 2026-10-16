@@ -152,6 +152,8 @@ class Control:
                     receipts=sorted(sig.index for sig in self.hby.db.wigs.get(keys=(pre, sender.serder.said))))
                 rep.media = dict(pid=os.getpid(), provider=self.host.hab.pre,
                     sender=state, rows=rows,
+                    queries=[dict(said=keys[-1], stamp=cache.mdt)
+                             for keys, cache in self.hby.db.kramMSGC.getTopItemIter(keys=(pre,))],
                     streams=[cue["serder"].said for cue in cues if cue["kin"] == "stream"])
             elif action == "send":
                 request = Request(command["url"], data=base64.b64decode(command["wire"]),

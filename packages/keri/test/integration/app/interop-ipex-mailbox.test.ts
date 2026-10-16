@@ -69,7 +69,7 @@ for (const count of [1, 2]) {
         );
         await withStartedChild(provider, port, async () => {
           const providerPre = (await inspectMailbox(mailboxUrl, "unknown-controller")).provider;
-          await run(function* () {
+          await run(function*() {
             const hbys: Habery[] = [], runtimes: AgentRuntime[] = [];
             const listeners: {
               server: Deno.HttpServer<Deno.NetAddr>;
@@ -284,7 +284,7 @@ for (const count of [1, 2]) {
                   const response = yield* requestFrame(mailboxUrl, queryFrame, { signal: AbortSignal.timeout(10_000) });
                   assertEquals(response.status, 200);
                   let received = false;
-                  yield* consumeMailboxSse(response, new AbortController(), function* (event) {
+                  yield* consumeMailboxSse(response, new AbortController(), function*(event) {
                     const [forwarded] = parseBytes(event.msg);
                     assertEquals(forwarded.body.raw, body.raw);
                     assertEquals(new TextDecoder().decode(event.msg).includes("mailbox-secret"), false);

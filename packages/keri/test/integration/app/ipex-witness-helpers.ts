@@ -30,7 +30,7 @@ export function nonce(): string {
 
 /** Actual detached-header egress; transport success is followed by store assertions. */
 export async function post(url: string, frame: CesrFrame): Promise<void> {
-  await run(function* () {
+  await run(function*() {
     const response = yield* requestFrame(url, frame, { signal: AbortSignal.timeout(10_000) });
     const body = yield* call(() => response.text());
     assertEquals(response.status, 204, body);
@@ -102,6 +102,7 @@ export async function inspectMailbox(url: string, pre: string, saids: string[] =
   provider: string;
   sender: { event: string; witnesses: string[]; threshold: number; receipts: number[] } | null;
   rows: { said: string; cached: boolean; pending: boolean }[];
+  queries: { said: string; stamp: string }[];
 }> {
   const response = await fetch(`${url}_fixture`, {
     method: "POST",
