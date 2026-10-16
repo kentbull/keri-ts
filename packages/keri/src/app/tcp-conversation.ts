@@ -1,27 +1,27 @@
-import { ResourceAdmissionError } from "cesr-ts";
-import { toEffectionFrames } from "cesr-ts/effection"; /** Application composition of a byte-level TCP connection with CESR parsing and guarded dispatch. */
-import { call, each, type Operation, resource } from "npm:effection@^3.6.0";
+/** Application composition of actual TCP receive and transmit lifetimes. */
+import { parse } from "cesr-ts";
+import { call, ensure, on, type Operation, race, spawn } from "npm:effection@^3.6.0";
 import type { KeriDispatchEnvelope } from "../core/dispatch.ts";
+import { rethrowCleanupFailure } from "./abortable.ts";
+import { chunkBytes } from "./byte-source.ts";
 import type { DispatchDecision } from "./parsering.ts";
 import type { Reactor } from "./reactor.ts";
-import type { RuntimeServices } from "./runtime-services.ts";
+import { socketBytes } from "./socket-source.ts";
 import {
-  attemptSendCesrTcp,
-  streamCesrTcp,
-  type TcpRead,
+  openTcpConnection,
+  sendCesrTcpSocket,
   type TcpSendOptions,
   type TcpSourceFactory,
   type TcpTransmission,
 } from "./tcp-egress.ts";
 
-/** Components borrowed by this application flow; the transport receives only a byte consumer. */
+/** Protocol processor borrowed only by this application; transport receives no consumer. */
 export interface TcpReplyReceiver {
-  services: RuntimeServices;
   reactor: Reactor;
 }
 
 /** Same-socket protocol processing selected explicitly by the application owner. */
-export interface TcpConversationOptions extends Omit<TcpSendOptions, "read"> {
+export interface TcpConversationOptions extends TcpSendOptions {
   replies: TcpReplyReceiver & {
     local?: boolean;
     /** Borrow guarded envelopes only for this call; never reenter Reactor or implicitly drain cues. */
@@ -36,32 +36,13 @@ export interface TcpConversation {
   receive: { kind: "eof"; processedFrames: number };
 }
 
-/** Application-owned result includes protocol processing; transport remains byte-only. */
-export type TcpConversationAttempt = TcpConversation | { kind: "refuse"; error: ResourceAdmissionError };
-
-/** Return only invocation-owned refusals after both transport and parser cleanup join. */
-export function attemptConverseCesrTcp(
-  url: string,
-  bytes: Uint8Array,
-  options: TcpConversationOptions,
-): Operation<TcpConversationAttempt> {
-  return conversation(url, bytes, options);
-}
-
-/** Strict callers unwrap a completed application attempt. */
-function* completedConversation(attempt: Operation<TcpConversationAttempt>): Operation<TcpConversation> {
-  const result = yield* attempt;
-  if (result.kind === "refuse") throw result.error;
-  return result;
-}
-
 /** Send finite wire while this application flow owns parser/dispatch and the transport owns the socket. */
 export function converseCesrTcp(
   url: string,
   bytes: Uint8Array,
   options: TcpConversationOptions,
 ): Operation<TcpConversation> {
-  return completedConversation(conversation(url, bytes, options));
+  return conversation(url, (signal) => chunkBytes(bytes, { signal, maxChunkBytes: options.maxChunkBytes }), options);
 }
 
 /** Pull output and process same-socket frames concurrently without adding a queue or prefetch. */
@@ -70,49 +51,78 @@ export function streamCesrTcpConversation(
   source: TcpSourceFactory,
   options: TcpConversationOptions,
 ): Operation<TcpConversation> {
-  return completedConversation(conversation(url, source, options));
+  return conversation(url, source, options);
 }
 
-/** Both actual output forms share exactly one application-owned read scope. */
+/** Compose native RX/TX siblings over a real socket; transport never starts protocol work. */
 function conversation(
   url: string,
-  input: Uint8Array | TcpSourceFactory,
+  source: TcpSourceFactory,
   options: TcpConversationOptions,
-): Operation<TcpConversationAttempt> {
-  return call(function*(): Operation<TcpConversationAttempt> {
-    const { replies: receiver, ...output } = options;
-    const replies = { ...receiver };
-    const services = replies.services;
-    if (output.services && output.services !== services) {
-      throw new RangeError("TCP replies require the receiver's exact services");
-    }
+): Operation<TcpConversation> {
+  return call(function*() {
+    const { replies, ...output } = options;
+    const connection = yield* openTcpConnection(url, output);
     let processedFrames = 0;
-    const read: TcpRead = {
-      maxChunkBytes: 65536,
-      open(source, signal) {
-        return resource<Operation<void>>(function*(provide) {
-          const channel = yield* toEffectionFrames(source, {
-            signal,
+    const receive = yield* spawn(function*() {
+      yield* race([
+        call(function*() {
+          const controller = new AbortController();
+          const signal = AbortSignal.any([controller.signal, connection.signal]);
+          const frames = parse(socketBytes(connection.socket, { signal }));
+          let pending: ReturnType<typeof frames.next> | undefined;
+          yield* ensure(function*() {
+            try {
+              if (pending) {
+                try {
+                  yield* call(() => pending!);
+                } catch (error) {
+                  rethrowCleanupFailure(error, signal);
+                }
+              }
+            } finally {
+              yield* call(() => frames.return());
+            }
           });
-          yield* provide(call(function*() {
-            for (const frame of yield* each(channel.frames)) {
+          try {
+            while (true) {
+              signal.throwIfAborted();
+              pending = frames.next();
+              let next: Awaited<typeof pending>;
+              try {
+                next = yield* call(() => pending!);
+              } catch (error) {
+                pending = undefined;
+                throw error;
+              }
+              pending = undefined;
+              signal.throwIfAborted();
+              if (next.done) return;
               yield* replies.reactor.settle(
-                frame,
+                next.value,
                 { local: replies.local ?? true, escrows: true },
                 replies.consume,
               );
               processedFrames++;
-              yield* each.next();
             }
-          }));
-        });
-      },
-    };
-    const transport = { ...output, services, read };
-    const transmission = yield* (input instanceof Uint8Array
-      ? attemptSendCesrTcp(url, input, transport)
-      : streamCesrTcp(url, input, transport));
-    if (transmission.kind === "refuse") return transmission;
+          } catch (error) {
+            // Stop TX before parser/source cleanup can suspend on the failed direction.
+            connection.close(error);
+          } finally {
+            controller.abort();
+          }
+        }),
+        call(function*(): Operation<never> {
+          const abort = yield* on(connection.signal, "abort");
+          connection.signal.throwIfAborted();
+          yield* abort.next();
+          throw connection.signal.reason;
+        }),
+      ]);
+    });
+    const transmission = yield* sendCesrTcpSocket(connection, source, output);
+    yield* receive;
+    connection.signal.throwIfAborted();
     return { kind: "conversationDrained", transmission, receive: { kind: "eof", processedFrames } };
   });
 }

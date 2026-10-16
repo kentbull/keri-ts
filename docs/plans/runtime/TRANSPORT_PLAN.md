@@ -15,8 +15,10 @@ reconciled before affected implementation; it is not preservation authority.
   and after pulls and halt waiting dispatch/active consumers on external abort;
   concrete readers still interrupt and join actual I/O.
 - Existing host operation scopes start, cancel and join readers, dispatch and
-  output. Remove FrameIntake, TcpRead.open, FrameChannel/toEffectionFrames,
-  admission hooks and parser-option propagation. No substitute intake framework.
+  output. FrameIntake, TcpRead.open, FrameChannel/toEffectionFrames and parser
+  lifetime options are removed. TCP lends a real connection and composes native
+  RX/TX at the application. Remove remaining admission/delivery hooks without
+  introducing another intake framework.
 - Plain cues reach their concrete Respondant/Poster/response owner. Delete generic
   preparation/delivery lifecycle wrappers. Real routing, signing, correlation and
   retry bytes stay with those owners. Reactor does no unrelated execution.

@@ -726,11 +726,11 @@ export function* sendWitnessMessage(
     yield* call(function*() {
       if (runtime) {
         yield* converseCesrTcp(url, bytes, {
-          services,
-          replies: { services: runtime.services, reactor: runtime.reactor, local: true },
+          clock: services?.clock,
+          replies: { reactor: runtime.reactor, local: true },
         });
       } else {
-        yield* sendCesrTcp(url, bytes, { services });
+        yield* sendCesrTcp(url, bytes, { clock: services?.clock });
       }
     });
     return;

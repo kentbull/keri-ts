@@ -25,7 +25,6 @@
   "imports": {
     "@deno/dnt": "jsr:@deno/dnt@^0.42.3",
     "cesr-ts": "../cesr/mod.ts",
-    "cesr-ts/effection": "../cesr/effection.ts",
     "keri-ts": "../keri/mod.ts",
     "keri-ts/cli": "../keri/cli.ts",
     "keri-ts/runtime": "../keri/runtime.ts",

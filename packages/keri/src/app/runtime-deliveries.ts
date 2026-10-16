@@ -289,9 +289,9 @@ function* postQueryMessage(
 ): Operation<void> {
   if (new URL(delivery.url).protocol === "tcp:") {
     yield* converseCesrTcp(delivery.url, delivery.body, {
-      services: runtime.services,
+      clock: runtime.services.clock,
       signal: controller.signal,
-      replies: { services: runtime.services, reactor: runtime.reactor, local: true },
+      replies: { reactor: runtime.reactor, local: true },
     });
     return;
   }

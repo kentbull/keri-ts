@@ -2,8 +2,7 @@
   "name": "@keri-ts/cesr",
   "version": "0.10.0",
   "exports": {
-    ".": "./mod.ts",
-    "./effection": "./effection.ts"
+    ".": "./mod.ts"
   },
   "imports": {
     "jsr:@std/assert": "jsr:@std/assert@^0.217.0",

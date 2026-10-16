@@ -587,21 +587,8 @@ Deno.test("TCP frame output preserves nested body, genus, signatures and ESSR ev
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const resources = new ResourcePolicy({ streams: 1 });
-  const transport = { ...defaultRuntimeServices, resources };
   try {
-    await assertRejects(
-      () =>
-        run(() =>
-          sendCesrTcpFrame(url, frame, {
-            services: { ...transport, resources: new ResourcePolicy({ bytes: 1 }) },
-          })
-        ),
-      ResourceAdmissionError,
-      "limit",
-    );
-    assertEquals(connections, 0, "refusal precedes network acquisition");
-    const result = await run(() => sendCesrTcpFrame(url, frame, { services: transport, maxChunkBytes: 7 }));
+    const result = await run(() => sendCesrTcpFrame(url, frame, { maxChunkBytes: 7 }));
     assertEquals(result.kind, "transmitted");
     const roundtrip = await received.promise;
     {
@@ -613,7 +600,6 @@ Deno.test("TCP frame output preserves nested body, genus, signatures and ESSR ev
       assertEquals(await collectPayload(essrRaw(roundtrip.nests![0].essrs!)), b("abcxyz"));
     }
     assertEquals(child.essrs, payloadFrame.essrs);
-    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   } finally {
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

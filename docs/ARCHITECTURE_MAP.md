@@ -141,7 +141,7 @@ reference material and historical reports.
      `prefixive`, `special`, and `composable` belong on `Matter`; do not hide
      them in verifier-local helpers. `Signer.transferable` is the intentional
      exception because seed codes do not encode transferability on their own.
-4. Adapters (`async-iterable`, `effection`) and tooling (`annotate`)
+4. Buffered async byte input and finite annotation tooling; scheduling belongs to applications.
 
 ## Cross-Cutting Concerns
 

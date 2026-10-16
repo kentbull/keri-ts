@@ -94,7 +94,7 @@ export class Reactor {
   private queuedBytes = 0;
   private ingressRecords = 0;
   private ingressGeneration = 0;
-  /** Complete-record and waiting-turn limit; injected FrameIntake owns source concurrency. */
+  /** Transitional complete-record and waiting-turn limit; input operations own their sources. */
   private readonly maxSources: number;
   /** Maximum bytes in the complete-record ingress deck. */
   private readonly maxQueuedBytes: number;

@@ -86,8 +86,7 @@ can confuse task halt with foreign I/O failure. Source and handler cleanup
 failures must survive cancellation during either reading or dispatch. Receipt
 inspection and approved finite legacy children use parseBytes; no channel or
 resource wrapper belongs around already hydrated values. CLI grant files use a
-cancellable parser scan through valid EOF, not first-match early return. Other
-TCP adapters remain pending removal. HTTP ingress/egress, witness ingress and
+cancellable parser scan through valid EOF, not first-match early return. TCP conversations compose native RX/TX over an actual connection resource. HTTP ingress/egress, witness ingress and
 stored multisig replay also own their parser iterators directly. HTTP exposes
 one input signal, not a second parser-options bag; each outgoing request keeps
 its actual transport owner. Shared cleanup filtering removes only exact owned
@@ -178,8 +177,10 @@ Native fetch headers/buffering and pending-row allocation remain separate bounds
 
 Parser-owned ESSR staging and ordinary-frame disposal are removed. Ordered
 Texters carry evidence; actual files and network readers retain their own cleanup.
-Reactor queued-record accounting, transport policy, TcpRead and the optional
-Effection frame bridge remain removal work. HTTP requests keep actual transport
+TcpRead and the Effection frame bridge/export are removed. Concrete TCP writers
+use native backpressure without quotas or RuntimeServices. The application owns
+receive processing; witness sockets own one pending parser pull plus deferred-query
+readiness. Reactor queued-record, HTTP and witness-listener accounting remain removal work. HTTP requests keep actual transport
 scopes independently of parsing; do not restore parser slots for coordination.
 Protocol producers and consumers share ordinary Deck records. KEL/Revery/KSN,
 registry/credential TSN, EXN, verifier and OOBI publish cues after the owning

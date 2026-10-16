@@ -107,20 +107,17 @@ an explicitly bounded 8 MiB value. `Reactor.processBytes` supplies a finite valu
 path; it owns parsing and dispatch through an Effection operation. No shared
 feed buffer or separate synchronous parser remains.
 
-FrameIntake owns source admission, one pending parser pull and joined source/parser
-cleanup. AgentRuntime constructs it and lends the same component to protocol
-processing and HTTP/TCP edges. Reactor owns guarded dispatch/escrow/state turns;
-its former frames method is removed. Frame ownership still crosses the existing
-consume/settle boundary; storage payloads retain their valid independent lifetime.
+FrameIntake and the custom frame channel are removed. Concrete HTTP, TCP,
+witness and replay operations own their parser iterator and cancellation.
+Reactor owns protocol dispatch/escrow/state turns; transport never starts sibling
+protocol work. The [transport plan][transport-plan] owns remaining gate, delivery
+and listener accounting removal and full qualification.
 
-## Socket-to-application boundary (implementation pending)
+## Socket-to-application boundary
 
-The required transport path is a bounded abortable source, one progressive parser
-per connection/request, complete frames, guarded verification/storage, and owned
-delivery outside the guard. HTTP body intake and Tufa TCP witness intake use the
-progressive parser. Existing cue consumers can still
-await network I/O under the guard. The [transport plan][transport-plan] owns closure;
-duplex and composed backpressure remain unqualified.
+Counted enclosures arrive completely before children decode. Each actual input
+owner composes its parser and protocol processing with native operations and owns
+pending I/O and iterator cleanup. HTTP and TCP consume the same buffered decoder.
 
 `socketBytes` is the shared KERI runtime TCP source used by Tufa witness listeners.
 It acquires exclusive binary readable-mode ownership
@@ -129,8 +126,7 @@ and permits one pending pull. Do not mix data/flow readers with it. Abort, failu
 and early return destroy and join socket close; genuine receive EOF releases only
 read ownership, preserving the writable half. The connection owner must handle
 socket errors before acquisition and after EOF, and own output drain/final close.
-Before pulling, admit the connection and two bounded materialized read/copy
-allocations, retaining credit through parser/source cleanup. A native-returned
+Read chunk sizing is a concrete I/O choice, not an application allocation budget. A native-returned
 view may pin pool/socket backing larger than a small configured chunk ceiling:
 twice that ceiling does not cover all native backing. The host must separately
 account for fixed pools, readable/native/kernel buffering and qualify its actual
@@ -139,8 +135,8 @@ configuration; this adapter supplies no full native or RSS bound.
 Tufa admits paused TCP connections before creating work, with a default cap of
 two admitted/closing connections and a positive shared 2 MiB logical read/copy
 allowance per connection. This allowance is qualification policy, not a hard native
-buffer ceiling. Reactor reserves the sole receive stream/cursor owner before the
-first socket pull; two receives consume two stream permits. Native acceptance is
+buffer ceiling. This listener accounting is transitional removal work; the parser and Reactor.process
+acquire no receive stream/cursor credit. Native acceptance is
 capped at `maxConnections + 1`: one transient refusal handle allows reporting in
 Deno, whose native cap does not emit Node's `drop` event. That handle is tracked
 through close and joined on shutdown, with no task/read/queue before refusal;
@@ -151,7 +147,7 @@ cleanup failures reach the host owner after joined cleanup. Parser-owned source
 return is not peer close. Stop acceptance, join parser/source/socket tasks, then
 join listener close before closing runtime stores. Earlier accepted frames remain
 durable after a later connection failure. Default mailbox/direct routing stays
-unchanged; same-socket reply conversations remain separate work.
+unchanged; same-socket reply conversations share the concrete socket writer.
 
 The guard protects protocol interpretation, signing, routing snapshots and local
 DB side effects. Network waits and capacity waits belong outside it. Transfer a
@@ -160,15 +156,15 @@ original cue. Replays carry captured extents plus one admitted current message.
 Borrowed frames and KRAM payload owners cannot escape their consuming scope as
 lazy work. HTTP request-local replies retain their existing correlation and owner.
 
-Each connection has a supervised receive/parser task and finite shared credit
-before reads begin. Stream writes await drain before pulling another chunk.
+Each connection has a supervised receive/parser task. Stream writes await native
+drain before pulling another chunk. Remaining listener credits are removal work.
 Shutdown stops admission and joins reads, dispatch and output before sockets and
 stores are released. Stream high-water marks alone do not establish these bounds.
 
 Explicit enclosures, a following body or genuine EOF complete CESR frames;
 temporary lack of input does not. A bare final frame may await more input.
-Independent GenericGroup children can become usable before transfer completion;
-parent-owned children remain evidence until their parent's route accepts them.
+GenericGroup children become usable only after their whole counted enclosure
+arrives; parent-owned children remain evidence until their parent's route accepts them.
 
 Full duplex is an explicit same-socket reply mode, separate from the preserved
 mailbox/direct routing default. Receive EOF does not imply transmit failure.
@@ -459,54 +455,42 @@ sender as forwarding. Witness authorization is preserved across content-type
 retries; caller headers cannot replace CESR framing or destination metadata.
 Generic witness sends borrow explicit runtime services; runtime delegation passes
 its own services through this seam. Standalone callers may use the shared default.
-TCP finite/source sending shares `sendCesrTcp`/`streamCesrTcp`. One stream slot
-and two bounded chunk allowances precede socket and abortable factory acquisition;
-finite input additionally charges its retained backing. The allowances cover one
-producer chunk and a transport copy; finite input is copied into bounded backing.
-Factories must observe abort, yield immutable backing within the configured ceiling,
-and join cleanup on iterator return. Their pre-yield allocations remain their responsibility.
-Each write callback and any required drain settle before the next source pull.
-Source cleanup, write callbacks and final socket close join before credit release;
-cleanup/infrastructure failures propagate. Native pools/socket/kernel residency is separate.
-Connection timeout is separate from the absolute, non-refreshing end/close deadline,
-which starts after source EOF. Active aggregate transfers have no total-duration cap.
-The default waits for peer close after local output end, preserving finite witness policy.
-The result describes local transmission, never authenticated remote acceptance.
-`sendCesrTcpFrame` borrows an already admitted tree directly through `framePayload`,
-without reparsing, adopting or discarding any frame/ESSR owner. HTTP and TCP share
-ordinary metadata counting: TCP reserves eight metadata-size copy allowances plus
-2 MiB for bounded serializer readers/output before constructing the serializer,
-in addition to its two transport chunk allowances. Serializer output is re-chunked
-under the configured backing ceiling. The caller retains its original owners until
-joined completion. This conservative policy is not an RSS bound.
+TCP finite/source sending shares `sendCesrTcp`/`streamCesrTcp`. The concrete
+`openTcpConnection` resource lends an actual paused socket, close completion and
+connection cancellation signal; it joins destruction after application children
+stop. It starts no parser or receive callback. Its optional clock controls real
+connect deadlines. TCP has no resource policy, byte estimates, backing-size
+refusal or exact runtime-service identity requirement.
 
-The application flow in `tcp-conversation.ts` composes `converseCesrTcp` and
-`streamCesrTcpConversation` from a borrowed `services`, `intake` and `reactor`.
-The lower TCP engine in `tcp-egress.ts` knows none of those application processor
-types. It lends a bounded byte source to a scoped `TcpRead` consumer. Consumer
-setup precedes connection; its returned operation runs after connect, concurrently
-with output. This reuses the existing pull stream, without another queue or prefetch.
+Each write callback and required native drain complete before the next source
+pull. Factories observe abort and join cleanup on iterator return. Output checks
+cancellation after each pull, before treating done as EOF or writing another chunk.
+The connection deadline is separate from the absolute peer-close deadline, which
+starts at source EOF and never refreshes with reply activity. Source/read/write
+cleanup retains independent failures, including late source failures during halt.
+`sendCesrTcpSocket` ends local output and joins peer close; `writeCesrTcpSocket`
+borrows an accepted socket without ending its writable half. `sendCesrTcpFrame`
+serializes already hydrated values directly, without reparsing or disposal.
 
-The application selects `replies: { services, intake, reactor, local?, consume? }`;
-default lower-level send options remain transmit-only. An explicit transport
-services override must match the application receiver's services. TX credit, a
-logical 2 MiB read/handle allowance and FrameIntake's RX stream/64 KiB producer/
-8 MiB cursor credit precede connect. The socket source starts after connect.
-These are JS/logical bounds, with native pools/kernel buffering separately qualified.
-One RX parser settles frames concurrently with TX under `allowHalfOpen: true`.
-Genuine RX EOF leaves TX alive. TX EOF starts one absolute drain deadline; reply
-activity cannot refresh it. Failure/cancellation aborts both directions before
-joining either cleanup, with credit and borrowed receiver/frame/payload owners held
-through parser/source/write/socket cleanup. Callback envelopes are non-retaining
-and guarded; do not reenter Reactor or implicitly drain network cues there.
-The application flow's `conversationDrained` result means local transmission plus
-processed RX EOF. Lower-level TCP returns only `transmitted` and counts no protocol frames.
-`processedFrames` counts dispatch attempts, including refusal/escrow/ignored inputs,
-not verified replies or durable remote acceptance. Inspect route decisions and
-accepted state explicitly; KEL dispatch may return no decision. Earlier accepted
-replies survive a later transmit failure. This maps 714's concurrent local TCP
-reply parsing without copying its `sent`/`idle` acceptance ambiguity; guarded
-delivery and actual caller/listener same-socket adoption remain successors.
+The application in `tcp-conversation.ts` opens the connection and composes native
+Effection RX/TX siblings. Its receive loop consumes socketBytes and owns its
+parser iterator, dispatching complete frames through Reactor.settle; the byte transport receives no Reactor or parser contract.
+The application chooses `replies: { reactor, local?, consume? }`, while transport
+options take only actual clock, signal, chunking and deadline choices. No TcpRead
+or custom frame channel remains. External cancellation stops waiting protocol
+turns, and directional failure stops the other direction before joining cleanup.
+Genuine receive EOF leaves output alive. Earlier committed replies survive later
+transmit failure; callback code must not reenter Reactor or drain network cues.
+
+The `conversationDrained` result means local transmission plus processed RX EOF.
+`processedFrames` counts dispatch attempts, including ignored/rejected/escrowed
+inputs, not authenticated replies or remote acceptance. Lower byte transport
+returns only `transmitted`. Inspect protocol decisions and persisted receipts to
+establish actual acceptance. Tufa's witness socket owns one pending parser pull
+while observing deferred query readiness, so replies can drain without another
+inbound message. Its listener accounting and general Reactor gates remain separate
+removal work; no broad release qualification is implied by these focused checks.
+
 Receipt endpoints intentionally return one finite proof: collection admits at
 most 1 MiB, failed-response diagnostics at most 16 KiB, and parsing requires one
 complete frame. Cancellation joins the body reader and releases its lock.
