@@ -12,12 +12,16 @@
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
 import {
+  attachmentPayload,
   type CesrFrame,
   collectPayload,
   concatBytes,
   Counter,
   Diger,
+  framePayload,
+  MtrDex,
   nestedPayload,
+  parseBytes,
   parsePather,
   SerderACDC,
   SerderKERI,
@@ -539,7 +543,7 @@ export class Poster {
     yield* sendPreparedCesrTarget(target, this.services, undefined, receiver);
   }
 
-  /** Capture signed introductions before payload preparation; no network work starts here. */
+  /** Prepare complete signed wire and its introduction before opening transport. */
   private *prepareForwardedTarget(
     hab: Hab,
     recipient: string,
@@ -555,8 +559,8 @@ export class Poster {
       if (!stored) throw new Error("Mailbox publication did not complete");
       return { kind: "stored" };
     }
-    const intro = introduce(hab, endpoint.eid);
     const forwarded = yield* buildForwardedDelivery(hab, { recipient, topic, message });
+    const intro = introduce(hab, endpoint.eid);
     return remoteCesrTarget(endpoint, concatBytes(intro, forwarded), this.hby.cesrBodyMode);
   }
 
@@ -941,7 +945,7 @@ interface MailboxPollTarget {
 }
 
 /**
- * Build one signed `/fwd` exchange containing the embedded mailbox payload.
+ * Build a signed legacy embed or v2 nested `/fwd` envelope for one complete message.
  *
  * The caller is responsible for any surrounding introduction or end-role
  * material that should travel with the forwarded request.
@@ -954,13 +958,32 @@ function* buildForwardedDelivery(
     message: Uint8Array;
   },
 ): Operation<Uint8Array> {
+  const frames = parseBytes(args.message);
+  if (frames.length !== 1) throw new ValidationError("Forwarding requires one complete CESR message.");
+  const child = frames[0];
+  if (child.body.pvrsn.major >= 2 || (child.gvrsn?.major ?? 1) >= 2) {
+    const [serder] = exchange("/fwd", {
+      evt: new Diger({ code: MtrDex.Blake3_256, raw: Diger.digest(child.body.raw, MtrDex.Blake3_256) }).qb64,
+    }, {
+      sender: hab.pre,
+      modifiers: { pre: args.recipient, topic: transportMailboxTopic(args.topic) },
+      pvrsn: Vrsn_2_0,
+    });
+    // Capture the signer before the codec reader yields; child proofs remain independent.
+    const [outer] = parseBytes(hab.endorse(serder, { pipelined: false, gvrsn: Vrsn_2_0, genusify: true }));
+    return yield* abortable((signal) => collectPayload(framePayload({ ...outer, nests: [child] }), signal));
+  }
+  const message = concatBytes(
+    child.body.raw,
+    yield* abortable((signal) => collectPayload(attachmentPayload(child), signal)),
+  );
   const [serder, attachments] = exchange(
     "/fwd",
     {},
     {
       sender: hab.pre,
       modifiers: { pre: args.recipient, topic: transportMailboxTopic(args.topic) },
-      embeds: { evt: args.message },
+      embeds: { evt: message },
     },
   );
   const endorsed = hab.endorse(serder, { pipelined: false });

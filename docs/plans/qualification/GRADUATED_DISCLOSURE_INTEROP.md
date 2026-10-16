@@ -153,6 +153,19 @@ These are TS credential processors with Python witnesses, not pairwise Python
 presentation-registry processing or mailbox-delivered IPEX. Those limits remain
 distinct from the bidirectional mailbox authentication cases above.
 
+`interop-ipex-mailbox.test.ts` separately completes apply → offer → agree → grant
+→ admit between independent TS issuer/holder/recipient stores through the actual
+consolidated KERIpy mailbox. Single and two-of-two holders use three real Python
+witnesses; issuer, holder and recipient KELs/receipts are independently accepted by
+the provider and witness stores. Signed endpoint authorization precedes real
+Poster forwarding. Each recipient queries the provider under its own KRAM identity,
+then its own HTTP intake verifies the retrieved IPEX evidence. The group grant's
+first contribution remains pending; the second completes it. Actual issuance
+registry proofs authenticate the credential, retained partials hide plaintext and
+nested children never become independently dispatched credentials. This qualifies
+mailbox-carried TS IPEX with a Python provider, not Python credential processors,
+presentation cutoffs over mailbox delivery or a witnessed process crash.
+
 Check accepted exchange lineage and both parties' state through admit, verified
 credential/root/chain commitments, retained partial nests, absence of private
 plaintext, and concrete refusal/escrow outcomes. State exactly which stage or

@@ -60,8 +60,13 @@ processors at composition. Before publishing to `AgentRuntime.cues`, Reactor
 captures direct request replies. A new reservation also claims matching records
 already published to the application Deck synchronously. Background cue workers cannot consume unfinished
 protocol output or reserved replies. Interpretation, signing, routing and request
-slot consumption are synchronous work of Hab, Respondant, QueryCoordinator and
-request owners; network waits happen in the actual delivery operations.
+slot consumption belong to Hab, Respondant, QueryCoordinator and request owners.
+Poster target preparation is an owned operation that uses the shared codec before
+transport. One complete v2 body/genus becomes a signed `/fwd` body-digest envelope
+with an independent nested payload; legacy traffic retains its pathed-embed shape.
+Qualified CESR selectors are parsed before body construction. Respondant awaits
+preparation before consuming its source and preserves exact prepared retry bytes.
+Network waits happen in the actual delivery operations.
 
 Queued ingress is an ordinary private `Deck<Uint8Array>`. `ingest` copies producer
 bytes before publication; copy failure publishes nothing. `processOnce` pulls

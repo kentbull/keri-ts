@@ -106,9 +106,9 @@ Deno.test("Respondant retains a wire view across retry and closes its actual ite
       targets: [{ eid: hab.pre, url: "https://peer.test/" }],
     });
     const prepare = runtime.poster.prepareBytesTarget.bind(runtime.poster);
-    runtime.poster.prepareBytesTarget = (...args) => {
+    runtime.poster.prepareBytesTarget = function*(...args) {
       preparations++;
-      const packet = prepare(...args);
+      const packet = yield* prepare(...args);
       if (packet.kind !== "http") throw new Error("Expected HTTP packet");
       assertEquals(packet.message, wire);
       return packet;
