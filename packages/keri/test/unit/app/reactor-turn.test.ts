@@ -350,6 +350,7 @@ Deno.test("stream cancellation joins the actual source cleanup", async () => {
               } finally {
                 cleaning.open();
                 await cleanup.wait;
+                // deno-lint-ignore no-unsafe-finally -- Inject a real cleanup failure after cancellation.
                 if (fail) throw expected;
               }
             })
@@ -406,6 +407,7 @@ Deno.test("input cancellation during dispatch joins source and handler cleanup w
                 } finally {
                   cleaning.open();
                   await cleanup.wait;
+                  // deno-lint-ignore no-unsafe-finally -- Cleanup failure must survive dispatch cancellation.
                   if (mode === "source-failure") throw expected;
                 }
               },
