@@ -8,8 +8,12 @@ cue descriptions are data, and processing/publication stays with Kevery.
 Baser prepares and writes accepted-event row/FEL metadata; Kevery turns clone
 order anomalies into cues and owns write/commit/publication sequencing.
 Baser.acceptedEventWitnesses owns accepted receipt cohort lookup for Kevery,
-Hab and witness HTTP flows. As in KERIpy fetchWitnessState, walk the accepted KEL
-back to the governing establishment and read its wits rows, including empty.
+Hab and witness HTTP flows. Confirm accepted membership, then follow the event's
+prior digests to its governing establishment and read its wits rows, including
+empty. A later recovery at the same ordinal cannot replace the old event's
+cohort. fullyWitnessed uses that establishment's bt, not the current Kever's
+threshold; raising or lowering today's threshold cannot change an old proof.
+This corrects KERIpy fullyWitnessed's current-state assumption.
 Interactions carry no separate witness projection. Current key state cannot
 classify a historical signature; keep partial-witness escrow derivation separate.
 Kever neither writes the event log nor prepares queue work. Delegation hint

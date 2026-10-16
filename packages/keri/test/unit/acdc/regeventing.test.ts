@@ -847,3 +847,48 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
     }
   });
 });
+
+Deno.test("registry anchors keep their historical receipt requirement after witness removal", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const whby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const witness = whby.makeHab("witness", undefined, { transferable: false });
+      const issuer = hby.makeHab("issuer", undefined, { wits: [witness.pre], toad: 1 });
+      const rip = regcept(issuer.pre), validated = validateRip(rip, issuer.pre);
+      if (validated.kind !== "valid") throw new Error("Expected valid registry inception");
+      issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
+      const anchor = issuer.kever!.serder;
+      const claim = {
+        db: hby.db,
+        issuer: issuer.pre,
+        number: NumberPrimitive.fromNum(BigInt(anchor.sn!)),
+        diger: new Diger({ qb64: anchor.said! }),
+      };
+      assertEquals(verifyRegistryAnchor(validated.event, claim), false);
+      issuer.rotate({ cuts: [witness.pre], toad: 0 });
+      assertEquals(
+        verifyRegistryAnchor(validated.event, claim),
+        false,
+        "removing the witness cannot authenticate an old registry anchor",
+      );
+      hby.kevery.processReceipt({
+        serder: receipt(issuer.pre, anchor.sn!, anchor.said!),
+        cigars: witness.sign(anchor.raw, false),
+        wigers: [],
+        tsgs: [],
+        local: false,
+      });
+      assertEquals(
+        verifyRegistryAnchor(validated.event, claim),
+        true,
+        "the historical witness's late receipt proves the anchor",
+      );
+      issuer.rotate({ adds: [witness.pre], toad: 1 });
+      assertEquals(verifyRegistryAnchor(validated.event, claim), true);
+    } finally {
+      yield* whby.close(true);
+      yield* hby.close(true);
+    }
+  });
+});

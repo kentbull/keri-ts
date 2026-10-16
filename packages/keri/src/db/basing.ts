@@ -1258,41 +1258,40 @@ export class Baser {
     }
   }
 
-  /**
-   * Resolve an accepted event's receipt witnesses from its latest establishment.
-   * Mirrors KERIpy Kevery.fetchWitnessState: interactions inherit the preceding
-   * establishment's stored cohort, including an empty cohort. Never borrow live
-   * key state. Partial-witness escrows derive their cohort before acceptance.
-   */
-  acceptedEventWitnesses(serder: SerderKERI): string[] | null {
+  /** Resolve the stored establishment governing an accepted event's witnesses. */
+  private acceptedEventEstablishment(serder: SerderKERI): SerderKERI | null {
     const pre = serder.pre;
     const sn = serder.sn;
-    if (!pre || !serder.said || sn === null) return null;
-    for (const said of this.kels.getOnBackIter(pre, sn)) {
-      const event = this.getEvtSerder(pre, said);
-      if (!event) return null;
-      if (event.estive) return this.wits.get(dgKey(pre, said)).map((wit) => wit.qb64);
+    const said = serder.said;
+    if (!pre || !said || sn === null || !this.kels.getOn(pre, sn).includes(said)) return null;
+    let event = this.getEvtSerder(pre, said);
+    while (event && !event.estive) {
+      event = event.prior ? this.getEvtSerder(pre, event.prior) : null;
     }
-    return null;
+    return event;
   }
 
   /**
-   * Return true when `serder` currently satisfies the stored witness threshold.
-   *
-   * KERIpy correspondence:
-   * - mirrors `Baser.fullyWitnessed(...)`
+   * Resolve an accepted event's receipt witnesses from its latest establishment.
+   * Like KERIpy Kevery.fetchWitnessState, interactions inherit an establishment's
+   * stored cohort, including an empty cohort. Follow this event's prior digests
+   * so a recovery at the same ordinal cannot replace its historical cohort.
+   * Partial-witness escrows derive their cohort separately before acceptance.
+   */
+  acceptedEventWitnesses(serder: SerderKERI): string[] | null {
+    const event = this.acceptedEventEstablishment(serder);
+    return event ? this.wits.get(dgKey(event.pre!, event.said!)).map((wit) => wit.qb64) : null;
+  }
+
+  /**
+   * Return whether an accepted event has its governing establishment's receipts.
+   * Unlike KERIpy Baser.fullyWitnessed's current-Kever lookup, later rotations
+   * cannot raise or lower this historical event's required witness threshold.
    */
   fullyWitnessed(serder: SerderKERI): boolean {
-    const pre = serder.pre;
-    const said = serder.said;
-    if (!pre || !said) {
-      return false;
-    }
-    const kever = this.getKever(pre);
-    if (!kever) {
-      return false;
-    }
-    return BigInt(this.wigs.get(dgKey(pre, said)).length) >= kever.toader.num;
+    const establishment = this.acceptedEventEstablishment(serder);
+    return establishment !== null
+      && BigInt(this.wigs.get(dgKey(serder.pre!, serder.said!)).length) >= establishment.bner!.num;
   }
 
   /**

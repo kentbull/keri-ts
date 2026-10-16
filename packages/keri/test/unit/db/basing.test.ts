@@ -29,7 +29,7 @@ import {
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import structingVectors from "../../../../cesr/test/fixtures/current-structing-vectors.json" with { type: "json" };
-import { createHabery } from "../../../src/app/habbing.ts";
+import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import {
   KeriDispatchEnvelope,
   PathedMaterialGroup,
@@ -37,7 +37,7 @@ import {
   TransLastIdxSigGroup,
   TransReceiptQuadruple,
 } from "../../../src/core/dispatch.ts";
-import { incept } from "../../../src/core/protocol-eventing.ts";
+import { incept, interact, receipt, rotate } from "../../../src/core/protocol-eventing.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { loadEvent } from "../../../src/core/protocol-serialization.ts";
 import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
@@ -465,6 +465,159 @@ Deno.test("readonly legacy Baser opening leaves absent schema escrow tables abse
       assertEquals(db.env!.getBinary(b("emsd.")), undefined);
     } finally {
       yield* db.close(true);
+    }
+  });
+});
+
+/** Authenticate a historical receipt through Kevery, including retired witnesses. */
+function witnessReceipt(hby: Habery, witness: Hab, event: SerderKERI): void {
+  hby.kevery.processReceipt({
+    serder: receipt(event.pre!, event.sn!, event.said!),
+    cigars: witness.sign(event.raw, false),
+    wigers: [],
+    tsgs: [],
+    local: false,
+  });
+}
+
+for (const initial of [0, 1]) {
+  Deno.test(`db/basing - historical threshold ${initial} survives increase to two witnesses`, async () => {
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const whby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      try {
+        const witnesses = [0, 1].map((i) => whby.makeHab(`witness-${i}`, undefined, { transferable: false }));
+        const issuer = hby.makeHab("issuer", undefined, {
+          wits: witnesses.slice(0, initial).map((w) => w.pre),
+          toad: initial,
+        });
+        const inception = issuer.kever!.serder;
+        const seal = { i: issuer.pre, s: "0", d: inception.said! };
+        issuer.interact({ data: [seal] });
+        const anchor = issuer.kever!.serder;
+        for (const event of [inception, anchor]) {
+          for (const witness of witnesses.slice(0, initial)) witnessReceipt(hby, witness, event);
+          assertEquals(hby.db.fullyWitnessed(event), true);
+        }
+        issuer.rotate({ adds: witnesses.slice(initial).map((w) => w.pre), toad: 2 });
+        const rotation = issuer.kever!.serder;
+        for (const event of [inception, anchor]) {
+          assertEquals(hby.db.acceptedEventWitnesses(event), witnesses.slice(0, initial).map((w) => w.pre));
+          assertEquals(hby.db.fullyWitnessed(event), true);
+        }
+        assertEquals(hby.db.fetchAllSealingEventByEventSeal(issuer.pre, seal)?.said, anchor.said);
+        assertEquals(hby.db.fetchLastSealingEventByEventSeal(issuer.pre, seal)?.said, anchor.said);
+        assertEquals(hby.db.fullyWitnessed(rotation), false);
+        witnessReceipt(hby, witnesses[0], rotation);
+        assertEquals(hby.db.fullyWitnessed(rotation), false);
+        witnessReceipt(hby, witnesses[1], rotation);
+        assertEquals(hby.db.fullyWitnessed(rotation), true);
+      } finally {
+        yield* whby.close(true);
+        yield* hby.close(true);
+      }
+    });
+  });
+}
+
+for (const remaining of [0, 1]) {
+  Deno.test(`db/basing - historical threshold two survives decrease to ${remaining} witnesses`, async () => {
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const whby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      try {
+        const witnesses = [0, 1].map((i) => whby.makeHab(`witness-${i}`, undefined, { transferable: false }));
+        const issuer = hby.makeHab("issuer", undefined, { wits: witnesses.map((w) => w.pre), toad: 2 });
+        const inception = issuer.kever!.serder;
+        const seal = { i: issuer.pre, s: "0", d: inception.said! };
+        issuer.interact({ data: [seal] });
+        const anchor = issuer.kever!.serder;
+        for (const event of [inception, anchor]) {
+          witnessReceipt(hby, witnesses[0], event);
+          assertEquals(hby.db.fullyWitnessed(event), false);
+        }
+        issuer.rotate({ cuts: witnesses.slice(remaining).map((w) => w.pre), toad: remaining });
+        for (const event of [inception, anchor]) {
+          assertEquals(hby.db.acceptedEventWitnesses(event), witnesses.map((w) => w.pre));
+          assertEquals(hby.db.fullyWitnessed(event), false, "current threshold must not bless an old partial proof");
+        }
+        assertEquals(hby.db.fetchAllSealingEventByEventSeal(issuer.pre, seal), null);
+        assertEquals(hby.db.fetchLastSealingEventByEventSeal(issuer.pre, seal), null);
+        for (const event of [inception, anchor]) {
+          witnessReceipt(hby, witnesses[1], event);
+          assertEquals(hby.db.fullyWitnessed(event), true, "retired witness still proves its historical event");
+        }
+        assertEquals(hby.db.fetchAllSealingEventByEventSeal(issuer.pre, seal)?.said, anchor.said);
+        assertEquals(hby.db.fetchLastSealingEventByEventSeal(issuer.pre, seal)?.said, anchor.said);
+      } finally {
+        yield* whby.close(true);
+        yield* hby.close(true);
+      }
+    });
+  });
+}
+
+Deno.test("db/basing - recovered interaction retains its own witness ancestry", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const whby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const witnesses = [0, 1].map((i) => whby.makeHab(`witness-${i}`, undefined, { transferable: false }));
+      const issuer = hby.makeHab("issuer");
+      const inception = issuer.kever!.serder;
+      issuer.interact();
+      const first = issuer.kever!.serder;
+      issuer.interact();
+      const second = issuer.kever!.serder;
+      const [verfers, digers] = issuer.mgr.rotate({ pre: issuer.pre, ncount: 1, temp: true, erase: false });
+      const keys = verfers.map((v) => v.qb64);
+      const recovery = rotate(issuer.pre, keys, inception.said!, {
+        sn: 1,
+        ndigs: digers.map((d) => d.qb64),
+        wits: [],
+        adds: witnesses.map((w) => w.pre),
+        toad: 2,
+      });
+      hby.kevery.processEvent({
+        serder: recovery,
+        sigers: issuer.mgr.sign(recovery.raw, keys, true) as Siger[],
+        wigers: [],
+        ssts: [],
+        frcs: [],
+        sscs: [],
+        local: true,
+      });
+      assertEquals(issuer.kever!.said, recovery.said, "a genuine recovery supersedes the first interaction");
+      assertEquals(hby.db.kels.getOn(issuer.pre, 1), [first.said, recovery.said]);
+      for (const event of [inception, first, second]) {
+        assertEquals(
+          hby.db.acceptedEventWitnesses(event),
+          [],
+          "follow the old event's prior digest, not the latest ordinal bucket",
+        );
+        assertEquals(hby.db.fullyWitnessed(event), true);
+      }
+      assertEquals(hby.db.acceptedEventWitnesses(recovery), witnesses.map((w) => w.pre));
+      assertEquals(hby.db.fullyWitnessed(recovery), false);
+      for (const witness of witnesses) witnessReceipt(hby, witness, recovery);
+      assertEquals(hby.db.fullyWitnessed(recovery), true);
+    } finally {
+      yield* whby.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("db/basing - an unaccepted candidate cannot inherit a zero witness threshold", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const candidate = interact(issuer.pre, issuer.kever!.said, 1);
+      assertEquals(hby.db.acceptedEventWitnesses(candidate), null);
+      assertEquals(hby.db.fullyWitnessed(candidate), false);
+    } finally {
+      yield* hby.close(true);
     }
   });
 });
