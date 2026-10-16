@@ -87,7 +87,12 @@ validation. Retained file cleanup is for real storage consumers, not parser stag
 ## Installed declaration gate
 
 Run the installed consumer through strict TypeScript NodeNext checking without
-`skipLibCheck`, alongside actual runtime/storage/CLI smoke. The maintained probe
+`skipLibCheck`, alongside actual runtime/storage/CLI smoke. The installed consumer must read a
+row larger than LMDB-js's 16 MiB shared-buffer threshold, close/reopen it and
+verify caller-owned bytes after a later write. Also perform public CESR signing/
+tamper refusal and actual TCP transmission/close before compiler tools are
+installed. CLI startup supplies a separate HTTP/keystore path; export loading
+alone cannot qualify these native operations. The maintained probe
 installs pinned compiler tools only after runtime checks and compiles public
 manager, host, ingress, credential and storage operations from packed entrypoints.
 LMDB 3.5.3's ESM declaration contains a CommonJS export assignment; package emission

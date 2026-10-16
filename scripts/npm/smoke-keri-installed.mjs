@@ -5,10 +5,14 @@
  * verifies both manifest-target existence and the public import surfaces that
  * users rely on after installing the packed tarball.
  */
+import { Signer } from "cesr-ts";
+import { run } from "effection";
 import * as keri from "keri-ts";
 import * as db from "keri-ts/db";
 import * as runtime from "keri-ts/runtime";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createServer } from "node:net";
 import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -81,6 +85,75 @@ try {
   await payloadStore.close();
   await rm(payloadRoot, { recursive: true });
 }
+
+// Exercise the installed native reader above LMDB-js's 16 MiB shared-buffer threshold.
+// This is a fresh current-version raw table, not a prior-version data compatibility test.
+const nativeRoot = await mkdtemp(join(tmpdir(), "keri-native-smoke-"));
+try {
+  await run(function*() {
+    const store = yield* db.openLMDB({ name: "installed", headDirPath: nativeRoot, temp: false });
+    try {
+      let table = store.openDB("installed.", false);
+      const key = new TextEncoder().encode("large");
+      const value = new Uint8Array(16 * 1024 ** 2 + 1).fill(0xa5);
+      value[0] = 0xff;
+      value[value.length - 1] = 0xfe;
+      const digest = createHash("sha256").update(value).digest("hex");
+      store.setVal(table, key, value);
+      assert(createHash("sha256").update(store.getVal(table, key)).digest("hex") === digest, "native large-row read changed bytes");
+      yield* store.close(false);
+      assert(yield* store.reopen({ reuse: true }), "native store did not reopen");
+      table = store.openDB("installed.", false);
+      const retained = store.getVal(table, key);
+      assert(createHash("sha256").update(retained).digest("hex") === digest, "native large row changed across reopen");
+      store.setVal(table, key, new Uint8Array([1, 2, 3]));
+      assert(createHash("sha256").update(retained).digest("hex") === digest, "later native writes changed caller-owned bytes");
+      assert(store.getVal(table, key).join(",") === "1,2,3", "native writer failed after the large read");
+    } finally {
+      yield* store.close(true);
+    }
+  });
+} finally {
+  await rm(nativeRoot, { recursive: true, force: true });
+}
+console.error("Installed native LMDB >16 MiB read/reopen and owned-byte checks passed.");
+
+const signedBytes = new TextEncoder().encode("installed CESR crypto and TCP qualification");
+const signer = Signer.random();
+const signature = signer.sign(signedBytes);
+assert(signer.verfer.verify(signature.raw, signedBytes), "installed signer/verifier failed");
+const altered = signedBytes.slice();
+altered[0] ^= 1;
+assert(!signer.verfer.verify(signature.raw, altered), "installed verifier accepted altered bytes");
+console.error("Installed CESR signing and tamper-refusal checks passed.");
+
+// Exercise the public native TCP owner; successful transmission is not protocol acceptance.
+let finishReceive, failReceive;
+const received = new Promise((resolve, reject) => { finishReceive = resolve; failReceive = reject; });
+const server = createServer((socket) => {
+  const chunks = [];
+  socket.on("data", (chunk) => chunks.push(chunk));
+  socket.once("end", () => finishReceive(Buffer.concat(chunks)));
+  socket.once("error", failReceive);
+});
+await new Promise((resolve, reject) => {
+  server.once("error", reject);
+  server.listen(0, "127.0.0.1", resolve);
+});
+try {
+  const wire = signature.qb64b;
+  const [result, bytes] = await Promise.all([
+    run(() => runtime.sendCesrTcp(`tcp://127.0.0.1:${server.address().port}`, wire, {
+      maxChunkBytes: 7, connectTimeoutMs: 5000, drainTimeoutMs: 5000, signal: AbortSignal.timeout(5000),
+    })),
+    received,
+  ]);
+  assert(result.kind === "transmitted" && result.bytes === wire.length, "installed TCP transmission did not complete");
+  assert(Buffer.from(bytes).equals(Buffer.from(wire)), "installed TCP changed transmitted bytes");
+} finally {
+  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+}
+console.error("Installed TCP transmission and joined socket close passed.");
 
 // Install compiler tools only after runtime checks, so they cannot mask missing
 // runtime dependencies. Check the actual packed declarations without skipping libs.

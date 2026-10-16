@@ -79,6 +79,9 @@ skipLibCheck. LMDB 3.5.3's ESM declaration uses export assignment; normalize emi
 type-only imports to its valid CommonJS declaration branch, preserving ESM values.
 DNT omits source resolution attributes. Keep Baser.env tied to LMDBer's own type.
 Install compiler tools after runtime smoke so they cannot mask missing dependencies.
+The packed consumer must actually read/reopen a >16 MiB native LMDB row and retain
+owned bytes across later writes, sign/refuse altered data and transmit/close real
+TCP. Module loading alone does not qualify those installed runtime paths.
 Install all three local tarballs once per runtime
 image (including macOS); run the installed Tufa bin without npx fallback. Source
 tests do not qualify package resolution or Node hosting. Require Node >=20.3 in
