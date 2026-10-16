@@ -1,6 +1,6 @@
 # @keri-ts/tufa
 
-## 0.12.0
+## 1.0.0
 
 ### Breaking CLI and host changes
 
@@ -19,7 +19,7 @@
   export/bin targets and strict installed declarations.
 - Keep DID artifact generation/resolution, witnessed/group workflows and mailbox
   IPEX on the supported KERI runtime operations. Final dependencies advance to
-  cesr-ts 0.11.0 and keri-ts 0.12.0.
+  cesr-ts 1.0.0 and keri-ts 1.0.0.
 
 ## 0.11.0
 

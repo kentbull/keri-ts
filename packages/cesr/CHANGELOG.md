@@ -1,6 +1,6 @@
 # cesr-ts
 
-## 0.11.0
+## 1.0.0
 
 ### Breaking API and parsing changes
 
