@@ -93,7 +93,7 @@ export function bindDesignatedAliases(
     options.createRegistry ?? true,
   );
 
-  const active = listActiveDesignatedAliasCredentials(runtime, aid);
+  const active = listActiveDesignatedAliasCredentials(rgy, aid);
   const revoked: string[] = [];
   for (const item of active) {
     const said = credentialSaid(item.creder);
@@ -129,10 +129,10 @@ export function bindDesignatedAliases(
 
 /** List active, unrevoked DA credentials issued by one AID. */
 export function listActiveDesignatedAliasCredentials(
-  runtime: AgentRuntime,
+  regery: Regery,
   aid: string,
 ): ActiveDesignatedAliasCredential[] {
-  const { reger, tvy } = requireRegery(runtime);
+  const { reger, tvy } = regery;
   const wallet = new CredentialWallet(reger);
   const active: ActiveDesignatedAliasCredential[] = [];
   for (

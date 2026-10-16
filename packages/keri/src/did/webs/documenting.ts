@@ -6,11 +6,11 @@
  * `did:web`, but resolver comparison normalizes them back to `did:webs`.
  */
 import type { ThresholdClause, ThresholdClauseEntry, ThresholdSith } from "cesr-ts";
-import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import type { Habery } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { Kever } from "../../core/kever.ts";
 import { Roles } from "../../core/roles.ts";
+import type { Regery } from "../../vdr/credentialing.ts";
 import { listActiveDesignatedAliasCredentials } from "./designated-aliases.ts";
 import { parseDid, parseDidWebs, toCanonicalDidWebs, toHostedDidWeb } from "./dids.ts";
 
@@ -36,13 +36,14 @@ interface Rational {
   readonly denominator: bigint;
 }
 
-/** Generate a DID document or DID Resolution Result from runtime state. */
+/** Project accepted key, endpoint and credential state into a DID document or result. */
 export function generateDidDocument(
-  runtime: AgentRuntime,
+  hby: Habery,
+  regery: Regery,
   did: string,
   options: DidDocumentOptions = {},
 ): DidDocument | DidResolutionResult {
-  const document = generateBareDidDocument(runtime, did, options);
+  const document = generateBareDidDocument(hby, regery, did, options);
   if (!options.metadata) {
     return document;
   }
@@ -55,15 +56,16 @@ export function generateDidDocument(
   };
 }
 
-/** Generate only the DID document body from runtime state. */
+/** Project accepted state into a DID document without owning intake or scheduling. */
 export function generateBareDidDocument(
-  runtime: AgentRuntime,
+  hby: Habery,
+  regery: Regery,
   did: string,
   options: DidDocumentOptions = {},
 ): DidDocument {
   const parsed = parseDid(did);
   const aid = parsed.aid;
-  const kever = runtime.hby.db.getKever(aid, { refresh: true });
+  const kever = hby.db.getKever(aid, { refresh: true });
   if (!kever) {
     throw new ValidationError(`No accepted key state for ${aid}.`);
   }
@@ -74,8 +76,8 @@ export function generateBareDidDocument(
     : parsed.canonical;
   const methodEntries = verificationMethods(documentDid, kever);
   methodEntries.push(...thresholdVerificationMethods(documentDid, kever, methodEntries.map((entry) => entry.id)));
-  const services = serviceEntries(runtime.hby, aid);
-  const aliases = listActiveDesignatedAliasCredentials(runtime, aid)
+  const services = serviceEntries(hby, aid);
+  const aliases = listActiveDesignatedAliasCredentials(regery, aid)
     .flatMap((item) => item.aliases)
     .sort();
   return pruneEmpty({

@@ -4,6 +4,7 @@
 import type { Operation } from "effection";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import { processRuntimeTurn } from "../../app/agent-runtime.ts";
+import { requireRegery } from "../../app/credential-workflows.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { parseDidKeriIdentifier } from "../webs/dids.ts";
 import {
@@ -43,7 +44,7 @@ export function* resolveDidKeri(
   if (!runtime.hby.db.getKever(parsed.aid, { refresh: true })) {
     throw new ValidationError(`No accepted key state for ${parsed.aid}.`);
   }
-  const document = generateBareDidDocument(runtime, parsed.canonical);
+  const document = generateBareDidDocument(runtime.hby, requireRegery(runtime), parsed.canonical);
   return {
     did: parsed.canonical,
     document,

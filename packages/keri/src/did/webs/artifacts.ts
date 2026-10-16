@@ -6,6 +6,7 @@
  */
 import { concatBytes, Diger, Prefixer } from "cesr-ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
+import { requireRegery } from "../../app/credential-workflows.ts";
 import type { Hab } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { type Role, Roles } from "../../core/roles.ts";
@@ -63,7 +64,7 @@ function prepareHostedJson(
     );
   }
   pinDesignatedAliasesSchema(runtime);
-  const document = generateDidDocument(runtime, options.did, {
+  const document = generateDidDocument(runtime.hby, requireRegery(runtime), options.did, {
     hosted: true,
     metadata: options.metadata ?? false,
   });
@@ -136,7 +137,7 @@ function designatedAliasMessages(
     throw new ValidationError("VDR runtime did not open Reger.");
   }
   const messages: Uint8Array[] = [];
-  for (const item of listActiveDesignatedAliasCredentials(runtime, aid)) {
+  for (const item of listActiveDesignatedAliasCredentials(requireRegery(runtime), aid)) {
     const creder = item.creder;
     if (!creder.regid || !creder.said) {
       continue;

@@ -9,6 +9,7 @@ import { call, type Operation } from "effection";
 import { abortable } from "../../app/abortable.ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import { collectBytes, streamBytes } from "../../app/byte-source.ts";
+import { requireRegery } from "../../app/credential-workflows.ts";
 import { defaultRuntimeHttpClient } from "../../app/runtime-services.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { pinDesignatedAliasesSchema } from "./designated-aliases.ts";
@@ -57,7 +58,7 @@ function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions
   yield* runtime.reactor.processEscrowsOnce();
   // Preserve the second convergence turn previously run after settleRuntimeIngress's own pass.
   yield* runtime.reactor.processEscrowsOnce();
-  const expected = generateBareDidDocument(runtime, parsed.canonical);
+  const expected = generateBareDidDocument(runtime.hby, requireRegery(runtime), parsed.canonical);
   const bytes = yield* abortable((signal) =>
     collectBytes(artifactBytes(runtime, urls.didJson, fallbackUrls.didJson, preferHttp, signal))
   );
