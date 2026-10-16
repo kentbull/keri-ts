@@ -552,7 +552,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
       let tcpTask = yield* spawn(serve);
       const receiver = yield* createAgentRuntime(sourceHby, { enableMailboxStore: true });
       let replayed = 0, foreignReplay = false;
-      let driver: Task<never> | undefined;
+      let driver: Task<void> | undefined;
       let stoppingReceiver = false, receiveTask: Task<void> | undefined;
 
       try {

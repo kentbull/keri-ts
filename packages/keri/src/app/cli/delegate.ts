@@ -19,7 +19,7 @@ import { dgKey } from "../../db/core/keys.ts";
 import {
   type AgentRuntime,
   processRuntimeTurn,
-  processRuntimeUntil,
+  runAgentRuntimeUntil,
 } from "../agent-runtime.ts";
 
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../endpoint-roleing.ts";
@@ -209,10 +209,10 @@ export function* performDelegationApproval(
 ): Operation<void> {
   const interactionApproval = confirmArgs.interact ?? false;
 
-  yield* processRuntimeUntil(
+  yield* runAgentRuntimeUntil(
     runtime,
     () => pendingDelegations(hby, hab.pre).length > 0,
-    { hab, maxTurns: 64, pollMailbox: true },
+    { hab, timeoutMs: 15_000, pollMailbox: true },
   );
 
   const pending = pendingDelegations(hby, hab.pre);
@@ -281,10 +281,10 @@ export function* performDelegationApproval(
         runtime.querying.enqueue(
           delegateWitnessLogsQuery(member, serder, selectedWitness),
         );
-        yield* processRuntimeUntil(
+        yield* runAgentRuntimeUntil(
           runtime,
           () => delegateCommitted(hby, serder),
-          { hab: member, maxTurns: 128, pollMailbox: true },
+          { hab: member, timeoutMs: 30_000, pollMailbox: true },
         );
       }
       pinApprovalSeal(hby, hab, serder, approving);
@@ -342,10 +342,10 @@ export function* performDelegationApproval(
       runtime.querying.enqueue(
         delegateWitnessLogsQuery(hab, serder, selectedWitness),
       );
-      yield* processRuntimeUntil(
+      yield* runAgentRuntimeUntil(
         runtime,
         () => delegateCommitted(hby, serder),
-        { hab, maxTurns: 128, pollMailbox: true },
+        { hab, timeoutMs: 30_000, pollMailbox: true },
       );
     } else {
       const querier = runtime.querying.watchSeqNo(
@@ -357,10 +357,10 @@ export function* performDelegationApproval(
       // after the delegator has anchored approval; the delegate still
       // discovers approval through its own delegator-KEL query path.
       pinApprovalSeal(hby, hab, serder, approving);
-      yield* processRuntimeUntil(
+      yield* runAgentRuntimeUntil(
         runtime,
         () => querier.done,
-        { hab, maxTurns: 128, pollMailbox: true },
+        { hab, timeoutMs: 30_000, pollMailbox: true },
       );
     }
     yield* processRuntimeTurn(runtime, { hab, pollMailbox: true });

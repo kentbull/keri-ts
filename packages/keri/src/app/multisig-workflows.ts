@@ -29,7 +29,7 @@ import { Credentialer, Regery, Registry, serializeCredential } from "../vdr/cred
 import {
   type AgentRuntime,
   processMailboxTurn,
-  processRuntimeUntil,
+  runAgentRuntimeUntil,
 } from "./agent-runtime.ts";
 
 import { requireRegery } from "./credential-workflows.ts";
@@ -301,10 +301,10 @@ export function* completeDelegationIfNeeded(
   }
   runtime.delegating.beginLatest(pre, kever.sn, { communicationHab });
 
-  yield* processRuntimeUntil(
+  yield* runAgentRuntimeUntil(
     runtime,
     () => runtime.delegating.complete(pre, kever.sn),
-    { hab: communicationHab, maxTurns: 512, pollMailbox: true },
+    { hab: communicationHab, timeoutMs: 120_000, pollMailbox: true },
   );
   return runtime.delegating.workflowStatus(pre, kever.sner.numh).phase;
 }

@@ -69,6 +69,21 @@ capacity retry. Failed processing does not reinsert its record. `clearIngress`
 discards queued records, while an active input operation owns its real cleanup.
 Runtime explicit close and scope exit clear queued ingress and cues.
 
+## Host workers and finite commands
+
+runAgentRuntime composes the existing component workers and suspends under their
+supervision. runAgentRuntimeUntil uses those same workers until its committed-state
+predicate succeeds or a caller-owned elapsed deadline expires, then joins them
+before returning or throwing. Commands choose their actual deadline and whether
+mailbox polling is needed; no max-turn count estimates elapsed work. A blocked
+HTTP/mailbox worker does not serialize unrelated ingress or escrow progress.
+Actual cleanup failure still reaches the caller after convergence or cancellation.
+
+The older serial processRuntimeTurn and explicit mailbox/approval pumping remain
+transitional removal work. Their remaining callers must move to real ingress or
+the shared workers, rather than a renamed whole-runtime pump. This finite-wait
+cut does not finish that migration or final composed qualification.
+
 ## Actual cancellation and cleanup
 
 Acquire actual source/socket/store owners before their work children. Cancellation

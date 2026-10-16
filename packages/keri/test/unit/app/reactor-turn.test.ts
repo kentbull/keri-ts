@@ -1,8 +1,8 @@
-import { call, ensure, run, spawn, suspend } from "effection";
+import { call, ensure, race, run, sleep, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { concatBytes, parseBytes } from "../../../../cesr/mod.ts";
 import { abortable } from "../../../src/app/abortable.ts";
-import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
@@ -21,6 +21,77 @@ function gate(): { wait: Promise<void>; open: () => void } {
   });
   return { wait, open };
 }
+
+Deno.test("finite runtime workers progress independently and join blocked HTTP cleanup on completion or deadline", async () => {
+  for (const mode of ["complete", "deadline"] as const) {
+    await run(function*() {
+      const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const sender = source.makeHab("sender"), fetched = gate(), cancelling = gate(), cleanup = gate();
+      let finished = false, failure: unknown;
+      const runtime = yield* createAgentRuntime(target, {
+        services: {
+          http: {
+            fetch() {
+              fetched.open();
+              return Promise.resolve(
+                new Response(
+                  new ReadableStream<Uint8Array>({
+                    cancel() {
+                      cancelling.open();
+                      return cleanup.wait;
+                    },
+                  }),
+                  { headers: { "Content-Type": "application/cesr" } },
+                ),
+              );
+            },
+          },
+        },
+      });
+      runtime.oobiery.resolve(`http://blocked.test/oobi/${sender.pre}/controller`);
+      const worker = yield* spawn(function*() {
+        try {
+          yield* runAgentRuntimeUntil(runtime, () => target.db.getKever(sender.pre) !== null, {
+            pollMailbox: false,
+            timeoutMs: mode === "deadline" ? 100 : 2000,
+          });
+        } catch (error) {
+          failure = error;
+        } finally {
+          finished = true;
+        }
+      });
+      try {
+        yield* call(() => fetched.wait);
+        if (mode !== "deadline") runtime.reactor.ingest(acceptedEventReplayMessage(source, sender.pre, 0).message);
+        yield* race([
+          call(() => cancelling.wait),
+          call(function*() {
+            yield* sleep(3000);
+            throw new Error("runtime did not stop its blocked HTTP source");
+          }),
+        ]);
+        assertEquals(finished, false, "the caller cannot resume before source cancellation joins");
+        cleanup.open();
+        yield* worker;
+        assertEquals(finished, true);
+        if (mode === "complete") {
+          assertEquals(failure, undefined);
+          assertEquals(target.db.getKever(sender.pre)?.sn, 0, "ingress progresses while OOBI input is blocked");
+        } else {
+          assertEquals(failure instanceof Error && failure.message, "Runtime did not converge within 100ms.");
+        }
+      } finally {
+        cleanup.open();
+        yield* worker.halt();
+        yield* runtime.close();
+        yield* target.close(true);
+        yield* source.close(true);
+      }
+    });
+  }
+});
 
 Deno.test("protocol processing waits for cancelled handler cleanup before the next pass", async () => {
   await run(function*() {

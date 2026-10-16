@@ -1,4 +1,4 @@
-import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
+import { call, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
@@ -658,36 +658,28 @@ export function runtimeOobiConverged(
     && !pending.queriesPending;
 }
 
-/**
- * Drive the shared runtime until the caller-provided completion predicate
- * succeeds or the bounded turn budget is exhausted.
- */
-export function* processRuntimeUntil(
+/** Run the same component workers as a host until command state completes or its deadline expires. */
+export function* runAgentRuntimeUntil(
   runtime: AgentRuntime,
   done: () => boolean,
   options: {
     hab?: Hab;
-    maxTurns?: number;
+    timeoutMs: number;
     pollMailbox?: boolean;
-  } = {},
+  },
 ): Operation<void> {
-  const maxTurns = options.maxTurns ?? 64;
-  for (let turn = 0; turn < maxTurns; turn++) {
-    if (done()) {
-      return;
-    }
-    yield* processRuntimeTurn(runtime, options);
-    if (done()) {
-      return;
-    }
-    if (!runtimeHasPendingWork(runtime)) {
+  if (done()) return;
+  const { timeoutMs, ...workerOptions } = options;
+  const deadline = Date.now() + timeoutMs;
+  const worker = yield* spawn(() => runAgentRuntime(runtime, workerOptions));
+  try {
+    while (!done()) {
+      if (Date.now() >= deadline) throw new Error(`Runtime did not converge within ${timeoutMs}ms.`);
       yield* runtimeTurn();
     }
+  } finally {
+    yield* worker.halt();
   }
-
-  throw new Error(
-    `Runtime did not converge within ${maxTurns} turns.`,
-  );
 }
 
 /**
@@ -716,8 +708,9 @@ export function* runAgentRuntime(
   runtime: AgentRuntime,
   options: {
     hab?: Hab;
+    pollMailbox?: boolean;
   } = {},
-): Operation<never> {
+): Operation<void> {
   runtime.querying.configure({ hab: options.hab });
   runtime.mailboxPoller.configure({ hab: options.hab });
   const tasks = [
@@ -750,9 +743,13 @@ export function* runAgentRuntime(
         }),
       ]
       : []),
-    yield* spawn(function*() {
-      yield* runtime.mailboxPoller.pollDo((batch) => settleMailboxPollBatch(runtime, batch));
-    }),
+    ...(options.pollMailbox ?? true
+      ? [
+        yield* spawn(function*() {
+          yield* runtime.mailboxPoller.pollDo((batch) => settleMailboxPollBatch(runtime, batch));
+        }),
+      ]
+      : []),
     yield* spawn(function*() {
       while (true) {
         yield* runtime.delegating.processAllOnce(runtime);
@@ -764,9 +761,7 @@ export function* runAgentRuntime(
     }),
   ];
   try {
-    while (true) {
-      yield* runtimeTurn();
-    }
+    return yield* suspend();
   } finally {
     for (const task of tasks.reverse()) {
       yield* task.halt();

@@ -15,7 +15,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import {
   createAgentRuntime,
-  processRuntimeUntil,
+  runAgentRuntimeUntil,
 } from "../agent-runtime.ts";
 
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
@@ -223,10 +223,10 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
           });
           const snh = hab.kever.sn.toString(16);
 
-          yield* processRuntimeUntil(
+          yield* runAgentRuntimeUntil(
             runtime,
             () => runtime.delegating.complete(hab.pre, hab.kever!.sn),
-            { hab, maxTurns: 512, pollMailbox: true },
+            { hab, timeoutMs: 120_000, pollMailbox: true },
           );
           delegationPhase = runtime.delegating.workflowStatus(hab.pre, snh).phase;
         } finally {
