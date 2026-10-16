@@ -19,24 +19,25 @@ Earlier `927c0cb8` fixture results retain their historical provenance.
 
 ## Implemented ownership
 
-| Responsibility                    | Owner                                                           |
-| --------------------------------- | --------------------------------------------------------------- |
-| Layout/lifecycle                  | RegBaser                                                        |
-| Storage/aliases/ordered chains    | RegistryStore                                                   |
-| Pure vetting                      | vet/vetBinds                                                    |
-| Atomic decisions/escrows          | Registry engine                                                 |
-| Local create/blind/present/vacate | Regery/Registry; audit forwarding-only v2 Registrar for removal |
-| Public parsed intake              | RegistryObserver                                                |
-| Child and presentation proofs     | IPEX                                                            |
-| Scoped runtime installation       | acdc.rgy; separate vdr.rgy                                      |
+| Responsibility                    | Owner                                              |
+| --------------------------------- | -------------------------------------------------- |
+| Layout/lifecycle                  | RegBaser                                           |
+| Storage/aliases/ordered chains    | RegistryStore                                      |
+| Pure vetting                      | vet/vetBinds                                       |
+| Atomic decisions/escrows          | Registry engine                                    |
+| Local create/blind/present/vacate | Regery/Registry; unused Registrar wrappers removed |
+| Public parsed intake              | RegistryObserver                                   |
+| Child and presentation proofs     | IPEX                                               |
+| Scoped runtime installation       | acdc.rgy; separate vdr.rgy                         |
 
 RegistryStore reads do not authenticate evidence. Body presence does not establish
 accepted sequence/head state. Local engine acceptance requires full witnessed
 KEL tuples; observer digest-only vetting remains a separate proof boundary.
 Choose concrete Reger/Regery/Tevery/Verifier dependencies at construction. Do not
-retain vague service bags or repeated runtime type checks. Delete a v2 Registrar
-facade if it only forwards; the legacy VDR Registrar has separate real workflow
-responsibilities and must be judged independently.
+retain vague service bags or repeated runtime type checks. Both v2 and legacy VDR
+Registrar wrappers are removed after caller review: neither had a production
+consumer or independent responsibility. Regery/Registry/Credentialer retain the
+actual version-specific workflows; no compatibility forwarding class remains.
 
 Concrete owners support reopen, earliest-anchor retention, deterministic retry,
 protected accepted slots/heads and an unambiguous staged frontier. Pure constructors

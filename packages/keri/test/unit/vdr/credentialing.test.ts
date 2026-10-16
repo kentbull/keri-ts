@@ -23,7 +23,6 @@ import {
   Credentialer,
   CredentialWallet,
   Regery,
-  Registrar,
   serializeCredential,
 } from "../../../src/vdr/credentialing.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
@@ -212,14 +211,14 @@ Deno.test("vdr/credentialing - creates, issues, saves, exports, and revokes a cr
   });
 });
 
-Deno.test("vdr/credentialing - registrar facade delegates single-sig completion", async () => {
+Deno.test("vdr/credentialing - registry completes single-sig inception", async () => {
   await run(function*() {
     const hby = yield* createHabery({
-      name: `credentialing-registrar-${crypto.randomUUID()}`,
+      name: `credentialing-registry-completion-${crypto.randomUUID()}`,
       temp: true,
     });
     const reger = yield* createReger({
-      name: `credentialing-registrar-${crypto.randomUUID()}`,
+      name: `credentialing-registry-completion-${crypto.randomUUID()}`,
       temp: true,
     });
     try {
@@ -232,11 +231,10 @@ Deno.test("vdr/credentialing - registrar facade delegates single-sig completion"
         toad: 0,
       });
       const rgy = new Regery(hby, { reger });
-      const registrar = new Registrar(rgy);
       const registry = rgy.makeRegistry("issuer-reg", hab);
 
-      assertEquals(registrar.complete(registry, registry.regk!), true);
-      registrar.processEscrows();
+      assertEquals(registry.complete(registry.regk!), true);
+      rgy.processEscrows();
     } finally {
       yield* reger.close(true);
       yield* hby.close(true);

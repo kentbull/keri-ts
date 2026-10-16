@@ -500,35 +500,6 @@ export class Registry {
   }
 }
 
-/** Local registrar facade over the single-sig registry completion path. */
-export class Registrar {
-  readonly rgy: Regery;
-
-  constructor(rgy: Regery) {
-    this.rgy = rgy;
-  }
-
-  incept(registry: Registry, options: RegistryInceptOptions = {}): TelProcessDecision {
-    return registry.incept(options);
-  }
-
-  issue(registry: Registry, creder: SerderACDC): TelProcessDecision {
-    return registry.issue(creder).decision;
-  }
-
-  revoke(registry: Registry, credentialSaid: string): TelProcessDecision {
-    return registry.revoke(credentialSaid).decision;
-  }
-
-  complete(registry: Registry, pre: string, sn = 0): boolean {
-    return registry.complete(pre, sn);
-  }
-
-  processEscrows(): void {
-    this.rgy.processEscrows();
-  }
-}
-
 /** Create, validate, issue, and index credentials for one local registry lane. */
 export class Credentialer {
   readonly hby: Habery;
