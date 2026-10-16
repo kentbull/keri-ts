@@ -112,7 +112,8 @@ with openHby(name="ipex-vectors", temp=True, salt=salt) as hby:
     emit("unreachable extra node", nodes=[signed(origin), signed(far)])
     emit("duplicate node", nodes=[signed(origin), signed(origin)])
     emit("disclosure order follows breadth first graph", nodes=[signed(near), signed(far)], dp=list(reversed(graph_plan)))
-    for op in ("E1E", "NI2I", "NOT", "DI2I"):
+    # Unevaluated reference stubs are not parity requirements for TS operator support.
+    for op in ("E1E", "NI2I"):
         node = acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"), edge=edge("authority", far, op))
         dp = [[node.schema["$id"], "/", []], [far.schema["$id"], "/e/authority/_/", []]]
         emit(f"edge operator {op}", nodes=[signed(node), signed(far)], dp=dp)

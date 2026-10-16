@@ -99,6 +99,13 @@ proof; metadata offers withhold issuer proofs but still validate carried schemas
 Grant order is issuer authentication, own schemas, edge pins, then presentation.
 Same-schema identity never bypasses payload constraints; missing schema is a
 typed dependency, while infrastructure/resource failures propagate.
+DI2I permits identity or an approved inception chain at any depth. Read each
+delegator's inception DND and accepted approval; protected/witness-held delpre is
+not authority. Missing KEL/approval evidence stays in proof escrow. Later rotations
+or witness changes do not renew the relationship, and lookup does not write hints.
+The last explicit I2I/NI2I/DI2I wins. Targeted far nodes default to I2I, untargeted
+to NI2I; the reference E1E extension retains entity-only matching when identity is
+not explicit. NOT needs authenticated node validity, not an inverted relation.
 Conversation acceptance is not wallet acceptance. Observer registry import
 is separate from issuer registry processing. Presentation registries still require
 receiver-owned KRAM time, node-local BLIDs and explicit fully witnessed Issuee

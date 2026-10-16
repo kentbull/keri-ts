@@ -1,5 +1,5 @@
 /** Borrowed ACDC disclosure DAGs: structure, negotiated paths and edge semantics. */
-import { type CesrFrame, Compactor, makePather, type MapperMap, Saider, SerderACDC } from "cesr-ts";
+import { type CesrFrame, Compactor, makePather, type MapperMap, Saider, SealEvent, SerderACDC } from "cesr-ts";
 import { type SchemaValidation, validateSchema } from "../acdc/scheming.ts";
 import type { Baser } from "../db/basing.ts";
 
@@ -11,7 +11,9 @@ export interface IpexGraph {
   order: readonly string[];
 }
 type MissingSchema = Extract<SchemaValidation, { kind: "missing" }>;
-type Relation = boolean | null | MissingSchema;
+/** Absent edge evidence remains distinct from a disproved relationship. */
+type RelationDependency = MissingSchema | { kind: "missingKel"; pre: string };
+type Relation = boolean | null | RelationDependency;
 const sectionLabels = new Set(["d", "u", "o", "w"]);
 const groupLabels = new Set([...sectionLabels, "s"]);
 const nodeLabels = new Set(["d", "u", "n", "s", "o", "w"]);
@@ -195,6 +197,61 @@ export function verifyIpexDisclosure(plan: DisclosurePlan, origin: string, graph
   return equal(selected, graph.order);
 }
 
+/** Walk approved inception relationships without modifying delegation hints or imposing a depth policy. */
+function delegatedIssuer(issuer: string, issuee: string, db: Baser): boolean | RelationDependency {
+  let pre = issuer;
+  while (pre !== issuee) {
+    if (!db.getKever(pre)) return { kind: "missingKel", pre };
+    const said = db.kels.getLast(pre, 0);
+    const inception = said ? db.getEvtSerder(pre, said) : null;
+    if (!inception) return { kind: "missingKel", pre };
+    if (inception.ilk !== "dip" || !inception.delpre) return false;
+    const delegator = inception.delpre;
+    if (!db.getKever(delegator)) return { kind: "missingKel", pre: delegator };
+    const parentSaid = db.kels.getLast(delegator, 0);
+    const parent = parentSaid ? db.getEvtSerder(delegator, parentSaid) : null;
+    if (!parent) return { kind: "missingKel", pre: delegator };
+    if (parent.traits.includes("DND")) return false;
+    let approved = false;
+    for (const event of db.getEvtPreIter(delegator)) {
+      // Only the DIP's ordinal-zero seal matters; unrelated application data stays opaque.
+      if (
+        event.seals.some((seal) =>
+          SealEvent.isSad(seal) && seal.i === pre && seal.d === inception.said && /^0+$/.test(seal.s)
+        )
+      ) {
+        approved = true;
+        break;
+      }
+    }
+    if (!approved) return { kind: "missingKel", pre: delegator };
+    // DIP prefixes commit their delegator: a valid chain cannot contain a hash cycle.
+    pre = delegator;
+  }
+  return true;
+}
+
+/** Identity policy is separate from edge shape and additional far-node schema validation. */
+function identityRelation(
+  operators: readonly string[],
+  near: SerderACDC,
+  far: SerderACDC,
+  db: Baser,
+): boolean | RelationDependency {
+  // NOT needs authenticated node validity, not a negated identity comparison.
+  if (operators.includes("NOT")) return false;
+  if (operators.includes("E1E") && (!near.issuee || !far.issuee || near.issuee !== far.issuee)) return false;
+  // Preserve the reference E1E extension's entity-only path unless identity is explicit.
+  let relation: "I2I" | "NI2I" | "DI2I" = far.issuee && !operators.includes("E1E") ? "I2I" : "NI2I";
+  for (const operator of operators) {
+    if (operator === "I2I" || operator === "NI2I" || operator === "DI2I") relation = operator;
+  }
+  if (relation === "NI2I") return true;
+  if (!far.issuee || !near.issuer) return false;
+  if (near.issuer === far.issuee) return true;
+  return relation === "DI2I" ? delegatedIssuer(near.issuer, far.issuee, db) : false;
+}
+
 /** Check one declared edge relation and its schema pin after the graph's issuer proofs pass. */
 function leafRelation(
   group: Record<string, unknown>,
@@ -207,18 +264,16 @@ function leafRelation(
   const far = graph.nodes.get(group.n)?.body;
   if (!far) return null;
   const op = group.o;
-  const operators = op == null
+  const operators = op == null || op === ""
     ? []
     : typeof op === "string"
     ? [op]
-    : Array.isArray(op) && op.length && op.every((item) => typeof item === "string")
+    : Array.isArray(op) && op.every((item) => typeof item === "string")
     ? op
     : null;
   if (!operators || operators.some((item) => !unaryOps.has(item))) return null;
-  // The frozen reference recognizes these operators but leaves them unsatisfied.
-  if (operators.includes("NOT") || operators.includes("DI2I")) return false;
-  if (operators.includes("E1E") && (!near.issuee || !far.issuee || near.issuee !== far.issuee)) return false;
-  if (operators.includes("I2I") && (!far.issuee || near.issuer !== far.issuee)) return false;
+  const identity = identityRelation(operators, near, far, db);
+  if (identity !== true) return identity;
   const schema = Object.hasOwn(group, "s") ? group.s : inheritedSchema;
   if (schema == null) return true;
   if (typeof schema !== "string" && !record(schema)) return false;
@@ -254,7 +309,7 @@ function groupRelation(
 }
 
 /** Validate edge blocks against authenticated nodes; unavailable schemas remain typed dependencies. */
-export function verifyIpexRelations(graph: IpexGraph, db: Baser): boolean | MissingSchema {
+export function verifyIpexRelations(graph: IpexGraph, db: Baser): boolean | RelationDependency {
   for (const said of graph.order) {
     const near = graph.nodes.get(said)!.body;
     const edges = blocks(near.sad!.e);
