@@ -413,7 +413,12 @@ for (const spec of MATRIX) {
         );
         assertEquals(delegatorHby.db.getKever(delegated.pre), null);
         if (spec.delegate.kind === "group") {
-          assertEquals(delegateHby.db.getKever(delegated.pre), null);
+          assertEquals(delegateHby.db.getKever(delegated.pre)?.said, delegated.serder.said);
+          assertEquals(
+            delegateHby.db.aess.get(dgKey(delegated.pre, delegated.serder.said!)),
+            null,
+            "local group acceptance is not delegator approval",
+          );
         }
 
         const approving = approveDelegable(delegator, delegated);
@@ -429,6 +434,8 @@ for (const spec of MATRIX) {
         }
 
         yield* settleRuntimeIngress(delegateRuntime, delegatorReplay);
+        // The approving peer supplies the actual accepted event and authorizing source seal.
+        yield* settleRuntimeIngress(delegateRuntime, delegatorHby.db.clonePreIter(delegated.pre));
 
         assertEquals(delegateHby.db.getKever(delegated.pre)?.sn, 0);
         assertEquals(
