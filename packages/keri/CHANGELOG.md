@@ -1,5 +1,14 @@
 # keri-ts
 
+## 2.0.0
+
+### Major Changes
+
+- 6c8e597: Pass concrete registry, transport, signing and contact-store dependencies into
+  application operations. Remove the runtime registry lookup export and update
+  credential/DID workflows, Notifier and Organizer constructors without compatibility
+  shims. CLI and HTTP adapters validate required capabilities before protocol effects.
+
 ## 1.0.0
 
 ### Breaking API and architecture changes
