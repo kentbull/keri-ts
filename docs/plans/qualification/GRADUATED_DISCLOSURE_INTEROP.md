@@ -102,7 +102,7 @@ Current upstream and the consolidated mailbox fork are distinct reference labels
 Start with independent single-controller peers. Extend the complete conversations
 to multisig with independently signing controllers and real witnesses/mailboxes.
 Preserve the existing participant topology where fixtures already establish it.
-The maintained `interop-kram` owner has twelve cases through actual fork/Tufa
+The maintained mailbox matrix in `interop-kram` has twelve cases through actual fork/Tufa
 mailbox hosts: both directions with single controllers and independent two-of-two
 member stores, four process-crash/reopen cases, and four witnessed-controller cases.
 Controller KELs arrive through HTTP, never receiver seeding. A first group signature
@@ -128,6 +128,19 @@ No receiver KEL/proof seeding, migration or previous-version TS compatibility is
 involved. Crash/reopen and witnessed cases are separate scenarios; the latter do
 not claim witnessed restart coverage. Composed IPEX and presentation-registry
 behavior remain required. No business-ack/outbox machinery.
+
+`interop-ipex-presentation.test.ts`, also owned by `interop-kram`, composes TS
+issuer, holder and receiver stores with three real KERIpy witnesses. Single and
+independent two-of-two holders complete offer → agree → grant → admit through
+HTTP. RegistryObserver is explicitly composed by the application; its parsed
+intake is not an automatic Tufa route or a direct accepted-row write. The grant
+waits for missing presentation TEL evidence across store reopen. A later accepted
+binding cannot change its inclusive KRAM receipt cutoff. The group case separates
+first-signature arrival from threshold completion; replay cannot refresh that
+completed receipt. Stored partial credentials retain commitments and hidden data.
+These are TS credential processors with Python witnesses, not pairwise Python
+presentation-registry processing or mailbox-delivered IPEX. Those limits remain
+distinct from the bidirectional mailbox authentication cases above.
 
 Check accepted exchange lineage and both parties' state through admit, verified
 credential/root/chain commitments, retained partial nests, absence of private

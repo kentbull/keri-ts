@@ -235,6 +235,7 @@ export const suites: Record<string, TestSuite> = {
   "interop-kram": {
     files: [
       "test/integration/app/interop-kram-mailbox.test.ts",
+      "test/integration/app/interop-ipex-presentation.test.ts",
     ],
   },
   "manual-delegation": {
