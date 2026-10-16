@@ -222,11 +222,16 @@ class TypeScriptPeer implements IpexPeer {
         ? this.signed(node, invalid === "altered" && !i ? this.disclosed(false)[0] : node)
         : { body: node, attachments: [], gvrsn: Vrsn_2_0 }
     );
+    return this.deliver(frame, !invalid);
+  }
+
+  /** Local protocol processing and public delivery share the same signed frame. */
+  private async deliver(frame: CesrFrame, accepted: boolean): Promise<string> {
     const wire = await collectPayload(framePayload(frame));
     await run(() => this.runtime.reactor.processBytes(wire));
-    assertEquals(Boolean(this.hby.db.exns.get(body.said!)), !invalid, `local outcome of ${verb}`);
+    assertEquals(Boolean(this.hby.db.exns.get(frame.body.said!)), accepted, `local outcome of ${frame.body.ilk}`);
     await this.post(frame);
-    return body.said!;
+    return frame.body.said!;
   }
 
   /** Replay actual retained exchange evidence through ordinary HTTP ingress. */

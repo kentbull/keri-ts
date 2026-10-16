@@ -148,9 +148,12 @@ class IpexPeer:
         previous = self.hby.db.exns.get(keys=(prior,)) if prior else None
         assert prior is None or previous is not None, f"Missing prior exchange: {prior}"
         body, attachments = self.message(verb, previous, invalid)
-        wire = bytes(body.raw + attachments)
+        return self.deliver(body, bytes(body.raw + attachments), not invalid)
+
+    def deliver(self, body, wire, accepted):
+        """Local verification and public delivery consume the same signed bytes."""
         Parser(version=Vrsn_2_0).parse(ims=bytearray(wire), kvy=self.kvy, exc=self.exc)
-        assert (self.hby.db.exns.get(keys=(body.said,)) is not None) == (not invalid), verb
+        assert (self.hby.db.exns.get(keys=(body.said,)) is not None) == accepted, body.route
         self.post(wire)
         return body.said
 
