@@ -10,7 +10,6 @@ import {
   parseBytes,
   Prefixer,
   SerderACDC,
-  Siger,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
@@ -42,53 +41,18 @@ import {
   withStartedChild,
 } from "./interop-test-helpers.ts";
 import { assertKeriPyWitnessStores } from "./interop-witness-helpers.ts";
-import { accepted, anchor, introduce, nonce, post, signed } from "./ipex-witness-helpers.ts";
+import {
+  accepted,
+  anchor,
+  inspectMailbox,
+  introduce,
+  introduceProvider,
+  nonce,
+  post,
+  signed,
+} from "./ipex-witness-helpers.ts";
 
 const PYTHON_PEER = fromFileUrl(new URL("../../fixtures/kram-mailbox-peer.py", import.meta.url));
-
-/** Observe the actual provider's accepted state; no command writes payload or protocol rows. */
-async function inspect(url: string, pre: string, saids: string[] = []): Promise<{
-  provider: string;
-  sender: { event: string; witnesses: string[]; threshold: number; receipts: number[] } | null;
-  rows: { said: string; cached: boolean; pending: boolean }[];
-}> {
-  const response = await fetch(`${url}_fixture`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "inspect", pre, saids }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  const text = await response.text();
-  assertEquals(response.status, 200, text);
-  return JSON.parse(text);
-}
-
-/** The fork's production bulk intake consumes explicit v2 attachment genera. */
-async function introduceProvider(url: string, hby: Habery, pre: string): Promise<void> {
-  for (const event of hby.db.getEvtPreIter(pre)) {
-    const wire = messagize(event, {
-      sigers: hby.db.getSigs(pre, event.said!).map((qb64) => new Siger({ qb64 })),
-      wigers: hby.db.wigs.get([pre, event.said!]),
-      gvrsn: Vrsn_2_0,
-      genusify: true,
-    });
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: { "Content-Type": "application/cesr" },
-      body: new Uint8Array(wire),
-      signal: AbortSignal.timeout(10_000),
-    });
-    assertEquals(response.ok, true, await response.text());
-  }
-  const deadline = Date.now() + 10_000;
-  let state;
-  do {
-    state = (await inspect(url, pre)).sender;
-    if (state?.event === hby.db.getKever(pre)!.said) break;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  } while (Date.now() < deadline);
-  assertEquals(state?.event, hby.db.getKever(pre)!.said);
-}
 
 for (const count of [1, 2]) {
   Deno.test(`IPEX mailbox: ${count}-signer TS holder, KERIpy provider and three witnesses, apply through admit`, async () => {
@@ -104,7 +68,7 @@ for (const count of [1, 2]) {
           ctx.repoRoot,
         );
         await withStartedChild(provider, port, async () => {
-          const providerPre = (await inspect(mailboxUrl, "unknown-controller")).provider;
+          const providerPre = (await inspectMailbox(mailboxUrl, "unknown-controller")).provider;
           await run(function*() {
             const hbys: Habery[] = [], runtimes: AgentRuntime[] = [];
             const listeners: {
@@ -239,7 +203,7 @@ for (const count of [1, 2]) {
                 for (const url of [...urls, mailboxUrl]) yield* call(() => post(url, signed(body, signers)));
               }
               for (const hab of [issuer, receiver, holder]) {
-                const state = yield* call(() => inspect(mailboxUrl, hab.pre));
+                const state = yield* call(() => inspectMailbox(mailboxUrl, hab.pre));
                 assertEquals(state.sender?.witnesses, wit.wits);
                 assertEquals(state.sender?.threshold, 2);
                 assertEquals(state.sender?.receipts, [0, 1, 2]);
@@ -330,7 +294,7 @@ for (const count of [1, 2]) {
                     return false;
                   }, { idleTimeoutMs: 2000, maxDurationMs: 5000 });
                   assertEquals(received, true, "the mailbox yielded the signed IPEX payload");
-                  const state = yield* call(() => inspect(mailboxUrl, destination.pre, [qry.said!]));
+                  const state = yield* call(() => inspectMailbox(mailboxUrl, destination.pre, [qry.said!]));
                   assertEquals(state.rows[0].cached, true, "KRAM authenticated the mailbox query");
                   assertEquals(state.rows[0].pending, false);
                   if (index < contributions.length - 1) {

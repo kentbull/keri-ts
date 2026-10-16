@@ -238,6 +238,7 @@ export const suites: Record<string, TestSuite> = {
       "test/integration/app/interop-kram-mailbox.test.ts",
       "test/integration/app/interop-ipex-presentation.test.ts",
       "test/integration/app/interop-ipex-mailbox.test.ts",
+      "test/integration/app/interop-ipex-mailbox-pairwise.test.ts",
     ],
   },
   "manual-delegation": {

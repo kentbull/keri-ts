@@ -122,7 +122,12 @@ preserving removed accounting or delivery guarantees.
    completed migration work as new tasks.
 3. Establish live graduated-disclosure and KRAM interop in both directions,
    single-signature and multisig with witnesses and mailboxes. Existing frozen
-   fixtures and legacy ACDC tests do not close this gate. `xip/pro/bar` reference
+   fixtures and legacy ACDC tests do not close this gate. Maintained signed
+   unregistered IPEX now crosses a Python mailbox between actual TS/Python
+   credential processors in both directions, including independently signing TS
+   groups and three witnesses. Presentation-registry intake and mailbox cutoff/
+   witnessed crash combinations remain distinct qualification limits.
+   `xip/pro/bar` reference
    processing stubs remain labeled; do not invent upstream support.
 4. Run the full maintained integration/e2e/interop inventory, representative real-path/
    lifecycle checks and exact installed-package checks. Preserve participant topology.

@@ -33,9 +33,9 @@ class Recorder:
 
 class IpexPeer:
     """Own one key store, protocol receiver and listener, independent of scenario order."""
-    def __init__(self, hby, cf, graph_case, port):
+    def __init__(self, hby, cf, graph_case, port, version):
         self.hby = hby
-        self.hab = hby.makeHab(name="peer", version=Vrsn_2_0, kind=Kinds.json)
+        self.hab = hby.makeHab(name="peer", version=version, kind=Kinds.json)
         self.graph_case = graph_case
         self.graph = graph_disclosures(hby, self.hab, graph_case)
         self.recorder = Recorder()
@@ -169,13 +169,13 @@ class PeerControl:
 
 
 @contextmanager
-def open_peer(port, graph_case=None):
-    """Fresh KRAM-enabled keys, stores and listener for each independent scenario."""
+def open_peer(port, graph_case=None, *, version=Vrsn_2_0):
+    """Fresh peer stores/listener; KEL version is independent of v2 IPEX messages."""
     with openCF(name="ipex-http", temp=True) as cf:
         cf.put(dict(kram=dict(enabled=True, denials=[], caches={
             "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000]})))
-        with openHby(name="python-peer", base="test", temp=True, version=Vrsn_2_0, cf=cf) as hby:
-            peer = IpexPeer(hby, cf, graph_case, port)
+        with openHby(name="python-peer", base="test", temp=True, version=version, cf=cf) as hby:
+            peer = IpexPeer(hby, cf, graph_case, port, version)
             try:
                 peer.doist.enter()
                 if not peer.server.servant.opened:

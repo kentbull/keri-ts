@@ -10,6 +10,7 @@ import {
   type SealEvent,
   type SerderACDC,
   type SerderKERI,
+  Siger,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
@@ -20,7 +21,7 @@ import { requestFrame } from "../../../src/app/cesr-egress.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { WitnessReceiptor } from "../../../src/app/witnessing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { messageAttachmentGroups } from "../../../src/core/protocol-serialization.ts";
+import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 
 /** Fresh commitment salts keep independent test runs and hidden fields distinct. */
 export function nonce(): string {
@@ -47,7 +48,7 @@ export async function introduce(url: string, hby: Habery, pre: string): Promise<
 }
 
 /** Each independent member contributes only its own controller signature. */
-export function signed(body: SerderKERI, signers: readonly Hab[], nests: CesrFrame[] = []): CesrFrame {
+export function signed(body: SerderKERI | SerderACDC, signers: readonly Hab[], nests: CesrFrame[] = []): CesrFrame {
   const hab = signers[0];
   return {
     body,
@@ -94,4 +95,54 @@ export function* anchor(
 export function accepted(registry: Registry, event: SerderACDC): void {
   registry.processEscrows();
   assertEquals(registry.head?.qb64, event.said);
+}
+
+/** Observe the actual provider's accepted state; no command writes payload or protocol rows. */
+export async function inspectMailbox(url: string, pre: string, saids: string[] = []): Promise<{
+  provider: string;
+  sender: { event: string; witnesses: string[]; threshold: number; receipts: number[] } | null;
+  rows: { said: string; cached: boolean; pending: boolean }[];
+  queries: { said: string; stamp: string }[];
+}> {
+  const response = await fetch(`${url}_fixture`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "inspect", pre, saids }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const text = await response.text();
+  assertEquals(response.status, 200, text);
+  return JSON.parse(text);
+}
+
+/** Send accepted KEL evidence through the production bulk intake with explicit v2 genera. */
+export async function postKel(url: string, hby: Habery, pre: string): Promise<void> {
+  for (const event of hby.db.getEvtPreIter(pre)) {
+    const wire = messagize(event, {
+      sigers: hby.db.getSigs(pre, event.said!).map((qb64) => new Siger({ qb64 })),
+      wigers: hby.db.wigs.get([pre, event.said!]),
+      gvrsn: Vrsn_2_0,
+      genusify: true,
+    });
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/cesr" },
+      body: new Uint8Array(wire),
+      signal: AbortSignal.timeout(10_000),
+    });
+    assertEquals(response.ok, true, await response.text());
+  }
+}
+
+/** Require the provider to accept the complete KEL before forwarding or polling. */
+export async function introduceProvider(url: string, hby: Habery, pre: string): Promise<void> {
+  await postKel(url, hby, pre);
+  const deadline = Date.now() + 10_000;
+  let state;
+  do {
+    state = (await inspectMailbox(url, pre)).sender;
+    if (state?.event === hby.db.getKever(pre)!.said) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  } while (Date.now() < deadline);
+  assertEquals(state?.event, hby.db.getKever(pre)!.said);
 }

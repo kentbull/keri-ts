@@ -174,7 +174,15 @@ data. Separate witnessed TS IPEX cases complete apply through admit over the
 KERIpy mailbox with single/two-of-two holders, three Python witnesses and real
 issuance proofs. Group grant proof remains incomplete after one contribution,
 then completes with the second; provider and recipient acceptance stay distinct.
-These are TS credential processors, not Python credential verification. Separate
-HTTP presentation-cutoff and provider SIGKILL cases retain their own assertions.
+Those cases use TS credential processors. Separate pairwise mailbox cases use
+real Python StreamPoster/Poller and TS Poster/KRAM intake in both directions,
+including independent two-of-two TS senders/recipients, three witnesses and
+signed unregistered chain/branch partials. Delivered missing/unsigned ancestors
+are refused before valid grants complete through admit. Exchange signed mailbox
+endpoint authorization as well as KELs; otherwise routing may choose a witness
+mailbox. Keep v1 witness KEL/OOBI context separate from v2 mailbox/IPEX framing.
+Python presentation-registry intake, mailbox presentation cutoffs and witnessed
+crash recovery remain unqualified; separate HTTP presentation-cutoff and provider
+SIGKILL cases retain their assertions.
 Packed minimum-Node, strict declarations, real native rows and composed disclosure/KRAM tests remain release
 gates; source Deno or addon-loading smoke alone does not qualify them.
