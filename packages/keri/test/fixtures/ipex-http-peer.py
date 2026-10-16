@@ -31,9 +31,9 @@ class Recorder:
         self.items.append(attrs)
 
 
-def disclosure(issuer):
+def disclosure(issuer, *, issuee=None, edge=None):
     """Build a full commitment and its status-only partial with identical SAIDs."""
-    full = acdcmap(issuer, uuid=Noncer().qb64, attribute=dict(
+    full = acdcmap(issuer, uuid=Noncer().qb64, iseaid=issuee, edge=edge, attribute=dict(
         d="", u=Noncer().qb64,
         status=dict(d="", u=Noncer().qb64, value="citizen"),
         private=dict(d="", u=Noncer().qb64, value="hidden-value")))
@@ -41,7 +41,8 @@ def disclosure(issuer):
                           kind=Kinds.json, verify=False)
     compactor.compact(paths=["a/status/"], root="a")
     partial = acdcmap(issuer, uuid=full.sad["u"], schema=full.sad["s"],
-                      attribute=compactor.partials[("a/status/",)].mad)
+                      attribute=compactor.partials[("a/status/",)].mad,
+                      edge=full.sad.get("e"))
     assert partial.said == full.said
 
     return full, partial
@@ -49,9 +50,13 @@ def disclosure(issuer):
 
 def main():
     """React to accepted peer messages, then assert both parties' full lineage."""
-    root, role, mode, recipient, destination, schema, port = sys.argv[1:]
+    root, role, mode, recipient, destination, schema, port, operator = sys.argv[1:]
+    operator = None if operator == "-" else operator
     root = Path(root)
     plan = [[schema, "/", ["a/status/"]]]
+    if operator:
+        plan.append([schema, "/e/authority/link/_/" if operator in ("AND", "OR") else
+                     "/e/authority/_/", ["a/status/"]])
     with openCF(name="ipex-http", temp=True) as cf:
         cf.put(dict(kram=dict(enabled=True, denials=[], caches={
             "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000]})))
@@ -70,6 +75,33 @@ def main():
             doist = doing.Doist(tock=.005, real=True,
                                doers=[http.ServerDoer(server=server)])
             full, partial = disclosure(hab.pre)
+            authority = hby.makeHab(name="authority") if operator and role == "issuer" else None
+            nodes, bad_nodes = [partial], []
+            if authority:
+                _, far = disclosure(authority.pre, issuee=hab.pre if operator == "I2I" else authority.pre)
+
+                def near(far, invalid=False):
+                    """Vary relation truth while retaining independently signed node evidence."""
+                    if operator in ("AND", "OR"):
+                        edge = dict(d="", o=operator, authority=dict(
+                            o="OR" if operator == "AND" else "AND",
+                            link=dict(n=far.said, o="I2I" if invalid and operator == "OR" else "NI2I"),
+                            sameIssuee=dict(n=far.said, o="I2I" if operator == "AND" else "E1E")),
+                            check=dict(n=far.said, o="E1E" if operator == "AND" and not invalid else "I2I"))
+                    else:
+                        edge = dict(d="", authority=dict(n=far.said, o=operator))
+                    return disclosure(hab.pre, issuee=authority.pre,
+                                      edge=edge)
+
+                full, partial = near(far)
+                nodes = [partial, far]
+                if operator == "NI2I":
+                    bad_nodes = nodes
+                elif operator in ("AND", "OR"):
+                    bad_nodes = [near(far, invalid=True)[1], far]
+                else:
+                    _, bad_far = disclosure(authority.pre, issuee=authority.pre if operator == "I2I" else hab.pre)
+                    bad_nodes = [near(bad_far)[1], bad_far]
 
             def post(wire):
                 """Send unchanged signed bytes through the TS full-body endpoint."""
@@ -79,12 +111,12 @@ def main():
                     assert rep.status == 204
                     rep.read()
 
-            def send(pair):
+            def send(pair, *, accepted=True):
                 """Persist our signed message through normal verification before replying."""
                 body, atc = pair
                 wire = bytes(body.raw + atc)
                 Parser(version=Vrsn_2_0).parse(ims=bytearray(wire), kvy=kvy, exc=exc)
-                assert hby.db.exns.get(keys=(body.said,)) is not None, body.route
+                assert (hby.db.exns.get(keys=(body.said,)) is not None) == accepted, body.route
                 post(wire)
                 return body
 
@@ -93,18 +125,29 @@ def main():
                 (root / "ready.json").write_text(json.dumps(dict(
                     pre=hab.pre, port=server.servant.ha[1])))
                 post(hab.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
+                if authority:
+                    post(authority.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
                 deadline = time.monotonic() + 30
                 sent = set()
                 complete = False
+                incoming_grants = []
+                rejected = None
                 while not complete:
                     assert time.monotonic() < deadline, "IPEX peer timed out"
                     doist.recur()
                     if parser.ims:
+                        # Observe decoded arrivals separately; only the normal parser mutates state.
+                        arrived = bytearray(parser.ims) if operator and role == "holder" else None
                         parser.parse()
+                        if arrived is not None:
+                            decoded = Parser(version=Vrsn_2_0).parse(ims=arrived, processive=False)
+                            incoming_grants.extend(frame.serder for frame in decoded
+                                                   if frame.serder.route == "/ipex/grant")
                     if recipient not in kvy.kevers:
                         continue
                     if mode.endswith("offer") and role == "issuer" and "open" not in sent:
-                        send(offer(hab, "status only", origin=partial, artifacts=[],
+                        send(offer(hab, "status only", origin=None if operator else partial,
+                                   artifacts=None if operator else [],
                                    recp=recipient, modifiers=dict(dp=[plan])))
                         sent.add("open")
                     if mode.endswith("apply") and role == "holder" and "open" not in sent:
@@ -118,18 +161,30 @@ def main():
                         sent.add(body.said)
                         if body.route == "/ipex/apply" and role == "issuer":
                             send(spurn(hab, "declined", body) if mode == "spurn-apply"
-                                 else offer(hab, "status only", partial, artifacts=[], apply=body))
+                                 else offer(hab, "status only", None if operator else partial,
+                                            artifacts=None if operator else [], apply=body))
                             complete = mode == "spurn-apply"
                         elif body.route == "/ipex/offer" and role == "holder":
                             send(spurn(hab, "declined", body) if mode == "spurn-offer"
                                  else agree(hab, "agreed", body))
                             complete = mode == "spurn-offer"
                         elif body.route == "/ipex/agree" and role == "issuer":
-                            signed = messagize(partial, tsgs=[(
-                                hab.kever.prefixer, Number(sn=hab.kever.lastEst.s),
-                                Diger(qb64=hab.kever.lastEst.d),
-                                hab.sign(ser=partial.raw, indexed=True))], gvrsn=Vrsn_2_0)
-                            send(grant(hab, recipient, "status only", origin=signed, agree=body))
+                            def signed(node):
+                                """Sign each child with its issuer's key, independently of the outer sender."""
+                                owner = authority if authority and node.israid == authority.pre else hab
+                                return messagize(node, tsgs=[(
+                                    owner.kever.prefixer, Number(sn=owner.kever.lastEst.s),
+                                    Diger(qb64=owner.kever.lastEst.d),
+                                    owner.sign(ser=node.raw, indexed=True))], gvrsn=Vrsn_2_0)
+
+                            if operator:
+                                bad = [signed(node) if operator != "NI2I" or index == 0 else node
+                                       for index, node in enumerate(bad_nodes)]
+                                rejected = send(grant(hab, recipient, "invalid chain", origin=bad[0],
+                                                      artifacts=bad[1:], agree=body), accepted=False).said
+                            signed_nodes = [signed(node) for node in nodes]
+                            send(grant(hab, recipient, "status only", origin=signed_nodes[0],
+                                       artifacts=signed_nodes[1:], agree=body))
                         elif body.route == "/ipex/grant" and role == "holder":
                             send(admit(hab, "accepted", body))
                             complete = True
@@ -142,6 +197,15 @@ def main():
                             (["apply"] if mode == "apply" else []) +
                             ["offer", "agree", "grant", "admit"])
                 assert set(messages) == {"/ipex/" + verb for verb in expected}
+                if operator:
+                    if role == "holder":
+                        assert len(incoming_grants) == 2
+                        rejected = incoming_grants[0].said
+                        assert incoming_grants[1].said == messages["/ipex/grant"].said
+                    assert rejected is not None
+                    assert hby.db.exns.get(keys=(rejected,)) is None
+                    assert hby.db.epse.get(keys=(rejected,)) is None
+                    assert not hby.db.enst.get(keys=(rejected,))
                 assert len(recorder.items) == len(expected)
                 lineage = [messages["/ipex/" + verb] for verb in expected]
                 assert lineage[0].ked["p"] == ""
@@ -151,18 +215,22 @@ def main():
                     assert reply.pre == previous.ked["ri"]
                     assert reply.ked["ri"] == previous.pre
                 credential = None
+                retained = []
                 if not mode.startswith("spurn"):
                     nests = loadParsedNestedSubstreams(hby, messages["/ipex/grant"].said)
-                    assert len(nests) == 1
+                    assert len(nests) == (2 if operator else 1)
+                    retained = [nest.serder.said for nest in nests]
+                    for nest in nests:
+                        assert nest.serder.sad["a"]["status"]["value"] == "citizen"
+                        assert isinstance(nest.serder.sad["a"]["private"], str)
+                        assert b"hidden-value" not in nest.serder.raw
                     node = nests[0].serder
                     credential = node.said
-                    assert node.sad["a"]["status"]["value"] == "citizen"
-                    assert isinstance(node.sad["a"]["private"], str)
-                    assert b"hidden-value" not in node.raw
                     if role == "issuer":
                         assert node.said == full.said
                 (root / "result.json").write_text(json.dumps(dict(
-                    lineage=[body.said for body in lineage], credential=credential)))
+                    lineage=[body.said for body in lineage], credential=credential,
+                    nodes=retained, rejected=rejected)))
             finally:
                 doist.exit()
                 server.close()
