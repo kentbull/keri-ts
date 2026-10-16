@@ -7,10 +7,10 @@
 import { concatBytes, Diger, Prefixer } from "cesr-ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import { requireRegery } from "../../app/credential-workflows.ts";
-import type { Hab } from "../../app/habbing.ts";
+import type { Hab, Habery } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { type Role, Roles } from "../../core/roles.ts";
-import { serializeCredential } from "../../vdr/credentialing.ts";
+import { type Regery, serializeCredential } from "../../vdr/credentialing.ts";
 import { listActiveDesignatedAliasCredentials, pinDesignatedAliasesSchema } from "./designated-aliases.ts";
 import { parseDidWebs } from "./dids.ts";
 import { generateDidDocument } from "./documenting.ts";
@@ -54,7 +54,7 @@ function prepareHostedJson(
   options: GenerateDidWebsArtifactsOptions,
 ): DidWebsJsonArtifact & { readonly hab: Hab } {
   const parsed = parseDidWebs(options.did);
-  const hab = options.alias ? requireHab(runtime, options.alias) : runtime.hby.habs.get(parsed.aid);
+  const hab = options.alias ? requireHab(runtime.hby, options.alias) : runtime.hby.habs.get(parsed.aid);
   if (!hab?.pre) {
     throw new ValidationError(`No local AID found for did:webs AID ${parsed.aid}.`);
   }
@@ -63,7 +63,7 @@ function prepareHostedJson(
       `DID ${options.did} embeds AID ${parsed.aid}, but alias ${hab.name} is ${hab.pre}.`,
     );
   }
-  pinDesignatedAliasesSchema(runtime);
+  pinDesignatedAliasesSchema(runtime.hby.db);
   const document = generateDidDocument(runtime.hby, requireRegery(runtime), options.did, {
     hosted: true,
     metadata: options.metadata ?? false,
@@ -95,7 +95,9 @@ export function generateDidWebsCesr(
   }
   messages.push(...runtime.hby.db.clonePreIter(aid));
   messages.push(...endpointMessages(hab, aid));
-  messages.push(...designatedAliasMessages(runtime, aid));
+  const regery = runtime.vdr;
+  if (!regery) throw new ValidationError("VDR runtime did not open Reger.");
+  messages.push(...designatedAliasMessages(regery, aid));
   return concatBytes(...messages.filter((message) => message.length > 0));
 }
 
@@ -129,15 +131,12 @@ function storedEndpointMessages(hab: Hab, aid: string, role: Role): Uint8Array[]
 }
 
 function designatedAliasMessages(
-  runtime: AgentRuntime,
+  regery: Regery,
   aid: string,
 ): Uint8Array[] {
-  const reger = runtime.vdr?.reger;
-  if (!reger) {
-    throw new ValidationError("VDR runtime did not open Reger.");
-  }
+  const reger = regery.reger;
   const messages: Uint8Array[] = [];
-  for (const item of listActiveDesignatedAliasCredentials(requireRegery(runtime), aid)) {
+  for (const item of listActiveDesignatedAliasCredentials(regery, aid)) {
     const creder = item.creder;
     if (!creder.regid || !creder.said) {
       continue;
@@ -155,8 +154,8 @@ function designatedAliasMessages(
   return messages;
 }
 
-function requireHab(runtime: AgentRuntime, alias: string): Hab {
-  const hab = runtime.hby.habByName(alias);
+function requireHab(hby: Habery, alias: string): Hab {
+  const hab = hby.habByName(alias);
   if (!hab?.pre) {
     throw new ValidationError(`No local AID found for alias ${alias}.`);
   }

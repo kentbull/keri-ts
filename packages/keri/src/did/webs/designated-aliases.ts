@@ -15,9 +15,10 @@ import {
 } from "cesr-ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import { requireRegery } from "../../app/credential-workflows.ts";
-import type { Hab } from "../../app/habbing.ts";
+import type { Hab, Habery } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Schemer } from "../../core/scheming.ts";
+import type { Baser } from "../../db/basing.ts";
 import { Credentialer, CredentialWallet, Regery, Registry } from "../../vdr/credentialing.ts";
 import DESIGNATED_ALIASES_SCHEMA_RESOURCE from "./designated-aliases-public-schema.json" with { type: "json" };
 import { isDidString, parseDid } from "./dids.ts";
@@ -48,8 +49,8 @@ export interface BindDesignatedAliasesResult {
   readonly aliases: readonly string[];
 }
 
-/** Pin the public DA schema into a Habery schema cache. */
-export function pinDesignatedAliasesSchema(runtime: AgentRuntime): Schemer {
+/** Pin the checked public DA schema into its concrete Baser schema cache. */
+export function pinDesignatedAliasesSchema(db: Baser): Schemer {
   const schemer = new Schemer({
     sed: cloneJsonObject(DESIGNATED_ALIASES_SCHEMA_RESOURCE),
   });
@@ -58,7 +59,7 @@ export function pinDesignatedAliasesSchema(runtime: AgentRuntime): Schemer {
       `Embedded designated-alias schema SAID ${schemer.said} does not match ${DESIGNATED_ALIASES_SCHEMA_SAID}.`,
     );
   }
-  runtime.hby.db.schema.pin(schemer.said, schemer);
+  db.schema.pin(schemer.said, schemer);
   return schemer;
 }
 
@@ -72,7 +73,7 @@ export function bindDesignatedAliases(
   runtime: AgentRuntime,
   options: BindDesignatedAliasesOptions,
 ): BindDesignatedAliasesResult {
-  const hab = requireHab(runtime, options.alias);
+  const hab = requireHab(runtime.hby, options.alias);
   const aid = hab.pre;
   const aliases = normalizeAliasList(options.dids);
   if (aliases.length === 0) {
@@ -82,7 +83,7 @@ export function bindDesignatedAliases(
     validateAliasDidForAid(did, aid, options.allowExternalDid ?? false);
   }
 
-  pinDesignatedAliasesSchema(runtime);
+  pinDesignatedAliasesSchema(runtime.hby.db);
   const rgy = requireRegery(runtime);
   const reger = rgy.reger;
   const registryName = options.registryName ?? DEFAULT_DESIGNATED_ALIASES_REGISTRY_NAME;
@@ -97,7 +98,7 @@ export function bindDesignatedAliases(
   const revoked: string[] = [];
   for (const item of active) {
     const said = credentialSaid(item.creder);
-    registryForCredential(runtime, item.creder).revoke(said);
+    registryForCredential(rgy, item.creder).revoke(said);
     revoked.push(said);
   }
 
@@ -225,11 +226,10 @@ function normalizeAliasList(dids: readonly string[]): string[] {
 }
 
 function registryForCredential(
-  runtime: AgentRuntime,
+  rgy: Regery,
   creder: SerderACDC,
 ): Registry {
   const regid = creder.regid;
-  const rgy = requireRegery(runtime);
   for (const registry of rgy.registries.values()) {
     if (registry.regk === regid) {
       return registry;
@@ -278,8 +278,8 @@ function credentialSaid(creder: SerderACDC): string {
   return creder.said;
 }
 
-function requireHab(runtime: AgentRuntime, alias: string): Hab {
-  const hab = runtime.hby.habByName(alias);
+function requireHab(hby: Habery, alias: string): Hab {
+  const hab = hby.habByName(alias);
   if (!hab?.pre) {
     throw new ValidationError(`No local AID found for alias ${alias}.`);
   }

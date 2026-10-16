@@ -60,7 +60,7 @@ Deno.test("did/webs - pins DA schema from JSON resource and rebinds active alias
         nsith: "1",
         toad: 0,
       });
-      const schema = pinDesignatedAliasesSchema(runtime);
+      const schema = pinDesignatedAliasesSchema(hby.db);
       assertEquals(schema.said, DESIGNATED_ALIASES_SCHEMA_SAID);
 
       const first = bindDesignatedAliases(runtime, {

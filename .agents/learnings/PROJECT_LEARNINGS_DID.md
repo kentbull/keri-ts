@@ -32,7 +32,9 @@ remains in designated-aliases.ts.
 
 Document projection borrows Habery and Regery directly; active-alias queries take
 Regery. Those functions must not receive AgentRuntime or start intake workers.
-Application resolution/artifact entry points select the actual state owners.
+Schema pinning borrows Baser, private alias replay/lookup borrows Regery and
+artifact fetching borrows the HTTP client. None receives a root to discover those
+dependencies. Application resolution/artifact entry points select the actual state owners.
 did:keri resolution is a synchronous projection over Habery/Regery. The CLI queues
 supplied OOBIs and owns finite workers through convergence and joined shutdown.
 HTTP resolution queues OOBIs and observes its existing host under an elapsed

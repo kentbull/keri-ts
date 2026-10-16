@@ -10,7 +10,7 @@ import { abortable } from "../../app/abortable.ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import { collectBytes, streamBytes } from "../../app/byte-source.ts";
 import { requireRegery } from "../../app/credential-workflows.ts";
-import { defaultRuntimeHttpClient } from "../../app/runtime-services.ts";
+import { defaultRuntimeHttpClient, type RuntimeHttpClient } from "../../app/runtime-services.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { pinDesignatedAliasesSchema } from "./designated-aliases.ts";
 import { didWebsArtifactUrls, normalizeHostedDidDocument, parseDidWebs } from "./dids.ts";
@@ -46,11 +46,11 @@ function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions
   const parsed = parseDidWebs(options.did);
   const urls = didWebsArtifactUrls(parsed, { scheme: "https" });
   const fallbackUrls = didWebsArtifactUrls(parsed, { scheme: "http" });
-  pinDesignatedAliasesSchema(runtime);
+  pinDesignatedAliasesSchema(runtime.hby.db);
   const preferHttp = options.insecureHttp ?? false;
   yield* call(function*() {
     yield* runtime.reactor.process(
-      (signal) => artifactBytes(runtime, urls.keriCesr, fallbackUrls.keriCesr, preferHttp, signal),
+      (signal) => artifactBytes(runtime.services.http, urls.keriCesr, fallbackUrls.keriCesr, preferHttp, signal),
       { local: false },
     );
   });
@@ -60,7 +60,7 @@ function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions
   yield* runtime.reactor.processEscrowsOnce();
   const expected = generateBareDidDocument(runtime.hby, requireRegery(runtime), parsed.canonical);
   const bytes = yield* abortable((signal) =>
-    collectBytes(artifactBytes(runtime, urls.didJson, fallbackUrls.didJson, preferHttp, signal))
+    collectBytes(artifactBytes(runtime.services.http, urls.didJson, fallbackUrls.didJson, preferHttp, signal))
   );
   let hosted: unknown;
   try {
@@ -82,7 +82,7 @@ function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions
 
 /** Native header transport fallback only; a started body never retries another artifact URL. */
 async function* artifactBytes(
-  runtime: AgentRuntime,
+  http: RuntimeHttpClient,
   httpsUrl: string,
   httpUrl: string,
   preferHttp: boolean,
@@ -94,11 +94,11 @@ async function* artifactBytes(
     signal.throwIfAborted();
     let response: Response;
     try {
-      response = await runtime.services.http.fetch(url, { signal });
+      response = await http.fetch(url, { signal });
     } catch (error) {
       signal.throwIfAborted();
       // Injected clients can throw programmer/infrastructure TypeErrors; never recast those as transport.
-      if (runtime.services.http !== defaultRuntimeHttpClient || !(error instanceof TypeError)) throw error;
+      if (http !== defaultRuntimeHttpClient || !(error instanceof TypeError)) throw error;
       lastError = error;
       continue;
     }
