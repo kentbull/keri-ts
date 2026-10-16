@@ -1,5 +1,5 @@
 import { concatBytes, Counter, parse, SerderKERI, type Versionage } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
@@ -20,13 +20,13 @@ import {
 } from "../ipex-credentialing.ts";
 import {
   approveMultisigIpex,
+  approveStoredMultisigIpexWrappers,
+  findPendingMultisigIpex,
   groupIpexPartial,
-  nextPendingMultisigIpex,
   publishGroupIpexProposal,
   requireStoredExchange,
   sendCredentialBytes,
   storedExchangeMessage,
-  waitForMultisigIpexCompletion,
 } from "../ipex-grouping.ts";
 import {
   IPEX_AGREE_ROUTE,
@@ -581,4 +581,66 @@ function grantSender(grant: SerderKERI): string {
     throw new ValidationError("Grant is missing sender AID.");
   }
   return sender;
+}
+
+interface PendingMultisigIpexOptions {
+  hab?: Hab;
+  pollTurns: number;
+  pollBudgetMs: number;
+}
+
+/** Wait for a group IPEX message to become complete while approving stored wrappers. */
+function* waitForMultisigIpexCompletion(
+  hby: Habery,
+  runtime: AgentRuntime,
+  groupHab: Hab,
+  embeddedSaid: string,
+  approvalTimeoutSeconds: number,
+): Operation<boolean> {
+  const member = localGroupMember(hby, groupHab.pre);
+  const deadline = Date.now() + approvalTimeoutSeconds * 1000;
+  while (Date.now() <= deadline) {
+    yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
+    yield* runtime.reactor.processEscrowsOnce();
+    if (runtime.reactor.exchanger.complete(embeddedSaid)) {
+      return true;
+    }
+
+    yield* processMailboxTurn(runtime, { hab: member, budgetMs: 1000 });
+    yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
+    yield* runtime.reactor.processEscrowsOnce();
+    if (runtime.reactor.exchanger.complete(embeddedSaid)) {
+      return true;
+    }
+    yield* sleep(250);
+  }
+  return runtime.reactor.exchanger.complete(embeddedSaid);
+}
+
+/** Poll for the next stored pending multisig IPEX proposal. */
+function* nextPendingMultisigIpex(
+  hby: Habery,
+  runtime: AgentRuntime,
+  options: PendingMultisigIpexOptions,
+): Operation<SerderKERI | null> {
+  for (let turn = 0; turn < options.pollTurns; turn += 1) {
+    const found = findPendingMultisigIpex(hby, runtime);
+    if (found) {
+      return found;
+    }
+    yield* processMailboxTurn(runtime, { hab: options.hab, budgetMs: options.pollBudgetMs });
+    yield* runtime.reactor.processEscrowsOnce();
+    const afterPoll = findPendingMultisigIpex(hby, runtime);
+    if (afterPoll) {
+      return afterPoll;
+    }
+  }
+  return null;
+}
+
+function* sleep(ms: number): Operation<void> {
+  yield* action<void>((resolve) => {
+    const timeout = setTimeout(resolve, ms);
+    return () => clearTimeout(timeout);
+  });
 }

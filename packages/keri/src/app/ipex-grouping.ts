@@ -3,7 +3,8 @@
  *
  * This module owns multisig coordination around embedded `/ipex/*` messages.
  * CLI adapters supply parsed options and output/file handling; this service
- * signs, publishes, waits, and sends completed group IPEX messages.
+ * signs, publishes and sends completed group IPEX messages. CLI orchestration
+ * owns timed waits and worker lifetimes.
  */
 import {
   type Cigar,
@@ -19,12 +20,12 @@ import {
   type Versionage,
   Vrsn_1_0,
 } from "cesr-ts";
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { serializeMessage } from "../core/protocol-exchanging.ts";
-import { type AgentRuntime, processMailboxTurn } from "./agent-runtime.ts";
+import { type AgentRuntime } from "./agent-runtime.ts";
 import { groupSigningMembers, localGroupMember } from "./group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigChild, multisigChildGenusAttrs } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -48,12 +49,6 @@ export interface MultisigIpexApprovalResult {
   accepted: boolean;
   deliveries: string[];
   approved: Uint8Array;
-}
-
-export interface PendingMultisigIpexOptions {
-  hab?: Hab;
-  pollTurns: number;
-  pollBudgetMs: number;
 }
 
 /** Approve one pending multisig wrapper around an embedded IPEX message. */
@@ -188,34 +183,6 @@ export function* publishGroupIpexProposal(
   return deliveries;
 }
 
-/** Wait for a group IPEX message to become complete while approving stored wrappers. */
-export function* waitForMultisigIpexCompletion(
-  hby: Habery,
-  runtime: AgentRuntime,
-  groupHab: Hab,
-  embeddedSaid: string,
-  approvalTimeoutSeconds: number,
-): Operation<boolean> {
-  const member = localGroupMember(hby, groupHab.pre);
-  const deadline = Date.now() + approvalTimeoutSeconds * 1000;
-  while (Date.now() <= deadline) {
-    yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
-    yield* runtime.reactor.processEscrowsOnce();
-    if (runtime.reactor.exchanger.complete(embeddedSaid)) {
-      return true;
-    }
-
-    yield* processMailboxTurn(runtime, { hab: member, budgetMs: 1000 });
-    yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
-    yield* runtime.reactor.processEscrowsOnce();
-    if (runtime.reactor.exchanger.complete(embeddedSaid)) {
-      return true;
-    }
-    yield* sleep(250);
-  }
-  return runtime.reactor.exchanger.complete(embeddedSaid);
-}
-
 /** Approve all stored multisig wrappers for one embedded IPEX SAID. */
 export function* approveStoredMultisigIpexWrappers(
   hby: Habery,
@@ -235,27 +202,6 @@ export function* approveStoredMultisigIpexWrappers(
       sendLead: false,
     });
   }
-}
-
-/** Poll for the next stored pending multisig IPEX proposal. */
-export function* nextPendingMultisigIpex(
-  hby: Habery,
-  runtime: AgentRuntime,
-  options: PendingMultisigIpexOptions,
-): Operation<SerderKERI | null> {
-  for (let turn = 0; turn < options.pollTurns; turn += 1) {
-    const found = findPendingMultisigIpex(hby, runtime);
-    if (found) {
-      return found;
-    }
-    yield* processMailboxTurn(runtime, { hab: options.hab, budgetMs: options.pollBudgetMs });
-    yield* runtime.reactor.processEscrowsOnce();
-    const afterPoll = findPendingMultisigIpex(hby, runtime);
-    if (afterPoll) {
-      return afterPoll;
-    }
-  }
-  return null;
 }
 
 /** Return the first incomplete stored `/multisig/exn` wrapping `/ipex/*`. */
@@ -478,11 +424,4 @@ function hexToFixedBytes(hex: string, size: number): Uint8Array {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function* sleep(ms: number): Operation<void> {
-  yield* action<void>((resolve) => {
-    const timeout = setTimeout(resolve, ms);
-    return () => clearTimeout(timeout);
-  });
 }
