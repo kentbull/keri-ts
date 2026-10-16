@@ -106,8 +106,11 @@ omit mailbox polling. Query and challenge verification keep their own completion
 display policy over the same runner. Challenge verification observes accepted
 responses while host workers poll mailboxes; even an empty-mailbox deadline joins
 those workers before stores close. The supervisor suspends; component loops own
-progress. processRuntimeTurn and explicit serial mailbox/approval callers remain
-removal work; do not claim one driving model is fully implemented yet.
+progress. Delegation approval likewise owns one host lifetime across all selected
+events; its phase predicates never pump workers. Group approvals select the local
+member as query/cue signer. Direct seal pinning and delegation escrow processing
+retain protocol ordering. Serial multisig/IPEX mailbox callers and their fixture
+counterparts remain removal work; do not claim one driving model is complete yet.
 
 QueryReplies reserves SAIDs for correlation, not capacity. Capture matching replies
 before background consumption; duplicates may iterate the same readonly replay.

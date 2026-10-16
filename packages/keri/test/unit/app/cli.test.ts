@@ -324,6 +324,72 @@ Deno.test("CLI - setupHby defaults CESR body mode to header when no mode is conf
   });
 });
 
+Deno.test("CLI - delegate confirm auto approves multiple unwitnessed events and closes its workers", async () => {
+  const name = `delegate-confirm-auto-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
+  const delegated: { pre: string; said: string }[] = [];
+  await run(() => initCommand({ name, headDirPath, nopasscode: true }));
+  await run(function*() {
+    const hby = yield* setupHby(name, "", undefined, false, headDirPath, { skipConfig: true });
+    const templateHby = yield* createHabery({
+      name: `delegate-templates-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {});
+      for (let index = 0; index < 2; index++) {
+        const template = templateHby.makeHab(`template-${index}`, undefined, {});
+        const dip = delcept([template.kever!.verfers[0]!.qb64], delegator.pre, {
+          ndigs: [template.kever!.ndigers[0]!.qb64],
+        });
+        assertExists(dip.pre);
+        assertExists(dip.said);
+        hby.db.putEvtSerder(dip.pre, dip.said, dip.raw);
+        hby.db.sigs.put(dgKey(dip.pre, dip.said), template.sign(dip.raw, true));
+        hby.db.delegables.add([dip.pre], dip.said);
+        delegated.push({ pre: dip.pre, said: dip.said });
+      }
+    } finally {
+      yield* templateHby.close(true);
+      yield* hby.close();
+    }
+  });
+
+  const result = await captureCommand(delegateConfirmCommand(createMockArgs({
+    name,
+    headDirPath,
+    alias: "delegator",
+    auto: true,
+    interact: true,
+  })));
+  assertEquals(result.stdout.match(/Approved delegated dip/g)?.length, 2);
+
+  // Reopen after command teardown: both accepted events and their distinct
+  // authorizer seals must survive the command's joined worker lifetime.
+  await run(function*() {
+    const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
+      readonly: true,
+      skipConfig: true,
+      skipSignator: true,
+    });
+    try {
+      assertEquals(hby.habByName("delegator")!.kever!.sn, 2);
+      const anchorSequences = [];
+      for (const { pre, said } of delegated) {
+        assertEquals(hby.db.kels.getLast(pre, 0), said);
+        assertEquals(hby.db.delegables.get([pre]), []);
+        const approval = hby.db.aess.get(dgKey(pre, said));
+        assertExists(approval);
+        anchorSequences.push(approval[0].num);
+      }
+      assertEquals(anchorSequences.sort(), [1n, 2n]);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
 Deno.test("CLI - delegate confirm does not pin aess or accept the delegate before replay-backed commitment", async () => {
   const name = `delegate-confirm-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;

@@ -171,6 +171,10 @@ No accounting completion or old-version compatibility gate remains. Prove actual
 HTTP/TCP progress through verified acceptance; local write completion is insufficient.
 Recheck the current held version PR's generated versions, dependency ranges,
 changelogs and exact-head checks after all implementation changes land.
+Each of CESR, KERI and Tufa must receive at least a minor-version bump from its
+currently published version for this release set. A major bump is authorized
+where the final breaking contracts and qualification justify that commitment;
+the size of the cleanup alone does not establish 1.0 stability.
 The current Changesets workflow only maintains versions; npm publication uses
 the existing package tag/dispatch workflows. Release in dependency order and
 verify registry versions, dependency metadata, tarball identity and installed
