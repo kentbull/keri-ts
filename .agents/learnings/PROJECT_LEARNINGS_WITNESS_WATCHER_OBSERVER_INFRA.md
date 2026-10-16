@@ -64,7 +64,9 @@ still includes the maintained manual/endurance gates.
 ## Packaging and release
 
 Use dprint and deterministic version generation in checks; opt into build metadata
-only for artifacts. Build helpers are real source files, not multiline JS/TS in
+only for artifacts. Package manifests are authoritative for both Deno version
+mirrors and npm workspace-lock entries; manifest:check must reject either drift.
+Sync workspace versions without re-resolving or changing npm dependency metadata. Build helpers are real source files, not multiline JS/TS in
 shell/workflow strings. Keep inline-code:check and export docstring checks honest.
 
 The package graph is tufa → keri-ts → cesr-ts. KERI's general entrypoints are root,

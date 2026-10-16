@@ -1,5 +1,5 @@
 /**
- * Sync deno.json version fields from package manifest versions.
+ * Sync Deno and npm workspace-lock version mirrors from package manifests.
  *
  * Usage:
  *   deno run -A scripts/sync_manifest_versions.ts
@@ -12,6 +12,11 @@ interface PackageManifest {
 
 interface DenoManifest {
   version?: string;
+}
+
+/** Npm owns all other fields; preserve them while updating workspace version mirrors. */
+interface WorkspaceLock {
+  packages: Record<string, PackageManifest>;
 }
 
 interface SyncTarget {
@@ -87,12 +92,32 @@ async function syncTarget(target: SyncTarget, packageVersion: string, check: boo
   await Deno.writeTextFile(target.denoPath, formatted);
 }
 
+/** Keep the checked-in npm workspace metadata aligned without resolving dependencies. */
+async function syncWorkspaceLock(versions: ReadonlyMap<SyncTarget["name"], string>, check: boolean): Promise<void> {
+  const path = new URL("../package-lock.json", import.meta.url);
+  const lock = JSON.parse(await Deno.readTextFile(path)) as WorkspaceLock;
+  let changed = false;
+  for (const [name, version] of versions) {
+    const key = `packages/${name}`;
+    const entry = lock.packages[key];
+    if (!entry) throw new Error(`Missing ${key} in package-lock.json`);
+    if (entry.version === version) continue;
+    if (check) throw new Error(`package-lock.json: ${key} version ${entry.version} does not match ${version}`);
+    entry.version = version;
+    changed = true;
+  }
+  if (changed) await Deno.writeTextFile(path, `${JSON.stringify(lock, null, 2)}\n`);
+}
+
 async function main() {
   const { check } = parseArgs(Deno.args);
+  const versions = new Map<SyncTarget["name"], string>();
   for (const target of TARGETS) {
     const version = await readPackageVersion(target.packagePath);
     await syncTarget(target, version, check);
+    versions.set(target.name, version);
   }
+  await syncWorkspaceLock(versions, check);
 }
 
 if (import.meta.main) {
