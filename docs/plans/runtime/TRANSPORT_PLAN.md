@@ -18,7 +18,10 @@ reconciled before affected implementation; it is not preservation authority.
   output. FrameIntake, TcpRead.open, FrameChannel/toEffectionFrames and parser
   lifetime options are removed. TCP lends a real connection and composes native
   RX/TX at the application. Remove remaining admission/delivery hooks without
-  introducing another intake framework.
+  introducing another intake framework. Generic HTTP requests, Fetch input, client
+  SSE and static artifact responses now have no accounting or size ceilings.
+  Provider mailbox, listener/runtime and finite receipt policies still need removal;
+  retain deadlines, actual I/O chunking, regular-file extents and joined cleanup.
 - Plain cues reach their concrete Respondant/Poster/response owner. Delete generic
   preparation/delivery lifecycle wrappers. Real routing, signing, correlation and
   retry bytes stay with those owners. Reactor does no unrelated execution.

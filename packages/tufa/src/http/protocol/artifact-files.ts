@@ -1,37 +1,25 @@
 /** Demand-driven static artifact responses; the host owns open files through joined response cleanup. */
-import { ResourceAdmissionError, ResourceLimitError, type ResourcePolicy } from "cesr-ts";
 import { constants } from "node:fs";
 import { type FileHandle, open } from "node:fs/promises";
 
 const CHUNK = 64 * 1024;
-const ALLOWANCE = 1024 ** 2 + 2 * CHUNK;
 
-/** One host's file responses share its runtime policy; shutdown also closes unconsumed bodies. */
+/** Own one host's open file responses, including bodies that have not been consumed. */
 export class ArtifactFiles {
   private readonly owners = new Set<(reason?: unknown) => Promise<void>>();
   private stopping = false;
   private closing?: Promise<void>;
 
-  constructor(private readonly resources: ResourcePolicy) {}
-
-  /** Admit before opening; capture the extent without reading data. JSON may additionally have a finite ceiling. */
-  async response(path: string, contentType: string, signal: AbortSignal, maxBytes?: number): Promise<Response> {
+  /** Open the regular file and capture its extent without reading data. */
+  async response(path: string, contentType: string, signal: AbortSignal): Promise<Response> {
     signal.throwIfAborted();
     if (this.stopping) throw new DOMException("Artifact host closed", "AbortError");
-    if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 1)) {
-      throw new RangeError("Artifact ceiling must be a positive safe integer");
-    }
-    if (path.length > CHUNK) throw new ResourceLimitError("Artifact path exceeds metadata ceiling");
-    const admission = this.resources.reserve({ streams: 1, bytes: ALLOWANCE });
-    if (admission.kind === "refuse") {
-      throw new ResourceAdmissionError("Artifact response admission refused", admission.reason);
-    }
     let file: FileHandle | undefined, reading: Promise<{ bytesRead: number }> | undefined;
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
     let ended = false, closing: Promise<void> | undefined;
     // Nonblocking open lets the regular-file check reject pipes without hanging acquisition/shutdown.
     const opening = Promise.resolve().then(() => open(path, constants.O_RDONLY | constants.O_NONBLOCK));
-    /** Stop new reads and join acquisition/current read/close before returning shared credit. */
+    /** Stop new reads and join acquisition, the current read and file close. */
     const close = (reason?: unknown): Promise<void> => {
       if (closing) return closing;
       ended = true;
@@ -56,7 +44,6 @@ export class ArtifactFiles {
           }
         } finally {
           this.owners.delete(close);
-          admission.reservation.release();
         }
         if (failures.length === 1) throw failures[0];
         if (failures.length) throw new AggregateError(failures, "Artifact read and cleanup failed");
@@ -73,8 +60,7 @@ export class ArtifactFiles {
         await close();
         return new Response("Not Found", { status: 404 });
       }
-      if (!Number.isSafeInteger(stat.size) || stat.size < 0) throw new ResourceLimitError("Invalid artifact extent");
-      if (maxBytes !== undefined && stat.size > maxBytes) throw new ResourceLimitError("Artifact exceeds byte ceiling");
+      if (!Number.isSafeInteger(stat.size) || stat.size < 0) throw new RangeError("Invalid artifact extent");
       if (stat.size === 0) {
         await close();
         return new Response(null, { headers: { "Content-Type": contentType, "Content-Length": "0" } });

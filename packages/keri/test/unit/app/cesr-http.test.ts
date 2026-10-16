@@ -5,7 +5,7 @@
  * aligned with KERIpy by default while still allowing Tufa's optional body
  * mode.
  */
-import { attachmentPayload, collectPayload, parseBytes, ResourceLimitError } from "cesr-ts";
+import { attachmentPayload, collectPayload, parseBytes } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { concatBytes } from "../../../../cesr/mod.ts";
@@ -32,13 +32,15 @@ function makeEmbeddedExchangeMessage(
   return { serder, attachments };
 }
 
-/** Header refusal must still join an unacquired body and report distinct cleanup failure. */
-Deno.test("CESR HTTP - finite intake preserves header refusal and outer body cleanup failure", async () => {
+/** Cancellation before acquisition must still close the body and report distinct cleanup failure. */
+Deno.test("CESR HTTP - finite intake preserves cancellation and outer body cleanup failure", async () => {
+  const abort = new AbortController(), primary = new Error("request cancelled");
   const fault = new Error("unacquired request cleanup failed");
   let cancelled = 0;
   const req = new Request("https://peer.test/", {
     method: "POST",
-    headers: { "content-type": "application/cesr", [CESR_ATTACHMENT_HEADER]: "A".repeat(65537) },
+    headers: { "content-type": "application/cesr", [CESR_ATTACHMENT_HEADER]: "-AAA" },
+    signal: abort.signal,
     body: new ReadableStream<Uint8Array>({
       cancel() {
         cancelled++;
@@ -46,9 +48,10 @@ Deno.test("CESR HTTP - finite intake preserves header refusal and outer body cle
       },
     }),
   });
+  abort.abort(primary);
   const error = await assertRejects(() => readCesrRequestBytes(req), AggregateError);
   assertEquals(error.errors.length, 2);
-  assertEquals(error.errors[0] instanceof ResourceLimitError, true);
+  assertStrictEquals(error.errors[0], primary);
   assertStrictEquals(error.errors[1], fault);
   assertEquals(cancelled, 1);
 });

@@ -37,7 +37,7 @@ Deno.test("mailbox SSE awaits each event consumer and preserves fragmented UTF-8
     });
   });
   await first.promise;
-  assertEquals(pulls, encoder.encode(chunks[0]).length); // No second-event read while the consumer owns credit.
+  assertEquals(pulls, encoder.encode(chunks[0]).length); // No second-event read while the consumer processes the first event.
   release.resolve();
   await task;
   assertEquals(received.map(({ msg }) => new TextDecoder().decode(msg)), ["café", " leading\nsecond"]);
@@ -142,30 +142,6 @@ Deno.test("mailbox SSE scope cancellation stops a blocked consumer and releases 
   await delivered.promise;
   await task.halt();
   assertEquals([continued, cancelled, body.locked], [false, true, false]);
-});
-
-Deno.test("mailbox SSE rejects an oversized event before delivering or retaining its tail", async () => {
-  let cancelled = false;
-  let delivered = false;
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(encoder.encode("id: 0\nevent: /reply\ndata: oversized\n\n"));
-    },
-    cancel() {
-      cancelled = true;
-    },
-  });
-  await assertRejects(
-    () =>
-      run(function*() {
-        yield* consumeMailboxSse(new Response(body), new AbortController(), function*() {
-          delivered = true;
-        }, { maxEventBytes: 20 });
-      }),
-    Error,
-    "event exceeds byte limit",
-  );
-  assertEquals([delivered, cancelled, body.locked], [false, true, false]);
 });
 
 Deno.test("mailbox SSE halt joins asynchronous cancellation of its pending read", async () => {

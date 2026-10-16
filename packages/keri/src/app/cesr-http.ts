@@ -12,9 +12,9 @@
  *   full CESR payload is sent in the body instead of splitting attachments into
  *   the header
  */
-import { parseBytes, parseSerder, requireFlatFrame, ResourceLimitError, SerderKERI, smell } from "cesr-ts";
+import { parseBytes, parseSerder, requireFlatFrame, SerderKERI, smell } from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
-import { collectBytes, type SourceOptions, streamBytes } from "./byte-source.ts";
+import { collectBytes, streamBytes } from "./byte-source.ts";
 
 /** Mailbox HTTP framing modes supported by `keri-ts`. */
 export type CesrBodyMode = "header" | "body";
@@ -154,32 +154,22 @@ export function buildCesrStreamRequest(bytes: Uint8Array, { destination }: {
  */
 export function requestBytes(
   req: Request,
-  { maxHeaderBytes = 64 * 1024, ...options }: SourceOptions & { maxHeaderBytes?: number } = {},
+  options: { signal?: AbortSignal } = {},
 ): AsyncIterable<Uint8Array> {
   return read();
-  /** Acquire the body lazily, after validating the separately bounded attachment header. */
+  /** Acquire the body lazily, then append detached attachments in their original order. */
   async function* read(): AsyncGenerator<Uint8Array> {
     const attachment = req.headers.get(CESR_ATTACHMENT_HEADER);
-    if (!Number.isSafeInteger(maxHeaderBytes) || maxHeaderBytes < 1) {
-      throw new RangeError("Header byte limit must be a positive safe integer");
-    }
-    // The transport already holds the header string; validate it before allocating encoded bytes.
-    if (attachment && attachment.length > maxHeaderBytes) {
-      throw new ResourceLimitError(`CESR attachment header exceeds ${maxHeaderBytes} bytes`);
-    }
     const tail = attachment && isCesrContentType(req.headers.get("content-type"))
       ? textEncoder.encode(attachment)
       : null;
-    if (tail && tail.length > maxHeaderBytes) {
-      throw new ResourceLimitError(`CESR attachment header exceeds ${maxHeaderBytes} bytes`);
-    }
     yield* streamBytes(req.body, { signal: req.signal, ...options });
     (options.signal ?? req.signal).throwIfAborted();
     if (tail?.length) yield tail;
   }
 }
 
-/** Collect a bounded administrative/receipt request; generic ingress uses requestBytes directly. */
+/** Collect a finite administrative/receipt request; generic ingress uses requestBytes directly. */
 export async function readCesrRequestBytes(req: Request): Promise<Uint8Array> {
   let failed = false, failure: unknown;
   try {

@@ -1,6 +1,5 @@
 // @file-test-lane app-fast-parallel
 
-import { ResourceAdmissionError } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createAgentRuntime, createHabery, readCesrRequestBytes, Roles } from "keri-ts/runtime";
@@ -37,12 +36,12 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       const draining = run(() => drainRuntimeCues(runtime, sender, runtime.cues));
       yield* call(() => started);
       assertEquals(runtime.cues.empty, true);
-      assertEquals(runtime.resources.used.bytes > 0, true);
+
       yield* runtime.reactor.settle(undefined, {}, function*() {
         runtime.cues.push({ kin: "query", pre: "unresolved", route: "logs", q: {} });
       });
       assertEquals(runtime.cues.length, 1, "another guarded turn progresses during network wait");
-      failure = new ResourceAdmissionError("foreign fetch busy", "busy");
+      failure = new Error("foreign fetch failure");
       finish();
       assertStrictEquals(yield* call(() => assertRejects(() => Promise.resolve(draining))), failure);
       assertEquals(runtime.deliveries.hasPending, true);
@@ -54,7 +53,6 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
         yield* runtime.deliveries.process(runtime);
       }
       assertEquals(runtime.deliveries.hasPending, false);
-      assertEquals(runtime.resources.used.bytes, 0);
 
       started = new Promise<void>((resolve) => start = resolve);
       gate = new Promise<void>((resolve) => finish = resolve);
@@ -65,12 +63,11 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       const halted = cancelling.halt().then(() => joined = true);
       yield* call(() => Promise.resolve());
       assertEquals(joined, false);
-      assertEquals(runtime.resources.used.bytes > 0, true, "cancellation holds wire until fetch cleanup joins");
+
       finish();
       yield* call(() => halted);
       assertEquals(runtime.deliveries.hasPending, true, "cancelled transport retains independent delivery");
       for (let pass = 0; pass < 4 && runtime.deliveries.hasPending; pass++) yield* runtime.deliveries.process(runtime);
-      assertEquals(runtime.resources.used.bytes, 0);
 
       hby.db.ends.rem([recipient.pre, Roles.controller, recipient.pre]);
       const beforeSends = sends, interpret = sender.interpretCue.bind(sender);
@@ -87,7 +84,7 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
         0,
         false,
       ], "absent endpoint remains a once-interpreted local no-op");
-      assertEquals(runtime.resources.used.bytes, 0);
+
       sender.interpretCue = interpret;
 
       const event = hby.db.getEvtSerder(sender.pre, sender.kever!.serder.said!)!;
@@ -100,7 +97,7 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
     } finally {
       finish();
       yield* runtime.close();
-      assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
       yield* hby.close(true);
     }
   });

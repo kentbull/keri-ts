@@ -6,7 +6,7 @@
  * setup lives under `tufa/src/host`, while endpoint-specific HTTP semantics
  * live under `tufa/src/http/protocol`.
  */
-import { type AgentRuntime, defaultRuntimeServices, type ProtocolHostPolicy } from "keri-ts/runtime";
+import { type AgentRuntime, type ProtocolHostPolicy } from "keri-ts/runtime";
 import { ArtifactFiles } from "./protocol/artifact-files.ts";
 import { buildProtocolRequestContext } from "./protocol/context.ts";
 import { classifyDidResolutionRoute, handleDidResolutionRoute } from "./protocol/endpoints/did-resolution.ts";
@@ -44,7 +44,7 @@ export function createProtocolHandler(
   runtime?: AgentRuntime,
   policy: ProtocolHostPolicy = {},
 ): ProtocolHandler {
-  const files = new ArtifactFiles(runtime?.resources ?? defaultRuntimeServices.resources);
+  const files = new ArtifactFiles();
   const handle = async (req: Request): Promise<Response> => {
     const context = buildProtocolRequestContext(req, runtime, policy);
     const route = classifyProtocolRoute(context);

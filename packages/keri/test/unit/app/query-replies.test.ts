@@ -1,6 +1,6 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { concatBytes, ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "../../../../cesr/mod.ts";
+import { concatBytes } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { QueryReplies } from "../../../src/app/query-replies.ts";
@@ -102,10 +102,9 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       name: crypto.randomUUID(),
       temp: true,
       skipConfig: true,
-      resources: new ResourcePolicy({ streams: 2 }),
     });
     const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
-    const failure = new ResourceAdmissionError("foreign fetch busy", "busy"),
+    const failure = new Error("foreign fetch failure"),
       preparation = new Error("second reply failure");
     let failSend = true, blocked = false, failPrepare = false, interpretations = 0;
     const packets: Uint8Array[] = [];
@@ -145,12 +144,11 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       yield* runtime.reactor.processBytes(recipient.makeLocScheme("https://peer.test/", recipient.pre, "https"));
       cues.extend(pair);
       replies.capture(cues);
-      const retained = runtime.resources.used.bytes;
       failPrepare = true;
       assertStrictEquals(assertThrows(() => runtime.deliveries.openReply(runtime, sender, slot)), preparation);
       assertEquals(
-        [runtime.deliveries.hasPending, runtime.resources.used.bytes],
-        [false, retained],
+        runtime.deliveries.hasPending,
+        false,
         "No first-cue publication on second-cue failure",
       );
       failPrepare = false;
@@ -169,7 +167,7 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       for (let pass = 0; pass < 6; pass++) yield* runtime.deliveries.process(runtime);
       assertEquals(packets[0], packets[1], "Retry preserves the original proof after sender state changes");
       assertEquals(concatBytes(packets[1], packets[2]), wire, "Both consumers borrow the same once-interpreted pair");
-      assertEquals([interpretations, runtime.resources.used.bytes], [preparedCount, 0]);
+      assertEquals(interpretations, preparedCount);
       const later = replies.reserve("tsn");
       cues.extend(pair);
       replies.capture(cues);
@@ -190,9 +188,9 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
         closed = true;
       });
       assertEquals(
-        [closed, runtime.resources.used.bytes > 0],
-        [false, true],
-        "Late cancellation keeps the shared owner through HTTP cleanup",
+        closed,
+        false,
+        "Late cancellation waits for HTTP cleanup",
       );
       unblock();
       yield* closing;
@@ -200,7 +198,6 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       assertEquals(runtime.deliveries.hasPending, false);
       const unreadWire = yield* call(() => new Response(unread).arrayBuffer());
       assertEquals(unreadWire.byteLength > 0, true, "Queued cleanup leaves the independent response readable");
-      assertEquals(runtime.resources.used.bytes, 0);
     } finally {
       unblock();
       sender.interpretCue = interpret;
@@ -212,14 +209,14 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
   });
 });
 
-Deno.test("queued replies preserve atomic slots without borrowing an HTTP response permit", async () => {
+Deno.test("queued replies preserve atomic slots and once-signed wire", async () => {
   let cleaning!: () => void, unblock!: () => void;
   const cleanup = new Promise<void>((resolve) => cleaning = resolve),
     gate = new Promise<void>((resolve) => unblock = resolve);
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
-    const failure = new ResourceAdmissionError("foreign queued fetch busy", "busy"),
+    const failure = new Error("foreign queued fetch failure"),
       preparation = new Error("second queued reply failure");
     let failSend = true, failPrepare = true, blocked = false, interpretations = 0;
     const packets: Uint8Array[] = [];
@@ -259,21 +256,11 @@ Deno.test("queued replies preserve atomic slots without borrowing an HTTP respon
       yield* runtime.reactor.processBytes(recipient.makeLocScheme("https://peer.test/", recipient.pre, "https"));
       cues.extend(pair);
       replies.capture(cues);
-      const retained = runtime.resources.used.bytes;
-      const receives = runtime.resources.reserve({ streams: 2 });
-      if (receives.kind !== "reserve") throw new Error("Expected receive permits");
       assertStrictEquals(assertThrows(() => runtime.deliveries.enqueueReply(runtime, sender, slot)), preparation);
-      assertEquals([runtime.deliveries.hasPending, runtime.resources.used.bytes], [false, retained]);
+      assertEquals(runtime.deliveries.hasPending, false);
       failPrepare = false;
-      const occupied = runtime.resources.reserve({ bytes: runtime.resources.limits.bytes - retained - 66 * 1024 ** 2 });
-      if (occupied.kind !== "reserve") throw new Error("Expected available reply preparation capacity");
-      try {
-        assertEquals(runtime.deliveries.enqueueReply(runtime, sender, slot), true);
-      } finally {
-        occupied.reservation.release();
-      }
-      assertEquals([slot.takeAll(), runtime.resources.used.streams], [undefined, 2]);
-      receives.reservation.release();
+      assertEquals(runtime.deliveries.enqueueReply(runtime, sender, slot), true);
+      assertEquals(slot.takeAll(), undefined);
       slot.close();
       const preparedCount = interpretations;
       assertStrictEquals(
@@ -284,7 +271,7 @@ Deno.test("queued replies preserve atomic slots without borrowing an HTTP respon
       failSend = false;
       for (let pass = 0; pass < 6; pass++) yield* runtime.deliveries.process(runtime);
       assertEquals(packets[0], packets[1], "Queue-only retry retains its original signed proof");
-      assertEquals([interpretations, runtime.resources.used.bytes], [preparedCount, 0]);
+      assertEquals(interpretations, preparedCount);
 
       const absent = replies.reserve("tsn");
       // Unaddressed prebuilt replies remain valid for local/direct interpretation; TSN data requires a destination.
@@ -292,7 +279,7 @@ Deno.test("queued replies preserve atomic slots without borrowing an HTTP respon
       replies.capture(cues);
       assertEquals(runtime.deliveries.enqueueReply(runtime, sender, absent), true);
       absent.close();
-      assertEquals([runtime.deliveries.hasPending, runtime.resources.used.bytes], [false, 0]);
+      assertEquals(runtime.deliveries.hasPending, false);
 
       const later = replies.reserve("tsn");
       cues.extend(pair);
@@ -313,11 +300,10 @@ Deno.test("queued replies preserve atomic slots without borrowing an HTTP respon
         yield* runtime.deliveries.close();
         closed = true;
       });
-      assertEquals([closed, runtime.resources.used.bytes > 0], [false, true]);
+      assertEquals(closed, false);
       unblock();
       yield* closing;
       yield* delivery;
-      assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     } finally {
       unblock();
       sender.interpretCue = interpret;
