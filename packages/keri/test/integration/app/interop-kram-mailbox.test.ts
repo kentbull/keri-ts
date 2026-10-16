@@ -6,7 +6,7 @@ import { decodeBase64, encodeBase64 } from "jsr:@std/encoding/base64";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/cesr-egress.ts";
-import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { consumeMailboxSse } from "../../../src/app/mailbox-sse.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { query } from "../../../src/core/protocol-eventing.ts";
@@ -71,6 +71,47 @@ async function control<T>(url: string, command: Command): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+/** Construct the KRAM query controls independently of controller/witness setup. */
+function queryPackets(signers: readonly Hab[], outsider: Hab): ControllerPackets["packets"] {
+  const sender = signers[0];
+  const now = Date.now();
+  const packet = (offset: number): SignedQuery => {
+    const body = query("mbx", { i: sender.pre, src: sender.pre, topics: { "/reply": 0 } }, {
+      pre: sender.pre,
+      pvrsn: Vrsn_2_0,
+      stamp: new Date(now + offset).toISOString(),
+    });
+    return {
+      said: body.said!,
+      stamp: body.ked!.dt as string,
+      wires: signers.map((hab) => encodeBase64(hab.endorse(body, { pipelined: false, gvrsn: Vrsn_2_0 }))),
+    };
+  };
+  const forged = packet(1);
+  const body = query("mbx", { i: sender.pre, src: sender.pre, topics: { "/reply": 0 } }, {
+    pre: sender.pre,
+    pvrsn: Vrsn_2_0,
+    stamp: forged.stamp,
+  });
+  const invalid = messagize(body, {
+    tsgs: [
+      new TransIdxSigGroup(
+        new Prefixer({ qb64: sender.pre }),
+        NumberPrimitive.fromNum(BigInt(sender.kever!.lastEst.s)),
+        new Diger({ qb64: sender.kever!.lastEst.d }),
+        outsider.sign(body.raw, true),
+      ),
+    ],
+    gvrsn: Vrsn_2_0,
+  });
+  return {
+    first: packet(0),
+    stale: packet(-86_400_000),
+    forged: { ...forged, invalid: encodeBase64(invalid) },
+    barrier: packet(2),
+  };
+}
+
 /** Independent Haberies contribute the real group inception and one query proof each. */
 async function typescriptPackets(count: number): Promise<ControllerPackets> {
   return await run(function*() {
@@ -103,36 +144,6 @@ async function typescriptPackets(count: number): Promise<ControllerPackets> {
       }
       const sender = signers[0];
       const outsider = hbys[0].makeHab("outsider");
-      const now = Date.now();
-      const packet = (offset: number): SignedQuery => {
-        const body = query("mbx", { i: sender.pre, src: sender.pre, topics: { "/reply": 0 } }, {
-          pre: sender.pre,
-          pvrsn: Vrsn_2_0,
-          stamp: new Date(now + offset).toISOString(),
-        });
-        return {
-          said: body.said!,
-          stamp: body.ked!.dt as string,
-          wires: signers.map((hab) => encodeBase64(hab.endorse(body, { pipelined: false, gvrsn: Vrsn_2_0 }))),
-        };
-      };
-      const forged = packet(1);
-      const body = query("mbx", { i: sender.pre, src: sender.pre, topics: { "/reply": 0 } }, {
-        pre: sender.pre,
-        pvrsn: Vrsn_2_0,
-        stamp: forged.stamp,
-      });
-      const invalid = messagize(body, {
-        tsgs: [
-          new TransIdxSigGroup(
-            new Prefixer({ qb64: sender.pre }),
-            NumberPrimitive.fromNum(BigInt(sender.kever!.lastEst.s)),
-            new Diger({ qb64: sender.kever!.lastEst.d }),
-            outsider.sign(body.raw, true),
-          ),
-        ],
-        gvrsn: Vrsn_2_0,
-      });
       return {
         pre: sender.pre,
         members: mids,
@@ -145,12 +156,7 @@ async function typescriptPackets(count: number): Promise<ControllerPackets> {
             genusify: true,
           }))
         ),
-        packets: {
-          first: packet(0),
-          stale: packet(-86_400_000),
-          forged: { ...forged, invalid: encodeBase64(invalid) },
-          barrier: packet(2),
-        },
+        packets: queryPackets(signers, outsider),
       };
     } finally {
       for (const runtime of runtimes) yield* runtime.close();

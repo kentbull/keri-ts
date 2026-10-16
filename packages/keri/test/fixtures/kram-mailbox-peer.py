@@ -54,6 +54,14 @@ def controller_packets(stack, count):
         kel.append(bytes(signers[0].msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_1_0)))
     sender = signers[0]
     outsider = hbys[0].makeHab(name="outsider", version=Vrsn_1_0)
+    return dict(pre=sender.pre, members=[hab.pre for hab in members],
+                kel=[base64.b64encode(wire).decode() for wire in kel],
+                packets=query_packets(signers, outsider))
+
+
+def query_packets(signers, outsider):
+    """Build signed KRAM controls without owning controller/witness preparation."""
+    sender = signers[0]
     now = helping.nowUTC()
     packets = {}
     encode = lambda value: base64.b64encode(value).decode()
@@ -70,8 +78,7 @@ def controller_packets(stack, count):
                 Number(sn=sender.kever.lastEst.s), Diger(qb64=sender.kever.lastEst.d),
                 outsider.sign(ser=body.raw, indexed=True))], gvrsn=Vrsn_2_0)
             packets[name]["invalid"] = encode(forged)
-    return dict(pre=sender.pre, members=[hab.pre for hab in members],
-                kel=[encode(wire) for wire in kel], packets=packets)
+    return packets
 
 
 class Control:
