@@ -562,31 +562,9 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         yield* receiptor.catchup(controller.pre, witness.pre);
         yield* sleepOp(50);
         assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
-        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
         controller.interact();
         const message = acceptedEventReplayMessage(sourceHby, controller.pre, 1).message;
-        // Byte contention refuses the paused handle before acquiring a parser or accepting its event.
-        const occupied = runtime.resources.reserve({ bytes: runtime.resources.limits.bytes });
-        assert(occupied.kind === "reserve");
-        try {
-          const refused = createConnection({ port: tcpPort, host: "127.0.0.1" });
-          sockets.push(refused);
-          refused.on("error", () => {});
-          const closed = new Promise<void>((resolve) => refused.once("close", resolve));
-          refused.write(message);
-          yield* race([
-            call(() => closed),
-            (function*() {
-              yield* sleepOp(2000);
-              throw new Error("Refusal did not close");
-            })(),
-          ]);
-          assertEquals(runtime.resources.used.streams, 0);
-          assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
-          assertEquals(refusals, ["busy"]);
-        } finally {
-          occupied.reservation.release();
-        }
         for (const reset of [false, true]) {
           const rejected = createConnection({ port: tcpPort, host: "127.0.0.1" });
           sockets.push(rejected);
@@ -608,9 +586,8 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
           ]);
           yield* sleepOp(10);
           assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
-          assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         }
-        assertEquals(refusals, ["busy", "wire", "peer"]);
+        assertEquals(refusals, ["wire", "peer"]);
         // Actual signed replay is accepted while the producer deliberately leaves the connection open.
         const active = createConnection({ port: tcpPort, host: "127.0.0.1" });
         sockets.push(active);
@@ -687,18 +664,20 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         for (let attempt = 0; attempt < 200 && replayed !== 3; attempt++) yield* sleepOp(10);
         assertEquals(replayed, 3, "correlated query replay drains on its existing socket before EOF");
         assertEquals(foreignReplay, false, "shared cues from another request cannot leak to this socket");
-        const excess = createConnection({ port: tcpPort, host: "127.0.0.1" });
-        sockets.push(excess);
-        excess.on("error", () => {});
-        const closed = new Promise<void>((resolve) => excess.once("close", resolve));
-        yield* race([
-          call(() => closed),
-          (function*() {
-            yield* sleepOp(2000);
-            throw new Error("Saturation did not close");
-          })(),
-        ]);
-        assertEquals(refusals, ["busy", "wire", "peer", "busy"]);
+        const extra = createConnection({ port: tcpPort, host: "127.0.0.1" });
+        sockets.push(extra);
+        extra.on("error", () => {});
+        extra.resume();
+        yield* call(() => once(extra, "connect"));
+        const another = sourceHby.makeHab("third-controller", undefined, { wits: [witness.pre], toad: 1 });
+        extra.write(acceptedEventReplayMessage(sourceHby, another.pre, 0).message);
+        for (let attempt = 0; attempt < 200 && !providerHby.db.getKever(another.pre); attempt++) yield* sleepOp(10);
+        assertEquals(
+          providerHby.db.getKever(another.pre)?.sn,
+          0,
+          "a third connection progresses alongside active and idle peers",
+        );
+        assertEquals(refusals, ["wire", "peer"]);
         const priorDrains = drains.length;
         driver = yield* spawn(() =>
           runAgentRuntime(runtime, { hab: witness, sink: respondantCueSink(runtime, witness) })
@@ -741,7 +720,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         for (let attempt = 0; attempt < 200 && drains.length !== priorDrains + 2; attempt++) yield* sleepOp(10);
         assertEquals(drains.length, priorDrains + 2, "the pending reply outlives real receive EOF");
         reset.resetAndDestroy();
-        for (let attempt = 0; attempt < 200 && refusals.length !== 5; attempt++) yield* sleepOp(10);
+        for (let attempt = 0; attempt < 200 && refusals.length !== 3; attempt++) yield* sleepOp(10);
         assertEquals(refusals.at(-1), "peer", "native reset after RX EOF cannot fail the listener");
         const expires = createConnection({ port: tcpPort, host: "127.0.0.1" });
         sockets.push(expires);
@@ -784,10 +763,10 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         if (receiveTask) yield* receiveTask.halt();
         yield* receiver.close();
         assert(sockets.every((socket) => socket.destroyed));
-        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
         assertEquals(
           refusals,
-          ["busy", "wire", "peer", "busy", "peer", "peer", "peer"],
+          ["wire", "peer", "peer", "peer", "peer"],
           "cancellation is distinct from peer refusal",
         );
         tcpTask = yield* spawn(serve);
@@ -813,7 +792,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         ]);
         assert(failure instanceof ParserError);
         assert(!(failure instanceof WireParseError));
-        assertEquals(refusals, ["busy", "wire", "peer", "busy", "peer", "peer", "peer"]);
+        assertEquals(refusals, ["wire", "peer", "peer", "peer", "peer"]);
       } finally {
         if (driver) yield* driver.halt();
         stoppingReceiver = true;
@@ -821,7 +800,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         if (receiveTask) yield* receiveTask.halt();
         yield* receiver.close();
         assert(sockets.every((socket) => socket.destroyed), "host shutdown must close its active peers");
-        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
         yield* runtime.close();
       }
     } finally {

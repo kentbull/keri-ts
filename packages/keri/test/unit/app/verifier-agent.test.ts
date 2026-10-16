@@ -288,7 +288,7 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
       assertExists((requests[1]!.data as Record<string, unknown>).revocationTimestamp);
     } finally {
       yield* runtime.close();
-      assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
       yield* cdb.close(true);
       yield* verifierReger.close(true);
       yield* verifierHby.close(true);

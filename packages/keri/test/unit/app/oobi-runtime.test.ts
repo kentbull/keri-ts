@@ -361,18 +361,6 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         assertEquals(runtimePendingState(runtime).authQueued, false);
         assertEquals(runtimePendingState(runtime).authInFlight, true);
         assertEquals(runtimeOobiConverged(runtime, wellKnownUrl), false);
-        assertStrictEquals(new Authenticator(hby).services.resources, runtime.resources);
-
-        const occupied = runtime.resources.reserve({ streams: runtime.resources.limits.streams });
-        if (occupied.kind !== "reserve") throw new Error("Expected free HTTP capacity");
-        try {
-          yield* processRuntimeTurn(runtime);
-          assertEquals(authRequests, 0, "busy refuses before request acquisition");
-          assertEquals(hby.db.mfa.get(wellKnownUrl)?.state, "auth-pending");
-          assertEquals(hby.db.rmfa.get(wellKnownUrl), null);
-        } finally {
-          occupied.reservation.release();
-        }
         yield* processRuntimeTurn(runtime);
         assertEquals(hby.db.rmfa.get(wellKnownUrl)?.state, "resolved");
         assertEquals(runtimeHasWellKnownAuth(runtime, wellKnownUrl), true);
@@ -381,7 +369,6 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
           "resolved",
         );
         assertEquals(runtimeOobiConverged(runtime, wellKnownUrl), true);
-        assertEquals(runtime.resources.used.streams, 0);
 
         enqueueOobi(runtime, { url: failingWellKnownUrl });
         yield* processRuntimeTurn(runtime);
@@ -425,7 +412,7 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         const task = run(() => auth.processOnce());
         try {
           yield* call(() => started);
-          assertEquals(runtime.resources.used.streams, 1, "response cleanup retains handle credit");
+
           const halted = task.halt();
           let joined = false;
           void halted.then(() => joined = true, () => joined = true);
@@ -435,7 +422,7 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
           finishCleanup();
           assertStrictEquals(yield* call(() => assertRejects(() => halted)), cleanupFailure);
           assertEquals(signals[0].aborted, true);
-          assertEquals(runtime.resources.used.streams, 0);
+
           assertEquals(hby.db.mfa.get(cleanupUrl)?.state, "auth-pending");
           assertEquals(hby.db.rmfa.get(cleanupUrl), null);
         } finally {

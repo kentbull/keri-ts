@@ -4,8 +4,8 @@
  * Resolution succeeds only when hosted `did.json` matches the DID document
  * regenerated from the fetched `keri.cesr` KERI/VDR stream.
  */
-import { ResourceAdmissionError } from "cesr-ts";
-import { call, type Operation, resource } from "effection";
+
+import { call, type Operation } from "effection";
 import { abortable } from "../../app/abortable.ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import { collectBytes, streamBytes } from "../../app/byte-source.ts";
@@ -48,7 +48,6 @@ function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions
   pinDesignatedAliasesSchema(runtime);
   const preferHttp = options.insecureHttp ?? false;
   yield* call(function*() {
-    yield* holdArtifactCredit(runtime, 1024 ** 2);
     yield* runtime.reactor.process(
       (signal) => artifactBytes(runtime, urls.keriCesr, fallbackUrls.keriCesr, preferHttp, signal),
       { local: false },
@@ -58,8 +57,6 @@ function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions
   yield* runtime.reactor.processEscrowsOnce();
   // Preserve the second convergence turn previously run after settleRuntimeIngress's own pass.
   yield* runtime.reactor.processEscrowsOnce();
-  // Generated/hosted plaintext, collection and comparison copies stay owned through this scope.
-  yield* holdArtifactCredit(runtime, 8 * 8 * 1024 ** 2, 1);
   const expected = generateBareDidDocument(runtime, parsed.canonical);
   const bytes = yield* abortable((signal) =>
     collectBytes(artifactBytes(runtime, urls.didJson, fallbackUrls.didJson, preferHttp, signal))
@@ -80,21 +77,6 @@ function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions
     document: expected,
     resolution,
   };
-}
-
-/** Hold request/copy allowance before fetch; enclosing cleanup joins before returning credit. */
-function* holdArtifactCredit(runtime: AgentRuntime, bytes: number, streams = 0): Operation<void> {
-  yield* resource<void>(function*(provide) {
-    const admission = runtime.resources.reserve({ bytes, streams });
-    if (admission.kind === "refuse") {
-      throw new ResourceAdmissionError("DID artifact admission refused", admission.reason);
-    }
-    try {
-      yield* provide();
-    } finally {
-      admission.reservation.release();
-    }
-  });
 }
 
 /** Native header transport fallback only; a started body never retries another artifact URL. */

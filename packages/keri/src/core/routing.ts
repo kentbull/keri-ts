@@ -1,4 +1,4 @@
-import { Cigar, Dater, Diger, Prefixer, ResourceLimitError, SerderKERI, Siger } from "cesr-ts";
+import { Cigar, Dater, Diger, Prefixer, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
@@ -379,7 +379,6 @@ export class Revery {
   readonly cues: Deck<AgentCue>;
   readonly lax: boolean;
   readonly local: boolean;
-  readonly maxReplyGroups: number;
 
   /**
    * Create one reply verifier bound to one `Baser` and optional shared router.
@@ -395,14 +394,11 @@ export class Revery {
       cues,
       lax = true,
       local = false,
-      maxReplyGroups = 4096,
     }: {
       rtr?: Router;
       cues?: Deck<AgentCue>;
       lax?: boolean;
       local?: boolean;
-      /** Incoming proof-group limit; bounds staged entries and matches the parser group default. */
-      maxReplyGroups?: number;
     } = {},
   ) {
     this.db = db;
@@ -410,8 +406,6 @@ export class Revery {
     this.cues = cues ?? new Deck();
     this.lax = lax;
     this.local = local;
-    if (!Number.isSafeInteger(maxReplyGroups) || maxReplyGroups < 0) throw new RangeError("Invalid reply group limit");
-    this.maxReplyGroups = maxReplyGroups;
   }
 
   /** Local prefixes used for self-attachment policy decisions. */
@@ -495,9 +489,6 @@ export class Revery {
 
   /** Evaluate ordered proof groups with a virtual escrow view before any durable reply effects. */
   decideReply(args: Parameters<Revery["acceptReply"]>[0]): ReplyPlan {
-    if ((args.tsgs?.length ?? 0) > this.maxReplyGroups || (args.cigars?.length ?? 0) > this.maxReplyGroups) {
-      throw new ResourceLimitError("Reply proof groups exceed configured work limit");
-    }
     const escrows: Array<Parameters<Revery["escrowReply"]>[0]> = [];
     const cues: QueryCue[] = [];
     // Same-call groups see the last staged pin exactly as they previously saw the durable write.
@@ -833,7 +824,6 @@ export class Revery {
       }
       return acceptEscrow();
     } catch (error) {
-      if (error instanceof ResourceLimitError) throw error;
       return dropEscrow(
         "processingError",
         `${error instanceof Error ? error.message : String(error)} (said=${diger.qb64}, route=${serder.route})`,

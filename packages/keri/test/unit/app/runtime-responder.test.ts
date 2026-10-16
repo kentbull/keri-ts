@@ -1,4 +1,3 @@
-import { ResourceAdmissionError } from "cesr-ts";
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import {
@@ -258,7 +257,7 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
           yield* runtime.deliveries.process(runtime);
         }
         assertEquals(runtime.deliveries.hasPending, false);
-        assertEquals(runtime.resources.used.bytes, 0);
+
         const chunk = new Uint8Array(4 * 1024 ** 2 + 1), messages = [chunk, chunk];
         const iterator = messages[Symbol.iterator].bind(messages), cleanupFailure = new Error("witness cursor cleanup");
         messages[Symbol.iterator] = () =>
@@ -366,7 +365,7 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
           [["keyStateSaved", controller.pre, provider.db.getKever(controller.pre)!.said]],
         );
         runtime.cues.clear(); // Cancellation preserves the unconsumed state cue's owner until test cleanup.
-        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
         const finite = yield* processWitnessIngress(runtime, witness, later, { local: true, deliver: false });
         assertEquals(finite.filter((emission) => emission.cue.kin === "witness").length, 1);
         assertEquals(provider.db.getKever(controller.pre)?.sn, 1);
@@ -424,8 +423,8 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
         const active = runtime;
         active.cues.push(cue);
         const sink = respondantCueSink(active, sender);
-        assertEquals(active.resources.used.bytes, 0, "queued records carry no byte credit");
-        const foreign = new ResourceAdmissionError("foreign cue preparation busy", "busy");
+
+        const foreign = new Error("foreign cue preparation busy");
         const resolve = active.poster.findBytesRoute;
         for (const phase of ["interpret", "route"]) {
           if (phase === "interpret") {
@@ -441,7 +440,6 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
               foreign,
             );
             assertStrictEquals(active.cues.peekHead(), cue);
-            assertEquals(active.resources.used.bytes, 0, "failed preparation leaves no queued output");
           } finally {
             sender.interpretCue = interpretation;
             active.poster.findBytesRoute = resolve;
@@ -492,7 +490,6 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
             ]],
           );
           active.cues.clear(); // Retire verified queued test work without masking any delivery-owner leak.
-          assertEquals(active.resources.used.bytes, 0);
         } finally {
           clearTimeout(deadline);
           release();

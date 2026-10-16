@@ -9,7 +9,6 @@ import {
   NumberPrimitive,
   parseBytes,
   Prefixer,
-  ResourceAdmissionError,
   SealEvent,
   SerderKERI,
   Texter,
@@ -177,8 +176,7 @@ Deno.test("HTTP cancellation closes a blocked body and joins its parser task", a
     try {
       for (
         const fault of [
-          new ResourceAdmissionError("foreign source busy", "busy"),
-          new ResourceAdmissionError("foreign source limit", "limit"),
+          new Error("foreign source failure"),
         ]
       ) {
         const body = new ReadableStream<Uint8Array>({
@@ -194,7 +192,7 @@ Deno.test("HTTP cancellation closes a blocked body and joins its parser task", a
           }),
         );
         assertStrictEquals(yield* call(() => assertRejects(() => failed)), fault);
-        assertEquals([body.locked, runtime.resources.used.bytes], [false, 0]);
+        assertEquals(body.locked, false);
       }
       let reading!: () => void;
       const ready = new Promise<void>((resolve) => {
@@ -267,7 +265,7 @@ Deno.test("HTTP cancellation closes a blocked body and joins its parser task", a
         yield* call(() => promptly(ready));
         abort.abort();
         assertStrictEquals(yield* call(() => assertRejects(() => pending)), fault);
-        assertEquals([source.locked, runtime.resources.used.bytes], [false, 0]);
+        assertEquals(source.locked, false);
       }
     } finally {
       yield* runtime.close();
@@ -352,7 +350,6 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
         }
         if (fault) assertStrictEquals(yield* call(() => assertRejects(() => pending)), fault);
         else assertEquals((yield* call(() => promptly(pending))).status, 408);
-        assertEquals(runtime.resources.used.bytes, 0);
       }
       runtime.deliveries.openReply = open;
       yield* worker.halt();
@@ -711,11 +708,7 @@ Deno.test("direct HTTP TSN query retains both independently verifiable replies",
         );
         assertEquals(response.status, 200);
         const bytes = yield* call(async () => new Uint8Array(await response.arrayBuffer()));
-        assertEquals(
-          runtime.resources.used,
-          { bytes: 0, streams: 0, decryptions: 0 },
-          "Complete response releases source ownership",
-        );
+
         const frames = yield* call(() => parseBytes(bytes));
         {
           assertEquals(

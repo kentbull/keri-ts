@@ -1,6 +1,6 @@
 import { call, ensure, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { concatBytes, ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "../../../../cesr/mod.ts";
+import { concatBytes } from "../../../../cesr/mod.ts";
 import { abortable } from "../../../src/app/abortable.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -21,11 +21,11 @@ function gate(): { wait: Promise<void>; open: () => void } {
   return { wait, open };
 }
 
-Deno.test("runtime turns retain admission until cancelled work finishes cleanup", async () => {
+Deno.test("runtime turns retain state ownership until cancelled work finishes cleanup", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `turn-cleanup-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
-      const reactor = new Reactor(hby, { maxSources: 1 });
+      const reactor = new Reactor(hby);
       const started = gate();
       const cleanup = gate();
       let second = false;
@@ -44,8 +44,6 @@ Deno.test("runtime turns retain admission until cancelled work finishes cleanup"
           second = true;
         })
       );
-      // One owner and one waiter fill admission; a third turn must fail without queueing.
-      yield* call(() => assertRejects(() => run(() => reactor.settle()), ResourceLimitError));
       const halted = yield* spawn(() => first.halt());
       yield* call(() => Promise.resolve());
       assertEquals(second, false);
@@ -72,7 +70,7 @@ Deno.test("two request reservations survive an interleaved background cue drain"
       const replayB: ReplayCue = { kin: "replay", querySaid: "query-b", messages: [new Uint8Array([2])] };
       const ordinary: ReplayCue = { kin: "replay", messages: [new Uint8Array([3])] };
       const seen: AgentCue[] = [];
-      const runtime = { hby, reactor, cues: reactor.cues, resources: reactor.resources } as AgentRuntime;
+      const runtime = { hby, reactor, cues: reactor.cues } as AgentRuntime;
       const producing = yield* spawn(() =>
         reactor.settle(undefined, {}, function*() {
           // These model deferred query results produced after another turn has already begun waiting.
@@ -114,7 +112,7 @@ Deno.test("cue delivery owns one initial batch even when delivery appends more w
     const hby = yield* createHabery({ name: `cue-batch-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const reactor = new Reactor(hby);
-      const runtime = { hby, reactor, cues: reactor.cues, resources: reactor.resources } as AgentRuntime;
+      const runtime = { hby, reactor, cues: reactor.cues } as AgentRuntime;
       // Exercise both the fallback interpreter and the habitat interpreter with the same sink.
       for (const withHab of [false, true]) {
         const hab = withHab ? hby.makeHab("recipient") : undefined;
@@ -151,7 +149,7 @@ Deno.test("queued cues do not prevent KEL acceptance or out-of-order escrow reco
       const later = sender.interact();
       const reactor = new Reactor(target);
       yield* reactor.process((signal) => chunkBytes(later, { signal }));
-      assertEquals(reactor.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
       assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 1);
       reactor.cues.clear();
       reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
@@ -198,25 +196,26 @@ Deno.test("OOBI result publication preserves cues appended during HTTP fetch", a
   });
 });
 
-Deno.test("queued ingress reserves shared bytes before copying and releases allocation failures", async () => {
+Deno.test("queued ingress copies producer bytes and does not publish failed copies", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
-      const resources = new ResourcePolicy({ bytes: 4 });
-      const first = new Reactor(hby, { resources }), second = new Reactor(hby, { resources });
-      first.ingest(new Uint8Array(4));
-      let copied = false;
+      const reactor = new Reactor(hby);
+      const producer = Uint8Array.of(1, 2);
+      let received: Uint8Array | undefined;
+      reactor.processBytes = function*(bytes) {
+        received = bytes;
+      };
+      reactor.ingest(producer);
+      producer.fill(0);
+      yield* reactor.processOnce();
+      assertEquals(received, Uint8Array.of(1, 2));
       const bytes = new Uint8Array(4);
       bytes.slice = () => {
-        copied = true;
         throw new Error("copy failed");
       };
-      assertThrows(() => second.ingest(bytes), ResourceLimitError, "busy");
-      assertEquals(copied, false);
-      first.clearIngress();
-      assertThrows(() => second.ingest(bytes), Error, "copy failed");
-      assertEquals(resources.used.bytes, 0);
-      assertEquals(second.hasIngress, false);
+      assertThrows(() => reactor.ingest(bytes), Error, "copy failed");
+      assertEquals(reactor.hasIngress, false);
     } finally {
       yield* hby.close(true);
     }
@@ -230,14 +229,13 @@ Deno.test("queued ingress processes without waiting for cue delivery", async () 
     try {
       const sender = source.makeHab("sender");
       const wire = acceptedEventReplayMessage(source, sender.pre, 0).message;
-      const resources = new ResourcePolicy({ streams: 2 });
-      const reactor = new Reactor(target, { resources, maxSources: 1 });
+
+      const reactor = new Reactor(target);
       reactor.ingest(wire);
       reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
       yield* reactor.processOnce();
       assertEquals(target.db.getKever(sender.pre)!.sn, 0);
       assertEquals(reactor.hasIngress, false);
-      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     } finally {
       yield* target.close(true);
       yield* source.close(true);
@@ -245,12 +243,11 @@ Deno.test("queued ingress processes without waiting for cue delivery", async () 
   });
 });
 
-Deno.test("queued processing holds local and shared capacity through joined cancellation and late retry", async () => {
+Deno.test("queued processing joins cancellation and does not reinsert failed records", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
-      const resources = new ResourcePolicy({ bytes: 16 });
-      const reactor = new Reactor(hby, { resources, maxSources: 1, maxQueuedBytes: 4 });
+      const reactor = new Reactor(hby);
       const started = gate(), cleaning = gate(), cleanup = gate();
       reactor.processBytes = function*() {
         yield* abortable(async (signal) => {
@@ -265,18 +262,20 @@ Deno.test("queued processing holds local and shared capacity through joined canc
       const task = yield* spawn(() => reactor.processOnce());
       yield* call(() => started.wait);
       assertEquals(reactor.hasIngress, false, "record transfers out of queued ownership before yielding");
-      assertThrows(() => reactor.ingest(new Uint8Array(1)), ResourceLimitError);
       reactor.clearIngress();
-      const halted = yield* spawn(() => task.halt());
+      let joined = false;
+      const halted = yield* spawn(function*() {
+        yield* task.halt();
+        joined = true;
+      });
       yield* call(() => cleaning.wait);
       try {
-        assertEquals(resources.used.bytes, 4);
-        assertThrows(() => reactor.ingest(new Uint8Array(1)), ResourceLimitError);
+        assertEquals(joined, false);
       } finally {
         cleanup.open();
       }
       yield* halted;
-      assertEquals(resources.used.bytes, 0);
+      assertEquals(joined, true);
       reactor.ingest(new Uint8Array(4));
       reactor.processBytes = function*() {
         reactor.clearIngress();
@@ -284,39 +283,37 @@ Deno.test("queued processing holds local and shared capacity through joined canc
       };
       yield* call(() => assertRejects(() => run(() => reactor.processOnce()), Error, "late processing failure"));
       assertEquals(reactor.hasIngress, false);
-      assertEquals(resources.used.bytes, 0);
+
       reactor.ingest(new Uint8Array(4));
       reactor.processBytes = function*() {
         throw new Error("processing failed");
       };
       yield* call(() => assertRejects(() => run(() => reactor.processOnce()), Error, "processing failed"));
-      assertEquals(resources.used.bytes, 0);
+      assertEquals(reactor.hasIngress, false);
     } finally {
       yield* hby.close(true);
     }
   });
 });
 
-Deno.test("runtime explicit close and scope exit release queued ingress and cue ownership", async () => {
-  const resources = new ResourcePolicy();
+Deno.test("runtime explicit close and scope exit clear queued ingress and cues", async () => {
   await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, resources });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
-      yield* call(function*() {
-        const runtime = yield* createAgentRuntime(hby, { resources });
-        runtime.reactor.ingest(new Uint8Array(4));
-        runtime.cues.push({ kin: "oobiQueued", url: "https://peer.test/" });
-        assertEquals(resources.used.bytes, 4, "only ingress bytes are accounted; queued cues are ordinary records");
-        yield* runtime.close();
-        assertEquals(resources.used.bytes, 0);
-      });
-      yield* call(function*() {
-        const runtime = yield* createAgentRuntime(hby, { resources });
-        runtime.reactor.ingest(new Uint8Array(4));
-        runtime.cues.push({ kin: "oobiQueued", url: "https://peer.test/" });
-        assertEquals(resources.used.bytes, 4, "only ingress bytes are accounted; queued cues are ordinary records");
-      });
-      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+      let runtime!: AgentRuntime;
+      for (const explicit of [true, false]) {
+        yield* call(function*() {
+          runtime = yield* createAgentRuntime(hby);
+          runtime.reactor.ingest(new Uint8Array(4));
+          runtime.cues.push({ kin: "oobiQueued", url: "https://peer.test/" });
+          assertEquals(runtime.reactor.hasIngress, true);
+          if (explicit) {
+            yield* runtime.close();
+            assertEquals([runtime.reactor.hasIngress, runtime.cues.length], [false, 0]);
+          }
+        });
+        assertEquals([runtime.reactor.hasIngress, runtime.cues.length], [false, 0]);
+      }
     } finally {
       yield* hby.close(true);
     }
@@ -597,8 +594,8 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
         temp: true,
         skipConfig: true,
       });
-      const resources = new ResourcePolicy();
-      const reactor = new Reactor(target, { resources });
+
+      const reactor = new Reactor(target);
       const resultCues = separateCues ? new Deck<AgentCue>() : reactor.cues;
       const hab = source.makeHab("source");
       const first = acceptedEventReplayMessage(source, hab.pre, 0).message;
@@ -643,7 +640,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           },
         },
       });
-      assertStrictEquals(oobi.services.resources, resources);
+
       const processEvent = reactor.kevery.processEvent;
       reactor.kevery.processEvent = function(envelope) {
         const decision = processEvent.call(this, envelope);
@@ -697,7 +694,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           yield* worker;
         }
         if (separateCues && mode === "complete") assertEquals(resultCues.pull()?.kin, "oobiResolved");
-        assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
         assertEquals(signal?.aborted, true);
         assertEquals(target.db.coobi.get(url), null);
         if (mode === "complete") {
@@ -715,7 +712,6 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           assertEquals(target.db.roobi.get(url)?.state, "resolved");
           assertEquals(target.db.oobis.get(url), null);
           if (separateCues) assertEquals(resultCues.pull()?.kin, "oobiResolved");
-          assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
         }
       } finally {
         next.open();
@@ -727,70 +723,4 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
       }
     });
   }
-});
-
-Deno.test("OOBI refusal precedes fetch or finite document reads and releases response ownership", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: `oobi-admission-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    try {
-      for (const document of [false, true]) {
-        const resources = new ResourcePolicy({ bytes: 2 * 1024 ** 2 });
-        const reactor = new Reactor(hby, { resources });
-        let requests = 0, reads = 0, cancelled = false;
-        const oobi = new Oobiery(hby, reactor, {
-          cues: reactor.cues,
-          services: {
-            ...defaultRuntimeServices,
-            http: {
-              fetch() {
-                requests++;
-                return Promise.resolve(
-                  document
-                    ? new Response(
-                      new ReadableStream<Uint8Array>({
-                        pull() {
-                          reads++;
-                          throw new Error("Inadmissible JSON was read");
-                        },
-                        cancel() {
-                          cancelled = true;
-                        },
-                      }, { highWaterMark: 0 }),
-                      { headers: { "Content-Type": "application/schema+json" } },
-                    )
-                    : new Response(null, { status: 404 }),
-                );
-              },
-            },
-          },
-        });
-        const url = `http://admission.test/oobi?document=${document}`;
-        oobi.resolve(url);
-        reactor.cues.clear();
-        const occupied = document ? undefined : resources.reserve({ bytes: resources.limits.bytes });
-        if (occupied && occupied.kind !== "reserve") throw new Error("Expected occupied byte budget");
-        let refusal: unknown;
-        try {
-          yield* call(() => oobi.processOnce());
-        } catch (error) {
-          refusal = error;
-        }
-        assertEquals(document ? refusal instanceof ResourceAdmissionError : refusal === undefined, true);
-        if (document) assertEquals((refusal as ResourceAdmissionError).reason, "limit");
-        assertEquals([requests, reads, cancelled], document ? [1, 0, true] : [0, 0, false]);
-        assertEquals([hby.db.roobi.get(url), hby.db.coobi.get(url)], [null, null]);
-        assertEquals(hby.db.oobis.get(url)?.state, "queued");
-        if (occupied?.kind === "reserve") {
-          occupied.reservation.release();
-          yield* oobi.processOnce();
-          assertEquals(hby.db.eoobi.get(url)?.state, "http-404");
-          assertEquals(requests, 1);
-        }
-        assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-        hby.db.oobis.rem(url);
-      }
-    } finally {
-      yield* hby.close(true);
-    }
-  });
 });

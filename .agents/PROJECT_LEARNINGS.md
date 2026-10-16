@@ -31,6 +31,9 @@ socket constraint supported by production evidence may remain. No no-op policies
 renamed ledgers or dormant hooks. Preserve real protocol state and resource cleanup;
 old keri-ts API/data compatibility is not required. Add no migration readers,
 upgrade machinery or new-to-old version tests.
+ResourcePolicy, accounting errors and constructor plumbing are removed throughout
+CESR/KERI/Tufa; RuntimeServices contains only clock/HTTP. Queue/client/listener and
+reply-proof work caps are removed; intrinsic numeric guards use RangeError.
 Cue queues and reply correlations now carry ordinary Deck records. Publish after
 owning writes/commit; preserve real iterator, reader and payload cleanup. Do not
 restore queue credit, capacity, inspection or synthetic retain/release handles.

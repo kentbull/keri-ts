@@ -3,7 +3,7 @@ import { annotate, annotateFrames } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
 import { tephraCli } from "../../src/cli/main.ts";
 import { decodeB64 } from "../../src/core/bytes.ts";
-import { ResourceLimitError, VersionError } from "../../src/core/errors.ts";
+import { VersionError } from "../../src/core/errors.ts";
 import { collectPayload } from "../../src/core/payload.ts";
 import { essrRaw, essrWire } from "../../src/parser/essr.ts";
 import { Counter } from "../../src/primitives/counter.ts";

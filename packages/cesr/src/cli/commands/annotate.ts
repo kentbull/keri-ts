@@ -10,7 +10,6 @@ interface AnnotateCliOptions {
   outPath?: string;
   /** Render embedded JSON with indentation. */
   pretty: boolean;
-  /** Finite annotation admission budget selected by the caller. */
 }
 
 /** Supported annotation flags shown by help and usage errors. */

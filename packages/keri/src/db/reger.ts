@@ -19,7 +19,6 @@ import {
   NumberPrimitive,
   NumDex,
   Prefixer,
-  ResourceLimitError,
   Saider,
   Seqner,
   SerderACDC,
@@ -324,7 +323,7 @@ export class Reger extends LMDBer {
     }
     if (end === null) return null;
     if (!Number.isFinite(end) || end < 0) throw new DatabaseOperationError("Corrupt TEL replay ordinal");
-    if (!Number.isSafeInteger(end)) throw new ResourceLimitError("TEL replay ordinal exceeds supported range");
+    if (!Number.isSafeInteger(end)) throw new RangeError("TEL replay ordinal exceeds supported range");
     return new CapturedTelReplay(this, [[pre, end]], { gvrsn, genusify });
   }
 

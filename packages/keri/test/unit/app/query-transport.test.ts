@@ -1,7 +1,7 @@
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
-import { attachmentPayload, collectPayload, concatBytes, parse, ResourceAdmissionError } from "../../../../cesr/mod.ts";
+import { attachmentPayload, collectPayload, concatBytes, parse } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
@@ -148,11 +148,11 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             q: { s: "0", fn: "0" },
           };
           assertThrows(() => sink.admitQuery!(cue, () => Promise.resolve(null) as never), TypeError);
-          assertEquals(runtime.resources.used.bytes, 0, "async preparation cannot escape admitted scope");
+
           assertEquals(sink.admitQuery!(cue, () => null), "ineligible");
-          assertEquals(runtime.resources.used.bytes, 0, "unresolved preparation cannot publish an owner");
+
           const readFailure = new Error("query iterator read failed");
-          const cleanupFailure = new ResourceAdmissionError("foreign query cleanup busy", "busy");
+          const cleanupFailure = new Error("foreign query cleanup busy");
           const cleanup = assertThrows(() =>
             sink.admitQuery!(cue, () => ({
               kind: "wire",
@@ -171,7 +171,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               },
             })), AggregateError);
           assertEquals(cleanup.errors, [readFailure, cleanupFailure]);
-          assertEquals(runtime.resources.used.bytes, 0, "both query failure paths release unpublished credit");
+
           runtime.cues.push(cue);
           runtime.querying.configure({ hab: sender, sink });
           const sign = sender.query, resolve = sender.endsFor;
@@ -194,7 +194,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               q: {},
             });
             const pending = runtime.querying.pending.peekHead();
-            const foreign = new ResourceAdmissionError("foreign signing busy", "busy");
+            const foreign = new Error("foreign signing busy");
             sender.query = () => {
               throw foreign;
             };
@@ -206,11 +206,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             );
             assertStrictEquals(runtime.cues.peekHead(), cue);
             assertStrictEquals(runtime.querying.pending.peekHead(), pending);
-            assertEquals(
-              runtime.resources.used.bytes,
-              0,
-              "failed signing publishes no delivery",
-            );
+
             sender.query = function(...args) {
               const wire = sign.apply(this, args);
               signed.push(wire);
@@ -236,7 +232,6 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               "captured endpoint and original signature survive later state changes",
             );
             assertEquals(signed.length, 2, "delivery never re-signs the admitted query");
-            assertEquals(runtime.resources.used.bytes, 0);
           } finally {
             sender.query = sign;
             sender.endsFor = resolve;
@@ -436,9 +431,9 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             ),
             ["receipt", "keyStateSaved"].map((kin) => [kin, remoteController.pre, remoteController.kever!.said]),
           );
-          assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
           runtime.cues.clear(); // Ordinary accepted output records carry no transport lease.
-          assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
           yield* runtime.reactor.processEscrowsOnce();
         } finally {
           yield* runtime.close();

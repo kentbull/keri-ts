@@ -1,4 +1,3 @@
-import { ResourceLimitError } from "cesr-ts";
 import { run } from "effection";
 import {
   type AgentRuntime,
@@ -104,23 +103,18 @@ export function handleWitnessQueryGet(
   const snText = context.url.searchParams.get("sn");
   const sn = snText === null ? null : Number.parseInt(snText, 10);
   const runtime = context.runtime!;
-  try {
-    const result = witnessQueryGet(witnessHab, {
-      typ: context.url.searchParams.get("typ"),
-      pre: context.url.searchParams.get("pre"),
-      sn: Number.isNaN(sn ?? Number.NaN) ? null : sn,
+  const result = witnessQueryGet(witnessHab, {
+    typ: context.url.searchParams.get("typ"),
+    pre: context.url.searchParams.get("pre"),
+    sn: Number.isNaN(sn ?? Number.NaN) ? null : sn,
+  });
+  if (result.kind === "accepted") {
+    return new Response(runtime.replyStreams.open(result.messages), {
+      status: result.status,
+      headers: { "Content-Type": "application/cesr" },
     });
-    if (result.kind === "accepted") {
-      return new Response(runtime.replyStreams.open(result.messages), {
-        status: result.status,
-        headers: { "Content-Type": "application/cesr" },
-      });
-    }
-    return textResponse(result.message, result.status);
-  } catch (error) {
-    if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
-    throw error;
   }
+  return textResponse(result.message, result.status);
 }
 
 /** Serve the signed witness state-notice contract with explicit destination selection. */

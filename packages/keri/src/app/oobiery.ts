@@ -1,4 +1,4 @@
-import { type Cigar, Diger, Ilks, Prefixer, ResourceAdmissionError, SerderKERI } from "cesr-ts";
+import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { AgentCue, OobiResolvedCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
@@ -18,7 +18,7 @@ import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import type { Notifier } from "./notifying.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import type { Reactor } from "./reactor.ts";
-import { defaultRuntimeServices, resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 export const OOBI_REQUEST_ROUTE = "/oobis";
@@ -72,8 +72,7 @@ export class Oobiery {
     this.hby = hby;
     this.reactor = reactor;
     this.cues = cues ?? new Deck();
-    // The Reactor owns admission; injected clock/HTTP services borrow its exact ledger.
-    this.services = resolveRuntimeServices({ ...services, resources: reactor.resources });
+    this.services = services;
   }
 
   /** Register `/introduce` on the shared reply router. */
@@ -118,14 +117,7 @@ export class Oobiery {
     const multi = this.nextReadyMoobi();
     if (multi) {
       const [url, record] = multi;
-      try {
-        this.completeMultiOobi(url, record);
-      } catch (error) {
-        if (!(error instanceof ResourceAdmissionError && error.reason === "busy")) {
-          throw error;
-        }
-        // The parent keeps its durable moobi owner until a later turn can admit its result.
-      }
+      this.completeMultiOobi(url, record);
     }
   }
 
@@ -134,7 +126,7 @@ export class Oobiery {
     // deno-lint-ignore no-this-alias -- The callback borrows this OOBI worker's durable queue.
     const self = this;
     return call(function*() {
-      const admitted = yield* resource<boolean>(function*(provide) {
+      const started = yield* resource<boolean>(function*(provide) {
         if (self.active) {
           yield* provide(false);
           return;
@@ -146,18 +138,9 @@ export class Oobiery {
           self.active = false;
         }
       });
-      if (!admitted) return;
-      try {
-        // Each finite child joins its body, fetch and parser before releasing the earlier job owner.
-        yield* call(() => self.processJob(kind, url, record));
-      } catch (error) {
-        if (!(error instanceof ResourceAdmissionError && error.reason === "busy")) {
-          throw error;
-        }
-        // Temporary cue/resource saturation leaves durable work for the existing worker's later turn.
-        self.hby.db.coobi.rem(url);
-        self.pinQueueStore(kind, url, record);
-      }
+      if (!started) return;
+      // Each finite child joins its body, fetch and parser before the earlier job owner ends.
+      yield* call(() => self.processJob(kind, url, record));
     });
   }
 
@@ -222,18 +205,6 @@ export class Oobiery {
     record: OobiRecord,
   ): Operation<void> {
     const services = this.services;
-    yield* resource<void>(function*(provide) {
-      // A finite minimum charge bounds pending GET handles; Reactor owns the one active body stream slot.
-      const admission = services.resources.reserve({ bytes: 1024 ** 2 });
-      if (admission.kind === "refuse") {
-        throw new ResourceAdmissionError("OOBI response admission refused", admission.reason);
-      }
-      try {
-        yield* provide();
-      } finally {
-        admission.reservation.release();
-      }
-    });
     const meta = {
       ...parseOobiUrl(url, record.oobialias ?? undefined),
       ...record,
@@ -249,7 +220,7 @@ export class Oobiery {
       oobialias: meta.alias ?? meta.oobialias ?? null,
       said: meta.said ?? null,
     };
-    // Stage attempt metadata only; the original queue row stays owned until result admission.
+    // Stage attempt metadata only; the original queue row stays owned until result publication.
     const response = yield* fetchOobiResponse(url, services);
     try {
       yield* this.processResponse(kind, url, queuedRecord, meta, response);
@@ -266,7 +237,6 @@ export class Oobiery {
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
     response: Response,
   ): Operation<void> {
-    const services = this.services;
     if (!response.ok) {
       yield* closeResponseBody(response);
       const result = { ...queuedRecord, date: new Date().toISOString(), state: `http-${response.status}` };
@@ -286,18 +256,6 @@ export class Oobiery {
       this.remQueueStore(kind, url);
       return;
     }
-    yield* resource<void>(function*(provide) {
-      // Finite JSON/schema collection and decoding remain bounded document work, not a replay collector.
-      const admission = services.resources.reserve({ bytes: 8 * 8 * 1024 ** 2 });
-      if (admission.kind === "refuse") {
-        throw new ResourceAdmissionError("OOBI document admission refused", admission.reason);
-      }
-      try {
-        yield* provide();
-      } finally {
-        admission.reservation.release();
-      }
-    });
     const bytes = yield* readResponseBytes(response);
     this.hby.db.coobi.pin(url, {
       ...queuedRecord,
@@ -797,7 +755,7 @@ function* fetchOobiResponse(
   return response;
 }
 
-/** Admit at most 8 MiB for the existing finite OOBI/document consumer and join its reader on cancellation. */
+/** Collect one finite OOBI document and join its reader on cancellation. */
 function* readResponseBytes(response: Response): Operation<Uint8Array> {
   return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal })));
 }

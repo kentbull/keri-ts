@@ -1,5 +1,5 @@
 /** Witness sequence replay borrows its Baser without retaining event bytes or read cursors. */
-import { b, bytesEqual, ResourceLimitError, t } from "cesr-ts";
+import { b, bytesEqual, t } from "cesr-ts";
 import { DatabaseOperationError } from "../core/errors.ts";
 import type { Baser } from "./basing.ts";
 import { onKey, splitOnKey } from "./core/keys.ts";
@@ -85,7 +85,7 @@ export class CapturedWitnessReplay implements Iterable<Uint8Array> {
       const fn = this.#db.getFelFn(this.pre, said);
       if (fn === null) continue;
       if (!Number.isFinite(fn) || fn < 0) throw new DatabaseOperationError("Corrupt witness first-seen ordinal");
-      if (!Number.isSafeInteger(fn)) throw new ResourceLimitError("Unsupported witness first-seen ordinal");
+      if (!Number.isSafeInteger(fn)) throw new RangeError("Unsupported witness first-seen ordinal");
       // New accepted duplicates at an old sequence are outside this response's first-seen horizon.
       if (fn > this.felEnd) continue;
       yield this.#db.cloneEvtMsg(this.pre, fn, said);

@@ -1,4 +1,3 @@
-import { ResourceAdmissionError } from "cesr-ts";
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
@@ -176,11 +175,11 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
       release.resolve();
       yield* halting;
       assertEquals(active.cues.length, 1);
-      assertEquals(active.resources.used.bytes, 0, "the remaining queued record holds no output credit");
+
       yield* processRuntimeTurn(active, { sink });
-      assertEquals(active.resources.used.bytes, 0);
+
       active.cues.push({ kin: "oobiFailed", url: "http://peer.test/", reason: "gone" });
-      const fault = new ResourceAdmissionError("foreign sink failure", "busy");
+      const fault = new Error("foreign sink failure");
       yield* call(() =>
         assertRejects(
           () =>
@@ -193,11 +192,10 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
                 },
               })
             ),
-          ResourceAdmissionError,
+          Error,
           "foreign sink failure",
         )
       );
-      assertEquals(active.resources.used.bytes, 0, "failed sink leaves no pending output");
     } finally {
       yield* hby.close();
     }
@@ -423,7 +421,7 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
         failed,
       );
       assertEquals(runtime.deliveries.hasPending, true, "an unobserved typed transport failure preserves progress");
-      failed = new ResourceAdmissionError("foreign transport busy", "busy");
+      failed = new Error("foreign transport busy");
       const previousTurns = preparationTurns;
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
@@ -449,7 +447,6 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
       injected = false;
       acceptFirst = true;
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });
-      assertEquals(runtime.resources.used.bytes, 0);
 
       const cleanupFailure = new Error("iterator cleanup failed");
       let returns = 0;
@@ -478,7 +475,7 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
       });
       const attempts = packets.first.length;
       assertStrictEquals(yield* call(() => assertRejects(() => run(() => runtime.deliveries.close()))), cleanupFailure);
-      assertEquals([runtime.deliveries.hasPending, runtime.resources.used.bytes, returns], [false, 0, 1]);
+      assertEquals([runtime.deliveries.hasPending, returns], [false, 1]);
       yield* runtime.deliveries.close();
       assertEquals(
         [packets.first.length, returns],

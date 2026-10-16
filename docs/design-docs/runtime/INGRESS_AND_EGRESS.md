@@ -1,676 +1,237 @@
-# Runtime input, output and ownership transition
+# Runtime input, output and ownership
 
-[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) and
-[ADR-0013](../../adr/adr-0013-simple-component-flows.md) supersede the progressive,
-accounting, preparation and general Reactor-gate instructions below. Those sections
-are transitional descriptions and must be rewritten with the owning code removals.
-Buffer complete enclosures, deliver complete messages, and let concrete host scopes
-own actual I/O cancellation/cleanup. No replacement intake/delivery framework.
+[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) requires buffered
+complete-enclosure decoding. [ADR-0013](../../adr/adr-0013-simple-component-flows.md)
+requires concrete component flows without application accounting. ResourcePolicy,
+its errors, reservations and constructor plumbing are removed. No compatibility
+policy, renamed ledger or queue/client/listener quota belongs here. A necessary
+private socket constraint requires production evidence; use native backpressure.
+The [transport plan](../../plans/runtime/TRANSPORT_PLAN.md) owns unfinished cue
+ownership, general Reactor-gate removal, shared worker driving and qualification.
+These architecture tasks remain incomplete.
 
-Runtime construction has no host mode: provider mailbox storage is selected with
-enableMailboxStore or an injected Mailboxer. The same components serve commands
-and long-lived hosts; unifying their worker driving remains unfinished.
+One runtime serves a Habery or command invocation. Provider storage is selected
+with `enableMailboxStore` or an injected Mailboxer; there is no host mode.
+RuntimeServices contains only the actual clock and HTTP client. Baser, Habery,
+Reactor, CLI and client constructors carry no shared accounting options.
 
-## Transitional ingress
+## Input and state ordering
 
-`Reactor.process(source, options)` is an Effection operation. The source factory
-receives the operation's abort signal. Fetch chunks are consumed on demand
-without a backing-buffer ceiling; resident/file sources choose actual chunk sizes. `chunkBytes`, `streamBytes`, and `fileBytes` adapt a finite value, Fetch
-body, or Deno file. A file source can be consumed directly:
+`Reactor.process(source, options)` owns its parser iterator in an Effection
+operation. Its source factory receives the input operation's abort signal.
+`chunkBytes`, `streamBytes`, `fileBytes` and `socketBytes` adapt actual inputs.
+Chunk sizes control I/O granularity, not message size or memory admission.
+`processBytes` supplies a finite value to the same buffered parser path:
 
 ```ts
 yield * reactor.process((signal) => fileBytes(path, { signal }));
 ```
 
-`runtime.intake.frames` exposes the optional CESR Effection channel when an edge needs
-to inspect each complete frame before choosing its dispatch policy. Its channel
-belongs to the caller's scope. Each complete independent GenericGroup child is dispatched before the
-consumer requests the next frame. Parent-owned nested children remain evidence
-inside their complete parent; only its route-specific consumer may process them. A later
-malformed sibling does not roll back already accepted children.
+A counted enclosure must arrive completely before synchronous decoding of its
+children. Independent complete messages can be processed before connection EOF.
+A following body, explicit enclosure or genuine EOF establishes completion;
+temporary lack of input does not. Parent-owned nested children remain evidence
+inside their parent until their semantic consumer accepts them. Parent signatures
+never authenticate children, and a later malformed sibling does not roll back
+previously committed messages. FrameIntake, TcpRead, custom frame channels,
+progressive cursors and parser-owned staging/disposal are removed.
 
-`Reactor.settle(frame, options, consume)` serializes one dispatch, an optional
-escrow pass, and its cue consumer. The consumer must not recursively call a
-guarded Reactor method. Input sources remain independent and backpressured;
-only their shared protocol state is serialized. Background escrow/cue turns and
-verifier cue consumption use the same guard. Direct calls to core processors are
-outside this runtime boundary.
+`Reactor.settle(frame, options, consume)` currently serializes dispatch, an
+optional escrow pass and cue consumption. Background escrow/cue turns use that
+same state guard. Waiting operations retain order and leave the wait set on
+cancellation. The active turn joins child cleanup before granting the next waiter.
+There is no configured waiter/source quota. A guarded consumer must not reenter
+Reactor. Removing this general callback gate requires moving remaining concrete
+cue work first; ledger deletion alone does not make concurrent mutation safe.
+Network work runs outside guarded interpretation/signing/routing where callers
+already transfer to delivery; remaining ownership work must preserve that ordering.
 
-The default limits are eight active sources, eight waiting turns, 1,024 pending
-cue references, and 8 MiB in the temporary complete-record queue. Parser byte,
-attachment, and nesting limits remain independently configurable. Exhausted
-admission fails with `ResourceLimitError`; it does not create an unbounded waiter
-queue. The shared cue deck enforces its reference capacity for every writer;
-batched insertion validates before mutating the queue. KEL/reply/TEL/credential
-admission checks cue space before changing accepted state. Full-deck backpressure
-retains event/reply/credential escrows and queued OOBI work for a later turn;
-a batch larger than the configured capacity fails explicitly. A draining turn
-remains available while admission is full. Cue consumers handle only the batch
-present when their pass begins, so concurrent producers cannot grow a returned
-emission array indefinitely. Replay cues retain lazy captured ranges as described
-below.
+Queued ingress is an ordinary private `Deck<Uint8Array>`. `ingest` copies producer
+bytes before publication; copy failure publishes nothing. `processOnce` pulls
+records and processes them without shared/local byte credit, generation tokens or
+capacity retry. Failed processing does not reinsert its record. `clearIngress`
+discards queued records, while an active input operation owns its real cleanup.
+Runtime explicit close and scope exit clear queued ingress and cues.
 
-Ownership is ordered with Effection resources: a source or runtime permit is
-acquired before its work child, so cancellation joins that child before releasing
-the permit. A frame's ESSR owner follows the same ordering. Durable exchange
-storage may adopt its owner; otherwise the runtime discards it after dispatch.
-`frames` lazily stages ESSR through the habitat's file archive unless its caller
-supplies a sink. Ordinary frames do not open that archive.
-Promise leaves must observe the supplied signal. `abortable` isolates the leaf,
-aborts it, and joins its completion; resources that depend on it must be
-registered before starting that leaf.
-Explicit response-body cancellation registers its cleanup owner before starting
-the cancellation Promise; joined late failures remain visible even during scope
-cancellation. Finite request intake preserves distinct read/header and outer-body
-cleanup failures. Unacquired response cleanup also propagates failure; it cannot
-silently turn failed cleanup into success.
-An already errored Fetch body may reject cancellation with its controller's exact
-abort reason; that remains cancellation. Other cleanup errors, including foreign
-AbortErrors during shutdown, propagate. Mailbox idle timeout keeps its ordinary outcome.
+## Actual cancellation and cleanup
 
-HTTP query replies carry the requesting query SAID. A bounded request reservation
-captures matching replies before background consumption. Duplicate requests
-share the same readonly replay reference. Reservations are released on response,
-failure, and cancellation. Only a query at the end of the request controls the
-HTTP response. Earlier queries retain ordinary reply delivery; their reserved
-reply moves to guarded delivery before the reservation is released. Mailbox
-authorization uses the final query frame's exact signatures and dispatch decision.
-A current sender refusal prevents opening a response even when an earlier matching
-query cue exists. See [v2 message admission](../exchange/MESSAGE_ADMISSION.md).
+Acquire actual source/socket/store owners before their work children. Cancellation
+aborts pending I/O, joins work and returns its iterator before releasing the
+underlying owner. Ordinary frames, cues and route records need no synthetic lease.
+`abortable` adapts Promise leaves at actual asynchronous edges. Register cleanup
+before starting work so a late independent failure remains observable during halt.
+A bare yielding finally can join a Promise while losing its error during teardown.
 
-The existing delivery owner can prepare an earlier query batch without an HTTP
-response consumer. This atomic queue-only transfer preserves the original slot
-on capacity or preparation refusal and reserves no response stream permit. It
-retains the once-interpreted wire through joined target cleanup; no-target cleanup
-waits until all preparation and source ownership have transferred. Generic HTTP
-uses this queued-only transfer for each earlier query authorized by its own exact
-frame/dispatch; a later unrelated frame neither authorizes nor revokes that batch.
-Ordinary HTTP cues use `processCuesOnce` with a per-request service habitat/sink:
-query/wire, mailbox correlation and unresolved pending ownership transfer before
-source removal. Network delivery and borrowed fallback consumption/cleanup run
-outside Reactor. Only observed engine-created admission refusals become HTTP
-capacity responses; foreign same-class source/preparation failures propagate.
-Explicit endpoint absence keeps the responder’s existing best-effort no-delivery
-outcome; no-target cleanup follows source transfer without a second interpretation.
-Witness source intake prepares emission records in short guarded turns and runs
-callbacks outside Reactor. Queued delivery and HTTP/witness callbacks use the same
-once-interpreted messages with independent actual iterator/reader cleanup. Cue
-interpretation has no output byte reservation, preparation floor or release handle.
-A record with no emission is still consumed; later records in the initial pass
-continue. Finite wrappers copy messages into caller-owned arrays and close each
-source iterator before returning; streaming callbacks collect no aggregate.
-Iterator and cleanup failures retain identity or aggregate when distinct.
+External input abort must stop waiting protocol turns and active consumers as well
+as the byte source. Register the watcher before checking its state. Check before
+pulls and after results, before treating done as EOF or dispatching another frame.
+DispatchOptions contains protocol choices; IngressOptions adds input lifetime.
 
-The generic HTTP route consumes its request body progressively and appends a
-separately bounded CESR attachment header. Administrative requests still collect
-an explicitly bounded 8 MiB value. `Reactor.processBytes` supplies a finite value to the same progressive source
-path; it owns parsing and dispatch through an Effection operation. No shared
-feed buffer or separate synchronous parser remains.
+Suppress only the operation's exact owned cancellation reason and failures already
+reported by that invocation. Foreign AbortErrors remain failures. Preserve a single
+error's identity and aggregate distinct read/consumer/cleanup failures. Readers
+cancel once, join that Promise and always attempt lock release. Unacquired request
+or response bodies must expose cleanup failure too. Runtime shutdown joins output
+before closing owned stores. Scoped checks do not replace composed qualification.
 
-FrameIntake and the custom frame channel are removed. Concrete HTTP, TCP,
-witness and replay operations own their parser iterator and cancellation.
-Reactor owns protocol dispatch/escrow/state turns; transport never starts sibling
-protocol work. The [transport plan][transport-plan] owns remaining gate, delivery
-and listener accounting removal and full qualification.
+## Cue and query ownership
 
-## Socket-to-application boundary
+Protocol owners write within their transactions and publish cues after commit.
+Cues and query-reply batches are ordinary records in Decks. `Hab.interpretCue` and
+`processCuesIter` interpret semantics; source removal follows successful transfer.
+Preparation failure preserves the source. Custom/ineligible sinks consume emissions
+outside the guarded turn. A pass consumes its initial extent, so newly appended
+work waits for the next pass. A cue with no emission is still consumed.
 
-Counted enclosures arrive completely before children decode. Each actual input
-owner composes its parser and protocol processing with native operations and owns
-pending I/O and iterator cleanup. HTTP and TCP consume the same buffered decoder.
+Current CueDelivery/RuntimeDeliveries retain real lazy iterators, routing snapshots,
+once-signed packets and retry progress. They have no item/byte/metadata limits,
+preparation floor or release handle for record data. Route resolution happens once;
+failures precede source removal, and an empty route retires without sending. Iterator
+cleanup runs once, even when it fails. These existing preparation/delivery wrappers
+still require the concrete-owner simplification in the transport plan.
 
-`socketBytes` is the shared KERI runtime TCP source used by Tufa witness listeners.
-It acquires exclusive binary readable-mode ownership
-on first pull, returns independent backing allocations of at most 64 KiB by default,
-and permits one pending pull. Do not mix data/flow readers with it. Abort, failure
-and early return destroy and join socket close; genuine receive EOF releases only
-read ownership, preserving the writable half. The connection owner must handle
-socket errors before acquisition and after EOF, and own output drain/final close.
-Read chunk sizing is a concrete I/O choice, not an application allocation budget. A native-returned
-view may pin pool/socket backing larger than a small configured chunk ceiling:
-twice that ceiling does not cover all native backing. The host must separately
-account for fixed pools, readable/native/kernel buffering and qualify its actual
-configuration; this adapter supplies no full native or RSS bound.
+QueryCoordinator owns a private ordinary Deck of QueryRequest records. Its
+inspection surface exposes length/empty/peekHead. The selected local signer is
+resolved at consumption; missing signers stay pending. Signing, introductions and
+endpoint selection precede source removal and preserve exact wire across retry.
+Failed/cancelled drains retain their head, unresolved records rotate, and new work
+waits for the next finite pass. Close joins active consumption before clearing.
+Continuations prepare against committed state without a parent runtime callback.
 
-Tufa admits paused TCP connections before creating work, with a default cap of
-two admitted/closing connections and a positive shared 2 MiB logical read/copy
-allowance per connection. This allowance is qualification policy, not a hard native
-buffer ceiling. This listener accounting is transitional removal work; the parser and Reactor.process
-acquire no receive stream/cursor credit. Native acceptance is
-capped at `maxConnections + 1`: one transient refusal handle allows reporting in
-Deno, whose native cap does not emit Node's `drop` event. That handle is tracked
-through close and joined on shutdown, with no task/read/queue before refusal;
-native/kernel pre-admission buffering remains separate from the shared ledger.
-Intrinsic wire failures, policy refusals and recognized peer failures close and
-report the connection; cancellation stays distinct. Source/storage/invariant and
-cleanup failures reach the host owner after joined cleanup. Parser-owned source
-return is not peer close. Stop acceptance, join parser/source/socket tasks, then
-join listener close before closing runtime stores. Earlier accepted frames remain
-durable after a later connection failure. Default mailbox/direct routing stays
-unchanged; same-socket reply conversations share the concrete socket writer.
+QueryReplies correlates exact requesting SAIDs before background consumption.
+These reservations are correlation records, not capacity leases. Only the final
+query controls an HTTP response; earlier authorized replies transfer to ordinary
+delivery. Duplicate requests can iterate the same readonly replay reference.
+Authorization uses the exact frame signatures and current dispatch decision; an
+older matching cue cannot override sender refusal. Final TSN pairs transfer
+atomically before correlation removal. Missing routes permit response-only output.
 
-The guard protects protocol interpretation, signing, routing snapshots and local
-DB side effects. Network waits and capacity waits belong outside it. Transfer a
-cue only after its bounded delivery owner accepts it; saturation must retain the
-original cue. Replays carry captured extents plus one admitted current message.
-Borrowed frames and KRAM payload owners cannot escape their consuming scope as
-lazy work. HTTP request-local replies retain their existing correlation and owner.
+Poster snapshots sender, recipient, URLs and body mode, then prepares a signed
+introduction/forwarded request or performs the local mailbox transaction. Prepared
+sending consumes ordinary wire without habitat/DB access. Local stored delivery
+requires completed body/topic publication in one transaction; raw deduplication
+must preserve topic order. There is no sender outbox, durable target retry sidecar,
+unsupported acknowledgement or claim that transport proves remote acceptance.
 
-Each connection has a supervised receive/parser task. Stream writes await native
-drain before pulling another chunk. Remaining listener credits are removal work.
-Shutdown stops admission and joins reads, dispatch and output before sockets and
-stores are released. Stream high-water marks alone do not establish these bounds.
+## HTTP ownership
 
-Explicit enclosures, a following body or genuine EOF complete CESR frames;
-temporary lack of input does not. A bare final frame may await more input.
-GenericGroup children become usable only after their whole counted enclosure
-arrives; parent-owned children remain evidence until their parent's route accepts them.
-
-Full duplex is an explicit same-socket reply mode, separate from the preserved
-mailbox/direct routing default. Receive EOF does not imply transmit failure.
-Half-open sockets end output after response drain or a fixed absolute deadline
-that activity cannot extend. Local write completion is not remote authentication
-or durability. Failed delivery retains live ownership; restart recovery requires
-a separately proven durable obligation or reconstruction path, not just a queue.
-
-[transport-plan]: ../../plans/runtime/TRANSPORT_PLAN.md
-
-Eligible Respondant source cues now transfer synchronously into RuntimeDeliveries
-before source removal. Occupied item/byte capacity preserves the head; ineligible
-custom cues keep their existing sink. QueryCoordinator observes transferred cues
-only after acceptance. Packet delivery then runs outside Reactor, while failed
-wire/progress remains owned. Exact preparation refusal notification separates
-engine busy outcomes from foreign same-class interpretation/routing failures.
-Source queries and continuation requests use synchronous `admitQuery` preparation
-after item preflight, bounded raw input, 8 MiB retained wire, 1 MiB route metadata
-and 24 MiB temporary preparation admission. This local input/wire policy refuses
-before signing when capacity is occupied; configured input/floor limits remain
-distinct. Ineligible preparation publishes nothing and preserves unresolved/custom
-notify behavior. Continuation drains prepare synchronously over committed state without a parent
-runtime or Reactor callback; no signing, route lookup, capacity or network wait occurs before that
-admission. Source removal/observation follows transfer, and joined network work
-retains the original endpoint/signature. These logical allowances leave decoded
-serialization/native endpoint-row copy qualification open. Request-local HTTP/
-witness response ownership, mailbox workers and the remaining stack inventory
-still require their caller ports.
-
-Pending queries are plain QueryRequest records in the coordinator's private
-ordinary Deck; continuations are unbounded metadata too. No byte estimates,
-reservation wrappers or configurable caps apply to these records. The top-level
-query/witness list is copied; nested query values remain immutable borrows.
-Failed/cancelled sends retain the head, unresolved work rotates, and close joins
-active consumption before clearing. Inspection cannot mutate the queue. Actual
-wire preparation and source/transport cleanup keep their separate controls; this
-metadata path does not establish a shared memory bound.
-
-## Messenger responsibilities
-
-The release requires incremental source/sink I/O where KERIpy 714 supports it:
-TCP parser/reply lifetimes, HTTP messenger ownership and mailbox SSE. Callers share
-the runtime's exact services/resource policy, preserve borrowed owners and
-propagate cancellation through joined cleanup. Further stack-wide adoption is deferred. GET retrieval,
-SSE and non-CESR documents preserve their framing; they reuse ownership facilities
-rather than being wrapped in a CESR POST. A finite collector needs a semantic
-reason and enforced admission/cap, not merely a legacy byte-input API.
-The [stack adoption inventory][transport-plan] marks remaining callers explicitly.
-
-Well-known authentication is a status-only GET exception: no response body is
-collected. `Authenticator` uses its Habery's exact policy and reserves a stream
-plus URL/handle allowance before fetch. Busy leaves durable pending authorization
-untouched. The response and pending cleanup join before credit returns; cleanup
-failure cannot publish success. Native headers/buffering and durable pending-row
-allocation are separate qualification boundaries.
-
-Required reference-backed library, host and command paths follow these ownership
-boundaries. Upstream finite collection remains permitted. A convenience wrapper
-must preserve its declared policy and joined lifetime. Finite document/proof exceptions
-retain their framing but expose an enforced ceiling, admission owner and
-cancellable joined response lifetime. Document the reason at the owning API;
-byte-input convenience alone does not justify buffering an entire history.
-Required streaming paths account their preparation and retained results; releasing
-a response reader does not release retained in-flight state. Finite introductions,
-credential exports and JSON may preserve reference behavior. Their conversion to
-new lazy producers or caches is deferred. Required callers preserve failure,
-disconnect and shutdown ownership. Size policy, local capacity refusal, transport
-failure and verified application acceptance remain distinct outcomes.
-
-Two engines own transport work: CESR HTTP request/response scopes and an owned
-TCP connection with directional I/O. Small Effection operations/resources expose
-finite-message and source inputs. TCP adapters share one writer with optional owned
-reply parsing; reference-backed caller qualification remains S1–9.
-
-| KERIpy responsibility | TypeScript entry / shared engine                        |
-| --------------------- | ------------------------------------------------------- |
-| HTTPMessenger         | `requestFrame`; finite bytes via `postCesr`             |
-| HTTPStreamMessenger   | `postCesr` source and scoped response consumer          |
-| TCPMessenger          | `sendCesrTcp` / `sendCesrTcpFrame` on one owned writer  |
-| TCPStreamMessenger    | `streamCesrTcp`; factory borrows bounded `Payload.open` |
-
-Do not add aliases or inheritance merely to mirror names. Reuse existing byte
-sources, serializers and response readers. A parsed frame bypasses byte parsing;
-its caller retains every borrowed frame/payload owner until transport consumption
-and joined cleanup finish. Byte inputs enter the same machinery through a finite
-source adapter. Stream inputs use an abortable source factory or an appropriately
-owned Payload, pulled only under available credit without hidden prefetch or
-transfer-sized collection. Shared admission precedes source acquisition and
-avoidable allocation; cancellation joins reads, writes, parsing and disposal
-before releasing reservations.
-
-HTTP `postCesr` produces successive framed **POST** requests, finishing each
-response scope before advancing. Header mode sends the body with bounded
-`CESR-ATTACHMENT`; body mode streams one qualified frame in that request. Neither
-mode turns the whole source into one request. Preserve the resolved URL/path,
-`CESR-DESTINATION`, authorization and existing media-type negotiation. KERIpy
-714's HTTPStreamMessenger instead sends one bulk PUT to `/`; this is a documented
-wire/API difference, not a reason to change the established POST contract.
-
-The HTTP engine owns upload, fetch and response cleanup. Normal scope exit may
-abort an unread successful response; cancellation suppresses only that controller's
-exact reason, preserving foreign AbortErrors and cleanup failures. Its scoped consumer
-uses one progressive parser for each applicable CESR response body. Receipt/SSE
-readers retain their distinct framing contracts. TCP owns one progressive parser
-per receive lifetime, optional concurrent reply consumption and directional
-shutdown. Only explicit conversation policy enables same-socket duplex. Socket
-fragments and temporary byte exhaustion never establish message boundaries.
-Poster/Respondant choose destination and delivery policy; Reactor verifies and
-mutates accepted state. Signing, routing snapshots and local DB preparation stay
-in short guarded turns; independently owned network work and capacity waits do not.
-
-Poster’s `resolveBytesRoute` snapshots sender, recipient, target URLs and body
-mode. Synchronous `prepareBytesTarget` performs local mailbox writes or prepares
-one signed introduction/forwarded request. `sendPreparedCesrTarget` consumes that
-wire through the shared HTTP sender without habitat or DB access. Its bytes stay
-caller-owned through joined cleanup. Existing `sendBytes` composes these steps;
-S1–3 still owns admitted handoff, guard-free runtime callers and delivery outcomes.
-An explicit finite target cap checks source backing before copying, and limits
-introduction plus forwarded wire before their final concatenation. Direct wire
-then has independent backing; its caller must reserve copy/preparation credit
-first and retain it through joined cleanup. Decoding, signing and native replay
-allocations remain separate qualification boundaries. HTTP/TCP senders return their
-own expected capacity/HTTP outcomes to prepared delivery after joined cleanup.
-Prepared target attempts return local complete/refused/busy; injected source,
-fetch, sink and cleanup failures propagate unchanged, including foreign same-class
-errors. Strict public source/frame senders throw refusal after the same cleanup.
-Attempt helpers remain internal module contracts rather than runtime package exports.
-The preparation facility adds no queue, automatic retry or runtime handoff.
-Local stored delivery requires completed body/topic publication in one mailbox
-transaction. Repeated body appearances preserve topic order and raw deduplication;
-false publication cannot acknowledge delivery. This strengthens714 storeMsg's
-atomicity while retaining its layout, and adds no shared-copy/native admission.
-
-`Hab.interpretCue` synchronously borrows one cue without dequeuing. Internal
-`prepareCueEmission` pre-admits input retention and 8 MiB finite output plus
-24 MiB interpretation allowance before calling it. These local policy ceilings
-match RuntimeDeliveries; output is checked afterward, not a decoded/capture/native
-allocation bound. Lazy replay metadata/store ownership stays borrowed and unopened.
-The queued source-owned floor includes its irreducible shared-batch credit;
-inspect that stored amount without walking stores or opening replay.
-Accept must immediately/atomically retain the owner or throw without publication;
-it cannot be async, mutate the source deck or release early. Refusal preserves
-input/credit; successful transfer frees the ordinary Deck slot and retains credit
-until destination consumption and joined cleanup finish.
-
-`processCuesOnce` prepares each custom/ineligible cue in a short Reactor turn,
-then waits for its sink outside the guard. One scoped owner is registered before
-sink resources, retaining input/output through their joined cleanup on success,
-failure or cancellation. Busy preserves the source head; a pass retains its
-initial count limit and eligible `admitCue` handoffs remain immediate. No queue
-or stream slot is added. `QueryCoordinator.prepareEmission` observes continuations
-and resolves/signs incomplete queries within that admitted preparation and final
-finite output check; `sendPrepared` performs no repeated local preparation.
-Actual runtime/host callers enter this drain outside an enclosing Reactor turn.
-`processPending()` owns synchronous fallback signing without a parent runtime;
-standalone/custom wire preparation retains caller-owned byte bounds. Default runtime
-cues retain byte/item credit through transfer and joined consumer cleanup.
-
-Prepared Poster targets preserve HTTP/HTTPS priority and select the shared TCP
-engine for TCP-only endpoints, with the same introduction and forwarded bytes.
-Queued cue/failed-target drains explicitly lend their runtime
-for local same-socket reply intake; standalone prepared targets and public Poster
-calls without that borrower drain output only. Runtime/services identity remains
-exact, and transport completion never establishes remote acceptance. Public
-Poster operations retain caller-owned synchronous preparation/retention bounds;
-admitted CueDelivery still prepares under a short turn and sends outside it.
-Poster has no durable retry store, disabled sidecar or pending-target drain.
-Transport completion does not establish authenticated remote acceptance.
-Invocation-local observers report actual TCP/RX capacity refusals so busy retains
-existing work before socket acquisition. Foreign failures and raw peer errors
-propagate with original identity; this adds no transport retry taxonomy.
-
-RuntimeDeliveries retains query requests, cue cursors and prepared failed packets
-on the existing eight-item queue. Cue output still retains 8 MiB plus source
-credit. Route metadata and prepared packets are ordinary records, with no
-reservation/release protocol or target-preparation ceiling. Direct packets borrow
-the supplied wire; the cursor owns and closes its actual replay iterator. A bounded pass
-advances one target per cue. Only the observed exact HTTP refusal may transfer
-a failed packet into another admitted slot; otherwise its cursor stays put.
-Other targets then progress while the exact failed wire remains pending.
-Queue retirement reports local owner progress, not durable transfer/acceptance.
-Synchronous cursor-finalization failure propagates after every independent cleanup
-attempt and credit release; the retired owner never repeats transport/cleanup.
-Actual Respondant/HTTP/witness cue adoption remains the next S1–3 unit.
-
-Cue routing resolves once and passes the ordinary RawCesrRoute to delivery.
-Resolution failures propagate before source removal. An empty route retires the
-cue without sending; a populated route preserves target order. The delivery
-cursor owns actual iterator cleanup, with no route reservation or release API.
-The other accounting described above remains scheduled for removal.
-
-Completion records must distinguish local transmission drain, HTTP success,
-verified protocol replies and durable application acceptance. An HTTP status or
-socket drain proves only its own boundary. Consumers report protocol decisions;
-transport must not infer them, swallow infrastructure/invariant failures or turn
-cancellation into ordinary success. No extra queues or scheduling are implied.
-
-## Runtime store ownership
-
-AgentRuntime borrows its Habery, injected `acdc.rgy` manager and injected VDR services.
-The default v2 `Regery` owns one `RegBaser`; `vdr.reger/rgy` retain their legacy
-owner and path. IPEX borrows the v2 manager's `RegistryStore`, without another handle.
-Readonly Habery construction creates neither default store. A writable Habery
-without an injected store acquires a default in the current Effection scope;
-explicit ownership flags govern runtime.close(). Scope exit also joins database
-close and removes temporary stores, including failed construction and cancellation.
-Runtime-created notification and provider-mailbox stores are scope-owned before
-reopen can suspend. Acquisition failure, cancellation and explicit shutdown join
-`close(hby.temp)`, clearing temporary paths while retaining persistent rows.
-Injected stores stay caller-owned; standalone opening helpers retain their caller
-lifecycle contract. Runtime output closes before its borrowed store owners.
-
-Explicit close followed by scope exit is harmless. The v2 manager factory owns
-acquisition cleanup until it transfers the manager, including alias-load failure.
-Reactor retries named registry escrows before IPEX; automatic foreign `rip/bup`
-wire dispatch remains a separate intake responsibility.
-A finite call scope separates acquisition cancellation from the resource provider,
-so joined factory cleanup cannot resume the provider with an untransferred value.
-
-## Replay output ownership
-
-KEL `replay` cues and `CueEmission.messages` are reopenable iterables of complete
-messages. Baser captures prefix/first-seen ranges without a depth or message size
-policy and closes each cursor before yielding an event. Cyclic delegation chains
-still fail. Later accepted events do not extend a captured replay; current proofs
-are read on consumption. Frozen ranges expose the captured horizons while Baser
-stays borrowed and open. Queue transfer and fanout open no event iterator.
-
-`ReplyStreams` owns live HTTP readers without application accounting or configured
-concurrency/event/chunk limits. Each pull yields one source message without an
-output copy; native stream demand controls advancement. Transport cancellation
-or runtime closure closes the iterator and optional disposer. The response lifetime is independent of ingress: Deno's
-legacy request signal aborts when its handler returns. If request cancellation wins
-before response transfer, ingress joins its task then cancels the published body
-outside status mapping; foreign source/fetch/cleanup failures remain failures.
-No background task or whole-replay array is needed for these synchronous database readers.
-
-`QueryCoordinator` retains a pending request until delivery succeeds; failure
-leaves it available for retry. Concurrent drains cannot send the same head, and newly appended work
-waits for the next bounded pass.
-
-`cloneEvtMsg` reads the event normally, reconstructs stored signatures/seals/
-receipts and first-seen metadata, then calculates the actual framed extent for one
-final allocation. Counters, quadlet alignment and attachment genus remain protocol
-rules. There is no replay byte ceiling or per-fragment retain/admit wrapper.
-
-## Witness source intake
-
-`processWitnessIngressSource` owns one Reactor parser and settles each frame,
-consuming witness emissions individually without an aggregate result. Its callback
-borrows each emission under the current guarded frame lifetime; retained work needs
-independent admitted ownership transfer, and lazy input owners cannot escape.
-The finite `processWitnessIngress` wrapper keeps its collected result and chunk cap;
-`/receipts` retains `local: true, deliver: false`. Source cancellation joins parser
-and producer cleanup. Default responder delivery still runs under the guard until
-bounded handoff adoption. Tufa TCP listeners compose this source with paused,
-bounded connection admission and joined parser/socket shutdown.
-
-## Witness and exchange output
-
-`ReplyStreams.openNonEmpty` primes one nonempty message and returns null only
-after empty-source cleanup. Acquisition/cleanup failures propagate. Primed bytes
-remain in the reader until consumption, cancellation or runtime close, including
-failed stream publication. Ordinary `open` keeps its first-pull behavior. OOBI and KEL replay
-sources have no response preparation policy.
-
-Witness `GET /query?typ=kel` returns a lazy source through shared ReplyStreams.
-Without `sn`, capture contains only the target's FEL extent, never delegator logs.
-With `sn`, it retains KEL sequence/duplicate order and captures final KEL/FEL
-horizons. Each duplicate is sought by its physical insertion proem, so deleted
-earlier rows do not shift the checkpoint and buckets are not rescanned. Later accepted duplicates at an old sequence are excluded by their
-new FEL ordinals; existing index/proof metadata is consumed at read time, not
-frozen as a proof snapshot. Each cursor closes before finite event hydration/yield.
-No response or storage size policy is passed down. Reader cleanup runs through
-EOF/cancel/runtime close; no transfer-sized event array is retained. Unsupported
-numeric representation remains distinct from size policy. Later read failures
-error the response stream.
-Existing missing-selector/SN 400, unknown-target 200-empty and TEL 501 remain.
-SN reconstruction propagates failures; no-SN uses the existing corrupt-record skip
-path, whose broad proof-reconstruction catch still requires phase 5 qualification.
-Native selected KEL duplicate-row and proof-row/copy pre-allocation admission
-remain open. Frozen 714 QueryEnd collects bytes;
-this lazy path is a qualified TS integration. Its SN path always clones with `fn=0`;
-TS preserves its existing actual FEL ordinal, so SN replay is not claimed byte parity.
-
-Signed exchanges and generic HTTP witness delivery use the same scoped
-sender as forwarding, without shared byte/stream reservations or metadata estimates.
-Expected transport refusals come only from peer HTTP responses; foreign source,
-fetch and cleanup failures propagate. Failed-response text is read until EOF or
-request cancellation, with incremental UTF-8 decoding and joined reader cleanup. Witness authorization is preserved across content-type
-retries; caller headers cannot replace CESR framing or destination metadata.
-Generic witness sends borrow explicit runtime services; runtime delegation passes
-its own services through this seam. Standalone callers may use the shared default.
-TCP finite/source sending shares `sendCesrTcp`/`streamCesrTcp`. The concrete
-`openTcpConnection` resource lends an actual paused socket, close completion and
-connection cancellation signal; it joins destruction after application children
-stop. It starts no parser or receive callback. Its optional clock controls real
-connect deadlines. TCP has no resource policy, byte estimates, backing-size
-refusal or exact runtime-service identity requirement.
-
-Each write callback and required native drain complete before the next source
-pull. Factories observe abort and join cleanup on iterator return. Output checks
-cancellation after each pull, before treating done as EOF or writing another chunk.
-The connection deadline is separate from the absolute peer-close deadline, which
-starts at source EOF and never refreshes with reply activity. Source/read/write
-cleanup retains independent failures, including late source failures during halt.
-`sendCesrTcpSocket` ends local output and joins peer close; `writeCesrTcpSocket`
-borrows an accepted socket without ending its writable half. `sendCesrTcpFrame`
-serializes already hydrated values directly, without reparsing or disposal.
-
-The application in `tcp-conversation.ts` opens the connection and composes native
-Effection RX/TX siblings. Its receive loop consumes socketBytes and owns its
-parser iterator, dispatching complete frames through Reactor.settle; the byte transport receives no Reactor or parser contract.
-The application chooses `replies: { reactor, local?, consume? }`, while transport
-options take only actual clock, signal, chunking and deadline choices. No TcpRead
-or custom frame channel remains. External cancellation stops waiting protocol
-turns, and directional failure stops the other direction before joining cleanup.
-Genuine receive EOF leaves output alive. Earlier committed replies survive later
-transmit failure; callback code must not reenter Reactor or drain network cues.
-
-The `conversationDrained` result means local transmission plus processed RX EOF.
-`processedFrames` counts dispatch attempts, including ignored/rejected/escrowed
-inputs, not authenticated replies or remote acceptance. Lower byte transport
-returns only `transmitted`. Inspect protocol decisions and persisted receipts to
-establish actual acceptance. Tufa's witness socket owns one pending parser pull
-while observing deferred query readiness, so replies can drain without another
-inbound message. Its listener accounting and general Reactor gates remain separate
-removal work; no broad release qualification is implied by these focused checks.
-
-Receipt endpoints intentionally return one finite proof and parsing requires one
-complete frame. Their separate collection caps remain removal work; generic HTTP
-sender diagnostics no longer impose a byte ceiling. Cancellation joins the body
-reader and releases its lock.
-The shared HTTP response resource forwards RequestInit.signal into its actual
-request/body controller, preserving its reason through headers and body consumption.
+HTTP upload, fetch and response scopes share the actual request controller.
+RequestInit.signal retains its reason through headers and body consumption.
 Pre-aborted requests acquire no fetch. Only the owner's header timeout becomes
-mailbox null; a later deadline cannot relabel earlier caller cancellation. The
-Node host reports a late foreign AbortError even after host cancellation and
-suppresses only its exact owned reason. Generic ingress composes request
-disconnect and operation lifetime before supplying requestBytes.
-The shared HTTP response resource also owns the handoff after headers arrive;
-continuous OOBI, authentication, query and mailbox workers close a finite call
-scope after each response so neither bodies nor resource registrations accumulate.
+mailbox null; a later deadline cannot relabel earlier external cancellation.
+Normal scope exit may abort an unread successful response; only its exact owned
+reason is suppressed. Finite workers close each response scope between jobs.
 
-## Query delivery and mailbox SSE
+`postCesr` sends successive framed POSTs and completes each response scope before
+advancing. Header mode carries CESR-ATTACHMENT; body mode streams one qualified
+frame. Preserve URL/path, destination, authentication and media-type retry rules.
+KERIpy 714 HTTPStreamMessenger instead uses one bulk PUT to `/`; matching class
+names does not justify changing the supported POST contract.
 
-The query cue sink signs and resolves the endpoint synchronously, then appends
-a concrete QueryDelivery record. RuntimeDeliveries has no byte policy, queue
-quota, preparation factory or refusal wrapper. It drains the initial record extent
-after the guarded cue turn, preserving a failed request for retry. Its HTTP response stays in the delivery scope and enters the
-progressive Reactor directly. Runtime closure aborts and joins the active delivery
-before closing stores; a consumer never reenters its own guarded turn.
+Finite documents and receipt proofs keep whole-document semantics, full validation
+and joined cancellation. Generic ingress appends its separately encoded attachment
+header to body bytes. There is no HTTP/header/document/diagnostic byte ceiling or
+local accounting refusal. Positive peer HTTP refusals remain separate from source,
+fetch, parser, storage and cleanup failures. Diagnostic text reads through EOF or
+cancellation using incremental UTF-8 decoding. Request-local reply readers retain
+independent iterator ownership through response consumption and cancellation.
 
-Mailbox SSE consumes one complete event at a time and awaits the consumer before
-reading again. The client imposes no event, field-count, transport-chunk or report
-byte ceiling. EOF, timeout, and cancellation discard an unterminated event,
-leaving its cursor available for retry. The first event may use the full poll
-window; an idle poll ends after 500 ms once an event has completed. Every timeout
-cancels and joins the single pending read. Long-lived mailbox workers admit and
-hand off each event before requesting the next. Command-local polling uses one
-absolute turn budget and resumes at the next endpoint/habitat after every attempted
-poll, so an empty early long poll cannot starve a later proxy. Its resume position
-retains only integer indices; discovery preserves existing borrowed habitat and
-per-habitat endpoint metadata, without a new flattened peer queue. It returns
-ordinary batches collected during the poll window, without record/byte quotas
-or a durable consumer inbox. Continuous sinks finish before cursor advancement.
-The earlier reader owner also observes late read/cancel failures after scope halt
-and always attempts lock release. Only exact owned abort reasons or a failure
-already propagated by this invocation are suppressed; foreign AbortErrors remain
-failures. Distinct consumer/read and cleanup failures propagate together. Successful
-idle/deadline expiry still ends a poll without accepting its incomplete event.
+## TCP ownership
 
-Provider SSE performs no mailbox reads without HTTP demand and releases each LMDB
-iterator before suspension. One demanded row is framed as SSE and copied in
-64 KiB transport chunks; this granularity does not reject larger messages.
-Responses carry no byte/stream/topic/metadata limits or synthetic release callback.
-A query response correlates its selected cue, owns its nested reader, and cancels
-and joins that reader during cleanup. Unmatched/duplicate cues retain their order.
-Direct responses are tracked by the director itself. Director close wakes pending
-polls and rejects new direct and query responses before backing stores close.
-Keep nonnegative safe cursor ordinals and protocol cursor persistence.
+`openTcpConnection` lends an actual paused socket, close completion and connection
+signal. It starts no parser or receive callback. Lower byte transport has no
+AgentRuntime/Reactor dependency. `tcp-conversation.ts` composes native RX/TX
+siblings and owns parsing/dispatch at the application layer. Standalone sends
+remain transmit-only; explicit reply mode enables same-socket conversations.
+HTTP/HTTPS priority, TCP fallback and mailbox/direct routing remain unchanged.
 
-OOBI CESR responses enter the progressive Reactor directly, including canonical
-`application/cesr`, legacy `application/json+cesr` and `application/cesr+json`.
-Independent counted events may become accepted before response EOF. One scoped
-job retains the queued row through complete intake and joined cancellation;
-partial failure clears its in-flight marker while retaining retry ownership and
-already accepted events. Transient admission/cue saturation leaves that row for
-the existing worker; size, I/O and unexpected failures propagate. No extra queue
-or retry scheduler is introduced. `oobiResolved` retains retrieval-completion
-semantics; it is not proof that every incoming event was independently accepted.
+`socketBytes` acquires exclusive binary readable ownership on first pull. It
+allows one pending pull and returns independent allocations, normally at most
+64 KiB. Abort/failure/early return destroy and join close; genuine receive EOF
+releases only read ownership. Connection owners observe socket errors before
+acquisition and after EOF. Native buffering is not an RSS or whole-message bound.
 
-Oobiery borrows the Reactor's exact policy. A 1 MiB minimum byte lease precedes
-fetch and bounds cooperating pending GET handles; Reactor separately reserves
-its one active parser stream before body-reader acquisition. This avoids charging
-the same receive lifetime twice. The job owner clears only after body/parser/fetch
-cleanup joins, preventing concurrent retries. JSON/schema OOBIs keep an 8 MiB
-collection ceiling and a conservative 64 MiB copy/decode allowance before reads.
-These logical charges require native/metadata qualification; they are not an RSS
-bound. OOBI replay serving still collects output and remains transport S2 work.
+Each write callback and required native drain completes before the next source
+pull. Output checks cancellation after pull before writing or treating done as
+EOF. Directional failure stops its sibling and joins cleanup. Receive EOF leaves
+TX alive. End output after response drain or the existing absolute deadline;
+activity must not extend it. Earlier committed replies survive later TX failure.
 
-DID `keri.cesr` resolution enters Reactor progressively using the exact runtime
-HTTP services/policy. A 1 MiB request allowance and parser source admission precede
-fetch; body/parser cleanup joins before returning credit. Independently accepted
-events remain on late failure/cancellation; no DID result or hosted JSON fetch
-precedes genuine CESR EOF and escrow processing. Complete generated-versus-hosted
-document comparison remains required. Hosted JSON retains an 8 MiB collection cap
-and one stream/64 MiB logical copy allowance through decoding, normalization and
-comparison. This is conservative allowance, not a measured native/heap bound:
-accepted alias projection may grow independently of the incoming JSON cap.
-Decoded/projection copy qualification remains phase 4 work. The returned document
-transfers to caller ownership; resolution credit ends after joined cleanup.
-Only default native fetch-header TypeError and non-ok HTTP responses may try the
-existing alternate URL; injected client TypeError, body/parser/storage/admission
-and cancellation failures propagate. HTTP-refusal cleanup failure prevents fallback.
-The shared `streamBytes` reader joins one cancel Promise and always releases its
-lock. A single failure keeps its identity; distinct read/cancel/unlock failures
-propagate together as an AggregateError. Parent cancellation/error reporting
-remains part of composed owner qualification. Existing
-HTTP scheme fallback remains a compatibility policy, not strict TLS qualification.
-Static Tufa artifact responses own their regular files directly, without shared
-allowances, stream slots, path-length or JSON-size ceilings. Response demand causes
-each read using a 64 KiB buffer; no source prefetch or whole-file allocation occurs.
-Capture the opened file's extent, ignore later growth, and fail on truncation;
-this is not a content snapshot.
-Request abort owns acquisition only. Cancellation/host close stop new reads and
-join pending filesystem work and descriptor close before returning.
-The protocol handler and Hono app expose close; default handlers are owned while
-injected handlers remain caller-owned. OS reads are joined, not forcibly interrupted;
-native/filesystem residency still requires qualification. Dynamic generation/export
-collects histories; its further streaming conversion is deferred.
-Dynamic `did.json` uses JSON-only artifact construction with the same local-AID
-validation, schema pinning and document bytes. It never opens CESR replay;
-further JSON preparation and streamed CESR generation/export changes are deferred.
-The Node host terminates a failing post-header body and reports its original error;
-it cannot replace already transmitted 200 headers with a new status.
-Finite JSON documents and receipt proofs retain whole-document semantics with
-bounded admission and joined cancellation. Mailbox admin response metadata still carries a 1 MiB ceiling scheduled for
-removal; the raw operator SSE diagnostic report has no byte ceiling. Those finite
-collectors use the same owned, cancellable byte reader.
+Tufa tracks actual accepted handles and connection scopes through close, without
+connection-count quotas, shared allowances or busy/drop callbacks. Stopping rejects
+new handles. Each connection owns one pending parser pull plus deferred-query
+readiness, allowing replies without another inbound message. Intrinsic wire and
+recognized peer failures close/report that connection. Infrastructure, invariant
+and cleanup failures reach the host owner. Shutdown stops acceptance, joins
+reads/dispatch/output and socket/listener close, then releases stores.
 
-Provider responses and per-request topics have no shared accounting. Remaining
-listener/runtime policy is removal work, not justification for new worker or query
-metadata bounds.
+`conversationDrained` means local TX plus processed RX EOF. `processedFrames`
+counts dispatch attempts, including ignored/rejected/escrowed input. Lower output
+reports only `transmitted`. Verified persisted receipts and protocol decisions
+establish acceptance; local drain or HTTP status cannot substitute for them.
 
-Stored endpoint reply reconstruction reads through the typed reply store. It has
-no byte/proof-row limits or parallel counter-size estimator. Missing bodies return
-empty; invalid keys, absent authenticators, corruption and I/O failures propagate.
-The shared serializer validates and frames the actual proof groups.
+## Replay and database lifetime
 
-Reconstruction follows actual 714 `Hab.loadEndRole`/`loadLocScheme` and `fetchTsgs`:
-all transferable groups retain canonical prefix/SN/digest order and stored seals,
-without reopening establishment bodies. Existing compact TS SN keys are padded
-only for ordering/reconstruction; stable raw-key ties retain each original group
-and accepted/escrow tables are not rewritten. Exactly one cigar may accompany them.
-Zero/multiple cigars contribute no couple. No remaining authenticator fails rather
-than emitting an unproved raw body. `messagize` accepts ordered groups under one
-aggregate counter, widening v1 ordinals and preserving v2 qualified ordinals.
-The caller's attachment genus floor remains explicit and the body may raise it.
-Independent actual-helper observations verified 64 imported 714 modules, group
-order `[0,1]`, v1 `-VBn-FAC` / v2 `-CBn-XBm` tails, one/two-cigar selection and
-missing-authenticator failure. Lazy OOBI selection and finite forwarding collectors keep their existing
-message order and introduction suppression without application size limits.
+AgentRuntime borrows its Habery and injected stores. Default v2 Regery/RegBaser,
+legacy TEL, Noter and optional provider Mailboxer are scope-owned. Readonly Haberies
+create neither default registry store. IPEX borrows the v2 RegistryStore rather
+than opening another handle. Acquisition owns failed/unreturned stores before
+reopen can suspend. Explicit close followed by scope exit is harmless; injected
+stores remain caller-owned. Separate v1/v2 environments remain distinct.
 
-Generic WitnessReceiptor submission prefers HTTP receipt endpoints, with TCP-only
-fallback through the existing same-socket conversation engine (`local=true`).
-Explicit Receiptor endpoint calls retain their HTTP-only contract.
-TCP EOF/local drain is insufficient: the requested witness's indexed signature
-must already be verified and persisted in the event's wigs before success and
-complementary fanout. Standalone Receiptor/WitnessReceiptor attempts own one scoped
-runtime; callers with an active runtime supply it explicitly and retain its stores
-through joined cleanup. Catchup and fanout reuse that receiver. The generic
-sendWitnessMessage helper parses TCP replies only with explicit receiver context;
-its context-free form remains a transmit-only primitive.
+KEL replay captures prefix/FEL ranges without depth, message-size or proof-row
+policies. Cyclic delegation chains still fail. Later events do not extend captured
+horizons; current proofs hydrate on consumption, and each cursor closes before
+yield. Witness SN replay preserves insertion-proem order and excludes later FEL
+ordinals. Missing selectors and corrupt rows retain their existing outcomes;
+unsupported numeric representation raises RangeError, not a capacity refusal.
 
-Default runtime Anchorer turns explicitly lend their existing runtime to TCP
-witness publication; a standalone turn without receiver context stays transmit-only.
-Witness inquiry routing prefers HTTPS/HTTP before TCP. The existing RuntimeDeliveries
-query record retains its wire; the active transport owns its abort signal through
-same-socket local reply parsing and joined cleanup. Guarded query preparation opens no socket.
-Retiring that owner records transport completion only; query continuations complete
-from Kevery-verified accepted state, never from drain or received frame counts.
+ReplyStreams tracks real lazy readers until EOF/cancellation/shutdown before store
+close. Each pull yields one source message without splitting. openNonEmpty primes
+one nonempty message; empty sources close before returning null. Iterator/acquisition/
+cleanup failures propagate. Finite witness wrappers copy messages and close their
+source iterator; the source form consumes emissions individually without an aggregate.
 
-Accepted Tufa TCP sockets use one receive parser and bounded event-prefix/SAID or
-query-SAID response slots. Only accepted/duplicate event decisions authorize
-receipt output. Preparation owns proof and replay hydration credit under the
-Reactor guard; the shared socket writer drains outside it, borrowing that
-connection's stream slot. Receive EOF starts one absolute reply-drain deadline.
-One unresolved logs/ksn query stays in its existing bounded response slot; another
-query on that connection receives a busy refusal. Its one readiness observer can
-wake output while one joined parser pull remains live, with no result queue.
-The host kernel supplies runAgentRuntime's escrow driver; standalone listener
-borrowers must provide that driver for idle-RX query retries. Genuine receive EOF
-keeps TX available for the pending reply under the same absolute deadline.
-Cancellation joins the pull and output before releasing reply or connection credit.
+Endpoint proof reconstruction uses typed stored bodies, canonical transferable
+prefix/SN/digest ordering and original seals. Existing compact SN keys are padded
+for ordering without rewriting tables. Exactly one cigar contributes a couple;
+no authenticators fails rather than publishing an unproved body. The serializer
+validates actual proof framing without a group-count/work cap.
 
-Signaler holds ordinary transient UI wakeups. A matching collapse key replaces
-its queue position; expiry and clear remove hints. There are no queue/byte quotas,
-prepared signals, JSON estimates or reservation lifetimes. Notifier writes the
-signed notice first, then publishes its hint after success. A false/throwing notice
-write emits no hint; a later signal failure propagates without undoing durable
-state. Runtime/CLI close their created producers and leave injected signalers open.
+## Mailbox, OOBI and DID
 
-Runtime output resources are acquired after their backing registry stores so
-reverse scope teardown joins delivery cancellation and closes lazy replies before
-store cleanup. The default Deck carries ordinary records and is cleared after
-joined outputs, before owned stores close.
-Explicit-close callers first join request/runtime tasks; close keeps that ordering
-and failure aggregation, and injected stores remain borrowed.
+Mailbox SSE awaits each complete event's consumer before another read. Poll windows
+and idle timeouts remain; EOF/timeout/cancellation discard an unterminated event.
+Command-local polling resumes across habitats/endpoints using integer positions,
+so one empty long poll cannot starve another proxy. Continuous sinks finish before
+protocol cursor advancement. There is no durable consumer inbox/acknowledgement.
+
+Provider SSE reads only on demand and closes each LMDB iterator before suspension.
+One demanded row is framed in 64 KiB output chunks without rejecting larger rows.
+Query responses own nested readers; direct responses are tracked by the director.
+Close wakes pending polls and rejects new direct/query responses before stores
+close. Keep exact nonnegative safe cursor ordinals and unmatched correlation order.
+
+OOBI CESR media types enter Reactor's buffered parser directly. Independent complete
+events can commit before response EOF. One actual job guard retains the original
+queue row until terminal result and outlives joined body/fetch/parser cleanup.
+Partial failure clears in-flight state, preserving retry ownership and accepted
+events. Errors propagate without a local busy/limit requeue path. Resolved means
+retrieval completion, not independent acceptance of every incoming event.
+JSON/schema documents collect and validate without admission credit or a size cap.
+Authenticator performs status-only GETs; cleanup failure cannot publish successful
+authorization. It accepts actual clock/HTTP services without Baser policy identity.
+
+DID resolution waits for genuine KERI/VDR EOF and escrow processing before fetching
+hosted JSON or returning a document. Full generated-versus-hosted comparison remains
+required. Only default native fetch-header TypeError and non-ok HTTP status permit
+the existing alternate URL; injected TypeError and body/parser/storage/cancellation
+failures propagate. Failed refusal cleanup prevents fallback. Native HTTP fallback
+is not strict TLS qualification. Finite collection has no byte/stream allowance.
+
+Static artifacts own regular files directly. Demand causes each 64 KiB read; capture
+the opened extent, ignore later growth, reject truncation and join close. This is
+not a content snapshot. Request abort owns acquisition; response/host shutdown owns
+later reads. Default handlers are owned, injected handlers borrowed. Dynamic did.json
+uses JSON-only construction without CESR replay; broader lazy generation/export is
+deferred. Post-header body failure terminates the body and reports its original error.

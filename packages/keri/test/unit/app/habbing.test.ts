@@ -560,7 +560,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
               "Anchorer borrows the default runtime for verified TCP reply intake",
             );
             assertEquals(runtime.delegating.complete(witnessed.pre, 0), true);
-            assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
             yield* runtime.reactor.processEscrowsOnce();
           } finally {
             yield* runtime.close();

@@ -41,7 +41,7 @@ Deno.test("query transport prepares and queues wire without an application credi
       assertEquals(runtime.deliveries.hasPending, true);
     } finally {
       yield* runtime.close();
-      assertEquals(runtime.resources.used.bytes, 0);
+
       yield* hby.close(true);
     }
   });
@@ -94,7 +94,6 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
       yield* closing;
       yield* delivery;
       assertEquals([closed, continued, body.locked], [true, false, false]);
-      assertEquals(runtime.resources.used.bytes, 0);
     } finally {
       release.resolve();
       yield* runtime.close();

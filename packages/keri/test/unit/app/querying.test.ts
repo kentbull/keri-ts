@@ -1,6 +1,6 @@
 import { call, resource, run, spawn, suspend } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { parseBytes, ParserError, ResourceAdmissionError, SerderKERI, type Siger } from "../../../../cesr/mod.ts";
+import { parseBytes, ParserError, SerderKERI, type Siger } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
   processRuntimeTurn,
@@ -200,7 +200,7 @@ Deno.test("Query coordinator turns incomplete query cues into outbound `logs` qu
       });
 
       assertEquals(signatures, 1, "prepared send must not sign or observe the query twice");
-      assertEquals(runtime.resources.used.bytes, 0);
+
       assertEquals(emissions.length, 1);
       assertEquals(emissions[0]?.kind, "wire");
       assertEquals(emissions[0]?.kin, "query");
@@ -249,7 +249,6 @@ Deno.test("queued queries resolve the selected signer at consumption and never s
       assertEquals(messages.length, 1);
       yield* call(() => assertQuerySigner(messages[0], selected));
       assertEquals(coordinator.pending.length, 0);
-      assertEquals(hby.db.resources.used.bytes, 0);
     } finally {
       yield* coordinator.close();
       yield* hby.close(true);
@@ -286,7 +285,6 @@ Deno.test("routed query cues preserve an explicit signer across interpretation a
       yield* runtime.querying.processPending();
       assertEquals(messages.length, 2);
       yield* call(() => assertQuerySigner(messages[1], selected));
-      assertEquals(runtime.resources.used.bytes, 0);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
@@ -310,7 +308,6 @@ Deno.test("Query coordinator keeps schema and credential notices notify-only eve
         { kind: "notify", kin: "query", serder: null },
       ]);
       assertEquals(runtime.querying.pending.length, 0);
-      assertEquals(runtime.resources.used.bytes, 0);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
@@ -777,7 +774,7 @@ Deno.test("QueryCoordinator prepares admitted requests without a parent runtime"
     try {
       coordinator.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: { s: "0" } });
       yield* coordinator.processPending();
-      assertEquals([prepared, coordinator.pending.length, hby.db.resources.used.bytes], [1, 0, 0]);
+      assertEquals([prepared, coordinator.pending.length], [1, 0]);
     } finally {
       yield* coordinator.close();
       yield* hby.close(true);
@@ -796,7 +793,7 @@ Deno.test("query queues keep failed deliveries and defer newly appended work to 
       coordinator.enqueue(request);
       const pending = coordinator.pending.peekHead();
       assertEquals(coordinator.enqueueCue({ kin: "query", q: { r: "schema", said: "unresolved" } }), false);
-      const failure = new ResourceAdmissionError("foreign transport busy", "busy");
+      const failure = new Error("foreign transport busy");
       coordinator.configure({
         hab,
         sink: {
@@ -871,7 +868,7 @@ Deno.test("query cancellation preserves its in-flight request and permits the ne
   });
 });
 Deno.test("runtime close joins active query consumption and preserves cleanup failures", async () => {
-  for (const fault of [undefined, new ResourceAdmissionError("foreign cleanup busy", "busy")]) {
+  for (const fault of [undefined, new Error("foreign cleanup busy")]) {
     let entered!: () => void, cleaning!: () => void, release!: () => void;
     const ready = new Promise<void>((resolve) => entered = resolve),
       cleanup = new Promise<void>((resolve) => cleaning = resolve),

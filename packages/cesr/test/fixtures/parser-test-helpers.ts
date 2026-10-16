@@ -279,7 +279,6 @@ export function assertExpectedParserError(error: unknown): void {
     "DeserializeError",
     "SyntaxParseError",
     "SemanticInterpretationError",
-    "ResourceLimitError",
   ]);
   assert(error instanceof Error, "mutation must fail with a typed parser error");
   assert(allowed.has(error.name), `unexpected mutation error: ${error.name} (${error.message})`);

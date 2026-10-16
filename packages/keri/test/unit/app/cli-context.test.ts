@@ -1,4 +1,3 @@
-import { ResourcePolicy } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assertEquals, assertRejects } from "jsr:@std/assert";
 import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
@@ -49,21 +48,12 @@ function fakeDependencies(events: string[], hby: Habery, runtime?: AgentRuntime)
 Deno.test("cli context - withExistingHabery closes hby after successful callback", async () => {
   const events: string[] = [];
   const hby = fakeHabery(events);
-  const resources = new ResourcePolicy();
 
   const result = await run(() =>
     withExistingHabery(
       { name: "store" },
       {
-        resources,
-        dependencies: {
-          ...fakeDependencies(events, hby),
-          setupHby: function*(name, _base, _bran, _temp, _head, options) {
-            assertEquals(options?.resources, resources);
-            events.push(`setup:${name}`);
-            return hby;
-          },
-        },
+        dependencies: fakeDependencies(events, hby),
       },
       function*({ hby: opened }) {
         events.push(opened === hby ? "use:hby" : "use:other");

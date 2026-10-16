@@ -13,7 +13,6 @@ import { createServer } from "node:net";
 import {
   concatBytes,
   parseBytes,
-  ResourceAdmissionError,
   SerderKERI,
 } from "../../../../cesr/mod.ts";
 import {
@@ -855,7 +854,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
             assertEquals(runtime.deliveries.hasPending, false);
             assertEquals(hby.db.rcts.get(receiptKey).length, 1, "actual queue caller lends its receiver");
             assertEquals(concatBytes(...tcpBodies[1]).subarray(0, expectedIntro.length), expectedIntro);
-            assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
             hby.db.rcts.rem(receiptKey);
             assertEquals(yield* attemptPreparedCesrTarget(tcpTarget, runtime.services), "complete");
             assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");

@@ -6,7 +6,6 @@ import {
   NumberPrimitive,
   ParserError,
   Prefixer,
-  ResourceLimitError,
   type SealEvent,
   type SealSource,
   SerderACDC,
@@ -452,7 +451,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       try {
         if (new Diger({ qb64: regid }).qb64 !== regid || new Prefixer({ qb64: issuee }).qb64 !== issuee) return null;
       } catch (error) {
-        if (!(error instanceof ParserError) || error instanceof ResourceLimitError) throw error;
+        if (!(error instanceof ParserError)) throw error;
         return null;
       }
       if (!declarations.some(([aid, registry]) => aid === issuee && registry === regid)) {
