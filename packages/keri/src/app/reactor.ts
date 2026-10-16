@@ -1,16 +1,4 @@
-import {
-  type CesrFrame,
-  Cigar,
-  Ilks,
-  parse,
-  ResourceAdmissionError,
-  ResourceLimitError,
-  ResourcePolicy,
-  type ResourceReservation,
-  SerderKERI,
-  Siger,
-  Verfer,
-} from "cesr-ts";
+import { type CesrFrame, Cigar, Ilks, parse, SerderKERI, Siger, Verfer } from "cesr-ts";
 import { action, call, ensure, on, type Operation, race, resource } from "npm:effection@^3.6.0";
 import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
@@ -51,11 +39,6 @@ export interface IngressOptions extends DispatchOptions {
   signal?: AbortSignal;
 }
 
-/** Retained copy and transferable shared credit for one queued or processing record. */
-interface IngressRecord {
-  bytes: Uint8Array;
-  reservation?: ResourceReservation;
-}
 /**
  * Shared message-routing component for one `Habery`.
  *
@@ -72,11 +55,9 @@ interface IngressRecord {
  */
 export class Reactor {
   readonly hby: Habery;
-  /** Shared host credit; omitted policy borrows the Habery Baser's existing ledger. */
-  readonly resources: ResourcePolicy;
   readonly cues: Deck<AgentCue>;
-  /** Bounded complete-record queue; callers enter only through ingest(). */
-  private readonly ingress: Deck<IngressRecord>;
+  /** Ordinary complete-record queue; callers enter through ingest(). */
+  private readonly ingress: Deck<Uint8Array>;
   readonly router: Router;
   readonly revery: Revery;
   readonly replyRoutes: BasicReplyRouteHandler;
@@ -85,19 +66,10 @@ export class Reactor {
   readonly local: boolean;
   /** Bounded direct-response reservations, captured before any guarded cue consumer runs. */
   readonly replies: QueryReplies;
-  /** Input parsing/lifetime is separate from the guarded protocol turn. */
   /** Whether one dispatch/escrow/cue turn currently owns shared runtime state. */
   private busy = false;
-  /** Waiting turns are bounded independently of the lifetime of their input streams. */
+  /** Waiting operations retain their position until granted or cancelled. */
   private readonly waiting = new Set<() => void>();
-  /** Resident queued and processing bytes retain local admission until joined cleanup. */
-  private queuedBytes = 0;
-  private ingressRecords = 0;
-  private ingressGeneration = 0;
-  /** Transitional complete-record and waiting-turn limit; input operations own their sources. */
-  private readonly maxSources: number;
-  /** Maximum bytes in the complete-record ingress deck. */
-  private readonly maxQueuedBytes: number;
   readonly vdr: VdrRuntimeServices;
   readonly acdc: AcdcRuntimeServices;
   private readonly registryStates?: RegistryStateReceiver;
@@ -109,10 +81,7 @@ export class Reactor {
       local = false,
       vdr = {},
       acdc = {},
-      maxSources = 8,
-      maxQueuedBytes = 8 * 1024 * 1024,
       messagePolicy,
-      resources = hby.db.resources,
       kram,
       now,
     }: {
@@ -120,30 +89,15 @@ export class Reactor {
       local?: boolean;
       vdr?: VdrRuntimeServices;
       acdc?: AcdcRuntimeServices;
-      /** Bound queued records/waiting turns and the standalone intake default. */
-      maxSources?: number;
-      /** Bound already resident complete records awaiting processOnce(). */
-      maxQueuedBytes?: number;
-      /** Reject more protocol work until the host drains a full cue deck. */
       /** Runtime-owned v2 non-event sender policy, independent of parser admission. */
       messagePolicy?: MessagePolicy;
-      /** Borrow the host policy so other streams and recipients compete for the same credit. */
-      resources?: ResourcePolicy;
       /** Omitted preserves disabled intake; the receiver clock is runtime-owned. */
       kram?: KramConfig;
       now?: () => number;
     } = {},
   ) {
-    for (const limit of [maxSources, maxQueuedBytes]) {
-      if (!Number.isSafeInteger(limit) || limit < 1) {
-        throw new RangeError("Ingress limits must be positive safe integers");
-      }
-    }
-    this.maxSources = maxSources;
-    this.maxQueuedBytes = maxQueuedBytes;
     this.replies = new QueryReplies();
     this.hby = hby;
-    this.resources = resources;
     this.cues = cues ?? new Deck();
     this.ingress = new Deck();
     this.router = new Router();
@@ -165,7 +119,7 @@ export class Reactor {
     }
   }
 
-  /** Whether the bounded complete-record queue still has input to process. */
+  /** Whether the complete-record queue still has input to process. */
   get hasIngress(): boolean {
     return !this.ingress.empty;
   }
@@ -273,7 +227,7 @@ export class Reactor {
       });
     });
   }
-  /** Acquire a bounded runtime turn; cancellation removes waiters and always releases acquired ownership. */
+  /** Acquire a runtime state turn; cancellation removes waiters and always releases acquired ownership. */
   private turn<T>(work: () => Operation<T>): Operation<T> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
@@ -282,7 +236,6 @@ export class Reactor {
         let acquired = false;
         try {
           if (self.busy) {
-            if (self.waiting.size >= self.maxSources) throw new ResourceLimitError("Too many waiting ingress turns");
             yield* action<void>((resolve) => {
               const grant = () => {
                 acquired = true;
@@ -310,7 +263,7 @@ export class Reactor {
           }
         }
       });
-      // This later child is joined before the earlier admission resource releases its permit.
+      // This later child joins before the earlier state-turn owner grants the next waiter.
       return yield* call(work);
     });
   }
@@ -322,45 +275,18 @@ export class Reactor {
    * and remotely fetched OOBI artifacts.
    */
   ingest(bytes: Uint8Array): void {
-    if (bytes.byteLength > this.maxQueuedBytes) {
-      throw new ResourceAdmissionError("Queued ingress exceeds byte limit", "limit");
-    }
-    if (this.ingressRecords >= this.maxSources || bytes.byteLength > this.maxQueuedBytes - this.queuedBytes) {
-      throw new ResourceAdmissionError("Complete-record ingress queue is full", "busy");
-    }
-    const credit = bytes.byteLength ? this.resources.reserve({ bytes: bytes.byteLength }) : undefined;
-    if (credit?.kind === "refuse") {
-      throw new ResourceAdmissionError(
-        `Queued ingress ${credit.resource} admission refused: ${credit.reason}`,
-        credit.reason,
-      );
-    }
-    // Copy only the admitted extent so a tiny view cannot retain a much larger producer buffer.
-    try {
-      this.ingress.push({ bytes: bytes.slice(), reservation: credit?.reservation });
-    } catch (error) {
-      credit?.reservation.release();
-      throw error;
-    }
-    this.queuedBytes += bytes.byteLength;
-    this.ingressRecords++;
+    // Preserve the queued record independently of subsequent producer mutation.
+    this.ingress.push(bytes.slice());
   }
-  /** Clear queued owners and invalidate late retries; active processing releases after joined cleanup. */
+
+  /** Discard ordinary queued records; active input operations own their own lifetime. */
   clearIngress(): void {
-    this.ingressGeneration++;
-    for (let record = this.ingress.pull(); record; record = this.ingress.pull()) this.releaseIngress(record);
+    this.ingress.clear();
   }
 
-  /** Return both shared credit and local capacity when this record's owner finishes. */
-  private releaseIngress(record: IngressRecord): void {
-    this.queuedBytes -= record.bytes.byteLength;
-    this.ingressRecords--;
-    record.reservation?.release();
-  }
-
-  /** Consume one complete record through the same progressive source and dispatch path as network input. */
+  /** Consume one complete record through the same buffered parser source and dispatch path as network input. */
   *processBytes(bytes: Uint8Array, options: IngressOptions = {}): Operation<void> {
-    // Copy already resident input in fixed-size chunks for the progressive source.
+    // Copy already resident input in fixed-size chunks for the parser source.
     yield* this.process((signal) => chunkBytes(bytes, { signal }), options);
   }
   /**
@@ -370,40 +296,7 @@ export class Reactor {
    * delegates the actual work to a plain drain helper.
    */
   *processOnce(): Operation<void> {
-    while (!this.ingress.empty) {
-      const record = this.ingress.pull()!;
-      const generation = this.ingressGeneration;
-      if (yield* this.processIngress(record, generation)) return;
-    }
-  }
-  /** Install the owner before work so cancellation joins child cleanup before returning credit. */
-  private processIngress(record: IngressRecord, generation: number): Operation<boolean> {
-    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
-    const self = this;
-    return call(function*() {
-      let retained = false;
-      yield* resource<void>(function*(provide) {
-        try {
-          yield* provide();
-        } finally {
-          if (!retained) self.releaseIngress(record);
-        }
-      });
-      try {
-        yield* call(() => self.processBytes(record.bytes));
-      } catch (error) {
-        // Keep the record for retry after cue delivery; already accepted frames replay as duplicates.
-        if ((error instanceof ResourceAdmissionError && error.reason === "busy")) {
-          if (generation === self.ingressGeneration) {
-            self.ingress.prepend(record);
-            retained = true;
-          }
-          return true;
-        }
-        throw error;
-      }
-      return false;
-    });
+    while (!this.ingress.empty) yield* this.processBytes(this.ingress.pull()!);
   }
 
   /**

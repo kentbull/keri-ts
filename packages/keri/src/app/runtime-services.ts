@@ -1,5 +1,3 @@
-import { ResourcePolicy } from "cesr-ts";
-
 /** Opaque timer handle returned by a runtime clock implementation. */
 export type RuntimeTimer = unknown;
 
@@ -19,8 +17,6 @@ export interface RuntimeHttpClient {
 export interface RuntimeServices {
   clock: RuntimeClock;
   http: RuntimeHttpClient;
-  /** Shared owner admission for runtime HTTP and its preparation copies. */
-  resources: ResourcePolicy;
 }
 
 /** Production clock backed by the JavaScript runtime. */
@@ -39,7 +35,6 @@ export const defaultRuntimeHttpClient: RuntimeHttpClient = Object.freeze({
 export const defaultRuntimeServices: RuntimeServices = Object.freeze({
   clock: defaultRuntimeClock,
   http: defaultRuntimeHttpClient,
-  resources: new ResourcePolicy(),
 });
 
 /** Resolve partial runtime service overrides against production defaults. */
@@ -49,6 +44,5 @@ export function resolveRuntimeServices(
   return Object.freeze({
     clock: services.clock ?? defaultRuntimeClock,
     http: services.http ?? defaultRuntimeHttpClient,
-    resources: services.resources ?? new ResourcePolicy(),
   });
 }

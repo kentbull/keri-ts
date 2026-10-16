@@ -1,4 +1,4 @@
-import { ResourcePolicy, ShortageError, WireParseError } from "cesr-ts";
+import { ShortageError, WireParseError } from "cesr-ts";
 import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
@@ -154,15 +154,13 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
 
 Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation without masking failures", async () => {
   await run(function*() {
-    const resources = new ResourcePolicy({ streams: 2 });
     const issuer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, resources });
+    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const source = yield* createAgentRuntime(issuer);
     let fetches: string[] = [], mode = "stream", body: ReadableStream<Uint8Array>;
     const injected = new TypeError("injected client invariant failure");
     const runtime = yield* createAgentRuntime(target, {
       services: {
-        resources,
         http: {
           // deno-lint-ignore require-await -- Model asynchronous Fetch rejection and response completion.
           async fetch(url) {

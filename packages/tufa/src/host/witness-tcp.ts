@@ -1,12 +1,4 @@
-import {
-  type CesrFrame,
-  Ilks,
-  parse,
-  ResourceAdmissionError,
-  ResourceLimitError,
-  type ResourceReservation,
-  WireParseError,
-} from "cesr-ts";
+import { type CesrFrame, Ilks, parse, WireParseError } from "cesr-ts";
 import { action, call, createScope, ensure, type Operation, race, resource, useScope } from "effection";
 import {
   type AgentRuntime,
@@ -22,45 +14,36 @@ import {
 } from "keri-ts/runtime";
 import { createServer, type Socket } from "node:net";
 
-/** Finite host supervision; the runtime owns the sole parser stream reservation. */
+/** Concrete listener supervision and joined connection lifetimes. */
 export interface WitnessTcpOptions {
-  /** Maximum admitted/closing connections on this listener; default two. */
-  maxConnections?: number;
   /** Absolute deadline after genuine receive EOF, never refreshed by output activity; default 30 seconds. */
   drainTimeoutMs?: number;
   /** Observe expected connection refusal without suppressing storage/invariant failures. */
-  onRefusal?: (reason: "busy" | "limit" | "wire" | "peer") => void;
+  onRefusal?: (reason: "wire" | "peer") => void;
 }
 
-// Logical native-read/backing-copy allowance, not a hard bound on OS or pooled native buffering.
-const CONNECTION_BYTES = 2 * 1024 ** 2;
 const PEER_ERRORS = new Set(["ECONNRESET", "ECONNABORTED", "EPIPE", "ETIMEDOUT"]);
 
 /** Recognize peer I/O failures without treating native capacity/infrastructure errors as input refusal. */
 function isPeerError(error: Error): boolean {
   return PEER_ERRORS.has((error as NodeJS.ErrnoException).code ?? "");
 }
-/** Join one parser/watcher/socket lifetime before returning its connection credit. */
+/** Join one parser/watcher/socket lifetime before its connection scope ends. */
 function* processWitnessSocket(
   socket: Socket,
   runtime: AgentRuntime,
   serviceHab: Hab,
   closed: Promise<void>,
-  release: () => void,
   onRefusal: NonNullable<WitnessTcpOptions["onRefusal"]>,
   drainTimeoutMs: number,
 ): Operation<void> {
   // Earlier resource outlives every parser/watcher child, including joined cancellation.
-  yield* resource<void>(function*(provideLease) {
+  yield* resource<void>(function*(provide) {
     try {
-      yield* provideLease();
+      yield* provide();
     } finally {
-      try {
-        socket.destroy();
-        yield* call(() => closed);
-      } finally {
-        release();
-      }
+      socket.destroy();
+      yield* call(() => closed);
     }
   });
   let rejectFailure!: (error: unknown) => void;
@@ -311,9 +294,7 @@ function* processWitnessSocket(
     ]);
   } catch (error) {
     if (error instanceof WireParseError) onRefusal("wire");
-    else if (error instanceof ResourceLimitError) {
-      onRefusal("reason" in error && error.reason === "busy" ? "busy" : "limit");
-    } else if (peers.has(error)) onRefusal("peer");
+    else if (peers.has(error)) onRefusal("peer");
     else throw error;
   }
 }
@@ -324,14 +305,10 @@ function* witnessTcpListener(
   runtime: AgentRuntime,
   serviceHab: Hab,
   {
-    maxConnections = 2,
     drainTimeoutMs = 30000,
     onRefusal = (reason) => console.warn(`Witness TCP connection refused: ${reason}`),
   }: WitnessTcpOptions = {},
 ): Operation<void> {
-  if (!Number.isSafeInteger(maxConnections + 1) || maxConnections < 1) {
-    throw new RangeError("TCP maxConnections and its rejection allowance must be positive safe integers");
-  }
   if (!Number.isSafeInteger(drainTimeoutMs) || drainTimeoutMs < 1) {
     throw new RangeError("TCP drainTimeoutMs must be positive");
   }
@@ -339,7 +316,6 @@ function* witnessTcpListener(
   const [connections, haltConnections] = createScope(yield* useScope());
   const finished = yield* resource<Promise<void>>(function*(provide) {
     const listening = new AbortController();
-    const sockets = new Set<Socket>();
     const handles = new Set<Socket>();
     let resolveCompletion!: () => void;
     let rejectCompletion!: (error: unknown) => void;
@@ -349,7 +325,6 @@ function* witnessTcpListener(
     });
     let stopping = false;
     const server = createServer({ pauseOnConnect: true, allowHalfOpen: true }, (socket) => {
-      let unowned: ResourceReservation | undefined;
       handles.add(socket);
       socket.once("close", () => handles.delete(socket));
       const closed = new Promise<void>((resolve) => socket.once("close", resolve));
@@ -362,34 +337,18 @@ function* witnessTcpListener(
       socket.on("error", nativeError);
       socket.once("close", () => socket.off("error", nativeError));
       try {
-        if (stopping || sockets.size >= maxConnections) {
+        if (stopping) {
           socket.destroy();
-          if (!stopping) {
-            onRefusal("busy");
-          }
           return;
         }
-        const decision = runtime.resources.reserve({ bytes: CONNECTION_BYTES });
-        if (decision.kind === "refuse") {
-          socket.destroy();
-          onRefusal(decision.reason);
-          return;
-        }
-        unowned = decision.reservation;
-        sockets.add(socket);
         connections.run(function*() {
           try {
             yield* call(function*() {
-              unowned = undefined;
               yield* processWitnessSocket(
                 socket,
                 runtime,
                 serviceHab,
                 closed,
-                () => {
-                  sockets.delete(socket);
-                  decision.reservation.release();
-                },
                 onRefusal,
                 drainTimeoutMs,
               );
@@ -399,18 +358,7 @@ function* witnessTcpListener(
           }
         });
       } catch (error) {
-        unowned?.release();
-        sockets.delete(socket);
         socket.destroy();
-        rejectCompletion(error);
-      }
-    });
-    // Deno does not emit Node's drop event: one native rejection handle permits explicit refusal reporting.
-    server.maxConnections = maxConnections + 1;
-    server.on("drop", () => {
-      try {
-        onRefusal("busy");
-      } catch (error) {
         rejectCompletion(error);
       }
     });
@@ -442,8 +390,7 @@ function* witnessTcpListener(
 }
 
 /**
- * Own paused sockets, one progressive parser per receive lifetime, and joined listener shutdown.
- * Admission precedes task/source acquisition; the Reactor alone charges the receive stream slot.
+ * Own paused sockets, one buffered parser per receive lifetime, and joined listener shutdown.
  * Exact event proofs and query replies use this connection; unrelated mailbox/direct cues retain ordinary routing.
  */
 export function startWitnessTcpServer(

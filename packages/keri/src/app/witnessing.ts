@@ -14,19 +14,7 @@
  * - concrete listener ownership lives in `tufa`; this module stays on the
  *   protocol/runtime side of that boundary
  */
-import {
-  Cigar,
-  concatBytes,
-  Counter,
-  CtrDexV1,
-  Ilks,
-  parse,
-  parseBytes,
-  ResourceAdmissionError,
-  ResourceLimitError,
-  type SerderKERI,
-  type Siger,
-} from "cesr-ts";
+import { Cigar, concatBytes, Counter, CtrDexV1, Ilks, parse, parseBytes, type SerderKERI, type Siger } from "cesr-ts";
 import { action, call, ensure, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { type Deck } from "../core/deck.ts";

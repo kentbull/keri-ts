@@ -1,4 +1,4 @@
-import { Ilks, ResourceLimitError } from "cesr-ts";
+import { Ilks } from "cesr-ts";
 import { type Operation, run } from "effection";
 import {
   type AgentRuntime,
@@ -54,7 +54,6 @@ export async function handleMailboxAdmin(
     mailboxRequest = await readMailboxAdminRequest(req);
   } catch (error) {
     if (req.signal.aborted) return textResponse("Request cancelled", 408);
-    if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
     if (error instanceof ValidationError) {
       return textResponse(error.message, 400);
     }
@@ -83,7 +82,6 @@ export async function handleMailboxAdmin(
     await task;
   } catch (error) {
     if (req.signal.aborted) return textResponse("Request cancelled", 408);
-    if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
     throw error;
   } finally {
     req.signal.removeEventListener("abort", stop);

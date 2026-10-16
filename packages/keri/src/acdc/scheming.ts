@@ -1,5 +1,5 @@
 /** Local v2 ACDC schema validation against the inspected 71438328 profile; no network resolution. */
-import { Diger, dumps, ParserError, ResourceLimitError, type SerderACDC } from "cesr-ts";
+import { Diger, dumps, ParserError, type SerderACDC } from "cesr-ts";
 import Ajv2020 from "npm:ajv@8.17.1/dist/2020.js";
 import { ValidationError } from "../core/errors.ts";
 import { Schemer } from "../core/scheming.ts";
@@ -62,7 +62,7 @@ function digest(value: string): Diger {
     const diger = new Diger({ qb64: value });
     if (diger.qb64 === value) return diger;
   } catch (error) {
-    if (!(error instanceof ParserError) || error instanceof ResourceLimitError) throw error;
+    if (!(error instanceof ParserError)) throw error;
   }
   throw new InvalidSchema("Schema reference must contain a complete SAID");
 }

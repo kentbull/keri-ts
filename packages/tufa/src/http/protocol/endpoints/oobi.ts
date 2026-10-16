@@ -1,4 +1,3 @@
-import { ResourceLimitError } from "cesr-ts";
 import { type AgentRuntime, endpointBasePath, fetchEndpointUrls, type Hab, preferredUrl, Roles } from "keri-ts/runtime";
 import { textResponse } from "../responses.ts";
 import type { OobiRouteRequest, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
@@ -107,15 +106,9 @@ export function handleOobiRoute(
     return textResponse("Not Found", 404);
   }
 
-  let body: ReadableStream<Uint8Array> | null;
-  try {
-    body = runtime.replyStreams.openNonEmpty(
-      hab.replyToOobiMessages(aid, request.role, request.eid ? [request.eid] : []),
-    );
-  } catch (error) {
-    if (error instanceof ResourceLimitError) return textResponse(error.message, 413);
-    throw error;
-  }
+  const body = runtime.replyStreams.openNonEmpty(
+    hab.replyToOobiMessages(aid, request.role, request.eid ? [request.eid] : []),
+  );
   if (!body) return textResponse("Not Found", 404);
 
   return new Response(body, {

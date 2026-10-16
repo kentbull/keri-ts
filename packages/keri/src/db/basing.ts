@@ -15,8 +15,6 @@ import {
   parseTexter,
   type Payload,
   Prefixer,
-  ResourceLimitError,
-  ResourcePolicy,
   Saider,
   SealEvent,
   Seqner,
@@ -178,8 +176,6 @@ function seqnerFromNumber(number: NumberPrimitive): Seqner {
 
 /** Options for opening a `Baser` LMDB environment and its named subdb surface. */
 export interface BaserOptions extends LMDBerOptions {
-  /** Shared deployment policy, fixed before storage or accepted state opens. */
-  resources?: ResourcePolicy;
   compat?: boolean;
 }
 
@@ -205,8 +201,6 @@ export interface BaserOptions extends LMDBerOptions {
  *   subset is actively driven by `Habery`/CLI in this arc
  */
 export class Baser {
-  /** Survives runtime shutdown because runtimes borrow this database. */
-  readonly resources: ResourcePolicy;
   private lmdber: LMDBer;
   private readonly logger: Logger;
   private evtsRaw!: Database<BinVal, BinKey>;
@@ -466,7 +460,6 @@ export class Baser {
   static readonly MaxNamedDBs = 128;
 
   constructor(options: BaserOptions = {}) {
-    this.resources = options.resources ?? new ResourcePolicy();
     this.logger = options.logger ?? consoleLogger;
     const compat = options.compat ?? false;
     this.lmdber = new LMDBer(options, {
@@ -536,9 +529,6 @@ export class Baser {
    * than hand-rolled raw LMDB handles.
    */
   *reopen(options: Partial<BaserOptions> = {}): Operation<boolean> {
-    if (options.resources && options.resources !== this.resources) {
-      throw new RangeError("Baser reopen requires its original resource policy");
-    }
     if (this.archive) {
       yield* call(async () => {
         await (await this.archive!.catch(() => null))?.close();
@@ -1779,14 +1769,14 @@ export class Baser {
     const felEnd = this.replayEnd(pre);
     if (felEnd === null) return null;
     if (!Number.isFinite(felEnd) || felEnd < 0) throw new DatabaseOperationError("Corrupt witness FEL horizon");
-    if (!Number.isSafeInteger(felEnd)) throw new ResourceLimitError("Unsupported witness replay horizon");
+    if (!Number.isSafeInteger(felEnd)) throw new RangeError("Unsupported witness replay horizon");
     if (sn === null) return new CapturedKelReplay(this, [[pre, 0, felEnd]]);
     const start = b(`${pre}.${"f".repeat(32)}`);
     for (const entry of this.kels.sdb.getRange({ start, reverse: true, limit: 1 })) {
       const [prefix, end] = splitOnKey(entry.key);
       if (t(prefix) !== pre) return null;
       if (!Number.isFinite(end) || end < 0) throw new DatabaseOperationError("Corrupt witness KEL horizon");
-      if (!Number.isSafeInteger(end)) throw new ResourceLimitError("Unsupported witness KEL horizon");
+      if (!Number.isSafeInteger(end)) throw new RangeError("Unsupported witness KEL horizon");
       if (end < sn) return null;
       return new CapturedWitnessReplay(this, pre, sn, end, felEnd);
     }

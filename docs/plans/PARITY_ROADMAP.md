@@ -13,6 +13,10 @@ interop and release qualification remain incomplete. Parent-owned nested childre
 are never independently accepted GenericGroup siblings. Ordinary queues carry
 records; actual files, sockets, iterators and payloads retain explicit cleanup.
 Existing accepted-state APIs need no eviction redesign for this removal.
+Shared ResourcePolicy, its errors and constructor plumbing are removed, along with
+remaining client, Reactor queue/waiter, listener and reply-proof quotas. Buffered
+decoder integration and accounting deletion are implemented; concrete cue/runtime
+ownership and full qualification remain open.
 
 ## Accepted architecture; supersedes older preservation instructions
 

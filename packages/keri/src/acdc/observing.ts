@@ -1,5 +1,5 @@
 /** Explicit public registry intake; this TypeScript integration is beyond frozen KERIpy 927. */
-import { Diger, Ilks, ParserError, ResourceLimitError, type SerderACDC } from "cesr-ts";
+import { Diger, Ilks, ParserError, type SerderACDC } from "cesr-ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
 import { type RegistryEventDecision, RegistryEventer } from "./regengine.ts";
@@ -30,7 +30,7 @@ export class RegistryObserver {
     try {
       if (new Diger({ qb64: event.regid }).qb64 !== event.regid) return { kind: "reject", reason: "registry" };
     } catch (error) {
-      if (!(error instanceof ParserError) || error instanceof ResourceLimitError) throw error;
+      if (!(error instanceof ParserError)) throw error;
       return { kind: "reject", reason: "registry" };
     }
     if (event.sn > BigInt(Number.MAX_SAFE_INTEGER)) return { kind: "reject", reason: "ordinalRange" };

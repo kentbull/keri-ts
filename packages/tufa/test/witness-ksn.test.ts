@@ -1,4 +1,4 @@
-import { ResourcePolicy, SerderKERI } from "cesr-ts";
+import { SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import {
@@ -17,7 +17,6 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
       temp: true,
       skipConfig: true,
       skipSignator: true,
-      resources: new ResourcePolicy({ streams: 2 }),
     });
     const peer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
     const runtime = yield* createAgentRuntime(hby);
@@ -66,7 +65,6 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
         const lazy = yield* call(() => handle(new Request(origin + `/query?typ=kel&pre=${controller.pre}`)));
         assertEquals(lazy.status, 200);
         yield* call(() => lazy.body!.cancel());
-        assertEquals(runtime.resources.used.bytes, 0);
       } finally {
         hby.db.getEvt = read;
       }
@@ -91,7 +89,7 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
         new SerderKERI({ raw: new Uint8Array(yield* call(() => replay.arrayBuffer())) }).said,
         controller.pre,
       );
-      assertEquals(runtime.resources.used.bytes, 0);
+
       const response = yield* call(() => get(controller.pre));
       assertEquals(response.status, 200);
       assertEquals(response.headers.get("content-type"), "application/cesr");

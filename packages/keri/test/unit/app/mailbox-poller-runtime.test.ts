@@ -99,7 +99,7 @@ function makePollerFixture(
     new MailboxDirector(hby),
     {
       timeouts,
-      services: fakeRuntimeServices({ clock, resources: hby.db.resources }),
+      services: fakeRuntimeServices({ clock }),
       pollTransport: transport,
     },
   );
@@ -256,7 +256,7 @@ Deno.test("processMailboxTurn settles complete body-only mailbox records", async
         ],
       });
       const runtime = yield* createAgentRuntime(hby, {
-        services: fakeRuntimeServices({ clock, resources: hby.db.resources }),
+        services: fakeRuntimeServices({ clock }),
         mailboxPollTransport: transport,
       });
       try {
@@ -336,7 +336,6 @@ Deno.test("MailboxPoller.processOnce stops after the bounded command-local budge
       ], "resume spans endpoints and habitats, then wraps without retaining a new queue");
       assertEquals(transport.polls.every((request) => request.timeouts.requestOpenTimeoutMs === 50), true);
       assertEquals(clock.now(), 240);
-      assertEquals(hby.db.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     } finally {
       yield* hby.close();
     }

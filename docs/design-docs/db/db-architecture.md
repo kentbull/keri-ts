@@ -184,36 +184,20 @@ establish zero-copy LMDB access; see the
 [byte ownership reference](../../reference/db/MEMORYVIEW_UINT8ARRAY.md).
 
 `db/kram-factors.ts` stages and rehydrates partial evidence keyed by `(AID, MID)`.
-Callers authenticate and stage the sender body, `pmks` pool and `pmsk` seal; foreign
-proofs remain independent. Call `storeKramFactors` and `validateKramFactors` inside
-the same transaction before commit so `ResourceLimitError` rolls back the union.
-Rehydration merges exact qualified members with shared 4096-item/8 MiB credits.
-Known foreign last groups freeze receipt-time coordinates; `ulgs.` retains unknown
-prefixes without old signatures, and `cigs.` retains foreign cigar verifier context.
-`unresolvedLast` remains missing evidence for Exchanger even after KEL recovery.
-`removeKramFactors` removes body, sender pool/seal and factors only. Nested/ESSR
-snapshots, cache transitions, authentication and complete handoff remain later units.
-Blind/bound/media `d` fields reopen as `Noncer`, matching their current typed
-record domain (including nonce/empty/digest encodings). This deliberately corrects
-frozen KERIpy's narrower `Diger` constructors without changing qualified row bytes.
-Sender seal couples/triples remain authentication inputs and are excluded from
-factor staging, as in frozen `_storeNonAuthData`.
-These finite limits do not bound whole-row LMDB allocation or the shared runtime.
+The caller authenticates sender body, establishment seal and verified `pmks` pool,
+and owns the publication transaction. Foreign proofs remain independent. Exact
+qualified members merge in first-receipt order without factor/byte credits or
+validation quotas. Known foreign last groups freeze receipt-time coordinates;
+`ulgs.` retains unknown prefixes without old signatures, and `cigs.` keeps foreign
+verifier context. Missing evidence remains explicit after KEL recovery.
+`removeKramFactors` removes body, sender pool/seal and factors only.
 
-`db/kram-snapshots.ts` serializes bounded whole-tree wire while borrowing incoming
-owners; `storeKramSnapshot` stages raw `kpnd.` bytes in the caller's transaction.
-Missing replacement wire preserves an existing snapshot. Consume-scoped `withKramHydration`
-composes scalar factors with matching-body child/ESSR hydration, preferring fresh
-borrowed owners. It never reconstructs parent signature groups from saved wire.
-Its callback cannot retain reopened owners. Direct `finally` propagates disposal
-failures before returning. Cancellation joins reads/writes before disposal; downstream failure and
-corrupt-row failure release every temporary reopened owner. Ordinary metadata,
-nodes, ESSR bytes/items and the 24 MiB wire copy all retain finite limits.
-Invalid ESSR size/count declarations are `RangeError` contract failures; valid
-extents over configured ceilings are `ResourceLimitError`.
-Private snapshots do not accept parent/child messages or replace public `enst.`
-publication. `removeKramSnapshot` removes only private wire; full pending cleanup
-must compose it with factor and later handoff owners.
+Blind/bound/media `d` fields reopen as `Noncer`, retaining nonce/empty/digest
+encodings without changing qualified row bytes. Sender seals authenticate intake
+and are excluded from factor staging, matching `_storeNonAuthData`.
+Private wire snapshots, ready/handoff acknowledgements and their tables/readers
+are removed. Keep KERIpy protocol caches, escrows, accepted evidence and real
+payload storage cleanup; do not restore a private delivery durability subsystem.
 
 ## Key Ordering Conventions
 

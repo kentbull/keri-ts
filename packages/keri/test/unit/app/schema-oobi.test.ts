@@ -59,7 +59,7 @@ Deno.test("Oobiery resolves application/schema+json data OOBIs", async () => {
 
     try {
       const runtime = yield* createAgentRuntime(hby, {
-        services: fakeRuntimeServices({ http, resources: hby.db.resources }),
+        services: fakeRuntimeServices({ http }),
       });
       try {
         runtime.oobiery.resolve(url);
@@ -96,7 +96,7 @@ Deno.test("Oobiery rejects schema data OOBIs with mismatched SAIDs", async () =>
 
     try {
       const runtime = yield* createAgentRuntime(hby, {
-        services: fakeRuntimeServices({ http, resources: hby.db.resources }),
+        services: fakeRuntimeServices({ http }),
       });
       try {
         runtime.oobiery.resolve(url);

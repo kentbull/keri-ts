@@ -5,8 +5,6 @@ import {
   Diger,
   NumberPrimitive,
   Prefixer,
-  ResourceAdmissionError,
-  ResourceLimitError,
   SerderKERI,
 } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -361,12 +359,6 @@ Deno.test("Revery publishes ordered proof effects and preserves external escrow 
         assertExists(hby.db.rpys.get([priorSaid.qb64]));
         assertEquals(cues.length, 0);
       };
-      assertThrows(
-        () => new Revery(hby.db, { cues, maxReplyGroups: 2 }).acceptReply(args),
-        ResourceLimitError,
-        "work limit",
-      );
-      unchanged();
       // External escrow must not virtually aggregate proofs which its semantic owner has not published.
       const pending = expectKind(rvy.acceptReply({ ...args, externalEscrow: true }), "unverified");
       assertEquals(pending.reason, "proofPending");
@@ -629,7 +621,7 @@ Deno.test("Revery escrow replay preserves processing error detail on drop decisi
         "reply-detail",
         "/escrow/reply/detail",
       );
-      let fault: Error = new Error("boom");
+      const fault = new Error("boom");
       replyVerifier.rtr.addRoute("/escrow/reply/detail", {
         processReply() {
           throw fault;
@@ -642,10 +634,6 @@ Deno.test("Revery escrow replay preserves processing error detail on drop decisi
       const drop = expectKind(decision, "drop");
       assertEquals(drop.reason, "processingError");
       assertEquals(drop.message, `boom (said=${saider.qb64}, route=/escrow/reply/detail)`);
-      fault = new ResourceAdmissionError("query bytes occupied", "busy");
-      assertThrows(() => replyVerifier.processEscrowReply(), ResourceAdmissionError);
-      assertEquals(hby.db.rpes.get(["/escrow/reply/detail"]).length, 1);
-      assertExists(hby.db.rpys.get([saider.qb64]));
     } finally {
       yield* hby.close(true);
     }

@@ -1,4 +1,3 @@
-import type { ResourcePolicy } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
@@ -98,8 +97,6 @@ export type { CueSink };
  */
 export interface AgentRuntime {
   hby: Habery;
-  /** Shared stream, byte and decryption credit; pass this same policy to hosted ESSR recipients. */
-  readonly resources: ResourcePolicy;
   mailboxer: Mailboxer | null;
   noter: Noter | null;
   notifier: Notifier | null;
@@ -135,8 +132,6 @@ export interface AgentRuntime {
  * local hosting and long-lived hosting stay behaviorally aligned.
  */
 export interface AgentRuntimeOptions {
-  /** Must match the policy installed when opening Habery, including shared deployments. */
-  resources?: ResourcePolicy;
   mailboxer?: Mailboxer;
   noter?: Noter;
   signaler?: Signaler;
@@ -189,13 +184,6 @@ export function* createAgentRuntime(
   hby: Habery,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
-  const resources = hby.db.resources;
-  if (
-    (options.resources && options.resources !== resources)
-    || (options.services?.resources && options.services.resources !== resources)
-  ) {
-    throw new RangeError("AgentRuntime requires the Habery Baser resource policy; supply it when opening Habery");
-  }
   const injectedSignaler = options.signaler ?? options.notifier?.signaler;
   if (
     (options.notifier && options.notifier.hby !== hby)
@@ -203,7 +191,7 @@ export function* createAgentRuntime(
   ) {
     throw new RangeError("AgentRuntime notification services require its exact Habery and Signaler");
   }
-  const services = resolveRuntimeServices({ ...options.services, resources });
+  const services = resolveRuntimeServices(options.services);
   const mailboxer = options.mailboxer
     ?? (options.enableMailboxStore ? (yield* openRuntimeMailboxer(hby)) : null);
   const ownsMailboxer = options.mailboxer === undefined && mailboxer !== null;
@@ -283,7 +271,6 @@ export function* createAgentRuntime(
   const reactor = new Reactor(hby, {
     cues,
     vdr,
-    resources,
     acdc,
     messagePolicy: options.messagePolicy,
     kram: options.kram,
@@ -357,7 +344,6 @@ export function* createAgentRuntime(
   const authenticator = new Authenticator(hby, { services });
   return {
     hby,
-    resources,
     mailboxer,
     noter,
     notifier,

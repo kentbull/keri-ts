@@ -17,7 +17,6 @@ import {
   parseBytes,
   parsePather,
   Prefixer,
-  ResourceLimitError,
   Saider,
   Serder,
   SerderKERI,

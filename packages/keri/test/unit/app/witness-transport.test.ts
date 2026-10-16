@@ -1,4 +1,4 @@
-import { concatBytes, ResourcePolicy } from "cesr-ts";
+import { concatBytes } from "cesr-ts";
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { once } from "node:events";
@@ -92,14 +92,13 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Expected TCP test address");
-  const services = { ...defaultRuntimeServices, resources: new ResourcePolicy({ streams: 2 }) };
+  const services = defaultRuntimeServices;
   try {
     await run(function*() {
       const hby = yield* createHabery({
         name: `tcp-send-${crypto.randomUUID()}`,
         temp: true,
         skipConfig: true,
-        resources: services.resources,
       });
       try {
         const { witness, controller } = fixture(hby, "http://unused.test");
@@ -179,7 +178,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
           statuses: { [witness.pre]: 200 },
         });
         assertEquals(hby.db.wigs.get(key).length, 1);
-        assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
         const priorConnections = connections;
         yield* submitter.submit(controller.pre);
         assertEquals(connections, priorConnections, "verified persistence enables the existing convergence fast path");
@@ -192,7 +191,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         hby.db.wigs.rem([controller.pre, next.said!]);
         yield* new WitnessReceiptor(hby).submit(controller.pre);
         assertEquals(hby.db.wigs.get([controller.pre, next.said!]).length, 1);
-        assertEquals(hby.db.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
         assertEquals(controller.kever?.sn, 1, "standalone receiver cleanup retains the caller's Habery");
       } finally {
         yield* hby.close(true);
@@ -357,7 +356,6 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
       name: `tcp-replies-${crypto.randomUUID()}`,
       temp: true,
       skipConfig: true,
-      resources: new ResourcePolicy({ streams: 2 }),
     });
     const producing = yield* createHabery({ name: `tcp-proof-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const sender = producing.makeHab("sender", undefined, { transferable: true });
@@ -520,8 +518,7 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
             ),
             [["receipt", sender.pre, sender.kever!.said], ["keyStateSaved", sender.pre, sender.kever!.said]],
           );
-          runtime.cues.clear(); // Queued protocol work owns credit independently of this joined conversation.
-          assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+          runtime.cues.clear(); // Verified cues remain ordinary queued work after the conversation joins.
         } finally {
           clearTimeout(timer);
           release.resolve();
@@ -554,7 +551,7 @@ Deno.test("TCP streamed output stops pulling under socket pressure and joins sou
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const services = { ...defaultRuntimeServices, resources: new ResourcePolicy({ streams: 1, bytes: 131072 }) };
+  const services = defaultRuntimeServices;
   let pulls = 0, opened = 0, continued = false;
   const source = async function*(signal: AbortSignal) {
     opened++;
@@ -609,7 +606,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const services = { ...defaultRuntimeServices, resources: new ResourcePolicy({ streams: 1 }) };
+  const services = defaultRuntimeServices;
   try {
     await assertRejects(
       () =>

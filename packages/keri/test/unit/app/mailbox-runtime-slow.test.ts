@@ -1399,7 +1399,7 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
       yield* runtime.close();
-      assertEquals(runtime.resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
       yield* providerHby.close();
     }
   });
