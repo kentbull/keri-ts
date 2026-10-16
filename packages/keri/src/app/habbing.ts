@@ -1640,6 +1640,8 @@ export class Habery {
     }
 
     this.habs.set(pre, hab);
+    // Membership is local intent, needed to accept before collecting witness receipts.
+    this.db.groups.add(pre);
     const decision = this.kevery.processEvent({
       serder,
       sigers,
@@ -1652,7 +1654,7 @@ export class Habery {
     if (decision.kind === "reject") {
       if (!args.hidden) {
         this.removeGroupHabRecord(pre, group, ns);
-      }
+      } else this.db.groups.delete(pre);
       this.habs.delete(pre);
       throw new ValidationError(decision.message);
     }

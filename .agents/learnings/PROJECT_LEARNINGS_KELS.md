@@ -33,22 +33,19 @@ explicitly sequences writes and publication. Queues carry no capacity or byte cr
 processEvent refuses a caller-owned native writer before evaluation;
 its own successful commit is the publication boundary. The unused public
 applyDecision is removed, so callers cannot apply stale decisions outside that
-writer. Pure decideEvent remains an inspection seam. Group-prefix
-publication follows admission. Default event escrow promotion uses the same
+writer. Pure decideEvent remains an inspection seam. Accepted-prefix/state
+publication follows admission; locally prepared group membership is application
+intent established before validation, not a claim of accepted or witnessed state. Default event escrow promotion uses the same
 owning writer, including bucket movement/removal before post-commit publication;
 same-bucket retries do not rewrite rows or emit additional cues.
-Busy/limit refusal leaves that decision unapplied; an unexpected infrastructure
-failure after writes is not a durable rollback or cue recovery guarantee.
-Ordinary Decks keep their conservative acceptance/duplicate count guard;
-changing that boundary changes
-ingress and escrow retry ownership even when the actual cue batch fits.
-KEL, reply and TSN producers check ordinary Deck capacity and publish cue records
-directly after the owning writes. Admitted queues alone prepare real retention
-handles. Transactional reply handlers retain plain query records across commit;
+Unexpected infrastructure failure after writes is not a durable rollback or cue
+recovery guarantee. Producers publish ordinary Deck records after owning writes;
+there is no queue-capacity accounting or synthetic retention protocol.
+Transactional reply handlers retain plain query records across commit;
 no synthetic publication owner is needed. Registry and credential TSN retain
 independent proof, trust, dependency and Broker membership decisions.
 KEL live/retried queries hold their concrete output batch before replay source-seal
-repair. Capture construction remains separate admission work; refusal cannot repair `aess`.
+repair. Failed capture construction cannot repair `aess`.
 
 `states.` is durable key-state authority; `kels.`/`fels.`/`dtss.` retain event
 history. Habery.habs and db.kevers are caches. Query/event routing must use
@@ -63,9 +60,12 @@ Weighted kt/nt behavior uses Tholder.satisfy, never numeric shortcuts.
   `aess` and unescrowing. Remote protected shortcuts must not bypass local approval.
 - Later accepted delegator anchors must repair missing `aess` for already accepted
   delegated events as well as promote pending pdes/delegables.
-- Persist pending group habitat metadata before processing, but mark prefixes/groups
-  and accepted member sets only after KEL acceptance. Pending rotations retain prior
-  smids/rmids. Preserve witness signatures through pre-approval and approval replay.
+- Persist local group intent and register its membership before event validation,
+  as joinGroupHab already does. Protected local acceptance drives subsequent witness
+  gathering; membership must not wait on the acceptance it enables. Publish accepted
+  prefixes/state and accepted member updates only after KEL acceptance. A third-party
+  validator still requires witness proof. Pending rotations retain prior smids/rmids;
+  preserve witness signatures through pre-approval and approval replay.
 - Rotation signatures independently index current keys and prior next commitments.
   Match current keys cryptographically to accepted ndigers; uncommitted replacements
   sign current-only. Recovery must satisfy prior rotation and new current thresholds,
