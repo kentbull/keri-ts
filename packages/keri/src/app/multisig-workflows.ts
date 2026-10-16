@@ -1,9 +1,9 @@
 /**
  * Multisig proposal and approval workflows.
  *
- * CLI adapters own prompts, output, and argument parsing. This module owns
- * proposal publishing, mailbox polling, KEL/RPY/VDR approval, and delegation
- * completion for command-local multisig operations.
+ * CLI orchestration owns timed waits, worker lifetimes, prompts and output.
+ * This module publishes proposals and approves stored KEL/RPY/VDR proposals
+ * without starting or driving background workers.
  */
 import {
   concatBytes,
@@ -20,20 +20,15 @@ import {
   TraitDex,
   type Versionage,
 } from "cesr-ts";
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { RegistryRecord } from "../core/records.ts";
 import { Credentialer, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
-import {
-  type AgentRuntime,
-  processMailboxTurn,
-  runAgentRuntimeUntil,
-} from "./agent-runtime.ts";
+import { type AgentRuntime } from "./agent-runtime.ts";
 
 import { requireRegery } from "./credential-workflows.ts";
-import { resolveDelegationCommunicationHab } from "./delegating.ts";
 import {
   endpointRoleAccepted,
   groupEndorseReply,
@@ -99,8 +94,6 @@ export interface MultisigApprovalCallbacks {
 export interface MultisigApprovalOptions {
   group?: string;
   said?: string;
-  pollTurns: number;
-  pollBudgetMs: number;
   callbacks: MultisigApprovalCallbacks;
 }
 
@@ -186,129 +179,6 @@ function* registerAndSendProposal(
   return [...result.deliveries];
 }
 
-/** Poll until a specific group KEL event is accepted or attempts expire. */
-export function* waitForGroupAcceptance(
-  hby: Habery,
-  runtime: AgentRuntime,
-  serder: SerderKERI,
-  options: MultisigApprovalOptions,
-): Operation<boolean> {
-  if (eventAccepted(hby, serder)) {
-    return true;
-  }
-  for (let turn = 0; turn < options.pollTurns; turn++) {
-    yield* processOnePendingApproval(hby, runtime, options);
-    if (eventAccepted(hby, serder)) {
-      return true;
-    }
-    yield* processMailboxTurn(runtime, { budgetMs: options.pollBudgetMs });
-    yield* runtime.reactor.processEscrowsOnce();
-    yield* sleep(250);
-  }
-  return eventAccepted(hby, serder);
-}
-
-/** Poll for and approve one pending multisig notification. */
-export function* waitForOneApproval(
-  hby: Habery,
-  runtime: AgentRuntime,
-  options: MultisigApprovalOptions,
-): Operation<ApprovalResult | null> {
-  for (let turn = 0; turn < options.pollTurns; turn++) {
-    const result = yield* processOnePendingApproval(hby, runtime, options);
-    if (result) {
-      return result;
-    }
-    yield* processMailboxTurn(runtime, { budgetMs: options.pollBudgetMs });
-    yield* runtime.reactor.processEscrowsOnce();
-    yield* sleep(250);
-  }
-  return null;
-}
-
-/** Wait for a locally authored group event to complete through stored approvals. */
-export function* waitForLocalGroupCompletion(
-  hby: Habery,
-  runtime: AgentRuntime,
-  options: MultisigApprovalOptions,
-): Operation<ApprovalResult | null> {
-  if (!options.group || options.said) {
-    return null;
-  }
-  const groupHab = groupHabByAliasOrPrefix(hby, options.group);
-  if (!groupHab?.pre) {
-    return null;
-  }
-  const serder = localGroupJoinSerder(hby, groupHab.pre);
-  if (!serder) {
-    return null;
-  }
-  const route = routeForKelEvent(serder);
-  if (!route) {
-    return null;
-  }
-  const accepted = yield* waitForGroupAcceptance(hby, runtime, serder, options);
-  return {
-    route,
-    said: "",
-    embedded: serder.said ?? "",
-    group: groupHab.pre,
-    accepted,
-    deliveries: [],
-  };
-}
-
-/** Poll for endpoint-role reply state after a group RPY proposal. */
-export function* waitForReplyAcceptance(
-  hby: Habery,
-  runtime: AgentRuntime,
-  groupPre: string,
-  role: string,
-  eid: string,
-  options: MultisigApprovalOptions,
-): Operation<boolean> {
-  if (endpointRoleAccepted(hby, groupPre, role, eid)) {
-    return true;
-  }
-  for (let turn = 0; turn < options.pollTurns; turn++) {
-    yield* processOnePendingApproval(hby, runtime, options);
-    if (endpointRoleAccepted(hby, groupPre, role, eid)) {
-      return true;
-    }
-    yield* processMailboxTurn(runtime, { budgetMs: options.pollBudgetMs });
-    yield* runtime.reactor.processEscrowsOnce();
-    yield* sleep(250);
-  }
-  return endpointRoleAccepted(hby, groupPre, role, eid);
-}
-
-/** Complete the delegation workflow for an accepted delegated group event. */
-export function* completeDelegationIfNeeded(
-  hby: Habery,
-  runtime: AgentRuntime,
-  pre: string,
-  proxy?: string,
-): Operation<string | null> {
-  const kever = hby.db.getKever(pre);
-  if (!kever?.delpre) {
-    return null;
-  }
-  const communicationHab = resolveDelegationCommunicationHab(hby, proxy);
-  if (!communicationHab) {
-    throw new ValidationError(
-      `Delegated group event for ${pre} requires --proxy <alias>.`,
-    );
-  }
-  runtime.delegating.beginLatest(pre, kever.sn, { communicationHab });
-
-  yield* runAgentRuntimeUntil(
-    runtime,
-    () => runtime.delegating.complete(pre, kever.sn),
-    { hab: communicationHab, timeoutMs: 120_000, pollMailbox: true },
-  );
-  return runtime.delegating.workflowStatus(pre, kever.sner.numh).phase;
-}
-
 /** True when a KEL event is accepted locally. */
 export function eventAccepted(hby: Habery, serder: SerderKERI): boolean {
   const pre = serder.pre;
@@ -335,7 +205,8 @@ export function routeForKelEvent(serder: SerderKERI): MultisigKelRoute | null {
   }
 }
 
-function* processOnePendingApproval(
+/** Approve the first matching stored proposal; host progress and deadlines belong to the caller. */
+export function* approvePendingMultisigProposal(
   hby: Habery,
   runtime: AgentRuntime,
   options: MultisigApprovalOptions,
@@ -772,18 +643,6 @@ function rpyAttrs(serder: SerderKERI): { cid: string; role: string; eid: string 
   return { cid: attrs.cid, role: attrs.role, eid: attrs.eid };
 }
 
-function groupHabByAliasOrPrefix(hby: Habery, group: string): Hab | null {
-  return hby.habByName(group) ?? hby.habs.get(group) ?? null;
-}
-
-function localGroupJoinSerder(hby: Habery, groupPre: string): SerderKERI | null {
-  const kever = hby.db.getKever(groupPre);
-  if (kever?.serder) {
-    return kever.serder;
-  }
-  return hby.db.getEvtSerder(groupPre, groupPre);
-}
-
 function payloadSection(ked: Record<string, unknown>): Record<string, unknown> {
   return isRecord(ked.a) ? ked.a : {};
 }
@@ -823,11 +682,4 @@ function requireText(value: string | undefined, label: string): string {
     throw new ValidationError(`${label} is required and cannot be empty.`);
   }
   return value;
-}
-
-function* sleep(ms: number): Operation<void> {
-  yield* action<void>((resolve) => {
-    const id = setTimeout(resolve, ms);
-    return () => clearTimeout(id);
-  });
 }

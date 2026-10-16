@@ -361,10 +361,8 @@ async function runProposalWithJoin(
     "--group",
     group,
     "--auto",
-    "--poll-turns",
-    "32",
-    "--poll-budget-ms",
-    "500",
+    "--approval-timeout",
+    "20",
   ]);
   assertCommandOk(joined, `join ${group}`);
   const proposed = await waitForChild(child, 20_000);

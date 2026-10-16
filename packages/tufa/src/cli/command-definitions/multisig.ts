@@ -117,16 +117,10 @@ function registerMultisigJoinCmd(multisig: Command, dispatch: CommandDispatch): 
             false,
           )
           .option(
-            "--poll-turns <turns>",
-            "Maximum mailbox polling turns before failing",
+            "--approval-timeout <seconds>",
+            "Elapsed time to wait for a matching proposal or group acceptance",
             (value: string) => Number(value),
-            32,
-          )
-          .option(
-            "--poll-budget-ms <milliseconds>",
-            "Mailbox polling budget per turn",
-            (value: string) => Number(value),
-            2000,
+            60,
           ),
       )
         .option("--proxy <alias>", "Alias for delegation communication proxy"),
@@ -144,8 +138,7 @@ function registerMultisigJoinCmd(multisig: Command, dispatch: CommandDispatch): 
       registryName: options.registryName,
       said: options.said,
       auto: options.auto || false,
-      pollTurns: options.pollTurns,
-      pollBudgetMs: options.pollBudgetMs,
+      approvalTimeoutSeconds: options.approvalTimeout,
       ...witnessAuthArgs(options),
       proxy: options.proxy,
     }),

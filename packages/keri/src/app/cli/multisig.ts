@@ -7,13 +7,16 @@
  * - `join` polls mailbox notifications, signs the embedded event with local
  *   member keys, and republishes the approval EXN
  */
-import { type ThresholdSith } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { type SerderKERI, type ThresholdSith } from "cesr-ts";
+import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
-import { type AgentRuntime } from "../agent-runtime.ts";
+import { type AgentRuntime, runAgentRuntime } from "../agent-runtime.ts";
+import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import {
+  endpointRoleAccepted,
   groupSigningMembers,
+  isLocalGroupHab,
   localGroupMember,
   proposeGroupEndpointRole,
 } from "../endpoint-roleing.ts";
@@ -28,13 +31,12 @@ import type { Hab, Habery } from "../habbing.ts";
 import {
   type ApprovalPromptContext,
   type ApprovalResult,
-  completeDelegationIfNeeded,
+  approvePendingMultisigProposal,
+  eventAccepted,
   type MultisigApprovalCallbacks,
+  type MultisigApprovalOptions,
   publishProposal,
-  waitForGroupAcceptance,
-  waitForLocalGroupCompletion,
-  waitForOneApproval,
-  waitForReplyAcceptance,
+  routeForKelEvent,
 } from "../multisig-workflows.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { withAgentRuntime } from "./common/context.ts";
@@ -99,8 +101,7 @@ interface MultisigJoinArgs extends MultisigBaseArgs {
   auto?: boolean;
   said?: string;
   registryName?: string;
-  pollTurns?: number;
-  pollBudgetMs?: number;
+  approvalTimeoutSeconds: number;
   proxy?: string;
 }
 
@@ -202,8 +203,6 @@ export function* multisigInceptCommand(
         ...commandArgs,
         group,
         auto: true,
-        pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
-        pollBudgetMs: 1_000,
       }),
     );
     let delegationPhase: string | null = null;
@@ -246,22 +245,16 @@ export function* multisigJoinCommand(
     auto: args.auto as boolean | undefined,
     registryName: args.registryName as string | undefined,
     said: args.said as string | undefined,
-    pollTurns: args.pollTurns as number | undefined,
-    pollBudgetMs: args.pollBudgetMs as number | undefined,
+    approvalTimeoutSeconds: nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds"),
     proxy: args.proxy as string | undefined,
   };
-  const pollTurns = positiveInteger(commandArgs.pollTurns, 32, "poll turns");
-  const pollBudgetMs = positiveInteger(commandArgs.pollBudgetMs, 2_000, "poll budget milliseconds");
   const name = requireText(commandArgs.name, "Name");
 
   yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
-    const result = yield* waitForOneApproval(hby, runtime, {
-      ...multisigApprovalOptions(hby, { ...commandArgs, pollTurns, pollBudgetMs }),
-    });
+    const approval = multisigApprovalOptions(hby, commandArgs);
+    const result = yield* waitForOneApproval(hby, runtime, approval);
     if (!result) {
-      const local = yield* waitForLocalGroupCompletion(hby, runtime, {
-        ...multisigApprovalOptions(hby, { ...commandArgs, pollTurns, pollBudgetMs }),
-      });
+      const local = yield* waitForLocalGroupCompletion(hby, runtime, approval);
       if (!local) {
         throw new ValidationError("No matching multisig notification was available to join.");
       }
@@ -337,8 +330,6 @@ export function* multisigInteractCommand(
         ...commandArgs,
         group,
         auto: true,
-        pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
-        pollBudgetMs: 1_000,
       }),
     );
     if (accepted) {
@@ -422,8 +413,6 @@ export function* multisigRotateCommand(
         ...commandArgs,
         group,
         auto: true,
-        pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
-        pollBudgetMs: 1_000,
       }),
     );
     let delegationPhase: string | null = null;
@@ -490,8 +479,6 @@ export function* multisigRpyCommand(
           ...commandArgs,
           group: groupHab.pre,
           auto: true,
-          pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
-          pollBudgetMs: 1_000,
         }),
       )
       : result.accepted;
@@ -524,7 +511,19 @@ function* withMultisigRuntime<TResult>(
       skipConfig: true,
       skipSignator: false,
     },
-    use,
+    function*(context) {
+      const selector = args.alias ?? args.group;
+      const selected = selector ? context.hby.habByName(selector) ?? context.hby.habs.get(selector) : undefined;
+      const signer = selected && isLocalGroupHab(context.hby, selected)
+        ? localGroupMember(context.hby, selected.pre)
+        : selected;
+      const worker = yield* spawn(() => runAgentRuntime(context.runtime, { hab: signer }));
+      try {
+        return yield* use(context);
+      } finally {
+        yield* worker.halt();
+      }
+    },
   );
 }
 
@@ -574,8 +573,7 @@ function multisigApprovalOptions(
   return {
     group: args.group,
     said: args.said,
-    pollTurns: positiveInteger(args.pollTurns, 32, "poll turns"),
-    pollBudgetMs: positiveInteger(args.pollBudgetMs, 2_000, "poll budget milliseconds"),
+    deadline: Date.now() + args.approvalTimeoutSeconds * 1000,
     callbacks: multisigApprovalCallbacks(hby, args),
   };
 }
@@ -682,17 +680,6 @@ function* receiptAcceptedEvent(
   }
 }
 
-function positiveInteger(value: unknown, fallback: number, label: string): number {
-  if (value === undefined || value === null || value === "") {
-    return fallback;
-  }
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new ValidationError(`${label} must be a positive integer.`);
-  }
-  return parsed;
-}
-
 function nonNegativeNumber(value: unknown, fallback: number, label: string): number {
   if (value === undefined || value === null || value === "") {
     return fallback;
@@ -702,13 +689,6 @@ function nonNegativeNumber(value: unknown, fallback: number, label: string): num
     throw new ValidationError(`${label} must be a finite nonnegative number.`);
   }
   return parsed;
-}
-
-function approvalTimeoutTurns(approvalTimeoutSeconds: number | undefined): number {
-  if (approvalTimeoutSeconds === undefined || approvalTimeoutSeconds === null) {
-    return 40;
-  }
-  return Math.max(1, Math.floor(Number(approvalTimeoutSeconds) * 4));
 }
 
 function printIdentifier(
@@ -725,4 +705,143 @@ function printIdentifier(
   if (delegationPhase) {
     console.log(`Delegation status  ${delegationPhase}`);
   }
+}
+
+/** Approve stored proposals until the target event is accepted or the deadline expires. */
+function* waitForGroupAcceptance(
+  hby: Habery,
+  runtime: AgentRuntime,
+  serder: SerderKERI,
+  options: MultisigApprovalOptions & { deadline: number },
+): Operation<boolean> {
+  if (eventAccepted(hby, serder)) {
+    return true;
+  }
+  while (true) {
+    yield* approvePendingMultisigProposal(hby, runtime, options);
+    if (eventAccepted(hby, serder)) {
+      return true;
+    }
+    if (Date.now() >= options.deadline) break;
+    yield* sleep(Math.min(250, options.deadline - Date.now()));
+  }
+  return eventAccepted(hby, serder);
+}
+
+/** Wait for one stored proposal while the command host owns background progress. */
+function* waitForOneApproval(
+  hby: Habery,
+  runtime: AgentRuntime,
+  options: MultisigApprovalOptions & { deadline: number },
+): Operation<ApprovalResult | null> {
+  while (true) {
+    const result = yield* approvePendingMultisigProposal(hby, runtime, options);
+    if (result) {
+      return result;
+    }
+    if (Date.now() >= options.deadline) break;
+    yield* sleep(Math.min(250, options.deadline - Date.now()));
+  }
+  return null;
+}
+
+/** Wait for a locally authored group event to complete through stored approvals. */
+function* waitForLocalGroupCompletion(
+  hby: Habery,
+  runtime: AgentRuntime,
+  options: MultisigApprovalOptions & { deadline: number },
+): Operation<ApprovalResult | null> {
+  if (!options.group || options.said) {
+    return null;
+  }
+  const groupHab = groupHabByAliasOrPrefix(hby, options.group);
+  if (!groupHab?.pre) {
+    return null;
+  }
+  const serder = localGroupJoinSerder(hby, groupHab.pre);
+  if (!serder) {
+    return null;
+  }
+  const route = routeForKelEvent(serder);
+  if (!route) {
+    return null;
+  }
+  const accepted = yield* waitForGroupAcceptance(hby, runtime, serder, options);
+  return {
+    route,
+    said: "",
+    embedded: serder.said ?? "",
+    group: groupHab.pre,
+    accepted,
+    deliveries: [],
+  };
+}
+
+/** Approve stored proposals until the endpoint reply is accepted or the deadline expires. */
+function* waitForReplyAcceptance(
+  hby: Habery,
+  runtime: AgentRuntime,
+  groupPre: string,
+  role: string,
+  eid: string,
+  options: MultisigApprovalOptions & { deadline: number },
+): Operation<boolean> {
+  if (endpointRoleAccepted(hby, groupPre, role, eid)) {
+    return true;
+  }
+  while (true) {
+    yield* approvePendingMultisigProposal(hby, runtime, options);
+    if (endpointRoleAccepted(hby, groupPre, role, eid)) {
+      return true;
+    }
+    if (Date.now() >= options.deadline) break;
+    yield* sleep(Math.min(250, options.deadline - Date.now()));
+  }
+  return endpointRoleAccepted(hby, groupPre, role, eid);
+}
+
+/** Complete the delegation workflow for an accepted delegated group event. */
+function* completeDelegationIfNeeded(
+  hby: Habery,
+  runtime: AgentRuntime,
+  pre: string,
+  proxy?: string,
+): Operation<string | null> {
+  const kever = hby.db.getKever(pre);
+  if (!kever?.delpre) {
+    return null;
+  }
+  const communicationHab = resolveDelegationCommunicationHab(hby, proxy);
+  if (!communicationHab) {
+    throw new ValidationError(
+      `Delegated group event for ${pre} requires --proxy <alias>.`,
+    );
+  }
+  runtime.delegating.beginLatest(pre, kever.sn, { communicationHab });
+
+  const deadline = Date.now() + 120_000;
+  while (!runtime.delegating.complete(pre, kever.sn)) {
+    if (Date.now() >= deadline) throw new Error("Runtime did not converge within 120000ms.");
+    yield* sleep(Math.min(250, deadline - Date.now()));
+  }
+  return runtime.delegating.workflowStatus(pre, kever.sner.numh).phase;
+}
+
+function groupHabByAliasOrPrefix(hby: Habery, group: string): Hab | null {
+  return hby.habByName(group) ?? hby.habs.get(group) ?? null;
+}
+
+function localGroupJoinSerder(hby: Habery, groupPre: string): SerderKERI | null {
+  const kever = hby.db.getKever(groupPre);
+  if (kever?.serder) {
+    return kever.serder;
+  }
+  return hby.db.getEvtSerder(groupPre, groupPre);
+}
+
+function* sleep(ms: number): Operation<void> {
+  yield* action<void>((resolve) => {
+    const id = setTimeout(resolve, ms);
+    return () => clearTimeout(id);
+  });
 }

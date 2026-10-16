@@ -984,10 +984,37 @@ Deno.test("Interop delegation: public KLI approval completes a Tufa-generated de
       url: delegator.witnessOobi,
       alias: `${delegator.alias}-witness-after-approval`,
     });
-    await pumpTufaRuntimeUntil(
-      member1,
-      ({ hby }) => hby.db.getKever(group.group)?.sn === 0,
-      { timeoutMs: 120_000 },
+    const completion = await requireSuccess(
+      "tufa multisig join completes approved delegation",
+      runTufaWithTimeout(
+        [
+          "multisig",
+          "join",
+          "--name",
+          member1.name,
+          "--base",
+          base,
+          "--head-dir",
+          headDirPath,
+          "--passcode",
+          INTEROP_PASSCODE,
+          "--group",
+          "tufa-generated-group",
+          "--proxy",
+          "member1",
+          "--auto",
+          "--approval-timeout",
+          "0",
+        ],
+        ctx.env,
+        ctx.repoRoot,
+        120_000,
+      ),
+    );
+    assertStringIncludes(completion.stdout, "\"accepted\":true");
+    assertEquals(
+      await inspectTufaHabery(member1, (hby) => hby.db.cdel.getOn(group.group, 0)?.qb64),
+      group.said,
     );
 
     assertEquals(

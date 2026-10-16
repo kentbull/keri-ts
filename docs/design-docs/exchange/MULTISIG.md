@@ -30,15 +30,14 @@ preserve first-notice behavior for an already indexed proposal.
 route attributes/options. It checks route/child kind and constructs the commitment.
 It performs no parsing, payload reads, storage, disposal or signature authentication.
 
-Already-parsed callers retain their CesrFrame and use `nestedPayload` with the
-existing serializer. These views borrow every child/payload owner until all readers
-finish. Parent signatures and child evidence share one parent attachment enclosure.
+Already-parsed callers use `nestedPayload` with the existing serializer over
+ordinary hydrated child values. Parent signatures and child evidence share one parent attachment enclosure.
 V1 retains its pathed encoding and distinct aggregation key.
 
-`prepareMultisigEventExn` is the byte-input Effection operation: own cancellable
-parseBytes, delegate pure construction, collect nested wire under the finite 8 MiB
-ceiling and dispose all parsed frames in finally. Cancellation aborts underlying
-reads and joins cleanup. The returned finite bytes have no lazy owner dependency.
+`prepareMultisigEventExn` is the byte-input Effection operation: synchronously
+decode the finite child, delegate pure construction and collect nested wire.
+Serialization observes cancellation; ordinary parsed frames need no disposal.
+The returned finite bytes have no lazy owner dependency or application size policy.
 IPEX uses the [same responsibility split](IPEX.md).
 
 ## Scope and evidence
@@ -59,7 +58,7 @@ gid and both lists; interaction carries gid and signing members; reply carries g
 The child supplies its commitment. No open metadata slot or second child identity
 is accepted. Attribute values remain immutable borrows through byte preparation;
 the route selection is captured before parser suspension. Existing v1/v2 bytes,
-child-kind checks and frame disposal remain separate from this input contract.
+child-kind and proof checks remain separate from this input contract.
 Other route builders and inbound membership/codec contracts are separate concerns.
 
 For a v1 outer proposal carrying a legacy child body with another attachment
@@ -70,3 +69,17 @@ vectors cover all four routes and the intrinsic-genus omission case, comparing
 complete parent bytes and supplemental bytes after removing KERIpy's separately
 owned parent endorsement. This proves encoding parity, not complete bidirectional
 approval interoperability; the receiving workflow remains a separate audit.
+
+## CLI approval lifetime
+
+`approvePendingMultisigProposal` approves one matching stored proposal. It has
+no polling or deadline contract. CLI orchestration owns the host, waits, prompts
+and output; background mailbox/query/escrow workers run once for the command and
+join before stores close. Delegated-group completion observes those same workers.
+It must not start a nested runtime over the same Habery.
+
+`multisig join --approval-timeout <seconds>` sets one elapsed deadline for finding
+a proposal and its local-completion fallback (default 60 seconds). Zero permits
+an immediate stored-state attempt. Proposer approval waits also use elapsed
+seconds rather than deriving a turn count. Acceptance remains the actual KEL or
+endpoint-role state, not a mailbox poll or successful transmission.

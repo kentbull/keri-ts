@@ -386,7 +386,7 @@ Deno.test("tufa/cli - DID Webs and DID KERI commands dispatch expected handlers"
   assertEquals(dkr.args.oobi, ["http://127.0.0.1:5642/oobi/EAid"]);
 });
 
-Deno.test("tufa/cli - multisig runtime knobs dispatch renamed args", () => {
+Deno.test("tufa/cli - multisig approval deadlines dispatch seconds", () => {
   const incept = parseCommandSelection([
     "multisig",
     "incept",
@@ -410,16 +410,11 @@ Deno.test("tufa/cli - multisig runtime knobs dispatch renamed args", () => {
     "join",
     "-n",
     "store",
-    "--poll-turns",
+    "--approval-timeout",
     "6",
-    "--poll-budget-ms",
-    "700",
   ]);
   assertEquals(join.name, "multisig.join");
-  assertEquals(join.args.pollTurns, 6);
-  assertEquals(join.args.pollBudgetMs, 700);
-  assertEquals("maxTurns" in join.args, false);
-  assertEquals("budgetMs" in join.args, false);
+  assertEquals(join.args.approvalTimeoutSeconds, 6);
 
   const rpy = parseCommandSelection([
     "multisig",

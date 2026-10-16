@@ -109,8 +109,12 @@ those workers before stores close. The supervisor suspends; component loops own
 progress. Delegation approval likewise owns one host lifetime across all selected
 events; its phase predicates never pump workers. Group approvals select the local
 member as query/cue signer. Direct seal pinning and delegation escrow processing
-retain protocol ordering. Serial multisig/IPEX mailbox callers and their fixture
-counterparts remain removal work; do not claim one driving model is complete yet.
+retain protocol ordering. Multisig commands own one host too; stored approvals
+and endpoint/KEL acceptance wait under elapsed deadlines, including delegated-group
+completion without a nested host. Join shares its deadline with local-completion
+fallback and uses `--approval-timeout`, not poll-turn/budget knobs. Serial IPEX
+callers and fixture counterparts remain removal work; one driving model is not
+complete yet.
 
 QueryReplies reserves SAIDs for correlation, not capacity. Capture matching replies
 before background consumption; duplicates may iterate the same readonly replay.
