@@ -1281,11 +1281,7 @@ export async function requireSuccess(
 }
 
 /** Return one currently available localhost port for temporary test hosts. */
-export function randomPort(): number {
-  return availableLocalhostPort();
-}
-
-function availableLocalhostPort(excludedPorts = new Set<number>()): number {
+export function randomPort(excludedPorts = new Set<number>()): number {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const port = TEST_PORT_MIN + Math.floor(
       Math.random() * (TEST_PORT_MAX_EXCLUSIVE - TEST_PORT_MIN),
@@ -1528,8 +1524,8 @@ export async function startKeriPyWitnessHarness(
   const nodes: KeriPyWitnessNode[] = [];
   const allocatedPorts = new Set<number>();
   for (const alias of aliases) {
-    const httpPort = availableLocalhostPort(allocatedPorts);
-    const tcpPort = availableLocalhostPort(allocatedPorts);
+    const httpPort = randomPort(allocatedPorts);
+    const tcpPort = randomPort(allocatedPorts);
     await writeKeriPyWitnessConfig(configRoot, alias, httpPort, tcpPort);
     const pre = await initializeKeriPyWitness(
       ctx.kliCommand,
@@ -1819,8 +1815,8 @@ export async function startTufaWitnessHarness(
         ctx.env,
         ctx.repoRoot,
       );
-      const httpPort = availableLocalhostPort(allocatedPorts);
-      const tcpPort = availableLocalhostPort(allocatedPorts);
+      const httpPort = randomPort(allocatedPorts);
+      const tcpPort = randomPort(allocatedPorts);
       await assertTcpPortsFree(
         [httpPort, tcpPort],
         `Tufa witness ${alias}`,
