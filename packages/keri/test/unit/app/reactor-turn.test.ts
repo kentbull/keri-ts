@@ -323,6 +323,31 @@ Deno.test("runtime explicit close and scope exit release queued ingress and cue 
   });
 });
 
+Deno.test("input cancellation is owned before source construction", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const reactor = new Reactor(hby), failure = new Error("source construction failed");
+      let invoked = false, sourceSignal: AbortSignal | undefined;
+      const source = (signal: AbortSignal): AsyncIterable<Uint8Array> => {
+        invoked = true;
+        sourceSignal = signal;
+        throw failure;
+      };
+      const stopped = AbortSignal.abort(new Error("input already stopped"));
+      assertStrictEquals(
+        yield* call(() => assertRejects(() => run(() => reactor.process(source, { signal: stopped })))),
+        stopped.reason,
+      );
+      assertEquals(invoked, false);
+      assertStrictEquals(yield* call(() => assertRejects(() => run(() => reactor.process(source)))), failure);
+      assertEquals(sourceSignal?.aborted, true);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("stream cancellation joins the actual source cleanup", async () => {
   for (const fail of [false, true]) {
     const expected = fail ? new Error("late source cleanup failure") : undefined;

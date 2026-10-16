@@ -1,4 +1,3 @@
-import { toEffectionFrames } from "cesr-ts/effection";
 /**
  * Generic CESR POST/PUT ingress for the Tufa HTTP edge.
  *
@@ -6,8 +5,8 @@ import { toEffectionFrames } from "cesr-ts/effection";
  * the remaining raw CESR traffic and decides whether it belongs to local
  * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
  */
-import { Ilks, ParserError, ResourceAdmissionError, ResourceLimitError, type SerderKERI } from "cesr-ts";
-import { call, each, type Operation, resource, run } from "effection";
+import { Ilks, parse, ParserError, ResourceAdmissionError, ResourceLimitError, type SerderKERI } from "cesr-ts";
+import { call, ensure, type Operation, resource, run } from "effection";
 import {
   type AgentRuntime,
   type CueEmission,
@@ -17,6 +16,7 @@ import {
   queryEnvelopeFromDispatch,
   type QueryReply,
   requestBytes,
+  rethrowCleanupFailure,
   runtimeTurn,
   ValidationError,
 } from "keri-ts/runtime";
@@ -244,63 +244,93 @@ function* ingest(
   try {
     // This child scope closes its parser before an optional deferred query wait begins.
     yield* call(function*() {
-      const channel = yield* toEffectionFrames((signal) => requestBytes(context.req, { signal }), {
-        signal: context.req.signal,
-      });
-      for (const frame of yield* each(channel.frames)) {
-        yield* call(function*() {
-          if (query?.reply) {
-            const previous = query.reply;
-            // A later frame makes this an ordinary query; transfer its reply before releasing its reservation.
-            yield* runtime.reactor.settle(undefined, {}, function*() {
+      const controller = new AbortController();
+      const signal = AbortSignal.any([controller.signal, context.req.signal]);
+      try {
+        signal.throwIfAborted();
+        const frames = parse(requestBytes(context.req, { signal }), { signal });
+        let pending: ReturnType<typeof frames.next> | undefined;
+        // The earlier resource joins the read after processing children stop.
+        yield* ensure(function*() {
+          try {
+            if (pending) {
               try {
-                const habitats = runtime.hby.habs.values();
-                const first = habitats.next();
-                const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
-                if (hab && query!.authorized) {
-                  runtime.deliveries.enqueueReply(runtime, hab, previous);
-                }
-              } finally {
-                previous.close();
+                yield* call(() => pending!);
+              } catch (error) {
+                rethrowCleanupFailure(error, signal);
               }
-            });
-            yield* runtime.deliveries.process(runtime);
-          }
-          query = undefined;
-          seen = true;
-          const serder = frame.body as SerderKERI;
-          const route = classifyCesrIngressRoute(context, hosted, serder);
-          if (serder.ilk === Ilks.qry) {
-            query = {
-              serder,
-              mailbox: route.kind === "mailboxQueryStream",
-              authorized: false,
-              reply: context.policy.directQueryResponses && route.kind !== "mailboxQueryStream" && serder.said
-                ? runtime.reactor.replies.reserve(serder.said)
-                : undefined,
-            };
-          }
-          yield* runtime.reactor.settle(frame, {
-            local: route.kind === "witnessLocalIngress",
-            mailboxAid: route.kind === "witnessLocalIngress" ? hosted.endpoint?.eid : route.mailboxAid,
-            escrows: true,
-          }, function*(envelope, decision) {
-            if (query) {
-              // SAIDs exclude attachments: authorize this exact envelope, not an older query cue.
-              query.authorized = decision?.kind !== "drop" && decision?.kind !== "pending"
-                && decision?.kind !== "missing"
-                && (!query.mailbox || runtime.reactor.kevery.isMailboxQueryAuthorized(
-                  queryEnvelopeFromDispatch(envelope!),
-                ));
             }
-          });
-          if (route.kind === "witnessLocalIngress") {
-            yield* drainWitnessCues(runtime, route.witnessHab, runtime.cues);
-          } else {
-            yield* drainRuntimeCues(runtime, context.policy.serviceHab, runtime.cues);
+          } finally {
+            yield* call(() => frames.return());
           }
         });
-        yield* each.next();
+        while (true) {
+          pending = frames.next();
+          let result: Awaited<typeof pending>;
+          try {
+            result = yield* call(() => pending!);
+          } catch (error) {
+            pending = undefined;
+            throw error;
+          }
+          pending = undefined;
+          if (result.done) break;
+          const frame = result.value;
+          yield* call(function*() {
+            if (query?.reply) {
+              const previous = query.reply;
+              // A later frame makes this an ordinary query; transfer its reply before releasing its reservation.
+              yield* runtime.reactor.settle(undefined, {}, function*() {
+                try {
+                  const habitats = runtime.hby.habs.values();
+                  const first = habitats.next();
+                  const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
+                  if (hab && query!.authorized) {
+                    runtime.deliveries.enqueueReply(runtime, hab, previous);
+                  }
+                } finally {
+                  previous.close();
+                }
+              });
+              yield* runtime.deliveries.process(runtime);
+            }
+            query = undefined;
+            seen = true;
+            const serder = frame.body as SerderKERI;
+            const route = classifyCesrIngressRoute(context, hosted, serder);
+            if (serder.ilk === Ilks.qry) {
+              query = {
+                serder,
+                mailbox: route.kind === "mailboxQueryStream",
+                authorized: false,
+                reply: context.policy.directQueryResponses && route.kind !== "mailboxQueryStream" && serder.said
+                  ? runtime.reactor.replies.reserve(serder.said)
+                  : undefined,
+              };
+            }
+            yield* runtime.reactor.settle(frame, {
+              local: route.kind === "witnessLocalIngress",
+              mailboxAid: route.kind === "witnessLocalIngress" ? hosted.endpoint?.eid : route.mailboxAid,
+              escrows: true,
+            }, function*(envelope, decision) {
+              if (query) {
+                // SAIDs exclude attachments: authorize this exact envelope, not an older query cue.
+                query.authorized = decision?.kind !== "drop" && decision?.kind !== "pending"
+                  && decision?.kind !== "missing"
+                  && (!query.mailbox || runtime.reactor.kevery.isMailboxQueryAuthorized(
+                    queryEnvelopeFromDispatch(envelope!),
+                  ));
+              }
+            });
+            if (route.kind === "witnessLocalIngress") {
+              yield* drainWitnessCues(runtime, route.witnessHab, runtime.cues);
+            } else {
+              yield* drainRuntimeCues(runtime, context.policy.serviceHab, runtime.cues);
+            }
+          });
+        }
+      } finally {
+        controller.abort();
       }
     });
     if (!seen) return textResponse("Invalid CESR request", 400);

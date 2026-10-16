@@ -5,13 +5,13 @@ import {
   type CesrFrame,
   collectPayload,
   framePayload,
-  type ParseOptions,
+  parse,
   type Payload,
   ResourceAdmissionError,
 } from "cesr-ts";
-import { toEffectionFrames } from "cesr-ts/effection";
-import { call, each, type Operation, resource, scoped } from "npm:effection@^3.6.0";
+import { call, ensure, type Operation, resource, scoped } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
+import { rethrowCleanupFailure } from "./abortable.ts";
 import {
   CESR_ATTACHMENT_HEADER,
   CESR_CONTENT_TYPE,
@@ -48,12 +48,6 @@ export interface EgressOptions {
   signal?: AbortSignal;
   /** Injectable HTTP service for the owning runtime. */
   services?: RuntimeServices;
-}
-
-/** Parser staging and HTTP transport options for a progressively consumed source. */
-export interface PostOptions extends EgressOptions {
-  /** Parser cancellation and optional payload staging for this source. */
-  parse?: ParseOptions;
 }
 
 /** A request body pump has at most one outstanding payload read and no prefetch queue. */
@@ -279,7 +273,7 @@ function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions
 export function* postCesr(
   url: string,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
-  options: PostOptions = {},
+  options: EgressOptions = {},
   consume?: (response: Response) => Operation<void>,
 ): Operation<void> {
   const result = yield* attemptPostCesr(url, source, options, consume);
@@ -289,34 +283,55 @@ export function* postCesr(
 export function attemptPostCesr(
   url: string,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
-  options: PostOptions = {},
+  options: EgressOptions = {},
   consume?: (response: Response) => Operation<void>,
 ): Operation<CesrPostResult> {
   // Isolate joining cleanup so a halt cannot resume a delegated caller after payload disposal.
   return call(function*(): Operation<CesrPostResult> {
     const services = options.services ?? defaultRuntimeServices;
-    // Either caller-facing signal cancels both parsing and the request already consuming a frame.
-    const signals = [options.signal, options.parse?.signal].filter((value): value is AbortSignal =>
-      value !== undefined
-    );
-    const signal = signals.length ? AbortSignal.any(signals) : undefined;
-    // The adapter owns input cancellation and leaves each delivered ESSR payload with this loop.
-    const channel = yield* toEffectionFrames(source, {
-      ...options.parse,
-      signal,
-    });
-    for (const frame of yield* each(channel.frames)) {
-      {
-        // Each request is closed before another frame or request can become resident.
-        const result = yield* scoped(function*(): Operation<CesrPostResult> {
-          const response = yield* openFrameResponse(url, frame, { ...options, services, signal });
+    const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
+    try {
+      signal.throwIfAborted();
+      const frames = parse(source(signal), { signal });
+      let pending: ReturnType<typeof frames.next> | undefined;
+      // The earlier resource joins the read after processing children stop.
+      yield* ensure(function*() {
+        try {
+          if (pending) {
+            try {
+              yield* call(() => pending!);
+            } catch (error) {
+              rethrowCleanupFailure(error, signal);
+            }
+          }
+        } finally {
+          yield* call(() => frames.return());
+        }
+      });
+      while (true) {
+        pending = frames.next();
+        let result: Awaited<typeof pending>;
+        try {
+          result = yield* call(() => pending!);
+        } catch (error) {
+          pending = undefined;
+          throw error;
+        }
+        pending = undefined;
+        if (result.done) break;
+        const frame = result.value;
+        // Each request closes before the next input frame; it owns its separate HTTP cancellation.
+        const posted = yield* scoped(function*(): Operation<CesrPostResult> {
+          const response = yield* openFrameResponse(url, frame, { ...options, services });
           if (response.kind === "refuse") return response;
           if (consume) yield* consume(response.response);
           return { kind: "complete" };
         });
-        if (result.kind === "refuse") return result;
+        if (posted.kind === "refuse") return posted;
       }
-      yield* each.next();
+    } finally {
+      controller.abort();
     }
     return { kind: "complete" };
   });

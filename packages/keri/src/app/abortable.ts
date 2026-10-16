@@ -10,6 +10,13 @@ function remainingFailures(error: unknown, cancellation: unknown): unknown[] {
     : remaining;
 }
 
+/** Preserve foreign cleanup failures, removing only this owner's exact abort reason. */
+export function rethrowCleanupFailure(error: unknown, signal: AbortSignal): void {
+  const failures = remainingFailures(error, signal.reason);
+  if (failures.length === 1) throw failures[0];
+  if (failures.length) throw new AggregateError(failures, "I/O cleanup failed during cancellation");
+}
+
 /**
  * Own one cancellable Promise leaf inside an Effection operation.
  * The leaf must observe its signal; teardown aborts it and joins its cleanup before returning.
@@ -35,9 +42,7 @@ export function abortable<T>(
             await pending;
           } catch (error) {
             if (reported) return;
-            const failures = remainingFailures(error, signal.reason);
-            if (failures.length === 1) throw failures[0];
-            if (failures.length) throw new AggregateError(failures, "I/O cleanup failed during cancellation");
+            rethrowCleanupFailure(error, signal);
           }
         });
       }

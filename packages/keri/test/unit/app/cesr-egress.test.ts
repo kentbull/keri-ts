@@ -460,13 +460,13 @@ Deno.test("halting CESR delivery closes input and never resumes the caller after
   assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
 });
 
-Deno.test("CESR parser cancellation also aborts the request consuming its delivered frame", async () => {
+Deno.test("CESR input cancellation also aborts the request consuming its delivered frame", async () => {
   const controller = new AbortController();
   const request = Promise.withResolvers<void>();
   let aborted = false;
   const transport = services((_url, init) =>
     new Promise<Response>((_resolve, reject) => {
-      // The parser has handed ownership to HTTP; cancelling its option must still reach this pending request.
+      // The input is suspended during HTTP delivery; its cancellation still reaches this pending request.
       init!.signal!.addEventListener("abort", () => {
         aborted = true;
         reject(init!.signal!.reason);
@@ -477,7 +477,7 @@ Deno.test("CESR parser cancellation also aborts the request consuming its delive
   const sending = run(function*() {
     yield* postCesr("https://peer.test/", (signal) => chunkBytes(fixture(), { signal }), {
       services: transport,
-      parse: { signal: controller.signal },
+      signal: controller.signal,
     });
   });
   await request.promise;
