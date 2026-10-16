@@ -62,9 +62,10 @@ bulk accepted-row writes to bypass the workflow's verification.
 
 S1 validates decoded credential data with bounded local resource closure; legacy
 Schemer remains separate. S2/S3 retain typed missing dependencies while invalid
-schemas reject and infrastructure/resource failures propagate. NOT/DI2I are
-currently unsatisfied as in inspected 714; this is a gap to close where semantics
-are established, not a permanent constraint. Follow the
+schemas reject and infrastructure/resource failures propagate. TS DI2I now checks
+approved inception relationships, inception DND and typed missing KEL dependencies.
+NOT still needs authenticated validity/invalidity evidence; neither operator is
+implemented by the selected Python IPEX reference. Follow the
 [operator acceptance matrix](../qualification/GRADUATED_DISCLOSURE_INTEROP.md):
 test these operators in keri-ts, excluding them from Python interop until the
 selected reference supports them. Separate known invalidity from missing evidence

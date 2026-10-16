@@ -177,6 +177,33 @@ Deno.test("DI2I reads the far aggregate issuee and survives an unapproved later 
   });
 });
 
+Deno.test("DI2I requires the inception seal, not merely a signed delegator event", async () => {
+  await run(function*() {
+    const { source, validator, witness, chain } = yield* delegationChain(0);
+    const root = chain[0];
+    const delegate = source.makeHab("delegate", undefined, { delpre: root.pre, wits: [witness.pre], toad: 1 });
+    yield* learn(validator, witnessed(source, witness, delegate.kever!.serder));
+    root.interact({ data: [{ i: delegate.pre, s: "1", d: delegate.pre }] });
+    yield* learn(validator, witnessed(source, witness, root.kever!.serder));
+    const evidence = graph(delegate.pre, root.pre);
+    assertEquals(verifyIpexRelations(evidence, validator.db), { kind: "missingKel", pre: root.pre });
+    root.interact({ data: [{ i: delegate.pre, s: "0", d: delegate.pre }] });
+    yield* learn(validator, witnessed(source, witness, root.kever!.serder));
+    assertEquals(verifyIpexRelations(evidence, validator.db), true);
+  });
+});
+
+Deno.test("DI2I inception approval survives the delegator's later witness change", async () => {
+  await run(function*() {
+    const { source, validator, witness, chain, approvals } = yield* delegationChain(1);
+    yield* learn(validator, approvals[0]);
+    chain[0].rotate({ adds: [witness.pre], toad: 1 });
+    yield* learn(validator, witnessed(source, witness, chain[0].kever!.serder));
+    assertEquals(validator.db.getKever(chain[0].pre)?.toader.num, 1n);
+    assertEquals(verifyIpexRelations(graph(chain[1].pre, chain[0].pre), validator.db), true);
+  });
+});
+
 Deno.test("IPEX identity operators use wire order and targeted defaults", async () => {
   await run(function*() {
     const { validator, chain, approvals } = yield* delegationChain(1);

@@ -40,9 +40,9 @@ accept size-dependent memory use; bounded-memory qualification is not a gate.
    They do not close pairwise Python registry processing or mailbox IPEX delivery.
 2. Keep unsupported deeper nests, registry compact-attribute cases and unfinished
    processing guarded. Label frozen edge/operator outcomes by reference rather
-   than preserving implementation gaps as requirements. Implement DI2I/NOT where
-   reference support or established semantics suffice, with dedicated keri-ts
-   tests. Exclude them from Python interop until the selected reference supports
+   than preserving implementation gaps as requirements. TS DI2I's approval-chain
+   profile and dedicated regressions are implemented; NOT still needs its separate
+   authenticated validity model. Exclude both from Python interop until the reference supports
    them. Follow the [operator acceptance matrix](../qualification/GRADUATED_DISCLOSURE_INTEROP.md),
    refactoring validity/dependency decisions before changing NOT behavior.
 3. Exercise actual grant/admit coordination, dependencies, escrow/retry,

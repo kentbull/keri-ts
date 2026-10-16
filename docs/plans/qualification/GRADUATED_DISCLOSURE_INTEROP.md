@@ -80,6 +80,17 @@ a witness-held KEL whose delegated inception precedes delegator approval. Avoid
 an arbitrary depth cap or requiring approval of a later rotation to prove the
 inception relationship.
 
+The TS v2 graph now implements this DI2I profile. Seventeen dedicated cases cover
+identity, approved depths one through three, an ordinary disinterested validator,
+each missing approval in a witness-held chain, DND at root/intermediate hops,
+missing KELs, unrelated/untargeted cases, aggregate issuees, an unapproved later
+delegate rotation, the delegator's later witness change and a signed wrong-ordinal
+approval followed by the valid counterpart. A signed grant stays
+in proof escrow until its actual approval arrives. Read-only accepted-history
+lookup neither repairs hints nor imposes a depth cap. Identity operator precedence
+and targeted/untargeted defaults are also covered; the reference E1E entity-only
+extension remains explicit. These are TS tests, not Python DI2I interop.
+
 For NOT, refactor authenticated node evidence, known validity/invalidity and
 missing dependencies before changing behavior. The current grant pipeline
 rejects every invalid node before edge evaluation; negating a relation boolean
