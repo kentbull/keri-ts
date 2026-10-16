@@ -23,7 +23,7 @@ import {
   unverifiedReplyDecision,
 } from "../../../src/core/routing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
-import type { RegistryReplyDecision } from "../../../src/vdr/registry-tsn.ts";
+import type { RegistryReplyDecision } from "../../../src/vdr/eventing.ts";
 import { expectKind, routingTestApi, withPatchedMethod } from "../../private-access.ts";
 
 // @ts-expect-error An accepted proof plan requires verified material and its prior-reply policy.
@@ -36,7 +36,7 @@ void ({ kind: "unverified", reason: "dependencyPending", message: "waiting" } sa
 void ({
   kind: "unverified",
   reason: "dependencyPending",
-  // @ts-expect-error A registry receiver cannot return a credential escrow family.
+  // @ts-expect-error Registry TSN processing cannot return a credential escrow family.
   family: "credential-mae",
   message: "waiting",
 } satisfies RegistryReplyDecision);

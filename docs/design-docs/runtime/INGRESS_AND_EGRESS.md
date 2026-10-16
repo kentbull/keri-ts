@@ -21,6 +21,11 @@ Verifier; `runtime.acdc` is the independent v2 Regery. Both are null when a read
 Habery receives no injected store/manager. Composition supplies the actual Tevery,
 Verifier and v2 registry to Reactor. Dispatch borrows the concrete processors and
 never discovers them through a runtime or probes for optional processor methods.
+The root constructs one Revery and supplies it to Tevery and Reactor. Tevery owns
+TSN route registration, proof/state admission and Broker dependency retries; its
+escrow operation advances TEL dependencies before registry and credential notices.
+TEL-only Tevery needs no Revery; registering TSN routes without one fails before
+registering either route. Reactor does not name individual TSN handlers.
 `AgentRuntimeOptions.reger` and `.acdc` borrow caller-owned stores/managers; shutdown
 closes only defaults it acquired. A legacy borrowed Reger gets runtime-created
 processors using the same cue Deck. Application workflows may reject genuine

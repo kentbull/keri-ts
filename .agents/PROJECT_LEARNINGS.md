@@ -25,7 +25,9 @@ owns its evidence and limits; future changes still require relevant qualificatio
 [ADR-0013](../docs/adr/adr-0013-simple-component-flows.md) governs concrete
 KERIpy-shaped owners, records and Decks. Refactor responsibility/contracts first,
 then behavior. No runtime-shaped sibling bundles, generic execution gates or
-forwarding-only facades. Lower transport knows actual byte I/O, not AgentRuntime.
+forwarding-only facades. Lower transport knows actual byte I/O, not AgentRuntime. Tevery owns TSN route
+admission/retries; Reactor composes and advances the processor without naming
+its registry/credential handlers.
 Finite commands run the host workers under elapsed deadlines and join them before
 store teardown; phase-specific tests invoke actual component operations.
 

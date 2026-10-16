@@ -26,6 +26,7 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { QueryEnvelope } from "../core/eventing.ts";
+import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
 import { Kever } from "../core/kever.ts";
 import {
   projectRegistrySeal,
@@ -33,10 +34,21 @@ import {
   vcstate as credentialState,
 } from "../core/protocol-vdr-eventing.ts";
 import { RegStateRecord } from "../core/records.ts";
+import {
+  acceptReplyDecision,
+  type ReplyPlan,
+  type ReplyProcessDecision,
+  Revery,
+  type Router,
+  unverifiedReplyDecision,
+} from "../core/routing.ts";
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
+import type { BrokerProcessReplyArgs } from "../db/escrowing.ts";
 import type { Reger } from "../db/reger.ts";
-import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../time/mod.ts";
+import { credentialRecord } from "./credential-tsn-record.ts";
+import { qualifiedPrefix, registryRecord } from "./registry-tsn-record.ts";
 import { prepareTsnQuery } from "./tsn-query.ts";
 
 type TelIlk =
@@ -99,6 +111,8 @@ export interface TelProcessEventArgs {
 }
 
 export interface TeveryOptions {
+  /** Reply proof service for transaction-state notice admission; absent for TEL-only processors. */
+  rvy?: Revery;
   reger: Reger;
   db: Baser;
   local?: boolean;
@@ -106,7 +120,7 @@ export interface TeveryOptions {
   cues?: Deck<AgentCue>;
 }
 
-export interface TeverOptions extends TeveryOptions {
+export interface TeverOptions extends Omit<TeveryOptions, "rvy"> {
   rsr?: RegStateRecord | null;
   serder?: SerderKERI | null;
   seqner?: NumberPrimitive | null;
@@ -886,15 +900,23 @@ export class Tever {
   }
 }
 
+/** Missing dependencies for registry and credential transaction-state notices. */
+type RegistryEscrowFamily = "registry-mae" | "registry-ooo";
+type CredentialEscrowFamily = "credential-mre" | "credential-mae" | "credential-ooo";
+export type RegistryReplyDecision = ReplyProcessDecision<RegistryEscrowFamily>;
+export type CredentialReplyDecision = ReplyProcessDecision<CredentialEscrowFamily>;
+
 /**
- * TEL event router and escrow reprocessor.
+ * TEL event and transaction-state notice processor.
  *
  * `Tevery` owns registry-key routing, expected sequence checks, accepted
  * `Tever` cache persistence, and replay of anchorless/out-of-order TEL
- * escrows.
+ * escrows, plus TSN reply admission and dependency retries.
  */
 export class Tevery {
   static readonly TimeoutTSN = 3600_000;
+
+  private readonly rvy?: Revery;
 
   readonly db: Baser;
   readonly reger: Reger;
@@ -903,6 +925,7 @@ export class Tevery {
   readonly cues: Deck<AgentCue>;
 
   constructor(options: TeveryOptions) {
+    this.rvy = options.rvy;
     this.db = options.db;
     this.reger = options.reger;
     this.local = options.local ?? false;
@@ -1043,9 +1066,293 @@ export class Tevery {
     });
   }
 
+  /** Register both semantic TSN routes against this processor, as KERIpy Tevery does. */
+  registerReplyRoutes(router: Router): void {
+    this.replyVerifier();
+    router.addRoute("/tsn/registry/{aid}", this, "RegistryTxnState");
+    router.addRoute("/tsn/credential/{aid}", this, "CredentialTxnState");
+  }
+
+  /** TEL-only processors have no implicit reply verifier or TSN capability. */
+  private replyVerifier(): Revery {
+    if (!this.rvy) throw new TypeError("Transaction-state notice processing requires Revery.");
+    return this.rvy;
+  }
+
+  /** Admit a registry TSN using independent attester proof, accepted trust and current TEL correspondence. */
+  processReplyRegistryTxnState(
+    { serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs,
+  ): RegistryReplyDecision {
+    const rvy = this.replyVerifier();
+    const record = registryRecord(serder.ked?.a);
+    const stamp = serder.ked?.dt;
+    if (
+      !record || !qualifiedPrefix(aid) || typeof stamp !== "string" || timestampMicros(stamp) === null
+      || route !== `/tsn/registry/${aid}`
+      || serder.said !== diger.qb64 || !serder.verify()
+    ) {
+      return unverifiedReplyDecision("Invalid registry transaction-state notice.");
+    }
+    const regk = record.i, issuer = record.ii, sn = Number.parseInt(record.s, 16);
+    const previous = this.reger.txnsb.current([regk, aid]);
+    const disposeIncoming = () => {
+      if (previous?.qb64 !== diger.qb64) rvy.removeReply(diger);
+    };
+    const reject = (reason: string) => {
+      disposeIncoming();
+      return unverifiedReplyDecision(reason);
+    };
+    const saved = this.reger.states.get(regk);
+    const stored = saved ? registryRecord(saved.asDict()) : null;
+    if (saved && !stored) throw new Error("Corrupt stored registry state.");
+    if (stored && (stored.ii !== issuer || BigInt(`0x${stored.s}`) > BigInt(sn))) {
+      return reject("Mismatched issuer or stale registry state.");
+    }
+    const kever = this.db.getKever(issuer, { refresh: true });
+
+    let queryCues: readonly AgentCue[] = [];
+    const escrow = (typ: RegistryEscrowFamily, query: boolean, proof?: ReplyPlan): RegistryReplyDecision => {
+      const isNew = !this.reger.txnsb.hasStateNotice(typ, regk, aid, diger);
+      const cues: AgentCue[] = !isNew || !query
+        ? []
+        : typ === "registry-mae"
+        ? [{ kin: "query", pre: issuer, src: aid, route: "logs", q: {} }]
+        : [{ kin: "query", pre: issuer, src: aid, route: "tels", q: { ri: regk, i: "" } }];
+
+      if (proof) rvy.writeReply(proof);
+      const added = this.reger.txnsb.escrowStateNotice({
+        typ,
+        pre: regk,
+        aid,
+        serder,
+        diger,
+        dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
+        cigars,
+        tsgs,
+      });
+      if (added !== isNew) throw new Error("Registry escrow membership changed before publication");
+      // Broker now owns copied pending proof; retain prior accepted BADA evidence in Baser.
+      disposeIncoming();
+      if (queryCues.length) rvy.cues.extend(queryCues);
+      if (cues.length) rvy.cues.extend(cues);
+      return {
+        kind: "unverified",
+        reason: "dependencyPending",
+        family: typ,
+        message: "Registry state dependency unavailable.",
+      };
+    };
+    if (!kever) return escrow("registry-mae", true);
+    const watchers = new Set<string>();
+    for (const [, habitat] of this.db.getHabItemIter()) {
+      for (const watcher of habitat.watchers ?? []) watchers.add(watcher);
+    }
+    const trusted = aid === issuer || watchers.has(aid)
+      || (!!stored && (stored.c.includes(TraitDex.NoBackers) ? kever.wits : stored.b).includes(aid));
+    if (!trusted && stored) return reject("Untrusted registry state attester.");
+    if (previous && (!this.db.sdts.get([previous.qb64]) || !this.db.rpys.get([previous.qb64]))) {
+      throw new Error("Corrupt prior registry reply evidence.");
+    }
+    const proof = rvy.decideReply({
+      serder,
+      saider: diger,
+      route,
+      aid,
+      cigars,
+      tsgs,
+      osaider: previous?.qb64 === diger.qb64 ? null : previous,
+      retainPrevious: true,
+      externalEscrow: true,
+    });
+    queryCues = proof.cues;
+
+    if (proof.kind !== "accept") {
+      if (proof.reason === "proofPending") return escrow("registry-mae", false, proof);
+      rvy.writeReply(proof);
+      if (queryCues.length) rvy.cues.extend(queryCues);
+      return reject("Unverified registry state attester.");
+    }
+    const accepted = this.reger.tels.getOn(regk, sn);
+    if (!accepted) return escrow("registry-ooo", true, proof);
+    const raw = this.reger.tvts.get(dgKey(regk, accepted.qb64));
+    if (!raw || !stored || stored.d !== accepted.qb64) throw new Error("Corrupt accepted registry TEL state.");
+    const event = new SerderKERI({ raw });
+    if (!event.verify() || event.said !== accepted.qb64 || event.pre !== regk || event.sn !== sn) {
+      throw new Error("Corrupt accepted registry TEL body.");
+    }
+    if (!trusted || accepted.qb64 !== record.d) return reject("Registry state does not match accepted TEL.");
+    // Receiver-generated record time is descriptive; configuration and state fields must agree.
+    const fields = ["vn", "i", "s", "d", "ii", "et", "bt", "b", "c"] as const;
+    if (fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(stored[key]))) {
+      return reject("Registry state metadata mismatch.");
+    }
+    const dater = new Dater({ qb64: encodeDateTimeToDater(stamp) });
+    const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
+
+    rvy.writeReply(proof);
+    this.reger.txnsb.updateReply(aid, serder, diger, dater);
+    if (previous?.qb64 !== diger.qb64) rvy.removeReply(previous);
+    if (queryCues.length) rvy.cues.extend(queryCues);
+    if (cues.length) rvy.cues.extend(cues);
+    return acceptReplyDecision();
+  }
+
+  /** Admit a credential TSN against its own proof, registry dependency and current TEL/anchor commitments. */
+  processReplyCredentialTxnState(
+    { serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs,
+  ): CredentialReplyDecision {
+    const rvy = this.replyVerifier();
+    const record = credentialRecord(serder.ked?.a);
+    const stamp = serder.ked?.dt;
+    if (
+      !record || !qualifiedPrefix(aid) || typeof stamp !== "string" || timestampMicros(stamp) === null
+      || route !== `/tsn/credential/${aid}` || serder.said !== diger.qb64 || !serder.verify()
+    ) return unverifiedReplyDecision("Invalid credential transaction-state notice.");
+    const vci = record.i, regk = record.ri, sn = Number.parseInt(record.s, 16);
+    const previous = this.reger.txnsb.current([vci, aid]);
+    const disposeIncoming = () => {
+      if (previous?.qb64 !== diger.qb64) rvy.removeReply(diger);
+    };
+    const reject = (reason: string) => {
+      disposeIncoming();
+      return unverifiedReplyDecision(reason);
+    };
+    const saved = this.reger.states.get(regk);
+    const stored = saved ? registryRecord(saved.asDict()) : null;
+    if (saved && !stored) throw new Error("Corrupt stored registry state.");
+    const issuer = stored?.ii ?? aid;
+
+    let queryCues: readonly AgentCue[] = [];
+    const escrow = (typ: CredentialEscrowFamily, query: boolean, proof?: ReplyPlan): CredentialReplyDecision => {
+      const isNew = !this.reger.txnsb.hasStateNotice(typ, vci, aid, diger);
+      const cues: AgentCue[] = !isNew || !query
+        ? []
+        : typ === "credential-mae"
+        ? [{ kin: "query", pre: issuer, src: aid, route: "logs", q: {} }]
+        : [{
+          kin: "query",
+          pre: issuer,
+          src: aid,
+          route: "tels",
+          q: { ri: regk, i: typ === "credential-mre" ? "" : vci },
+        }];
+
+      if (proof) rvy.writeReply(proof);
+      const added = this.reger.txnsb.escrowStateNotice({
+        typ,
+        pre: vci,
+        aid,
+        serder,
+        diger,
+        dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
+        cigars,
+        tsgs,
+      });
+      if (added !== isNew) throw new Error("Credential escrow membership changed before publication");
+      disposeIncoming();
+      if (queryCues.length) rvy.cues.extend(queryCues);
+      if (cues.length) rvy.cues.extend(cues);
+      return {
+        kind: "unverified",
+        reason: "dependencyPending",
+        family: typ,
+        message: "Credential state dependency unavailable.",
+      };
+    };
+    const regsn = record.ra.s === undefined ? 0 : Number.parseInt(record.ra.s, 16);
+    if (!stored || Number.parseInt(stored.s, 16) < regsn) return escrow("credential-mre", true);
+    const tever = new Tever({ db: this.db, reger: this.reger, rsr: stored });
+    if (
+      !tever.serder.verify() || tever.serder.said !== stored.d
+      || this.reger.tels.getOn(regk, tever.sn)?.qb64 !== stored.d
+    ) throw new Error("Corrupt accepted registry TEL state.");
+    const kever = this.db.getKever(issuer, { refresh: true });
+    if (!kever) return escrow("credential-mae", true);
+    const watchers = new Set<string>();
+    for (const [, habitat] of this.db.getHabItemIter()) {
+      for (const watcher of habitat.watchers ?? []) watchers.add(watcher);
+    }
+    if (
+      aid !== issuer && !watchers.has(aid)
+      && !(stored.c.includes(TraitDex.NoBackers) ? kever.wits : stored.b).includes(aid)
+    ) {
+      return reject("Untrusted credential state attester.");
+    }
+    if (previous && (!this.db.sdts.get([previous.qb64]) || !this.db.rpys.get([previous.qb64]))) {
+      throw new Error("Corrupt prior credential reply evidence.");
+    }
+    const proof = rvy.decideReply({
+      serder,
+      saider: diger,
+      route,
+      aid,
+      cigars,
+      tsgs,
+      osaider: previous?.qb64 === diger.qb64 ? null : previous,
+      retainPrevious: true,
+      externalEscrow: true,
+    });
+    queryCues = proof.cues;
+
+    if (proof.kind !== "accept") {
+      if (proof.reason === "proofPending") return escrow("credential-mae", false, proof);
+      rvy.writeReply(proof);
+      if (queryCues.length) rvy.cues.extend(queryCues);
+      return reject("Unverified credential state attester.");
+    }
+    const accepted = this.reger.tels.getOn(vci, sn);
+    if (!accepted) return escrow("credential-ooo", true, proof);
+    const current = tever.vcState(vci);
+    const raw = this.reger.tvts.get(dgKey(vci, accepted.qb64));
+    if (!raw || !current) throw new Error("Corrupt accepted credential TEL state.");
+    const event = new SerderKERI({ raw });
+    if (!event.verify() || event.pre !== vci || event.sn !== sn || event.said !== accepted.qb64) {
+      throw new Error("Corrupt accepted credential TEL body.");
+    }
+    if (Tevery.registryKey(event) !== regk) return reject("Credential belongs to a different registry.");
+    const fields = ["vn", "i", "s", "d", "ri", "dt", "et"] as const;
+    if (
+      accepted.qb64 !== record.d || fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(current[key]))
+      || (["s", "d"] as const).some((key) => record.a[key] !== current.a[key])
+      || (["i", "s", "d"] as const).some((key) => record.ra[key] !== current.ra[key])
+    ) return reject("Credential state does not match current accepted TEL and anchors.");
+    const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
+
+    rvy.writeReply(proof);
+    this.reger.txnsb.updateReply(
+      aid,
+      serder,
+      diger,
+      new Dater({ qb64: encodeDateTimeToDater(stamp) }),
+    );
+    if (previous?.qb64 !== diger.qb64) rvy.removeReply(previous);
+    if (queryCues.length) rvy.cues.extend(queryCues);
+    if (cues.length) rvy.cues.extend(cues);
+    return acceptReplyDecision();
+  }
+
+  /** Retry TEL dependencies first, then registry and credential notices on the same owning processor. */
   processEscrows(): void {
     this.processEscrowAnchorless();
     this.processEscrowOutOfOrders();
+    if (!this.rvy) return;
+    for (const typ of ["registry-mae", "registry-ooo"]) {
+      this.reger.txnsb.retryStateNotices(typ, (args) => {
+        const decision = this.processReplyRegistryTxnState(args);
+        if (decision.kind === "accept") return acceptEscrow();
+        if (decision.reason === "dependencyPending" && decision.family === typ) return keepEscrow("recoverableError");
+        return dropEscrow("processingError");
+      });
+    }
+    for (const typ of ["credential-mre", "credential-mae", "credential-ooo"]) {
+      this.reger.txnsb.retryStateNotices(typ, (args) => {
+        const decision = this.processReplyCredentialTxnState(args);
+        if (decision.kind === "accept") return acceptEscrow();
+        return decision.reason === "dependencyPending" && decision.family === typ
+          ? keepEscrow("recoverableError")
+          : dropEscrow("processingError");
+      });
+    }
   }
 
   processEscrowOutOfOrders(): void {

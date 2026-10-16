@@ -5,10 +5,8 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { Kevery, type MessagePolicy } from "../core/eventing.ts";
 import { type KramConfig, Kramer } from "../core/kraming.ts";
-import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
-import { CredentialStateReceiver } from "../vdr/credential-tsn.ts";
+import { BasicReplyRouteHandler, Revery, type Router } from "../core/routing.ts";
 import { Tevery } from "../vdr/eventing.ts";
-import { RegistryStateReceiver } from "../vdr/registry-tsn.ts";
 import { rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
@@ -79,13 +77,12 @@ export class Reactor {
   readonly tevery?: Tevery;
   readonly verifier?: Verifier;
   readonly registry?: AcdcRegery;
-  private readonly registryStates?: RegistryStateReceiver;
-  private readonly credentialStates?: CredentialStateReceiver;
   constructor(
     hby: Habery,
     {
       cues,
       protocolCues,
+      revery,
       local = false,
       tevery,
       verifier,
@@ -97,6 +94,8 @@ export class Reactor {
       cues?: Deck<AgentCue>;
       /** The actual TEL/verifier producer flow when composed outside Reactor. */
       protocolCues?: Deck<AgentCue>;
+      /** Shared reply processor constructed with the TEL processor at composition. */
+      revery?: Revery;
       local?: boolean;
       tevery?: Tevery;
       verifier?: Verifier;
@@ -111,11 +110,11 @@ export class Reactor {
     this.hby = hby;
     this.cues = cues ?? new Deck();
     this.replies = new QueryReplies(this.cues);
-    this.protocolCues = protocolCues ?? new Deck();
+    this.protocolCues = protocolCues ?? revery?.cues ?? new Deck();
     if (this.protocolCues === this.cues) throw new TypeError("Protocol and application cue flows must be distinct");
     this.ingress = new Deck();
-    this.router = new Router();
-    this.revery = new Revery(hby.db, { rtr: this.router, cues: this.protocolCues });
+    this.revery = revery ?? new Revery(hby.db, { cues: this.protocolCues });
+    this.router = this.revery.rtr;
     this.replyRoutes = new BasicReplyRouteHandler(this.revery);
     this.replyRoutes.registerReplyRoutes(this.router);
     const kramer = kram ? new Kramer(hby.db, { config: kram, cues: this.protocolCues, now }) : undefined;
@@ -126,12 +125,7 @@ export class Reactor {
     this.tevery = tevery;
     this.verifier = verifier;
     this.registry = registry;
-    if (tevery) {
-      this.registryStates = new RegistryStateReceiver(tevery, this.revery);
-      this.router.addRoute("/tsn/registry/{aid}", this.registryStates);
-      this.credentialStates = new CredentialStateReceiver(tevery, this.revery);
-      this.router.addRoute("/tsn/credential/{aid}", this.credentialStates);
-    }
+    tevery?.registerReplyRoutes(this.router);
   }
 
   /** Whether the complete-record queue still has input to process. */
@@ -333,8 +327,6 @@ export class Reactor {
     this.kevery.processEscrows();
     this.revery.processEscrowReply();
     this.tevery?.processEscrows();
-    this.registryStates?.processEscrows();
-    this.credentialStates?.processEscrows();
     this.verifier?.processEscrows();
     this.registry?.processEscrows();
     yield* this.exchanger.processEscrows();
