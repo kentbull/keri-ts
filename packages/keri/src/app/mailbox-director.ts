@@ -235,6 +235,7 @@ export class MailboxDirector {
     topicCursor: MbxTopicCursor,
     options: MailboxStreamOptions = {},
   ): ReadableStream<Uint8Array> {
+    if (this.correlationsClosed) throw new Error("Mailbox stream is closed");
     const credit = this.admit();
     try {
       return this.mailboxStream(pre, this.cursor(pre, topicCursor), options, () => credit.release(), true);

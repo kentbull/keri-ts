@@ -34,6 +34,7 @@ Deno.test("mailbox director stops active stream polling before its store closes"
 
   assertEquals(polls, pollsAtClose);
   assertEquals(await finished, { value: undefined, done: true });
+  assertThrows(() => director.streamMailbox("aid", { "/challenge": 0 }), Error, "closed");
 });
 
 Deno.test("mailbox director closes a pending query response during runtime shutdown", async () => {
@@ -109,7 +110,7 @@ Deno.test("mailbox query and nested provider share admission before metadata or 
   assertEquals([resources.used.streams, rows], [1, 1]);
   assertThrows(() => director.streamMailbox("aid", { "/reply": 0 }), ResourceAdmissionError, "busy");
   assertEquals(rows, 1);
-  await director.close();
+  await reader.cancel();
   assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   assertEquals((await reader.read()).done, true);
   let copied = false;
@@ -129,6 +130,7 @@ Deno.test("mailbox query and nested provider share admission before metadata or 
   const retry = director.streamMailbox("aid", { "/reply": 0 }).getReader();
   await retry.cancel();
   assertEquals(resources.used.streams, 0);
+  await director.close();
 });
 
 Deno.test("mailbox correlation preserves preceding order through joined shutdown", async () => {
