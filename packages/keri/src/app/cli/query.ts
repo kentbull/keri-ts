@@ -16,10 +16,15 @@ import { SealEvent } from "cesr-ts";
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
-import { runAgentRuntime, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
+import {
+  queryTransportSink,
+  runAgentRuntime,
+  runtimeHasPendingWork,
+  runtimeTurn,
+} from "../agent-runtime.ts";
+
 import type { Hab } from "../habbing.ts";
 import { flattenRoleUrls } from "../mailboxing.ts";
-import { queryTransportSink } from "../runtime-deliveries.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
 import { printExternal } from "./common/displaying.ts";
 
@@ -126,7 +131,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
       skipSignator: true,
     },
     function*({ hby, runtime, hab }) {
-      const sink = queryTransportSink(runtime, hby, hab);
+      const sink = queryTransportSink(runtime, hab);
 
       let watchDone = () => false;
       if (anchor) {

@@ -1,6 +1,6 @@
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
-import type { AgentCue } from "../core/cues.ts";
+import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
@@ -20,7 +20,7 @@ import { createReger, Reger } from "../db/reger.ts";
 import { Regery as VdrRegery } from "../vdr/credentialing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
-import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
+import { type CueAdmission, cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
 import { Anchorer, loadDelegationHandlers } from "./delegating.ts";
 import {
   ForwardHandler,
@@ -41,7 +41,6 @@ import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { ReplyStreams } from "./reply-streams.ts";
 import { Respondant } from "./respondant.ts";
-import { RuntimeDeliveries } from "./runtime-deliveries.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
@@ -96,8 +95,6 @@ export interface AgentRuntime {
   querying: QueryCoordinator;
   /** Live lazy HTTP replies, closed before their database owners. */
   replyStreams: ReplyStreams;
-  /** Transitional query-only output queue; reply state belongs to Respondant. */
-  deliveries: RuntimeDeliveries;
   /** Concrete legacy TEL/credential owner; absent for a readonly Habery without an injected store. */
   readonly vdr: VdrRegery | null;
   /** V2 registry services, separately owned from the legacy VDR environment. */
@@ -221,14 +218,6 @@ export function* createAgentRuntime(
       streams.close();
     }
   });
-  const deliveries = yield* resource<RuntimeDeliveries>(function*(provide) {
-    const deliveries = new RuntimeDeliveries();
-    try {
-      yield* provide(deliveries);
-    } finally {
-      yield* deliveries.close();
-    }
-  });
   const reactor = new Reactor(hby, {
     cues,
     tevery: vdr?.tvy,
@@ -300,7 +289,7 @@ export function* createAgentRuntime(
     mailboxDirector.registerTopic(topic);
   }
   const querying = yield* resource<QueryCoordinator>(function*(provide) {
-    const coordinator = new QueryCoordinator(hby);
+    const coordinator = new QueryCoordinator(hby, { reactor, services });
     try {
       yield* provide(coordinator);
     } finally {
@@ -328,7 +317,6 @@ export function* createAgentRuntime(
     delegating,
     querying,
     replyStreams,
-    deliveries,
     vdr,
     acdc,
     services,
@@ -344,9 +332,6 @@ export function* createAgentRuntime(
         },
         function*() {
           yield* respondant.close();
-        },
-        function*() {
-          yield* deliveries.close();
         },
         function*() {
           yield* call(() => Promise.resolve(replyStreams.close()));
@@ -584,7 +569,7 @@ export function* processRuntimeTurn(
   yield* runtime.delegating.processAllOnce(runtime);
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
-  yield* runtime.deliveries.process(runtime);
+  yield* runtime.querying.deliverOnce();
   yield* runtime.respondant.process();
 }
 
@@ -611,7 +596,7 @@ export function runtimePendingState(
       || runtime.hby.db.dune.cnt() > 0
       || runtime.hby.db.dpub.cnt() > 0,
     queriesPending: runtime.querying.hasPendingWork(),
-    deliveriesPending: runtime.deliveries.hasPending || runtime.respondant.hasPending,
+    deliveriesPending: runtime.querying.hasPendingDelivery || runtime.respondant.hasPending,
   };
 }
 
@@ -747,7 +732,7 @@ export function* runAgentRuntime(
   const tasks = [
     yield* spawn(function*() {
       while (true) {
-        yield* runtime.deliveries.process(runtime);
+        yield* runtime.querying.deliverOnce();
         yield* runtime.respondant.process();
         yield* runtimeTurn();
       }
@@ -796,4 +781,42 @@ export function* runAgentRuntime(
       yield* task.halt();
     }
   }
+}
+
+/**
+ * Create the cue sink that sends outbound `qry` messages through HTTP or TCP.
+ *
+ * Ownership split:
+ * - QueryCoordinator owns preparation, signed packets and actual query I/O
+ * - this root-level adapter retains the existing host-selection policy until
+ *   the optional cue hooks are removed
+ */
+export function queryTransportSink(
+  runtime: AgentRuntime,
+  hab: Hab,
+): CueSink {
+  const sink: CueSink = {
+    admitCue(source, interpreter) {
+      if (source !== runtime.cues) throw new RangeError("Query sink requires its composed source queue");
+      const cue = source.peekHead();
+      if (cue?.kin !== "query" || !interpreter) return "ineligible";
+      const admission = sink.admitQuery!(cue, () => {
+        const emission = interpreter.interpretCue(cue);
+        return emission?.kind === "wire" ? emission : null;
+      });
+      if (admission === "transferred") {
+        if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
+        source.pull();
+      }
+      return admission;
+    },
+    admitQuery(cue, prepare): CueAdmission {
+      return runtime.querying.queueEmission(hab, prepare()) ? "transferred" : "ineligible";
+    },
+    *send(emission: CueEmission): Operation<void> {
+      if (emission.kind !== "wire" || emission.cue.kin !== "query") return;
+      runtime.querying.queueEmission(hab, emission);
+    },
+  };
+  return sink;
 }

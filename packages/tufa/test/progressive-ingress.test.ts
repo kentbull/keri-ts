@@ -38,8 +38,8 @@ import {
   readCesrRequestBytes,
 } from "keri-ts/runtime";
 import { abortable } from "../../keri/src/app/abortable.ts";
+import { queryTransportSink } from "../../keri/src/app/agent-runtime.ts";
 import { acceptedEventReplayMessage } from "../../keri/src/app/habbing.ts";
-import { queryTransportSink } from "../../keri/src/app/runtime-deliveries.ts";
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
 import { messagize, serializeMessage } from "../../keri/src/core/protocol-serialization.ts";
 import { incept as inceptRegistry, issue } from "../../keri/src/core/protocol-vdr-eventing.ts";
@@ -645,7 +645,7 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
         yield* processRuntimeTurn(runtime, {
           hab: sender,
           pollMailbox: false,
-          sink: queryTransportSink(runtime, hby, sender),
+          sink: queryTransportSink(runtime, sender),
         });
         assertEquals(
           outgoing.length,

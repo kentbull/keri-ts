@@ -13,9 +13,13 @@
  */
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { createAgentRuntime, processRuntimeUntil } from "../agent-runtime.ts";
+import {
+  createAgentRuntime,
+  processRuntimeUntil,
+  queryTransportSink,
+} from "../agent-runtime.ts";
+
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
-import { queryTransportSink } from "../runtime-deliveries.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { withExistingHab } from "./common/context.ts";
 import {
@@ -219,11 +223,7 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
             communicationHab,
           });
           const snh = hab.kever.sn.toString(16);
-          const sink = queryTransportSink(
-            runtime,
-            hby,
-            communicationHab ?? hab,
-          );
+          const sink = queryTransportSink(runtime, communicationHab ?? hab);
           yield* processRuntimeUntil(
             runtime,
             () => runtime.delegating.complete(hab.pre, hab.kever!.sn),

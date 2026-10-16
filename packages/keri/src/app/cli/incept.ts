@@ -4,14 +4,15 @@ import {
   type AgentRuntime,
   createAgentRuntime,
   processRuntimeUntil,
+  queryTransportSink,
   runtimeHasPendingWork,
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
 } from "../agent-runtime.ts";
+
 import { type Configer, createConfiger } from "../configing.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import type { Habery } from "../habbing.ts";
-import { queryTransportSink } from "../runtime-deliveries.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import { InceptFileOptions, loadInceptFileOptions, parseDataItems, parseThresholdOption } from "./common/parsing.ts";
@@ -190,7 +191,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
           runtime.delegating.beginLatest(hab.pre, 0, {
             communicationHab,
           });
-          const sink = queryTransportSink(runtime, hby, communicationHab);
+          const sink = queryTransportSink(runtime, communicationHab);
           yield* processRuntimeUntil(
             runtime,
             () => runtime.delegating.complete(hab.pre, 0),

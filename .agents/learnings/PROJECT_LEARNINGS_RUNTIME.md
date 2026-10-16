@@ -49,13 +49,15 @@ a runtime-shaped delivery bundle. Respondant owns its private reply cursors,
 ordered correlation batches and exact failed packets. CueDelivery and
 DirectReplyDelivery are deleted; their routing/publication callbacks are gone.
 Respondant borrows the actual Poster, Reactor and ReplyStreams. RuntimeDeliveries
-now carries queries only and remains an input to the QueryCoordinator cleanup.
+is deleted; QueryCoordinator owns query routing/signing, ordinary queued packets
+and joined response I/O using actual Reactor/clock/HTTP dependencies. Its producer
+and transport passes preserve source records and exact wire on failure/cancellation.
 Ordinary cues, routes, packets and reply batches have no synthetic lifecycle.
 Consumers perform interpretation/publication/source removal directly, without a
 generic callback-based cue publication helper. Failure preserves the source.
 Drains use the initial queue extent, and no-emission records do not stop the pass.
 Real iterator cleanup occurs once, even if it throws. Custom sinks run outside
-guarded interpretation. Optional CueSink hooks, the remaining query wrapper, the broad Reactor gate and
+guarded interpretation. Optional CueSink hooks, the broad Reactor gate and
 duplicate whole-runtime driving remain removal inputs, not new abstractions.
 
 Reactor currently serializes dispatch, escrows and cue handling. Never reenter it

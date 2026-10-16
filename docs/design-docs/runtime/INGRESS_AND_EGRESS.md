@@ -102,9 +102,13 @@ interpret the complete correlation batch before publishing either destination an
 then take its records. Failed second-TSN interpretation leaves the pair pending.
 The HTTP reader and outbound delivery consume the same signed emissions independently;
 queue publication does not open replay. Actual cursor cleanup runs once, even if it
-fails, and active transport joins before stores close. RuntimeDeliveries now carries
-queries only. Its deletion into QueryCoordinator, optional CueSink hooks, the broad
-Reactor gate and duplicate whole-runtime driving remain unfinished.
+fails, and active transport joins before stores close. RuntimeDeliveries is deleted;
+QueryCoordinator owns both deferred requests and signed query packets. Construction
+supplies its actual Reactor and clock/HTTP services; query code never receives an
+AgentRuntime. Its close stops production and joins response I/O before clearing
+records or closing stores. The root queryTransportSink adapter keeps existing host
+selection while optional CueSink hooks, the broad Reactor gate and duplicate
+whole-runtime driving remain unfinished.
 
 QueryCoordinator owns a private ordinary Deck of QueryRequest records. Its
 inspection surface exposes length/empty/peekHead. The selected local signer is

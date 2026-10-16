@@ -13,6 +13,7 @@ import { type CueSink } from "../../../src/app/cue-runtime.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { type AnchorQuerier, QueryCoordinator } from "../../../src/app/querying.ts";
+import { Reactor } from "../../../src/app/reactor.ts";
 import type { QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { type KeverEventEnvelope } from "../../../src/core/eventing.ts";
@@ -230,6 +231,7 @@ Deno.test("queued queries resolve the selected signer at consumption and never s
     const ambient = hby.makeHab("ambient"), selected = hby.makeHab("selected"), subject = hby.makeHab("subject");
     const messages: Uint8Array[] = [];
     const coordinator = new QueryCoordinator(hby, {
+      reactor: new Reactor(hby),
       hab: ambient,
       sink: {
         *send(emission) {
@@ -750,6 +752,7 @@ Deno.test("QueryCoordinator prepares admitted requests without a parent runtime"
     const hab = hby.makeHab("requester");
     let prepared = 0;
     const coordinator = new QueryCoordinator(hby, {
+      reactor: new Reactor(hby),
       hab,
       sink: {
         admitQuery(_cue, prepare) {
@@ -787,7 +790,7 @@ Deno.test("query queues keep failed deliveries and defer newly appended work to 
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("alice");
     seedControllerEndpoint(hby, hab.pre);
-    const coordinator = new QueryCoordinator(hby, { hab });
+    const coordinator = new QueryCoordinator(hby, { reactor: new Reactor(hby), hab });
     try {
       const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
       coordinator.enqueue(request);
@@ -830,7 +833,7 @@ Deno.test("query cancellation preserves its in-flight request and permits the ne
       const hab = hby.makeHab("alice");
       seedControllerEndpoint(hby, hab.pre);
       const entered = Promise.withResolvers<void>();
-      const coordinator = new QueryCoordinator(hby, { hab });
+      const coordinator = new QueryCoordinator(hby, { reactor: new Reactor(hby), hab });
       const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
       coordinator.configure({
         hab,
@@ -945,7 +948,11 @@ Deno.test("anchor queries ask every attester once and complete on accepted state
     const first = hby.makeHab("first", undefined, { transferable: false, ncount: 0 });
     const second = hby.makeHab("second", undefined, { transferable: false, ncount: 0 });
     const emissions: CueRecord[] = [];
-    const coordinator = new QueryCoordinator(hby, { hab: requester, sink: captureSink(emissions) });
+    const coordinator = new QueryCoordinator(hby, {
+      reactor: new Reactor(hby),
+      hab: requester,
+      sink: captureSink(emissions),
+    });
     const seal = { i: requester.pre, s: "0", d: requester.pre };
     const anchor = coordinator.watchAnchor(requester.pre, seal, { wits: [first.pre, second.pre] });
     try {

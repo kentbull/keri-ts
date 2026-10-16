@@ -2,14 +2,22 @@ import { call, run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
 import { attachmentPayload, collectPayload, concatBytes, parse } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+  queryTransportSink,
+} from "../../../src/app/agent-runtime.ts";
+
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { introduce } from "../../../src/app/forwarding.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
-import { acceptedEventReplayMessage } from "../../../src/app/habbing.ts";
-import { queryTransportSink } from "../../../src/app/runtime-deliveries.ts";
+import {
+  acceptedEventReplayMessage,
+  createHabery,
+} from "../../../src/app/habbing.ts";
+
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
 /** Collect the finite signed fixture through the same progressive frame boundary used by HTTP output. */
@@ -98,7 +106,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             remoteController.pre,
             { route: "logs" as const, q: { s: "0", fn: "0" } },
           );
-          const sink = queryTransportSink(runtime, hby, sender);
+          const sink = queryTransportSink(runtime, sender);
 
           yield* sink.send({
             kind: "wire",
@@ -114,7 +122,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
 
           // The guarded cue sink queues delivery; this separate turn owns the response.
           assertEquals(bodies.length, 0);
-          yield* runtime.deliveries.process(runtime);
+          yield* runtime.querying.deliverOnce();
           assertEquals(
             bodies,
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteController.pre), query))),
@@ -134,7 +142,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             },
             messages: [selectedQuery],
           });
-          yield* runtime.deliveries.process(runtime);
+          yield* runtime.querying.deliverOnce();
           assertEquals(
             bodies.slice(beforeSelected),
             yield* call(() => expectedMessages(concatBytes(introduce(selected, remoteController.pre), selectedQuery))),
@@ -215,7 +223,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
             yield* runtime.querying.processPending();
             assertEquals([runtime.cues.empty, runtime.querying.pending.empty, signed.length], [true, true, 2]);
-            assertEquals(runtime.deliveries.hasPending, true, "both prepared query records await delivery");
+            assertEquals(runtime.querying.hasPendingDelivery, true, "both prepared query records await delivery");
             const captured = concatBytes(introduce(sender, remoteController.pre), signed[0]);
             sender.rotate();
             yield* runtime.reactor.process((signal) =>
@@ -225,7 +233,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               )
             );
             const before = bodies.length;
-            yield* runtime.deliveries.process(runtime);
+            yield* runtime.querying.deliverOnce();
             assertEquals(
               bodies.slice(before, before + (yield* call(() => expectedMessages(captured))).length),
               yield* call(() => expectedMessages(captured)),
@@ -357,7 +365,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
               },
             },
           );
-          const sink = queryTransportSink(runtime, hby, sender);
+          const sink = queryTransportSink(runtime, sender);
 
           yield* sink.send({
             kind: "wire",
@@ -378,7 +386,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
 
           // The guarded cue sink queues delivery; this separate turn owns the response.
           assertEquals(bodies.length, 0);
-          yield* runtime.deliveries.process(runtime);
+          yield* runtime.querying.deliverOnce();
           assertEquals(
             bodies,
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteWitness.pre), query))),
@@ -402,7 +410,8 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           });
           yield* runtime.querying.processPending();
           assertEquals(tcpConnections, 0, "guarded query preparation performs no network I/O");
-          assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });
+          yield* runtime.querying.deliverOnce();
+          assertEquals(runtime.querying.hasPendingDelivery, false);
           assertEquals(hby.db.getKever(remoteController.pre)?.sn, 0, "TCP drain does not satisfy the query");
           assertEquals(waiting.done, false);
           remoteHby.db.wigs.put(
@@ -412,7 +421,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           reply = acceptedEventReplayMessage(remoteHby, remoteController.pre, 1).message;
           enqueue();
           yield* runtime.querying.processPending();
-          yield* runtime.deliveries.process(runtime);
+          yield* runtime.querying.deliverOnce();
           assertEquals(tcpConnections, 2);
           assertEquals(
             hby.db.getKever(remoteController.pre)?.sn,
@@ -552,7 +561,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
             remoteController.pre,
             { route: "logs" as const, q: { s: "0", fn: "0" } },
           );
-          const sink = queryTransportSink(runtime, hby, sender);
+          const sink = queryTransportSink(runtime, sender);
 
           yield* sink.send({
             kind: "wire",
@@ -614,7 +623,7 @@ Deno.test("query delivery settles a streamed reply after releasing the guarded c
     try {
       hby.db.locs.pin([peer.pre, "http"], { url: "http://query-peer.test/" });
       hby.db.ends.pin([peer.pre, EndpointRoles.controller, peer.pre], { allowed: true });
-      const sink = queryTransportSink(runtime, hby, sender);
+      const sink = queryTransportSink(runtime, sender);
       const emission = {
         kind: "wire" as const,
         cue: { kin: "query" as const, pre: peer.pre, src: peer.pre, route: "logs" as const, q: {} },
@@ -623,10 +632,10 @@ Deno.test("query delivery settles a streamed reply after releasing the guarded c
       // The real guard owns cue handling. Reply parsing here would recursively wait for this same guard.
       yield* runtime.reactor.settle(undefined, {}, () => sink.send(emission));
       assertEquals(requests, 0);
-      assertEquals(runtime.deliveries.hasPending, true);
-      yield* runtime.deliveries.process(runtime);
+      assertEquals(runtime.querying.hasPendingDelivery, true);
+      yield* runtime.querying.deliverOnce();
       assertEquals(hby.db.getKever(peer.pre)?.said, peer.kever!.said);
-      assertEquals(runtime.deliveries.hasPending, false);
+      assertEquals(runtime.querying.hasPendingDelivery, false);
     } finally {
       yield* runtime.close();
       yield* remote.close(true);
