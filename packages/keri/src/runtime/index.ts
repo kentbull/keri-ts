@@ -10,7 +10,7 @@ export * from "../acdc/index.ts";
 export * from "../app/agent-runtime.ts";
 export * from "../app/authenticating.ts";
 export * from "../app/byte-source.ts";
-export { CesrHttpRefusal, type EgressOptions, postCesr, type PostOptions, requestFrame } from "../app/cesr-egress.ts";
+export { CesrHttpRefusal, type EgressOptions, postCesr, requestFrame } from "../app/cesr-egress.ts";
 export * from "../app/cesr-http.ts";
 export * from "../app/challenging.ts";
 export * from "../app/configing.ts";
@@ -113,7 +113,7 @@ export { prepareCueEmission } from "../app/cue-preparation.ts";
 
 export { type QueryReply } from "../app/query-replies.ts";
 
-export { abortable } from "../app/abortable.ts";
+export { abortable, rethrowCleanupFailure } from "../app/abortable.ts";
 
 export * from "../acdc/observing.ts";
 export * from "../acdc/regeventing.ts";

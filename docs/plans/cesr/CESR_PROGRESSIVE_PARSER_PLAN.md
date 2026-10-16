@@ -12,7 +12,10 @@ receiving loop. Counted groups arrive completely before decoding children.
 Cursor, EssrWriter, parser sink factories/staging, ordinary-frame disposal and
 FrameIntake are removed. Dispatch, serialization, annotation and exchange storage
 use ordered Texter evidence. Existing file storage/crypto cleanup remains real.
-The implementation branch still requires its scoped validation and merge.
+PR #459 merged the decoder after scoped validation. PR #461 moved Reactor,
+finite receipt/legacy multisig inspection and CLI grant scans off the custom
+frame channel. HTTP, witness and stored-replay inputs now own their iterators
+at the composition point; the two TCP bridge callers remain transitional.
 
 ## Remaining cuts
 

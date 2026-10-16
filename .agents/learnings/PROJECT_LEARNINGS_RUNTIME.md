@@ -82,7 +82,11 @@ failures must survive cancellation during either reading or dispatch. Receipt
 inspection and approved finite legacy children use parseBytes; no channel or
 resource wrapper belongs around already hydrated values. CLI grant files use a
 cancellable parser scan through valid EOF, not first-match early return. Other
-transport adapters remain pending removal.
+TCP adapters remain pending removal. HTTP ingress/egress, witness ingress and
+stored multisig replay also own their parser iterators directly. HTTP exposes
+one input signal, not a second parser-options bag; each outgoing request keeps
+its actual transport owner. Shared cleanup filtering removes only exact owned
+cancellation, even inside aggregates, and preserves independent failure identity.
 Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 QueryCoordinator owns an ordinary private Deck of plain QueryRequest records.

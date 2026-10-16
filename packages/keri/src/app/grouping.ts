@@ -13,6 +13,7 @@ import {
   Counter,
   type Kind,
   nestedPayload,
+  parse,
   parseBytes,
   parsePather,
   Prefixer,
@@ -24,12 +25,11 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
-import { toEffectionFrames } from "cesr-ts/effection";
-import { call, each, type Operation } from "effection";
+import { call, ensure, type Operation } from "effection";
 import { Kevery } from "../core/eventing.ts";
 import { exchange, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
-import { abortable } from "./abortable.ts";
+import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import { Exchanger, type ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
@@ -512,17 +512,51 @@ export class Multiplexor {
     }
   }
   /** Reopen stored evidence and revalidate it before approved protocol processing. */
-  private *replayApproved(said: string): Operation<void> {
-    const channel = yield* toEffectionFrames((signal) => this.replay.replay(said, signal));
-    for (const frame of yield* each(channel.frames)) {
-      {
-        const serder = frame.body as SerderKERI;
-        if (!this.verify(serder, frame.nests)) throw new Error("Stored multisig proposal failed revalidation.");
-        if (serder.pvrsn.major === 1) yield* this.processLegacyApproved(serder);
-        else yield* this.processApproved(frame.nests ?? []);
+  private replayApproved(said: string): Operation<void> {
+    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
+    const self = this;
+    return call(function*() {
+      const controller = new AbortController();
+      const signal = controller.signal;
+      try {
+        signal.throwIfAborted();
+        const frames = parse(self.replay.replay(said, signal), { signal });
+        let pending: ReturnType<typeof frames.next> | undefined;
+        // The earlier resource joins the read after processing children stop.
+        yield* ensure(function*() {
+          try {
+            if (pending) {
+              try {
+                yield* call(() => pending!);
+              } catch (error) {
+                rethrowCleanupFailure(error, signal);
+              }
+            }
+          } finally {
+            yield* call(() => frames.return());
+          }
+        });
+        while (true) {
+          pending = frames.next();
+          let result: Awaited<typeof pending>;
+          try {
+            result = yield* call(() => pending!);
+          } catch (error) {
+            pending = undefined;
+            throw error;
+          }
+          pending = undefined;
+          if (result.done) break;
+          const frame = result.value;
+          const serder = frame.body as SerderKERI;
+          if (!self.verify(serder, frame.nests)) throw new Error("Stored multisig proposal failed revalidation.");
+          if (serder.pvrsn.major === 1) yield* self.processLegacyApproved(serder);
+          else yield* self.processApproved(frame.nests ?? []);
+        }
+      } finally {
+        controller.abort();
       }
-      yield* each.next();
-    }
+    });
   }
 
   /** Check route, child body commitment, and membership without mutating durable state. */

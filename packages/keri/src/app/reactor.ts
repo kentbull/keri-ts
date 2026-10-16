@@ -22,6 +22,7 @@ import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { CredentialStateReceiver } from "../vdr/credential-tsn.ts";
 import { Tevery } from "../vdr/eventing.ts";
 import { RegistryStateReceiver } from "../vdr/registry-tsn.ts";
+import { rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
 import type { Habery } from "./habbing.ts";
@@ -175,23 +176,24 @@ export class Reactor {
     yield* call(function*() {
       const controller = new AbortController();
       const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
-      const frames = parse(source(signal), { signal });
-      let pending: ReturnType<typeof frames.next> | undefined;
-      // This earlier resource joins I/O after dispatch/read children have stopped.
-      yield* ensure(function*() {
-        try {
-          if (pending) {
-            try {
-              yield* call(() => pending!);
-            } catch (error) {
-              if (error !== signal.reason) throw error;
-            }
-          }
-        } finally {
-          yield* call(() => frames.return());
-        }
-      });
       try {
+        signal.throwIfAborted();
+        const frames = parse(source(signal), { signal });
+        let pending: ReturnType<typeof frames.next> | undefined;
+        // This earlier resource joins I/O after dispatch/read children have stopped.
+        yield* ensure(function*() {
+          try {
+            if (pending) {
+              try {
+                yield* call(() => pending!);
+              } catch (error) {
+                rethrowCleanupFailure(error, signal);
+              }
+            }
+          } finally {
+            yield* call(() => frames.return());
+          }
+        });
         while (true) {
           pending = frames.next();
           let result: Awaited<typeof pending>;

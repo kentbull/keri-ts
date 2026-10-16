@@ -20,14 +20,14 @@ import {
   Counter,
   CtrDexV1,
   Ilks,
+  parse,
   parseBytes,
   ResourceAdmissionError,
   ResourceLimitError,
   type SerderKERI,
   type Siger,
 } from "cesr-ts";
-import { toEffectionFrames } from "cesr-ts/effection";
-import { action, call, each, type Operation, resource, spawn } from "npm:effection@^3.6.0";
+import { action, call, ensure, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { type Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -35,7 +35,7 @@ import { receipt as receiptEvent, reply as replyEvent } from "../core/protocol-e
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
-import { abortable } from "./abortable.ts";
+import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
 import { chunkBytes, collectBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
@@ -337,18 +337,16 @@ function* consumeWitnessCues(
 }
 /** Witness-local dispatch and existing responder delivery policy for one ingress source. */
 export interface WitnessIngressOptions {
-  /** Let hosts distinguish intrinsic wire refusals from source, storage and cleanup failures. */
   /** Accept with witness-local semantics; default false preserves ordinary ingress policy. */
   local?: boolean;
   /** Deliver through the existing responder; receipts use false to produce their own finite proof. */
   deliver?: boolean;
 }
 /**
- * Own one progressive witness parser and settle each frame before requesting more input.
+ * Own one witness input and settle each frame before requesting more input.
  * Consume emissions individually, without retaining an aggregate result. The callback
- * borrows admitted emission/evidence outside Reactor through joined cleanup. Retaining work
- * requires independently admitted ownership transfer; never retain lazy owners or
- * expose scoped lazy owners. Source abort/cleanup belongs to the parser scope.
+ * borrows emission iterators outside Reactor until consumption and cleanup finish.
+ * Source abort and cleanup belong to this input scope.
  * Queued delivery and the callback share one interpretation until both finish.
  */
 export function* processWitnessIngressSource(
@@ -359,11 +357,43 @@ export function* processWitnessIngressSource(
   consume?: (emission: CueEmission) => Operation<void>,
 ): Operation<void> {
   yield* call(function*() {
-    const channel = yield* toEffectionFrames(source);
-    for (const frame of yield* each(channel.frames)) {
-      yield* runtime.reactor.settle(frame, { local, escrows: true });
-      yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume);
-      yield* each.next();
+    const controller = new AbortController();
+    const signal = controller.signal;
+    try {
+      signal.throwIfAborted();
+      const frames = parse(source(signal), { signal });
+      let pending: ReturnType<typeof frames.next> | undefined;
+      // The earlier resource joins the read after processing children stop.
+      yield* ensure(function*() {
+        try {
+          if (pending) {
+            try {
+              yield* call(() => pending!);
+            } catch (error) {
+              rethrowCleanupFailure(error, signal);
+            }
+          }
+        } finally {
+          yield* call(() => frames.return());
+        }
+      });
+      while (true) {
+        pending = frames.next();
+        let result: Awaited<typeof pending>;
+        try {
+          result = yield* call(() => pending!);
+        } catch (error) {
+          pending = undefined;
+          throw error;
+        }
+        pending = undefined;
+        if (result.done) break;
+        const frame = result.value;
+        yield* runtime.reactor.settle(frame, { local, escrows: true });
+        yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume);
+      }
+    } finally {
+      controller.abort();
     }
   });
 }
@@ -379,8 +409,8 @@ export function* processWitnessIngressSource(
  * - return those cue emissions so the caller can make any request-scoped
  *   response decision
  *
- * Returned emission snapshots own finite wire arrays (8 MiB aggregate and captured
- * cue-count ceiling); callers own them after return. Source callbacks borrow instead.
+ * Returned snapshots contain finite wire arrays. Source callbacks instead borrow
+ * each emission's iterator through consumption and cleanup.
  *
  * `local=true` is the crucial switch for the witness receipt path: accepted
  * events that list the hosted witness emit `witness` cues instead of ordinary
