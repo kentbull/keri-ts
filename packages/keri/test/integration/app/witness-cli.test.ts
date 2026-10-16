@@ -3,6 +3,7 @@ import { assertEquals, assertExists, assertNotEquals, assertStringIncludes } fro
 import { createHabery } from "../../../src/app/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+import { randomPort } from "./interop-test-helpers.ts";
 
 interface CmdResult {
   code: number;
@@ -16,9 +17,8 @@ function packageRoot(): string {
   return new URL("../../../../../", import.meta.url).pathname;
 }
 
-function randomPort(): number {
-  return 20000 + Math.floor(Math.random() * 20000);
-}
+/** Distinct HTTP/TCP ports for this file; allocation also probes the actual bind. */
+const allocatedPorts = new Set<number>();
 
 function extractPrefix(output: string): string {
   const line = output.split(/\r?\n/).find((candidate) => candidate.trim().startsWith("Prefix"));
@@ -117,8 +117,12 @@ async function stopChild(child: SpawnedChild): Promise<string> {
   } catch {
     // Child may already be gone.
   }
-  await child.status.catch(() => undefined);
-  return await readChildOutput(child);
+  const status = await child.status;
+  const output = await readChildOutput(child);
+  if (status.code !== 0 && status.signal !== "SIGTERM") {
+    console.error(`Witness host failed (code ${status.code}, signal ${status.signal ?? "none"}):\n${output}`);
+  }
+  return output;
 }
 
 async function createWitnessIdentity(
@@ -262,10 +266,10 @@ Deno.test("CLI integration - deployable witness start supports receipt-endpoint 
   const witness1Alias = "wit1";
   const witness2Alias = "wit2";
   const controllerAlias = "controller";
-  const witness1Port = randomPort();
-  const witness2Port = randomPort();
-  const witness1TcpPort = randomPort();
-  const witness2TcpPort = randomPort();
+  const witness1Port = randomPort(allocatedPorts);
+  const witness2Port = randomPort(allocatedPorts);
+  const witness1TcpPort = randomPort(allocatedPorts);
+  const witness2TcpPort = randomPort(allocatedPorts);
 
   const witness1Pre = await createWitnessIdentity(
     witness1Name,
@@ -465,9 +469,9 @@ Deno.test("CLI integration - receipt-endpoint rotation and interaction converge 
   await initController(controllerName, headDirPath);
 
   const ports = [
-    { http: randomPort(), tcp: randomPort() },
-    { http: randomPort(), tcp: randomPort() },
-    { http: randomPort(), tcp: randomPort() },
+    { http: randomPort(allocatedPorts), tcp: randomPort(allocatedPorts) },
+    { http: randomPort(allocatedPorts), tcp: randomPort(allocatedPorts) },
+    { http: randomPort(allocatedPorts), tcp: randomPort(allocatedPorts) },
   ];
   const children = [
     startWitnessHost(
@@ -666,9 +670,9 @@ Deno.test("CLI integration - successive rotate and interact events stay fully wi
   await initController(controllerName, headDirPath);
 
   const ports = [
-    { http: randomPort(), tcp: randomPort() },
-    { http: randomPort(), tcp: randomPort() },
-    { http: randomPort(), tcp: randomPort() },
+    { http: randomPort(allocatedPorts), tcp: randomPort(allocatedPorts) },
+    { http: randomPort(allocatedPorts), tcp: randomPort(allocatedPorts) },
+    { http: randomPort(allocatedPorts), tcp: randomPort(allocatedPorts) },
   ];
   const children = [
     startWitnessHost(
