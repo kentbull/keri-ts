@@ -24,7 +24,6 @@ import {
 import { spawnTufa, stopChild } from "../../../../tufa/test/test-helpers.ts";
 import {
   createAgentRuntime,
-  processMailboxTurn,
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";

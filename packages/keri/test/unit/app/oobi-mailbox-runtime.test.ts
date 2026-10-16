@@ -3,9 +3,8 @@ import { assertEquals, assertExists } from "jsr:@std/assert";
 import { mailboxAddCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import {
   createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
   runAgentRuntime,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { exchangeSendCommand } from "../../../src/app/cli/exchange.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
@@ -107,19 +106,11 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
 
       try {
         const providerUrl = `http://${address.hostname}:${address.port}`;
-        ingestKeriBytes(
-          runtime,
+        yield* settleRuntimeIngress(runtime, [
           hab.makeLocScheme(providerUrl, hab.pre, "http"),
-        );
-        ingestKeriBytes(
-          runtime,
           hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-        );
-        ingestKeriBytes(
-          runtime,
           hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true),
-        );
-        yield* processRuntimeTurn(runtime, { hab });
+        ]);
 
         const providerResolved = yield* testCLICommand(
           oobiResolveCommand({
@@ -220,9 +211,7 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
           const recipientRuntime = yield* createAgentRuntime(recipientHby);
 
           try {
-            ingestKeriBytes(recipientRuntime, storedMessage);
-            yield* recipientRuntime.reactor.processOnce();
-            yield* recipientRuntime.reactor.processEscrowsOnce();
+            yield* settleRuntimeIngress(recipientRuntime, [storedMessage]);
 
             const requestedRecord = recipientHby.db.oobis.get(requestedOobi);
             const requestedNotice = (recipientRuntime.notifier?.list() ?? [])

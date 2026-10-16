@@ -1,7 +1,7 @@
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { SerderKERI } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";

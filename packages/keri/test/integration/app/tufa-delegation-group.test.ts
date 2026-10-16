@@ -11,10 +11,8 @@ import { run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Counter, CtrDexV1, Diger, SerderKERI, Siger } from "../../../../cesr/mod.ts";
 import {
-  type AgentRuntime,
   createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { createHabery, eventPayloadMessage, type Hab, type Habery } from "../../../src/app/habbing.ts";
@@ -278,40 +276,6 @@ function createControlledAid(
   return createGroupAid(hby, alias, profile, options);
 }
 
-/** Advance one runtime without polling mailboxes for a bounded number of turns. */
-function* drainRuntime(
-  runtime: AgentRuntime,
-  hab: Hab,
-  turns = 8,
-) {
-  for (let i = 0; i < turns; i += 1) {
-    yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
-  }
-}
-
-/** Inject serialized messages and drain the runtime so escrows can settle. */
-function* ingestMessages(
-  runtime: AgentRuntime,
-  hab: Hab,
-  messages: Iterable<Uint8Array>,
-  turns = 8,
-) {
-  for (const message of messages) {
-    ingestKeriBytes(runtime, message);
-  }
-  yield* drainRuntime(runtime, hab, turns);
-}
-
-/** Replay one accepted KEL from a source store into a target runtime. */
-function* transferAcceptedKel(
-  source: Habery,
-  target: AgentRuntime,
-  targetHab: Hab,
-  pre: string,
-) {
-  yield* ingestMessages(target, targetHab, source.db.clonePreIter(pre), 12);
-}
-
 /**
  * Approve one locally escrowed delegated event as a delegator.
  *
@@ -425,12 +389,7 @@ for (const spec of MATRIX) {
           ? delegateProxy
           : delegated.communicationHab;
 
-        yield* transferAcceptedKel(
-          delegateHby,
-          delegatorRuntime,
-          delegator.hab,
-          requestSender.pre,
-        );
+        yield* settleRuntimeIngress(delegatorRuntime, delegateHby.db.clonePreIter(requestSender.pre));
 
         const delegatedPayload = eventPayloadMessage(
           delegateHby,
@@ -446,12 +405,7 @@ for (const spec of MATRIX) {
           delegatedPayload,
           delegated.members.map((member) => member.pre),
         );
-        yield* ingestMessages(
-          delegatorRuntime,
-          delegator.hab,
-          [requestMessage, delegatedPayload],
-          16,
-        );
+        yield* settleRuntimeIngress(delegatorRuntime, [requestMessage, delegatedPayload]);
 
         assertEquals(
           delegatorHby.db.delegables.get([delegated.pre]),
@@ -474,9 +428,7 @@ for (const spec of MATRIX) {
           assertHasWitnessIndexedSigs(delegatorReplay.at(-1)!, 1);
         }
 
-        yield* ingestMessages(delegateRuntime, delegated.communicationHab, [
-          ...delegatorReplay,
-        ], 24);
+        yield* settleRuntimeIngress(delegateRuntime, delegatorReplay);
 
         assertEquals(delegateHby.db.getKever(delegated.pre)?.sn, 0);
         assertEquals(

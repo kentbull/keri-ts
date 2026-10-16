@@ -4,8 +4,7 @@ import { createServer, type Socket } from "node:net";
 import { attachmentPayload, collectPayload, concatBytes, parse } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -80,26 +79,22 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
         const runtime = yield* createAgentRuntime(hby);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
-            ingestKeriBytes(runtime, msg);
+            yield* settleRuntimeIngress(runtime, [msg]);
           }
-          ingestKeriBytes(
-            runtime,
+          yield* settleRuntimeIngress(runtime, [
             remoteController.makeLocScheme(
               `http://127.0.0.1:${port}`,
               remoteController.pre,
               "http",
             ),
-          );
-          ingestKeriBytes(
-            runtime,
             remoteController.makeEndRole(
               remoteController.pre,
               EndpointRoles.controller,
               true,
             ),
-          );
-          yield* processRuntimeTurn(runtime, { pollMailbox: false });
+          ]);
 
+          runtime.cues.clear(); // Setup cues are separate from the queried replay under test.
           let query!: Uint8Array;
           const signQuery = sender.query;
           sender.query = function(...args) {
@@ -305,22 +300,21 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
         const runtime = yield* createAgentRuntime(hby);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
-            ingestKeriBytes(runtime, msg);
+            yield* settleRuntimeIngress(runtime, [msg]);
           }
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
-            ingestKeriBytes(runtime, msg);
+            yield* settleRuntimeIngress(runtime, [msg]);
           }
-          ingestKeriBytes(
-            runtime,
+          yield* settleRuntimeIngress(runtime, [
             remoteWitness.makeLocScheme(
               `http://127.0.0.1:${port}`,
               remoteWitness.pre,
               "http",
             ),
-          );
-          ingestKeriBytes(runtime, remoteWitness.makeLocScheme(tcpUrl, remoteWitness.pre, "tcp"));
-          yield* processRuntimeTurn(runtime, { pollMailbox: false });
+            remoteWitness.makeLocScheme(tcpUrl, remoteWitness.pre, "tcp"),
+          ]);
 
+          runtime.cues.clear(); // Setup cues are separate from the queried replay under test.
           let query!: Uint8Array;
           const signQuery = sender.query;
           sender.query = function(...args) {
@@ -489,30 +483,27 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
         const runtime = yield* createAgentRuntime(hby);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
-            ingestKeriBytes(runtime, msg);
+            yield* settleRuntimeIngress(runtime, [msg]);
           }
-          ingestKeriBytes(
-            runtime,
+          yield* settleRuntimeIngress(runtime, [
             remoteController.makeLocScheme(
               `http://127.0.0.1:${port}`,
               remoteController.pre,
               "http",
             ),
-          );
-          ingestKeriBytes(
-            runtime,
             remoteController.makeEndRole(
               remoteController.pre,
               EndpointRoles.controller,
               true,
             ),
-          );
-          yield* processRuntimeTurn(runtime, { pollMailbox: false });
+          ]);
+
           remoteController.rotate();
           replay = Uint8Array.from(
             concatBytes(...remoteHby.db.clonePreIter(remoteController.pre)),
           );
 
+          runtime.cues.clear(); // Setup cues are separate from the queried replay under test.
           let query!: Uint8Array;
           const signQuery = sender.query;
           sender.query = function(...args) {
@@ -527,7 +518,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
             route: "logs" as const,
             q: { s: "0", fn: "0" },
           }, sender);
-          yield* processRuntimeTurn(runtime, { pollMailbox: false });
+          yield* runtime.querying.deliverOnce();
 
           assertEquals(runtime.hby.db.getKever(remoteController.pre)?.sn, 1);
           assertEquals(

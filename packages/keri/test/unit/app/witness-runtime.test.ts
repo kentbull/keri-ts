@@ -7,9 +7,8 @@ import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
 import {
   createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
   runAgentRuntime,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest } from "../../../src/app/cesr-http.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
@@ -54,23 +53,12 @@ function* seedWitnessHostState(
     enableMailboxStore: true,
   });
   try {
-    ingestKeriBytes(
-      runtime,
+    yield* settleRuntimeIngress(runtime, [
       witness.makeLocScheme(hostUrl, witness.pre, Schemes.http),
-    );
-    ingestKeriBytes(
-      runtime,
       witness.makeEndRole(witness.pre, EndpointRoles.controller, true),
-    );
-    ingestKeriBytes(
-      runtime,
       witness.makeEndRole(witness.pre, EndpointRoles.witness, true),
-    );
-    ingestKeriBytes(
-      runtime,
       witness.makeEndRole(witness.pre, EndpointRoles.mailbox, true),
-    );
-    yield* processRuntimeTurn(runtime, { hab: witness, pollMailbox: false });
+    ]);
   } finally {
     yield* runtime.close();
   }
@@ -85,11 +73,9 @@ function* seedRemoteWitnessLocation(
   const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
   try {
     for (const message of witness.db.clonePreIter(witness.pre, 0)) {
-      ingestKeriBytes(runtime, message);
+      yield* settleRuntimeIngress(runtime, [message]);
     }
-    ingestKeriBytes(runtime, witness.makeLocScheme(url, witness.pre, scheme));
-    yield* processRuntimeTurn(runtime, { pollMailbox: false });
-    yield* processRuntimeTurn(runtime, { pollMailbox: false });
+    yield* settleRuntimeIngress(runtime, [witness.makeLocScheme(url, witness.pre, scheme)]);
   } finally {
     yield* runtime.close();
   }
