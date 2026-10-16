@@ -1,5 +1,46 @@
 # keri-ts
 
+## 1.0.0
+
+### Breaking API and architecture changes
+
+- Restrict supported package entrypoints to explicit root/runtime/db and CLI
+  helper surfaces; remove implementation deep-import patterns and unused exports.
+- Use concrete KERIpy-shaped owners, data cues and Decks. Query records carry
+  their required q body. Reactor handles protocol intake/escrows rather than
+  arbitrary application callbacks; transport does not discover AgentRuntime.
+- CLI and hosts share workers with elapsed completion and joined cancellation.
+  Remove serial runtime pumps, finite mailbox turns, application budgets, outboxes
+  and unsupported mailbox/KRAM business acknowledgements. Preserve protocol
+  escrows, replay/timeliness caches, mailbox messages/cursors and real cleanup.
+
+### Protocol and interoperability
+
+- Support complete IPEX apply/offer-through-admit and legal spurn workflows,
+  independently authenticated credential chains, nested edge operators and
+  progressive multi-attribute disclosure without changing commitments or expanding
+  earlier stored partial evidence.
+- Support TS DI2I approved delegation chains and NOT over authenticated node
+  validity and receiver-accepted issued/revoked facts. Missing, malformed, forged
+  or unknown evidence cannot satisfy negation. These operators remain excluded
+  from Python interop while the reference does not implement them.
+- Correct v2 mailbox forwarding to carry a signed child-body digest and qualified
+  nested evidence. Keep KRAM authentication distinct from downstream acceptance;
+  preserve threshold-completion receipt time across dependency retry and replay.
+- Derive historical witness cohorts/thresholds from accepted event ancestry.
+  Keep node issuer/registry authentication independent of conversation policy,
+  and publish registry state atomically through its concrete owner.
+- Project DID documents from accepted state; keep actual OOBI convergence,
+  complete artifact intake, transport-fallback rules and joined cleanup explicit.
+
+### Packaging
+
+- Preserve valid strict NodeNext declarations for LMDB 3.5.3 and the actual
+  public manager, storage, host and ingress contracts.
+- Installed-package qualification exercises native large-row read/reopen,
+  cryptographic signing/refusal, TCP transmission/close and CLI/HTTP operation
+  before installing compiler tools. The supported Node floor remains 20.3.
+
 ## 0.11.0
 
 ### Minor Changes

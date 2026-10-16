@@ -1,5 +1,26 @@
 # @keri-ts/tufa
 
+## 1.0.0
+
+### Breaking CLI and host changes
+
+- Use the same concrete host workers for finite commands and long-lived agents;
+  replace polling-turn controls with elapsed timeout options and joined shutdown.
+- Return endpoint-role proposals as recipient/SAID records instead of a misleading
+  single message identifier. Select actual member signers and hosted identities
+  explicitly; do not expose internal signatory/keeper identities by default.
+- Remove budgeting flags, duplicate runtime drivers and unsupported delivery
+  acknowledgements. Preserve signed endpoint authorization, mailbox routing,
+  protocol caches and actual request/response ownership.
+
+### Correctness and packaging
+
+- Preserve explicit host/runtime/protocol-handler package boundaries, generated
+  export/bin targets and strict installed declarations.
+- Keep DID artifact generation/resolution, witnessed/group workflows and mailbox
+  IPEX on the supported KERI runtime operations. Final dependencies advance to
+  cesr-ts 1.0.0 and keri-ts 1.0.0.
+
 ## 0.11.0
 
 ### Minor Changes

@@ -21,3 +21,7 @@ data.mdb*
 
 # Local and CI test execution evidence
 .test-timings/
+
+# Python fixture bytecode is generated test output
+__pycache__/
+*.pyc

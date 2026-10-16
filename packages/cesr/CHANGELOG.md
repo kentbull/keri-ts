@@ -1,5 +1,24 @@
 # cesr-ts
 
+## 1.0.0
+
+### Breaking API and parsing changes
+
+- Buffer complete counted enclosures before finite synchronous decoding. Remove
+  progressive parser cursors/staging, FrameIntake, TcpRead and the CESR Effection
+  adapter. Ordinary hydrated frames no longer carry disposal obligations.
+- Remove shared memory policies, accounting, byte estimates, quotas and capacity
+  callbacks. Declared wire extents, supported numeric ranges, native codec rules
+  and actual I/O cleanup remain enforced.
+
+### Correctness
+
+- Preserve canonical compactable ACDC commitments across partial attribute, edge
+  and rule disclosures; keep qualified nested proofs and ordered ESSR fragments.
+- Correct genus-specific HTTP attachment framing and nested v1/v2 serialization.
+- Preserve codec reset and malformed-input provenance without speculative
+  allocation preflight or private library-layout assumptions.
+
 ## 0.10.0
 
 ### Minor Changes

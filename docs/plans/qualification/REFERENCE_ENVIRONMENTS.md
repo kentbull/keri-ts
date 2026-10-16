@@ -6,8 +6,9 @@ buffering replace speculative frameworks; protocol correctness and real cleanup 
 
 Owner: [phase 7](QUALIFICATION_PLAN.md). Pins below are the observed continuation
 baseline, not proof of current execution. Re-verify each path and **actual imported
-modules** before changing a pin or claiming qualification. Upgrade applicable
-paths to the approved 714 target, or document why historical compatibility is retained.
+modules** before changing a pin or claiming qualification. Frozen vectors, current
+upstream, the functional mailbox fork and embedded resolver dependencies are distinct
+references; one result must not be attributed to another.
 
 | Environment             | Declared target              | Owning entrypoint            |
 | ----------------------- | ---------------------------- | ---------------------------- |
@@ -22,19 +23,23 @@ paths to the approved 714 target, or document why historical compatibility is re
 
 ## Immutable authorities
 
-- Active upstream: `7143832813cac6a394ab1faf9be83bb3372be87c`.
+- Frozen upstream table/CESR baseline: `7143832813cac6a394ab1faf9be83bb3372be87c`.
+  This is the reproducible fixture target, not a claim that upstream main stopped there.
+- Current upstream observed 2026-10-16: `c102367ea0b8416ffb3c01403d18b3fd4a6a38bf`.
+  The mailbox branch is rebased on this main. Keep its results separate from
+  unmodified-upstream probes and frozen-table comparisons.
 - Historical upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
-  Existing KERI registry/IPEX/KRAM/replay fixtures retain their actual source
-  labels and reproducibility pins. They do not alone qualify changed 714 behavior.
-- Mailbox fork: `kentbull/keripy` `b08ddeb047fd865d60affe82a0dc77f5efaf4672`,
-  based on upstream 927. Ports mailbox commits `1faba4f2`/`9924fffa`, adapts
-  nested messages, and adds explicit mailbox/credential protocol selection,
-  receipt lookup repair, export genus selection, JSON slash-topic queries and
-  protocol-specific admit rehydration. Keep this **fork-on-main** evidence
-  separate from unmodified-upstream evidence.
-  Retain this compatibility target because unmodified 714 lacks the required
-  mailbox commands/extensions. Its 927 ancestry does not qualify 714 schema logic;
-  current-upstream probes and composed qualification supply that evidence separately.
+  Existing registry/IPEX/KRAM/replay fixtures retain their actual source labels
+  and reproducibility pins; they do not alone qualify later upstream behavior.
+- Current mailbox fork: `kentbull/keripy` branch `mailbox-impl`, commit
+  `331f32e4de13cc5cb699587c5b1f1e5bc4468035`. The shared local helper, extended
+  interop and macOS workflow select `scripts/ci/keripy-reference.json`. The
+  consolidated branch supplies mailbox commands and the tested KRAM configuration
+  repair. The redundant `mailbox-main-interop` branch has been removed. Functional
+  fork results qualify the selected fork, not unmodified upstream.
+- Historical mailbox fork: `b08ddeb047fd865d60affe82a0dc77f5efaf4672`, based on
+  upstream 927. Earlier import/protocol observations below retain that label;
+  it is no longer the active shared CLI target.
 - Historical 450: `450ae1c2a7eac61d92bc7b830cb6883c41e6a798`, retired from
   macOS selection. `test:quality` includes `interop-parity`, whose existing
   `interop-kli-tufa.test.ts` exercises mailbox operations in both directions.
@@ -63,7 +68,33 @@ paths to the approved 714 target, or document why historical compatibility is re
    in the final report. Declared targets in this table are still unqualified
    unless supported by the corresponding actual-path run.
 
-## Observed import qualification
+## Current qualification evidence
+
+The 2026-10-16 clean source candidate `7217902a` completed all 25 KERI owners:
+943 cases over 142 files, including pairwise graduated disclosure, KRAM, composed
+mailbox, DID resolution and the local manual delegation/witness owners. Together
+with CESR, Tufa and tooling, 1,509 cases passed with none ignored. Package
+implementation/test inputs were unchanged through merged #519 (`b1b3d8dc`).
+
+The shared mailbox CLI imported the selected `331f32e4` source with verified Git
+bytes under Python 3.14.6. The separate four-case embedded resolver matrix passed
+with Python 3.13.16, resolver `8395277f`, site-packages KERIpy 1.2.14 and HIO 0.6.14.
+Its import probe records actual paths and SHA-256 hashes as `installed-record`;
+it does not establish KERI Git-byte equivalence. CLI PYTHONPATH must not override
+that separate resolver environment. Ignore generated fixture bytecode as test output.
+
+The first copied-workspace invocation refused stale/dirty Git labels before KERI
+execution. A clean exact-source retry passed all other owners but found that the
+resolver cannot run on Python 3.14. Installing its supported interpreter and
+rerunning the same four cases resolved those environment failures. Raw failures,
+771-file source proofs, actual-import records and the transparent aggregate are
+retained in the dated cleanup qualification artifacts. The original count omitted
+a 158-passed summary containing child-step notation; the corrected count does
+not change execution or source evidence. This is an aggregate after
+environment repair, not a claim that the first command succeeded. Final versioned
+artifacts, package dependencies, CI and publication still require their own gates.
+
+## Historical import observations (2026-10-13)
 
 Local continuation checks on 2026-10-13 used the existing provenance probe and
 uncommitted actual-command probes. No hosted workflow was dispatched.
@@ -107,7 +138,8 @@ Git equivalence. The CLI wrapper preserved help success and invalid-argument
 exit status 2. Lazy command imports require independent actual-command checks,
 not extrapolation from startup counts.
 
-Hosted macOS quality/packaging, extended interop, full Sally workflows and the
-embedded resolver matrix remain unqualified by these import smoke checks. Sally
+Hosted macOS quality/packaging and the full Sally workflow remain unqualified by
+these historical import smoke checks. Current Linux extended-interop and embedded
+resolver execution are recorded separately above. Sally
 `KLI_CMD`/`KERIPY_DIR` overrides and runnable-cache markers still need actual-import
 verification before a full harness result can establish its selected peer.
