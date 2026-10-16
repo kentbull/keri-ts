@@ -7,6 +7,7 @@ import { Reger } from "../../db/reger.ts";
 import { abortable } from "../abortable.ts";
 import { type AgentRuntime, processMailboxTurn } from "../agent-runtime.ts";
 import { fileBytes } from "../byte-source.ts";
+import { requireRegery } from "../credential-workflows.ts";
 import { isLocalGroupHab, localGroupMember } from "../group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
@@ -433,18 +434,10 @@ function* withIpexRuntime<TResult>(
       skipConfig: true,
     },
     function*({ hby, runtime }) {
-      const reger = requireReger(runtime);
+      const reger = requireRegery(runtime).reger;
       return yield* use({ hby, runtime, reger });
     },
   );
-}
-
-function requireReger(runtime: AgentRuntime): Reger {
-  const reger = runtime.vdr.reger;
-  if (!(reger instanceof Reger)) {
-    throw new ValidationError("VDR runtime did not open Reger.");
-  }
-  return reger;
 }
 
 function requireHab(hby: Habery, alias: string | undefined): Hab {

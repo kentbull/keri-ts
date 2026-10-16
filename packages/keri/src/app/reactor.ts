@@ -18,11 +18,10 @@ import {
   type DispatchDecision,
   dispatchEnvelope,
   envelopeFromFrame,
-  type TeveryLike,
-  type VerifierLike,
 } from "./parsering.ts";
 import { QueryReplies } from "./query-replies.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+import type { Verifier } from "./verifying.ts";
 
 /** Protocol processing choices, independent of an input operation's lifetime. */
 export interface DispatchOptions {
@@ -70,8 +69,9 @@ export class Reactor {
   private busy = false;
   /** Waiting operations retain their position until granted or cancelled. */
   private readonly waiting = new Set<() => void>();
-  readonly vdr: VdrRuntimeServices;
-  readonly acdc: AcdcRuntimeServices;
+  readonly tevery?: Tevery;
+  readonly verifier?: Verifier;
+  readonly registry?: AcdcRegery;
   private readonly registryStates?: RegistryStateReceiver;
   private readonly credentialStates?: CredentialStateReceiver;
   constructor(
@@ -79,16 +79,18 @@ export class Reactor {
     {
       cues,
       local = false,
-      vdr = {},
-      acdc = {},
+      tevery,
+      verifier,
+      registry,
       messagePolicy,
       kram,
       now,
     }: {
       cues?: Deck<AgentCue>;
       local?: boolean;
-      vdr?: VdrRuntimeServices;
-      acdc?: AcdcRuntimeServices;
+      tevery?: Tevery;
+      verifier?: Verifier;
+      registry?: AcdcRegery;
       /** Runtime-owned v2 non-event sender policy, independent of parser admission. */
       messagePolicy?: MessagePolicy;
       /** Omitted preserves disabled intake; the receiver clock is runtime-owned. */
@@ -109,12 +111,13 @@ export class Reactor {
     this.kevery.registerReplyRoutes(this.router);
     this.exchanger = new Exchanger(hby, { cues: this.cues, now });
     this.local = local;
-    this.vdr = vdr;
-    this.acdc = acdc;
-    if (vdr.tvy instanceof Tevery) {
-      this.registryStates = new RegistryStateReceiver(vdr.tvy, this.revery);
+    this.tevery = tevery;
+    this.verifier = verifier;
+    this.registry = registry;
+    if (tevery) {
+      this.registryStates = new RegistryStateReceiver(tevery, this.revery);
       this.router.addRoute("/tsn/registry/{aid}", this.registryStates);
-      this.credentialStates = new CredentialStateReceiver(vdr.tvy, this.revery);
+      this.credentialStates = new CredentialStateReceiver(tevery, this.revery);
       this.router.addRoute("/tsn/credential/{aid}", this.credentialStates);
     }
   }
@@ -213,7 +216,8 @@ export class Reactor {
             self.revery,
             self.kevery,
             self.exchanger,
-            self.vdr,
+            self.tevery,
+            self.verifier,
             mailboxAid,
             function*(ready, current) {
               consumed = true;
@@ -315,11 +319,11 @@ export class Reactor {
     this.kevery.kramer?.prune();
     this.kevery.processEscrows();
     this.revery.processEscrowReply();
-    this.vdr.tvy?.processEscrows?.();
+    this.tevery?.processEscrows();
     this.registryStates?.processEscrows();
     this.credentialStates?.processEscrows();
-    this.vdr.vry?.processEscrows?.();
-    this.acdc.rgy?.processEscrows();
+    this.verifier?.processEscrows();
+    this.registry?.processEscrows();
     yield* this.exchanger.processEscrows();
   }
 
@@ -349,29 +353,4 @@ export class Reactor {
       yield* runtimeTurn();
     }
   }
-}
-
-/** Registry DB owner seam; Phase 3 supplies the concrete `Reger`. */
-export type RegerRuntimeService = object;
-
-/** TEL state processor seam; Phase 5 supplies the concrete `Tevery`. */
-export type TeveryRuntimeService = TeveryLike;
-
-/** Credential verifier seam; Phase 4/10 supplies the concrete verifier. */
-export type VerifierRuntimeService = VerifierLike;
-
-/** Registry operation seam; Phase 6 supplies the concrete `Regery`. */
-export type RegeryRuntimeService = object;
-
-/** VDR services accepted by `Reactor` and the shared `AgentRuntime`. */
-export interface VdrRuntimeServices {
-  reger?: RegerRuntimeService | null;
-  tvy?: TeveryRuntimeService | null;
-  vry?: VerifierRuntimeService | null;
-  rgy?: RegeryRuntimeService | null;
-}
-
-/** Borrowed v2 registry manager; automatic foreign rip/bup parser intake remains separate. */
-export interface AcdcRuntimeServices {
-  rgy?: AcdcRegery | null;
 }

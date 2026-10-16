@@ -108,8 +108,13 @@ not first-match return. Nested/ESSR payload storage retains actual files and rea
 ## Stores and replay
 
 AgentRuntime borrows Habery and injected services/stores. Default v2 Regery owns
-one RegBaser shared by IPEX/Reactor; legacy VDR remains separate. Readonly Haberies
-create neither default store. Factories own failed/unreturned acquisitions before
+one RegBaser shared by IPEX/Reactor; legacy VDR remains separate. Runtime.vdr is
+the existing concrete legacy Regery, which owns Reger/Tevery/Verifier; runtime.acdc
+is the concrete v2 Regery. Reactor receives the actual processors, not placeholder
+object/service bags or optional-method interfaces. Application entrypoints check
+genuine registry absence once and use its typed members. An injected Reger remains
+borrowed while runtime composition creates its processors with the shared cue deck.
+Readonly Haberies create neither default store. Factories own failed/unreturned acquisitions before
 cancellable reopen. Explicit close and scope exit both join cleanup; repeated close
 is harmless. Created Noter/Mailboxer use Habery's temp policy; injected sidecars stay
 borrowed. Acquire output after databases so reverse teardown closes output first.

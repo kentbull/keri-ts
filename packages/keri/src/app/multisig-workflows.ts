@@ -25,10 +25,9 @@ import { ValidationError } from "../core/errors.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { RegistryRecord } from "../core/records.ts";
-import { Reger } from "../db/reger.ts";
 import { Credentialer, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
-import { Tevery } from "../vdr/eventing.ts";
 import { type AgentRuntime, processMailboxTurn, processRuntimeUntil } from "./agent-runtime.ts";
+import { requireRegery } from "./credential-workflows.ts";
 import { resolveDelegationCommunicationHab } from "./delegating.ts";
 import {
   endpointRoleAccepted,
@@ -55,7 +54,6 @@ import {
 } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { queryTransportSink } from "./runtime-deliveries.ts";
-import { Verifier } from "./verifying.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
@@ -612,14 +610,15 @@ function approveRegistryIncept(
   anchorSerder: SerderKERI,
   options: MultisigApprovalOptions,
 ): boolean {
+  const rgy = requireRegery(runtime);
   const seal = sourceSeal(anchorSerder);
-  requireTevery(runtime).processEvent({ serder: vserder, seqner: seal.seqner, saider: seal.saider });
-  requireRegery(runtime).processEscrows();
+  rgy.tvy.processEvent({ serder: vserder, seqner: seal.seqner, saider: seal.saider });
+  rgy.processEscrows();
 
   const regk = requireSerderPrefix(vserder, "registry inception");
   const registryName = options.callbacks.chooseRegistryName(regk);
   const cnfg = stringArrayField(vserder.ked ?? {}, "c");
-  registerRegistry(requireRegery(runtime), registryName, groupHab, regk, {
+  registerRegistry(rgy, registryName, groupHab, regk, {
     noBackers: cnfg.includes(TraitDex.NoBackers),
     estOnly: cnfg.includes(TraitDex.EstOnly),
   });
@@ -638,12 +637,13 @@ function approveCredentialIssue(
   iserder: SerderKERI,
   anchorSerder: SerderKERI,
 ): boolean {
+  const rgy = requireRegery(runtime);
   const seal = sourceSeal(anchorSerder);
-  requireTevery(runtime).processEvent({ serder: iserder, seqner: seal.seqner, saider: seal.saider });
-  requireRegery(runtime).processEscrows();
+  rgy.tvy.processEvent({ serder: iserder, seqner: seal.seqner, saider: seal.saider });
+  rgy.processEscrows();
 
-  const reger = requireReger(runtime);
-  const vry = requireVerifier(runtime);
+  const reger = rgy.reger;
+  const vry = rgy.vry;
   const credentialer = new Credentialer(hby, { reger, vry });
   credentialer.validate(creder);
   const credentialSeal = telCredentialSeal(iserder);
@@ -748,39 +748,11 @@ function requireCredentialSaid(creder: SerderACDC): string {
 }
 
 function telAccepted(runtime: AgentRuntime, pre: string, sn: number, eventSaid: string): boolean {
-  return requireReger(runtime).tels.getOn(pre, sn)?.qb64 === eventSaid;
+  return requireRegery(runtime).reger.tels.getOn(pre, sn)?.qb64 === eventSaid;
 }
 
 function markTelComplete(runtime: AgentRuntime, pre: string, sn: number, eventSaid: string): void {
-  requireReger(runtime).ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
-}
-
-function requireReger(runtime: AgentRuntime): Reger {
-  if (!(runtime.vdr.reger instanceof Reger)) {
-    throw new ValidationError("VDR runtime did not open Reger.");
-  }
-  return runtime.vdr.reger;
-}
-
-function requireRegery(runtime: AgentRuntime): Regery {
-  if (!(runtime.vdr.rgy instanceof Regery)) {
-    throw new ValidationError("VDR runtime did not open Regery.");
-  }
-  return runtime.vdr.rgy;
-}
-
-function requireTevery(runtime: AgentRuntime): Tevery {
-  if (!(runtime.vdr.tvy instanceof Tevery)) {
-    throw new ValidationError("VDR runtime did not open Tevery.");
-  }
-  return runtime.vdr.tvy;
-}
-
-function requireVerifier(runtime: AgentRuntime): Verifier {
-  if (!(runtime.vdr.vry instanceof Verifier)) {
-    throw new ValidationError("VDR runtime did not open Verifier.");
-  }
-  return runtime.vdr.vry;
+  requireRegery(runtime).reger.ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
 }
 
 function rpyAttrs(serder: SerderKERI): { cid: string; role: string; eid: string } {

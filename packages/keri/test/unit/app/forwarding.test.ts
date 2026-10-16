@@ -261,8 +261,8 @@ Deno.test("Local runtime defaults to no provider mailbox store", async () => {
   });
 });
 
-/** Proves shared runtime construction explicitly carries Phase 1 VDR services. */
-Deno.test("Runtime exposes injected VDR services and registers /credential", async () => {
+/** Concrete registry processors share the runtime cue flow and credential topic. */
+Deno.test("Runtime composes concrete registry processors and registers /credential", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `runtime-vdr-${crypto.randomUUID()}`,
@@ -271,15 +271,10 @@ Deno.test("Runtime exposes injected VDR services and registers /credential", asy
     });
 
     try {
-      const vdr = {
-        reger: {},
-        tvy: {},
-        vry: {},
-        rgy: {},
-      };
-      const runtime = yield* createAgentRuntime(hby, { vdr });
-      assertEquals(runtime.vdr, vdr);
-      assertEquals(runtime.reactor.vdr, vdr);
+      const runtime = yield* createAgentRuntime(hby);
+      assertEquals(runtime.reactor.tevery, runtime.vdr!.tvy);
+      assertEquals(runtime.reactor.verifier, runtime.vdr!.vry);
+      assertEquals(runtime.vdr!.cues, runtime.cues);
       assertEquals(
         runtime.mailboxDirector.registeredTopics().includes(CREDENTIAL_MAILBOX_TOPIC),
         true,

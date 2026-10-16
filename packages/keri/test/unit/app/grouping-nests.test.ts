@@ -287,8 +287,8 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         });
         assertEquals(registryResult?.accepted, true);
         assertEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
-        assertInstanceOf(runtime.vdr.reger, Reger);
-        assertEquals(runtime.vdr.reger.tels.getOn(registry.pre!, 0)?.qb64, registry.said);
+        assertInstanceOf(runtime.vdr!.reger, Reger);
+        assertEquals(runtime.vdr!.reger.tels.getOn(registry.pre!, 0)?.qb64, registry.said);
         yield* call(() => learn(right, local.hab));
         const schemer = new Schemer({ sed: { $id: "", type: "object" } });
         left.db.schema.pin(schemer.said, schemer);
@@ -334,8 +334,8 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
           },
         });
         assertEquals(issueResult?.accepted, true);
-        assertEquals(runtime.vdr.reger.tels.getOn(creder.said!, 0)?.qb64, issuance.said);
-        assertExists(runtime.vdr.reger.saved.get([creder.said!]));
+        assertEquals(runtime.vdr!.reger.tels.getOn(creder.said!, 0)?.qb64, issuance.said);
+        assertExists(runtime.vdr!.reger.saved.get([creder.said!]));
       } finally {
         yield* runtime.close();
       }

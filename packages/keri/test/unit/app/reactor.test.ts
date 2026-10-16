@@ -635,7 +635,8 @@ Deno.test("runtime dispatch waits for an exchange and keeps its mailbox identity
           yield* call(() => gate);
         },
       },
-      {},
+      undefined,
+      undefined,
       "mailbox-a",
     );
     completed = true;

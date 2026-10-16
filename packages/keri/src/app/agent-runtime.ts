@@ -18,7 +18,6 @@ import { Mailboxer } from "../db/mailboxing.ts";
 import { Noter } from "../db/noting.ts";
 import { createReger, Reger } from "../db/reger.ts";
 import { Regery as VdrRegery } from "../vdr/credentialing.ts";
-import { Tevery } from "../vdr/eventing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
@@ -39,14 +38,13 @@ import { mailboxerOptionsForHabery } from "./mailboxing.ts";
 import { noterOptionsForHabery, Notifier } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
-import { type AcdcRuntimeServices, Reactor, type VdrRuntimeServices } from "./reactor.ts";
+import { Reactor } from "./reactor.ts";
 import { ReplyStreams } from "./reply-streams.ts";
 import { recipientForCue, Respondant, senderHabForCue, topicForCue } from "./respondant.ts";
 import { RuntimeDeliveries } from "./runtime-deliveries.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
-import { Verifier } from "./verifying.ts";
 
 /** Compose responder source-to-delivery wiring at the runtime root; admission receives the actual cue flow. */
 export function respondantCueSink(runtime: AgentRuntime, hab?: Hab | null): CueSink {
@@ -117,9 +115,10 @@ export interface AgentRuntime {
   replyStreams: ReplyStreams;
   /** Bounded query/cue deliveries drained outside guarded cue handling. */
   deliveries: RuntimeDeliveries;
-  vdr: VdrRuntimeServices;
+  /** Concrete legacy TEL/credential owner; absent for a readonly Habery without an injected store. */
+  readonly vdr: VdrRegery | null;
   /** V2 registry services, separately owned from the legacy VDR environment. */
-  acdc: AcdcRuntimeServices;
+  readonly acdc: AcdcRegery | null;
   services: RuntimeServices;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
   close(): Operation<void>;
@@ -140,9 +139,10 @@ export interface AgentRuntimeOptions {
   enableMailboxStore?: boolean;
   services?: Partial<RuntimeServices>;
   mailboxPollTransport?: MailboxPollTransport;
-  vdr?: VdrRuntimeServices;
+  /** Borrowed legacy registry store; the runtime creates its processors and never closes this store. */
+  reger?: Reger;
   /** An injected v2 manager and its backing store remain caller-owned. */
-  acdc?: AcdcRuntimeServices;
+  acdc?: AcdcRegery;
   /** Sender filtering for v2 non-event ingress; denial always wins. */
   messagePolicy?: MessagePolicy;
   /** Optional KRAM uses the trusted runtime receiver clock. */
@@ -214,20 +214,11 @@ export function* createAgentRuntime(
     && noter !== null;
   const notifier = options.notifier
     ?? (noter && signaler ? new Notifier(hby, { noter, signaler }) : null);
-  const vdr: VdrRuntimeServices = { ...(options.vdr ?? {}) };
-  let ownsReger = false;
-  if (!vdr.reger && !hby.readonly) {
-    vdr.reger = yield* openRegerForHabery(hby);
-    ownsReger = true;
-  }
-  const reger = vdr.reger instanceof Reger ? vdr.reger : null;
-  const acdc: AcdcRuntimeServices = { ...(options.acdc ?? {}) };
-  let ownsAcdcRegery = false;
-  if (acdc.rgy == null && !hby.readonly) {
-    acdc.rgy = yield* openAcdcRegeryForHabery(hby);
-    ownsAcdcRegery = true;
-  }
-  const acdcRegery = acdc.rgy;
+  const reger = options.reger ?? (!hby.readonly ? (yield* openRegerForHabery(hby)) : null);
+  const ownsReger = options.reger === undefined && reger !== null;
+  const acdc = options.acdc ?? (!hby.readonly ? (yield* openAcdcRegeryForHabery(hby)) : null);
+  const ownsAcdcRegery = options.acdc === undefined && acdc !== null;
+  const acdcRegery = acdc;
   // Acquire after stores, before processors/consumers: reverse teardown joins consumers, clears cues, closes stores.
   const cues = yield* resource<Deck<AgentCue>>(function*(provide) {
     const owned = new Deck<AgentCue>();
@@ -237,20 +228,7 @@ export function* createAgentRuntime(
       owned.clear();
     }
   });
-  if (reger && !vdr.tvy) {
-    vdr.tvy = new Tevery({ db: hby.db, reger, cues });
-  }
-  if (reger && !vdr.vry) {
-    vdr.vry = new Verifier(hby, { reger, cues });
-  }
-  if (reger && vdr.tvy instanceof Tevery && vdr.vry instanceof Verifier && !vdr.rgy) {
-    vdr.rgy = new VdrRegery(hby, {
-      reger,
-      tvy: vdr.tvy,
-      vry: vdr.vry,
-      cues,
-    });
-  }
+  const vdr = reger ? new VdrRegery(hby, { reger, cues }) : null;
   // Reverse scope teardown joins borrowed output evidence before its backing stores close.
   const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
     const streams = new ReplyStreams();
@@ -270,8 +248,9 @@ export function* createAgentRuntime(
   });
   const reactor = new Reactor(hby, {
     cues,
-    vdr,
-    acdc,
+    tevery: vdr?.tvy,
+    verifier: vdr?.vry,
+    registry: acdc ?? undefined,
     messagePolicy: options.messagePolicy,
     kram: options.kram,
     now: () => services.clock.now(),
@@ -289,7 +268,7 @@ export function* createAgentRuntime(
   loadMultisigHandlers(hby, reactor.exchanger, { notifier });
   loadIpexHandlers(hby, reactor.exchanger, {
     notifier,
-    registry: acdc.rgy?.store ?? null,
+    registry: acdc?.store ?? null,
   });
   const mailboxDirector = yield* resource<MailboxDirector>(function*(provide) {
     const director = new MailboxDirector(hby, {

@@ -148,7 +148,7 @@ Deno.test("nested forward preserves signed tree, ciphertext and duplicates acros
     const normalized = envelopeFromFrame(parent);
     assertEquals(normalized.tsgs.length, 1);
     assertEquals(normalized.nests.length, 1);
-    await run(() => dispatchEnvelope(normalized, hby.rvy, hby.kevery, exchanger, {}, provider.pre));
+    await run(() => dispatchEnvelope(normalized, hby.rvy, hby.kevery, exchanger, undefined, undefined, provider.pre));
     assertEquals(exchanger.complete(input.serder.said!), true);
     const rows = hby.db.enst.get([input.serder.said!]);
     assertEquals(rows.length, 1);

@@ -291,9 +291,8 @@ Deno.test("vdr/credentialing - imports frozen Python issuance and replays both g
         yield* call(function*() {
           const gvrsn = vector.version === 1 ? Vrsn_1_0 : Vrsn_2_0;
           const bytes = new TextEncoder();
-          const tvy = new Tevery({ db: hby.db, reger });
-          const vry = new Verifier(hby, { reger });
-          const runtime = yield* createAgentRuntime(hby, { vdr: { reger, tvy, vry } });
+          const runtime = yield* createAgentRuntime(hby, { reger });
+          const { tvy, vry } = runtime.vdr!;
           const reactor = runtime.reactor;
           hby.db.schema.pin(vectors.schema.$id, new Schemer({ sed: vectors.schema }));
           // Arrival before the issuer KEL exercises durable source-seal escrow as well.

@@ -189,7 +189,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       assertEquals(runtime.cues.toArray().map((cue) => cue.kin === "saved" ? cue.creder.said : cue.kin), [
         aliases.issued,
       ]);
-      assertEquals((runtime.vdr.reger as Reger).saved.get([aliases.issued])?.qb64, aliases.issued);
+      assertEquals(runtime.vdr!.reger.saved.get([aliases.issued])?.qb64, aliases.issued);
       runtime.cues.clear();
     };
     const first = [...issuer.db.clonePreIter(hab.pre)][0];
@@ -230,7 +230,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         ).concat([["saved", aliases.issued]]),
       );
       assertEquals(target.db.getState(hab.pre)?.d, hab.kever!.said);
-      assertEquals((runtime.vdr.reger as Reger).saved.get([aliases.issued])?.qb64, aliases.issued);
+      assertEquals(runtime.vdr!.reger.saved.get([aliases.issued])?.qb64, aliases.issued);
       runtime.cues.clear();
       fetches = [];
       body = new ReadableStream({

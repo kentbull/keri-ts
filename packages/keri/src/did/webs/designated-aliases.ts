@@ -14,13 +14,11 @@ import {
   type SerderACDC,
 } from "cesr-ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
+import { requireRegery } from "../../app/credential-workflows.ts";
 import type { Hab } from "../../app/habbing.ts";
-import { Verifier } from "../../app/verifying.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Schemer } from "../../core/scheming.ts";
-import type { Reger } from "../../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, Registry } from "../../vdr/credentialing.ts";
-import { Tevery } from "../../vdr/eventing.ts";
 import DESIGNATED_ALIASES_SCHEMA_RESOURCE from "./designated-aliases-public-schema.json" with { type: "json" };
 import { isDidString, parseDid } from "./dids.ts";
 
@@ -86,7 +84,7 @@ export function bindDesignatedAliases(
 
   pinDesignatedAliasesSchema(runtime);
   const rgy = requireRegery(runtime);
-  const reger = requireReger(runtime);
+  const reger = rgy.reger;
   const registryName = options.registryName ?? DEFAULT_DESIGNATED_ALIASES_REGISTRY_NAME;
   const registry = designatedAliasRegistry(
     rgy,
@@ -105,7 +103,7 @@ export function bindDesignatedAliases(
 
   const credentialer = new Credentialer(runtime.hby, {
     reger,
-    vry: requireVerifier(runtime),
+    vry: rgy.vry,
   });
   const creder = credentialer.create({
     registry,
@@ -134,8 +132,7 @@ export function listActiveDesignatedAliasCredentials(
   runtime: AgentRuntime,
   aid: string,
 ): ActiveDesignatedAliasCredential[] {
-  const reger = requireReger(runtime);
-  const tvy = requireTevery(runtime);
+  const { reger, tvy } = requireRegery(runtime);
   const wallet = new CredentialWallet(reger);
   const active: ActiveDesignatedAliasCredential[] = [];
   for (
@@ -287,35 +284,6 @@ function requireHab(runtime: AgentRuntime, alias: string): Hab {
     throw new ValidationError(`No local AID found for alias ${alias}.`);
   }
   return hab;
-}
-
-function requireReger(runtime: AgentRuntime): Reger {
-  const reger = runtime.vdr.reger;
-  if (!reger) {
-    throw new ValidationError("VDR runtime did not open Reger.");
-  }
-  return reger as Reger;
-}
-
-function requireRegery(runtime: AgentRuntime): Regery {
-  if (!(runtime.vdr.rgy instanceof Regery)) {
-    throw new ValidationError("VDR runtime did not open Regery.");
-  }
-  return runtime.vdr.rgy;
-}
-
-function requireTevery(runtime: AgentRuntime): Tevery {
-  if (!(runtime.vdr.tvy instanceof Tevery)) {
-    throw new ValidationError("VDR runtime did not open Tevery.");
-  }
-  return runtime.vdr.tvy;
-}
-
-function requireVerifier(runtime: AgentRuntime): Verifier {
-  if (!(runtime.vdr.vry instanceof Verifier)) {
-    throw new ValidationError("VDR runtime did not open Verifier.");
-  }
-  return runtime.vdr.vry;
 }
 
 function cloneJsonObject(value: unknown): Record<string, unknown> {

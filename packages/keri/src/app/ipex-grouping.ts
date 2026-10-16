@@ -24,7 +24,6 @@ import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { serializeMessage } from "../core/protocol-exchanging.ts";
-import { Reger } from "../db/reger.ts";
 import { type AgentRuntime, processMailboxTurn } from "./agent-runtime.ts";
 import { groupSigningMembers, localGroupMember } from "./group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigChild, multisigChildGenusAttrs } from "./grouping.ts";
@@ -296,9 +295,9 @@ export function* sendCompletedGroupIpex(
 
   const messages: Uint8Array[] = [];
   let grantPathed: Uint8Array[] | undefined;
-  const reger = runtime.vdr.reger;
+  const reger = runtime.vdr?.reger;
   if (embedded.route === IPEX_GRANT_ROUTE) {
-    if (!(reger instanceof Reger)) {
+    if (!reger) {
       throw new ValidationError("VDR runtime did not open Reger.");
     }
     const credentialSaid = credentialSaidFromGrant(embedded);

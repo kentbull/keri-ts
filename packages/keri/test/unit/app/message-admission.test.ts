@@ -19,6 +19,7 @@ import ipex from "../../fixtures/keripy-ipex-vectors.json" with { type: "json" }
 Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prerequisite refusals", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       assertEquals(fixture.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
       for (const row of fixture.cases) {
@@ -45,6 +46,8 @@ Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prereq
             record("reply");
             return { kind: "accept" };
           };
+          const tvy = runtime.vdr!.tvy;
+          tvy.processQuery = (query) => record("tel-query", query);
           const result = yield* dispatchEnvelope(
             envelopeFromFrame(frame),
             revery,
@@ -56,7 +59,7 @@ Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prereq
                 },
               }
               : undefined,
-            row.processor ? { tvy: { processQuery: (query) => record("tel-query", query) } } : {},
+            row.processor ? tvy : undefined,
           );
           assertEquals(observed, row.observed, row.name);
           if (!row.observed.length) {
@@ -78,6 +81,7 @@ Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prereq
         }
       }
     } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });

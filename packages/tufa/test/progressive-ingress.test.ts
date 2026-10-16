@@ -676,7 +676,9 @@ Deno.test("direct HTTP TSN query retains both independently verifiable replies",
     const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const requester = receiver.makeHab("requester"), target = yield* createAgentRuntime(receiver);
     try {
-      const tvy = runtime.vdr.tvy as Tevery, reger = runtime.vdr.reger! as Reger, received = target.vdr.reger! as Reger;
+      const tvy = runtime.vdr!.tvy as Tevery,
+        reger = runtime.vdr!.reger! as Reger,
+        received = target.vdr!.reger! as Reger;
       const vcp = inceptRegistry(issuer.pre, { cnfg: ["NB"] });
       const credential = new Diger({ code: "E", raw: Diger.digest(b("HTTP credential"), "E") }).qb64;
       const iss = issue(credential, vcp.pre!);
