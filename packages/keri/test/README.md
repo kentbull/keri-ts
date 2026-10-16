@@ -98,6 +98,9 @@ The Python server lives in [`ipex_peer.py`](fixtures/ipex_peer.py), with a small
 [`launcher`](fixtures/ipex-http-peer.py). Its loopback `/_fixture` endpoint accepts
 only test commands; all KELs, exchanges and nested proofs still cross the public
 CESR endpoint and normal verification. Private keys and stores remain local.
+The parent selects an available unprivileged port explicitly: HIO's HTTP server
+treats port zero as port 80. Publish readiness only after the listener opens, and
+check its reported port against the selected port even when local tests run as root.
 
 Credential construction is separate in
 [`ipex/disclosures.ts`](integration/app/ipex/disclosures.ts) and
