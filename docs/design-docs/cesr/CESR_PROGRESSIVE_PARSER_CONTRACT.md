@@ -43,8 +43,10 @@ extent and zero lead padding before admitting an incoming Texter.
 
 `essrRaw(texters)` and `essrWire(texters)` provide derived read-only Payload views
 for existing crypto/storage consumers. They create no staging files or owners.
-`essrChunks(texters, { gvrsn, domain, signal })` emits counters derived from the
-actual array and primitive extents. There is no caller-supplied count/size
+`essrChunks(texters, { gvrsn, domain })` synchronously yields counters and chunks
+derived from the actual array and primitive extents. It has no lifetime policy;
+actual Payload.open readers and replay operations check before publishing each
+chunk. Finite stored-nest and resident-token hydration likewise take no signal. There is no caller-supplied count/size
 manifest, lazy parser source, sink factory or discardFrame lifecycle.
 
 `annotateFrames` and `annotate` are synchronous finite operations. Rendering walks

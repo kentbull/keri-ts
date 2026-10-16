@@ -1,4 +1,4 @@
-/** KERIpy enst. wire storage; temporary reopened ESSR owners belong to the caller. */
+/** KERIpy enst. wire storage and finite nested evidence hydration. */
 import {
   b,
   type CesrFrame,
@@ -95,11 +95,10 @@ export function publishNests(db: Baser, said: string, stage: string): void {
 }
 
 /** Hydrate each stored wrapper through the finite decoder without parser-owned files. */
-export function loadNests(db: Baser, said: string, signal?: AbortSignal): CesrFrame[] {
+export function loadNests(db: Baser, said: string): CesrFrame[] {
   const nests: CesrFrame[] = [];
   let ordinal = 0;
   for (;;) {
-    signal?.throwIfAborted();
     const row = nextRow(db, db.enst, said, ordinal);
     if (!row) break;
     ordinal = row.next;

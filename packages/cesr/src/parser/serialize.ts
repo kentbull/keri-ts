@@ -137,9 +137,8 @@ function groupBytes(group: AttachmentGroup, gvrsn: Versionage, domain: CesrDomai
 }
 
 /** Yield owned bounded chunks so a short view never pins a larger backing allocation downstream. */
-async function* chunks(bytes: Uint8Array, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
+function* chunks(bytes: Uint8Array): Generator<Uint8Array> {
   for (let offset = 0; offset < bytes.length; offset += CHUNK_BYTES) {
-    signal?.throwIfAborted();
     yield bytes.slice(offset, offset + CHUNK_BYTES);
   }
 }
@@ -156,13 +155,12 @@ function essrHeader(texters: readonly Texter[], gvrsn: Versionage, domain: CesrD
 }
 
 /** Serialize ordinary ESSR fragments under their selected counter genus. */
-export async function* essrChunks(
+export function* essrChunks(
   texters: readonly Texter[],
-  { gvrsn, domain = "txt", signal }: { gvrsn: Versionage; domain?: CesrDomain; signal?: AbortSignal },
-): AsyncGenerator<Uint8Array> {
-  signal?.throwIfAborted();
+  { gvrsn, domain = "txt" }: { gvrsn: Versionage; domain?: CesrDomain },
+): Generator<Uint8Array> {
   yield essrHeader(texters, gvrsn, domain);
-  for (const texter of texters) yield* chunks(domain === "txt" ? texter.qb64b : texter.qb2, signal);
+  for (const texter of texters) yield* chunks(domain === "txt" ? texter.qb64b : texter.qb2);
 }
 
 /**
@@ -182,7 +180,14 @@ export function nestedPayload(frame: CesrFrame, enclosing: Versionage, options: 
     ? counter("ControllerIdxSigs", 0, gvrsn, domain)
     : undefined;
   const attachments: Payload = empty
-    ? { size: empty.length, open: (signal) => chunks(empty, signal) }
+    ? {
+      size: empty.length,
+      /** This reader owns cancellation even when its content is one finite counter. */
+      async *open(signal) {
+        signal?.throwIfAborted();
+        yield empty;
+      },
+    }
     : attachmentContent(frame, options);
   // All child bytes are qualified, so enclosing counts are quadlets in text and triplets in binary.
   const header = counter(
@@ -195,9 +200,12 @@ export function nestedPayload(frame: CesrFrame, enclosing: Versionage, options: 
     size: header.length + selector.length + body.length + attachments.size,
     /** Borrow descendant owners until the caller finishes or cancels this reader. */
     async *open(signal?: AbortSignal) {
-      yield* chunks(header, signal);
-      yield* chunks(selector, signal);
-      yield* chunks(body, signal);
+      for (const bytes of [header, selector, body]) {
+        for (const chunk of chunks(bytes)) {
+          signal?.throwIfAborted();
+          yield chunk;
+        }
+      }
       yield* attachments.open(signal);
     },
   };
@@ -235,7 +243,7 @@ function attachmentContent(frame: CesrFrame, options: SerializeOptions): Payload
     })
   );
   const nested = children.reduce((size, child) => size + child.size, 0);
-  // Only the ESSR header is resident; its canonical wire stays in its owning sink.
+  // ESSR wire is derived from the authoritative resident Texter values.
   const essr = frame.essrs;
   // The same helper is used when the stream emits this counted payload.
   const essrPrefix = essr ? essrHeader(essr, gvrsn, domain) : new Uint8Array();
@@ -246,9 +254,19 @@ function attachmentContent(frame: CesrFrame, options: SerializeOptions): Payload
     size: ordinary + nested + essrPrefix.length + essrSize,
     /** Each reopen retains the existing owner and streams the same logical attachment bytes. */
     async *open(signal?: AbortSignal) {
-      for (const group of groups) yield* chunks(group, signal);
+      for (const group of groups) {
+        for (const chunk of chunks(group)) {
+          signal?.throwIfAborted();
+          yield chunk;
+        }
+      }
       for (const child of children) yield* child.open(signal);
-      if (essr) yield* essrChunks(essr, { gvrsn, domain, signal });
+      if (essr) {
+        for (const chunk of essrChunks(essr, { gvrsn, domain })) {
+          signal?.throwIfAborted();
+          yield chunk;
+        }
+      }
     },
   };
 }
@@ -271,14 +289,18 @@ export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions =
     size: header.length + selector.length + content.size,
     /** The caller retains every owner until this complete attachment reader closes. */
     async *open(signal?: AbortSignal) {
-      yield* chunks(header, signal);
-      yield* chunks(selector, signal);
+      for (const bytes of [header, selector]) {
+        for (const chunk of chunks(bytes)) {
+          signal?.throwIfAborted();
+          yield chunk;
+        }
+      }
       yield* content.open(signal);
     },
   };
 }
 
-/** Serialize one admitted frame with an explicit genus and a complete attachment boundary. */
+/** Serialize one hydrated frame with an explicit genus and a complete attachment boundary. */
 export function framePayload(frame: CesrFrame, options: SerializeOptions = {}): Payload {
   // Native bodies declare a genus in their own qualification; JSON protocol versions do not.
   const gvrsn = frameGenus(frame, options.gvrsn);
@@ -295,8 +317,12 @@ export function framePayload(frame: CesrFrame, options: SerializeOptions = {}): 
     size: prefix.length + body.length + attachments.size,
     /** Yield prefix, finite body, and streamed attachments under the caller's cancellation signal. */
     async *open(signal?: AbortSignal) {
-      yield* chunks(prefix, signal);
-      yield* chunks(body, signal);
+      for (const bytes of [prefix, body]) {
+        for (const chunk of chunks(bytes)) {
+          signal?.throwIfAborted();
+          yield chunk;
+        }
+      }
       yield* attachments.open(signal);
     },
   };

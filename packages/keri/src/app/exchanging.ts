@@ -533,12 +533,13 @@ export class Exchanger {
       if (decision.kind === "reject" && !decision.preserveEscrow) yield* call(() => this.dropEscrow(said));
     }
   }
-  /** Stream accepted evidence; reopened child ESSR stages survive until output cancellation or completion. */
+  /** Own accepted-evidence replay and its actual payload readers through completion or cancellation. */
   async *replay(said: string, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
     signal?.throwIfAborted();
     const serder = this.hby.db.exns.get([said]);
     if (!serder) throw new ValidationError("Cannot replay an unaccepted exchange.");
     const essrs = await this.hby.db.getEssrs(said, signal);
+    signal?.throwIfAborted();
     const gvrsn = resolveAttachmentGvrsn(serder, this.hby.db.exchangeMeta.get([said])?.essr?.gvrsn);
     const args = {
       serder,
@@ -557,7 +558,7 @@ export class Exchanger {
     const nested = hasNests(this.hby.db, said);
     {
       const groups = nested ? messageAttachmentGroups(evidence, gvrsn) : [];
-      const nests = nested ? loadNests(this.hby.db, said, signal) : [];
+      const nests = nested ? loadNests(this.hby.db, said) : [];
       if (nests.length) {
         // Reuse the stored Serder and hydrated endorsements; the shared encoder builds real leaf groups.
         const parent: CesrFrame = {
@@ -569,9 +570,13 @@ export class Exchanger {
         };
         yield* framePayload(parent).open(signal);
       } else {
+        signal?.throwIfAborted();
         yield serializeMessage(serder, { ...evidence, gvrsn, genusify: gvrsn.major >= 2 });
         if (essrs) {
-          yield* essrChunks(essrs, { gvrsn, signal });
+          for (const chunk of essrChunks(essrs, { gvrsn })) {
+            signal?.throwIfAborted();
+            yield chunk;
+          }
         }
       }
     }
