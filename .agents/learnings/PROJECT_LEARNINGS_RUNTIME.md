@@ -69,7 +69,12 @@ including cleanup errors combined with the owner's abort reason. Abort before
 child teardown, then join pending I/O through a registered resource finalizer;
 throwing only from the operation's own finally does not fail Effection's halt
 result. Suppress only the exact owned abort reason and preserve already reported
-failures without duplication.
+failures without duplication. External input cancellation must stop the native
+Effection operation, including a waiting protocol turn or active response
+consumer; composing byte-source signals alone is insufficient. Register the
+abort watcher before checking its state. Check before pulls and after results,
+before interpreting done as successful EOF or dispatching another frame.
+DispatchOptions contains protocol choices only; IngressOptions adds input lifetime.
 
 KERI/Tufa operations own lifecycle. Acquire source/frame/runtime resources before
 work children so cancellation aborts and joins I/O before releasing permits or

@@ -1,6 +1,6 @@
 import { call, type Operation, resource, type Stream } from "npm:effection@^3.6.0";
 import type { CesrFrame } from "../core/types.ts";
-import { parse, type ParseOptions } from "../parser/parser.ts";
+import { parse } from "../parser/parser.ts";
 /** One pull-only Effection subscription; consumption requests the next complete frame. */
 export interface FrameChannel {
   /** Consume with `yield* each(...)`; each channel permits one subscription only. */
@@ -16,7 +16,7 @@ export interface FrameChannel {
  */
 export function* toEffectionFrames(
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
-  options: ParseOptions = {},
+  options: { signal?: AbortSignal } = {},
 ): Operation<FrameChannel> {
   return yield* resource<FrameChannel>(function*(provide) {
     // This resource owns cancellation; external aborts enter the same cleanup path.
@@ -35,7 +35,7 @@ export function* toEffectionFrames(
       }
     }
     const iterator = input(); // Retain source lifetime separately from the cursor's interruptible read.
-    const parser = parse(iterator, { ...options, signal: controller.signal });
+    const parser = parse(iterator);
     let subscribed = false; // One source has one position; this stream is not a broadcast channel.
     let pending: Promise<IteratorResult<CesrFrame, void>> | undefined;
     let closing: Promise<void> | undefined;
@@ -104,6 +104,7 @@ export function* toEffectionFrames(
                 return call(function*() {
                   if (closing) throw new Error("Frame channel is closed");
                   if (pending) throw new Error("Frame channel cannot read concurrently");
+                  controller.signal.throwIfAborted();
                   pending = parser.next();
                   let delivered = false;
                   // Earlier resource teardown preserves late close failure even when this next() is halted.
@@ -122,6 +123,7 @@ export function* toEffectionFrames(
                   });
                   try {
                     const result = yield* call(() => pending!);
+                    controller.signal.throwIfAborted();
                     delivered = true;
                     return result;
                   } catch (error) {

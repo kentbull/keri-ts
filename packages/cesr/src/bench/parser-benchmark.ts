@@ -1,6 +1,6 @@
-import { parse, type ParseOptions } from "../parser/parser.ts";
+import { parse } from "../parser/parser.ts";
 
-/** Controls repeated progressive parses; every run must consume valid input completely. */
+/** Controls repeated buffered parses; every run must consume valid input completely. */
 export interface BenchmarkOptions {
   /** Number of measured runs; default 50. */
   iterations?: number;
@@ -8,8 +8,8 @@ export interface BenchmarkOptions {
   warmupIterations?: number;
   /** Independent copied source chunks; default 64 KiB. */
   chunkSize?: number;
-  /** Optional cancellation for the input receiving loop. */
-  parserOptions?: ParseOptions;
+  /** Cancel the benchmark operation between pulls and measured runs. */
+  signal?: AbortSignal;
 }
 
 /** Throughput over fully consumed valid input, excluding warmup iterations. */
@@ -42,24 +42,31 @@ function integer(value: number, name: string, minimum = 1): number {
   if (!Number.isSafeInteger(value) || value < minimum) throw new RangeError(`${name} must be an integer >= ${minimum}`);
   return value;
 }
-/** Consume one progressive pass, releasing ESSR on every delivered frame. */
+/** Consume one valid pass; benchmark cancellation stays outside decoding. */
 export async function countFrames(
   input: Uint8Array,
-  options: Pick<BenchmarkOptions, "chunkSize" | "parserOptions"> = {},
+  options: Pick<BenchmarkOptions, "chunkSize" | "signal"> = {},
 ): Promise<number> {
   const chunkSize = integer(options.chunkSize ?? 65536, "chunkSize");
   /** Allocate only the next chunk; no array of slices retains source metadata. */
   async function* source(): AsyncGenerator<Uint8Array> {
     for (let offset = 0; offset < input.length; offset += chunkSize) {
-      options.parserOptions?.signal?.throwIfAborted();
       yield input.slice(offset, offset + chunkSize);
     }
   }
   let frameCount = 0;
-  for await (const frame of parse(source(), options.parserOptions)) {
-    {
+  options.signal?.throwIfAborted();
+  const frames = parse(source());
+  try {
+    while (true) {
+      options.signal?.throwIfAborted();
+      const result = await frames.next();
+      options.signal?.throwIfAborted();
+      if (result.done) break;
       frameCount++;
     }
+  } finally {
+    await frames.return();
   }
   return frameCount;
 }

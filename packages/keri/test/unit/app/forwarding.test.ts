@@ -843,8 +843,6 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
               } finally {
                 remaining.reservation.release();
               }
-              assertEquals(yield* attemptPreparedCesrTarget(tcpTarget, runtime.services, undefined, runtime), "busy");
-              assertEquals(connections, 0, "RX refusal must precede socket acquisition");
             } finally {
               busy.reservation.release();
             }

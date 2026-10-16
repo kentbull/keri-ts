@@ -557,8 +557,18 @@ function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<SerderKERI> {
     const path = args.grantFile;
     return yield* abortable(async (signal) => {
       let grant: SerderKERI | undefined;
-      for await (const frame of parse(fileBytes(path, { signal }), { signal })) {
-        if (!grant && frame.body instanceof SerderKERI && frame.body.route === IPEX_GRANT_ROUTE) grant = frame.body;
+      const frames = parse(fileBytes(path, { signal }));
+      try {
+        while (true) {
+          signal.throwIfAborted();
+          const result = await frames.next();
+          signal.throwIfAborted();
+          if (result.done) break;
+          const frame = result.value;
+          if (!grant && frame.body instanceof SerderKERI && frame.body.route === IPEX_GRANT_ROUTE) grant = frame.body;
+        }
+      } finally {
+        await frames.return();
       }
       if (grant) return grant;
       throw new ValidationError(`Grant file ${path} does not contain an IPEX grant.`);

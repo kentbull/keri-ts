@@ -520,7 +520,7 @@ export class Multiplexor {
       const signal = controller.signal;
       try {
         signal.throwIfAborted();
-        const frames = parse(self.replay.replay(said, signal), { signal });
+        const frames = parse(self.replay.replay(said, signal));
         let pending: ReturnType<typeof frames.next> | undefined;
         // The earlier resource joins the read after processing children stop.
         yield* ensure(function*() {
@@ -537,6 +537,7 @@ export class Multiplexor {
           }
         });
         while (true) {
+          signal.throwIfAborted();
           pending = frames.next();
           let result: Awaited<typeof pending>;
           try {
@@ -546,6 +547,7 @@ export class Multiplexor {
             throw error;
           }
           pending = undefined;
+          signal.throwIfAborted();
           if (result.done) break;
           const frame = result.value;
           const serder = frame.body as SerderKERI;

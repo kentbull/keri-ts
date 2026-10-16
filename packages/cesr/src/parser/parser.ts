@@ -4,24 +4,19 @@ import type { CesrFrame } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { decodeNext } from "./decoder.ts";
 
-/** Input cancellation belongs to the concrete source owner. */
-export interface ParseOptions {
-  signal?: AbortSignal;
-}
-
-/** Receive fragments and emit complete messages; counted enclosures arrive before decoding. */
+/**
+ * Receive fragments and emit complete messages; counted enclosures arrive before decoding.
+ * The consuming operation owns cancellation. Returning joins the actual input iterator.
+ */
 export async function* parse(
   source: AsyncIterable<Uint8Array>,
-  { signal }: ParseOptions = {},
 ): AsyncGenerator<CesrFrame, void> {
-  signal?.throwIfAborted();
   const input = source[Symbol.asyncIterator]();
   const failures: unknown[] = [];
   let bytes = new Uint8Array(0), start = 0, end = 0, wanted = 1, eof = false;
   let selected: Versionage | null = null;
   try {
     while (true) {
-      signal?.throwIfAborted();
       if (end - start >= wanted || eof) {
         if (start === end && eof) return;
         let decoderFailure: unknown;
@@ -32,7 +27,6 @@ export async function* parse(
           let step = unit.next();
           while (!step.done) {
             yield step.value;
-            signal?.throwIfAborted();
             step = unit.next();
           }
           start += step.value.consumed;
@@ -43,14 +37,13 @@ export async function* parse(
           if (eof) return;
         } catch (error) {
           if (error instanceof ShortageError && !eof) wanted = error.needed;
-          else if (error instanceof ParserError && error !== decoderFailure && error !== signal?.reason) {
+          else if (error instanceof ParserError && error !== decoderFailure) {
             throw new WireParseError(error);
           } else throw error;
         }
       }
-      // Source operations stay outside decoding classification. The source honors cancellation.
+      // Source operations stay outside decoding classification; the input owner controls its lifetime.
       const part = await input.next();
-      signal?.throwIfAborted();
       if (part.done) {
         eof = true;
         continue;

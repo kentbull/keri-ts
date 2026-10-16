@@ -348,6 +348,109 @@ Deno.test("input cancellation is owned before source construction", async () => 
   });
 });
 
+Deno.test("external cancellation removes an input waiting for the protocol turn", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const hab = hby.makeHab("sender"), reactor = new Reactor(hby);
+      const bytes = acceptedEventReplayMessage(hby, hab.pre, 0).message;
+      const held = gate(), release = gate(), queued = gate();
+      const settle = reactor.settle;
+      reactor.settle = function(frame, options, consume) {
+        if (frame) queued.open();
+        return settle.call(this, frame, options, consume);
+      };
+      yield* call(async () => {
+        const holder = run(() =>
+          reactor.settle(undefined, {}, function*() {
+            held.open();
+            yield* call(() => release.wait);
+          })
+        );
+        await held.wait;
+        const controller = new AbortController(), reason = new Error("input stopped while waiting");
+        let dispatched = false, closed = false;
+        const input = run(() =>
+          reactor.process(
+            async function*() {
+              try {
+                yield concatBytes(bytes, bytes);
+              } finally {
+                closed = true;
+              }
+            },
+            { signal: controller.signal },
+            function*() {
+              dispatched = true;
+            },
+          )
+        );
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await queued.wait;
+          controller.abort(reason);
+          const failure = await assertRejects(() =>
+            Promise.race([
+              input,
+              new Promise<never>((_, reject) =>
+                timer = setTimeout(() => reject(new Error("cancel waited for the turn")), 1000)
+              ),
+            ])
+          );
+          assertStrictEquals(failure, reason);
+          assertEquals([dispatched, closed], [false, true]);
+        } finally {
+          clearTimeout(timer);
+          await input.halt();
+          release.open();
+          await holder;
+        }
+        assertEquals(dispatched, false);
+      });
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("input cancellation stops buffered dispatch and cannot become successful source EOF", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const hab = hby.makeHab("sender"), reactor = new Reactor(hby);
+      const bytes = acceptedEventReplayMessage(hby, hab.pre, 0).message;
+      for (const endAtSource of [false, true]) {
+        const controller = new AbortController(), reason = new Error("stop input");
+        let dispatches = 0, closed = false;
+        const input = run(() =>
+          reactor.process(
+            async function*() {
+              try {
+                if (endAtSource) {
+                  controller.abort(reason);
+                  return;
+                }
+                yield concatBytes(bytes, bytes, bytes);
+              } finally {
+                closed = true;
+              }
+            },
+            { signal: controller.signal },
+            function*() {
+              dispatches++;
+              controller.abort(reason);
+            },
+          )
+        );
+        assertStrictEquals(yield* call(() => assertRejects(() => input)), reason);
+        assertEquals([dispatches, closed], [endAtSource ? 0 : 1, true]);
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("stream cancellation joins the actual source cleanup", async () => {
   for (const fail of [false, true]) {
     const expected = fail ? new Error("late source cleanup failure") : undefined;

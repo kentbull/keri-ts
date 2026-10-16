@@ -12,7 +12,6 @@ const DEFAULT_OPTIONS: RenderOptions = Object.freeze({
 });
 /** Decode finite input and render the original wrapper wire without temporary storage. */
 export function annotateFrames(input: Uint8Array | string, options: AnnotateOptions = {}): AnnotatedFrame[] {
-  options.signal?.throwIfAborted();
   const bytes = typeof input === "string" ? b(input) : input;
   return renderAnnotatedFrames(parseBytes(bytes), { ...DEFAULT_OPTIONS, ...options }, bytes);
 }

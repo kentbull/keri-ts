@@ -26,6 +26,9 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
   serialized counts from that representation; ordinary values need no disposal.
 - Annotation is synchronous and walks original wire scopes with each hydrated
   node once. Rendering does not acquire parser payload owners.
+- parse(source) has no options; annotation is presentation-only. Input operations
+  check before/after pulls and stop buffered/waiting dispatch on cancellation.
+  Benchmark cancellation is a direct operation signal, never parser configuration.
 - Files, crypto, sockets and actual Payload readers retain their own cleanup.
   The optional Effection bridge remains transport removal work, not a parser
   architecture requirement. Sources must cooperate with their owner's signal.

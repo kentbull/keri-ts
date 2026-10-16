@@ -19,8 +19,11 @@ at the composition point; the two TCP bridge callers remain transitional.
 
 ## Remaining cuts
 
-1. Remove TcpRead, custom frame channels and caller parser-option forwarding.
-   Concrete transport scopes own cancellation, blocked reads and joined cleanup.
+1. Input owners now bind external cancellation to native operations and check
+   pulls/results before EOF or dispatch. Parser, finite annotation and benchmark
+   parser-options forwarding are removed; benchmark operations own a direct signal.
+   Remove the remaining TcpRead and two TCP frame-channel callers, preserving
+   concrete blocked I/O interruption and joined cleanup.
 2. Remove remaining runtime/transport accounting and delivery/pump indirection
    under ADR-0013 without weakening actual socket/file cleanup.
 3. Resolve the reverse HTTP KERIpy genus contract and qualify successive messages,

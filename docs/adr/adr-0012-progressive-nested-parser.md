@@ -42,7 +42,10 @@ closure. The host operation scope connects received bytes to the decoder and
 complete messages to protocol processing. CESR decoding has no Effection
 dependency. Remove FrameIntake, TcpRead, custom frame channels, parser option
 forwarding, provenance callbacks and iterator machinery made unnecessary by this
-separation. Choose one cancellation owner; transport readers cooperate with it.
+separation. parse(source) accepts no lifetime options; finite annotation is also
+signal-free. Consuming operations check around pulls and before dispatch/EOF,
+and external cancellation stops waiting or active native Effection work. Concrete
+I/O observes its owner's signal and joins before actual resources are released.
 
 Remove parser sink factories, EssrWriter staging, pending/finished owner registries,
 parallel pending trees, cursor reopening and mandatory disposal of ordinary parsed

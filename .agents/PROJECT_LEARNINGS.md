@@ -40,7 +40,9 @@ open boundaries. Diagnostic metadata must not drive domain control flow.
 ADR-0012 now requires one buffered finite decoder. The progressive engine, cursor and parser-owned staging are removed.
 The Effection frame bridge remains transport removal work.
 Buffer complete counted enclosures before synchronous decoding; accept the group
-memory/latency tradeoff. KERI/Tufa own concrete transport cancellation and cleanup.
+memory/latency tradeoff. Parsing/finite annotation have no cancellation options;
+KERI/Tufa input operations stop buffered or waiting work and concrete I/O owns
+interruption and joined cleanup.
 Composition points depend downward: transport lends bounded byte streams;
 application flows compose parsing/dispatch without an AgentRuntime dependency in transport.
 Ordinary hydrated frames require no disposal; actual I/O owners join cleanup.
