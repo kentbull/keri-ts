@@ -78,6 +78,9 @@ before returning or throwing. Commands choose their actual deadline and whether
 mailbox polling is needed; no max-turn count estimates elapsed work. A blocked
 HTTP/mailbox worker does not serialize unrelated ingress or escrow progress.
 Actual cleanup failure still reaches the caller after convergence or cancellation.
+Challenge verification uses the same host workers while its command loop observes
+accepted responses and an elapsed deadline. It joins them before marking a match
+or reporting a missing response, so an empty mailbox wait can be retried cleanly.
 
 The older serial processRuntimeTurn and explicit mailbox/approval pumping remain
 transitional removal work. Their remaining callers must move to real ingress or

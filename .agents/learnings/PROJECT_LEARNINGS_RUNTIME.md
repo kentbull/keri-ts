@@ -102,8 +102,10 @@ workers as runAgentRuntime, with a caller-owned elapsed deadline and completion
 predicate. There is no max-turn policy or compatibility alias. Blocked mailbox/
 OOBI I/O cannot serialize unrelated ingress progress; success, deadline, failure
 and cancellation join workers before caller/store teardown. A genuine command may
-omit mailbox polling. Query keeps its own completion/display policy over the same
-runner. The supervisor suspends instead of polling; component loops still own
+omit mailbox polling. Query and challenge verification keep their own completion/
+display policy over the same runner. Challenge verification observes accepted
+responses while host workers poll mailboxes; even an empty-mailbox deadline joins
+those workers before stores close. The supervisor suspends; component loops own
 progress. processRuntimeTurn and explicit serial mailbox/approval callers remain
 removal work; do not claim one driving model is fully implemented yet.
 

@@ -1,6 +1,6 @@
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { processMailboxTurn } from "../agent-runtime.ts";
+import { runAgentRuntime } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import {
   CHALLENGE_RESPONSE_ROUTE,
@@ -194,11 +194,15 @@ export function* challengeVerifyCommand(
       const deadline = Date.now() + timeoutMs;
       let match = findVerifiedChallengeResponse(hby.db, signer, words);
 
-      while (!match && Date.now() < deadline) {
-        yield* processMailboxTurn(runtime);
-        match = findVerifiedChallengeResponse(hby.db, signer, words);
-        if (!match && Date.now() < deadline) {
-          yield* sleep(pollDelayMs);
+      if (!match) {
+        const worker = yield* spawn(() => runAgentRuntime(runtime));
+        try {
+          while (!match && Date.now() < deadline) {
+            yield* sleep(Math.min(pollDelayMs, Math.max(0, deadline - Date.now())));
+            match = findVerifiedChallengeResponse(hby.db, signer, words);
+          }
+        } finally {
+          yield* worker.halt();
         }
       }
 

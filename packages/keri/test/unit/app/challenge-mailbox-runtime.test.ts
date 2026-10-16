@@ -1,16 +1,16 @@
 import { type Operation, run, spawn } from "effection";
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertInstanceOf, assertStringIncludes } from "jsr:@std/assert";
 import { mailboxAddCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import {
   createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
   runAgentRuntime,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
 import { controllerOobiResponse, startStaticHttpHost } from "../../http-test-support.ts";
@@ -46,7 +46,7 @@ async function seedMailboxProvider(
   return pre;
 }
 
-Deno.test("exchange send can deliver challenge responses through mailbox-authorized transport", async () => {
+Deno.test("challenge verification joins an empty mailbox wait before successful delivery and retry", async () => {
   const providerName = `challenge-indirect-provider-${crypto.randomUUID()}`;
   const bobName = `challenge-indirect-bob-${crypto.randomUUID()}`;
   const aliceName = `challenge-indirect-alice-${crypto.randomUUID()}`;
@@ -105,19 +105,11 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
 
       try {
         const providerUrl = `http://${address.hostname}:${address.port}`;
-        ingestKeriBytes(
-          runtime,
+        yield* settleRuntimeIngress(runtime, [
           hab.makeLocScheme(providerUrl, hab.pre, "http"),
-        );
-        ingestKeriBytes(
-          runtime,
           hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-        );
-        ingestKeriBytes(
-          runtime,
           hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true),
-        );
-        yield* processRuntimeTurn(runtime, { hab });
+        ]);
 
         const providerResolved = yield* testCLICommand(
           oobiResolveCommand({
@@ -180,6 +172,22 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
           bobResolved.output.at(-1),
           `${providerUrl}/oobi/${bobPre}/mailbox/${providerPre}`,
         );
+
+        let expired: unknown;
+        try {
+          yield* testCLICommand(challengeVerifyCommand({
+            name: bobName,
+            headDirPath: bobHeadDirPath,
+            signer: alice.pre,
+            words: JSON.stringify(words),
+            timeout: 1,
+            pollDelayMs: 25,
+          }));
+        } catch (error) {
+          expired = error;
+        }
+        assertInstanceOf(expired, ValidationError);
+        assertStringIncludes(expired.message, "No challenge response");
 
         const responded = yield* testCLICommand(
           challengeRespondCommand({
