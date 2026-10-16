@@ -15,8 +15,15 @@ npm install keri-ts
 - `keri-ts/runtime`: explicit non-browser-safe runtime surface
 - `keri-ts/db`: explicit LMDB-backed storage surface
 
-Only those three entrypoints are supported public surfaces. Runnable CLI/server
-ownership lives in the separate `tufa` package.
+Those three entrypoints are the general library surfaces. `keri-ts/cli` is the
+separate command-helper boundary used by Tufa. Runnable CLI/server ownership
+lives in `@keri-ts/tufa`.
+
+The runtime exports deliberate operations and data contracts. Scheduling details,
+handler installation, reply-slot state and constructor helpers remain internal;
+implementation-module exports do not automatically become package API. npm deep
+imports such as `keri-ts/app/...` and `keri-ts/core/...` are not supported. Import
+runtime operations from `keri-ts/runtime` and storage from `keri-ts/db`.
 
 ## Maintainer Docs
 

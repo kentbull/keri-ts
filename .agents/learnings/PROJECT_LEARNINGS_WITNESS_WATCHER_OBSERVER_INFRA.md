@@ -62,7 +62,11 @@ Use dprint and deterministic version generation in checks; opt into build metada
 only for artifacts. Build helpers are real source files, not multiline JS/TS in
 shell/workflow strings. Keep inline-code:check and export docstring checks honest.
 
-The package graph is tufa → keri-ts → cesr-ts. Derive every manifest export/bin
+The package graph is tufa → keri-ts → cesr-ts. KERI's general entrypoints are root,
+runtime and db; cli is the separate Tufa command-helper boundary. Runtime exports
+are deliberate, not module wildcards. Do not publish app/core/db/vdr deep-import
+patterns to expose implementation internals. Installed probes use named surfaces.
+Derive every manifest export/bin
 from DNT output, including host/kernel and protocol-handler imports/declarations;
 fixed layout guesses can break advertised subpaths while the CLI still works.
 Assert packed targets. Install all three local tarballs once per runtime
@@ -82,10 +86,10 @@ blocker as current publication status; verify live state before release claims.
 ## Remaining qualification
 
 The [qualification plan](../../docs/plans/qualification/QUALIFICATION_PLAN.md) owns
-the full inventory and two fresh-process 16/256 MiB production observations.
-Gigabyte/repeated matrices and historical reruns are deferred; enlarge only to
-resolve an anomaly and do not claim statistical or unmeasured scale evidence. Long hosted jobs
-remain maintainer-dispatched with the existing 15-minute cap, outside required
+the full maintained inventory and required manual/endurance evidence. Use
+representative traffic and investigate actual anomalies; no mandatory 16/256 MiB
+or gigabyte performance matrix remains. Do not claim unmeasured scale evidence.
+Long hosted jobs remain maintainer-dispatched with the existing 15-minute cap, outside required
 merge CI. Record failures/skips and variance; parser-only timing does not prove
 production memory bounds. [Runtime learnings](PROJECT_LEARNINGS_RUNTIME.md) own
 signal/SSE shutdown, and [storage learnings](PROJECT_LEARNINGS_STORAGE.md) own

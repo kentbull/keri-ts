@@ -42,6 +42,7 @@ assert(typeof db.createBaser === "function", "keri-ts/db missing createBaser");
 assert(typeof db.LMDBer === "function", "keri-ts/db missing LMDBer");
 assert(typeof db.dgKey === "function", "keri-ts/db missing dgKey");
 assert(typeof runtime.credential === "function", "keri-ts/runtime missing credential");
+assert(runtime.Algos?.salty === "salty", "keri-ts/runtime missing Manager algorithm selection");
 
 assert(!("startServer" in keri), "keri-ts root leaked startServer");
 assert(!("createTufaApp" in keri), "keri-ts root leaked createTufaApp");
