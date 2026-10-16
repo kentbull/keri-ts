@@ -7,7 +7,6 @@ import { Reger } from "../../db/reger.ts";
 import { abortable } from "../abortable.ts";
 import { type AgentRuntime, runAgentRuntime, settleMailboxPollBatch } from "../agent-runtime.ts";
 import { fileBytes } from "../byte-source.ts";
-import { requireRegery } from "../credential-workflows.ts";
 import { isLocalGroupHab, localGroupMember } from "../group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
@@ -193,7 +192,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       if (ipexArgs.out) {
         Deno.writeFileSync(ipexArgs.out, stream);
       } else if (runtime.reactor.exchanger.lead(hab, completedGrant.said!)) {
-        yield* sendCredentialBytes(runtime, localGroupMember(hby, hab.pre), recipient, [
+        yield* sendCredentialBytes(runtime.poster, localGroupMember(hby, hab.pre), recipient, [
           ...grant.support,
           completedGrantWire,
         ], ipexArgs.delivery);
@@ -213,7 +212,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     if (ipexArgs.out) {
       Deno.writeFileSync(ipexArgs.out, stream);
     } else {
-      yield* sendCredentialBytes(runtime, hab, recipient, [...grant.support, grant.wire], ipexArgs.delivery);
+      yield* sendCredentialBytes(runtime.poster, hab, recipient, [...grant.support, grant.wire], ipexArgs.delivery);
     }
     console.log(JSON.stringify({ said: grant.grant.said, credential: ipexArgs.said, support: grant.support.length }));
   });
@@ -241,7 +240,7 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void
     if (ipexArgs.out) {
       Deno.writeFileSync(ipexArgs.out, admit.wire);
     } else {
-      yield* sendCredentialBytes(runtime, hab, recipient, [admit.wire], ipexArgs.delivery);
+      yield* sendCredentialBytes(runtime.poster, hab, recipient, [admit.wire], ipexArgs.delivery);
     }
     console.log(JSON.stringify({ said: admit.admit.said, grant: grant.said }));
   });
@@ -458,7 +457,9 @@ function* withIpexRuntime<TResult>(
       skipConfig: true,
     },
     function*({ hby, runtime }) {
-      const reger = requireRegery(runtime).reger;
+      const rgy = runtime.vdr;
+      if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
+      const reger = rgy.reger;
       return yield* use({ hby, runtime, reger });
     },
   );

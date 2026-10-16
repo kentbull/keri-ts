@@ -141,7 +141,6 @@ export {
   inceptCredentialRegistry,
   listCredentials,
   pinSchemaBytes,
-  requireRegery,
   revokeCredential,
 } from "../app/credential-workflows.ts";
 export {

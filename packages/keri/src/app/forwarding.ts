@@ -199,7 +199,7 @@ export class Poster {
     const { mailboxer, services = defaultRuntimeServices } = options;
     this.hby = hby;
     this.mailboxer = mailboxer ?? null;
-    this.organizer = new Organizer(hby);
+    this.organizer = new Organizer(hby.db, hby.signator);
     this.services = services;
   }
 

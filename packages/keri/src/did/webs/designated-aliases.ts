@@ -13,8 +13,6 @@ import {
   Saider,
   type SerderACDC,
 } from "cesr-ts";
-import type { AgentRuntime } from "../../app/agent-runtime.ts";
-import { requireRegery } from "../../app/credential-workflows.ts";
 import type { Hab, Habery } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Schemer } from "../../core/scheming.ts";
@@ -70,10 +68,10 @@ export function pinDesignatedAliasesSchema(db: Baser): Schemer {
  * the replacement credential is issued.
  */
 export function bindDesignatedAliases(
-  runtime: AgentRuntime,
+  rgy: Regery,
   options: BindDesignatedAliasesOptions,
 ): BindDesignatedAliasesResult {
-  const hab = requireHab(runtime.hby, options.alias);
+  const hab = requireHab(rgy.hby, options.alias);
   const aid = hab.pre;
   const aliases = normalizeAliasList(options.dids);
   if (aliases.length === 0) {
@@ -83,8 +81,7 @@ export function bindDesignatedAliases(
     validateAliasDidForAid(did, aid, options.allowExternalDid ?? false);
   }
 
-  pinDesignatedAliasesSchema(runtime.hby.db);
-  const rgy = requireRegery(runtime);
+  pinDesignatedAliasesSchema(rgy.hby.db);
   const reger = rgy.reger;
   const registryName = options.registryName ?? DEFAULT_DESIGNATED_ALIASES_REGISTRY_NAME;
   const registry = designatedAliasRegistry(
@@ -102,7 +99,7 @@ export function bindDesignatedAliases(
     revoked.push(said);
   }
 
-  const credentialer = new Credentialer(runtime.hby, {
+  const credentialer = new Credentialer(rgy.hby, {
     reger,
     vry: rgy.vry,
   });

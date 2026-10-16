@@ -42,7 +42,7 @@ Deno.test("Notifier signs, lists, marks, removes, and signals notices with colla
     });
     const noter = yield* openNoterForHabery(hby);
     const signaler = new Signaler();
-    const notifier = new Notifier(hby, { noter, signaler });
+    const notifier = new Notifier(hby.signator!, { noter, signaler });
 
     try {
       assertEquals(
@@ -115,7 +115,7 @@ Deno.test("Notifier rejects tampered stored notices", async () => {
       skipConfig: true,
     });
     const noter = yield* openNoterForHabery(hby);
-    const notifier = new Notifier(hby, { noter });
+    const notifier = new Notifier(hby.signator!, { noter });
 
     try {
       assertEquals(notifier.add({ r: "/delegate/request", src: "EA" }), true);
@@ -183,7 +183,7 @@ Deno.test("DelegateRequestHandler writes notices only for local delegators", asy
       skipConfig: true,
     });
     const noter = yield* openNoterForHabery(hby);
-    const notifier = new Notifier(hby, { noter });
+    const notifier = new Notifier(hby.signator!, { noter });
 
     try {
       const delegator = hby.makeHab("delegator", undefined, {
@@ -254,7 +254,7 @@ Deno.test("OobiRequestHandler queues oobis and writes controller notices", async
       skipConfig: true,
     });
     const noter = yield* openNoterForHabery(hby);
-    const notifier = new Notifier(hby, { noter });
+    const notifier = new Notifier(hby.signator!, { noter });
 
     try {
       const sender = hby.makeHab("sender", undefined, {

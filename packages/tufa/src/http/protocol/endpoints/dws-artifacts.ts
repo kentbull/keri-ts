@@ -62,9 +62,11 @@ function dynamicArtifactResponse(
       didPath: didPathSegments(context.policy.dwsDidPath),
       aid: route.aid,
     });
+    const rgy = context.runtime?.vdr;
+    if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
     const bytes = route.artifact === "did.json"
-      ? generateDidWebsJson(context.runtime!, { did }).didJson
-      : generateDidWebsArtifacts(context.runtime!, { did }).keriCesr;
+      ? generateDidWebsJson(rgy, { did }).didJson
+      : generateDidWebsArtifacts(rgy, { did }).keriCesr;
     return new Response(bodyBuffer(bytes), {
       headers: {
         "Content-Type": route.artifact === "did.json" ? "application/did+json" : "application/cesr",

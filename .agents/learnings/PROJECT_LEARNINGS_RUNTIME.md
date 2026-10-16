@@ -96,7 +96,13 @@ check before pull and after results. Finite parser/codec APIs have no lifetime o
 Runtime borrows Habery/injected stores; defaults are owned. Readonly Haberies
 create neither default registry. Legacy Regery owns Reger/Tevery/Verifier; v2 Regery
 owns the RegBaser shared by IPEX/Reactor. Inject actual processors, not service bags
-or optional-method probes. Check genuine registry absence at application entry.
+or optional-method probes. Application entrypoints select optional registry owners
+before effects; subordinate operations receive Regery/Reger, Reactor or Poster.
+Keep capability guards for explicitly injected optional stores and lifecycle guards.
+Notifier borrows a required Signator, Noter and optional Signaler; runtime injection
+must match its Signator and any explicitly supplied Noter/Signaler before acquisition.
+Organizer borrows Baser and an explicit optional Signator; unsigned-read policy is
+unchanged. Neither component discovers its signing dependency through Habery.
 Factories own failed/unreturned acquisitions before reopen suspends; repeated close
 and scope exit are harmless. Default Noter/Mailboxer use Habery's temp policy.
 Acquire output after DBs so reverse teardown joins it first.

@@ -3,7 +3,6 @@ import { run } from "effection";
 import {
   didResolutionError,
   parseDidKeriIdentifier,
-  requireRegery,
   resolveDidKeri,
   type ResolveDidKeriResult,
   resolveDidWebs,
@@ -44,8 +43,10 @@ export async function handleDidResolutionRoute(
     const oobis = context.url.searchParams.getAll("oobi");
     let result: ResolveDidKeriResult | ResolveDidWebsResult | null = null;
     if (did.startsWith("did:webs:") || did.startsWith("did:web:")) {
+      const rgy = context.runtime.vdr;
+      if (!rgy) throw new Error("Legacy credential registry is unavailable in this runtime.");
       result = await run(() =>
-        resolveDidWebs(context.runtime!, {
+        resolveDidWebs(rgy, context.runtime!.reactor, context.runtime!.services.http, {
           did,
           metadata: meta,
           insecureHttp: context.policy.dwsInsecureHttp ?? false,
@@ -53,6 +54,8 @@ export async function handleDidResolutionRoute(
       );
     } else if (did.startsWith("did:keri:")) {
       const canonical = parseDidKeriIdentifier(did).canonical;
+      const rgy = context.runtime.vdr;
+      if (!rgy) throw new Error("Legacy credential registry is unavailable in this runtime.");
       // The host owns workers. This request only queues introductions and observes state.
       for (const oobi of oobis) context.runtime.oobiery.resolve(oobi);
       const deadline = Date.now() + 30_000;
@@ -61,7 +64,7 @@ export async function handleDidResolutionRoute(
         if (Date.now() >= deadline) throw new Error("DID introductions did not converge within 30000ms.");
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
-      result = resolveDidKeri(context.runtime.hby, requireRegery(context.runtime), canonical);
+      result = resolveDidKeri(context.runtime.hby, rgy, canonical);
     }
     if (!result) {
       return jsonResponse(

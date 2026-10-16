@@ -58,8 +58,10 @@ function* withNotifier<TResult>(
       skipSignator: false,
     },
     function*({ hby }) {
+      const signator = hby.signator;
+      if (!signator) throw new ValidationError("Notifications require an available habery signator.");
       const noter = yield* openNoterForHabery(hby);
-      const notifier = new Notifier(hby, { noter });
+      const notifier = new Notifier(signator, { noter });
       try {
         return yield* use({ notifier });
       } finally {

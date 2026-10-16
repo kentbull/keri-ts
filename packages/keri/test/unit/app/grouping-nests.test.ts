@@ -45,7 +45,7 @@ import {
 } from "../../../src/app/grouping.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { approveMultisigIpex, groupIpexPartial } from "../../../src/app/ipex-grouping.ts";
-import { ipexApplyExn } from "../../../src/app/ipexing.ts";
+import { ipexApplyExn, ipexGrantExn } from "../../../src/app/ipexing.ts";
 import { approvePendingMultisigProposal, publishProposal } from "../../../src/app/multisig-workflows.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
@@ -113,7 +113,7 @@ async function participants(
       const bob = right.makeHab("bob");
       yield* call(() => learn(left, bob));
       yield* call(() => learn(right, alice));
-      yield* call(() => test(left, right, alice, bob, new Notifier(left, { noter })));
+      yield* call(() => test(left, right, alice, bob, new Notifier(left.signator!, { noter })));
     } finally {
       yield* noter.close(true);
       yield* right.close(true);
@@ -837,59 +837,139 @@ Deno.test("multisig issuance missing its credential neither prompts nor accepts 
   });
 });
 
-for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
-  Deno.test(`multisig IPEX approval preserves genus ${genus.major} through peer publication`, async () => {
-    await participants(async (left, right, alice, bob, notifier) => {
-      const mids = [alice.pre, bob.pre];
-      const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-      const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-      await run(function*() {
-        const runtime = yield* createAgentRuntime(left, { notifier });
-        const peerRuntime = yield* createAgentRuntime(right);
-        try {
-          yield* runtime.reactor.processBytes(
-            messagize(local.serder, {
-              sigers: [...local.sigers, ...remote.sigers],
-            }),
-            { local: true },
-          );
-          yield* call(() => learn(right, local.hab));
-          const schema = new Schemer({ sed: { $id: "", type: "object" } });
-          left.db.schema.pin(schema.said, schema);
-          right.db.schema.pin(schema.said, schema);
-          const [embedded] = ipexApplyExn(remote.hab, bob.pre, "apply", schema.said, {});
-          const partial = groupIpexPartial(right, remote.hab, embedded, new Uint8Array(), genus);
-          const hint = genus.major === 2 ? { cgvrsn: [2, 0] } : {};
-          const [wrapper, paths] = exchange("/multisig/exn", { gid: local.hab.pre, ...hint }, {
-            sender: bob.pre,
-            embeds: { exn: partial },
-          });
-          yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), paths), {
-            local: true,
-          });
-          let outgoing: { serder: SerderKERI; message: Uint8Array } | undefined;
-          // Substitute transmission only; the peer admits the actual signed outgoing bytes below.
-          runtime.poster.sendPreparedExchange = function*(_sender, args) {
-            assertEquals(args.serder.ked!.a, { gid: local.hab.pre, ...hint, i: bob.pre });
-            outgoing = { serder: args.serder, message: args.message };
-            return { serder: args.serder, deliveries: ["test"], queued: [] };
-          };
-          const result = yield* approveMultisigIpex(left, runtime, wrapper, { publish: true, sendLead: false });
-          assertEquals(result.accepted, true);
-          assertEquals(runtime.reactor.exchanger.complete(embedded.said!), true);
-          assertExists(outgoing);
-          yield* peerRuntime.reactor.processBytes(outgoing.message, { local: true });
-          const peerResult = yield* approveMultisigIpex(right, peerRuntime, outgoing.serder, {
-            publish: false,
-            sendLead: false,
-          });
-          assertEquals(peerResult.accepted, true);
-          assertEquals(peerRuntime.reactor.exchanger.complete(embedded.said!), true);
-        } finally {
-          yield* peerRuntime.close();
-          yield* runtime.close();
-        }
+for (const kind of ["apply", "grant"] as const) {
+  for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
+    Deno.test(`multisig IPEX ${kind} approval preserves genus ${genus.major} through peer publication`, async () => {
+      await participants(async (left, right, alice, bob, notifier) => {
+        const mids = [alice.pre, bob.pre];
+        const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+        const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+        await run(function*() {
+          const runtime = yield* createAgentRuntime(left, { notifier });
+          const peerRuntime = yield* createAgentRuntime(right);
+          try {
+            yield* runtime.reactor.processBytes(
+              messagize(local.serder, {
+                sigers: [...local.sigers, ...remote.sigers],
+              }),
+              { local: true },
+            );
+            yield* call(() => learn(right, local.hab));
+            const schema = new Schemer({ sed: { $id: "", type: "object" } });
+            left.db.schema.pin(schema.said, schema);
+            right.db.schema.pin(schema.said, schema);
+            const [embedded] = kind === "apply"
+              ? ipexApplyExn(remote.hab, bob.pre, "apply", schema.said, {})
+              : ipexGrantExn(
+                remote.hab,
+                bob.pre,
+                "grant",
+                credential({
+                  issuer: remote.hab.pre,
+                  registry: inceptRegistry(remote.hab.pre, { cnfg: ["NB"] }).pre!,
+                  schema: schema.said,
+                  data: {},
+                }).raw,
+              );
+            const partial = groupIpexPartial(right, remote.hab, embedded, new Uint8Array(), genus);
+            const hint = genus.major === 2 ? { cgvrsn: [2, 0] } : {};
+            const [wrapper, paths] = exchange("/multisig/exn", { gid: local.hab.pre, ...hint }, {
+              sender: bob.pre,
+              embeds: { exn: partial },
+            });
+            yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), paths), {
+              local: true,
+            });
+            let outgoing: { serder: SerderKERI; message: Uint8Array } | undefined;
+            // Substitute transmission only; the peer admits the actual signed outgoing bytes below.
+            runtime.poster.sendPreparedExchange = function*(_sender, args) {
+              assertEquals(args.serder.ked!.a, { gid: local.hab.pre, ...hint, i: bob.pre });
+              outgoing = { serder: args.serder, message: args.message };
+              return { serder: args.serder, deliveries: ["test"], queued: [] };
+            };
+            if (kind === "grant") {
+              const before = [...left.db.esigs.getTopItemIter([embedded.said!, ""])].map((
+                [keys, siger],
+              ) => [keys, siger.qb64]);
+              yield* call(() =>
+                assertRejects(
+                  () => run(() => approveMultisigIpex(left, { ...runtime, vdr: null }, wrapper)),
+                  Error,
+                  "did not open Reger",
+                )
+              );
+              assertEquals(
+                [...left.db.esigs.getTopItemIter([embedded.said!, ""])].map(([keys, siger]) => [keys, siger.qb64]),
+                before,
+              );
+              assertEquals(runtime.reactor.exchanger.complete(embedded.said!), false);
+              assertEquals(outgoing, undefined);
+            }
+            const result = yield* approveMultisigIpex(left, { ...runtime, vdr: null }, wrapper, {
+              publish: true,
+              sendLead: false,
+            });
+            assertEquals(result.accepted, true);
+            assertEquals(runtime.reactor.exchanger.complete(embedded.said!), true);
+            assertExists(outgoing);
+            yield* peerRuntime.reactor.processBytes(outgoing.message, { local: true });
+            const peerResult = yield* approveMultisigIpex(right, peerRuntime, outgoing.serder, {
+              publish: false,
+              sendLead: false,
+            });
+            assertEquals(peerResult.accepted, true);
+            assertEquals(peerRuntime.reactor.exchanger.complete(embedded.said!), true);
+          } finally {
+            yield* peerRuntime.close();
+            yield* runtime.close();
+          }
+        });
       });
     });
-  });
+  }
 }
+
+Deno.test("VDR approval without a registry preserves decline and fails before accepting the anchor", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    const registry = inceptRegistry(local.hab.pre, { cnfg: ["NB"] });
+    const anchor = right.interactGroupHab("group", mids, { data: [{ i: registry.pre, s: "0", d: registry.said }] });
+    const [wrapper, paths] = exchange("/multisig/vcp", { gid: local.hab.pre }, {
+      sender: bob.pre,
+      embeds: { vcp: registry.raw, anc: messagize(anchor.serder, { sigers: anchor.sigers, gvrsn: Vrsn_1_0 }) },
+    });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, { notifier });
+      try {
+        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), paths), {
+          local: true,
+        });
+        const unavailable = { ...runtime, vdr: null };
+        const callbacks = {
+          approveProposal: () => false,
+          chooseGroupAlias: () => "group",
+          chooseRegistryName: () => "registry",
+        };
+        assertEquals(yield* approvePendingMultisigProposal(left, unavailable, { callbacks }), null);
+        callbacks.approveProposal = () => true;
+        const before = left.db.getKever(local.hab.pre)?.said;
+        const signatures = left.db.getSigs(local.hab.pre, anchor.serder.said!);
+        yield* call(() =>
+          assertRejects(
+            () => run(() => approvePendingMultisigProposal(left, unavailable, { callbacks })),
+            Error,
+            "registry is unavailable",
+          )
+        );
+        assertEquals(left.db.getKever(local.hab.pre)?.said, before);
+        assertEquals(left.db.getSigs(local.hab.pre, anchor.serder.said!), signatures);
+        assertEquals(runtime.vdr!.reger.tels.getOn(registry.pre!, 0), null);
+        assertNotEquals(notifier.count(), 0);
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});

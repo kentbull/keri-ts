@@ -14,7 +14,7 @@ import { type Cigar } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { createNoter, type Noter, type NoterOptions, Notice, type NoticeAttrs } from "../db/noting.ts";
-import type { Habery } from "./habbing.ts";
+import type { Habery, Signator } from "./habbing.ts";
 import { Signaler } from "./signaling.ts";
 
 export function notice<T extends NoticeAttrs = NoticeAttrs>(
@@ -70,13 +70,13 @@ export function* openNoterForHabery(
  * application-specific maps.
  */
 export class Notifier {
-  readonly hby: Habery;
+  readonly signator: Signator;
   readonly noter: Noter;
   readonly signaler: Signaler;
   private readonly ownsSignaler: boolean;
 
   constructor(
-    hby: Habery,
+    signator: Signator,
     {
       noter,
       signaler,
@@ -85,7 +85,7 @@ export class Notifier {
       signaler?: Signaler;
     },
   ) {
-    this.hby = hby;
+    this.signator = signator;
     this.noter = noter;
     this.ownsSignaler = signaler === undefined;
     this.signaler = signaler ?? new Signaler();
@@ -93,7 +93,7 @@ export class Notifier {
 
   /** Add one unread signed notice and emit a transient add signal. */
   add<T extends NoticeAttrs = NoticeAttrs>(attrs: T): boolean {
-    const signator = this.requireSignator();
+    const signator = this.signator;
     const note = notice(attrs);
     const cigar = signator.sign(note.raw);
     if (!this.noter.add(note, cigar)) return false;
@@ -128,7 +128,7 @@ export class Notifier {
       return false;
     }
 
-    const signator = this.requireSignator();
+    const signator = this.signator;
     note.read = true;
     const cigar = signator.sign(note.raw);
     if (!this.noter.update(note, cigar)) return false;
@@ -165,21 +165,12 @@ export class Notifier {
     note: Notice<T>,
     cigar: Cigar,
   ): Notice<T> {
-    const signator = this.requireSignator();
+    const signator = this.signator;
     if (!signator.verify(note.raw, cigar)) {
       throw new ValidationError(
         `Notification ${note.rid} failed signator verification.`,
       );
     }
     return note;
-  }
-
-  private requireSignator() {
-    if (!this.hby.signator) {
-      throw new ValidationError(
-        "Notifications require an available habery signator.",
-      );
-    }
-    return this.hby.signator;
   }
 }

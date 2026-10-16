@@ -143,7 +143,7 @@ Deno.test({
         skipConfig: true,
       });
       const noter = yield* openNoterForHabery(hby);
-      const notifier = new Notifier(hby, { noter });
+      const notifier = new Notifier(hby.signator!, { noter });
 
       try {
         notifier.add({
