@@ -1258,6 +1258,19 @@ export class Baser {
     }
   }
 
+  /** Resolve the stored establishment governing an accepted event's witnesses. */
+  private acceptedEventEstablishment(serder: SerderKERI): SerderKERI | null {
+    const pre = serder.pre;
+    const sn = serder.sn;
+    if (!pre || !serder.said || sn === null) return null;
+    for (const said of this.kels.getOnBackIter(pre, sn)) {
+      const event = this.getEvtSerder(pre, said);
+      if (!event) return null;
+      if (event.estive) return event;
+    }
+    return null;
+  }
+
   /**
    * Resolve an accepted event's receipt witnesses from its latest establishment.
    * Mirrors KERIpy Kevery.fetchWitnessState: interactions inherit the preceding
@@ -1265,15 +1278,8 @@ export class Baser {
    * key state. Partial-witness escrows derive their cohort before acceptance.
    */
   acceptedEventWitnesses(serder: SerderKERI): string[] | null {
-    const pre = serder.pre;
-    const sn = serder.sn;
-    if (!pre || !serder.said || sn === null) return null;
-    for (const said of this.kels.getOnBackIter(pre, sn)) {
-      const event = this.getEvtSerder(pre, said);
-      if (!event) return null;
-      if (event.estive) return this.wits.get(dgKey(pre, said)).map((wit) => wit.qb64);
-    }
-    return null;
+    const event = this.acceptedEventEstablishment(serder);
+    return event ? this.wits.get(dgKey(event.pre!, event.said!)).map((wit) => wit.qb64) : null;
   }
 
   /**
