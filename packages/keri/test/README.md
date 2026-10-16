@@ -85,7 +85,8 @@ a 600-second process limit and at most two jobs running concurrently. Its full
 
 [`interop-ipex-disclosure.test.ts`](integration/app/interop-ipex-disclosure.test.ts),
 [`interop-ipex-progressive.test.ts`](integration/app/interop-ipex-progressive.test.ts),
-and [`interop-ipex-edge-refusals.test.ts`](integration/app/interop-ipex-edge-refusals.test.ts)
+[`interop-ipex-edge-refusals.test.ts`](integration/app/interop-ipex-edge-refusals.test.ts),
+and [`interop-ipex-conversation-refusals.test.ts`](integration/app/interop-ipex-conversation-refusals.test.ts)
 are the scenario entry points. Each test spells out who sends apply, offer, agree,
 grant, admit or spurn; every test starts fresh independent peers. The seven graph
 cases name the invalid evidence they reject before admitting a valid partial graph.
@@ -95,6 +96,11 @@ altered disclosure controls. Full commitments remain local construction inputs;
 receivers only receive negotiated partials and independent issuer proofs. Edge
 refusal cases isolate unknown operators, malformed leaf fields, direct/inherited
 schema mismatches and invalid schema profiles, each with a valid chain control.
+Conversation controls deliver authenticated invalid replies through normal ingress;
+high-level builder refusal alone is not receiver validation. Wrong exchange IDs
+assert the exact KRAM `unknownThread` drop, while party/prior and special-spurn
+controls require IPEX refusal. Foreign signers use real public KEL introductions.
+Opening grants can be spurned; negotiated grants cannot, and spurn prevents admit.
 
 [`ipex/peers.ts`](integration/app/ipex/peers.ts) owns listener/process startup,
 KEL introduction, signing, delivery, observations and cleanup. `withIpexPeers`

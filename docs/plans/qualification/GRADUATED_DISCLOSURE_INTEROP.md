@@ -40,7 +40,14 @@ schema mismatches and a self-addressed schema with an invalid profile version.
 Both issuers authenticate the bad graph: refusal is the named edge/schema gate.
 A valid signed two-node counterpart then completes through admit; refused rows
 and child evidence remain absent on both stores before and after that control.
-Remaining conversation-link/spurn refusal controls still need qualification. Separate topology and presentation cases below retain their own
+Twenty cases in `interop-ipex-conversation-refusals.test.ts` cover grant/spurn
+prior, exchange-id, recipient and sender mismatches in both directions. Foreign
+senders use real independent keys with public KEL intake. Unknown exchange IDs
+are stopped by KRAM as `unknownThread` before IPEX; other cases assert route
+refusal. Legal opening-grant spurn retains conversation evidence without wallet
+acceptance, a later admit cannot continue it, and negotiated-grant spurn refuses
+before a valid admit. All cases deliver the actual signed wire before inspecting
+refusal and complete matching valid controls. Separate topology and presentation cases below retain their own
 limits; passing these cases alone does not close every family gate.
 
 ## Pairwise cases
@@ -120,8 +127,9 @@ Kent's execution priority is complete disclosure/operator acceptance first, then
 KRAM/composed mailbox acceptance, then residual architecture cleanup, before
 final qualification and publications. Multiple/nested blinding and progressive
 reveal and pairwise malformed-edge/schema controls have dedicated maintained
-cases. Conversation-link/spurn refusal controls must close before disclosure is
-complete.
+cases. Conversation-link/spurn controls complete the supported pairwise family
+matrix; final-source full qualification remains mandatory. Keep single-controller
+HTTP evidence distinct from witnessed/multisig mailbox and registry-cutoff evidence.
 
 ## Transport, KRAM and topology
 
@@ -211,22 +219,18 @@ operator a negative case proves; include a valid counterpart so missing setup
 cannot masquerade as a security refusal. Reopen/replay assertions must inspect the
 actual stored representation, not a separately retained producer object.
 
-## Reviewable implementation rounds
+## Remaining qualification
 
-1. Qualify the maintained pairwise single-controller HTTP cases and refreshed
-   consolidated mailbox reference pin in CI. Local real-peer coverage now includes
-   offer/agree/admit and dedicated spurn cases in both directions.
-2. Qualify the maintained two-node leaf/group and multi-hop/branching cases in
-   both directions, then extend malformed-edge/schema controls. In separate
-   keri-ts-only cases, refactor operator/node-validity
-   decisions first, then implement DI2I and sufficiently defined NOT semantics in
-   cohesive follow-ups. Keep both operators out of Python interop until supported.
-3. Add multiple/nested blinding and progressive reveal cases, including leakage,
-   commitment and stored-replay checks at multiple graph nodes.
-4. Add multisig witness/mailbox conversations and KRAM restart/failure cases in
-   cohesive cuts. Fix discovered production defects in dedicated targeted PRs.
-5. Run all cases on the final source and required references with the full maintained
-   battery and installed Node minimum/current packages before publication.
+The maintained pairwise owner covers the requested conversation, graph/operator,
+multiple/nested attribute, progressive, failure and spurn families. TS DI2I and
+NOT remain separately qualified profiles, excluded from Python interop until
+supported there. Preserve these cases rather than rebuilding the matrix.
+
+Audit the composed KRAM/mailbox obligations next, retaining the topology and
+reference limits above, then residual architecture work under the sole ENCTX
+execution tracker. The complete final maintained/manual battery and clean installed
+Node minimum/current qualification still gate all publications. Passing this
+matrix at a scoped PR head does not qualify the eventual package set.
 
 Share only necessary signing/transport/credential fixture setup. Do not build a
 scenario framework or hide all assertions in one parameterized mega-test. Existing

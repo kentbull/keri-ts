@@ -86,6 +86,7 @@ export const suites: Record<string, TestSuite> = {
       "test/integration/app/interop-ipex-disclosure.test.ts",
       "test/integration/app/interop-ipex-progressive.test.ts",
       "test/integration/app/interop-ipex-edge-refusals.test.ts",
+      "test/integration/app/interop-ipex-conversation-refusals.test.ts",
     ],
   },
   "interop-acdc-extended": {

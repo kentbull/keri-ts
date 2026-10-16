@@ -16,7 +16,7 @@ from keri import Kinds, Vrsn_2_0
 from keri.acdc import acdcmap, admit, agree, apply, grant, loadHandlers, offer, spurn
 from keri.app import openCF, openHby
 from keri.app.indirecting import HttpEnd, createHttpServer
-from keri.core import Diger, Kevery, Number, Parser, messagize
+from keri.core import Diger, Kevery, Number, Parser, SerderACDC, exchange, messagize
 from keri.peer import Exchanger
 from keri.peer.exchanging import loadParsedNestedSubstreams, serializeMessage
 
@@ -87,13 +87,14 @@ class IpexPeer:
         for issuer in self.graph.issuers:
             self.post(issuer.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
 
-    def signed(self, node, proof_body=None):
-        """Each child is signed by its own issuer, independently of the outer sender."""
-        owner = next(issuer for issuer in self.graph.issuers if issuer.pre == node.israid)
+    def signed(self, node, proof_body=None, *, owner=None, nests=None):
+        """Each child is signed by its own issuer; an explicit sender signs a test reply."""
+        if owner is None:
+            owner = next(issuer for issuer in self.graph.issuers if issuer.pre == node.israid)
         return messagize(node, tsgs=[(
             owner.kever.prefixer, Number(sn=owner.kever.lastEst.s),
             Diger(qb64=owner.kever.lastEst.d), owner.sign(ser=(proof_body if proof_body is not None else node).raw, indexed=True))],
-            gvrsn=Vrsn_2_0)
+            nests=nests, nested=isinstance(node, SerderACDC), gvrsn=Vrsn_2_0)
 
     def disclosed(self, defect=False):
         """Derive negotiated partials afresh; test defects affect only carried evidence."""
@@ -141,18 +142,44 @@ class IpexPeer:
                       self.signed(node, self.disclosed()[0] if invalid == "altered" and i == 0 else node)
                       for i, node in enumerate(nodes)]
             return grant(self.hab, recipient, "status only", origin=proofs[0],
-                         artifacts=proofs[1:], agree=prior)
+                         artifacts=proofs[1:], agree=prior,
+                         modifiers=dict(dp=[self.plan]) if prior is None else None)
         raise ValueError(f"Unknown IPEX verb: {verb}")
 
     def send(self, verb, prior=None, invalid=False):
         previous = self.hby.db.exns.get(keys=(prior,)) if prior else None
         assert prior is None or previous is not None, f"Missing prior exchange: {prior}"
         body, attachments = self.message(verb, previous, invalid)
-        wire = bytes(body.raw + attachments)
+        return self.deliver(body, bytes(body.raw + attachments), not invalid)
+
+    def deliver(self, body, wire, accepted):
+        """Local verification and public delivery consume the same signed bytes."""
         Parser(version=Vrsn_2_0).parse(ims=bytearray(wire), kvy=self.kvy, exc=self.exc)
-        assert (self.hby.db.exns.get(keys=(body.said,)) is not None) == (not invalid), verb
+        assert (self.hby.db.exns.get(keys=(body.said,)) is not None) == accepted, body.route
         self.post(wire)
         return body.said
+
+    def invalid_reply(self, verb, prior, defect):
+        """Use normal factories/signers for protocol-invalid replies the high-level builders refuse."""
+        previous = self.hby.db.exns.get(keys=(prior,))
+        assert previous is not None, "Missing accepted prior"
+        kind = defect["kind"]
+        owner = self.hby.makeHab(name="other-party") if kind == "sender" else self.hab
+        if owner is not self.hab:
+            self.post(owner.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
+        nodes = self.disclosed() if verb == "grant" else []
+        attributes = dict(m="invalid reply")
+        if nodes:
+            attributes["o"] = [nodes[0].said]
+        body = exchange(sender=owner.pre,
+                        receiver=self.hab.pre if kind == "recipient" else previous.pre,
+                        xid=Diger(ser=b"other conversation").qb64 if kind == "exchange-id" else previous.sad["x"],
+                        prior=defect["said"] if kind == "prior" else prior,
+                        route=f"/ipex/{verb}", attributes=attributes,
+                        modifiers=dict(dp=[[]]) if verb == "grant" else {},
+                        pvrsn=Vrsn_2_0, gvrsn=Vrsn_2_0, kind=Kinds.json)
+        wire = self.signed(body, owner=owner, nests=[self.signed(node) for node in nodes] or None)
+        return dict(said=self.deliver(body, bytes(wire), False), sender=owner.pre)
 
     def snapshot(self, inspect=None):
         """Expose observations; scenario assertions belong to the calling test."""
@@ -187,6 +214,8 @@ class PeerControl:
             if action == "connect":
                 self.peer.connect(**command)
                 rep.media = dict(connected=True)
+            elif action == "invalid_reply":
+                rep.media = self.peer.invalid_reply(**command)
             elif action == "send":
                 rep.media = self.peer.send(**command)
             elif action == "replay":

@@ -140,7 +140,13 @@ proof are independent refusal boundaries. Edge/schema refusal fixtures retain
 both issuer proofs and vary only the named semantic defect; complete a valid
 counterpart afterward and assert refused parent/child rows remain absent. This
 separates actual edge/schema refusal from missing authentication setup. The test
-README routes to the peer and graph fixture modules.
+README routes to the peer and graph fixture modules. Conversation controls must
+carry authentic signatures and traverse receiver intake, independent of guarded
+builders. A wrong exchange may stop in KRAM before IPEX; assert the actual gate
+and reason instead of mislabeling it a handler rejection. Public key introductions
+select actual attachment genus, and Python node serialization uses its native
+nested option; do not patch headers, mutate reference code or tolerate undecoded
+wire to obtain a negative-case pass.
 
 ## Remaining work
 
