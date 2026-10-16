@@ -33,7 +33,7 @@ function tsnPair(querySaid: string, dest = "recipient", src?: string): [ReplyCue
 }
 
 Deno.test("query reply reservations isolate interleaved results from the background cue deck", () => {
-  const replies = new QueryReplies();
+  const replies = new QueryReplies(new Deck());
   const first = replies.reserve("query-a");
   const duplicate = replies.reserve("query-a");
   const second = replies.reserve("query-b");
@@ -61,7 +61,7 @@ Deno.test("query reply reservations isolate interleaved results from the backgro
 });
 
 Deno.test("query reply cancellation returns later results to background delivery", () => {
-  const replies = new QueryReplies();
+  const replies = new QueryReplies(new Deck());
   const pending = replies.reserve("query-a");
   pending.close();
   pending.close();
@@ -75,7 +75,7 @@ Deno.test("query reply cancellation returns later results to background delivery
 });
 
 Deno.test("TSN pairs share ordinary records across matching requests", () => {
-  const cues = new Deck<AgentCue>(), replies = new QueryReplies();
+  const cues = new Deck<AgentCue>(), replies = new QueryReplies(new Deck());
   const first = replies.reserve("tsn"), duplicate = replies.reserve("tsn");
   const [registry, credential] = tsnPair("tsn");
   const background: ReplyCue = { kin: "reply", serder: replyEvent("/background", {}) };
@@ -137,7 +137,7 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       if (failPrepare && cue.kin === "reply" && cue.route === "/tsn/credential") throw preparation;
       return interpret(cue);
     };
-    const replies = new QueryReplies(), slot = replies.reserve("tsn"), cues = new Deck<AgentCue>();
+    const replies = new QueryReplies(new Deck()), slot = replies.reserve("tsn"), cues = new Deck<AgentCue>();
     const pair = tsnPair("tsn", recipient.pre, sender.pre);
     try {
       yield* runtime.reactor.processBytes(recipient.makeEndRole(recipient.pre, "controller", true));
@@ -251,7 +251,7 @@ Deno.test("queued replies preserve atomic slots and once-signed wire", async () 
       if (failPrepare && cue.kin === "reply" && cue.route === "/tsn/credential") throw preparation;
       return interpret(cue);
     };
-    const replies = new QueryReplies(), slot = replies.reserve("tsn"), cues = new Deck<AgentCue>();
+    const replies = new QueryReplies(new Deck()), slot = replies.reserve("tsn"), cues = new Deck<AgentCue>();
     const pair = tsnPair("tsn", recipient.pre, sender.pre);
     try {
       yield* runtime.reactor.processBytes(recipient.makeEndRole(recipient.pre, "controller", true));

@@ -328,7 +328,6 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
             gvrsn: pvrsn,
           });
           yield* runtime.reactor.processBytes(wire);
-          runtime.reactor.replies.capture(runtime.cues);
           const batch = reply.takeAll();
           assertExists(batch);
           const [cue] = batch.cues;
@@ -373,19 +372,20 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
           }
         }
       }
+      yield* runtime.reactor.processEscrowsOnce();
       assertRuntimeCue(runtime, "revoked", "Accepted later revocation keeps its independent cue");
       const request = (ri = vcp.pre!, i = "", route = "tels") =>
         query(route, { ri, src: issuer.pre, i }, { pre: issuer.pre, pvrsn: Vrsn_2_0 });
       const source = new Prefixer({ qb64: issuer.pre });
       assertEquals(tvy.processQuery({ serder: request(), source }), undefined);
-      assertRuntimeCue(runtime, "replay");
+      assertEquals(tvy.cues.pull()?.kin, "replay");
       tvy.processQuery({ serder: request(vcp.pre!, vcp.pre!), source });
-      const duplicate = runtime.cues.pull();
+      const duplicate = tvy.cues.pull();
       if (duplicate?.kin !== "replay") throw new Error("Expected duplicate TEL replay");
       const first = [...responses[0]][0];
       assertEquals([...duplicate.messages], [first, first], "Repeated ranges preserve management/credential order");
       assertEquals(tvy.processQuery({ serder: request(issuer.pre), source }), undefined);
-      assertEquals(runtime.cues.length, 0, "Unknown TEL has no response or query escrow");
+      assertEquals(tvy.cues.length, 0, "Unknown TEL has no response or query escrow");
       assertEquals(tvy.processQuery({ serder: request(), source: undefined }), {
         kind: "drop",
         reason: "missingAuthentication",
@@ -395,13 +395,13 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
         const malformed = new SerderKERI({ sad: { ...request().ked, q }, makify: true });
         assertEquals(tvy.processQuery({ serder: malformed, source }), { kind: "drop", reason: "invalidQuery" });
       }
-      assertEquals(runtime.cues.length, 0);
+      assertEquals(tvy.cues.length, 0);
       assertEquals(tvy.processQuery({ serder: request(vcp.pre!, "", "tsn"), source }), undefined);
-      assertRuntimeCue(runtime, "reply");
+      assertEquals(tvy.cues.pull()?.kin, "reply");
       const unsigned = hby.makeHab("nontransferable", undefined, { transferable: false });
       const serder = request();
       assertEquals(tvy.processQuery({ serder, cigars: unsigned.sign(serder.raw, false) }), undefined);
-      assertRuntimeCue(runtime, "replay");
+      assertEquals(tvy.cues.pull()?.kin, "replay");
       yield* reger.close();
       assertThrows(() => [...responses[0]], Error, "not open");
       yield* reger.reopen();
@@ -936,6 +936,7 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
       assertRuntimeCue(runtime, "txnStateSaved");
       const rev = revoke(credential.said!, vcp.pre!, iss.said!);
       assertEquals(tvy.processEvent({ serder: rev, ...anchorTel(issuer, rev) }).kind, "accept");
+      yield* runtime.reactor.processEscrowsOnce();
       assertRuntimeCue(runtime, "revoked");
       const stale = notice(state, stamp.replace(/2\+00:00$/, "5+00:00"));
       yield* runtime.reactor.processBytes(issuer.endorse(stale));
@@ -1207,6 +1208,7 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
         serder: query("tsn", { ri: vcp.pre!, i: credential.said! }),
         source: requester.kever!.prefixer,
       });
+      yield* runtime.reactor.processEscrowsOnce();
       assertEquals(runtime.cues.toArray().map((cue) => cue.kin), ["reply", "reply"]);
     } finally {
       yield* target.close();

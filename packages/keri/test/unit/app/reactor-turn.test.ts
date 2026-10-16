@@ -1,12 +1,13 @@
 import { call, ensure, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { concatBytes } from "../../../../cesr/mod.ts";
+import { concatBytes, parseBytes } from "../../../../cesr/mod.ts";
 import { abortable } from "../../../src/app/abortable.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { Oobiery } from "../../../src/app/oobiery.ts";
+import { queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import type { AgentCue, ReplayCue } from "../../../src/core/cues.ts";
@@ -21,7 +22,7 @@ function gate(): { wait: Promise<void>; open: () => void } {
   return { wait, open };
 }
 
-Deno.test("runtime turns retain state ownership until cancelled work finishes cleanup", async () => {
+Deno.test("protocol processing waits for cancelled handler cleanup before the next pass", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `turn-cleanup-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
@@ -29,21 +30,21 @@ Deno.test("runtime turns retain state ownership until cancelled work finishes cl
       const started = gate();
       const cleanup = gate();
       let second = false;
-      const first = yield* spawn(() =>
-        reactor.settle(undefined, {}, function*() {
-          yield* abortable(async (signal) => {
-            started.open();
-            await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
-            await cleanup.wait;
-          });
-        })
-      );
-      yield* call(() => started.wait);
-      const next = yield* spawn(() =>
-        reactor.settle(undefined, {}, function*() {
+      let passes = 0;
+      reactor.exchanger.processEscrows = function*() {
+        if (++passes > 1) {
           second = true;
-        })
-      );
+          return;
+        }
+        yield* abortable(async (signal) => {
+          started.open();
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+          await cleanup.wait;
+        });
+      };
+      const first = yield* spawn(() => reactor.processEscrowsOnce());
+      yield* call(() => started.wait);
+      const next = yield* spawn(() => reactor.processEscrowsOnce());
       const halted = yield* spawn(() => first.halt());
       yield* call(() => Promise.resolve());
       assertEquals(second, false);
@@ -73,21 +74,20 @@ Deno.test("two request reservations survive an interleaved background cue drain"
       observe(cue);
     };
     try {
-      const producing = yield* spawn(() =>
-        reactor.settle(undefined, {}, function*() {
-          reactor.cues.push(replayB);
-          ready.open();
-          yield* call(() => release.wait);
-          reactor.cues.push(ordinary);
-          reactor.cues.push(replayA);
-        })
-      );
+      reactor.exchanger.processEscrows = function*() {
+        reactor.kevery.cues.push(replayB);
+        ready.open();
+        yield* call(() => release.wait);
+        reactor.kevery.cues.push(ordinary);
+        reactor.kevery.cues.push(replayA);
+      };
+      const producing = yield* spawn(() => reactor.processEscrowsOnce());
       yield* call(() => ready.wait);
-      const background = yield* spawn(() => processCuesOnce(runtime));
-      assertEquals(seen, []);
+      yield* processCuesOnce(runtime);
+      assertEquals(seen, [], "unfinished protocol output is not exposed to application consumers");
       release.open();
       yield* producing;
-      yield* background;
+      yield* processCuesOnce(runtime);
       assertEquals(seen, [ordinary]);
       assertStrictEquals(first.takeAll()?.cues[0], replayA);
       assertStrictEquals(second.takeAll()?.cues[0], replayB);
@@ -95,6 +95,31 @@ Deno.test("two request reservations survive an interleaved background cue drain"
       first.close();
       second.close();
       yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("dispatch returns mailbox authorization from its exact protocol state", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const recipient = hby.makeHab("recipient"), reactor = new Reactor(hby);
+      const [frame] = yield* call(() =>
+        parseBytes(recipient.query(recipient.pre, recipient.pre, {
+          route: "mbx",
+          q: { topics: { "/reply": 0 } },
+        }))
+      );
+      const result = yield* reactor.dispatch(frame);
+      assertEquals(result.decision?.kind, "accept");
+      assertEquals(result.mailboxQueryAuthorized, true);
+      recipient.rotate();
+      assertEquals(reactor.kevery.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope)), false);
+      assertEquals(result.mailboxQueryAuthorized, true, "later key state cannot change this request's decision");
+      const rejected = yield* reactor.dispatch(frame);
+      assertEquals([rejected.decision?.kind, rejected.mailboxQueryAuthorized], ["drop", false]);
+    } finally {
       yield* hby.close(true);
     }
   });
@@ -341,21 +366,25 @@ Deno.test("external cancellation removes an input waiting for the protocol turn"
       const hab = hby.makeHab("sender"), reactor = new Reactor(hby);
       const bytes = acceptedEventReplayMessage(hby, hab.pre, 0).message;
       const held = gate(), release = gate(), queued = gate();
-      const settle = reactor.settle;
-      reactor.settle = function(frame, options, consume) {
-        if (frame) queued.open();
-        return settle.call(this, frame, options, consume);
+      const dispatch = reactor.dispatch;
+      reactor.dispatch = function(frame, options) {
+        queued.open();
+        return dispatch.call(this, frame, options);
+      };
+      reactor.exchanger.processEscrows = function*() {
+        held.open();
+        yield* call(() => release.wait);
       };
       yield* call(async () => {
-        const holder = run(() =>
-          reactor.settle(undefined, {}, function*() {
-            held.open();
-            yield* call(() => release.wait);
-          })
-        );
+        const holder = run(() => reactor.processEscrowsOnce());
         await held.wait;
         const controller = new AbortController(), reason = new Error("input stopped while waiting");
         let dispatched = false, closed = false;
+        const processEvent = reactor.kevery.processEvent;
+        reactor.kevery.processEvent = function(envelope) {
+          dispatched = true;
+          return processEvent.call(this, envelope);
+        };
         const input = run(() =>
           reactor.process(
             async function*() {
@@ -366,9 +395,6 @@ Deno.test("external cancellation removes an input waiting for the protocol turn"
               }
             },
             { signal: controller.signal },
-            function*() {
-              dispatched = true;
-            },
           )
         );
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -408,6 +434,13 @@ Deno.test("input cancellation stops buffered dispatch and cannot become successf
       for (const endAtSource of [false, true]) {
         const controller = new AbortController(), reason = new Error("stop input");
         let dispatches = 0, closed = false;
+        const processEvent = reactor.kevery.processEvent.bind(reactor.kevery);
+        reactor.kevery.processEvent = (envelope) => {
+          const decision = processEvent(envelope);
+          dispatches++;
+          controller.abort(reason);
+          return decision;
+        };
         const input = run(() =>
           reactor.process(
             async function*() {
@@ -422,14 +455,11 @@ Deno.test("input cancellation stops buffered dispatch and cannot become successf
               }
             },
             { signal: controller.signal },
-            function*() {
-              dispatches++;
-              controller.abort(reason);
-            },
           )
         );
         assertStrictEquals(yield* call(() => assertRejects(() => input)), reason);
         assertEquals([dispatches, closed], [endAtSource ? 0 : 1, true]);
+        reactor.kevery.processEvent = processEvent;
       }
     } finally {
       yield* hby.close(true);
@@ -512,8 +542,17 @@ Deno.test("input cancellation during dispatch joins source and handler cleanup w
           const bytes = acceptedEventReplayMessage(hby, hab.pre, 0).message;
           const started = gate(), cleaning = gate(), cleanup = gate();
           let resumed = false, joined = false, handlerClosed = false;
+          const reactor = new Reactor(hby);
+          reactor.exchanger.processEscrows = function*() {
+            yield* ensure(function*() {
+              handlerClosed = true;
+              if (mode === "handler-failure") throw expected;
+            });
+            started.open();
+            yield* suspend();
+          };
           const task = yield* spawn(function*() {
-            yield* new Reactor(hby).process(
+            yield* reactor.process(
               async function*() {
                 try {
                   yield concatBytes(bytes, bytes); // The second body closes the first without source EOF.
@@ -525,15 +564,7 @@ Deno.test("input cancellation during dispatch joins source and handler cleanup w
                   if (mode === "source-failure") throw expected;
                 }
               },
-              {},
-              function*() {
-                yield* ensure(function*() {
-                  handlerClosed = true;
-                  if (mode === "handler-failure") throw expected;
-                });
-                started.open();
-                yield* suspend();
-              },
+              { escrows: true },
             );
             resumed = true;
           });

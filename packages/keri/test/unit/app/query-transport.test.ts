@@ -552,7 +552,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
   }
 });
 
-Deno.test("query delivery settles a streamed reply after releasing the guarded cue turn", async () => {
+Deno.test("query delivery processes a streamed reply after synchronous preparation", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -582,10 +582,9 @@ Deno.test("query delivery settles a streamed reply after releasing the guarded c
         cue: { kin: "query" as const, pre: peer.pre, src: peer.pre, route: "logs" as const, q: {} },
         messages: [sender.query(peer.pre, peer.pre, { route: "logs" as const, q: {} })],
       };
-      // The real guard owns cue handling. Reply parsing here would recursively wait for this same guard.
-      yield* runtime.reactor.settle(undefined, {}, function*() {
-        runtime.querying.enqueueCue(emission.cue, sender);
-      });
+      // Queue preparation is synchronous; reply intake happens only in the actual delivery operation.
+      runtime.querying.enqueueCue(emission.cue, sender);
+
       assertEquals(requests, 0);
       assertEquals(runtime.querying.hasPendingDelivery, true);
       yield* runtime.querying.deliverOnce();

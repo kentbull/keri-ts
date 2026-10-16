@@ -86,7 +86,9 @@ acknowledgement, accepted-state eviction or borrowing framework is in scope.
 ## Review units and acceptance
 
 1. Move actual cue routing/signing/correlation to existing owners and delete the
-   preparation framework, general Reactor gate and vague service contracts.
+   preparation framework, general Reactor gate and vague service contracts. These
+   removals are implemented: Reactor publishes protocol cues after correlation
+   capture and returns decision data; actual output owners work directly.
 2. Integrate the finite decoder with concrete receive loops; remove intake/cursor/
    channel bridges and options throughout their callers in a cohesive cut.
 3. Qualify real HTTP/TCP/SSE callers and shared CLI/host worker lifetimes.

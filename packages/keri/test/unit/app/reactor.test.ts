@@ -533,12 +533,12 @@ Deno.test("app/reactor - malformed and unsupported queries do not throw, and uns
         hab.endorse(makeQuerySerder("ksn", { i: hab.pre })),
       );
       yield* reactor.processOnce();
-      assertEquals(reactor.kevery.cues.pull(), undefined);
+      assertEquals(reactor.cues.pull(), undefined);
 
       reactor.ingest(hab.endorse(makeQuerySerder("bogus", { i: hab.pre, src: hab.pre })));
       yield* reactor.processOnce();
 
-      const cue = reactor.kevery.cues.pull();
+      const cue = reactor.cues.pull();
       assertExists(cue);
       assertEquals(cue.kin, "invalid");
       if (cue.kin !== "invalid") {

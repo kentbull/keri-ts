@@ -166,10 +166,12 @@ registry, or arbitrary callback job queue.
 Effection and application lifecycle code start, cancel, and join workers. External
 input cancellation must stop waiting dispatch and active consumers, not only byte
 reads. Parser and finite transformations take no lifetime options; DispatchOptions
-contains protocol choices only. Reactor and protocol processors do protocol work. Sibling workers must not borrow
-`Reactor.settle(undefined, ..., callback)` to sign, prepare deliveries, clean up
-cursors, or run unrelated state changes. Do not rename this to a universal
-`runExclusive` or scheduler callback API and call the migration complete.
+contains protocol choices only. Reactor and protocol processors do protocol work. Reactor returns dispatch data
+and captures reserved replies before publishing its protocol Deck to application
+consumers. Its private serialization covers only actual dispatch and escrow work.
+Sibling workers sign, prepare deliveries, consume request slots and clean up their
+own cursors directly. The former arbitrary settle callback is removed; do not
+restore it as a universal `runExclusive` or scheduler callback API.
 
 Use short owner turns and explicit flows. Retain a local synchronization mechanism
 only for demonstrated shared-state ordering that cannot be eliminated simply.

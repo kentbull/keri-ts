@@ -145,11 +145,16 @@ export function envelopesFromFrames(
   return frames.map((frame) => envelopeFromFrame(frame, local));
 }
 
+/** The processed envelope and its exact decision; KRAM may combine earlier proof records. */
+export interface DispatchResult {
+  envelope: KeriDispatchEnvelope;
+  decision: DispatchDecision;
+}
+
 /**
  * Route one already-parsed KERI dispatch envelope into the established
  * `Revery` / `Kevery` / `Exchanger` architecture.
- * The optional ready consumer is scoped to v2 non-event dispatch; other messages
- * remain caller-consumed. No hydrated evidence is returned with the decision.
+ * Return ordinary buffered evidence and its decision to the application owner.
  */
 export function* dispatchEnvelope(
   envelope: KeriDispatchEnvelope,
@@ -159,35 +164,37 @@ export function* dispatchEnvelope(
   tevery?: Tevery,
   verifier?: Verifier,
   mailboxAid?: string | null,
-  consume?: (ready: KeriDispatchEnvelope, decision: DispatchDecision) => Operation<void>,
-): Operation<DispatchDecision> {
+): Operation<DispatchResult> {
   const serder = envelope.serder as SerderKERI | SerderACDC;
   if (serder instanceof SerderACDC) {
     if (serder.ilk === null) {
       verifier?.processACDC(acdcEnvelopeFromDispatch(envelope, serder));
     }
-    return;
+    return { envelope, decision: undefined };
   }
 
   if (
     serder.pvrsn.major >= 2
     && [Ilks.qry, Ilks.rpy, Ilks.exn, Ilks.xip, Ilks.pro, Ilks.bar].some((ilk) => ilk === serder.ilk)
   ) {
-    return yield* dispatchMessage(envelope, revery, kevery, exchanger, tevery, mailboxAid, consume);
+    return yield* dispatchMessage(envelope, revery, kevery, exchanger, tevery, mailboxAid);
   }
 
   switch (serder.ilk) {
     case Ilks.rpy:
-      return revery.processReply({
-        serder,
-        cigars: envelope.cigars,
-        tsgs: envelope.tsgs,
-      });
+      return {
+        envelope,
+        decision: revery.processReply({
+          serder,
+          cigars: envelope.cigars,
+          tsgs: envelope.tsgs,
+        }),
+      };
     case Ilks.qry:
       if (["tels", "tsn"].includes(serder.route ?? "")) {
-        return dispatchTelQuery(queryEnvelopeFromDispatch(envelope), tevery);
+        return { envelope, decision: dispatchTelQuery(queryEnvelopeFromDispatch(envelope), tevery) };
       }
-      return kevery.processQuery(queryEnvelopeFromDispatch(envelope));
+      return { envelope, decision: kevery.processQuery(queryEnvelopeFromDispatch(envelope)) };
     case Ilks.rct:
       kevery.processReceipt(envelope);
       break;
@@ -195,7 +202,7 @@ export function* dispatchEnvelope(
       // Frozen legacy intake requires a signature group even though the EXN kernel accepts source seals.
       if (serder.pvrsn.major === 1 && !envelope.tsgs.length && !envelope.cigars.length) break;
       if (exchanger) {
-        return yield* dispatchExchange(envelope, exchanger, mailboxAid);
+        return { envelope, decision: yield* dispatchExchange(envelope, exchanger, mailboxAid) };
       }
       break;
     case Ilks.vcp:
@@ -232,11 +239,12 @@ export function* dispatchEnvelope(
           local: envelope.local,
         });
       }
-      return decision;
+      return { envelope, decision };
     }
     default:
       break;
   }
+  return { envelope, decision: undefined };
 }
 
 /**
@@ -251,16 +259,17 @@ function* dispatchMessage(
   exchanger: ExchangerLike | undefined,
   tevery: Tevery | undefined,
   mailboxAid?: string | null,
-  consume?: (ready: KeriDispatchEnvelope, decision: DispatchDecision) => Operation<void>,
-): Operation<DispatchDecision> {
+): Operation<DispatchResult> {
   const serder = envelope.serder;
   const sender = serder.pre;
   if (sender !== null) {
-    if (kevery.denyList.has(sender)) return { kind: "drop", reason: "deniedSender" };
-    if (kevery.allowList.size && !kevery.allowList.has(sender)) return { kind: "drop", reason: "senderNotAllowed" };
+    if (kevery.denyList.has(sender)) return { envelope, decision: { kind: "drop", reason: "deniedSender" } };
+    if (kevery.allowList.size && !kevery.allowList.has(sender)) {
+      return { envelope, decision: { kind: "drop", reason: "senderNotAllowed" } };
+    }
   }
   const result = kevery.kramer?.intake(envelope);
-  if (result && result.kind !== "ready") return result;
+  if (result && result.kind !== "ready") return { envelope, decision: result };
   const ready = result?.envelope ?? envelope;
   const decision = yield* dispatchReadyMessage(
     ready,
@@ -271,8 +280,7 @@ function* dispatchMessage(
     mailboxAid,
     result?.receiverTime,
   );
-  if (consume) yield* consume(ready, decision);
-  return decision;
+  return { envelope: ready, decision };
 }
 
 /** Delegate accepted evidence; downstream processors verify their own proof owners. */

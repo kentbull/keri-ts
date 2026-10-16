@@ -362,7 +362,7 @@ for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
           const message = concatBytes(sender.endorse(wrapper, { pipelined: false }), paths);
           for (const frame of await parseBytes(message)) {
             {
-              const decision = await run(() =>
+              const { decision } = await run(() =>
                 dispatchEnvelope(envelopeFromFrame(frame, true), left.rvy, left.kevery, exchanger)
               );
               assertEquals(decision?.kind, "accept");

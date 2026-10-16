@@ -15,7 +15,7 @@ interface QueryReplyBatch {
 export interface QueryReply {
   /** Observe this existing slot without queues or retained Promise waiters; one observer at a time. */
   observeReady(notify: () => void): () => void;
-  /** Whether a captured batch is available for guarded consumption. */
+  /** Whether a captured batch is available for request-owned consumption. */
   readonly ready: boolean;
   /** Take the receipt/witness or ordered TSN pair. */
   takeAll(): QueryReplyBatch | undefined;
@@ -29,6 +29,9 @@ export interface QueryReply {
 export class QueryReplies {
   /** One replay or a registry/credential pair per request, grouped by query SAID for fanout. */
   private readonly active = new Map<string, Set<Slot>>();
+  /** Borrow the application output flow so a late request claims matching queued replies synchronously. */
+  constructor(private readonly published: Deck<AgentCue>) {}
+
   /** Reserve one response; duplicate arrivals never add another retained batch. */
   reserve(said: string): QueryReply {
     return this.reserveKey(`query:${said}`);
@@ -46,6 +49,7 @@ export class QueryReplies {
     group.add(slot);
     this.active.set(said, group);
     let closed = false;
+    this.capture(this.published);
     return {
       get ready() {
         return slot.reply !== undefined;

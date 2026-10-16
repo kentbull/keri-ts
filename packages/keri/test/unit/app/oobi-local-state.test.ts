@@ -436,7 +436,8 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
         assertEquals(cold.db.oobis.get(introducedUrl), null);
         assertEquals(cold.db.rpes.cnt(), 1, "Unverified introduction retains existing reply escrow ownership");
         assertExists(cold.db.rpys.get([serder.said!]));
-        assertEquals(queries.pull()?.kin, "query");
+        assertEquals(queries.empty, true, "direct Revery work has not passed Reactor publication");
+        assertEquals(reactor.revery.cues.pull()?.kin, "query");
         assertEquals(queues.length, 0);
       } finally {
         yield* cold.close(true);

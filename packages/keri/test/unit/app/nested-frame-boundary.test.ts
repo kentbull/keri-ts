@@ -21,7 +21,7 @@ Deno.test("nested runtime boundaries reject unsupported trees before processing"
           skipConfig: true,
         });
         try {
-          yield* new Reactor(hby).settle(frame);
+          yield* new Reactor(hby).dispatch(frame);
         } finally {
           yield* hby.close();
         }

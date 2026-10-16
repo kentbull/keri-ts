@@ -171,7 +171,12 @@ Deno.test("Reactor runs injected TEL and verifier escrow turns", async () => {
         verifierEscrows++;
         return verifierEscrow.call(this);
       };
-      const reactor = new Reactor(hby, { tevery: tvy, verifier: vry, cues: runtime.cues });
+      const reactor = new Reactor(hby, {
+        tevery: tvy,
+        verifier: vry,
+        cues: runtime.cues,
+        protocolCues: runtime.vdr!.cues,
+      });
 
       yield* reactor.processEscrowsOnce();
       assertEquals(telEscrows, 1);

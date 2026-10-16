@@ -37,10 +37,9 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       yield* call(() => started);
       assertEquals(runtime.cues.empty, true);
 
-      yield* runtime.reactor.settle(undefined, {}, function*() {
-        runtime.cues.push({ kin: "query", pre: "unresolved", route: "logs", q: {} });
-      });
-      assertEquals(runtime.cues.length, 1, "another guarded turn progresses during network wait");
+      runtime.cues.push({ kin: "query", pre: "unresolved", route: "logs", q: {} });
+
+      assertEquals(runtime.cues.length, 1, "application cue publication progresses during network wait");
       failure = new Error("foreign fetch failure");
       finish();
       assertStrictEquals(yield* call(() => assertRejects(() => Promise.resolve(draining))), failure);

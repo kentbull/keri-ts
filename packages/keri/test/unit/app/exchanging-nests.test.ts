@@ -358,12 +358,11 @@ Deno.test("optional runtime KRAM pools proofs across reopen and forwards current
           gvrsn: Vrsn_2_0,
         })).then(parseBytes)
       );
-      yield* runtime.reactor.settle(retry, { mailboxAid: provider.pre }, function*(ready) {
-        assertEquals(ready!.nests[0].body.raw, nest.body.raw);
-        assertEquals(yield* call(() => collectPayload(essrWire(ready!.nests[0].essrs!))), wire);
-        assertEquals(hby.db.pmkm.get(key), null, "acceptance retires partial state before transport callback");
-        assertEquals(hby.db.exns.get(nest.body.said!), null);
-      });
+      const { envelope: ready } = yield* runtime.reactor.dispatch(retry, { mailboxAid: provider.pre });
+      assertEquals(ready!.nests[0].body.raw, nest.body.raw);
+      assertEquals(yield* call(() => collectPayload(essrWire(ready!.nests[0].essrs!))), wire);
+      assertEquals(hby.db.pmkm.get(key), null, "acceptance retires partial state before returning accepted evidence");
+      assertEquals(hby.db.exns.get(nest.body.said!), null);
       assertExists(hby.db.exns.get(input.serder.said!));
       assertEquals(hby.db.pmkm.get(key), null);
       const saved = [...runtime.mailboxDirector.topicIter(recipient.pre, "/nested")];

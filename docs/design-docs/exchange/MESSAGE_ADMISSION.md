@@ -197,9 +197,12 @@ private persistence strengthens retention across pruning without changing wire t
 
 ## Ownership and HTTP
 
-Dispatch borrows the envelope, including separate parent and child proof owners.
-Reactor awaits dispatch and joins frame disposal before returning. Its guarded
-consumer receives both the envelope and dispatch decision. HTTP query response
+Dispatch returns the processed envelope and decision as ordinary buffered data,
+including combined KRAM proofs and independent parent/child evidence. Reactor
+awaits actual protocol work and captures direct replies before publishing other
+cues. Mailbox signature authorization returns from that same protocol turn, so
+later key-state changes cannot affect the snapshot. Reactor neither disposes
+ordinary frames nor invokes application consumers. HTTP query response
 authorization checks the current refusal as well as exact mailbox signatures;
 an older matching query cue cannot override a refused request. Nested-route
 normalization guards remain in force.

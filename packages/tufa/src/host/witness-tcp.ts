@@ -3,7 +3,6 @@ import { action, call, createScope, ensure, type Operation, race, resource, useS
 import {
   type AgentRuntime,
   chunkBytes,
-  type CueEmission,
   type Hab,
   processCuesOnce,
   type QueryReply,
@@ -159,14 +158,11 @@ function* processWitnessSocket(
             }
           });
           type Batch = NonNullable<ReturnType<QueryReply["takeAll"]>>;
-          /** Interpret captured replies under the guard and write them through the existing socket. */
+          /** Interpret captured replies and write them through the existing socket. */
           const sendBatch = function*(batch: Batch): Operation<void> {
             for (const cue of batch.cues) {
               yield* call(function*() {
-                let output: CueEmission | undefined;
-                yield* runtime.reactor.settle(undefined, {}, function*() {
-                  output = serviceHab.interpretCue(cue);
-                });
+                const output = serviceHab.interpretCue(cue);
                 yield* writeCesrTcpSocket(socket, async function*(signal) {
                   for (const message of output!.messages) {
                     yield* chunkBytes(message, { signal, maxChunkBytes: 65536 });
@@ -198,22 +194,21 @@ function* processWitnessSocket(
                 slot?.close();
               }
             });
-            yield* runtime.reactor.settle(frame, { local: true, escrows: true }, function*(_envelope, decision) {
-              // SAIDs do not include signatures: this exact dispatch must authorize its output.
+            const { decision } = yield* runtime.reactor.dispatch(frame, { local: true, escrows: true });
+            // SAIDs do not include signatures: this exact dispatch must authorize its output.
+            if (
+              body.ilk === Ilks.qry
+                ? decision?.kind !== "drop" && decision?.kind !== "pending" && decision?.kind !== "missing"
+                : decision?.kind === "accept" || decision?.kind === "duplicate"
+            ) {
               if (
-                body.ilk === Ilks.qry
-                  ? decision?.kind !== "drop" && decision?.kind !== "pending" && decision?.kind !== "missing"
-                  : decision?.kind === "accept" || decision?.kind === "duplicate"
+                body.ilk === Ilks.qry && decision?.kind === "escrow"
+                && ["logs", "ksn"].includes(String(body.ked?.r))
               ) {
-                if (
-                  body.ilk === Ilks.qry && decision?.kind === "escrow"
-                  && ["logs", "ksn"].includes(String(body.ked?.r))
-                ) {
-                  pending = slot;
-                  slot = undefined;
-                } else batch = slot?.takeAll();
-              }
-            });
+                pending = slot;
+                slot = undefined;
+              } else batch = slot?.takeAll();
+            }
             yield* processCuesOnce(runtime, { hab: serviceHab });
             if (batch) yield* sendBatch(batch);
           };
@@ -221,10 +216,7 @@ function* processWitnessSocket(
             signal.throwIfAborted();
             if (pending?.ready) {
               yield* call(function*() {
-                let batch: Batch | undefined;
-                yield* runtime.reactor.settle(undefined, {}, function*() {
-                  batch = pending!.takeAll();
-                });
+                const batch = pending!.takeAll();
                 if (batch) yield* sendBatch(batch);
               });
               pending.close();

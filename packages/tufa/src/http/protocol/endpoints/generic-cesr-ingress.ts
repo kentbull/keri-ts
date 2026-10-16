@@ -13,7 +13,6 @@ import {
   drainWitnessCues,
   type HostedRouteResolution,
   isCesrContentType,
-  queryEnvelopeFromDispatch,
   type QueryReply,
   requestBytes,
   rethrowCleanupFailure,
@@ -127,21 +126,20 @@ function* deferredDirectQueryResponse(
   const expires = Date.now() + DIRECT_QUERY_RESPONSE_WAIT_MS;
   do {
     let response: Response | null = null;
-    yield* runtime.reactor.settle(undefined, { escrows: true }, function*() {
-      const habitats = runtime.hby.habs.values();
-      const first = habitats.next();
-      const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
-      if (hab) {
-        const stream = runtime.respondant.openReply(hab, reply);
-        if (stream) {
-          response = new Response(stream, {
-            status: 200,
-            headers: { "Content-Type": "application/cesr" },
-          });
-          publish(response);
-        }
+    yield* runtime.reactor.processEscrowsOnce();
+    const habitats = runtime.hby.habs.values();
+    const first = habitats.next();
+    const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
+    if (hab) {
+      const stream = runtime.respondant.openReply(hab, reply);
+      if (stream) {
+        response = new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "application/cesr" },
+        });
+        publish(response);
       }
-    });
+    }
     if (response) {
       return response;
     }
@@ -279,18 +277,16 @@ function* ingest(
             if (query?.reply) {
               const previous = query.reply;
               // A later frame makes this an ordinary query; transfer its reply before releasing its reservation.
-              yield* runtime.reactor.settle(undefined, {}, function*() {
-                try {
-                  const habitats = runtime.hby.habs.values();
-                  const first = habitats.next();
-                  const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
-                  if (hab && query!.authorized) {
-                    runtime.respondant.enqueueReply(hab, previous);
-                  }
-                } finally {
-                  previous.close();
+              try {
+                const habitats = runtime.hby.habs.values();
+                const first = habitats.next();
+                const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
+                if (hab && query!.authorized) {
+                  runtime.respondant.enqueueReply(hab, previous);
                 }
-              });
+              } finally {
+                previous.close();
+              }
               yield* runtime.querying.deliverOnce();
               yield* runtime.respondant.process();
             }
@@ -308,20 +304,17 @@ function* ingest(
                   : undefined,
               };
             }
-            yield* runtime.reactor.settle(frame, {
+            const { decision, mailboxQueryAuthorized } = yield* runtime.reactor.dispatch(frame, {
               local: route.kind === "witnessLocalIngress",
               mailboxAid: route.kind === "witnessLocalIngress" ? hosted.endpoint?.eid : route.mailboxAid,
               escrows: true,
-            }, function*(envelope, decision) {
-              if (query) {
-                // SAIDs exclude attachments: authorize this exact envelope, not an older query cue.
-                query.authorized = decision?.kind !== "drop" && decision?.kind !== "pending"
-                  && decision?.kind !== "missing"
-                  && (!query.mailbox || runtime.reactor.kevery.isMailboxQueryAuthorized(
-                    queryEnvelopeFromDispatch(envelope!),
-                  ));
-              }
             });
+            if (query) {
+              // SAIDs exclude attachments: authorize this exact envelope, not an older query cue.
+              query.authorized = decision?.kind !== "drop" && decision?.kind !== "pending"
+                && decision?.kind !== "missing"
+                && (!query.mailbox || mailboxQueryAuthorized);
+            }
             if (route.kind === "witnessLocalIngress") {
               yield* drainWitnessCues(runtime, route.witnessHab, runtime.cues);
             } else {

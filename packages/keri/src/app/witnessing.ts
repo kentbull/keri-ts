@@ -289,38 +289,33 @@ function* consumeWitnessCues(
   if (!hab) {
     return;
   }
-  let count = 0;
-  yield* runtime.reactor.settle(undefined, {}, function*() {
-    count = cues.length;
-  });
+  const count = cues.length;
   for (let index = 0; index < count; index++) {
     const more = yield* call(function*() {
       let emission: CueEmission | undefined, prepared = false;
-      yield* runtime.reactor.settle(undefined, {}, function*() {
-        if (deliver) {
-          prepared = !cues.empty;
-          const cue = cues.peekHead();
-          if (cue) {
-            if (cue.kin === "query") {
-              runtime.querying.enqueueCue(cue, hab);
-              runtime.querying.observeCue(cue);
-            } else emission = hab.interpretCue(cue);
-            if (emission?.kind === "wire") runtime.respondant.enqueueEmission(hab, emission);
-            else if (emission?.kind === "transport" && emission.cue.kin === "stream") {
-              runtime.mailboxDirector.retainQueryCue(emission.cue);
-            }
-            cues.pull();
+      if (deliver) {
+        prepared = !cues.empty;
+        const cue = cues.peekHead();
+        if (cue) {
+          if (cue.kin === "query") {
+            runtime.querying.enqueueCue(cue, hab);
+            runtime.querying.observeCue(cue);
+          } else emission = hab.interpretCue(cue);
+          if (emission?.kind === "wire") runtime.respondant.enqueueEmission(hab, emission);
+          else if (emission?.kind === "transport" && emission.cue.kin === "stream") {
+            runtime.mailboxDirector.retainQueryCue(emission.cue);
           }
-        } else {
-          const cue = cues.peekHead();
-          if (cue) {
-            emission = hab.interpretCue(cue);
-            cues.pull();
-            prepared = true;
-          }
+          cues.pull();
         }
-        if (emission) runtime.querying.observeCue(emission.cue);
-      });
+      } else {
+        const cue = cues.peekHead();
+        if (cue) {
+          emission = hab.interpretCue(cue);
+          cues.pull();
+          prepared = true;
+        }
+      }
+      if (emission) runtime.querying.observeCue(emission.cue);
       if (!prepared) {
         return false;
       }
@@ -390,7 +385,7 @@ export function* processWitnessIngressSource(
         signal.throwIfAborted();
         if (result.done) break;
         const frame = result.value;
-        yield* runtime.reactor.settle(frame, { local, escrows: true });
+        yield* runtime.reactor.dispatch(frame, { local, escrows: true });
         yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume);
       }
     } finally {

@@ -46,15 +46,21 @@ never authenticate children, and a later malformed sibling does not roll back
 previously committed messages. FrameIntake, TcpRead, custom frame channels,
 progressive cursors and parser-owned staging/disposal are removed.
 
-`Reactor.settle(frame, options, consume)` currently serializes dispatch, an
-optional escrow pass and cue consumption. Background escrow/cue turns use that
-same state guard. Waiting operations retain order and leave the wait set on
-cancellation. The active turn joins child cleanup before granting the next waiter.
-There is no configured waiter/source quota. A guarded consumer must not reenter
-Reactor. Removing this general callback gate requires moving remaining concrete
-cue work first; ledger deletion alone does not make concurrent mutation safe.
-Network work runs outside guarded interpretation/signing/routing where callers
-already transfer to delivery; remaining ownership work must preserve that ordering.
+`Reactor.dispatch(frame, options)` returns the processed envelope and its exact
+decision, plus mailbox authorization observed before releasing protocol state.
+KRAM can return accumulated threshold proofs as ordinary buffered data.
+Reactor serializes dispatch and escrow passes so async handlers cannot interleave
+protocol processing. Waiting input cancellation removes the waiter; an active
+owner joins handler cleanup before releasing the processor. It has no callback
+executor or application-work entrypoint.
+
+Protocol producers write to their own Deck, wired with the legacy TEL/verifier
+processors at composition. Before publishing to `AgentRuntime.cues`, Reactor
+captures direct request replies. A new reservation also claims matching records
+already published to the application Deck synchronously. Background cue workers cannot consume unfinished
+protocol output or reserved replies. Interpretation, signing, routing and request
+slot consumption are synchronous work of Hab, Respondant, QueryCoordinator and
+request owners; network waits happen in the actual delivery operations.
 
 Queued ingress is an ordinary private `Deck<Uint8Array>`. `ingest` copies producer
 bytes before publication; copy failure publishes nothing. `processOnce` pulls
@@ -93,7 +99,7 @@ Preparation failure preserves the source. Each consumer sequences interpretation
 publication and source removal directly, without prepareCueEmission callbacks.
 Composition routes query, stream and reply cues to their concrete owners.
 CueSink and its optional hooks/root adapters are deleted. Network output runs
-outside the guarded routing turn. A pass consumes its initial extent, so newly appended
+in their concrete delivery operations. A pass consumes its initial extent, so newly appended
 work waits for the next pass. A cue with no emission is still consumed.
 
 Respondant owns lazy reply iterators, routing snapshots, once-signed packets and

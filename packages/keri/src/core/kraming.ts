@@ -10,7 +10,7 @@ import { type KramStageRefusal, stageKram } from "./kram-staging.ts";
 
 /** Expected pending/refusal outcomes; cancellation, corruption and infrastructure failures throw. */
 export type KramRefusal = KramStageRefusal | { kind: "pending"; key: readonly string[] };
-/** Accepted input borrows the caller's frame and payload owners. */
+/** Accepted input carries ordinary buffered evidence, including combined threshold proofs. */
 export type KramIntakeResult = KramRefusal | { kind: "ready"; envelope: KeriDispatchEnvelope; receiverTime?: string };
 /** Explicit receiver-owned cache and exemption configuration. */
 export type { KramConfig } from "./kram-policy.ts";
@@ -37,7 +37,7 @@ export class Kramer {
     this.pruner = new KramPruner(db, this.policy);
   }
 
-  /** Decide intake synchronously; the parser owns subsequent dispatch and disposal. */
+  /** Decide intake synchronously; protocol dispatch consumes the returned evidence. */
   intake(envelope: KeriDispatchEnvelope): KramIntakeResult {
     this.policy.reconcile();
     if (this.policy.exempts(envelope.serder)) return { kind: "ready", envelope };

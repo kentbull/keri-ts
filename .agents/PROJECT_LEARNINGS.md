@@ -36,7 +36,9 @@ CESR/KERI/Tufa; RuntimeServices contains only clock/HTTP. Queue/client/listener 
 reply-proof work caps are removed; intrinsic numeric guards use RangeError.
 Cue queues and reply correlations now carry ordinary Deck records. Composition
 routes directly to query, mailbox and reply owners; optional CueSink hooks and
-root adapters are removed. Default query transport cannot be a no-op sink. Publish after
+root adapters are removed. Reactor returns dispatch data, captures replies before
+publishing its protocol Deck, and offers no application callback gate. Default
+query transport cannot be a no-op sink. Publish after
 owning writes/commit; preserve real iterator, reader and payload cleanup. Do not
 restore queue credit, capacity, inspection or synthetic retain/release handles.
 Use concrete semantic records, narrow validated input, and locally justified
