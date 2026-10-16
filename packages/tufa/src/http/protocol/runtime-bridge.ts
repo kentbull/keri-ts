@@ -25,7 +25,7 @@ export function* drainRuntimeCues(
   const first = habitats.next();
   const hab = serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
   if (!hab) return;
-  const transport = queryTransportSink(runtime, runtime.hby, hab);
+  const transport = queryTransportSink(runtime, hab);
   const responder = respondantCueSink(runtime, hab);
   const destination: CueSink = {
     admitQuery: transport.admitQuery,
@@ -54,6 +54,6 @@ export function* drainRuntimeCues(
   };
   yield* processCuesOnce(runtime, { hab, sink });
   // Network/capacity checks run after the synchronous guarded transfers.
-  yield* runtime.deliveries.process(runtime);
+  yield* runtime.querying.deliverOnce();
   yield* runtime.respondant.process();
 }

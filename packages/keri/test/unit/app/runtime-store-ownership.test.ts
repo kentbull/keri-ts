@@ -379,7 +379,7 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     yield* call(() => reader.read());
     reader.releaseLock();
     const hab = hby.makeHab("sender");
-    runtime.deliveries.enqueue({
+    runtime.querying.enqueueDelivery({
       url: "https://query.test/",
       body: hab.query(hab.pre, hab.pre, { route: "logs", q: {} }),
       bodyMode: "header",
@@ -395,7 +395,7 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     }),
   ]);
   // An independently running borrower makes the queue's own abort/join seam observable on scope exit.
-  const delivery = run(() => runtime.deliveries.process(runtime));
+  const delivery = run(() => runtime.querying.deliverOnce());
   const result = delivery.catch((error) => error);
   try {
     await Promise.race([

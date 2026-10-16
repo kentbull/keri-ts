@@ -1,11 +1,21 @@
-import { type SealEvent } from "cesr-ts";
+import { concatBytes, type SealEvent } from "cesr-ts";
 import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission, QueryCue, QueryInstruction, QueryRequest } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
+import { ValidationError } from "../core/errors.ts";
 import { Roles } from "../core/roles.ts";
+import { Schemes } from "../core/schemes.ts";
+import { chunkBytes, streamBytes } from "./byte-source.ts";
+import { postCesr } from "./cesr-egress.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
+import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { consumeMailboxSse } from "./mailbox-sse.ts";
+import { flattenRoleUrls } from "./mailboxing.ts";
+import type { Reactor } from "./reactor.ts";
+import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+import { converseCesrTcp } from "./tcp-conversation.ts";
 
 /**
  * Query/reply correspondence helpers for the Gate E runtime.
@@ -18,12 +28,13 @@ import { runtimeTurn } from "./runtime-turn.ts";
  *
  * `keri-ts` keeps the same behavioral split but makes the ownership seam more
  * explicit:
- * - `QueryCoordinator` owns runtime correspondence for incomplete `query` cues
+ * - `QueryCoordinator` owns correspondence, signed query packets and joined
+ *   response I/O using concrete Reactor and clock/HTTP dependencies
  * - `Hab.processCuesIter()` remains the cue-to-wire interpreter for already
  *   complete cues
  *
  * Non-goals:
- * - this module does not own transport
+ * - this module never receives a parent AgentRuntime or discovers sibling services
  * - this module does not guess across multiple local habitats
  * - this module does not turn watcher/query selection into generic cue logic
  */
@@ -364,6 +375,56 @@ export class AnchorQuerier implements QueryContinuation {
 }
 
 /**
+ * Resolve the actual transport URL for one query destination AID.
+ *
+ * Transport policy:
+ * - explicit witness-targeted queries resolve directly from the witness AID's
+ *   `locs.` replies because KERIpy witness inquiries do not depend on the
+ *   queried controller advertising witness end roles
+ * - prefer direct controller/agent/witness URLs when the chosen destination
+ *   matches an advertised end role
+ * - in mailbox-only topologies, allow queries addressed to the controller AID
+ *   to ride the first mailbox endpoint URL
+ */
+function resolveQueryDestinationUrl(
+  hab: Hab,
+  queriedPre: string,
+  destination: string,
+  {
+    explicitWitness = false,
+  }: {
+    explicitWitness?: boolean;
+  } = {},
+): string | null {
+  if (explicitWitness) {
+    const urls = hab.fetchUrls(destination);
+    return urls[Schemes.https] ?? urls[Schemes.http] ?? urls[Schemes.tcp] ?? null;
+  }
+
+  const ends = hab.endsFor(queriedPre);
+  for (const role of [Roles.controller, Roles.agent, Roles.witness]) {
+    const endpoint = flattenRoleUrls(ends[role]).find((entry) => entry.eid === destination);
+    if (endpoint) {
+      return endpoint.url;
+    }
+  }
+
+  if (destination === queriedPre) {
+    return flattenRoleUrls(ends[Roles.mailbox])[0]?.url ?? null;
+  }
+
+  return null;
+}
+
+/** One signed query packet captured before asynchronous transport. */
+interface QueryDelivery {
+  url: string;
+  body: Uint8Array;
+  bodyMode: "header" | "body";
+  destination: string;
+}
+
+/**
  * Runtime query side-effect owner.
  *
  * Responsibilities:
@@ -374,6 +435,12 @@ export class AnchorQuerier implements QueryContinuation {
  */
 export class QueryCoordinator implements CueSink {
   readonly hby: Habery;
+  private readonly reactor: Reactor;
+  private readonly services: RuntimeServices;
+  private readonly deliveries = new Deck<QueryDelivery>();
+  private delivering = false;
+  private output?: AbortController;
+  private outputJoined?: Promise<void>;
   private readonly requests = new Deck<QueryRequest>();
   /** Inspect deferred work without exposing queue mutation outside its owner. */
   get pending(): Pick<Deck<QueryRequest>, "length" | "empty" | "peekHead"> {
@@ -392,9 +459,16 @@ export class QueryCoordinator implements CueSink {
 
   constructor(
     hby: Habery,
-    { sink = ignoreSink, hab = null }: { sink?: CueSink; hab?: Hab | null } = {},
+    { reactor, services = defaultRuntimeServices, sink = ignoreSink, hab = null }: {
+      reactor: Reactor;
+      services?: RuntimeServices;
+      sink?: CueSink;
+      hab?: Hab | null;
+    },
   ) {
     this.hby = hby;
+    this.reactor = reactor;
+    this.services = services;
     this.sink = sink;
     this.hab = hab;
   }
@@ -446,7 +520,7 @@ export class QueryCoordinator implements CueSink {
   /** Return true while continuations or unsent queries are still pending. */
   hasPendingWork(): boolean {
     this.compactContinuations();
-    return !this.requests.empty || this.continuations.length > 0;
+    return !this.requests.empty || this.continuations.length > 0 || this.hasPendingDelivery;
   }
 
   /**
@@ -469,6 +543,124 @@ export class QueryCoordinator implements CueSink {
     const { kin: _, ...request } = cue;
     this.enqueue(request);
     return true;
+  }
+
+  /** Capture a signed query and introduction before removing the source request. */
+  queueEmission(hab: Hab, emission: CueEmission | null): boolean {
+    if (emission === null) return false;
+    if (!emission || emission.kind !== "wire" && emission.kind !== "notify" && emission.kind !== "transport") {
+      throw new TypeError("Query preparation must return a synchronous emission or null");
+    }
+    if (emission.kind !== "wire" || emission.cue.kin !== "query") return false;
+    const destination = emission.cue.src, queriedPre = emission.cue.pre;
+    if (!destination || !queriedPre) return false;
+    const signer = emission.cue.signer === undefined ? hab : this.hby.habs.get(emission.cue.signer);
+    if (!signer) return false;
+    const url = resolveQueryDestinationUrl(signer, queriedPre, destination, {
+      explicitWitness: emission.cue.wits?.includes(destination) ?? false,
+    });
+    if (!url) throw new ValidationError(`No endpoint URL found for query destination ${destination}.`);
+    const messages = emission.messages[Symbol.iterator]();
+    let message: Uint8Array | undefined, failed = false, failure: unknown;
+    try {
+      message = messages.next().value;
+    } catch (error) {
+      failed = true;
+      failure = error;
+    }
+    try {
+      messages.return?.();
+    } catch (error) {
+      if (failed && error !== failure) throw new AggregateError([failure, error], "Query source cleanup failed");
+      throw error;
+    }
+    if (failed) throw failure;
+    if (!message) return false;
+    const intro = introduce(signer, destination);
+    this.enqueueDelivery({ url, body: concatBytes(intro, message), bodyMode: this.hby.cesrBodyMode, destination });
+    return true;
+  }
+
+  /** Append one ordinary signed query packet; its bytes remain borrowed until delivery or joined close. */
+  enqueueDelivery(delivery: QueryDelivery): void {
+    if (this.closed) throw new Error("Query coordinator is closed");
+    this.deliveries.push(delivery);
+  }
+
+  /** Include live query I/O and unsent packets in convergence. */
+  get hasPendingDelivery(): boolean {
+    return this.delivering || !this.deliveries.empty;
+  }
+
+  /** Join each real response before removing its captured packet; failed/cancelled sends retain exact bytes. */
+  deliverOnce(): Operation<void> {
+    // deno-lint-ignore no-this-alias -- The operation owns one finite output pass.
+    const self = this;
+    return call(function*() {
+      if (self.delivering || self.closed) return;
+      self.delivering = true;
+      const active = self.output = new AbortController();
+      let complete!: () => void;
+      self.outputJoined = new Promise<void>((resolve) => complete = resolve);
+      yield* resource<void>(function*(provide) {
+        try {
+          yield* provide();
+        } finally {
+          self.delivering = false;
+          self.output = undefined;
+          self.outputJoined = undefined;
+          complete();
+        }
+      });
+      const count = self.deliveries.length;
+      for (let index = 0; index < count && !self.closed; index++) {
+        const packet = self.deliveries.peekHead();
+        if (!packet) break;
+        active.signal.throwIfAborted();
+        yield* call(() => self.postQueryMessage(packet, active));
+        active.signal.throwIfAborted();
+        self.deliveries.pull();
+      }
+    });
+  }
+
+  /** One delivery scope owns upload frames and all response readers through completion or cancellation. */
+  private *postQueryMessage(
+    delivery: QueryDelivery,
+    controller: AbortController,
+  ): Operation<void> {
+    const reactor = this.reactor, services = this.services;
+    if (new URL(delivery.url).protocol === "tcp:") {
+      yield* converseCesrTcp(delivery.url, delivery.body, {
+        clock: services.clock,
+        signal: controller.signal,
+        replies: { reactor, local: true },
+      });
+      return;
+    }
+    yield* postCesr(
+      delivery.url,
+      (signal) => chunkBytes(delivery.body, { signal }),
+      {
+        bodyMode: delivery.bodyMode,
+        destination: delivery.destination,
+        services,
+        signal: controller.signal,
+      },
+      function*(response) {
+        if (response.headers.get("Content-Type")?.toLowerCase().startsWith("text/event-stream")) {
+          yield* consumeMailboxSse(response, new AbortController(), function*(message) {
+            yield* reactor.process((signal) => chunkBytes(message.msg, { signal }), {
+              signal: controller.signal,
+            });
+          }, { idleTimeoutMs: 500, maxDurationMs: 5_000, services, signal: controller.signal });
+        } else {
+          yield* reactor.process((signal) => streamBytes(response.body, { signal }), {
+            signal: controller.signal,
+          });
+        }
+      },
+    );
   }
 
   /** Observe a source cue only after its prepared delivery record is queued. */
@@ -598,6 +790,7 @@ export class QueryCoordinator implements CueSink {
   /** Stop active processing and join its children before clearing pending requests. Do not reenter from its sink. */
   *close(): Operation<void> {
     this.closed = true;
+    this.output?.abort();
     const failures: unknown[] = [];
     try {
       if (this.active && !this.stopping) {
@@ -614,7 +807,13 @@ export class QueryCoordinator implements CueSink {
     } catch (error) {
       if (!failures.includes(error)) failures.push(error);
     }
+    try {
+      if (this.outputJoined) yield* call(() => this.outputJoined!);
+    } catch (error) {
+      if (!failures.includes(error)) failures.push(error);
+    }
     this.requests.clear();
+    this.deliveries.clear();
     this.stopping = undefined;
     if (failures.length === 1) throw failures[0];
     if (failures.length) throw new AggregateError(failures, "Query coordinator cleanup failed");

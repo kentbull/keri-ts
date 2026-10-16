@@ -26,7 +26,13 @@ import { exchange } from "../core/protocol-exchanging.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { RegistryRecord } from "../core/records.ts";
 import { Credentialer, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
-import { type AgentRuntime, processMailboxTurn, processRuntimeUntil } from "./agent-runtime.ts";
+import {
+  type AgentRuntime,
+  processMailboxTurn,
+  processRuntimeUntil,
+  queryTransportSink,
+} from "./agent-runtime.ts";
+
 import { requireRegery } from "./credential-workflows.ts";
 import { resolveDelegationCommunicationHab } from "./delegating.ts";
 import {
@@ -53,7 +59,6 @@ import {
   prepareMultisigEventExn,
 } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import { queryTransportSink } from "./runtime-deliveries.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
@@ -296,7 +301,7 @@ export function* completeDelegationIfNeeded(
     );
   }
   runtime.delegating.beginLatest(pre, kever.sn, { communicationHab });
-  const sink = queryTransportSink(runtime, hby, communicationHab);
+  const sink = queryTransportSink(runtime, communicationHab);
   yield* processRuntimeUntil(
     runtime,
     () => runtime.delegating.complete(pre, kever.sn),

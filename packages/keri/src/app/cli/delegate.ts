@@ -21,12 +21,13 @@ import {
   type CueSink,
   processRuntimeTurn,
   processRuntimeUntil,
+  queryTransportSink,
   respondantCueSink,
 } from "../agent-runtime.ts";
+
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../endpoint-roleing.ts";
 import { MULTISIG_IXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
-import { queryTransportSink } from "../runtime-deliveries.ts";
 import { WitnessReceiptor } from "../witnessing.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
 import { resolveWitnessAuths } from "./common/witness-auth.ts";
@@ -206,10 +207,9 @@ function pinApprovalSeal(
 /** Route query cues through query transport and other cues through Respondant. */
 function delegateConfirmSink(
   runtime: AgentRuntime,
-  hby: Habery,
   hab: Hab,
 ): CueSink {
-  const querySink = queryTransportSink(runtime, hby, hab);
+  const querySink = queryTransportSink(runtime, hab);
   const responder = respondantCueSink(runtime, hab);
   return {
     admitQuery: querySink.admitQuery,
@@ -237,7 +237,7 @@ export function* performDelegationApproval(
 ): Operation<void> {
   const interactionApproval = confirmArgs.interact ?? false;
 
-  const sink = delegateConfirmSink(runtime, hby, hab);
+  const sink = delegateConfirmSink(runtime, hab);
   yield* processRuntimeUntil(
     runtime,
     () => pendingDelegations(hby, hab.pre).length > 0,

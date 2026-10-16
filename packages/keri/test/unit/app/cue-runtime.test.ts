@@ -378,7 +378,7 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
       assertEquals(runtime.respondant.enqueueCue(sender, runtime.cues), true);
       const query = sender.query(sender.pre, sender.pre, { route: "logs" as const, q: {} });
       for (let index = 0; index < 9; index++) {
-        runtime.deliveries.enqueue({
+        runtime.querying.enqueueDelivery({
           url: "https://query.test/",
           body: query,
           bodyMode: "header",
@@ -401,7 +401,8 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
       injected = false;
       yield* runtime.respondant.process();
       assertEquals(runtime.respondant.hasPending, true);
-      assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 9, pending: false });
+      yield* runtime.querying.deliverOnce();
+      assertEquals(runtime.querying.hasPendingDelivery, false);
       assertEquals(
         packets.query.length,
         9,
@@ -440,7 +441,7 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
         yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))),
         failed,
       );
-      runtime.deliveries.enqueue({
+      runtime.querying.enqueueDelivery({
         url: "https://query.test/",
         body: query,
         bodyMode: "header",

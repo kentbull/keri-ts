@@ -1,31 +1,45 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  queryTransportSink,
+} from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { queryTransportSink, RuntimeDeliveries } from "../../../src/app/runtime-deliveries.ts";
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
-Deno.test("query delivery queues ordinary requests and retains failed deliveries for retry", async () => {
-  const queue = new RuntimeDeliveries();
-  const request = {
-    url: "https://query.test/",
-    body: new Uint8Array(9 * 1024 ** 2),
-    bodyMode: "header" as const,
-    destination: "aid",
-  };
-  for (let index = 0; index < 9; index++) queue.enqueue(request);
-  assertEquals(queue.hasPending, true);
-  await run(() => queue.close());
-  assertEquals(queue.hasPending, false);
-  assertThrows(() => queue.enqueue(request), Error, "closed");
+import { QueryCoordinator } from "../../../src/app/querying.ts";
 
-  const failed = new RuntimeDeliveries();
-  failed.enqueue({ ...request, body: new TextEncoder().encode("invalid CESR") });
-  await assertRejects(() => run(() => failed.process({} as AgentRuntime)));
-  assertEquals(failed.hasPending, true, "failed delivery remains available for retry or shutdown");
-  await run(() => failed.close());
-  assertEquals(failed.hasPending, false);
+Deno.test("query owner queues ordinary packets and retains failed deliveries for retry", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("sender");
+    const runtime = yield* createAgentRuntime(hby), queue = runtime.querying;
+    const request = {
+      url: "https://query.test/",
+      body: hab.query(hab.pre, hab.pre, { route: "logs", q: {} }),
+      bodyMode: "header" as const,
+      destination: hab.pre,
+    };
+    try {
+      for (let index = 0; index < 9; index++) queue.enqueueDelivery(request);
+      assertEquals(queue.hasPendingDelivery, true);
+      assertEquals(queue.hasPendingWork(), true, "query convergence includes queued wire");
+      yield* queue.close();
+      assertEquals(queue.hasPendingDelivery, false);
+      assertThrows(() => queue.enqueueDelivery(request), Error, "closed");
+      const failed = new QueryCoordinator(hby, { reactor: runtime.reactor });
+      try {
+        failed.enqueueDelivery({ ...request, body: new TextEncoder().encode("invalid CESR") });
+        yield* call(() => assertRejects(() => run(() => failed.deliverOnce())));
+        assertEquals(failed.hasPendingDelivery, true, "failed delivery remains available for retry or shutdown");
+      } finally {
+        yield* failed.close();
+      }
+      assertEquals(failed.hasPendingDelivery, false);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
 });
 
 Deno.test("query transport prepares and queues wire without an application credit policy", async () => {
@@ -36,9 +50,9 @@ Deno.test("query transport prepares and queues wire without an application credi
     const runtime = yield* createAgentRuntime(hby);
     try {
       const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, wits: [hab.pre], route: "logs" as const, q: {} };
-      const sink = queryTransportSink(runtime, hby, hab);
+      const sink = queryTransportSink(runtime, hab);
       assertEquals(sink.admitQuery!(cue, () => hab.interpretCue(cue) ?? null), "transferred");
-      assertEquals(runtime.deliveries.hasPending, true);
+      assertEquals(runtime.querying.hasPendingDelivery, true);
     } finally {
       yield* runtime.close();
 
@@ -68,7 +82,7 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
       services: { http: { fetch: () => Promise.resolve(new Response(body)) } },
     });
     try {
-      runtime.deliveries.enqueue({
+      runtime.querying.enqueueDelivery({
         url: "https://query.test/",
         body: hab.query(hab.pre, hab.pre, { route: "logs", q: {} }),
         bodyMode: "header",
@@ -76,7 +90,7 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
       });
       const delivery = yield* spawn(function*() {
         try {
-          yield* runtime.deliveries.process(runtime);
+          yield* runtime.querying.deliverOnce();
           continued = true;
         } catch (error) {
           if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
@@ -85,7 +99,7 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
       yield* call(() => reading.promise);
       let closed = false;
       const closing = yield* spawn(function*() {
-        yield* runtime.deliveries.close();
+        yield* runtime.querying.close();
         closed = true;
       });
       yield* call(() => cleanup.promise);
@@ -110,40 +124,35 @@ Deno.test("query shutdown after successful response consumption cannot send the 
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    const queue = new RuntimeDeliveries();
-    const runtime = {
+    const runtime = yield* createAgentRuntime(hby, {
       services: {
-        ...defaultRuntimeServices,
         http: {
           fetch: () => {
             requests++;
-            return Promise.resolve(
-              new Response(
-                new ReadableStream<Uint8Array>({
-                  async cancel() {
-                    cleaning.resolve();
-                    await release.promise;
-                  },
-                }),
-              ),
-            );
+            const response = new Response(new Uint8Array());
+            const cancel = response.body!.cancel.bind(response.body);
+            response.body!.cancel = async (reason) => {
+              cleaning.resolve();
+              await release.promise;
+              await cancel(reason);
+            };
+            return Promise.resolve(response);
           },
         },
       },
-      // Isolate the drainer handoff: response handling succeeded, but its HTTP owner has not finished cleanup.
-      reactor: { *process() {} },
-    } as unknown as AgentRuntime;
+    });
+    const queue = runtime.querying;
     const request = {
       url: "https://query.test/",
       body: hab.query(hab.pre, hab.pre, { route: "logs", q: {} }),
       bodyMode: "header" as const,
       destination: hab.pre,
     };
-    queue.enqueue(request);
-    queue.enqueue(request);
+    queue.enqueueDelivery(request);
+    queue.enqueueDelivery(request);
     const delivery = yield* spawn(function*() {
       try {
-        yield* queue.process(runtime);
+        yield* queue.deliverOnce();
         continued = true;
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
@@ -155,11 +164,11 @@ Deno.test("query shutdown after successful response consumption cannot send the 
       release.resolve();
       yield* closing;
       yield* delivery;
-      assertEquals([requests, continued, queue.hasPending], [1, false, false]);
+      assertEquals([requests, continued, queue.hasPendingDelivery], [1, false, false]);
     } finally {
       release.resolve();
       yield* delivery.halt();
-      yield* queue.close();
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });

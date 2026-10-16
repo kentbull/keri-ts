@@ -6,6 +6,7 @@ import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
+  queryTransportSink,
   respondantCueSink,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
@@ -14,7 +15,6 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { fetchResponseHandle } from "../../../src/app/httping.ts";
 import { readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 
-import { queryTransportSink } from "../../../src/app/runtime-deliveries.ts";
 import { witnessReceiptPost } from "../../../src/app/witnessing.ts";
 
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -389,7 +389,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
         witness.pre,
         { route: "logs", q: { fn: "0", s: "0", a: seal } },
       );
-      const sink = queryTransportSink(proxyRuntime, proxyHby, proxy);
+      const sink = queryTransportSink(proxyRuntime, proxy);
       yield* sink.send({
         kind: "wire",
         cue: {
@@ -404,7 +404,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       });
 
       // Network response processing begins only after the cue consumer's guarded turn has ended.
-      yield* proxyRuntime.deliveries.process(proxyRuntime);
+      yield* proxyRuntime.querying.deliverOnce();
       assertExists(witnessRuntime.hby.db.getKever(proxy.pre));
       assertExists(
         witnessRuntime.hby.db.ends.get([

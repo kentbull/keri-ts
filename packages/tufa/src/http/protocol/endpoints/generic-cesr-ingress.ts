@@ -291,7 +291,7 @@ function* ingest(
                   previous.close();
                 }
               });
-              yield* runtime.deliveries.process(runtime);
+              yield* runtime.querying.deliverOnce();
               yield* runtime.respondant.process();
             }
             query = undefined;
