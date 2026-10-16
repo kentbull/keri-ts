@@ -1,72 +1,89 @@
 import { call, run } from "effection";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { dkrResolveCommand } from "../../../src/app/cli/did.ts";
+import { requireRegery } from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { resolveDidKeri } from "../../../src/did/keri/resolving.ts";
 import { controllerOobiResponse, startStaticHttpHost } from "../../http-test-support.ts";
+import { testCLICommand } from "../../utils.ts";
 
-Deno.test("did/keri - resolve signed HTTP introduction, then project accepted local state", async () => {
+Deno.test("did/keri - CLI owns signed HTTP introduction before accepted local projection", async () => {
+  const headDirPath = await Deno.makeTempDir({ prefix: "dkr-reader-" });
   await run(function*() {
     const issuer = yield* createHabery({ name: `dkr-issuer-${crypto.randomUUID()}`, temp: true });
-    const reader = yield* createHabery({ name: `dkr-reader-${crypto.randomUUID()}`, temp: true });
-    const runtime = yield* createAgentRuntime(reader);
+    const name = `dkr-reader-${crypto.randomUUID()}`;
+    const reader = yield* createHabery({ name, headDirPath });
+    yield* reader.close();
     const hab = issuer.makeHab("issuer");
     const did = `did:keri:${hab.pre}`;
     const wire = hab.replyToOobi(hab.pre, EndpointRoles.controller);
     const host = startStaticHttpHost(() => controllerOobiResponse(hab.pre, wire));
     try {
-      assertEquals(reader.db.getKever(hab.pre), null);
       let missing: unknown;
       try {
-        yield* resolveDidKeri(runtime, { did });
+        yield* testCLICommand(dkrResolveCommand({ name, headDirPath, did }));
       } catch (error) {
         missing = error;
       }
       assertInstanceOf(missing, ValidationError);
 
       const oobi = `${host.origin}/oobi/${hab.pre}/controller`;
-      const introduced = yield* resolveDidKeri(runtime, { did, oobis: [oobi] });
-      assertEquals(introduced.document.id, did);
-      assertEquals(introduced.resolution.didDocument, introduced.document);
-      assertEquals(reader.db.getKever(hab.pre)?.said, hab.kever!.said);
-      assertEquals(reader.db.roobi.get(oobi)?.state, "resolved");
+      const introduced = yield* testCLICommand(dkrResolveCommand({ name, headDirPath, did, oobi: [oobi] }));
+      const document = JSON.parse(introduced.output.at(-1)!);
+      assertEquals(document.id, did);
 
-      const local = yield* resolveDidKeri(runtime, { did });
-      assertEquals(local.document, introduced.document);
+      const accepted = yield* createHabery({ name, headDirPath });
+      const runtime = yield* createAgentRuntime(accepted);
+      try {
+        assertEquals(accepted.db.getKever(hab.pre)?.said, hab.kever!.said);
+        assertEquals(accepted.db.roobi.get(oobi)?.state, "resolved");
+        const local = resolveDidKeri(accepted, requireRegery(runtime), did);
+        assertEquals(local.document, document);
+        assertEquals(local.resolution.didDocument, local.document);
+      } finally {
+        yield* runtime.close();
+        yield* accepted.close();
+      }
     } finally {
-      yield* runtime.close();
-      yield* reader.close(true);
       yield* issuer.close(true);
       yield* call(() => host.close());
+      yield* call(() => Deno.remove(headDirPath, { recursive: true }));
     }
   });
 });
 
-Deno.test("did/keri - failed HTTP introduction cannot manufacture accepted key state", async () => {
+Deno.test("did/keri - failed CLI introduction cannot manufacture accepted key state", async () => {
+  const headDirPath = await Deno.makeTempDir({ prefix: "dkr-refusal-" });
   await run(function*() {
     const issuer = yield* createHabery({ name: `dkr-missing-${crypto.randomUUID()}`, temp: true });
-    const reader = yield* createHabery({ name: `dkr-refusal-${crypto.randomUUID()}`, temp: true });
-    const runtime = yield* createAgentRuntime(reader);
+    const name = `dkr-refusal-${crypto.randomUUID()}`;
+    const reader = yield* createHabery({ name, headDirPath });
+    yield* reader.close();
     const hab = issuer.makeHab("issuer");
     const host = startStaticHttpHost(() => new Response("Not Found", { status: 404 }));
     const oobi = `${host.origin}/oobi/${hab.pre}/controller`;
     try {
       let refused: unknown;
       try {
-        yield* resolveDidKeri(runtime, { did: `did:keri:${hab.pre}`, oobis: [oobi] });
+        yield* testCLICommand(dkrResolveCommand({ name, headDirPath, did: `did:keri:${hab.pre}`, oobi: [oobi] }));
       } catch (error) {
         refused = error;
       }
       assertInstanceOf(refused, ValidationError);
-      assertEquals(reader.db.getKever(hab.pre), null);
-      assertEquals(reader.db.eoobi.get(oobi)?.state, "http-404");
+      const inspected = yield* createHabery({ name, headDirPath });
+      try {
+        assertEquals(inspected.db.getKever(hab.pre), null);
+        assertEquals(inspected.db.eoobi.get(oobi)?.state, "http-404");
+      } finally {
+        yield* inspected.close();
+      }
     } finally {
-      yield* runtime.close();
-      yield* reader.close(true);
       yield* issuer.close(true);
       yield* call(() => host.close());
+      yield* call(() => Deno.remove(headDirPath, { recursive: true }));
     }
   });
 });

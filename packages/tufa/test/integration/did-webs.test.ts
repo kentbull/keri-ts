@@ -1,4 +1,4 @@
-import { action, call, type Operation, run, spawn } from "effection";
+import { action, call, type Operation, run, spawn, type Task } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import {
   bindDesignatedAliases,
@@ -6,10 +6,64 @@ import {
   createHabery,
   generateDidWebsArtifacts,
   resolveDidWebs,
+  runAgentRuntime,
 } from "keri-ts/runtime";
 import { startServer } from "../../src/host/http-server.ts";
 import { createProtocolHandler } from "../../src/http/protocol-handler.ts";
-import { reserveTcpPort, waitForServer, waitForTaskHalt } from "../test-helpers.ts";
+import { reserveTcpPort, startTestServer, waitForServer, waitForTaskHalt } from "../test-helpers.ts";
+
+Deno.test("tufa/dkr - HTTP waits for every supplied introduction on the existing host", async () => {
+  await run(function*() {
+    const issuer = yield* createHabery({ name: `dkr-http-source-${crypto.randomUUID()}`, temp: true });
+    const reader = yield* createHabery({ name: `dkr-http-reader-${crypto.randomUUID()}`, temp: true });
+    const source = yield* createAgentRuntime(issuer);
+    const resolver = yield* createAgentRuntime(reader);
+    const habs = Array.from({ length: 6 }, (_, index) => issuer.makeHab(`issuer-${index}`));
+    const unhosted = issuer.makeHab("unhosted");
+    const worker = yield* spawn(() => runAgentRuntime(resolver, { pollMailbox: false }));
+    let sourceTask: Task<void> | undefined;
+    let resolverTask: Task<void> | undefined;
+    try {
+      const sourceServer = yield* startTestServer(source, {
+        serviceHab: habs[0],
+        hostedPrefixes: habs.map((hab) => hab.pre),
+      });
+      sourceTask = sourceServer.task;
+      const resolverServer = yield* startTestServer(resolver);
+      resolverTask = resolverServer.task;
+      const sourceOrigin = `http://${sourceServer.address.hostname}:${sourceServer.address.port}`;
+      const resolverOrigin = `http://${resolverServer.address.hostname}:${resolverServer.address.port}`;
+      const did = `did:keri:${habs[0].pre}`;
+      const request = new URL(`/1.0/identifiers/${encodeURIComponent(did)}`, resolverOrigin);
+      request.searchParams.set("meta", "true");
+      for (const hab of habs) request.searchParams.append("oobi", `${sourceOrigin}/oobi/${hab.pre}/controller`);
+      const result = yield* fetchJson(request.href);
+      assertEquals((result as { didDocument: { id: string } }).didDocument.id, did);
+      for (const hab of habs) {
+        assertEquals(reader.db.getKever(hab.pre)?.said, hab.kever!.said);
+        assertEquals(reader.db.roobi.get(`${sourceOrigin}/oobi/${hab.pre}/controller`)?.state, "resolved");
+      }
+
+      const missing = new URL(`/1.0/identifiers/${encodeURIComponent(`did:keri:${unhosted.pre}`)}`, resolverOrigin);
+      missing.searchParams.set("meta", "true");
+      const unavailable = `${sourceOrigin}/oobi/${unhosted.pre}/controller`;
+      missing.searchParams.set("oobi", unavailable);
+      const refusal = yield* fetchJson(missing.href);
+      assertEquals((refusal as { didDocument: null }).didDocument, null);
+      assertEquals((refusal as { didResolutionMetadata: { error: string } }).didResolutionMetadata.error, "notFound");
+      assertEquals(reader.db.getKever(unhosted.pre), null);
+      assertEquals(reader.db.eoobi.get(unavailable)?.state, "http-404");
+    } finally {
+      if (resolverTask) yield* waitForTaskHalt(resolverTask);
+      if (sourceTask) yield* waitForTaskHalt(sourceTask);
+      yield* worker.halt();
+      yield* resolver.close();
+      yield* source.close();
+      yield* reader.close(true);
+      yield* issuer.close(true);
+    }
+  });
+});
 
 Deno.test("tufa/dws - static artifacts resolve through the Tufa HTTP artifact route", async () => {
   await run(function*(): Operation<void> {

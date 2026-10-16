@@ -2,8 +2,13 @@
 import { run } from "effection";
 import {
   didResolutionError,
+  parseDidKeriIdentifier,
+  requireRegery,
   resolveDidKeri,
+  type ResolveDidKeriResult,
   resolveDidWebs,
+  type ResolveDidWebsResult,
+  runtimeOobiConverged,
 } from "keri-ts/runtime";
 import type { ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
@@ -37,23 +42,27 @@ export async function handleDidResolutionRoute(
   }
   try {
     const oobis = context.url.searchParams.getAll("oobi");
-    const result = did.startsWith("did:webs:") || did.startsWith("did:web:")
-      ? await run(() =>
+    let result: ResolveDidKeriResult | ResolveDidWebsResult | null = null;
+    if (did.startsWith("did:webs:") || did.startsWith("did:web:")) {
+      result = await run(() =>
         resolveDidWebs(context.runtime!, {
           did,
           metadata: meta,
           insecureHttp: context.policy.dwsInsecureHttp ?? false,
         })
-      )
-      : did.startsWith("did:keri:")
-      ? await run(() =>
-        resolveDidKeri(context.runtime!, {
-          did,
-          oobis,
-          metadata: meta,
-        })
-      )
-      : null;
+      );
+    } else if (did.startsWith("did:keri:")) {
+      const canonical = parseDidKeriIdentifier(did).canonical;
+      // The host owns workers. This request only queues introductions and observes state.
+      for (const oobi of oobis) context.runtime.oobiery.resolve(oobi);
+      const deadline = Date.now() + 30_000;
+      while (!oobis.every((url) => runtimeOobiConverged(context.runtime!, url))) {
+        context.req.signal.throwIfAborted();
+        if (Date.now() >= deadline) throw new Error("DID introductions did not converge within 30000ms.");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      result = resolveDidKeri(context.runtime.hby, requireRegery(context.runtime), canonical);
+    }
     if (!result) {
       return jsonResponse(
         didResolutionError("methodNotSupported", `Unsupported DID method for ${did}.`),

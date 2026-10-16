@@ -81,6 +81,11 @@ Actual cleanup failure still reaches the caller after convergence or cancellatio
 Challenge verification uses the same host workers while its command loop observes
 accepted responses and an elapsed deadline. It joins them before marking a match
 or reporting a missing response, so an empty mailbox wait can be retried cleanly.
+The did:keri CLI likewise owns introduction workers through an elapsed wait. Its
+shared resolver only projects accepted Habery/Regery state. HTTP requests queue
+introductions and observe the existing host's convergence; they never start a
+second set of workers. Both entry points finish all supplied introductions before
+projection rather than counting runtime turns or stopping at the first known key.
 
 The older serial processRuntimeTurn and explicit mailbox/approval pumping remain
 transitional removal work. Their remaining callers must move to real ingress or

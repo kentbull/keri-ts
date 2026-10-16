@@ -33,9 +33,13 @@ remains in designated-aliases.ts.
 Document projection borrows Habery and Regery directly; active-alias queries take
 Regery. Those functions must not receive AgentRuntime or start intake workers.
 Application resolution/artifact entry points select the actual state owners.
-The did:keri five-turn resolver loop remains removal work: CLI owns finite-command
-workers, while HTTP resolution already borrows an active host. Do not start a
-second set of host consumers inside a shared resolver.
+did:keri resolution is a synchronous projection over Habery/Regery. The CLI queues
+supplied OOBIs and owns finite workers through convergence and joined shutdown.
+HTTP resolution queues OOBIs and observes its existing host under an elapsed
+request deadline; it never starts another set of host consumers. Complete every
+supplied introduction before projection, including when the target's key state
+arrives before other requested introductions. Failed introduction cannot create
+accepted key state. Metadata rendering belongs to the CLI/HTTP adapter.
 
 Designated aliases use ordinary registry-backed credentials and a SAID-checked
 JSON schema. Current binding revokes the issuer/schema's active credentials before
