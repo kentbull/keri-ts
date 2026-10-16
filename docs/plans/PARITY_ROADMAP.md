@@ -46,6 +46,13 @@ ownership and full qualification remain open.
 - Witness receipt, delegation and raw transport entrypoints now borrow actual
   Reactor/services instead of a parent runtime. Standalone receipting constructs
   only a protocol processor over the existing Habery, with no extra stores/workers.
+- HTTP receipt false-success/fanout is corrected: both transports require the
+  requested event's accepted witness signature; GET validates accepted proof and
+  fanout uses only verified complementary indexed signatures. Real-HTTP regressions
+  cover foreign/forged/wrong-event proof, valid retrieval, three-witness fanout
+  and historical receipt selection/completion after a nonempty witness replacement.
+  The shared empty historical witness-list fallback to current witnesses remains
+  owner-level cleanup; close that gap before final qualification.
 - Narrow public runtime exports to supported operations/data. Remove optional
   hooks and wrappers; condense contracts, learnings and plans to current decisions.
 - One finite decoder shared by complete input and a small network input loop.

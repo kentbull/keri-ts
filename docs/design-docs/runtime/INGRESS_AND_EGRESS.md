@@ -152,8 +152,14 @@ construction; its escrow passes receive no parent runtime. Receiptor uses a
 borrowed Reactor or creates a protocol processor over the caller's existing
 Habery. It does not construct AgentRuntime, unrelated registry/notification
 stores or background workers. Receipt intake still runs verification and escrows;
-TCP success still requires the selected witness's persisted signature. Raw
-witness/Poster sends receive the actual Reactor, while transport retains native
+HTTP and TCP success require the selected witness's persisted signature for the
+requested event. GET returns false without matching accepted proof, including a
+sequence/digest mismatch. Complementary fanout uses only verified indexed witness
+signatures read from wigs; raw response proof and unrelated signer receipts do not
+establish completion or enter fanout.
+Use the requested accepted event's witness list for retrieval, proof indexes and
+cached completion; later witness replacements cannot reinterpret older proof.
+Raw witness/Poster sends receive the actual Reactor, while transport retains native
 socket ownership. Every actual HTTP/TCP operation joins cleanup before returning.
 
 QueryCoordinator owns a private ordinary Deck of QueryRequest records. Its
