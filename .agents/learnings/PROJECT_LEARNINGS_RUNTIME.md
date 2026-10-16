@@ -161,7 +161,9 @@ DB. Bootstrap uses explicit config paths.
 
 The maintained interop-kram owner checks single/group mailbox authentication in
 both directions, including partial thresholds, replay, stale and foreign proofs.
-It uses actual hosts/HTTP, with fixture payloads; witnessed delivery, restart and
-presentation-registry workflows remain separate gates. Packed minimum-Node, strict
-declarations, real native rows and composed disclosure/KRAM tests remain release
+SIGKILL/reopen cases retain provider/sender identity, exact pending proofs and
+accepted cache state across actual processes; only the remaining member proof
+completes the group, and post-restart replay cannot redispatch. Payloads are fixture
+data; witnessed delivery and presentation-registry workflows remain separate gates.
+Packed minimum-Node, strict declarations, real native rows and composed disclosure/KRAM tests remain release
 gates; source Deno or addon-loading smoke alone does not qualify them.

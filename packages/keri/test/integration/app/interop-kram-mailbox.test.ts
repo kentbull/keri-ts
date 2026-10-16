@@ -1,10 +1,9 @@
 /** KRAM admission through real mailbox hosts; controller keys never cross implementations. */
 import { Diger, NumberPrimitive, parseBytes, Prefixer, Siger, t, Vrsn_2_0 } from "cesr-ts";
-import { call, ensure, run } from "effection";
+import { call, run } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { decodeBase64, encodeBase64 } from "jsr:@std/encoding/base64";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/cesr-egress.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
@@ -14,12 +13,14 @@ import { query } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
 import {
   createInteropContext,
+  type InteropContext,
   randomPort,
   spawnChild,
   withStartedChild,
 } from "./interop-test-helpers.ts";
 
-const PEER = fromFileUrl(new URL("../../fixtures/kram-mailbox-peer.py", import.meta.url));
+const PYTHON_PEER = fromFileUrl(new URL("../../fixtures/kram-mailbox-peer.py", import.meta.url));
+const TYPESCRIPT_PEER = fromFileUrl(new URL("../../fixtures/kram-mailbox-peer.ts", import.meta.url));
 const PAYLOAD = "authenticated-mailbox-payload";
 
 /** Captured packets carry public evidence only, including separate member signatures. */
@@ -40,8 +41,10 @@ interface ControllerPackets {
   };
 }
 interface Snapshot {
+  pid: number;
+  provider: string;
   known: boolean;
-  rows: { said: string; cached: boolean; pending: boolean; stamp: string | null }[];
+  rows: { said: string; cached: boolean; pending: boolean; stamp: string | null; proofs: number[] }[];
   streams: string[];
 }
 interface Sent {
@@ -227,12 +230,12 @@ async function exercise(
   assertEquals(refused.rows[0], complete.rows[0], "replay changes neither cache nor pending evidence");
   assertEquals(
     refused.rows[1],
-    { said: stale.said, cached: false, pending: false, stamp: null },
+    { said: stale.said, cached: false, pending: false, stamp: null, proofs: [] },
     "a validly signed day-old query is stale",
   );
   assertEquals(
     refused.rows[2],
-    { said: forged.said, cached: false, pending: false, stamp: null },
+    { said: forged.said, cached: false, pending: false, stamp: null, proofs: [] },
     "a foreign-key signature cannot authenticate this sender",
   );
   assertEquals(refused.streams.includes(first.said), false, "replay cannot dispatch another stream");
@@ -252,7 +255,12 @@ for (const count of [1, 2]) {
       const ctx = await createInteropContext();
       const port = randomPort();
       const pythonUrl = `http://127.0.0.1:${port}/`;
-      const child = spawnChild(ctx.pythonCommand, [PEER, String(port), String(count)], ctx.env, ctx.repoRoot);
+      const child = spawnChild(
+        ctx.pythonCommand,
+        [PYTHON_PEER, String(port), String(count), `${ctx.home}/python-provider`],
+        ctx.env,
+        ctx.repoRoot,
+      );
       try {
         await withStartedChild(child, port, async () => {
           if (direction === "keri-ts -> KERIpy") {
@@ -266,46 +274,25 @@ for (const count of [1, 2]) {
               }));
           } else {
             const bundle = await control<ControllerPackets>(pythonUrl, { action: "info" });
-            await run(function*() {
-              const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-              yield* ensure(() => hby.close(true));
-              const runtime = yield* createAgentRuntime(hby, {
-                enableMailboxStore: true,
-                kram: {
-                  enabled: true,
-                  denials: [],
-                  caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] },
-                },
-              });
-              yield* ensure(() => runtime.close());
-              const hab = hby.makeHab("relay", undefined, { transferable: false });
-              runtime.mailboxer!.storeMsg(`${bundle.pre}/reply`, new TextEncoder().encode(PAYLOAD));
-              const handler = createProtocolHandler(runtime, { serviceHab: hab });
-              yield* ensure(() => call(() => handler.close?.()));
-              const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, handler);
-              yield* ensure(() => call(() => server.shutdown()));
-              const url = `http://127.0.0.1:${server.addr.port}/`;
-              yield* call(() =>
-                exercise(
-                  bundle,
-                  (wire, readEvent) => control<Sent>(pythonUrl, { action: "send", url, wire, readEvent }),
-                  () =>
-                    Promise.resolve({
-                      known: !!hby.db.getKever(bundle.pre),
-                      rows: Object.values(bundle.packets).map(({ said }) => {
-                        const cache = hby.db.msgc.get([bundle.pre, said]);
-                        return {
-                          said,
-                          cached: !!cache,
-                          pending: !!hby.db.pmkm.get([bundle.pre, said]),
-                          stamp: cache?.mdt ?? null,
-                        };
-                      }),
-                      streams: [...runtime.mailboxDirector.queryCues].map((cue) =>
-                        "serder" in cue ? cue.serder?.said! : ""
-                      ),
-                    }),
-                )
+            const providerPort = randomPort();
+            const url = `http://127.0.0.1:${providerPort}/`;
+            const provider = spawnChild(
+              Deno.execPath(),
+              ["run", "-A", TYPESCRIPT_PEER, String(providerPort), `${ctx.home}/typescript-provider`],
+              ctx.env,
+              ctx.repoRoot,
+            );
+            await withStartedChild(provider, providerPort, async () => {
+              await control(url, { action: "store", pre: bundle.pre });
+              await exercise(
+                bundle,
+                (wire, readEvent) => control<Sent>(pythonUrl, { action: "send", url, wire, readEvent }),
+                () =>
+                  control<Snapshot>(url, {
+                    action: "inspect",
+                    pre: bundle.pre,
+                    saids: Object.values(bundle.packets).map((packet) => packet.said),
+                  }),
               );
             });
           }
@@ -315,4 +302,112 @@ for (const count of [1, 2]) {
       }
     });
   }
+}
+
+/** Kill/reopen actual provider processes against the same test-owned current-version stores. */
+async function restartProvider(ctx: InteropContext, count: number, pythonClient?: string): Promise<void> {
+  const bundle = pythonClient
+    ? await control<ControllerPackets>(pythonClient, { action: "info" })
+    : await typescriptPackets(count);
+  const { first, barrier } = bundle.packets;
+  const port = randomPort();
+  const url = `http://127.0.0.1:${port}/`;
+  const root = `${ctx.home}/restart-provider`;
+  const inspect = () =>
+    control<Snapshot>(url, {
+      action: "inspect",
+      pre: bundle.pre,
+      saids: Object.values(bundle.packets).map((packet) => packet.said),
+    });
+  const transmit = (wire: string, readEvent: boolean) =>
+    pythonClient
+      ? control<Sent>(pythonClient, { action: "send", url, wire, readEvent })
+      : send(url, wire, readEvent);
+  // This local resource helper runs one concrete fixture phase, then joins the
+  // actual process. SIGKILL deliberately skips application cleanup after commit.
+  const phase = async (body: () => Promise<Snapshot>, crash = false): Promise<Snapshot> => {
+    const child = pythonClient
+      ? spawnChild(Deno.execPath(), ["run", "-A", TYPESCRIPT_PEER, String(port), root], ctx.env, ctx.repoRoot)
+      : spawnChild(ctx.pythonCommand, [PYTHON_PEER, String(port), String(count), root], ctx.env, ctx.repoRoot);
+    return await withStartedChild(child, port, async () => {
+      const state = await body();
+      if (crash) {
+        child.kill("SIGKILL");
+        assertEquals((await child.status).signal, "SIGKILL");
+      }
+      return state;
+    });
+  };
+  const initial = await phase(async () => {
+    await control(url, { action: "store", pre: bundle.pre });
+    for (const kel of bundle.kel) assertEquals((await transmit(kel, false)).status, 204);
+    if (count === 2) {
+      await transmit(first.wires[0], false);
+      const pending = await observed(inspect, (state) => state.rows[0].pending);
+      assert(pending.known);
+      assertEquals(pending.rows[0].proofs, [0]);
+      assertEquals(pending.streams, []);
+      return pending;
+    }
+    assertEquals(await transmit(first.wires[0], true), { status: 200, payload: PAYLOAD });
+    return await observed(inspect, (state) => state.rows[0].cached && !state.rows[0].pending);
+  }, true);
+
+  let accepted = initial;
+  if (count === 2) {
+    accepted = await phase(async () => {
+      const reopened = await inspect();
+      assert(reopened.known, "the sender's accepted KEL must survive without reintroduction");
+      assert(reopened.pid !== initial.pid, "a different OS process reads the saved proof");
+      assertEquals(reopened.provider, initial.provider, "provider identity/keys survive");
+      assertEquals(reopened.rows[0], initial.rows[0], "exact partial evidence survives SIGKILL");
+      // Do not resend proof zero or republish the mailbox payload after restart.
+      assertEquals(await transmit(first.wires[1], true), { status: 200, payload: PAYLOAD });
+      const completed = await observed(inspect, (state) => state.rows[0].cached && !state.rows[0].pending);
+      assertEquals(completed.rows[0].proofs, [], "threshold completion retires partial signatures");
+      return completed;
+    }, true);
+  }
+
+  await phase(async () => {
+    const reopened = await inspect();
+    assert(reopened.known);
+    assert(reopened.pid !== accepted.pid, "accepted state is reopened in another OS process");
+    assertEquals(reopened.provider, accepted.provider);
+    assertEquals(reopened.rows[0], accepted.rows[0], "accepted cache survives without partial evidence");
+    for (const wire of first.wires) await transmit(wire, false);
+    for (const wire of barrier.wires.slice(0, -1)) await transmit(wire, false);
+    assertEquals(await transmit(barrier.wires.at(-1)!, true), { status: 200, payload: PAYLOAD });
+    const final = await observed(inspect, (state) => state.rows[3].cached && !state.rows[3].pending);
+    assertEquals(final.rows[0], accepted.rows[0], "replay after restart cannot reset acceptance");
+    assertEquals(final.streams.includes(first.said), false, "replay after restart cannot redispatch");
+    assertEquals(final.rows[3].proofs, []);
+    return final;
+  });
+}
+
+for (const count of [1, 2]) {
+  Deno.test(`KRAM mailbox keri-ts -> KERIpy: ${count}-signer provider survives SIGKILL/reopen`, async () => {
+    const ctx = await createInteropContext();
+    try {
+      await restartProvider(ctx, count);
+    } finally {
+      await Deno.remove(ctx.home, { recursive: true });
+    }
+  });
+  Deno.test(`KRAM mailbox KERIpy -> keri-ts: ${count}-signer provider survives SIGKILL/reopen`, async () => {
+    const ctx = await createInteropContext();
+    const port = randomPort();
+    const child = spawnChild(
+      ctx.pythonCommand,
+      [PYTHON_PEER, String(port), String(count), `${ctx.home}/python-provider`],
+      ctx.env,
+      ctx.repoRoot,
+    );
+    try {
+      await withStartedChild(child, port, () => restartProvider(ctx, count, `http://127.0.0.1:${port}/`));
+    } finally {
+      await Deno.remove(ctx.home, { recursive: true });
+    }
+  });
 }
