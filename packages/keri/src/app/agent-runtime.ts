@@ -14,10 +14,12 @@ import {
   REPLY_MAILBOX_TOPIC,
 } from "../core/mailbox-topics.ts";
 import type { OobiRecord } from "../core/records.ts";
+import { Revery } from "../core/routing.ts";
 import { Mailboxer } from "../db/mailboxing.ts";
 import { Noter } from "../db/noting.ts";
 import { createReger, Reger } from "../db/reger.ts";
 import { Regery as VdrRegery } from "../vdr/credentialing.ts";
+import { Tevery } from "../vdr/eventing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo } from "./cue-runtime.ts";
@@ -196,7 +198,9 @@ export function* createAgentRuntime(
     }
   });
   const protocolCues = new Deck<AgentCue>();
-  const vdr = reger ? new VdrRegery(hby, { reger, cues: protocolCues }) : null;
+  const revery = new Revery(hby.db, { cues: protocolCues });
+  const tvy = reger ? new Tevery({ db: hby.db, reger, cues: protocolCues, rvy: revery }) : undefined;
+  const vdr = reger ? new VdrRegery(hby, { reger, cues: protocolCues, tvy }) : null;
   // Reverse scope teardown joins borrowed output evidence before its backing stores close.
   const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
     const streams = new ReplyStreams();
@@ -209,6 +213,7 @@ export function* createAgentRuntime(
   const reactor = new Reactor(hby, {
     cues,
     protocolCues,
+    revery,
     tevery: vdr?.tvy,
     verifier: vdr?.vry,
     registry: acdc ?? undefined,

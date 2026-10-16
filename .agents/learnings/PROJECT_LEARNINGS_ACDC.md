@@ -33,6 +33,8 @@ record schemas in structing.ts and counted transport in wrappers.
 ## TEL, verifier and IPEX
 
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless escrow.
+Tevery also owns registry/credential TSN routes, independent reply admission and
+Broker dependency retries. Record-only validators do not import processors.
 Revocation evidence persists before its ordinary cue is published. Storage or
 publication failures retain their exact identity through router catches. TSN
 pairs are appended in registry/credential order; captured replay stays lazy.

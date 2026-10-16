@@ -28,13 +28,11 @@ import {
   issue,
   revoke,
 } from "../../../src/core/protocol-vdr-eventing.ts";
-import { Revery } from "../../../src/core/routing.ts";
+import { Revery, Router } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
-import { CredentialStateReceiver } from "../../../src/vdr/credential-tsn.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
-import { RegistryStateReceiver } from "../../../src/vdr/registry-tsn.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
 import { expectKind } from "../../private-access.ts";
 
@@ -645,14 +643,14 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
     const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
     try {
       const issuer = hby.makeHab("issuer");
-      const tvy = new Tevery({ db: hby.db, reger });
+      const cues = new Deck<AgentCue>();
+      const rvy = new Revery(hby.db, { cues });
+      const tvy = new Tevery({ db: hby.db, reger, rvy });
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
       assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
       const state = tvy.tevers.get(vcp.pre!)!.state().asDict();
       const est = hby.db.getEvtSerder(issuer.pre, hby.db.kels.getLast(issuer.pre, 0)!)!;
       const stamp = makeNowIso8601().replace(/0\+00:00$/, "1+00:00");
-      const cues = new Deck<AgentCue>();
-      const rvy = new Revery(hby.db, { cues }), receiver = new RegistryStateReceiver(tvy, rvy);
       const args = (stamp: string) => {
         const serder = reply(`/tsn/registry/${issuer.pre}`, state, { pre: issuer.pre, stamp });
         return {
@@ -672,7 +670,7 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
         };
       };
       const prior = args(stamp), incoming = args(stamp.replace(/1\+00:00$/, "2+00:00"));
-      assertEquals(receiver.processReply(prior).kind, "accept");
+      assertEquals(tvy.processReplyRegistryTxnState(prior).kind, "accept");
       cues.clear();
       const unchanged = () => {
         assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, prior.diger.qb64);
@@ -686,7 +684,7 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
         assertEquals(cues.length, 0);
       };
       unchanged();
-      assertEquals(receiver.processReply(incoming).kind, "accept");
+      assertEquals(tvy.processReplyRegistryTxnState(incoming).kind, "accept");
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, incoming.diger.qb64);
       assertEquals(hby.db.rpys.get([prior.diger.qb64]), null);
       assertEquals(cues.pull()?.kin, "txnStateSaved");
@@ -695,11 +693,12 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
       const pendingReger = yield* createReger({ name: crypto.randomUUID(), temp: true });
       try {
         const pendingCues = new Deck<AgentCue>();
-        const pending = new RegistryStateReceiver(
-          new Tevery({ db: target.db, reger: pendingReger }),
-          new Revery(target.db, { cues: pendingCues }),
-        );
-        assertEquals(pending.processReply(incoming), {
+        const pending = new Tevery({
+          db: target.db,
+          reger: pendingReger,
+          rvy: new Revery(target.db, { cues: pendingCues }),
+        });
+        assertEquals(pending.processReplyRegistryTxnState(incoming), {
           kind: "unverified",
           reason: "dependencyPending",
           family: "registry-mae",
@@ -714,7 +713,7 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
         }]);
         pendingCues.clear();
         assertEquals(
-          pending.processReply(incoming),
+          pending.processReplyRegistryTxnState(incoming),
           {
             kind: "unverified",
             reason: "dependencyPending",
@@ -735,6 +734,74 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
     }
   });
 });
+Deno.test("Tevery keeps TEL-only use independent and requires Revery before registering TSN routes", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const tvy = new Tevery({ db: hby.db, reger });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      tvy.processEscrows();
+      assertEquals(reger.states.get(vcp.pre!)?.d, vcp.said);
+      const router = new Router();
+      assertThrows(() => tvy.registerReplyRoutes(router), TypeError, "requires Revery");
+      assertEquals(router.routes.length, 0, "Composition failure must precede either route registration");
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Tevery routes both signed TSNs and completes their dependencies in one escrow pass", async () => {
+  await run(function*() {
+    const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const source = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(target);
+    const received = runtime.vdr!.reger, tvy = runtime.vdr!.tvy;
+    try {
+      const issuer = sender.makeHab("issuer"), producing = new Tevery({ db: sender.db, reger: source });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(producing.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const credential = makeCredential(issuer.pre), iss = issue(credential.said!, vcp.pre!);
+      assertEquals(producing.processEvent({ serder: iss, ...anchorTel(issuer, iss) }).kind, "accept");
+      const tever = producing.tevers.get(vcp.pre!)!;
+      const registry = reply(`/tsn/registry/${issuer.pre}`, tever.state().asDict(), { pre: issuer.pre });
+      const notice = reply(`/tsn/credential/${issuer.pre}`, tever.vcState(credential.said!)!.asDict(), {
+        pre: issuer.pre,
+      });
+      for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
+      yield* runtime.reactor.processBytes(issuer.endorse(registry));
+      yield* runtime.reactor.processBytes(issuer.endorse(notice));
+      assertEquals(received.txnsb.escrowdb.get(["registry-ooo", vcp.pre!, issuer.pre]).length, 1);
+      assertEquals(received.txnsb.escrowdb.get(["credential-mre", credential.said!, issuer.pre]).length, 1);
+      assertEquals(received.txnsb.current([vcp.pre!, issuer.pre]), null);
+      assertEquals(received.txnsb.current([credential.said!, issuer.pre]), null);
+      yield* runtime.reactor.processBytes(source.cloneTvt(vcp.pre!, vcp.said!));
+      yield* runtime.reactor.processBytes(source.cloneTvt(credential.said!, iss.said!));
+      runtime.reactor.revery.cues.clear();
+      tvy.processEscrows();
+      assertEquals(received.txnsb.current([vcp.pre!, issuer.pre])?.qb64, registry.said);
+      assertEquals(received.txnsb.current([credential.said!, issuer.pre])?.qb64, notice.said);
+      assertEquals(received.txnsb.escrowdb.cnt(), 0);
+      assertEquals(target.db.rpes.cnt(), 0, "Notice dependencies retain one Broker owner");
+      assertEquals(
+        runtime.reactor.revery.cues.toArray().flatMap((cue) => cue.kin === "txnStateSaved" ? [cue.record.i] : []),
+        [vcp.pre!, credential.said!],
+        "Registry publication precedes credential publication",
+      );
+    } finally {
+      yield* runtime.close();
+      yield* target.close(true);
+      yield* source.close(true);
+      yield* sender.close(true);
+    }
+  });
+});
+
 Deno.test("registry TSN missing issuer and TEL retry through the normal runtime turn", async () => {
   await run(function*() {
     const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -882,7 +949,7 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
       assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, valid.said);
       assertRuntimeCue(runtime, "txnStateSaved");
       const ownedCues = new Deck<AgentCue>();
-      const receiver = new CredentialStateReceiver(tvy, new Revery(hby.db, { cues: ownedCues }));
+      const notices = new Tevery({ db: hby.db, reger, rvy: new Revery(hby.db, { cues: ownedCues }) });
       const est = hby.db.getEvtSerder(issuer.pre, hby.db.kels.getLast(issuer.pre, 0)!)!;
       const args = (serder: ReturnType<typeof reply>) => ({
         serder,
@@ -912,7 +979,7 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
         assertEquals(ownedCues.length, 0);
       };
       unchanged();
-      assertEquals(receiver.processReply(args(valid)).kind, "accept");
+      assertEquals(notices.processReplyCredentialTxnState(args(valid)).kind, "accept");
       assertEquals(ownedCues.pull()?.kin, "txnStateSaved");
       yield* runtime.reactor.processBytes(issuer.endorse(notice(state, oldStamp)));
       yield* runtime.reactor.processBytes(outsider.endorse(notice()));
@@ -1038,7 +1105,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
         { pre: issuer.pre },
       );
       const cues = new Deck<AgentCue>();
-      const owned = new CredentialStateReceiver(runtime.vdr!.tvy! as Tevery, new Revery(hby.db, { cues }));
+      const owned = new Tevery({ db: hby.db, reger, rvy: new Revery(hby.db, { cues }) });
       const first = sender.db.getEvtSerder(issuer.pre, sender.db.kels.getLast(issuer.pre, 0)!)!;
       const incoming = {
         serder: notice,
@@ -1076,7 +1143,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
         route: "tels",
         q: { ri: vcp.pre!, i: "" },
       });
-      assertEquals(owned.processReply(incoming), {
+      assertEquals(owned.processReplyCredentialTxnState(incoming), {
         kind: "unverified",
         reason: "dependencyPending",
         family: "credential-mre",

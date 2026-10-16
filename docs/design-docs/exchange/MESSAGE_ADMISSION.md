@@ -61,7 +61,8 @@ Revery indexes proof/timestamp metadata by the outer reply SAID: a direct parsed
 probe accepted an older signed reply. Receiving must instead retain the outer
 reply SAID for BADA; state production and TSN dispatch guards remain unchanged.
 
-Built-in Reactor routes `/tsn/registry/{aid}` through independent reply proof,
+Tevery registers `/tsn/registry/{aid}` on the shared Revery router and owns its
+dependency retries. Admission requires independent reply proof,
 strict attester trust, BADA and accepted legacy TEL correspondence. Trust comes
 from accepted registry configuration/backers, issuer KEL witnesses or configured
 watchers. Notice fields cannot confer trust: actual 714's strict handler accepted
