@@ -2,102 +2,24 @@
 
 ## 0.12.0
 
-### Minor Changes
+### Breaking CLI and host changes
 
-- 047cd5f: Remove codec allocation estimates, decoded-body budgets, capacity callbacks and
-  speculative CBOR extension refusals. Preserve exact body ownership, native codec
-  semantics, malformed-wire provenance and actual CBOR decoder-state cleanup.
-- c1b4392: Route cue records directly to query, mailbox and reply owners. Remove optional cue sink hooks and adapters; default queued queries now use concrete transport instead of silently retiring through a no-op sink.
-- 5e26f8a: Process local endpoint and host startup records directly through protocol intake.
-  Remove hollow per-Hab host seeding, the forwarding-only mailbox host wrapper and
-  unused host context/no-HTTP configuration; retain explicit hosted-prefix selection.
-- d733e52: Endpoint-role proposal results and CLI JSON now return `proposals: [{ recipient, said }]` identifying actual signed exchanges, replacing the misleading single `said` and `attachmentBytes` fields. Register each recipient-specific proposal before delivery and preserve separate durable retry routing.
-- e850883: Remove AgentMode metadata and mode configuration. Hosts explicitly construct
-  provider mailbox storage with enableMailboxStore or borrow an injected Mailboxer;
-  ordinary command runtimes omit it. Use the same concrete components in every host.
-- a4a4364: Separate IPEX group coordination from CLI timing and worker ownership. Timed
-  completion and pending-proposal waits are private CLI orchestration.
+- Use the same concrete host workers for finite commands and long-lived agents;
+  replace polling-turn controls with elapsed timeout options and joined shutdown.
+- Return endpoint-role proposals as recipient/SAID records instead of a misleading
+  single message identifier. Select actual member signers and hosted identities
+  explicitly; do not expose internal signatory/keeper identities by default.
+- Remove budgeting flags, duplicate runtime drivers and unsupported delivery
+  acknowledgements. Preserve signed endpoint authorization, mailbox routing,
+  protocol caches and actual request/response ownership.
 
-  Use the ordinary host workers for IPEX waits and report fully settled mailbox
-  batches/messages. Poll now uses `--timeout` seconds and join uses
-  `--approval-timeout` seconds instead of polling turn counts and per-turn budgets.
+### Correctness and packaging
 
-- b57c2ec: Separate direct multisig approval from CLI scheduling. Timed waits and delegation
-  completion belong to CLI orchestration; direct proposal approval does not start
-  or drive background workers.
-
-  Run each multisig command under one joined host lifetime. Multisig join now uses
-  `--approval-timeout` in seconds instead of polling turn counts and per-turn budgets.
-
-- 3c0386b: Remove nested exchange tree/copy budgets, stored ESSR byte/item caps and recipient
-  crypto/concurrency quotas. Keep authentication, qualified framing, transactions,
-  exact declared payload sizes and joined file/reader cleanup.
-- d44aa3a: Remove cue-output reservations, combined preparation floors and prepared-emission ownership handles. Publish ordinary emission records after synchronous preparation, retain retryable wire and actual iterator/reader cleanup, and allow finite witness snapshots without application output quotas.
-- 4b12067: Remove query-request byte reservations, preparation floors, metadata quotas and synthetic busy/refused admission. RuntimeDeliveries accepts concrete query records directly; signing and endpoint selection precede source removal, while failed transport and cancellation retain their existing retry and cleanup behavior.
-- d097b1b: Remove parser cursor/tree/ESSR/input quotas, frame-credit ownership and intake
-  source slots. Annotation, benchmark and byte collectors no longer accept input
-  caps. Keep wire counts/extents, independent signatures, actual payload ownership,
-  native backpressure, cooperative cancellation and joined source/file cleanup.
-- 075f015: Remove payload collection and memory/file staging quotas and quota-bearing sink callbacks. Preserve exact declared lengths, owned byte/file lifetimes and joined cancellation cleanup.
-- cd84470: Replace cue ownership and capacity accounting with ordinary Deck records across protocol producers, runtime consumers, query replies and mailbox correlation. Preserve post-commit publication, lazy replay and joined I/O cleanup; remove the former cue-credit and queue-limit APIs.
-- bbe3eab: Remove OOBI, forwarding and KEL replay accounting limits and duplicate stored-reply size formulas. Preserve lazy replay horizons, proof ordering, framing and actual reader cleanup.
-- c590d5c: Remove HTTP reply accounting and configured chunk copies. Keep pull-driven message streams and joined reader cleanup.
-- 08bd4f4: Remove TEL replay limits, canonical pair inspection and native row size billing APIs. Preserve real wire settings, replay horizons, ordered iteration and owned native byte copies.
-- 021cdbe: Remove Reactor's application callback gate. Dispatch returns processed evidence
-  and its exact decision; protocol cues are correlated before application publication.
-  Reply, query and request owners prepare and consume their own output directly.
-- 3919b4f: Remove outbox sidecar acquisition, CLI flags, database selectors, and mailbox debug backlog output.
-- e9eb1bf: Remove automatic durable outbox enqueue/retry and queued delivery results. Mailbox sends attempt each target and report any failure, including partial delivery, to the caller.
-- 39a7ba1: Remove the shared ResourcePolicy, accounting errors and constructor options.
-  Delete remaining client, Reactor queue/waiter, TCP listener and reply-proof work
-  quotas. Preserve actual I/O cleanup, protocol state ordering and numeric guards.
-
-### Patch Changes
-
-- 5429fdb: Replace application error context bags with diagnostic messages and standard causes for actual underlying failures.
-- ea8b5cc: Compose TCP receive/send tasks over actual socket resources in the application,
-  remove TcpRead and the CESR Effection adapter/export, and delete TCP output quota
-  formulas. Preserve half-close, native write backpressure, fixed deadlines and joined
-  cleanup, including late source failures during cancellation.
-- ae90b33: Replace progressive CESR traversal with one finite decoder that buffers complete
-  counted enclosures before delivery. Carry ESSR as ordinary ordered Texters through
-  dispatch, verification, persistence and replay; remove parser staging, Cursor,
-  FrameIntake and ordinary-frame disposal. Preserve framing, padding, genus scopes,
-  independent nested proofs and actual transport/storage cleanup.
-- c5cd6c8: Run challenge verification over joined host workers so mailbox polling progresses
-  independently of the command's response deadline.
-- 34c2555: Compose admitted cue storage from owned handles and expose legal cue queue operations instead of inheriting destructive Deck methods.
-- 018cea3: Own Reactor input cancellation and cleanup directly, decode finite receipts and
-  approved legacy multisig children synchronously, and scan grant files without
-  a frame-channel bridge while still requiring valid EOF.
-- 46bf809: Run delegation approval under one joined host worker lifetime instead of serial
-  runtime turns, preserving witness-backed commitment and authorizer seal ordering.
-- eac30e2: Make did:keri resolution a synchronous accepted-state projection. CLI commands own
-  finite introduction workers, and HTTP requests observe their existing host's work
-  with an elapsed deadline instead of pumping the runtime for five turns.
-- 3ed065b: Make DID document projection depend on accepted Habery and registry state instead
-  of AgentRuntime. Active designated-alias queries now take their registry owner.
-- 4596c98: Move HTTP, witness and multisig replay parsing into their concrete input scopes.
-  Remove the HTTP parser-options bag and preserve foreign cleanup failures while
-  joining cancellation, without an Effection frame-channel dependency.
-- e58bbc4: Curate the runtime API with explicit operation and data exports, and remove npm deep-import patterns for implementation directories. Use the package root, runtime or db entrypoints; cli remains the separate Tufa command-helper boundary.
-- 5f526b8: Separate demand-driven source/parser lifetime into the runtime FrameIntake owner and remove Reactor.frames; migrate HTTP, witness and TCP edges to the same owner.
-- 948f254: Honor the caller HTTP signal through headers and response-body ownership, keeping
-  external cancellation distinct from timeout. Report late foreign AbortError body
-  failures from the Node host instead of mistaking them for its own cancellation.
-- 24f2c1f: Remove HTTP request reservations, client Fetch/SSE and attachment-header size
-  ceilings, and static-artifact allowances. Retain native backpressure, poll
-  and request cancellation, file extent correctness and joined I/O cleanup.
-- f772d43: Preserve the configured attachment genus across credential grant construction and stored artifact intake. Add `--gvrsn` to holder polling and verifier runs so legacy grant envelopes can carry genus-2 child proofs through verification.
-- 433ced2: Preserve independent I/O failures reported while a cancelled operation joins its
-  cleanup. Abort the concrete source before child teardown, join its pending work
-  through the resource lifetime, and suppress only that operation's own abort reason.
-- ae663a9: Bind external input cancellation to the consuming operation so waiting protocol
-  turns and active HTTP response consumers stop and join cleanup. Separate dispatch
-  choices from input lifetime and check cancellation at input consumption boundaries.
-
-  Remove parser and finite annotation cancellation options. Benchmark and CLI
-  consumers own cancellation directly; protocol decoding takes only its byte source.
+- Preserve explicit host/runtime/protocol-handler package boundaries, generated
+  export/bin targets and strict installed declarations.
+- Keep DID artifact generation/resolution, witnessed/group workflows and mailbox
+  IPEX on the supported KERI runtime operations. Final dependencies advance to
+  cesr-ts 0.11.0 and keri-ts 0.12.0.
 
 ## 0.11.0
 

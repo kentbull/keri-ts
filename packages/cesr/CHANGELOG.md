@@ -2,56 +2,22 @@
 
 ## 0.11.0
 
-### Minor Changes
+### Breaking API and parsing changes
 
-- ae90b33: Replace progressive CESR traversal with one finite decoder that buffers complete
-  counted enclosures before delivery. Carry ESSR as ordinary ordered Texters through
-  dispatch, verification, persistence and replay; remove parser staging, Cursor,
-  FrameIntake and ordinary-frame disposal. Preserve framing, padding, genus scopes,
-  independent nested proofs and actual transport/storage cleanup.
-- 047cd5f: Remove codec allocation estimates, decoded-body budgets, capacity callbacks and
-  speculative CBOR extension refusals. Preserve exact body ownership, native codec
-  semantics, malformed-wire provenance and actual CBOR decoder-state cleanup.
-- 3519b55: Preserve the selected frame genus in detached HTTP attachment framing instead of
-  inferring it from the message body protocol version. Remove the unused separate
-  outer-genus override from attachment serialization.
-- 3938e85: Remove the unused toAsyncFrames alias and internal CBOR admission/provenance helpers from public exports. Use parse directly; encodeKeriCbor and decodeKeriCbor remain supported.
-- 3c0386b: Remove nested exchange tree/copy budgets, stored ESSR byte/item caps and recipient
-  crypto/concurrency quotas. Keep authentication, qualified framing, transactions,
-  exact declared payload sizes and joined file/reader cleanup.
-- d097b1b: Remove parser cursor/tree/ESSR/input quotas, frame-credit ownership and intake
-  source slots. Annotation, benchmark and byte collectors no longer accept input
-  caps. Keep wire counts/extents, independent signatures, actual payload ownership,
-  native backpressure, cooperative cancellation and joined source/file cleanup.
-- 075f015: Remove payload collection and memory/file staging quotas and quota-bearing sink callbacks. Preserve exact declared lengths, owned byte/file lifetimes and joined cancellation cleanup.
-- 39a7ba1: Remove the shared ResourcePolicy, accounting errors and constructor options.
-  Delete remaining client, Reactor queue/waiter, TCP listener and reply-proof work
-  quotas. Preserve actual I/O cleanup, protocol state ordering and numeric guards.
+- Buffer complete counted enclosures before finite synchronous decoding. Remove
+  progressive parser cursors/staging, FrameIntake, TcpRead and the CESR Effection
+  adapter. Ordinary hydrated frames no longer carry disposal obligations.
+- Remove shared memory policies, accounting, byte estimates, quotas and capacity
+  callbacks. Declared wire extents, supported numeric ranges, native codec rules
+  and actual I/O cleanup remain enforced.
 
-### Patch Changes
+### Correctness
 
-- ea8b5cc: Compose TCP receive/send tasks over actual socket resources in the application,
-  remove TcpRead and the CESR Effection adapter/export, and delete TCP output quota
-  formulas. Preserve half-close, native write backpressure, fixed deadlines and joined
-  cleanup, including late source failures during cancellation.
-- 819b027: Preserve canonical partial attribute, edge and rule commitments when rebuilding
-  compactable ACDC credentials. Compute the credential commitment separately so
-  serialization does not silently rewrite negotiated disclosure evidence.
-- 6cd3f6a: Separate declaration preflight, codec workspace accounting and intrinsic syntax provenance while preserving budgets and failure outcomes. Return unknown CBOR values instead of an unchecked caller-selected generic type.
-- 5ccedc6: Keep finite nested/ESSR hydration and wire formatting independent of cancellation.
-  Payload readers and replay operations own cancellation before publishing bytes;
-  archive/file readers retain their actual I/O signals.
-- 2f82e3a: Replace CBOR private scratch arithmetic with a conservative logical allowance while preserving real decoder reset, allocating-extension preflight and retained decoded ownership. Tight byte policies may refuse earlier.
-- 4659214: Replace MessagePack private-field workspace arithmetic with a conservative logical allowance while preserving declaration preflight and retained decoded-tree ownership. Tight byte policies may refuse earlier.
-- ae663a9: Bind external input cancellation to the consuming operation so waiting protocol
-  turns and active HTTP response consumers stop and join cleanup. Separate dispatch
-  choices from input lifetime and check cancellation at input consumption boundaries.
-
-  Remove parser and finite annotation cancellation options. Benchmark and CLI
-  consumers own cancellation directly; protocol decoding takes only its byte source.
-
-- 74f852e: Pin audited MessagePack 3.1.3 and cbor-x 1.6.0 dependencies in source and emitted npm packages without changing the resolved decoder implementations.
-- 0c20957: Remove unsupported codec prototype/global mutation guarantees and private-layout tests. Preserve real declaration/extension preflight, decoder reset and supplied-interface error propagation.
+- Preserve canonical compactable ACDC commitments across partial attribute, edge
+  and rule disclosures; keep qualified nested proofs and ordered ESSR fragments.
+- Correct genus-specific HTTP attachment framing and nested v1/v2 serialization.
+- Preserve codec reset and malformed-input provenance without speculative
+  allocation preflight or private library-layout assumptions.
 
 ## 0.10.0
 
