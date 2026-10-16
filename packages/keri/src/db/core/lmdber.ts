@@ -4,7 +4,8 @@
 
 import { b, bytesEqual, bytesHex, t, toBytes } from "cesr-ts";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { Database, Key, open, RootDatabase } from "npm:lmdb@3.5.3";
+import { open } from "npm:lmdb@3.5.3";
+import type { Database, Key, RootDatabase } from "npm:lmdb@3.5.3";
 import { startsWith } from "../../core/bytes.ts";
 import { DatabaseKeyError, DatabaseNotOpenError, DatabaseOperationError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
