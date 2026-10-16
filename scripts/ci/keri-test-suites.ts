@@ -60,6 +60,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/verifier-agent.test.ts",
       "test/unit/app/verifying.test.ts",
       "test/unit/app/witness-auth.test.ts",
+      "test/unit/did/keri.test.ts",
       "test/unit/did/webs.test.ts",
     ],
   },

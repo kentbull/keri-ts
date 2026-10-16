@@ -3,6 +3,7 @@ import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
+import { requireRegery } from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -77,7 +78,7 @@ Deno.test("did/webs - pins DA schema from JSON resource and rebinds active alias
       });
       assertEquals(second.revoked, [first.issued]);
 
-      const active = listActiveDesignatedAliasCredentials(runtime, hab.pre);
+      const active = listActiveDesignatedAliasCredentials(requireRegery(runtime), hab.pre);
       assertEquals(active.map((item) => item.creder.said), [second.issued]);
       assertEquals(active.flatMap((item) => item.aliases), [
         `did:webs:example.com:dws:${hab.pre}`,
@@ -497,7 +498,7 @@ Deno.test("did/webs - numeric thresholds project as conditionThreshold methods",
         nsith: "2",
         toad: 0,
       });
-      const document = generateBareDidDocument(runtime, didFor(hab.pre));
+      const document = generateBareDidDocument(runtime.hby, requireRegery(runtime), didFor(hab.pre));
       const methods = verificationMethodMap(document);
       const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
       const root = requireVerificationMethod(methods, `#${hab.pre}`);
@@ -529,7 +530,7 @@ Deno.test("did/webs - flat weighted thresholds project with scaled integer weigh
         nsith: ["1/2", "1/2"],
         toad: 0,
       });
-      const document = generateBareDidDocument(runtime, didFor(hab.pre));
+      const document = generateBareDidDocument(runtime.hby, requireRegery(runtime), didFor(hab.pre));
       const methods = verificationMethodMap(document);
       const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
       const root = requireVerificationMethod(methods, `#${hab.pre}`);
@@ -564,7 +565,7 @@ Deno.test("did/webs - nested weighted thresholds project recursively without pat
         nsith: [{ "1": ["1/2", "1/2"] }, "1"],
         toad: 0,
       });
-      const document = generateBareDidDocument(runtime, didFor(hab.pre));
+      const document = generateBareDidDocument(runtime.hby, requireRegery(runtime), didFor(hab.pre));
       const methods = verificationMethodMap(document);
       const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
       const root = requireVerificationMethod(methods, `#${hab.pre}`);
@@ -607,7 +608,7 @@ Deno.test("did/webs - multi-clause weighted thresholds project as conditionAnd c
         nsith: [["1/2", "1/2"], ["1/2", "1/2"]],
         toad: 0,
       });
-      const document = generateBareDidDocument(runtime, didFor(hab.pre));
+      const document = generateBareDidDocument(runtime.hby, requireRegery(runtime), didFor(hab.pre));
       const methods = verificationMethodMap(document);
       const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
       const root = requireVerificationMethod(methods, `#${hab.pre}`);
