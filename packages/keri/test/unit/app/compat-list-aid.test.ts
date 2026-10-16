@@ -13,11 +13,17 @@ Deno.test("CLI - compat list/aid open a .keri-layout store without config or sig
   await ensureCompatLmdbBuild();
 
   const oldHome = Deno.env.get("HOME");
+  const mkdir = Deno.mkdir;
   const home = await Deno.makeTempDir({ prefix: "tufa-compat-home-" });
   const name = `compat-${crypto.randomUUID()}`;
   const alias = "alice";
 
   Deno.env.set("HOME", home);
+  // Exercise user-home fallback even when Docker runs as root and can write the system path.
+  Deno.mkdir = (path, options) =>
+    typeof path === "string" && path.startsWith("/usr/local/var/keri/")
+      ? Promise.reject(new Deno.errors.PermissionDenied("system path unavailable"))
+      : mkdir(path, options);
 
   try {
     let prefix = "";
@@ -76,6 +82,7 @@ Deno.test("CLI - compat list/aid open a .keri-layout store without config or sig
       aidHarness.restoreOutput();
     }
   } finally {
+    Deno.mkdir = mkdir;
     if (oldHome) {
       Deno.env.set("HOME", oldHome);
     } else {
