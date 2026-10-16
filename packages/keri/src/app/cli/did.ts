@@ -7,11 +7,13 @@ import {
   bindDesignatedAliases,
   DEFAULT_DESIGNATED_ALIASES_REGISTRY_NAME,
   generateDidWebsArtifacts,
+  parseDidKeriIdentifier,
   parseDidWebs,
   resolveDidKeri,
   resolveDidWebs,
 } from "../../did/index.ts";
-import type { AgentRuntime } from "../agent-runtime.ts";
+import { type AgentRuntime, runAgentRuntimeUntil, runtimeOobiConverged } from "../agent-runtime.ts";
+import { requireRegery } from "../credential-workflows.ts";
 import type { Habery } from "../habbing.ts";
 import { WitnessReceiptor } from "../witnessing.ts";
 import { withAgentRuntime } from "./common/context.ts";
@@ -165,16 +167,20 @@ export function* dkrResolveCommand(args: Record<string, unknown>): Operation<voi
   };
   requireNonEmpty(commandArgs.name, "Name");
   requireNonEmpty(commandArgs.did, "DID");
-  const did = commandArgs.did!;
+  const did = parseDidKeriIdentifier(commandArgs.did!).canonical;
   yield* withAgentRuntime(
     commandArgs,
     runtimeOpenOptions(commandArgs),
-    function*({ runtime }) {
-      const result = yield* resolveDidKeri(runtime, {
-        did,
-        oobis: commandArgs.oobis,
-        metadata: commandArgs.meta ?? false,
-      });
+    function*({ hby, runtime }) {
+      for (const oobi of commandArgs.oobis) runtime.oobiery.resolve(oobi);
+      if (commandArgs.oobis.length > 0) {
+        yield* runAgentRuntimeUntil(
+          runtime,
+          () => commandArgs.oobis.every((url) => runtimeOobiConverged(runtime, url)),
+          { timeoutMs: 30_000, pollMailbox: false },
+        );
+      }
+      const result = resolveDidKeri(hby, requireRegery(runtime), did);
       console.log(JSON.stringify(commandArgs.meta ? result.resolution : result.document, null, 2));
     },
   );
