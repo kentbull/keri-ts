@@ -4,6 +4,7 @@ Startup/result files carry public test coordinates and observations only. KELs,
 signed exchanges and credential evidence arrive through actual HTTP ingress.
 """
 import copy
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import sys
@@ -15,9 +16,9 @@ from hio.base import doing
 from hio.core import http
 from keri import Kinds, Vrsn_2_0
 from keri.acdc import acdcmap, admit, agree, apply, grant, loadHandlers, offer, spurn
-from keri.app import openCF, openHby
+from keri.app import Hab, openCF, openHby
 from keri.app.indirecting import HttpEnd, createHttpServer
-from keri.core import Compactor, Diger, Kevery, Noncer, Number, Parser, messagize
+from keri.core import Compactor, Diger, Kevery, Noncer, Number, Parser, SerderACDC, messagize
 from keri.peer import Exchanger
 from keri.peer.exchanging import loadParsedNestedSubstreams
 
@@ -48,14 +49,59 @@ def disclosure(issuer, *, issuee=None, edge=None):
     return full, partial
 
 
+@dataclass
+class DisclosureGraph:
+    """Concrete credential bodies, issuer keys and the deliberately missing proof."""
+    full: SerderACDC
+    nodes: list[SerderACDC]
+    bad_nodes: list[SerderACDC]
+    issuers: list[Hab]
+    unsigned: str | None
+
+
+def graph_disclosures(hby, hab, graph_case):
+    """Build issuer-side graph data independently of transport and conversation state."""
+    full, partial = disclosure(hab.pre)
+    authority = hby.makeHab(name="authority") if graph_case else None
+    nodes, bad_nodes = [partial], []
+    if authority:
+        _, far = disclosure(authority.pre, issuee=hab.pre if graph_case == "I2I" else authority.pre)
+
+        def near(far, invalid=False):
+            """Vary relation truth while retaining independently signed node evidence."""
+            if graph_case in ("AND", "OR"):
+                edge = dict(d="", o=graph_case, authority=dict(
+                    o="OR" if graph_case == "AND" else "AND",
+                    link=dict(n=far.said, o="I2I" if invalid and graph_case == "OR" else "NI2I"),
+                    sameIssuee=dict(n=far.said, o="I2I" if graph_case == "AND" else "E1E")),
+                    check=dict(n=far.said, o="E1E" if graph_case == "AND" and not invalid else "I2I"))
+            else:
+                edge = dict(d="", authority=dict(n=far.said, o=graph_case))
+            return disclosure(hab.pre, issuee=authority.pre,
+                              edge=edge)
+
+        full, partial = near(far)
+        nodes = [partial, far]
+        if graph_case == "NI2I":
+            bad_nodes = nodes
+        elif graph_case in ("AND", "OR"):
+            bad_nodes = [near(far, invalid=True)[1], far]
+        else:
+            _, bad_far = disclosure(authority.pre, issuee=authority.pre if graph_case == "I2I" else hab.pre)
+            bad_nodes = [near(bad_far)[1], bad_far]
+
+    return DisclosureGraph(full, nodes, bad_nodes, [hab, authority] if authority else [hab],
+                           nodes[1].said if graph_case == "NI2I" else None)
+
+
 def main():
     """React to accepted peer messages, then assert both parties' full lineage."""
-    root, role, mode, recipient, destination, schema, port, operator = sys.argv[1:]
-    operator = None if operator == "-" else operator
+    root, role, mode, recipient, destination, schema, port, graph_case = sys.argv[1:]
+    graph_case = None if graph_case == "-" else graph_case
     root = Path(root)
     plan = [[schema, "/", ["a/status/"]]]
-    if operator:
-        plan.append([schema, "/e/authority/link/_/" if operator in ("AND", "OR") else
+    if graph_case:
+        plan.append([schema, "/e/authority/link/_/" if graph_case in ("AND", "OR") else
                      "/e/authority/_/", ["a/status/"]])
     with openCF(name="ipex-http", temp=True) as cf:
         cf.put(dict(kram=dict(enabled=True, denials=[], caches={
@@ -74,34 +120,9 @@ def main():
             server = createHttpServer("127.0.0.1", int(port), app)
             doist = doing.Doist(tock=.005, real=True,
                                doers=[http.ServerDoer(server=server)])
-            full, partial = disclosure(hab.pre)
-            authority = hby.makeHab(name="authority") if operator and role == "issuer" else None
-            nodes, bad_nodes = [partial], []
-            if authority:
-                _, far = disclosure(authority.pre, issuee=hab.pre if operator == "I2I" else authority.pre)
-
-                def near(far, invalid=False):
-                    """Vary relation truth while retaining independently signed node evidence."""
-                    if operator in ("AND", "OR"):
-                        edge = dict(d="", o=operator, authority=dict(
-                            o="OR" if operator == "AND" else "AND",
-                            link=dict(n=far.said, o="I2I" if invalid and operator == "OR" else "NI2I"),
-                            sameIssuee=dict(n=far.said, o="I2I" if operator == "AND" else "E1E")),
-                            check=dict(n=far.said, o="E1E" if operator == "AND" and not invalid else "I2I"))
-                    else:
-                        edge = dict(d="", authority=dict(n=far.said, o=operator))
-                    return disclosure(hab.pre, issuee=authority.pre,
-                                      edge=edge)
-
-                full, partial = near(far)
-                nodes = [partial, far]
-                if operator == "NI2I":
-                    bad_nodes = nodes
-                elif operator in ("AND", "OR"):
-                    bad_nodes = [near(far, invalid=True)[1], far]
-                else:
-                    _, bad_far = disclosure(authority.pre, issuee=authority.pre if operator == "I2I" else hab.pre)
-                    bad_nodes = [near(bad_far)[1], bad_far]
+            graph = graph_disclosures(hby, hab, graph_case if role == "issuer" else None)
+            full, nodes, bad_nodes = graph.full, graph.nodes, graph.bad_nodes
+            partial = nodes[0]
 
             def post(wire):
                 """Send unchanged signed bytes through the TS full-body endpoint."""
@@ -124,9 +145,8 @@ def main():
             try:
                 (root / "ready.json").write_text(json.dumps(dict(
                     pre=hab.pre, port=server.servant.ha[1])))
-                post(hab.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
-                if authority:
-                    post(authority.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
+                for issuer in graph.issuers:
+                    post(issuer.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
                 deadline = time.monotonic() + 30
                 sent = set()
                 complete = False
@@ -137,7 +157,7 @@ def main():
                     doist.recur()
                     if parser.ims:
                         # Observe decoded arrivals separately; only the normal parser mutates state.
-                        arrived = bytearray(parser.ims) if operator and role == "holder" else None
+                        arrived = bytearray(parser.ims) if graph_case and role == "holder" else None
                         parser.parse()
                         if arrived is not None:
                             decoded = Parser(version=Vrsn_2_0).parse(ims=arrived, processive=False)
@@ -146,8 +166,8 @@ def main():
                     if recipient not in kvy.kevers:
                         continue
                     if mode.endswith("offer") and role == "issuer" and "open" not in sent:
-                        send(offer(hab, "status only", origin=None if operator else partial,
-                                   artifacts=None if operator else [],
+                        send(offer(hab, "status only", origin=None if graph_case else partial,
+                                   artifacts=None if graph_case else [],
                                    recp=recipient, modifiers=dict(dp=[plan])))
                         sent.add("open")
                     if mode.endswith("apply") and role == "holder" and "open" not in sent:
@@ -161,8 +181,8 @@ def main():
                         sent.add(body.said)
                         if body.route == "/ipex/apply" and role == "issuer":
                             send(spurn(hab, "declined", body) if mode == "spurn-apply"
-                                 else offer(hab, "status only", None if operator else partial,
-                                            artifacts=None if operator else [], apply=body))
+                                 else offer(hab, "status only", None if graph_case else partial,
+                                            artifacts=None if graph_case else [], apply=body))
                             complete = mode == "spurn-apply"
                         elif body.route == "/ipex/offer" and role == "holder":
                             send(spurn(hab, "declined", body) if mode == "spurn-offer"
@@ -171,15 +191,15 @@ def main():
                         elif body.route == "/ipex/agree" and role == "issuer":
                             def signed(node):
                                 """Sign each child with its issuer's key, independently of the outer sender."""
-                                owner = authority if authority and node.israid == authority.pre else hab
+                                owner = next(issuer for issuer in graph.issuers if issuer.pre == node.israid)
                                 return messagize(node, tsgs=[(
                                     owner.kever.prefixer, Number(sn=owner.kever.lastEst.s),
                                     Diger(qb64=owner.kever.lastEst.d),
                                     owner.sign(ser=node.raw, indexed=True))], gvrsn=Vrsn_2_0)
 
-                            if operator:
-                                bad = [signed(node) if operator != "NI2I" or index == 0 else node
-                                       for index, node in enumerate(bad_nodes)]
+                            if graph_case:
+                                bad = [node if node.said == graph.unsigned else signed(node)
+                                       for node in bad_nodes]
                                 rejected = send(grant(hab, recipient, "invalid chain", origin=bad[0],
                                                       artifacts=bad[1:], agree=body), accepted=False).said
                             signed_nodes = [signed(node) for node in nodes]
@@ -197,7 +217,7 @@ def main():
                             (["apply"] if mode == "apply" else []) +
                             ["offer", "agree", "grant", "admit"])
                 assert set(messages) == {"/ipex/" + verb for verb in expected}
-                if operator:
+                if graph_case:
                     if role == "holder":
                         assert len(incoming_grants) == 2
                         rejected = incoming_grants[0].said
@@ -218,7 +238,7 @@ def main():
                 retained = []
                 if not mode.startswith("spurn"):
                     nests = loadParsedNestedSubstreams(hby, messages["/ipex/grant"].said)
-                    assert len(nests) == (2 if operator else 1)
+                    assert len(nests) == (2 if graph_case else 1)
                     retained = [nest.serder.said for nest in nests]
                     for nest in nests:
                         assert nest.serder.sad["a"]["status"]["value"] == "citizen"
