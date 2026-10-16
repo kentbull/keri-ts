@@ -21,6 +21,13 @@ KEL/RPY/VCP/ISS approval and group IPEX wrapper approval have separate owners.
 All eight legacy coordination routes are registered; V2 nested processing is limited
 to the four routes above, exactly as [714 validate][v2-routes] requires.
 
+CLI approval uses one command-owned host and elapsed approval deadlines. Direct
+stored-proposal approval is separate from scheduling, and delegated-group
+completion must not start another host. Preserve the local deadline/reopen and
+weighted mailbox CLI cases plus the KERIpy group-approval scenario that verifies
+terminal `cdel` completion through `multisig join`. Full composed qualification
+remains separate.
+
 ## Deferred legacy boundary
 
 714 has real [peer revocation approval/fanout][legacy-rev]. TS retains REV

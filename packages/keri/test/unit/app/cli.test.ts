@@ -152,7 +152,7 @@ Deno.test("CLI - IPEX runtime knobs validate before runtime startup", async () =
   );
 });
 
-Deno.test("CLI - multisig runtime knobs validate before runtime startup", async () => {
+Deno.test("CLI - multisig approval deadlines validate before runtime startup", async () => {
   await assertOperationThrows(
     multisigInceptCommand({ approvalTimeoutSeconds: -1 }),
     "approval timeout seconds must be a finite nonnegative number",
@@ -166,13 +166,58 @@ Deno.test("CLI - multisig runtime knobs validate before runtime startup", async 
     "Name is required and cannot be empty",
   );
   await assertOperationThrows(
-    multisigJoinCommand({ name: "store", pollTurns: 0 }),
-    "poll turns must be a positive integer",
+    multisigJoinCommand({ name: "store", approvalTimeoutSeconds: -1 }),
+    "approval timeout seconds must be a finite nonnegative number",
   );
   await assertOperationThrows(
-    multisigJoinCommand({ name: "store", pollBudgetMs: 1.5 }),
-    "poll budget milliseconds must be a positive integer",
+    multisigJoinCommand({ name: "store", approvalTimeoutSeconds: Number.NaN }),
+    "approval timeout seconds must be a finite nonnegative number",
   );
+});
+
+Deno.test("CLI - multisig approval deadline joins workers before reopening accepted group state", async () => {
+  const name = `multisig-deadline-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
+  let groupPre = "";
+  await run(() => initCommand({ name, headDirPath, nopasscode: true }));
+  await run(function*() {
+    const hby = yield* setupHby(name, "", undefined, false, headDirPath, { skipConfig: true });
+    try {
+      const member = hby.makeHab("member", undefined, {});
+      const group = hby.makeGroupHab("group", member, [member.pre], [member.pre], undefined, {
+        isith: "1",
+        nsith: "1",
+        toad: 0,
+      });
+      groupPre = group.hab.pre;
+      assertEquals(hby.db.getKever(groupPre)?.sn, 0);
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  const started = Date.now();
+  const result = await captureCommand(multisigJoinCommand({
+    name,
+    headDirPath,
+    group: "group",
+    auto: true,
+    approvalTimeoutSeconds: 0.05,
+  }));
+  assertStringIncludes(result.stdout, "\"accepted\":true");
+  assertEquals(Date.now() - started < 3_000, true, "An empty proposal wait must obey its elapsed deadline.");
+  await run(function*() {
+    const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
+      readonly: true,
+      skipConfig: true,
+      skipSignator: true,
+    });
+    try {
+      assertEquals(hby.db.getKever(groupPre)?.sn, 0);
+    } finally {
+      yield* hby.close();
+    }
+  });
 });
 
 Deno.test("CLI - endpoint role multisig mode validates before runtime startup", async () => {
