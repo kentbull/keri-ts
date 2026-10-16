@@ -23,7 +23,13 @@ import type { DisclosurePlan } from "../../../../src/app/ipex-graph.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
 import { loadNests } from "../../../../src/db/exchange-nests.ts";
-import { createInteropContext, type InteropContext, spawnChild, stopChild } from "../interop-test-helpers.ts";
+import {
+  createInteropContext,
+  type InteropContext,
+  randomPort,
+  spawnChild,
+  stopChild,
+} from "../interop-test-helpers.ts";
 import { type DisclosureGraph, disclosurePlan, type GraphCase, graphDisclosures } from "./disclosures.ts";
 
 const PEER = fromFileUrl(new URL("../../../fixtures/ipex-http-peer.py", import.meta.url));
@@ -251,7 +257,14 @@ async function withPythonPeer(
   graph: GraphCase | undefined,
   body: (peer: IpexPeer) => Promise<void>,
 ): Promise<void> {
-  const child = spawnChild(context.pythonCommand, [PEER, context.home, graph ?? "-"], context.env, context.repoRoot);
+  // HIO HTTP treats port=0 as port 80; select an available unprivileged port explicitly.
+  const port = randomPort();
+  const child = spawnChild(
+    context.pythonCommand,
+    [PEER, context.home, graph ?? "-", String(port)],
+    context.env,
+    context.repoRoot,
+  );
   const output = Promise.all([new Response(child.liveStdout).text(), new Response(child.liveStderr).text()]);
   let exited: Deno.CommandStatus | undefined;
   void child.status.then((status) => {
@@ -269,6 +282,7 @@ async function withPythonPeer(
         throw error;
       }
     });
+    assertEquals(Number(new URL(info.url).port), port, "KERIpy peer must bind the selected unprivileged port");
     await body(new PythonPeer(info));
   } catch (error) {
     failure = { cause: error };
