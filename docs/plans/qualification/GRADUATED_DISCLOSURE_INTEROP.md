@@ -102,9 +102,19 @@ Current upstream and the consolidated mailbox fork are distinct reference labels
 Start with independent single-controller peers. Extend the complete conversations
 to multisig with independently signing controllers and real witnesses/mailboxes.
 Preserve the existing participant topology where fixtures already establish it.
-KRAM gates include incomplete-proof escrow, completion by the remaining signatures,
-replay refusal without duplicate dispatch, stale or invalid authentication refusal,
-restart while pending and restart after acceptance. No business-ack/outbox machinery.
+The maintained `interop-kram` owner now exercises actual fork/Tufa mailbox hosts
+in both directions with single controllers and independent two-of-two member stores.
+Controller KELs arrive through HTTP, never receiver seeding. A first group signature
+remains pending without an SSE stream; the second opens the mailbox. Replay, stale
+and foreign-key proofs produce no extra stream/cache state, and fresh barriers plus
+a correctly signed counterpart prove the refusals were processed. TypeScript uses
+production detached-header egress and Python uses its real HTTP client. Provider
+payloads are fixture data: these cases qualify authenticated mailbox query admission,
+not complete witnessed IPEX delivery. They do not include witnesses, restart,
+presentation-registry cutoffs or the final installed package set.
+
+KRAM qualification still requires witness/controller workflows, restart while
+pending and restart after acceptance. No business-ack/outbox machinery.
 
 Check accepted exchange lineage and both parties' state through admit, verified
 credential/root/chain commitments, retained partial nests, absence of private

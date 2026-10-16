@@ -157,6 +157,11 @@ Director close wakes polls/rejects new streams before stores close.
 Notifier publishes transient Signaler hints only after durable mutation; false/
 throw emits no hint and later signaling failure cannot roll back a notice. Borrowed
 producers stay borrowed. Tufa owns CLI/role hosts/listeners; KERI owns library/runtime/
-DB. Bootstrap uses explicit config paths. Packed minimum-Node, strict declarations,
-real native rows and composed failure/restart/disclosure/KRAM tests remain release
+DB. Bootstrap uses explicit config paths.
+
+The maintained interop-kram owner checks single/group mailbox authentication in
+both directions, including partial thresholds, replay, stale and foreign proofs.
+It uses actual hosts/HTTP, with fixture payloads; witnessed delivery, restart and
+presentation-registry workflows remain separate gates. Packed minimum-Node, strict
+declarations, real native rows and composed disclosure/KRAM tests remain release
 gates; source Deno or addon-loading smoke alone does not qualify them.
