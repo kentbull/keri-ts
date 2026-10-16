@@ -100,14 +100,10 @@ production caller used those controls and no demonstrated backlog justified them
 The current head remains until send/transfer succeeds; failed or cancelled sends
 retry it, unresolved records rotate, and new work waits for the next finite pass.
 Close cancels/joins active consumption before clearing. Actual wire/source owners
-retain their separate admission and joined cleanup; this is not a shared memory bound.
-Query delivery borrows its input record without recursively estimating or reserving
-its metadata again. Existing held source credit still participates in the combined
-capacity check to distinguish impossible work from temporary contention. The
-prepared wire ceiling is checked after construction; it is not an input-allocation bound.
-Cue interpretation and direct replies likewise borrow plain input records without
-recursive metadata charges. Admitted source owners still survive fanout and joined
-cleanup; combined preparation includes their existing credit, never a duplicate estimate.
+retain joined cleanup. Query delivery, cue interpretation and direct replies
+borrow ordinary input records without recursive metadata estimates or credits.
+HTTP requests have no local accounting refusal; positive peer refusals remain
+separate from source, fetch and cleanup failures.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state. Without explicit mailbox routes, poll every eligible witness
 mailbox in stable order through the existing per-endpoint workers. A logs reply is stored at the
@@ -142,8 +138,8 @@ AbortError class plus aborted state. Generic CESR ingress already composes reque
 disconnect and operation lifetime before requestBytes. Foreign same-class AbortErrors
 and I/O failures propagate without repeating an already-reported object.
 Generic and CESR requests share the pending-fetch/response owner; CESR upload and
-diagnostic leaves stay separate. Register HTTP credit before response owners so
-their joined cleanup completes before the credit releases.
+diagnostic leaves stay separate. Request scopes join them before returning,
+without shared HTTP byte/stream reservations or metadata estimates.
 HTTP ingress joins its own halt and closes published reply output on late abort
 outside status mapping. Preserve the mailbox's ordinary idle-timeout outcome.
 Parent cancellation diagnostics still need composed owner qualification.
@@ -234,16 +230,13 @@ See the [reservation contract](../../docs/design-docs/runtime/RESOURCE_POLICY.md
 
 Require streaming where KERIpy 714 supports it; further stack-wide discovery,
 artifact and CLI conversion is deferred. Required callers use shared engines and
-response owners with the runtime's exact services/policy. Finite JSON/receipt semantics
-require enforced caps, cancellation and joined cleanup. OOBI/DID completion still
-requires full evidence; processing before EOF does not imply artifact success.
-Close adoption through default library/host/CLI callers, not only engine tests.
-Every finite exception needs a semantic reason, ceiling, admission owner and
-joined response lifetime; audit newly introduced I/O on the final release head.
-Audit producer preparation and retained output as well as the shared engine:
-history collection before sending and uncharged copies after reading bypass the
-contract. Finite JSON/proofs may require whole-document semantics, with admission
-before avoidable allocation and ownership through consumption or explicit transfer.
+response owners. Finite JSON/receipt semantics still require cancellation, joined
+cleanup and full validation; collection alone does not justify a quota or policy.
+OOBI/DID completion requires full evidence, not merely parsed input before EOF.
+Audit actual preparation/response lifetimes through default library/host/CLI callers
+on the final release head. Static artifacts read only on demand, capture the
+regular-file extent, ignore later growth, reject truncation and join descriptor
+close. They have no allowance, path-length or JSON-size ceiling.
 The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,
@@ -389,8 +382,8 @@ pull. Credit follows source return plus socket close; calling destroy is not joi
 cleanup. End/close deadlines start at source EOF, not the beginning of a large transfer.
 Accepted-socket output borrows the connection stream slot, reserves separate output backing,
 and shares the outgoing callback/drain loop without ending the socket.
-Already admitted TCP frames use the serializer directly; shared HTTP/TCP metadata
-admission precedes qualification, and actual nested payload owners stay borrowed.
+TCP and HTTP frames use the serializer directly without metadata estimates;
+actual nested payload readers retain their real I/O lifetime.
 
 Explicit TCP conversations pre-admit one lazy RX Reactor channel and retain its
 runtime/owners through joined directional cleanup. RX EOF cannot end TX; TX EOF
@@ -442,6 +435,10 @@ current dispatch refusal: a prior matching query cue cannot override sender poli
 queries retain separate policy; no insecure read override exists.
 
 SSE consumes one complete event and awaits its consumer before another read.
+Its client has no event/line/chunk/report size policy, and Fetch input has no
+backing-buffer or attachment-header ceiling. Keep poll deadlines and exact cursor
+validation. Byte-array/file/socket chunk sizes control actual I/O granularity;
+they are not total-message quotas.
 Provider output reads only with HTTP demand. Finite processOnce returns typed
 batches; long-lived pollDo is sink-based. Disconnect/timeout discards unfinished
 events so their cursors can retry. Pollers hand off ordinary bytes and retain only

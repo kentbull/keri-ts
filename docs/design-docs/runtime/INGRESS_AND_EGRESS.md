@@ -14,8 +14,8 @@ and long-lived hosts; unifying their worker driving remains unfinished.
 ## Transitional ingress
 
 `Reactor.process(source, options)` is an Effection operation. The source factory
-receives the operation's abort signal and supplies bounded, independently owned
-chunks. `chunkBytes`, `streamBytes`, and `fileBytes` adapt a finite value, Fetch
+receives the operation's abort signal. Fetch chunks are consumed on demand
+without a backing-buffer ceiling; resident/file sources choose actual chunk sizes. `chunkBytes`, `streamBytes`, and `fileBytes` adapt a finite value, Fetch
 body, or Deno file. A file source can be consumed directly:
 
 ```ts
@@ -450,8 +450,11 @@ remain open. Frozen 714 QueryEnd collects bytes;
 this lazy path is a qualified TS integration. Its SN path always clones with `fn=0`;
 TS preserves its existing actual FEL ordinal, so SN replay is not claimed byte parity.
 
-Signed exchanges and generic HTTP witness delivery use the same progressive
-sender as forwarding. Witness authorization is preserved across content-type
+Signed exchanges and generic HTTP witness delivery use the same scoped
+sender as forwarding, without shared byte/stream reservations or metadata estimates.
+Expected transport refusals come only from peer HTTP responses; foreign source,
+fetch and cleanup failures propagate. Failed-response text is read until EOF or
+request cancellation, with incremental UTF-8 decoding and joined reader cleanup. Witness authorization is preserved across content-type
 retries; caller headers cannot replace CESR framing or destination metadata.
 Generic witness sends borrow explicit runtime services; runtime delegation passes
 its own services through this seam. Standalone callers may use the shared default.
@@ -491,9 +494,10 @@ while observing deferred query readiness, so replies can drain without another
 inbound message. Its listener accounting and general Reactor gates remain separate
 removal work; no broad release qualification is implied by these focused checks.
 
-Receipt endpoints intentionally return one finite proof: collection admits at
-most 1 MiB, failed-response diagnostics at most 16 KiB, and parsing requires one
-complete frame. Cancellation joins the body reader and releases its lock.
+Receipt endpoints intentionally return one finite proof and parsing requires one
+complete frame. Their separate collection caps remain removal work; generic HTTP
+sender diagnostics no longer impose a byte ceiling. Cancellation joins the body
+reader and releases its lock.
 The shared HTTP response resource forwards RequestInit.signal into its actual
 request/body controller, preserving its reason through headers and body consumption.
 Pre-aborted requests acquire no fetch. Only the owner's header timeout becomes
@@ -515,8 +519,8 @@ progressive Reactor directly. Runtime closure aborts and joins the active delive
 before closing stores; a consumer never reenters its own guarded turn.
 
 Mailbox SSE consumes one complete event at a time and awaits the consumer before
-reading again. Each event admits at most 8 MiB of wire bytes and 4,096 fields; transport chunks
-admit at most 1 MiB. EOF, timeout, and cancellation discard an unterminated event,
+reading again. The client imposes no event, field-count, transport-chunk or report
+byte ceiling. EOF, timeout, and cancellation discard an unterminated event,
 leaving its cursor available for retry. The first event may use the full poll
 window; an idle poll ends after 500 ms once an event has completed. Every timeout
 cancels and joins the single pending read. Long-lived mailbox workers admit and
@@ -579,13 +583,13 @@ lock. A single failure keeps its identity; distinct read/cancel/unlock failures
 propagate together as an AggregateError. Parent cancellation/error reporting
 remains part of composed owner qualification. Existing
 HTTP scheme fallback remains a compatibility policy, not strict TLS qualification.
-Static Tufa artifacts reserve one shared stream and 1 MiB of logical handle/metadata
-allowance plus two 64 KiB buffers before opening a regular file. Response demand
-causes each read; no source prefetch or whole-file allocation occurs. Capture the
-opened file's extent, ignore later growth, and fail on truncation; this is not a
-content snapshot. Static JSON additionally checks its 8 MiB ceiling before reads.
+Static Tufa artifact responses own their regular files directly, without shared
+allowances, stream slots, path-length or JSON-size ceilings. Response demand causes
+each read using a 64 KiB buffer; no source prefetch or whole-file allocation occurs.
+Capture the opened file's extent, ignore later growth, and fail on truncation;
+this is not a content snapshot.
 Request abort owns acquisition only. Cancellation/host close stop new reads and
-join pending filesystem work and descriptor close before returning credit.
+join pending filesystem work and descriptor close before returning.
 The protocol handler and Hono app expose close; default handlers are owned while
 injected handlers remain caller-owned. OS reads are joined, not forcibly interrupted;
 native/filesystem residency still requires qualification. Dynamic generation/export

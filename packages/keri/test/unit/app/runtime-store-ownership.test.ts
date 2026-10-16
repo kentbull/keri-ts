@@ -388,7 +388,6 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
       ...habitatOptions,
       name: crypto.randomUUID(),
       skipSignator: false,
-      resources: new ResourcePolicy({ streams: 3 }),
     })
   );
   const ready = Promise.withResolvers<void>(), reading = Promise.withResolvers<void>();
@@ -454,7 +453,6 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     assertEquals((runtime.vdr.reger as Reger).opened, true);
     assertEquals(runtime.noter!.opened, true);
     assertEquals(runtime.mailboxer!.opened, true);
-    assertEquals(runtime.resources.used.bytes > 0, true);
     assertEquals(replyClosed, false);
     release.resolve();
     await closing;
@@ -464,7 +462,6 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     assertReleased(runtime.vdr.reger as Reger);
     assertReleased(runtime.noter!);
     assertReleased(runtime.mailboxer!);
-    assertEquals(runtime.resources.used.bytes, 0);
     assertEquals(hby.db.opened, true);
   } finally {
     release.resolve();

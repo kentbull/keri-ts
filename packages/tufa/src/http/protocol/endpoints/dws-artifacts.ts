@@ -1,5 +1,4 @@
 /** Static and dynamic `did:webs` artifact routes. */
-import { ResourceAdmissionError, ResourceLimitError } from "cesr-ts";
 import {
   didWebsFromArtifactRequest,
   generateDidWebsArtifacts,
@@ -92,7 +91,6 @@ async function staticArtifactResponse(
       path,
       route.artifact === "did.json" ? "application/did+json" : "application/cesr",
       context.req.signal,
-      route.artifact === "did.json" ? 8 * 1024 ** 2 : undefined,
     );
   } catch (error) {
     if (error instanceof ValidationError) {
@@ -101,10 +99,6 @@ async function staticArtifactResponse(
         headers: { "Content-Type": "text/plain" },
       });
     }
-    if (error instanceof ResourceAdmissionError && error.reason === "busy") {
-      return new Response(error.message, { status: 503 });
-    }
-    if (error instanceof ResourceLimitError) return new Response(error.message, { status: 413 });
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       return new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } });
     }

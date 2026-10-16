@@ -1,4 +1,3 @@
-import { ResourceLimitError } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { abortable } from "./abortable.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
@@ -13,16 +12,12 @@ export interface MailboxSseMessage {
   topic: string;
 }
 
-/** Finite event/read admission; the total number of streamed events is unrestricted. */
+/** Poll timing and cancellation; complete events are delivered to the awaited consumer. */
 export interface MailboxSseOptions {
   /** End an idle poll after its first complete event; default 500 ms. */
   idleTimeoutMs?: number;
   /** Absolute lifetime of one long poll, including its first event; default 30 seconds. */
   maxDurationMs?: number;
-  /** Maximum wire bytes in one event, including its metadata; default 8 MiB. */
-  maxEventBytes?: number;
-  /** Maximum retained transport backing buffer; default 1 MiB. */
-  maxChunkBytes?: number;
   services?: RuntimeServices;
   /** External cancellation remains separate from a successful poll timeout. */
   signal?: AbortSignal;
@@ -52,10 +47,9 @@ function appendBytes(
   bytes: Uint8Array<ArrayBuffer>,
   size: number,
   chunk: Uint8Array,
-  limit: number,
 ): Uint8Array<ArrayBuffer> {
   if (size + chunk.length > bytes.length) {
-    const grown = new Uint8Array(Math.min(limit, Math.max(size + chunk.length, 1024, bytes.length * 2)));
+    const grown = new Uint8Array(Math.max(size + chunk.length, 1024, bytes.length * 2));
     grown.set(bytes.subarray(0, size));
     bytes = grown;
   }
@@ -75,11 +69,9 @@ export function consumeMailboxSse(
   options: MailboxSseOptions = {},
 ): Operation<void> {
   return call(function*() {
-    const maxEventBytes = options.maxEventBytes ?? 8 * 1024 * 1024;
     let lines: string[] = [];
     let lineBytes = new Uint8Array(0);
     let lineSize = 0;
-    let eventBytes = 0;
     const decoder = new TextDecoder();
     let completed = false;
     yield* consumeChunks(
@@ -88,22 +80,18 @@ export function consumeMailboxSse(
       function*(chunk) {
         let start = 0;
         for (let index = 0; index < chunk.length; index++) {
-          if (++eventBytes > maxEventBytes) throw new ResourceLimitError("Mailbox SSE event exceeds byte limit");
           if (chunk[index] !== 10) continue;
-          lineBytes = appendBytes(lineBytes, lineSize, chunk.subarray(start, index), maxEventBytes);
+          lineBytes = appendBytes(lineBytes, lineSize, chunk.subarray(start, index));
           lineSize += index - start;
           let line = decoder.decode(lineBytes.subarray(0, lineSize));
           if (line.endsWith("\r")) line = line.slice(0, -1);
           lineSize = 0;
           start = index + 1;
           if (line) {
-            // Bound per-line metadata as well as event bytes, including adversarial one-character fields.
-            if (lines.length === 4096) throw new ResourceLimitError("Mailbox SSE event exceeds line limit");
             lines.push(line);
           } else {
             const message = eventMessage(lines);
             lines = [];
-            eventBytes = 0;
             if (message) {
               completed = true;
               if ((yield* consume(message)) === false) return false;
@@ -111,7 +99,7 @@ export function consumeMailboxSse(
           }
         }
         if (start < chunk.length) {
-          lineBytes = appendBytes(lineBytes, lineSize, chunk.subarray(start), maxEventBytes);
+          lineBytes = appendBytes(lineBytes, lineSize, chunk.subarray(start));
           lineSize += chunk.length - start;
         }
       },
@@ -122,17 +110,15 @@ export function consumeMailboxSse(
 }
 
 /**
- * Collect a finite raw SSE diagnostic report. Production polling uses
- * consumeMailboxSse; operator reports and wire assertions explicitly cap text.
+ * Collect a raw SSE diagnostic report for one poll window. Production polling
+ * uses consumeMailboxSse to deliver complete events as they arrive.
  */
 export function readMailboxSseBody(
   response: Response,
   controller: AbortController,
-  options: MailboxSseOptions & { maxBytes?: number } = {},
+  options: MailboxSseOptions = {},
 ): Operation<string> {
   return call(function*() {
-    const limit = options.maxBytes ?? 16 * 1024 * 1024;
-    if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Invalid mailbox SSE report limit");
     const decoder = new TextDecoder();
     let bytes = new Uint8Array(0);
     let size = 0;
@@ -142,8 +128,7 @@ export function readMailboxSseBody(
       response,
       controller,
       function*(chunk) {
-        if (chunk.length > limit - size) throw new ResourceLimitError("Mailbox SSE report exceeds byte limit");
-        bytes = appendBytes(bytes, size, chunk, limit);
+        bytes = appendBytes(bytes, size, chunk);
         const end = size + chunk.length;
         // Inspect each terminated block once. A retry/comment header alone must not start the idle deadline.
         for (let index = size; !completed && index < end; index++) {
@@ -183,12 +168,10 @@ function* consumeChunks(
   const {
     idleTimeoutMs = 500,
     maxDurationMs = 30_000,
-    maxChunkBytes = 1024 * 1024,
-    maxEventBytes = 8 * 1024 * 1024,
     services = defaultRuntimeServices,
   } = options;
-  for (const value of [idleTimeoutMs, maxDurationMs, maxChunkBytes, maxEventBytes]) {
-    if (!Number.isSafeInteger(value) || value < 1) throw new RangeError("Invalid mailbox SSE limit");
+  for (const value of [idleTimeoutMs, maxDurationMs]) {
+    if (!Number.isSafeInteger(value) || value < 1) throw new RangeError("Invalid mailbox SSE timeout");
   }
   if (!response.body) return;
   const reader = response.body.getReader();
@@ -281,9 +264,6 @@ function* consumeChunks(
         }
       }, options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal);
       if (!next || next.done) return;
-      if (next.value.buffer.byteLength > maxChunkBytes) {
-        throw new ResourceLimitError("Mailbox SSE chunk exceeds byte limit");
-      }
       if (next.value.length) {
         if ((yield* consume(next.value)) === false) return;
       }

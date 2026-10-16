@@ -1,4 +1,4 @@
-/** Scoped CESR HTTP output: bounded metadata, streamed payloads, and joined cancellation. */
+/** Scoped CESR HTTP output with streamed payloads and joined cancellation. */
 import {
   attachmentPayload,
   byteString,
@@ -7,7 +7,6 @@ import {
   framePayload,
   parse,
   type Payload,
-  ResourceAdmissionError,
 } from "cesr-ts";
 import { call, ensure, on, type Operation, race, resource, scoped } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
@@ -19,7 +18,6 @@ import {
   type CesrBodyMode,
   KERIPY_CESR_JSON_CONTENT_TYPE,
 } from "./cesr-http.ts";
-import { cesrOutputMetadataBytes } from "./cesr-output.ts";
 import { ownHttpResponse } from "./httping.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 
@@ -30,11 +28,11 @@ export class CesrHttpRefusal extends ValidationError {
   }
 }
 
-/** Expected local admission or remote HTTP refusal; infrastructure and cleanup failures still throw. */
-type CesrPostResult = { kind: "complete" } | { kind: "refuse"; error: ResourceAdmissionError | CesrHttpRefusal };
+/** Expected remote HTTP refusal; infrastructure and cleanup failures still throw. */
+type CesrPostResult = { kind: "complete" } | { kind: "refuse"; error: CesrHttpRefusal };
 type FrameResponse = { kind: "response"; response: Response } | Extract<CesrPostResult, { kind: "refuse" }>;
 
-/** Transport choices and finite HTTP metadata limits for an admitted CESR frame. */
+/** Transport choices for one CESR frame. */
 export interface EgressOptions {
   /** Header mode matches KERIpy; body mode streams the complete qualified frame. */
   bodyMode?: CesrBodyMode;
@@ -42,8 +40,6 @@ export interface EgressOptions {
   headers?: HeadersInit;
   /** Optional endpoint AID carried in CESR-DESTINATION. */
   destination?: string;
-  /** Failed responses retain at most this many diagnostic bytes; default 16 KiB. */
-  maxErrorBytes?: number;
   /** Upstream cancellation joins the same request lifetime as Effection cancellation. */
   signal?: AbortSignal;
   /** Injectable HTTP service for the owning runtime. */
@@ -57,7 +53,7 @@ interface RequestBody {
   /** Join the last read and iterator cleanup after its owning signal aborts. */
   close(): Promise<void>;
 }
-/** Adapt an already admitted payload to the platform fetch boundary without collecting it. */
+/** Adapt a payload to the platform fetch boundary without collecting it. */
 function requestBody(payload: Payload, upstream: AbortSignal): RequestBody {
   // Fetch can cancel the upload independently of the surrounding response scope.
   const controller = new AbortController();
@@ -97,10 +93,9 @@ function requestBody(payload: Payload, upstream: AbortSignal): RequestBody {
     close,
   };
 }
-/** Read only a finite failed-response prefix and cancel any unread tail. */
-async function errorText(response: Response, limit: number, signal: AbortSignal): Promise<string> {
+/** Read a failed response while keeping cancellation and reader cleanup with the request. */
+async function errorText(response: Response, signal: AbortSignal): Promise<string> {
   if (!response.body) return "";
-  // Diagnostics are metadata, not a reason to buffer an arbitrary peer response.
   const reader = response.body.getReader();
   let closing: Promise<void> | undefined;
   /** Repeated cancel calls do not join the first underlying stream cancellation. */
@@ -111,20 +106,16 @@ async function errorText(response: Response, limit: number, signal: AbortSignal)
   };
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
-  // A finite byte budget applies before text decoding can expand the diagnostic representation.
-  const bytes = new Uint8Array(limit);
-  // Only the initialized prefix is decoded when the peer ends early.
-  let size = 0;
+  const decoder = new TextDecoder();
+  const text: string[] = [];
   try {
-    while (size < limit) {
-      // A peer stream may end before the finite diagnostic budget is exhausted.
+    while (true) {
       const result = await reader.read();
       if (result.done) break;
-      const part = result.value.subarray(0, limit - size);
-      bytes.set(part, size);
-      size += part.length;
+      text.push(decoder.decode(result.value, { stream: true }));
     }
-    return new TextDecoder().decode(bytes.subarray(0, size));
+    text.push(decoder.decode());
+    return text.join("");
   } finally {
     signal.removeEventListener("abort", cancel);
     try {
@@ -133,11 +124,6 @@ async function errorText(response: Response, limit: number, signal: AbortSignal)
       reader.releaseLock();
     }
   }
-}
-/** Reject invalid budgets before allocating buffers or opening a remote connection. */
-function byteLimit(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value < 0) throw new RangeError(`${name} must be a non-negative safe integer`);
-  return value;
 }
 /**
  * Open one frame response as an Effection resource owned by the caller's scope.
@@ -162,27 +148,6 @@ function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions
     const services = options.services ?? defaultRuntimeServices;
     // Header mode is the KERIpy default, and bulk body mode is explicit.
     const mode = options.bodyMode ?? "header";
-    // Diagnostic output policy remains separate from attachment collection.
-    const errorLimit = byteLimit(options.maxErrorBytes ?? 16 * 1024, "maxErrorBytes");
-    // Retain conservative qualification/header/diagnostic copies plus bounded serializer reader/output backing.
-    const bytes = 8 * cesrOutputMetadataBytes(frame) + 4 * errorLimit + 2 * 1024 ** 2;
-    const credit = services.resources.reserve({ streams: 1, bytes });
-    if (credit.kind === "refuse") {
-      const refusal = new ResourceAdmissionError(
-        `HTTP output ${credit.resource} admission refused: ${credit.reason}`,
-        credit.reason,
-      );
-      yield* provide({ kind: "refuse", error: refusal });
-      return;
-    }
-    // Register credit before response owners so cancellation joins their last use before release.
-    yield* resource<void>(function*(provide) {
-      try {
-        yield* provide();
-      } finally {
-        credit.reservation.release();
-      }
-    });
     // Each Promise leaf remains tracked until cancellation has joined its cleanup.
     let preparing: Promise<Uint8Array> | undefined;
     // Upload cleanup is independent of whether fetch has already returned response headers.
@@ -194,7 +159,7 @@ function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions
     let deliveredFailure: { error: unknown } | undefined;
     try {
       signal.throwIfAborted();
-      // Detached attachments are always legal text, even if the admitted frame was binary.
+      // Detached attachments are always legal text, even if the input frame was binary.
       const attachments = mode === "header"
         ? attachmentPayload(frame, {
           domain: "txt",
@@ -230,8 +195,8 @@ function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions
           return;
         }
         // Only failed response text is read here; successful bodies remain available to the caller.
-        reading = errorText(response, errorLimit, signal);
-        // The retained prefix determines whether the historical media-type retry applies.
+        reading = errorText(response, signal);
+        // The response detail determines whether the historical media-type retry applies.
         const detail = yield* call(() => reading!);
         if (
           mode === "header" && response.status === 406 && contentType === CESR_CONTENT_TYPE

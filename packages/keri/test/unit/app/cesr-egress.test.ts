@@ -5,8 +5,6 @@ import {
   Counter,
   decodeB64,
   parse,
-  ResourceAdmissionError,
-  ResourcePolicy,
   t,
   Texter,
 } from "cesr-ts";
@@ -40,7 +38,7 @@ function fixture(): Uint8Array {
   );
 }
 
-/** Return one owned admitted fixture frame for a request-resource test. */
+/** Return one fixture frame for a request-resource test. */
 async function read(bytes: Uint8Array): Promise<CesrFrame> {
   // Only this test's finite fixture is collected; production readers request frames individually.
   const parser = parse(chunkBytes(bytes));
@@ -57,11 +55,10 @@ async function read(bytes: Uint8Array): Promise<CesrFrame> {
 function services(fetch: RuntimeServices["http"]["fetch"]): RuntimeServices {
   return { ...defaultRuntimeServices, http: { fetch } };
 }
-Deno.test("CESR cancellation preserves a late foreign fetch failure through joined credit release", async () => {
+Deno.test("CESR cancellation preserves a late foreign fetch failure through joined cleanup", async () => {
   for (const failure of [new Error("late fetch I/O"), new DOMException("foreign abort", "AbortError")]) {
     const frame = await read(fixture());
     const ready = Promise.withResolvers<void>();
-    const resources = new ResourcePolicy({ streams: 1 });
     let rejectFetch!: () => void;
     const task = run(function*() {
       yield* requestFrame("https://peer.test/", frame, {
@@ -72,7 +69,6 @@ Deno.test("CESR cancellation preserves a late foreign fetch failure through join
               ready.resolve();
             })
           ),
-          resources,
         },
       });
     });
@@ -81,10 +77,8 @@ Deno.test("CESR cancellation preserves a late foreign fetch failure through join
       const stopped = Promise.resolve(task.halt());
       void stopped.catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, 0));
-      assertEquals(resources.used.streams, 1, "pending fetch still owns HTTP credit");
       rejectFetch();
       assertStrictEquals(await assertRejects(() => stopped), failure);
-      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
     } finally {
       rejectFetch?.();
       await task.halt().catch(() => {});
@@ -96,7 +90,6 @@ Deno.test("CESR cancellation preserves late diagnostic cleanup failure", async (
   const reading = Promise.withResolvers<void>();
   const cleanup = Promise.withResolvers<void>();
   const failure = new Error("diagnostic cleanup failed");
-  const resources = new ResourcePolicy({ streams: 1 });
   const response = new Response(
     new ReadableStream<Uint8Array>({
       pull() {
@@ -110,7 +103,7 @@ Deno.test("CESR cancellation preserves late diagnostic cleanup failure", async (
   );
   const task = run(() =>
     requestFrame("https://peer.test/", frame, {
-      services: { ...services(() => Promise.resolve(response)), resources },
+      services: services(() => Promise.resolve(response)),
     })
   );
   try {
@@ -118,10 +111,8 @@ Deno.test("CESR cancellation preserves late diagnostic cleanup failure", async (
     const stopped = Promise.resolve(task.halt());
     void stopped.catch(() => {});
     await new Promise((resolve) => setTimeout(resolve, 0));
-    assertEquals(resources.used.streams, 1);
     cleanup.reject(failure);
     assertStrictEquals(await assertRejects(() => stopped), failure);
-    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   } finally {
     cleanup.resolve();
     await task.halt().catch(() => {});
@@ -134,7 +125,6 @@ Deno.test("CESR egress waits for each request before consuming the next frame", 
   let pulls = 0;
   let requests = 0;
   let closed = false;
-  const resources = new ResourcePolicy({ streams: 1 });
   const transport = {
     ...services(async (_url, init) => {
       // Reading a real platform request stream exercises the serializer and fetch body adapter together.
@@ -148,35 +138,7 @@ Deno.test("CESR egress waits for each request before consuming the next frame", 
       }
       return new Response(null, { status: 204 });
     }),
-    resources,
   };
-  let acquisitions = 0;
-  const source = (signal: AbortSignal) => {
-    acquisitions++;
-    return chunkBytes(fixture(), { signal });
-  };
-  const occupied = resources.reserve({ streams: 1 });
-  if (occupied.kind !== "reserve") throw new Error("Expected free test capacity");
-  try {
-    await assertRejects(
-      () => run(() => postCesr("https://peer.test/", source, { services: transport })),
-      ResourceAdmissionError,
-      "busy",
-    );
-  } finally {
-    occupied.reservation.release();
-  }
-  await assertRejects(
-    () =>
-      run(() =>
-        postCesr("https://peer.test/", source, {
-          services: { ...transport, resources: new ResourcePolicy({ bytes: 1 }) },
-        })
-      ),
-    ResourceAdmissionError,
-    "limit",
-  );
-  assertEquals([acquisitions, requests], [2, 0], "request admission still precedes fetch after source parsing");
   const task = run(function*() {
     yield* postCesr("https://peer.test/", async function*(signal) {
       try {
@@ -195,11 +157,9 @@ Deno.test("CESR egress waits for each request before consuming the next frame", 
   });
   await opened.promise;
   assertEquals(pulls, 1);
-  assertEquals(resources.used.streams, 1, "source and its request share one outgoing stream slot");
   release.resolve();
   await task;
   assertEquals([pulls, requests, closed], [2, 2, true]);
-  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
 });
 Deno.test("CESR header egress normalizes binary attachments for HTTP", async () => {
   // The source is binary v2 while the detached JSON body independently declares protocol v1.
@@ -250,7 +210,7 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
     assertEquals(cancelled, false);
   });
   assertEquals(cancelled, true);
-  const resources = new ResourcePolicy();
+
   for (const failure of [new Error("response cleanup failed"), new DOMException("foreign cleanup", "AbortError")]) {
     const observed = await assertRejects(
       () =>
@@ -269,13 +229,11 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
                   ),
                 )
               ),
-              resources,
             },
           })
         ),
     );
     assertStrictEquals(observed, failure);
-    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   }
   let ownSignal: AbortSignal | undefined;
   const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
@@ -298,51 +256,18 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
             ownSignal = init!.signal!;
             return fetch(url, init);
           }),
-          resources,
         },
       });
       assertEquals(response.status, 202);
       assertEquals(ownSignal!.aborted, false, "successful headers keep the response live");
     });
     assertEquals(ownSignal!.aborted, true, "normal scope cleanup intentionally aborts its fetch");
-    assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
   } finally {
     await server.shutdown();
   }
 });
-Deno.test("CESR failed-response diagnostics cancel a tail beyond the finite budget", async () => {
-  // An unbounded error response must not defeat otherwise bounded successful transport.
+Deno.test("CESR failed-response diagnostics join asynchronous cancellation", async () => {
   const frame = await read(fixture());
-  let cancelled = false;
-  await assertRejects(
-    () =>
-      run(function*() {
-        yield* requestFrame("https://peer.test/", frame, {
-          maxErrorBytes: 4,
-          services: services(() =>
-            Promise.resolve(
-              new Response(
-                new ReadableStream({
-                  /** Supply more diagnostic data than allowed, then leave the response open. */
-                  start(controller) {
-                    controller.enqueue(b("bad!ignored"));
-                  },
-                  /** The response tail is explicitly released after its admitted prefix is read. */
-                  cancel() {
-                    cancelled = true;
-                  },
-                }),
-                { status: 500 },
-              ),
-            )
-          ),
-        });
-      }),
-    Error,
-    "HTTP 500: bad!",
-  );
-  assertEquals(cancelled, true);
-  const resources = new ResourcePolicy({ streams: 1 });
   const reading = Promise.withResolvers<void>(), cancelling = Promise.withResolvers<void>();
   const cleanup = Promise.withResolvers<void>();
   const controller = new AbortController();
@@ -355,16 +280,15 @@ Deno.test("CESR failed-response diagnostics cancel a tail beyond the finite budg
           Promise.resolve(
             new Response(
               new ReadableStream({
-                /** Suspend diagnostics so abort, rather than reaching the prefix cap, starts cancellation. */
+                /** Keep diagnostics pending until the request is cancelled. */
                 pull() {
                   reading.resolve();
                 },
-                /** Credit belongs to this first asynchronous cancellation until it finishes. */
+                /** The request scope must join this first asynchronous cancellation. */
                 async cancel() {
                   calls++;
                   cancelling.resolve();
                   await cleanup.promise;
-                  assertEquals(resources.used.streams, 1);
                   joined = true;
                 },
               }, { highWaterMark: 0 }),
@@ -372,7 +296,6 @@ Deno.test("CESR failed-response diagnostics cancel a tail beyond the finite budg
             ),
           )
         ),
-        resources,
       },
     })
   );
@@ -383,12 +306,12 @@ Deno.test("CESR failed-response diagnostics cancel a tail beyond the finite budg
     controller.abort();
     await cancelling.promise;
     await new Promise((resolve) => setTimeout(resolve, 0));
-    assertEquals([settled, joined, resources.used.streams], [false, false, 1]);
+    assertEquals([settled, joined], [false, false]);
   } finally {
     cleanup.resolve();
     await rejected;
   }
-  assertEquals([calls, joined, resources.used.streams, resources.used.bytes], [1, true, 0, 0]);
+  assertEquals([calls, joined], [1, true]);
 });
 // Only detached-header requests have a second supported media type to negotiate.
 for (const bodyMode of ["header", "body"] as const) {
@@ -422,7 +345,6 @@ Deno.test("halting CESR delivery closes input and never resumes the caller after
   const blocked = Promise.withResolvers<void>();
   let closed = false;
   let continued = false;
-  const resources = new ResourcePolicy({ streams: 1 });
   const closing = Promise.withResolvers<void>(), cleanup = Promise.withResolvers<void>();
   const task = run(function*() {
     yield* postCesr("https://peer.test/", async function*() {
@@ -441,7 +363,6 @@ Deno.test("halting CESR delivery closes input and never resumes the caller after
             blocked.resolve();
           })
         ),
-        resources,
       },
     });
     continued = true;
@@ -457,7 +378,6 @@ Deno.test("halting CESR delivery closes input and never resumes the caller after
   }
   assertEquals(closed, true);
   assertEquals(continued, false);
-  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
 });
 
 Deno.test("CESR input cancellation also aborts the request consuming its delivered frame", async () => {
@@ -607,7 +527,7 @@ Deno.test("TCP frame output preserves nested body, genus, signatures and ESSR ev
 });
 Deno.test("transport attempt excludes identical typed errors from source, fetch and cleanup", async () => {
   for (
-    const failure of [new CesrHttpRefusal("external failure", 503), new ResourceAdmissionError("foreign busy", "busy")]
+    const failure of [new CesrHttpRefusal("external failure", 503), new Error("foreign transport failure")]
   ) {
     for (const origin of ["source", "fetch", "cleanup", "peer"] as const) {
       const transport = services(async (_url, init) => {
@@ -616,14 +536,10 @@ Deno.test("transport attempt excludes identical typed errors from source, fetch 
         if (origin === "cleanup") {
           return new Response(
             new ReadableStream<Uint8Array>({
-              start(controller) {
-                controller.enqueue(new Uint8Array(16 * 1024));
-              },
               cancel() {
                 throw failure;
               },
             }),
-            { status: 503 },
           );
         }
         return new Response("peer refusal", { status: 503 });
@@ -644,20 +560,15 @@ Deno.test("transport attempt excludes identical typed errors from source, fetch 
       } else {
         assertStrictEquals(await assertRejects(send), failure);
       }
-      assertEquals([transport.resources.used.bytes, transport.resources.used.streams], [0, 0]);
     }
   }
 });
-Deno.test("prepared attempt reports only its own joined admission refusal", async () => {
-  const resources = new ResourcePolicy();
-  let requests = 0;
+Deno.test("prepared attempt reports peer refusal and preserves foreign transport failure", async () => {
   const transport = {
     ...services(async (_url, init) => {
-      requests++;
       await new Response(init!.body).arrayBuffer();
       return new Response(null, { status: 204 });
     }),
-    resources,
   };
   const target = {
     kind: "http" as const,
@@ -666,19 +577,14 @@ Deno.test("prepared attempt reports only its own joined admission refusal", asyn
     message: fixture(),
     bodyMode: "body" as const,
   };
-  const held = resources.reserve({ streams: resources.limits.streams });
-  if (held.kind !== "reserve") throw new Error("Expected free stream capacity");
-  assertEquals(await run(() => attemptPreparedCesrTarget(target, transport)), "busy");
-  assertEquals(requests, 0);
-  held.reservation.release();
   assertEquals(await run(() => attemptPreparedCesrTarget(target, transport)), "complete");
   transport.http = services(async (_url, init) => {
     await new Response(init!.body).arrayBuffer();
     return new Response("peer refusal", { status: 503 });
   }).http;
   assertEquals(await run(() => attemptPreparedCesrTarget(target, transport)), "refused");
-  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-  const failure = new ResourceAdmissionError("foreign transport busy", "busy");
+
+  const failure = new Error("foreign transport failure");
   const controller = new AbortController();
   transport.http = {
     fetch() {
@@ -690,5 +596,4 @@ Deno.test("prepared attempt reports only its own joined admission refusal", asyn
     await assertRejects(() => run(() => attemptPreparedCesrTarget(target, transport, controller.signal))),
     failure,
   );
-  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
 });

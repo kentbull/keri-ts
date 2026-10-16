@@ -424,12 +424,12 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
       );
       assertEquals(runtime.deliveries.hasPending, true, "an unobserved typed transport failure preserves progress");
       failed = new ResourceAdmissionError("foreign transport busy", "busy");
-      const retained = runtime.resources.used.bytes, previousTurns = preparationTurns;
+      const previousTurns = preparationTurns;
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.deliveries.process(runtime)))),
         failed,
       );
-      assertEquals(runtime.resources.used.bytes, retained, "foreign failure preserves pending delivery");
+      assertEquals(runtime.deliveries.hasPending, true, "foreign failure preserves pending delivery");
       assertEquals(preparationTurns, previousTurns, "an exact packet retry cannot recapture protocol reply cues");
       injected = false;
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 9, pending: true });
@@ -447,10 +447,6 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
         failed,
       );
       injected = false;
-      const occupied = runtime.resources.reserve({ streams: runtime.resources.limits.streams });
-      if (occupied.kind !== "reserve") throw new Error("Expected free stream capacity");
-      assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 0, pending: true });
-      occupied.reservation.release();
       acceptFirst = true;
       assertEquals(yield* runtime.deliveries.process(runtime), { retiredOwners: 1, pending: false });
       assertEquals(runtime.resources.used.bytes, 0);
@@ -546,11 +542,11 @@ Deno.test("cue delivery releases its guarded turn but retains owners until HTTP 
         yield* runtime.deliveries.close();
         closed = true;
       });
-      assertEquals([guarded, closed, runtime.resources.used.bytes > 0], [true, false, true]);
+      assertEquals([guarded, closed, runtime.deliveries.hasPending], [true, false, true]);
       release();
       yield* closing;
       yield* delivery;
-      assertEquals([closed, runtime.deliveries.hasPending, runtime.resources.used.bytes], [true, false, 0]);
+      assertEquals([closed, runtime.deliveries.hasPending], [true, false]);
     } finally {
       release();
       yield* delivery.halt();

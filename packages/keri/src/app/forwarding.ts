@@ -34,7 +34,7 @@ import type { Mailboxer } from "../db/mailboxing.ts";
 import { abortable } from "./abortable.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes } from "./byte-source.ts";
-import { attemptPostCesr, CesrHttpRefusal, postCesr } from "./cesr-egress.ts";
+import { attemptPostCesr, postCesr } from "./cesr-egress.ts";
 import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -132,13 +132,13 @@ function remoteCesrTarget(
   return new URL(endpoint.url).protocol === "tcp:" ? { ...base, kind: "tcp" } : { ...base, kind: "http", bodyMode };
 }
 
-/** Join a prepared target attempt; local completion/refusal/busy never implies protocol acceptance. */
+/** Join a prepared target attempt; local completion or peer refusal never implies protocol acceptance. */
 export function* attemptPreparedCesrTarget(
   target: PreparedCesrTarget,
   services: RuntimeServices,
   signal?: AbortSignal,
   receiver?: TcpReplyReceiver,
-): Operation<"complete" | "refused" | "busy"> {
+): Operation<"complete" | "refused"> {
   if (target.kind === "http") {
     const result = yield* attemptPostCesr(target.url, (signal) => chunkBytes(target.message, { signal }), {
       bodyMode: target.bodyMode,
@@ -148,9 +148,7 @@ export function* attemptPreparedCesrTarget(
     });
     signal?.throwIfAborted();
     if (result.kind === "complete") return "complete";
-    if (result.error instanceof CesrHttpRefusal) return "refused";
-    if (result.error.reason === "busy") return "busy";
-    throw result.error;
+    return "refused";
   }
   if (target.kind === "stored") {
     signal?.throwIfAborted();

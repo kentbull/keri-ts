@@ -1,4 +1,4 @@
-import { concatBytes, ResourceAdmissionError, ResourcePolicy } from "cesr-ts";
+import { concatBytes, ResourcePolicy } from "cesr-ts";
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { once } from "node:events";
@@ -45,23 +45,9 @@ Deno.test("witness delivery preserves authorization and retries the media type f
       try {
         const { witness, controller } = fixture(hby, `http://127.0.0.1:${server.addr.port}`);
         controller.interact();
-        const services = { ...defaultRuntimeServices, resources: new ResourcePolicy({ streams: 1 }) };
+        const services = defaultRuntimeServices;
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
-        const busy = services.resources.reserve({ streams: services.resources.limits.streams });
-        if (busy.kind !== "reserve") throw new Error("Expected free test capacity");
-        try {
-          yield* call(() =>
-            assertRejects(
-              () => run(() => sendWitnessMessage(controller, witness.pre, wire, "Bearer fixture", services)),
-              ResourceAdmissionError,
-              "busy",
-            )
-          );
-          assertEquals(requests.length, 0);
-        } finally {
-          busy.reservation.release();
-        }
-        // One request is completed before the next complete event is admitted for delivery.
+        // One request completes before the next complete event is sent.
         yield* sendWitnessMessage(
           controller,
           witness.pre,

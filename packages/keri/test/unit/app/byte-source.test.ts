@@ -1,5 +1,4 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert";
-import { ResourceLimitError } from "../../../../cesr/mod.ts";
 import { collectBytes, fileBytes, streamBytes } from "../../../src/app/byte-source.ts";
 import { requestBytes } from "../../../src/app/cesr-http.ts";
 
@@ -79,25 +78,7 @@ Deno.test("transport abort interrupts a pending read and releases its reader", a
   assertEquals([broken.locked, cancels], [false, 1], "Abort/finally share exactly one cancel and always unlock");
 });
 
-Deno.test("transport reader caps count backing buffers and collection joins its source", async () => {
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(new Uint8Array(16).subarray(0, 1));
-    },
-  });
-  await assertRejects(() => streamBytes(stream, { maxChunkBytes: 8 }).next(), ResourceLimitError);
-  const cleanup = new Error("overflow cleanup");
-  const oversized = new ReadableStream<Uint8Array>({
-    start(current) {
-      current.enqueue(new Uint8Array(16));
-    },
-    cancel() {
-      throw cleanup;
-    },
-  });
-  const error = await assertRejects(() => streamBytes(oversized, { maxChunkBytes: 8 }).next(), AggregateError);
-  assertEquals([error.errors[0] instanceof ResourceLimitError, error.errors[1]], [true, cleanup]);
-  assertEquals(oversized.locked, false);
+Deno.test("transport failures preserve identity and collection joins its source", async () => {
   const fault = new Error("native read fault");
   const errored = new ReadableStream<Uint8Array>({
     start(current) {
@@ -124,7 +105,7 @@ Deno.test("transport reader caps count backing buffers and collection joins its 
   assertEquals(closed, true);
 });
 
-Deno.test("CESR HTTP appends bounded attachment headers after streamed bodies for both media types", async () => {
+Deno.test("CESR HTTP appends attachment headers after streamed bodies for both media types", async () => {
   for (const type of ["application/cesr", "application/cesr+json"]) {
     const req = new Request("http://example.test", {
       method: "POST",
@@ -134,11 +115,6 @@ Deno.test("CESR HTTP appends bounded attachment headers after streamed bodies fo
     // The four ASCII attachment bytes follow the body, including for KERIpy's +json media type.
     assertEquals(await collectBytes(requestBytes(req)), new Uint8Array([1, 2, 45, 65, 65, 65]));
   }
-  const req = new Request("http://example.test", {
-    method: "POST",
-    headers: { "content-type": "application/cesr", "CESR-ATTACHMENT": "-AAA" },
-  });
-  await assertRejects(() => collectBytes(requestBytes(req, { maxHeaderBytes: 3 })), ResourceLimitError);
 });
 
 Deno.test("file input yields fixed-size buffers and closes on early return", async () => {

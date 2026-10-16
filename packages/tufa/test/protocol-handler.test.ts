@@ -1,6 +1,6 @@
 // @file-test-lane app-fast-parallel
 
-import { Ilks, ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
+import { Ilks } from "cesr-ts";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import type { AgentRuntime, Hab, HostedRouteResolution, ProtocolHostPolicy } from "keri-ts/runtime";
 import { Schemer } from "keri-ts/runtime";
@@ -14,20 +14,15 @@ import {
 } from "../src/http/protocol-handler.ts";
 import { ArtifactFiles } from "../src/http/protocol/artifact-files.ts";
 
-Deno.test("static artifact responses read only on demand and retain admission through joined close", async () => {
+Deno.test("static artifact responses read only on demand and join file close", async () => {
   const root = Deno.makeTempDirSync(), path = `${root}/keri.cesr`, chunk = 65536;
-  const resources = new ResourcePolicy({ streams: 1 }), files = new ArtifactFiles(resources);
+  const files = new ArtifactFiles();
   const signal = new AbortController();
   try {
     const data = new Uint8Array(3 * chunk);
     Deno.writeFileSync(path, data);
     const response = await files.response(path, "application/cesr", signal.signal);
-    assertEquals([response.status, response.headers.get("content-length"), resources.used.streams], [200, "196608", 1]);
-    const busy = await assertRejects(
-      () => files.response(`${root}/absent`, "application/cesr", signal.signal),
-      ResourceAdmissionError,
-    );
-    assertEquals(busy.reason, "busy", "capacity refusal precedes opening even a nonexistent path");
+    assertEquals([response.status, response.headers.get("content-length")], [200, "196608"]);
     data[0] = 7;
     Deno.writeFileSync(path, data);
     // Deno's old request signal can abort when headers return; it must not own the response.
@@ -37,36 +32,33 @@ Deno.test("static artifact responses read only on demand and retain admission th
     data[chunk] = 8;
     Deno.writeFileSync(path, data);
     assertEquals((await reader.read()).value?.[0], 8, "there was no hidden next-chunk prefetch");
-    assertEquals(resources.used.streams, 1);
+
     await reader.cancel();
     reader.releaseLock();
-    assertEquals(resources.used.bytes, 0);
 
     const active = new AbortController().signal;
-    await assertRejects(() => files.response(path, "application/did+json", active, 8), ResourceLimitError);
-    assertEquals(resources.used.bytes, 0);
+
     const captured = await files.response(path, "application/cesr", active);
     Deno.truncateSync(path, 4 * chunk);
     assertEquals((await captured.arrayBuffer()).byteLength, 3 * chunk, "file growth cannot extend a captured response");
-    assertEquals(resources.used.bytes, 0);
+
     const truncated = await files.response(path, "application/cesr", active);
     Deno.truncateSync(path, chunk);
     await assertRejects(() => truncated.arrayBuffer(), Error, "truncated");
-    assertEquals(resources.used.bytes, 0);
 
     const cancelling = await files.response(path, "application/cesr", active);
     const pendingReader = cancelling.body!.getReader();
     const read = pendingReader.read();
     await Promise.resolve();
     const cancelled = pendingReader.cancel();
-    assertEquals(resources.used.streams, 1, "pending file work retains credit during cancellation");
+
     await Promise.all([read, cancelled]);
     pendingReader.releaseLock();
-    assertEquals(resources.used.bytes, 0);
+
     const unopened = await files.response(path, "application/cesr", active);
     await files.close();
     await assertRejects(() => unopened.arrayBuffer(), DOMException, "host closed");
-    assertEquals(resources.used.bytes, 0);
+
     await files.close();
 
     const handler = createProtocolHandler(undefined, { dwsStaticFilesDir: root });
@@ -76,7 +68,8 @@ Deno.test("static artifact responses read only on demand and retain admission th
     assertEquals([empty.status, empty.body], [200, null]);
     Deno.writeTextFileSync(`${root}/EAID/did.json`, "{}");
     Deno.truncateSync(`${root}/EAID/did.json`, 9 * 1024 ** 2);
-    assertEquals((await handler(new Request("http://localhost/EAID/did.json"))).status, 413);
+    const largeJson = await handler(new Request("http://localhost/EAID/did.json"));
+    assertEquals([largeJson.status, (await largeJson.arrayBuffer()).byteLength], [200, 9 * 1024 ** 2]);
     assertEquals((await handler(new Request("http://localhost/missing/keri.cesr"))).status, 404);
     await handler.close?.();
     Deno.writeTextFileSync(`${root}/EAID/keri.cesr`, "file");

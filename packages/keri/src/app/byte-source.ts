@@ -1,11 +1,10 @@
-/** Bounded transport readers. Each yielded chunk owns its buffer until consumption finishes. */
-import { ResourceLimitError } from "cesr-ts";
+/** Transport readers. Each operation owns its reader and joins cancellation. */
 
-/** Bounds for one transport read, independent of the stream's total length. */
+/** Cancellation and chunk size for byte-array and file sources. */
 export interface SourceOptions {
   /** Abort reads and release the transport when its operation stops. */
   signal?: AbortSignal;
-  /** Largest owned backing allocation admitted for one transport read. */
+  /** Buffer size used when chunking resident bytes or reading a local file. */
   maxChunkBytes?: number;
 }
 
@@ -18,7 +17,7 @@ export async function* chunkBytes(
   signal?.throwIfAborted();
   for (let offset = 0; offset < bytes.byteLength; offset += maxChunkBytes) {
     signal?.throwIfAborted();
-    // A subarray would retain the full input backing buffer and exceed the cursor's chunk budget.
+    // Give the consumer an independent chunk of the resident value.
     yield bytes.slice(offset, offset + maxChunkBytes);
   }
 }
@@ -26,9 +25,8 @@ export async function* chunkBytes(
 /** Read a Fetch stream on demand and cancel its reader when parsing stops. */
 export async function* streamBytes(
   stream: ReadableStream<Uint8Array> | null,
-  { signal, maxChunkBytes = 1024 * 1024 }: SourceOptions = {},
+  { signal }: Pick<SourceOptions, "signal"> = {},
 ): AsyncGenerator<Uint8Array> {
-  checkLimit(maxChunkBytes);
   signal?.throwIfAborted();
   if (!stream) return;
   const reader = stream.getReader();
@@ -47,10 +45,6 @@ export async function* streamBytes(
       const { done, value } = await reader.read();
       signal?.throwIfAborted();
       if (done) return;
-      // Counting the backing allocation prevents a tiny view from retaining a huge input buffer.
-      if (value.buffer.byteLength > maxChunkBytes) {
-        throw new ResourceLimitError(`Transport chunk exceeds ${maxChunkBytes} bytes`);
-      }
       if (value.length > 0) yield value;
     }
   } catch (error) {
@@ -128,7 +122,7 @@ export async function collectBytes(source: AsyncIterable<Uint8Array>): Promise<U
   return bytes.subarray(0, size);
 }
 
-/** Reject invalid budgets before opening a file or taking ownership of a stream. */
+/** Reject invalid chunk sizes before allocation or opening a file. */
 function checkLimit(limit: number): void {
-  if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Byte limit must be a positive safe integer");
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Chunk size must be a positive safe integer");
 }
