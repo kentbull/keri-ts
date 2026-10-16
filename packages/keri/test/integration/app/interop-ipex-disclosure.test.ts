@@ -35,6 +35,35 @@ import { createInteropContext, randomPort, spawnChild, stopChild } from "./inter
 const PEER = fromFileUrl(new URL("../../fixtures/ipex-http-peer.py", import.meta.url));
 type Mode = "apply" | "offer" | "spurn-apply" | "spurn-offer";
 
+/** Build a full commitment and its status-only partial with identical SAIDs. */
+function disclosure(issuer: string): { full: SerderACDC; partial: SerderACDC } {
+  const nonce = () => new Noncer({ code: NonceDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
+  const full = acdcmap(issuer, {
+    uuid: nonce(),
+    attribute: {
+      d: "",
+      u: nonce(),
+      status: { d: "", u: nonce(), value: "citizen" },
+      private: { d: "", u: nonce(), value: "hidden-value" },
+    },
+    kind: Kinds.json,
+  });
+  const compactor = new Compactor({
+    mad: structuredClone(full.sad!.a) as MapperMap,
+    kind: Kinds.json,
+    verify: false,
+  });
+  compactor.compact(["a/status/"], "a");
+  const partial = acdcmap(issuer, {
+    uuid: full.sad!.u as string,
+    schema: full.sad!.s as MapperMap,
+    attribute: compactor.partials!["a/status/"].mad,
+    kind: Kinds.json,
+  });
+  assertEquals(partial.said, full.said);
+  return { full, partial };
+}
+
 /** Wait on observed peer state with an elapsed deadline; no whole-runtime pumping. */
 async function observed<T>(label: string, read: () => T | null | undefined): Promise<T> {
   const deadline = performance.now() + 35_000;
@@ -71,31 +100,7 @@ async function conversation(tsIssuer: boolean, mode: Mode): Promise<void> {
       });
       try {
         const hab = hby.makeHab("typescript");
-        const nonce = () =>
-          new Noncer({ code: NonceDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
-        const full = acdcmap(hab.pre, {
-          uuid: nonce(),
-          attribute: {
-            d: "",
-            u: nonce(),
-            status: { d: "", u: nonce(), value: "citizen" },
-            private: { d: "", u: nonce(), value: "hidden-value" },
-          },
-          kind: Kinds.json,
-        });
-        const compactor = new Compactor({
-          mad: structuredClone(full.sad!.a) as MapperMap,
-          kind: Kinds.json,
-          verify: false,
-        });
-        compactor.compact(["a/status/"], "a");
-        const partial = acdcmap(hab.pre, {
-          uuid: full.sad!.u as string,
-          schema: full.sad!.s as MapperMap,
-          attribute: compactor.partials!["a/status/"].mad,
-          kind: Kinds.json,
-        });
-        assertEquals(partial.said, full.said);
+        const { full, partial } = disclosure(hab.pre);
         const schema = (full.sad!.s as { $id: string }).$id;
         const plan: DisclosurePlan = [[schema, "/", ["a/status/"]]];
         server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {

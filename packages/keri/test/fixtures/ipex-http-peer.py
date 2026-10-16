@@ -31,6 +31,22 @@ class Recorder:
         self.items.append(attrs)
 
 
+def disclosure(issuer):
+    """Build a full commitment and its status-only partial with identical SAIDs."""
+    full = acdcmap(issuer, uuid=Noncer().qb64, attribute=dict(
+        d="", u=Noncer().qb64,
+        status=dict(d="", u=Noncer().qb64, value="citizen"),
+        private=dict(d="", u=Noncer().qb64, value="hidden-value")))
+    compactor = Compactor(mad=copy.deepcopy(full.sad["a"]),
+                          kind=Kinds.json, verify=False)
+    compactor.compact(paths=["a/status/"], root="a")
+    partial = acdcmap(issuer, uuid=full.sad["u"], schema=full.sad["s"],
+                      attribute=compactor.partials[("a/status/",)].mad)
+    assert partial.said == full.said
+
+    return full, partial
+
+
 def main():
     """React to accepted peer messages, then assert both parties' full lineage."""
     root, role, mode, recipient, destination, schema, port = sys.argv[1:]
@@ -53,16 +69,7 @@ def main():
             server = createHttpServer("127.0.0.1", int(port), app)
             doist = doing.Doist(tock=.005, real=True,
                                doers=[http.ServerDoer(server=server)])
-            full = acdcmap(hab.pre, uuid=Noncer().qb64, attribute=dict(
-                d="", u=Noncer().qb64,
-                status=dict(d="", u=Noncer().qb64, value="citizen"),
-                private=dict(d="", u=Noncer().qb64, value="hidden-value")))
-            compactor = Compactor(mad=copy.deepcopy(full.sad["a"]),
-                                  kind=Kinds.json, verify=False)
-            compactor.compact(paths=["a/status/"], root="a")
-            partial = acdcmap(hab.pre, uuid=full.sad["u"], schema=full.sad["s"],
-                              attribute=compactor.partials[("a/status/",)].mad)
-            assert partial.said == full.said
+            full, partial = disclosure(hab.pre)
 
             def post(wire):
                 """Send unchanged signed bytes through the TS full-body endpoint."""
