@@ -20,6 +20,7 @@ import {
   parseCounterFromText,
   SerderKERI,
   Siger,
+  Signer,
   smell,
   Verfer,
   Vrsn_2_0,
@@ -1022,6 +1023,46 @@ Deno.test("Habery makeGroupHab creates a local group inception and persists memb
   });
 });
 
+Deno.test("local group inception precedes witness receipts without exempting a remote validator", async () => {
+  await run(function*() {
+    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const members = [source.makeHab("alice"), source.makeHab("bob")];
+      const witness = Signer.random({ transferable: false });
+      const group = source.makeGroupHab("team", members[0], members.map((hab) => hab.pre), undefined, undefined, {
+        isith: "2",
+        nsith: "2",
+        wits: [witness.verfer.qb64],
+        toad: 1,
+      });
+      assertExists(group.hab.kever, "a local group must accept before its receipt owner can publish the event");
+      assertEquals(source.db.groups.has(group.hab.pre), true);
+      assertEquals(source.db.wigs.get([group.hab.pre, group.serder.said!]), [], "acceptance is not full witnessing");
+      const envelope = {
+        serder: group.serder,
+        sigers: group.sigers,
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: false,
+      };
+      const pending = remote.kevery.processEvent(envelope);
+      assertEquals(pending.kind, "escrow");
+      if (pending.kind === "escrow") assertEquals(pending.reason, "partialWigs");
+      assertEquals(remote.db.getKever(group.hab.pre), null, "a disinterested validator still needs witness proof");
+      const proof = witness.sign(group.serder.raw, { index: 0 });
+      assertInstanceOf(proof, Siger);
+      assertEquals(remote.kevery.processEvent({ ...envelope, wigers: [proof] }).kind, "accept");
+      assertExists(remote.db.getKever(group.hab.pre));
+    } finally {
+      yield* source.close(true);
+      yield* remote.close(true);
+    }
+  });
+});
+
 Deno.test("Habery rotateGroupHab preserves accepted member metadata while rotation is pending", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -1295,6 +1336,8 @@ Deno.test("Habery skips pending delegated group records during reopen", async ()
 
       assertEquals(hby.db.getHab(groupPre)?.mid, member1.pre);
       assertEquals(hby.db.getKever(groupPre), null);
+      assertEquals(hby.db.groups.has(groupPre), true, "local membership does not assert accepted key state");
+      assertEquals(hby.db.prefixes.has(groupPre), false);
     } finally {
       yield* hby.close();
     }
@@ -1306,6 +1349,8 @@ Deno.test("Habery skips pending delegated group records during reopen", async ()
       assertEquals(hby.db.getHab(groupPre)?.name, "team");
       assertEquals(hby.habs.has(groupPre), false);
       assertEquals(hby.db.getKever(groupPre), null);
+      assertEquals(hby.db.groups.has(groupPre), true, "local membership does not assert accepted key state");
+      assertEquals(hby.db.prefixes.has(groupPre), false);
     } finally {
       yield* hby.close(true);
     }
