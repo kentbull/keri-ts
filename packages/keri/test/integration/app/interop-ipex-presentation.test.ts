@@ -1,119 +1,35 @@
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
 import {
-  type CesrFrame,
   Compactor,
   concatBytes,
   Counter,
-  Diger,
   Kinds,
   type MapperMap,
-  NonceDex,
-  Noncer,
-  NumberPrimitive,
   parseBytes,
-  Prefixer,
-  type SealEvent,
   SerderACDC,
-  type SerderKERI,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, type Operation, run } from "effection";
+import { call, run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
-import { type Registry } from "../../../src/acdc/registraring.ts";
 import {
   type AgentRuntime,
   createAgentRuntime,
   runAgentRuntimeUntil,
   runtimeOobiTerminalState,
 } from "../../../src/app/agent-runtime.ts";
-import { requestFrame } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex-building.ts";
 import { WitnessReceiptor } from "../../../src/app/witnessing.ts";
-import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { loadNests } from "../../../src/db/exchange-nests.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { createInteropContext, startKeriPyWitnessHarness } from "./interop-test-helpers.ts";
 import { assertKeriPyWitnessStores } from "./interop-witness-helpers.ts";
-
-/** Fresh commitment salts keep independent test runs and hidden fields distinct. */
-function nonce(): string {
-  return new Noncer({ code: NonceDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
-}
-
-/** Actual detached-header egress; transport success is followed by store assertions. */
-async function post(url: string, frame: CesrFrame): Promise<void> {
-  await run(function*() {
-    const response = yield* requestFrame(url, frame, { signal: AbortSignal.timeout(10_000) });
-    const body = yield* call(() => response.text());
-    assertEquals(response.status, 204, body);
-  });
-}
-
-/** Replay accepted KEL evidence, including authentic witness receipts, through HTTP. */
-async function introduce(url: string, hby: Habery, pre: string): Promise<void> {
-  const state = hby.db.getKever(pre);
-  assertExists(state);
-  for (let sn = 0; sn <= state.sn; sn++) {
-    const { message } = acceptedEventReplayMessage(hby, pre, sn);
-    for (const frame of parseBytes(message)) await post(url, frame);
-  }
-}
-
-/** Each independent member contributes only its own controller signature. */
-function signed(body: SerderKERI, signers: readonly Hab[], nests: CesrFrame[] = []): CesrFrame {
-  const hab = signers[0];
-  return {
-    body,
-    gvrsn: Vrsn_2_0,
-    nests,
-    attachments: messageAttachmentGroups({
-      tsgs: [
-        new TransIdxSigGroup(
-          new Prefixer({ qb64: hab.pre }),
-          NumberPrimitive.fromNum(BigInt(hab.kever!.lastEst.s)),
-          new Diger({ qb64: hab.kever!.lastEst.d }),
-          signers.flatMap((signer) => signer.sign(body.raw, true)),
-        ),
-      ],
-    }, Vrsn_2_0),
-  };
-}
-
-/** Publish a full registry anchor and collect receipts before declaring it accepted. */
-function* anchor(
-  event: SerderACDC,
-  signers: readonly Hab[],
-  runtimes: readonly AgentRuntime[],
-): Operation<SealEvent> {
-  const data = [{ i: event.regid ?? event.said, s: event.sad!.n, d: event.said }];
-  if (signers.length === 1) signers[0].interact({ data });
-  else {
-    const partials = runtimes.map((runtime) => runtime.hby.interactGroupHab(signers[0].name, undefined, { data }));
-    for (const [index, runtime] of runtimes.entries()) {
-      // Both members approve this locally authored interaction; HTTP intake remains unprotected.
-      yield* runtime.reactor.processBytes(partials[1 - index].message, { local: true });
-      runtime.hby.kevery.processEscrows();
-      assertEquals(signers[index].kever!.serder.said, partials[index].serder.said);
-    }
-  }
-  const hab = signers[0], runtime = runtimes[0];
-  yield* new WitnessReceiptor(runtime.hby, { reactor: runtime.reactor, services: runtime.services }).submit(hab.pre);
-  const serder = hab.kever!.serder;
-  assertEquals(hab.db.wigs.get([hab.pre, serder.said!]).map((signature) => signature.index).sort(), [0, 1, 2]);
-  return { i: new Prefixer({ qb64: hab.pre }), s: serder.sner!, d: new Diger({ qb64: serder.said! }) };
-}
-
-/** Check a local registry's actual accepted head after its witnessed KEL dependency arrives. */
-function accepted(registry: Registry, event: SerderACDC): void {
-  registry.processEscrows();
-  assertEquals(registry.head?.qb64, event.said);
-}
+import { accepted, anchor, introduce, nonce, post, signed } from "./ipex-witness-helpers.ts";
 
 for (const count of [1, 2]) {
   Deno.test(`IPEX presentation cutoff: ${count}-signer TS holder, independent stores, three KERIpy witnesses`, async () => {
