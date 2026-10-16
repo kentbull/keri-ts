@@ -1,10 +1,8 @@
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import type { CueSink } from "./cue-runtime.ts";
 import { attemptPreparedCesrTarget, type Poster, type PreparedCesrTarget, type RawCesrRoute } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import type { MailboxDirector } from "./mailbox-director.ts";
 import type { QueryReply } from "./query-replies.ts";
 import type { Reactor } from "./reactor.ts";
 import type { ReplyStreams } from "./reply-streams.ts";
@@ -43,10 +41,9 @@ type OutboundReply =
  *   back toward the bug where mailbox code was incorrectly acting like
  *   KERIpy's `Respondant`
  */
-export class Respondant implements CueSink {
+export class Respondant {
   private readonly hby: Habery;
   private readonly poster: Poster;
-  private readonly mailboxDirector: MailboxDirector;
   private readonly reactor: Reactor;
   private readonly replyStreams: ReplyStreams;
   private readonly outgoing = new Deck<OutboundReply>();
@@ -59,19 +56,16 @@ export class Respondant implements CueSink {
     hby: Habery,
     {
       poster,
-      mailboxDirector,
       reactor,
       replyStreams,
     }: {
       poster: Poster;
-      mailboxDirector: MailboxDirector;
       reactor: Reactor;
       replyStreams: ReplyStreams;
     },
   ) {
     this.hby = hby;
     this.poster = poster;
-    this.mailboxDirector = mailboxDirector;
     this.reactor = reactor;
     this.replyStreams = replyStreams;
   }
@@ -91,7 +85,7 @@ export class Respondant implements CueSink {
     if (!recipient || !topic || !sender) return false;
     const emission = interpreter.interpretCue(cue);
     if (emission?.kind !== "wire") throw new RangeError("Cue delivery requires wire");
-    const route = this.poster.findBytesRoute(sender, { recipient, topic });
+    const route = this.poster.findBytesRoute(sender, { recipient, recipientIsPrefix: true, topic });
     if (route?.targets.length) {
       this.outgoing.push({ kind: "cues", cues: [{ emission, hab: sender, route, targetIndex: 0 }], index: 0 });
     }
@@ -285,50 +279,7 @@ export class Respondant implements CueSink {
     const recipient = recipientForCue(emission.cue), topic = topicForCue(emission.cue);
     const sender = senderHabForCue(this.hby, emission.cue, hab);
     if (emission.kind !== "wire" || !recipient || !topic || !sender) return null;
-    return this.poster.findBytesRoute(sender, { recipient, topic });
-  }
-
-  /** Default cue-sink entry point when no explicit habitat hint is supplied. */
-  *send(emission: CueEmission): Operation<void> {
-    yield* this.sendWithHab(emission, null);
-  }
-
-  /**
-   * Route one interpreted cue emission to mailbox query state or outbound
-   * mailbox/direct delivery.
-   */
-  *sendWithHab(
-    emission: CueEmission,
-    hab?: Hab | null,
-  ): Operation<void> {
-    if (emission.kind === "transport" && emission.cue.kin === "stream") {
-      this.mailboxDirector.retainQueryCue(emission.cue);
-      return;
-    }
-
-    if (emission.kind !== "wire") {
-      return;
-    }
-
-    const recipient = recipientForCue(emission.cue);
-    const topic = topicForCue(emission.cue);
-    const senderHab = senderHabForCue(this.hby, emission.cue, hab);
-    if (!recipient || !topic || !senderHab) {
-      return;
-    }
-
-    for (const message of emission.messages) {
-      try {
-        yield* this.poster.sendBytes(senderHab, {
-          recipient,
-          topic,
-          message,
-        });
-      } catch {
-        // Keep host ingress best-effort, matching KERIpy's background
-        // respondant behavior instead of failing the request path.
-      }
-    }
+    return this.poster.findBytesRoute(sender, { recipient, recipientIsPrefix: true, topic });
   }
 }
 

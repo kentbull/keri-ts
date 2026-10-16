@@ -1,210 +1,13 @@
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
-import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
+import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
-
-Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and transport cues", async () => {
-  const name = `cue-runtime-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-cue-runtime-${crypto.randomUUID()}`;
-  const emissions: Array<{ kind: string; messages: number; kin: string }> = [];
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-      skipConfig: true,
-    });
-    try {
-      const hab = hby.makeHab("alice", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const state = hby.db.getState(hab.pre)!;
-      const said = state.d!;
-      const event = hby.db.getEvtSerder(hab.pre, said)!;
-      const runtime = yield* createAgentRuntime(hby);
-      runtime.cues.push({
-        kin: "receipt",
-        serder: event,
-      });
-      runtime.cues.push({
-        kin: "reply",
-        serder: replyEvent("/loc/scheme", { eid: hab.pre, scheme: "http", url: "http://127.0.0.1:7723" }),
-      });
-      runtime.cues.push({
-        kin: "query",
-        pre: hab.pre,
-        src: hab.pre,
-        route: "ksn",
-        q: {},
-      });
-      runtime.cues.push({
-        kin: "stream",
-        serder: event,
-        pre: hab.pre,
-        src: hab.pre,
-        topics: { logs: 0 },
-      });
-      runtime.cues.push({
-        kin: "keyStateSaved",
-        ksn: state,
-      });
-
-      const sink: CueSink = {
-        *send(emission) {
-          emissions.push({
-            kind: emission.kind,
-            messages: [...emission.messages].length,
-            kin: emission.cue.kin,
-          });
-        },
-      };
-
-      yield* processCuesOnce(runtime, { hab, sink });
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  assertEquals(emissions, [
-    { kind: "wire", messages: 1, kin: "receipt" },
-    { kind: "wire", messages: 1, kin: "reply" },
-    { kind: "wire", messages: 1, kin: "query" },
-    { kind: "transport", messages: 0, kin: "stream" },
-    { kind: "notify", messages: 0, kin: "keyStateSaved" },
-  ]);
-});
-
-Deno.test("Cue runtime - runtime turn preserves cues without a local habitat interpreter", async () => {
-  const name = `cue-runtime-fallback-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-cue-runtime-fallback-${crypto.randomUUID()}`;
-  const emissions: Array<{ kind: string; kin: string }> = [];
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-      skipConfig: true,
-      skipSignator: true,
-    });
-    try {
-      const hab = hby.makeHab("alice", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const state = hby.db.getState(hab.pre)!;
-      const said = state.d!;
-      const event = hby.db.getEvtSerder(hab.pre, said)!;
-      hby.makeHab("bob", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const runtime = yield* createAgentRuntime(hby);
-      runtime.cues.push({
-        kin: "stream",
-        serder: event,
-        pre: hab.pre,
-        src: hab.pre,
-        topics: { logs: 0 },
-      });
-      runtime.cues.push({
-        kin: "oobiFailed",
-        url: "http://127.0.0.1:9999/oobi/abc/controller",
-        reason: "HTTP 404",
-      });
-
-      const sink: CueSink = {
-        *send(emission) {
-          emissions.push({ kind: emission.kind, kin: emission.cue.kin });
-        },
-      };
-
-      // The real default runtime owns both normal sends and cancellation through QueryCoordinator.
-      const active = runtime;
-      yield* processRuntimeTurn(active, { sink });
-      active.cues.extend([
-        { kin: "stream", serder: event, pre: hab.pre, src: hab.pre, topics: { logs: 0 } },
-        { kin: "oobiFailed", url: "http://127.0.0.1:9999/oobi/abc/controller", reason: "HTTP 404" },
-      ]);
-      const started = Promise.withResolvers<void>(), cleanup = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
-      const draining = yield* spawn(() =>
-        processRuntimeTurn(active, {
-          sink: {
-            *send(emission) {
-              assertEquals(emission.kind, "transport");
-              yield* resource<void>(function*(provide) {
-                try {
-                  yield* provide();
-                } finally {
-                  cleanup.resolve();
-                  yield* call(() => release.promise);
-                  assertEquals(emission.kind, "transport", "emission remains available through joined cleanup");
-                }
-              });
-              started.resolve();
-              yield* suspend();
-            },
-          },
-        })
-      );
-      yield* call(() => started.promise);
-      // No outer host/query guard may serialize this turn behind the suspended sink.
-      yield* active.reactor.settle();
-      const halting = yield* spawn(() => draining.halt());
-      yield* call(() => cleanup.promise);
-      release.resolve();
-      yield* halting;
-      assertEquals(active.cues.length, 1);
-
-      yield* processRuntimeTurn(active, { sink });
-
-      active.cues.push({ kin: "oobiFailed", url: "http://peer.test/", reason: "gone" });
-      const fault = new Error("foreign sink failure");
-      yield* call(() =>
-        assertRejects(
-          () =>
-            run(() =>
-              processCuesOnce(active, {
-                sink: {
-                  *send() {
-                    throw fault;
-                  },
-                },
-              })
-            ),
-          Error,
-          "foreign sink failure",
-        )
-      );
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  assertEquals(emissions, [
-    { kind: "transport", kin: "stream" },
-    { kind: "notify", kin: "oobiFailed" },
-    { kind: "notify", kin: "oobiFailed" },
-  ]);
-});
 
 Deno.test("Respondant preserves source on interpretation/routing failure and opens replay only during delivery", async () => {
   await run(function*() {
@@ -376,15 +179,18 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
       runtime.cues.push(cue);
       runtime.poster.findBytesRoute = route;
       assertEquals(runtime.respondant.enqueueCue(sender, runtime.cues), true);
-      const query = sender.query(sender.pre, sender.pre, { route: "logs" as const, q: {} });
+      hby.db.locs.pin([sender.pre, "http"], { url: "https://query.test/" });
       for (let index = 0; index < 9; index++) {
-        runtime.querying.enqueueDelivery({
-          url: "https://query.test/",
-          body: query,
-          bodyMode: "header",
-          destination: sender.pre,
+        runtime.querying.enqueue({
+          pre: sender.pre,
+          signer: sender.pre,
+          src: sender.pre,
+          route: "logs",
+          q: {},
+          wits: [sender.pre],
         });
       }
+      yield* runtime.querying.processPending();
       assertStrictEquals(
         yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))),
         failed,
@@ -404,7 +210,7 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
       yield* runtime.querying.deliverOnce();
       assertEquals(runtime.querying.hasPendingDelivery, false);
       assertEquals(
-        packets.query.length,
+        packets.query.filter((body) => new SerderKERI({ raw: body }).ilk === "qry").length,
         9,
         "more than eight queued deliveries retain first-target failure and drain queries",
       );
@@ -423,6 +229,7 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
 
       const cleanupFailure = new Error("iterator cleanup failed");
       let returns = 0;
+      const query = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
       const messages = [query], iterator = messages[Symbol.iterator].bind(messages);
       messages[Symbol.iterator] = () => {
         const source = iterator();
@@ -441,12 +248,15 @@ Deno.test("runtime cue delivery retains exact failed wire while other recipients
         yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))),
         failed,
       );
-      runtime.querying.enqueueDelivery({
-        url: "https://query.test/",
-        body: query,
-        bodyMode: "header",
-        destination: sender.pre,
+      runtime.querying.enqueue({
+        pre: sender.pre,
+        signer: sender.pre,
+        src: sender.pre,
+        route: "logs",
+        q: {},
+        wits: [sender.pre],
       });
+      yield* runtime.querying.processPending();
       const attempts = packets.first.length;
       assertStrictEquals(yield* call(() => assertRejects(() => run(() => runtime.respondant.close()))), cleanupFailure);
       assertEquals([runtime.respondant.hasPending, returns], [false, 1]);

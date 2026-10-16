@@ -38,7 +38,6 @@ import {
   readCesrRequestBytes,
 } from "keri-ts/runtime";
 import { abortable } from "../../keri/src/app/abortable.ts";
-import { queryTransportSink } from "../../keri/src/app/agent-runtime.ts";
 import { acceptedEventReplayMessage } from "../../keri/src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
 import { messagize, serializeMessage } from "../../keri/src/core/protocol-serialization.ts";
@@ -281,16 +280,13 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
       const alice = hby.makeHab("alice");
       const bob = hby.makeHab("bob");
       const background: string[] = [];
-      const worker = yield* spawn(() =>
-        cueDo(runtime, {
-          hab: alice,
-          sink: {
-            *send(emission) {
-              if (emission.cue.kin === "replay") background.push(emission.cue.querySaid ?? "unreserved");
-            },
-          },
-        })
-      );
+      const enqueue = runtime.respondant.enqueueCue.bind(runtime.respondant);
+      runtime.respondant.enqueueCue = (hab, source, hint) => {
+        const cue = source.peekHead();
+        if (cue?.kin === "replay") background.push(cue.querySaid ?? "unreserved");
+        return enqueue(hab, source, hint);
+      };
+      const worker = yield* spawn(() => cueDo(runtime, { hab: alice }));
       const handler = createProtocolHandler(runtime, { serviceHab: alice, directQueryResponses: true });
       // Both requests share protocol state and the cue worker, but each reserves its query SAID before dispatch.
       const requests = [alice, bob].map((hab) =>
@@ -645,7 +641,6 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
         yield* processRuntimeTurn(runtime, {
           hab: sender,
           pollMailbox: false,
-          sink: queryTransportSink(runtime, sender),
         });
         assertEquals(
           outgoing.length,

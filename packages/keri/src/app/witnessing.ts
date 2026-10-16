@@ -301,11 +301,14 @@ function* consumeWitnessCues(
           prepared = !cues.empty;
           const cue = cues.peekHead();
           if (cue) {
-            emission = hab.interpretCue(cue);
+            if (cue.kin === "query") {
+              runtime.querying.enqueueCue(cue, hab);
+              runtime.querying.observeCue(cue);
+            } else emission = hab.interpretCue(cue);
             if (emission?.kind === "wire") runtime.respondant.enqueueEmission(hab, emission);
             else if (emission?.kind === "transport" && emission.cue.kin === "stream") {
               runtime.mailboxDirector.retainQueryCue(emission.cue);
-            } else if (emission?.cue.kin === "query") runtime.querying.enqueueCue(emission.cue);
+            }
             cues.pull();
           }
         } else {
@@ -335,7 +338,7 @@ function* consumeWitnessCues(
 export interface WitnessIngressOptions {
   /** Accept with witness-local semantics; default false preserves ordinary ingress policy. */
   local?: boolean;
-  /** Deliver through the existing responder; receipts use false to produce their own finite proof. */
+  /** Route queries/replies through their owners; receipts use false to produce their own finite proof. */
   deliver?: boolean;
 }
 /**

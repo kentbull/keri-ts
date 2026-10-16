@@ -30,7 +30,6 @@ import {
   type AgentRuntime,
   processMailboxTurn,
   processRuntimeUntil,
-  queryTransportSink,
 } from "./agent-runtime.ts";
 
 import { requireRegery } from "./credential-workflows.ts";
@@ -301,11 +300,11 @@ export function* completeDelegationIfNeeded(
     );
   }
   runtime.delegating.beginLatest(pre, kever.sn, { communicationHab });
-  const sink = queryTransportSink(runtime, communicationHab);
+
   yield* processRuntimeUntil(
     runtime,
     () => runtime.delegating.complete(pre, kever.sn),
-    { hab: communicationHab, sink, maxTurns: 512, pollMailbox: true },
+    { hab: communicationHab, maxTurns: 512, pollMailbox: true },
   );
   return runtime.delegating.workflowStatus(pre, kever.sner.numh).phase;
 }

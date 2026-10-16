@@ -1,12 +1,11 @@
 import { call, run } from "effection";
-import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
 import { attachmentPayload, collectPayload, concatBytes, parse } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
-  queryTransportSink,
 } from "../../../src/app/agent-runtime.ts";
 
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -101,47 +100,43 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
           );
           yield* processRuntimeTurn(runtime, { pollMailbox: false });
 
-          const query = sender.query(
-            remoteController.pre,
-            remoteController.pre,
-            { route: "logs" as const, q: { s: "0", fn: "0" } },
-          );
-          const sink = queryTransportSink(runtime, sender);
+          let query!: Uint8Array;
+          const signQuery = sender.query;
+          sender.query = function(...args) {
+            return query = signQuery.apply(this, args);
+          };
+          const bodyStart = bodies.length;
 
-          yield* sink.send({
-            kind: "wire",
-            cue: {
-              kin: "query",
-              pre: remoteController.pre,
-              src: remoteController.pre,
-              route: "logs" as const,
-              q: { s: "0", fn: "0" },
-            },
-            messages: [query],
-          });
+          runtime.querying.enqueueCue({
+            kin: "query",
+            pre: remoteController.pre,
+            src: remoteController.pre,
+            route: "logs" as const,
+            q: { s: "0", fn: "0" },
+          }, sender);
 
-          // The guarded cue sink queues delivery; this separate turn owns the response.
-          assertEquals(bodies.length, 0);
+          // The query owner queues signed wire; this separate turn owns the response.
+          assertEquals(bodies.length, bodyStart);
           yield* runtime.querying.deliverOnce();
           assertEquals(
-            bodies,
+            bodies.slice(bodyStart),
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteController.pre), query))),
           );
           const selected = hby.makeHab("selected");
-          const selectedQuery = selected.query(remoteController.pre, remoteController.pre, { route: "logs", q: {} });
+          let selectedQuery!: Uint8Array;
+          const selectedSign = selected.query;
+          selected.query = function(...args) {
+            return selectedQuery = selectedSign.apply(this, args);
+          };
           const beforeSelected = bodies.length;
-          yield* sink.send({
-            kind: "wire",
-            cue: {
-              kin: "query",
-              pre: remoteController.pre,
-              src: remoteController.pre,
-              signer: selected.pre,
-              route: "logs",
-              q: {},
-            },
-            messages: [selectedQuery],
-          });
+          runtime.querying.enqueueCue({
+            kin: "query",
+            pre: remoteController.pre,
+            src: remoteController.pre,
+            signer: selected.pre,
+            route: "logs",
+            q: {},
+          }, sender);
           yield* runtime.querying.deliverOnce();
           assertEquals(
             bodies.slice(beforeSelected),
@@ -155,33 +150,8 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             route: "logs" as const,
             q: { s: "0", fn: "0" },
           };
-          assertThrows(() => sink.admitQuery!(cue, () => Promise.resolve(null) as never), TypeError);
-
-          assertEquals(sink.admitQuery!(cue, () => null), "ineligible");
-
-          const readFailure = new Error("query iterator read failed");
-          const cleanupFailure = new Error("foreign query cleanup busy");
-          const cleanup = assertThrows(() =>
-            sink.admitQuery!(cue, () => ({
-              kind: "wire",
-              cue,
-              messages: {
-                [Symbol.iterator]() {
-                  return {
-                    next() {
-                      throw readFailure;
-                    },
-                    return() {
-                      throw cleanupFailure;
-                    },
-                  };
-                },
-              },
-            })), AggregateError);
-          assertEquals(cleanup.errors, [readFailure, cleanupFailure]);
-
           runtime.cues.push(cue);
-          runtime.querying.configure({ hab: sender, sink });
+          runtime.querying.configure({ hab: sender });
           const sign = sender.query, resolve = sender.endsFor;
           const signed: Uint8Array[] = [];
           let resolved = 0;
@@ -207,9 +177,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               throw foreign;
             };
             assertStrictEquals(
-              yield* call(() =>
-                assertRejects(() => run(() => processCuesOnce(runtime, { hab: sender, sink: runtime.querying })))
-              ),
+              yield* call(() => assertRejects(() => run(() => processCuesOnce(runtime, { hab: sender })))),
               foreign,
             );
             assertStrictEquals(runtime.cues.peekHead(), cue);
@@ -220,7 +188,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
               signed.push(wire);
               return wire;
             };
-            yield* processCuesOnce(runtime, { hab: sender, sink: runtime.querying });
+            yield* processCuesOnce(runtime, { hab: sender });
             yield* runtime.querying.processPending();
             assertEquals([runtime.cues.empty, runtime.querying.pending.empty, signed.length], [true, true, 2]);
             assertEquals(runtime.querying.hasPendingDelivery, true, "both prepared query records await delivery");
@@ -353,49 +321,38 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           ingestKeriBytes(runtime, remoteWitness.makeLocScheme(tcpUrl, remoteWitness.pre, "tcp"));
           yield* processRuntimeTurn(runtime, { pollMailbox: false });
 
-          const query = sender.query(
-            remoteController.pre,
-            remoteWitness.pre,
-            {
-              route: "logs" as const,
-              q: {
-                s: "0",
-                fn: "0",
-                a: { i: sender.pre, s: "0", d: sender.kever!.said! },
-              },
-            },
-          );
-          const sink = queryTransportSink(runtime, sender);
+          let query!: Uint8Array;
+          const signQuery = sender.query;
+          sender.query = function(...args) {
+            return query = signQuery.apply(this, args);
+          };
+          const bodyStart = bodies.length;
 
-          yield* sink.send({
-            kind: "wire",
-            cue: {
-              kin: "query",
-              pre: remoteController.pre,
-              src: remoteWitness.pre,
-              route: "logs" as const,
-              q: {
-                s: "0",
-                fn: "0",
-                a: { i: sender.pre, s: "0", d: sender.kever!.said! },
-              },
-              wits: [remoteWitness.pre],
+          runtime.querying.enqueueCue({
+            kin: "query",
+            pre: remoteController.pre,
+            src: remoteWitness.pre,
+            route: "logs" as const,
+            q: {
+              s: "0",
+              fn: "0",
+              a: { i: sender.pre, s: "0", d: sender.kever!.said! },
             },
-            messages: [query],
-          });
+            wits: [remoteWitness.pre],
+          }, sender);
 
-          // The guarded cue sink queues delivery; this separate turn owns the response.
-          assertEquals(bodies.length, 0);
+          // The query owner queues signed wire; this separate turn owns the response.
+          assertEquals(bodies.length, bodyStart);
           yield* runtime.querying.deliverOnce();
           assertEquals(
-            bodies,
+            bodies.slice(bodyStart),
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteWitness.pre), query))),
           );
           assertEquals(tcpConnections, 0, "HTTP remains preferred when both schemes are advertised");
           hby.db.locs.rem([remoteWitness.pre, "http"]);
           remoteController.interact();
           assertEquals(hby.db.getKever(remoteController.pre)?.sn, 0);
-          runtime.querying.configure({ hab: sender, sink });
+          runtime.querying.configure({ hab: sender });
           const enqueue = () =>
             runtime.querying.enqueue({
               pre: remoteController.pre,
@@ -556,29 +513,25 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
             concatBytes(...remoteHby.db.clonePreIter(remoteController.pre)),
           );
 
-          const query = sender.query(
-            remoteController.pre,
-            remoteController.pre,
-            { route: "logs" as const, q: { s: "0", fn: "0" } },
-          );
-          const sink = queryTransportSink(runtime, sender);
+          let query!: Uint8Array;
+          const signQuery = sender.query;
+          sender.query = function(...args) {
+            return query = signQuery.apply(this, args);
+          };
+          const bodyStart = bodies.length;
 
-          yield* sink.send({
-            kind: "wire",
-            cue: {
-              kin: "query",
-              pre: remoteController.pre,
-              src: remoteController.pre,
-              route: "logs" as const,
-              q: { s: "0", fn: "0" },
-            },
-            messages: [query],
-          });
+          runtime.querying.enqueueCue({
+            kin: "query",
+            pre: remoteController.pre,
+            src: remoteController.pre,
+            route: "logs" as const,
+            q: { s: "0", fn: "0" },
+          }, sender);
           yield* processRuntimeTurn(runtime, { pollMailbox: false });
 
           assertEquals(runtime.hby.db.getKever(remoteController.pre)?.sn, 1);
           assertEquals(
-            bodies,
+            bodies.slice(bodyStart),
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteController.pre), query))),
           );
         } finally {
@@ -623,14 +576,16 @@ Deno.test("query delivery settles a streamed reply after releasing the guarded c
     try {
       hby.db.locs.pin([peer.pre, "http"], { url: "http://query-peer.test/" });
       hby.db.ends.pin([peer.pre, EndpointRoles.controller, peer.pre], { allowed: true });
-      const sink = queryTransportSink(runtime, sender);
+
       const emission = {
         kind: "wire" as const,
         cue: { kin: "query" as const, pre: peer.pre, src: peer.pre, route: "logs" as const, q: {} },
         messages: [sender.query(peer.pre, peer.pre, { route: "logs" as const, q: {} })],
       };
       // The real guard owns cue handling. Reply parsing here would recursively wait for this same guard.
-      yield* runtime.reactor.settle(undefined, {}, () => sink.send(emission));
+      yield* runtime.reactor.settle(undefined, {}, function*() {
+        runtime.querying.enqueueCue(emission.cue, sender);
+      });
       assertEquals(requests, 0);
       assertEquals(runtime.querying.hasPendingDelivery, true);
       yield* runtime.querying.deliverOnce();

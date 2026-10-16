@@ -1,6 +1,6 @@
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
-import type { AgentCue, CueEmission } from "../core/cues.ts";
+import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
@@ -20,7 +20,7 @@ import { createReger, Reger } from "../db/reger.ts";
 import { Regery as VdrRegery } from "../vdr/credentialing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
-import { type CueAdmission, cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
+import { cueDo, processCuesOnce } from "./cue-runtime.ts";
 import { Anchorer, loadDelegationHandlers } from "./delegating.ts";
 import {
   ForwardHandler,
@@ -45,20 +45,7 @@ import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
 
-/** Compose responder source-to-delivery wiring at the runtime root; admission receives the actual cue flow. */
-export function respondantCueSink(runtime: AgentRuntime, hab?: Hab | null): CueSink {
-  return {
-    admitCue(source, interpreter) {
-      const cue = source.peekHead();
-      if (!cue || !interpreter) return "ineligible";
-      return runtime.respondant.enqueueCue(interpreter, source, hab) ? "transferred" : "ineligible";
-    },
-    send: (emission) => runtime.respondant.sendWithHab(emission, hab),
-  };
-}
-
 export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
-export type { CueSink };
 
 /**
  * Shared runtime composition root owned by one `Habery`.
@@ -254,7 +241,7 @@ export function* createAgentRuntime(
   });
   const poster = new Poster(hby, { mailboxer, services });
   const respondant = yield* resource<Respondant>(function*(provide) {
-    const respondant = new Respondant(hby, { poster, mailboxDirector, reactor, replyStreams });
+    const respondant = new Respondant(hby, { poster, reactor, replyStreams });
     try {
       yield* provide(respondant);
     } finally {
@@ -550,11 +537,10 @@ export function* processRuntimeTurn(
   runtime: AgentRuntime,
   options: {
     hab?: Hab;
-    sink?: CueSink;
     pollMailbox?: boolean;
   } = {},
 ): Operation<void> {
-  runtime.querying.configure({ hab: options.hab, sink: options.sink });
+  runtime.querying.configure({ hab: options.hab });
   yield* runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
   yield* runtime.authenticator.processOnce();
@@ -563,11 +549,11 @@ export function* processRuntimeTurn(
   if (options.pollMailbox ?? true) {
     yield* processMailboxTurn(runtime, { hab: options.hab });
   }
-  yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
+  yield* processCuesOnce(runtime, options);
   yield* runtime.querying.processPending();
   yield* runtime.reactor.processEscrowsOnce();
   yield* runtime.delegating.processAllOnce(runtime);
-  yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
+  yield* processCuesOnce(runtime, options);
   yield* runtime.querying.processPending();
   yield* runtime.querying.deliverOnce();
   yield* runtime.respondant.process();
@@ -654,15 +640,20 @@ export function runtimeOobiTerminalState(
 }
 
 /**
- * Return true once one requested OOBI has reached a terminal state and all
- * related runtime work has drained.
+ * Return true once OOBI acceptance and its ingress/query dependencies settle.
+ * Background receipt delivery is not remote acknowledgement of OOBI acceptance;
+ * static OOBI servers may refuse unsolicited posts. Runtime close still joins I/O.
  */
 export function runtimeOobiConverged(
   runtime: AgentRuntime,
   url: string,
 ): boolean {
+  const pending = runtimePendingState(runtime);
   return runtimeOobiTerminalState(runtime, url).status !== "pending"
-    && !runtimeHasPendingWork(runtime);
+    && !pending.ingress && !pending.cues && !pending.replyEscrow
+    && !pending.oobiQueued && !pending.oobiInFlight && !pending.multiPending
+    && !pending.authQueued && !pending.authInFlight && !pending.delegationPending
+    && !pending.queriesPending;
 }
 
 /**
@@ -674,7 +665,6 @@ export function* processRuntimeUntil(
   done: () => boolean,
   options: {
     hab?: Hab;
-    sink?: CueSink;
     maxTurns?: number;
     pollMailbox?: boolean;
   } = {},
@@ -724,10 +714,9 @@ export function* runAgentRuntime(
   runtime: AgentRuntime,
   options: {
     hab?: Hab;
-    sink?: CueSink;
   } = {},
 ): Operation<never> {
-  runtime.querying.configure({ hab: options.hab, sink: options.sink });
+  runtime.querying.configure({ hab: options.hab });
   runtime.mailboxPoller.configure({ hab: options.hab });
   const tasks = [
     yield* spawn(function*() {
@@ -741,7 +730,7 @@ export function* runAgentRuntime(
       yield* runtime.reactor.msgDo();
     }),
     yield* spawn(function*() {
-      yield* cueDo(runtime, { ...options, sink: runtime.querying });
+      yield* cueDo(runtime, options);
     }),
     yield* spawn(function*() {
       yield* runtime.reactor.escrowDo();
@@ -781,42 +770,4 @@ export function* runAgentRuntime(
       yield* task.halt();
     }
   }
-}
-
-/**
- * Create the cue sink that sends outbound `qry` messages through HTTP or TCP.
- *
- * Ownership split:
- * - QueryCoordinator owns preparation, signed packets and actual query I/O
- * - this root-level adapter retains the existing host-selection policy until
- *   the optional cue hooks are removed
- */
-export function queryTransportSink(
-  runtime: AgentRuntime,
-  hab: Hab,
-): CueSink {
-  const sink: CueSink = {
-    admitCue(source, interpreter) {
-      if (source !== runtime.cues) throw new RangeError("Query sink requires its composed source queue");
-      const cue = source.peekHead();
-      if (cue?.kin !== "query" || !interpreter) return "ineligible";
-      const admission = sink.admitQuery!(cue, () => {
-        const emission = interpreter.interpretCue(cue);
-        return emission?.kind === "wire" ? emission : null;
-      });
-      if (admission === "transferred") {
-        if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
-        source.pull();
-      }
-      return admission;
-    },
-    admitQuery(cue, prepare): CueAdmission {
-      return runtime.querying.queueEmission(hab, prepare()) ? "transferred" : "ineligible";
-    },
-    *send(emission: CueEmission): Operation<void> {
-      if (emission.kind !== "wire" || emission.cue.kin !== "query") return;
-      runtime.querying.queueEmission(hab, emission);
-    },
-  };
-  return sink;
 }

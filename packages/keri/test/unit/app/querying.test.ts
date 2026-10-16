@@ -1,6 +1,6 @@
-import { call, resource, run, spawn, suspend } from "effection";
+import { call, run } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { parseBytes, ParserError, SerderKERI, type Siger } from "../../../../cesr/mod.ts";
+import { parseBytes, ParserError, SerderKERI } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
   processRuntimeTurn,
@@ -8,15 +8,15 @@ import {
   runtimeOobiConverged,
   runtimePendingState,
 } from "../../../src/app/agent-runtime.ts";
+import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { queryCommand } from "../../../src/app/cli/query.ts";
-import { type CueSink } from "../../../src/app/cue-runtime.ts";
-import { createHabery, type Hab } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { type AnchorQuerier, QueryCoordinator } from "../../../src/app/querying.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
+import { defaultRuntimeClock, type RuntimeServices } from "../../../src/app/runtime-services.ts";
 import type { QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
-import { type KeverEventEnvelope } from "../../../src/core/eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 
 // @ts-expect-error There is one query body; the legacy alias cannot coexist with q.
@@ -52,205 +52,97 @@ void ({ i: "prefix", s: 0, d: "digest" } satisfies ConstructorParameters<typeof 
 // @ts-expect-error Event seals have no diagnostic extension slot.
 void ({ i: "prefix", s: "0", d: "digest", extra: true } satisfies ConstructorParameters<typeof AnchorQuerier>[1]);
 
-function eventEnvelope(
-  serder: SerderKERI,
-  sigers: Siger[],
-): KeverEventEnvelope {
+/** Capture actual HTTP query wire after production framing; introductions are not queries. */
+function queryHttp(messages: Uint8Array[], urls: string[] = []): RuntimeServices {
   return {
-    serder,
-    sigers,
-    wigers: [],
-    frcs: [],
-    sscs: [],
-    ssts: [],
-    local: false,
-  };
-}
-
-function makeInteraction(
-  pre: string,
-  sn: number,
-  prior: string,
-): SerderKERI {
-  return new SerderKERI({
-    sad: {
-      t: "ixn",
-      i: pre,
-      s: sn.toString(16),
-      p: prior,
-      a: [],
-    },
-    makify: true,
-  });
-}
-
-function parseSerder(msg: Uint8Array): SerderKERI {
-  return new SerderKERI({ raw: msg });
-}
-
-function captureSink(
-  emissions: CueRecord[],
-): CueSink {
-  return {
-    *send(emission) {
-      const message = [...emission.messages][0];
-      emissions.push({
-        kind: emission.kind,
-        kin: emission.cue.kin,
-        serder: message ? parseSerder(message) : null,
-      });
+    clock: defaultRuntimeClock,
+    http: {
+      async fetch(url, init) {
+        const bytes = await readCesrRequestBytes(new Request(url, init));
+        const serder = new SerderKERI({ raw: bytes });
+        if (serder.ilk === "qry") {
+          messages.push(bytes);
+          urls.push(url);
+        }
+        return new Response(null, { status: 204 });
+      },
     },
   };
 }
-/** Assert the actual V1 query endorsement, whose signer is in attachments rather than the body. */
-async function assertQuerySigner(bytes: Uint8Array, selected: Hab): Promise<void> {
-  const frames = await parseBytes(bytes);
-  {
-    assertEquals(frames.length, 1);
-    const query = queryEnvelopeFromDispatch(envelopeFromFrame(frames[0]));
-    assertEquals(query.source?.qb64, selected.pre);
-    assertExists(query.sigers);
-    assertEquals(query.sigers.length, 1);
-    const signature = query.sigers[0];
-    assert(selected.kever!.verfers[signature.index].verify(signature.raw, query.serder.raw));
-  }
-}
 
-function seedControllerEndpoint(
-  hby: {
-    db: {
-      locs: { pin(keys: [string, string], value: { url: string }): void };
-      ends: {
-        pin(keys: [string, string, string], value: { allowed: boolean }): void;
-      };
-    };
-  },
-  pre: string,
-  url = "http://127.0.0.1:7723",
-): void {
+function seedControllerEndpoint(hby: Habery, pre: string, url = "http://controller.test/"): void {
   hby.db.locs.pin([pre, "http"], { url });
   hby.db.ends.pin([pre, Roles.controller, pre], { allowed: true });
 }
 
-function seedMailboxEndpoint(
-  hby: {
-    db: {
-      locs: { pin(keys: [string, string], value: { url: string }): void };
-      ends: {
-        pin(keys: [string, string, string], value: { allowed: boolean }): void;
-      };
-    };
-  },
-  recipientPre: string,
-  mailboxPre: string,
-  url = "http://127.0.0.1:7723",
-): void {
-  hby.db.locs.pin([mailboxPre, "http"], { url });
-  hby.db.ends.pin([recipientPre, Roles.mailbox, mailboxPre], { allowed: true });
+/** Verify the endorsement from actual transmitted attachments, independently of body routing. */
+async function assertQuerySigner(bytes: Uint8Array, hab: Hab): Promise<void> {
+  const frames = await parseBytes(bytes);
+  assertEquals(frames.length, 1);
+  const envelope = queryEnvelopeFromDispatch(envelopeFromFrame(frames[0]));
+  assertEquals(envelope.source?.qb64, hab.pre);
+  assertExists(envelope.sigers);
+  assertEquals(envelope.sigers.length, 1);
+  const signature = envelope.sigers[0];
+  assert(hab.kever!.verfers[signature.index].verify(signature.raw, envelope.serder.raw));
 }
 
-interface CueRecord {
-  kind: string;
-  kin: string;
-  serder: SerderKERI | null;
-}
-
-Deno.test("Query coordinator turns incomplete query cues into outbound `logs` queries when a local hab and controller endpoint exist", async () => {
+Deno.test("default runtime sends queued and cue queries through its concrete owner without host sink wiring", async () => {
   await run(function*() {
-    const hby = yield* createHabery({
-      name: `querying-incomplete-${crypto.randomUUID()}`,
-      temp: true,
-    });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), subject = hby.makeHab("subject");
+    const messages: Uint8Array[] = [];
+    seedControllerEndpoint(hby, subject.pre);
+    const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages) });
+    const sign = sender.query;
+    let signatures = 0;
+    sender.query = function(...args) {
+      signatures++;
+      return sign.apply(this, args);
+    };
     try {
-      const requester = hby.makeHab("requester", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const subject = hby.makeHab("subject", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      seedControllerEndpoint(hby, subject.pre);
-
-      const runtime = yield* createAgentRuntime(hby);
-      runtime.cues.push({
-        kin: "query",
-        pre: subject.pre,
-        route: "logs",
-        q: {},
-      });
-
-      const emissions: CueRecord[] = [];
-      const query = requester.query;
-      let signatures = 0;
-      requester.query = (...args) => {
-        signatures++;
-        return query.apply(requester, args);
-      };
-      yield* processRuntimeTurn(runtime, {
-        hab: requester,
-        sink: captureSink(emissions),
-      });
-
-      assertEquals(signatures, 1, "prepared send must not sign or observe the query twice");
-
-      assertEquals(emissions.length, 1);
-      assertEquals(emissions[0]?.kind, "wire");
-      assertEquals(emissions[0]?.kin, "query");
-      assertExists(emissions[0]?.serder);
-      assertEquals(emissions[0]?.serder?.route, "logs");
+      runtime.querying.enqueue({ pre: subject.pre, signer: sender.pre, route: "logs", q: {} });
+      runtime.cues.push({ kin: "query", pre: subject.pre, route: "ksn", q: {} });
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
       assertEquals(
-        (emissions[0]?.serder?.ked?.q as Record<string, unknown>).i,
-        subject.pre,
+        [messages.length, signatures, runtime.querying.pending.length, runtime.querying.hasPendingDelivery],
+        [2, 2, 0, false],
       );
-      assertEquals(
-        (emissions[0]?.serder?.ked?.q as Record<string, unknown>).src,
-        subject.pre,
-      );
-      assertEquals(
-        (emissions[0]?.serder?.ked?.q as Record<string, unknown>).pre,
-        undefined,
-      );
+      assertEquals(messages.map((wire) => new SerderKERI({ raw: wire }).route), ["ksn", "logs"]);
+      for (const message of messages) yield* call(() => assertQuerySigner(message, sender));
     } finally {
+      sender.query = sign;
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });
 });
 
-Deno.test("queued queries resolve the selected signer at consumption and never substitute an ambient identity", async () => {
+Deno.test("queued and cue queries never substitute an ambient identity for an explicitly selected signer", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const ambient = hby.makeHab("ambient"), selected = hby.makeHab("selected"), subject = hby.makeHab("subject");
     const messages: Uint8Array[] = [];
+    seedControllerEndpoint(hby, subject.pre);
     const coordinator = new QueryCoordinator(hby, {
       reactor: new Reactor(hby),
+      services: queryHttp(messages),
       hab: ambient,
-      sink: {
-        *send(emission) {
-          messages.push(...emission.messages);
-        },
-      },
     });
     try {
-      coordinator.enqueue({ pre: subject.pre, signer: selected.pre, src: subject.pre, route: "logs", q: {} });
+      const request = { pre: subject.pre, signer: selected.pre, src: subject.pre, route: "logs" as const, q: {} };
+      coordinator.enqueue(request);
       const pending = coordinator.pending.peekHead();
       hby.habs.delete(selected.pre);
       yield* coordinator.processPending();
-      assertEquals(messages, [], "an unavailable selected signer cannot fall back to the ambient Hab");
-      assertStrictEquals(coordinator.pending.peekHead(), pending, "unresolved work keeps its original identity");
+      assertStrictEquals(coordinator.pending.peekHead(), pending);
+      assertEquals(coordinator.hasPendingDelivery, false);
       hby.habs.set(selected.pre, selected);
       yield* coordinator.processPending();
-      assertEquals(messages.length, 1);
-      yield* call(() => assertQuerySigner(messages[0], selected));
-      assertEquals(coordinator.pending.length, 0);
+      coordinator.enqueueCue({ kin: "query", ...request }, ambient);
+      yield* coordinator.deliverOnce();
+      assertEquals([messages.length, coordinator.pending.length], [2, 0]);
+      for (const message of messages) yield* call(() => assertQuerySigner(message, selected));
     } finally {
       yield* coordinator.close();
       yield* hby.close(true);
@@ -258,721 +150,202 @@ Deno.test("queued queries resolve the selected signer at consumption and never s
   });
 });
 
-Deno.test("routed query cues preserve an explicit signer across interpretation and pending admission", async () => {
+Deno.test("unrouted notices create no requests; ambiguous identities and missing endpoints remain deferred", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const ambient = hby.makeHab("ambient"), selected = hby.makeHab("selected"), subject = hby.makeHab("subject");
-    const runtime = yield* createAgentRuntime(hby);
+    const sender = hby.makeHab("sender"), subject = hby.makeHab("subject");
+    const messages: Uint8Array[] = [];
+    const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages) });
     try {
-      const cue = {
-        kin: "query",
-        pre: subject.pre,
-        signer: selected.pre,
-        src: subject.pre,
-        route: "logs",
-        q: {},
-      } satisfies QueryCue;
-      const messages: Uint8Array[] = [];
-      const sink: CueSink = {
-        *send(emission) {
-          messages.push(...emission.messages);
-        },
-      };
-      runtime.cues.push(cue);
-      yield* processRuntimeTurn(runtime, { hab: ambient, sink });
-      assertEquals(messages.length, 1);
-      yield* call(() => assertQuerySigner(messages[0], selected));
-      runtime.querying.configure({ hab: ambient, sink });
-      assertEquals(runtime.querying.enqueueCue(cue), true);
-      yield* runtime.querying.processPending();
-      assertEquals(messages.length, 2);
-      yield* call(() => assertQuerySigner(messages[1], selected));
-    } finally {
-      yield* runtime.close();
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("Query coordinator keeps schema and credential notices notify-only even when their hint names a known KEL", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const requester = hby.makeHab("requester"), subject = hby.makeHab("subject");
-    seedControllerEndpoint(hby, subject.pre);
-    const runtime = yield* createAgentRuntime(hby);
-    try {
-      runtime.cues.push({ kin: "query", q: { r: "tels", pre: subject.pre } });
       runtime.cues.push({ kin: "query", q: { r: "schema", said: subject.pre } });
-      const emissions: CueRecord[] = [];
-      yield* processRuntimeTurn(runtime, { hab: requester, sink: captureSink(emissions) });
-      assertEquals(emissions, [
-        { kind: "notify", kin: "query", serder: null },
-        { kind: "notify", kin: "query", serder: null },
-      ]);
-      assertEquals(runtime.querying.pending.length, 0);
-    } finally {
-      yield* runtime.close();
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("Query coordinator keeps incomplete queries notify-only when no honest local habitat can be resolved", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({
-      name: `querying-ambiguous-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    try {
-      hby.makeHab("requester-a", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      hby.makeHab("requester-b", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const subject = hby.makeHab("subject", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
+      runtime.cues.push({ kin: "query", q: { r: "tels", pre: subject.pre } });
+      yield* processRuntimeTurn(runtime, { pollMailbox: false });
+      assertEquals([runtime.cues.length, runtime.querying.pending.length, messages.length], [0, 0, 0]);
+      runtime.cues.push({ kin: "query", pre: subject.pre, route: "logs", q: {} });
+      yield* processRuntimeTurn(runtime, { pollMailbox: false });
+      assertEquals([runtime.querying.pending.length, messages.length], [1, 0]);
+      const pending = runtime.querying.pending.peekHead();
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      assertStrictEquals(runtime.querying.pending.peekHead(), pending);
+      assertEquals(messages.length, 0);
       seedControllerEndpoint(hby, subject.pre);
-
-      const runtime = yield* createAgentRuntime(hby);
-      runtime.cues.push({
-        kin: "query",
-        pre: subject.pre,
-        route: "logs",
-        q: {},
-      });
-
-      const emissions: CueRecord[] = [];
-      yield* processRuntimeTurn(runtime, {
-        sink: captureSink(emissions),
-      });
-
-      assertEquals(emissions.length, 1);
-      assertEquals(emissions[0], {
-        kind: "notify",
-        kin: "query",
-        serder: null,
-      });
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      assertEquals([runtime.querying.pending.length, messages.length], [0, 1]);
+      yield* call(() => assertQuerySigner(messages[0], sender));
     } finally {
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("Query coordinator keeps incomplete queries notify-only when the target has no controller, agent, or witness endpoint", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({
-      name: `querying-no-endpoint-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    try {
-      const requester = hby.makeHab("requester", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const subject = hby.makeHab("subject", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-
-      const runtime = yield* createAgentRuntime(hby);
-      runtime.cues.push({
-        kin: "query",
-        pre: subject.pre,
-        route: "logs",
-        q: {},
-      });
-
-      const emissions: CueRecord[] = [];
-      yield* processRuntimeTurn(runtime, {
-        hab: requester,
-        sink: captureSink(emissions),
-      });
-
-      assertEquals(emissions.length, 1);
-      assertEquals(emissions[0], {
-        kind: "notify",
-        kin: "query",
-        serder: null,
-      });
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("Query coordinator emits mailbox-delivered queries when only a mailbox endpoint is known for the target", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({
-      name: `querying-mailbox-only-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    try {
-      const requester = hby.makeHab("requester", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const subject = hby.makeHab("subject", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const mailbox = hby.makeHab("mailbox", undefined, {
-        transferable: false,
-        icount: 1,
-        isith: "1",
-        toad: 0,
-      });
-      seedMailboxEndpoint(hby, subject.pre, mailbox.pre);
-
-      const runtime = yield* createAgentRuntime(hby);
-      runtime.cues.push({
-        kin: "query",
-        pre: subject.pre,
-        route: "logs",
-        q: {},
-      });
-
-      const emissions: CueRecord[] = [];
-      yield* processRuntimeTurn(runtime, {
-        hab: requester,
-        sink: captureSink(emissions),
-      });
-
-      assertEquals(emissions.length, 1);
-      assertEquals(emissions[0]?.kind, "wire");
-      assertEquals(emissions[0]?.kin, "query");
-      assertEquals(emissions[0]?.serder?.route, "logs");
-      assertEquals(
-        (emissions[0]?.serder?.ked?.q as Record<string, unknown>).src,
-        subject.pre,
-      );
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("KeyStateNoticer finishes immediately once a saved key state matches local accepted state", async () => {
-  await run(function*() {
-    const requesterHby = yield* createHabery({
-      name: `querying-ksn-current-requester-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    const subjectHby = yield* createHabery({
-      name: `querying-ksn-current-subject-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    try {
-      const requester = requesterHby.makeHab("requester", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const subject = subjectHby.makeHab("subject", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-
-      const runtime = yield* createAgentRuntime(requesterHby);
-      const subjectIcp = subjectHby.db.getEvtSerder(
-        subject.pre,
-        subject.kever?.said ?? "",
-      );
-      assertExists(subjectIcp);
-      runtime.reactor.kevery.processEvent(
-        eventEnvelope(subjectIcp, subject.sign(subjectIcp.raw, true)),
-      );
-      seedControllerEndpoint(requesterHby, subject.pre);
-      runtime.cues.clear();
-      const resolvedUrl = `http://127.0.0.1:7723/oobi/${subject.pre}/controller`;
-      requesterHby.db.roobi.pin(resolvedUrl, {
-        date: new Date().toISOString(),
-        state: "resolved",
-        cid: subject.pre,
-        role: Roles.controller,
-      });
-
-      runtime.querying.watchKeyState(subject.pre, { signer: requester.pre });
-
-      const emissions: CueRecord[] = [];
-      yield* processRuntimeTurn(runtime, {
-        hab: requester,
-        sink: captureSink(emissions),
-      });
-      const initialQuery = emissions.find((entry) => entry.kind === "wire");
-      assertEquals(initialQuery?.serder?.route, "ksn");
-
-      runtime.querying.configure({
-        hab: requester,
-        sink: captureSink(emissions),
-      });
-      runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
-      yield* processRuntimeTurn(runtime, { hab: requester, sink: captureSink(emissions) });
-
-      assertEquals(runtime.querying.hasPendingWork(), false);
-      assertEquals(
-        emissions.filter((entry) => entry.kind === "wire").length,
-        1,
-      );
-    } finally {
-      yield* subjectHby.close(true);
-      yield* requesterHby.close(true);
-    }
-  });
-});
-
-Deno.test("KeyStateNoticer upgrades to a `logs` query when a saved key state is ahead and clears once local KEL catches up", async () => {
-  await run(function*() {
-    const requesterHby = yield* createHabery({
-      name: `querying-ksn-ahead-requester-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    const subjectHby = yield* createHabery({
-      name: `querying-ksn-ahead-subject-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    try {
-      const requester = requesterHby.makeHab("requester", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const subject = subjectHby.makeHab("subject", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-
-      const runtime = yield* createAgentRuntime(requesterHby);
-      const subjectIcp = subjectHby.db.getEvtSerder(
-        subject.pre,
-        subject.kever?.said ?? "",
-      );
-      assertExists(subjectIcp);
-      runtime.reactor.kevery.processEvent(
-        eventEnvelope(subjectIcp, subject.sign(subjectIcp.raw, true)),
-      );
-      seedControllerEndpoint(requesterHby, subject.pre);
-      runtime.cues.clear();
-      const resolvedUrl = `http://127.0.0.1:7723/oobi/${subject.pre}/controller`;
-      requesterHby.db.roobi.pin(resolvedUrl, {
-        date: new Date().toISOString(),
-        state: "resolved",
-        cid: subject.pre,
-        role: Roles.controller,
-      });
-
-      runtime.querying.watchKeyState(subject.pre, { signer: requester.pre });
-
-      const emissions: CueRecord[] = [];
-      const sink = captureSink(emissions);
-      yield* processRuntimeTurn(runtime, { hab: requester, sink });
-      const initialQuery = emissions.find((entry) => entry.kind === "wire");
-      assertEquals(initialQuery?.serder?.route, "ksn");
-
-      const ixn = makeInteraction(subject.pre, 1, subject.kever!.said);
-      subjectHby.kevery.processEvent({
-        ...eventEnvelope(ixn, subject.sign(ixn.raw, true)),
-        local: true,
-      });
-
-      runtime.querying.configure({ hab: requester, sink });
-      yield* runtime.querying.send({
-        cue: {
-          kin: "keyStateSaved",
-          ksn: subjectHby.db.getKever(subject.pre)!.state(),
-        },
-        messages: [],
-        kind: "notify",
-      });
-
-      assertEquals(runtime.querying.hasPendingWork(), true);
-      assertEquals(runtimePendingState(runtime).queriesPending, true);
-      assertEquals(runtimeHasPendingWork(runtime), true);
-      assertEquals(runtimeOobiConverged(runtime, resolvedUrl), false);
-      assertEquals(emissions[1]?.kind, "notify");
-      assertEquals(emissions[2]?.kind, "wire");
-      assertEquals(emissions[2]?.serder?.route, "logs");
-
-      runtime.reactor.kevery.processEvent(
-        eventEnvelope(ixn, subject.sign(ixn.raw, true)),
-      );
-      yield* processRuntimeTurn(runtime, { hab: requester, sink });
-
-      assertEquals(runtime.querying.hasPendingWork(), false);
-      assertEquals(runtimePendingState(runtime).queriesPending, false);
-      assertEquals(runtimeHasPendingWork(runtime), false);
-      assertEquals(runtimeOobiConverged(runtime, resolvedUrl), true);
-    } finally {
-      yield* subjectHby.close(true);
-      yield* requesterHby.close(true);
-    }
-  });
-});
-
-Deno.test("SeqNoQuerier and AnchorQuerier complete only after the accepted sequence and seal arrive", async () => {
-  await run(function*() {
-    const requesterHby = yield* createHabery({
-      name: `querying-continuations-requester-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    const subjectHby = yield* createHabery({
-      name: `querying-continuations-subject-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    try {
-      const requester = requesterHby.makeHab("requester", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const subject = subjectHby.makeHab("subject", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-
-      const runtime = yield* createAgentRuntime(requesterHby);
-      const subjectIcp = subjectHby.db.getEvtSerder(
-        subject.pre,
-        subject.kever?.said ?? "",
-      );
-      assertExists(subjectIcp);
-      runtime.reactor.kevery.processEvent(
-        eventEnvelope(subjectIcp, subject.sign(subjectIcp.raw, true)),
-      );
-      seedControllerEndpoint(requesterHby, subject.pre);
-      runtime.cues.clear();
-
-      const seq = runtime.querying.watchSeqNo(subject.pre, 1, {
-        signer: requester.pre,
-      });
-      assertExists(subjectIcp.said);
-      const requestedAnchor = { d: subjectIcp.said, s: "0", i: subject.pre };
-      const expectedAnchor = { i: subject.pre, s: "0", d: subjectIcp.said };
-      const anchor = runtime.querying.watchAnchor(subject.pre, requestedAnchor, { signer: requester.pre });
-      requestedAnchor.d = requester.pre; // Caller mutation must not change queued wire or completion.
-
-      const emissions: CueRecord[] = [];
-      yield* processRuntimeTurn(runtime, {
-        hab: requester,
-        sink: captureSink(emissions),
-      });
-      yield* processRuntimeTurn(runtime, {
-        hab: requester,
-        sink: captureSink(emissions),
-      });
-
-      assertEquals(
-        emissions.filter((entry) => entry.kind === "wire").length >= 2,
-        true,
-      );
-      assertEquals(seq.done, false);
-      assertEquals(anchor.done, false);
-      assertEquals(runtime.querying.hasPendingWork(), true);
-      assertEquals(emissions[1]?.serder?.ked?.q, {
-        fn: "0",
-        s: "0",
-        a: expectedAnchor,
-        i: subject.pre,
-        src: subject.pre,
-      });
-      const wireQuery = emissions[1]?.serder?.ked?.q;
-      assert(
-        wireQuery && typeof wireQuery === "object" && "a" in wireQuery
-          && wireQuery.a && typeof wireQuery.a === "object",
-      );
-      // KERIpy fetchLastSealingEventByEventSeal requires tuple(seal) == (i, s, d).
-      assertEquals(Object.keys(wireQuery.a), ["i", "s", "d"]);
-      assertEquals(anchor.anchor, expectedAnchor);
-      yield* runtime.reactor.processBytes(subject.interact({ data: [expectedAnchor] }));
-      yield* processRuntimeTurn(runtime, { hab: requester, sink: captureSink(emissions) });
-      assertEquals([seq.done, anchor.done, runtime.querying.hasPendingWork()], [true, true, false]);
-    } finally {
-      yield* subjectHby.close(true);
-      yield* requesterHby.close(true);
-    }
-  });
-});
-
-Deno.test("QueryCoordinator prepares admitted requests without a parent runtime", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const hab = hby.makeHab("requester");
-    let prepared = 0;
-    const coordinator = new QueryCoordinator(hby, {
-      reactor: new Reactor(hby),
-      hab,
-      sink: {
-        admitQuery(_cue, prepare) {
-          const emission = prepare();
-          assertExists(emission);
-          const message = [...emission.messages][0];
-          assertExists(message);
-          const query = parseSerder(message);
-          assertEquals([query.verify(), query.route, query.ked?.q], [
-            true,
-            "logs",
-            { s: "0", i: hab.pre, src: hab.pre },
-          ]);
-          prepared++;
-          return "transferred";
-        },
-        *send() {
-          throw new Error("Admitted query must not fall through to sending");
-        },
-      },
-    });
-    try {
-      coordinator.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: { s: "0" } });
-      yield* coordinator.processPending();
-      assertEquals([prepared, coordinator.pending.length], [1, 0]);
-    } finally {
-      yield* coordinator.close();
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("query queues keep failed deliveries and defer newly appended work to the next pass", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const hab = hby.makeHab("alice");
-    seedControllerEndpoint(hby, hab.pre);
-    const coordinator = new QueryCoordinator(hby, { reactor: new Reactor(hby), hab });
-    try {
-      const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
-      coordinator.enqueue(request);
-      const pending = coordinator.pending.peekHead();
-      assertEquals(coordinator.enqueueCue({ kin: "query", q: { r: "schema", said: "unresolved" } }), false);
-      const failure = new Error("foreign transport busy");
-      coordinator.configure({
-        hab,
-        sink: {
-          *send() {
-            throw failure;
-          },
-        },
-      });
-      assertStrictEquals(yield* call(() => assertRejects(() => run(() => coordinator.processPending()))), failure);
-      assertStrictEquals(coordinator.pending.peekHead(), pending);
-      let sent = 0;
-      coordinator.configure({
-        hab,
-        sink: {
-          *send() {
-            sent++;
-            coordinator.enqueue(request);
-          },
-        },
-      });
-      yield* coordinator.processPending();
-      assertEquals([sent, coordinator.pending.length], [1, 1], "new work waits for the next pass");
-    } finally {
-      yield* coordinator.close();
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("query cancellation preserves its in-flight request and permits the next drain", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: `query-cancel-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    try {
-      const hab = hby.makeHab("alice");
-      seedControllerEndpoint(hby, hab.pre);
-      const entered = Promise.withResolvers<void>();
-      const coordinator = new QueryCoordinator(hby, { reactor: new Reactor(hby), hab });
-      const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
-      coordinator.configure({
-        hab,
-        sink: {
-          *send() {
-            entered.resolve();
-            yield* suspend();
-          },
-        },
-      });
-      coordinator.enqueue(request);
-      const sending = yield* spawn(() => coordinator.processPending());
-      yield* call(() => entered.promise);
-      const pending = coordinator.pending.peekHead();
-      coordinator.enqueue(request);
-      assertStrictEquals(coordinator.pending.peekHead(), pending, "appending cannot replace the suspended head");
-      yield* sending.halt();
-      assertEquals(coordinator.pending.length, 2);
-      let sent = 0;
-      coordinator.configure({
-        hab,
-        sink: {
-          *send() {
-            sent++;
-          },
-        },
-      });
-      yield* coordinator.processPending();
-      // Halt releases only the drain guard; the retained request is delivered by the next turn.
-      assertEquals(sent, 2);
-      assertEquals(coordinator.pending.length, 0);
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-});
-Deno.test("runtime close joins active query consumption and preserves cleanup failures", async () => {
-  for (const fault of [undefined, new Error("foreign cleanup busy")]) {
-    let entered!: () => void, cleaning!: () => void, release!: () => void;
-    const ready = new Promise<void>((resolve) => entered = resolve),
-      cleanup = new Promise<void>((resolve) => cleaning = resolve),
-      gate = new Promise<void>((resolve) => release = resolve);
-    await run(function*() {
-      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-      const hab = hby.makeHab("alice");
-      seedControllerEndpoint(hby, hab.pre);
-      const runtime = yield* createAgentRuntime(hby), coordinator = runtime.querying;
-      const cue = { kin: "query" as const, pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
-      coordinator.configure({
-        hab,
-        sink: {
-          *send() {
-            yield* resource<void>(function*(provide) {
-              try {
-                yield* provide();
-              } finally {
-                cleaning();
-                yield* call(() => gate);
-                if (fault) {
-                  // deno-lint-ignore no-unsafe-finally -- Qualify propagation of an injected cleanup failure.
-                  throw fault;
-                }
-              }
-            });
-            entered();
-            yield* suspend();
-          },
-        },
-      });
-      coordinator.enqueueCue(cue);
-      let consumeError: unknown, closeError: unknown;
-      const sending = yield* spawn(function*() {
-        try {
-          yield* coordinator.processPending();
-        } catch (error) {
-          consumeError = error;
-        }
-      });
-      yield* call(() => ready);
-      assertEquals(coordinator.pending.length, 1);
-      let closed = false;
-      const closing = yield* spawn(function*() {
-        try {
-          yield* runtime.close();
-          closed = true;
-        } catch (error) {
-          closeError = error;
-        }
-      });
-      try {
-        yield* call(() => cleanup);
-        assertEquals([closed, coordinator.pending.length], [false, 1]);
-      } finally {
-        release();
-      }
-      yield* closing;
-      yield* sending;
-      assertStrictEquals(consumeError, fault);
-      assertStrictEquals(closeError, fault);
-      assertEquals([closed, coordinator.pending.length], [!fault, 0]);
-      assertThrows(() => coordinator.enqueueCue(cue), Error, "closed");
       yield* runtime.close();
       yield* hby.close(true);
-    });
-  }
+    }
+  });
 });
 
-Deno.test("anchor queries ask every attester once and complete on accepted state", async () => {
+Deno.test("mailbox-only query transport retains the controller as attester", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const requester = hby.makeHab("requester");
-    const first = hby.makeHab("first", undefined, { transferable: false, ncount: 0 });
-    const second = hby.makeHab("second", undefined, { transferable: false, ncount: 0 });
-    const emissions: CueRecord[] = [];
-    const coordinator = new QueryCoordinator(hby, {
-      reactor: new Reactor(hby),
-      hab: requester,
-      sink: captureSink(emissions),
-    });
-    const seal = { i: requester.pre, s: "0", d: requester.pre };
-    const anchor = coordinator.watchAnchor(requester.pre, seal, { wits: [first.pre, second.pre] });
+    const sender = hby.makeHab("sender"),
+      subject = hby.makeHab("subject"),
+      mailbox = hby.makeHab("mailbox", undefined, { transferable: false, ncount: 0 });
+    hby.db.locs.pin([mailbox.pre, "http"], { url: "http://mailbox.test/" });
+    hby.db.ends.pin([subject.pre, Roles.mailbox, mailbox.pre], { allowed: true });
+    const messages: Uint8Array[] = [], urls: string[] = [];
+    const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages, urls) });
+    try {
+      runtime.cues.push({ kin: "query", pre: subject.pre, route: "logs", q: {} });
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      assertEquals(urls, ["http://mailbox.test/"]);
+      assertEquals(new SerderKERI({ raw: messages[0] }).ked?.q, { i: subject.pre, src: subject.pre });
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only after accepted catchup", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), subject = remote.makeHab("subject");
+    const messages: Uint8Array[] = [];
+    const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages) });
+    try {
+      yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
+      runtime.cues.clear();
+      seedControllerEndpoint(hby, subject.pre);
+      const resolvedUrl = "http://controller.test/oobi";
+      hby.db.roobi.pin(resolvedUrl, {
+        date: new Date().toISOString(),
+        state: "resolved",
+        cid: subject.pre,
+        role: Roles.controller,
+      });
+      const current = runtime.querying.watchKeyState(subject.pre, { signer: sender.pre });
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      assertEquals(new SerderKERI({ raw: messages[0] }).route, "ksn");
+      runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      assertEquals([current.done, messages.length], [true, 1]);
+      const ahead = runtime.querying.watchKeyState(subject.pre, { signer: sender.pre });
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      const interaction = subject.interact();
+      runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      assertEquals(messages.map((wire) => new SerderKERI({ raw: wire }).route), ["ksn", "ksn", "logs"]);
+      assertEquals([
+        ahead.done,
+        runtimePendingState(runtime).queriesPending,
+        runtimeHasPendingWork(runtime),
+        runtimeOobiConverged(runtime, resolvedUrl),
+      ], [false, true, true, false]);
+      yield* runtime.reactor.processBytes(interaction);
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      assertEquals(runtimePendingState(runtime).deliveriesPending, true);
+      assertEquals([ahead.done, runtime.querying.hasPendingWork(), runtimeOobiConverged(runtime, resolvedUrl)], [
+        true,
+        false,
+        true,
+      ]);
+    } finally {
+      yield* runtime.close();
+      yield* remote.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("sequence and anchor continuations preserve the seal snapshot and complete on accepted evidence", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), subject = remote.makeHab("subject");
+    const messages: Uint8Array[] = [];
+    const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages) });
+    try {
+      yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
+      runtime.cues.clear();
+      seedControllerEndpoint(hby, subject.pre);
+      const original = { d: subject.kever!.said, s: "0", i: subject.pre };
+      const expected = { i: subject.pre, s: "0", d: subject.kever!.said };
+      const sequence = runtime.querying.watchSeqNo(subject.pre, 1, { signer: sender.pre });
+      const anchor = runtime.querying.watchAnchor(subject.pre, original, { signer: sender.pre });
+      original.d = sender.pre;
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      assertEquals(messages.length, 2);
+      const query = new SerderKERI({ raw: messages[1] }).ked?.q as { a: object };
+      assertEquals(query.a, expected);
+      assertEquals(Object.keys(query.a), ["i", "s", "d"]);
+      assertEquals([sequence.done, anchor.done], [false, false]);
+      yield* runtime.reactor.processBytes(subject.interact({ data: [expected] }));
+      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      assertEquals([sequence.done, anchor.done, runtime.querying.hasPendingWork()], [true, true, false]);
+    } finally {
+      yield* runtime.close();
+      yield* remote.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("query preparation retains failed heads and limits one pass to its initial work", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("sender");
+    seedControllerEndpoint(hby, hab.pre);
+    const messages: Uint8Array[] = [];
+    const coordinator = new QueryCoordinator(hby, { reactor: new Reactor(hby), hab, services: queryHttp(messages) });
+    const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
+    const sign = hab.query, fault = new Error("signing failed");
+    try {
+      coordinator.enqueue(request);
+      const head = coordinator.pending.peekHead();
+      hab.query = () => {
+        throw fault;
+      };
+      assertStrictEquals(yield* call(() => assertRejects(() => run(() => coordinator.processPending()))), fault);
+      assertStrictEquals(coordinator.pending.peekHead(), head);
+      hab.query = function(...args) {
+        coordinator.enqueue(request);
+        return sign.apply(this, args);
+      };
+      yield* coordinator.processPending();
+      assertEquals([coordinator.pending.length, coordinator.hasPendingDelivery], [1, true]);
+      hab.query = sign;
+      yield* coordinator.deliverOnce();
+      assertEquals(messages.length, 1);
+      yield* coordinator.processPending();
+      yield* coordinator.deliverOnce();
+      assertEquals([messages.length, coordinator.pending.length], [2, 0]);
+    } finally {
+      hab.query = sign;
+      yield* coordinator.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("anchor queries ask all eligible attesters once and stop on accepted seal state", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("sender"),
+      first = hby.makeHab("first", undefined, { transferable: false, ncount: 0 }),
+      second = hby.makeHab("second", undefined, { transferable: false, ncount: 0 });
+    for (const attester of [first, second]) seedControllerEndpoint(hby, attester.pre);
+    const messages: Uint8Array[] = [];
+    const coordinator = new QueryCoordinator(hby, { reactor: new Reactor(hby), hab, services: queryHttp(messages) });
+    const seal = { i: hab.pre, s: "0", d: hab.pre };
+    const anchor = coordinator.watchAnchor(hab.pre, seal, { wits: [first.pre, second.pre] });
     try {
       yield* coordinator.processPending();
-      assertEquals([emissions.length, coordinator.pending.length, anchor.done], [2, 0, false]);
+      yield* coordinator.deliverOnce();
       yield* coordinator.processPending();
-      assertEquals([emissions.length, coordinator.pending.length, anchor.done], [2, 0, false]);
+      yield* coordinator.deliverOnce();
       assertEquals(
-        emissions.map((emission) => emission.serder?.ked?.q),
-        [first, second].map((attester) => ({
-          fn: "0",
-          s: "0",
-          a: seal,
-          i: requester.pre,
-          src: attester.pre,
-        })),
+        messages.map((wire) => new SerderKERI({ raw: wire }).ked?.q),
+        [first, second].map((attester) => ({ fn: "0", s: "0", a: seal, i: hab.pre, src: attester.pre })),
       );
-      requester.interact({ data: [seal] });
+      hab.interact({ data: [seal] });
       yield* coordinator.processPending();
-      assertEquals([anchor.done, emissions.length], [true, 2]);
+      assertEquals([anchor.done, messages.length], [true, 2]);
     } finally {
       yield* coordinator.close();
       yield* hby.close(true);

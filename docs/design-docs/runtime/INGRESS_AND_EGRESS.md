@@ -91,8 +91,9 @@ Cues and query-reply batches are ordinary records in Decks. `Hab.interpretCue` a
 `processCuesIter` interpret semantics; source removal follows successful transfer.
 Preparation failure preserves the source. Each consumer sequences interpretation,
 publication and source removal directly, without prepareCueEmission callbacks.
-Custom/ineligible sinks consume emissions
-outside the guarded turn. A pass consumes its initial extent, so newly appended
+Composition routes query, stream and reply cues to their concrete owners.
+CueSink and its optional hooks/root adapters are deleted. Network output runs
+outside the guarded routing turn. A pass consumes its initial extent, so newly appended
 work waits for the next pass. A cue with no emission is still consumed.
 
 Respondant owns lazy reply iterators, routing snapshots, once-signed packets and
@@ -106,9 +107,11 @@ fails, and active transport joins before stores close. RuntimeDeliveries is dele
 QueryCoordinator owns both deferred requests and signed query packets. Construction
 supplies its actual Reactor and clock/HTTP services; query code never receives an
 AgentRuntime. Its close stops production and joins response I/O before clearing
-records or closing stores. The root queryTransportSink adapter keeps existing host
-selection while optional CueSink hooks, the broad Reactor gate and duplicate
-whole-runtime driving remain unfinished.
+records or closing stores. Query requests always use this concrete output path;
+there is no optional no-op downstream sink. Unresolved records remain deferred.
+Synchronous producer preparation has no task/halt bookkeeping, raw-packet injector
+or custom-emission API. The broad Reactor gate and duplicate whole-runtime driving
+remain unfinished.
 
 QueryCoordinator owns a private ordinary Deck of QueryRequest records. Its
 inspection surface exposes length/empty/peekHead. The selected local signer is
@@ -117,6 +120,9 @@ endpoint selection precede source removal and preserve exact wire across retry.
 Failed/cancelled drains retain their head, unresolved records rotate, and new work
 waits for the next finite pass. Close joins active consumption before clearing.
 Continuations prepare against committed state without a parent runtime callback.
+OOBI completion waits for accepted resolution and ingress/query/escrow dependencies;
+it does not require background receipt delivery to a static OOBI server. Active
+transport still aborts and joins during runtime close.
 
 QueryReplies correlates exact requesting SAIDs before background consumption.
 These reservations are correlation records, not capacity leases. A response owner

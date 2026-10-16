@@ -34,7 +34,9 @@ upgrade machinery or new-to-old version tests.
 ResourcePolicy, accounting errors and constructor plumbing are removed throughout
 CESR/KERI/Tufa; RuntimeServices contains only clock/HTTP. Queue/client/listener and
 reply-proof work caps are removed; intrinsic numeric guards use RangeError.
-Cue queues and reply correlations now carry ordinary Deck records. Publish after
+Cue queues and reply correlations now carry ordinary Deck records. Composition
+routes directly to query, mailbox and reply owners; optional CueSink hooks and
+root adapters are removed. Default query transport cannot be a no-op sink. Publish after
 owning writes/commit; preserve real iterator, reader and payload cleanup. Do not
 restore queue credit, capacity, inspection or synthetic retain/release handles.
 Use concrete semantic records, narrow validated input, and locally justified

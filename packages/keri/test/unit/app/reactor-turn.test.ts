@@ -59,21 +59,22 @@ Deno.test("runtime turns retain state ownership until cancelled work finishes cl
 
 Deno.test("two request reservations survive an interleaved background cue drain", async () => {
   await run(function*() {
-    const hby = yield* createHabery({ name: `turn-replies-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby), reactor = runtime.reactor;
+    const first = reactor.replies.reserve("query-a"), second = reactor.replies.reserve("query-b");
+    const ready = gate(), release = gate();
+    const replayA: ReplayCue = { kin: "replay", querySaid: "query-a", messages: [Uint8Array.of(1)] };
+    const replayB: ReplayCue = { kin: "replay", querySaid: "query-b", messages: [Uint8Array.of(2)] };
+    const ordinary: ReplayCue = { kin: "replay", messages: [Uint8Array.of(3)] };
+    const seen: AgentCue[] = [];
+    const observe = runtime.querying.observeCue.bind(runtime.querying);
+    runtime.querying.observeCue = (cue) => {
+      seen.push(cue);
+      observe(cue);
+    };
     try {
-      const reactor = new Reactor(hby);
-      const first = reactor.replies.reserve("query-a");
-      const second = reactor.replies.reserve("query-b");
-      const ready = gate();
-      const release = gate();
-      const replayA: ReplayCue = { kin: "replay", querySaid: "query-a", messages: [new Uint8Array([1])] };
-      const replayB: ReplayCue = { kin: "replay", querySaid: "query-b", messages: [new Uint8Array([2])] };
-      const ordinary: ReplayCue = { kin: "replay", messages: [new Uint8Array([3])] };
-      const seen: AgentCue[] = [];
-      const runtime = { hby, reactor, cues: reactor.cues } as AgentRuntime;
       const producing = yield* spawn(() =>
         reactor.settle(undefined, {}, function*() {
-          // These model deferred query results produced after another turn has already begun waiting.
           reactor.cues.push(replayB);
           ready.open();
           yield* call(() => release.wait);
@@ -82,58 +83,46 @@ Deno.test("two request reservations survive an interleaved background cue drain"
         })
       );
       yield* call(() => ready.wait);
-      const background = yield* spawn(() =>
-        processCuesOnce(runtime, {
-          sink: {
-            *send(emission) {
-              seen.push(emission.cue);
-            },
-          },
-        })
-      );
+      const background = yield* spawn(() => processCuesOnce(runtime));
       assertEquals(seen, []);
       release.open();
       yield* producing;
       yield* background;
-      // The actual background consumer runs under the guard and captures both reservations first.
       assertEquals(seen, [ordinary]);
       assertStrictEquals(first.takeAll()?.cues[0], replayA);
       assertStrictEquals(second.takeAll()?.cues[0], replayB);
+    } finally {
       first.close();
       second.close();
-    } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });
 });
 
-Deno.test("cue delivery owns one initial batch even when delivery appends more work", async () => {
+Deno.test("cue routing keeps its initial extent when owner observation appends more work", async () => {
   await run(function*() {
-    const hby = yield* createHabery({ name: `cue-batch-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby);
+    const observe = runtime.querying.observeCue.bind(runtime.querying);
     try {
-      const reactor = new Reactor(hby);
-      const runtime = { hby, reactor, cues: reactor.cues } as AgentRuntime;
-      // Exercise both the fallback interpreter and the habitat interpreter with the same sink.
       for (const withHab of [false, true]) {
         const hab = withHab ? hby.makeHab("recipient") : undefined;
-        reactor.cues.push({ kin: "oobiQueued", url: "https://example.test/first" });
-        let delivered = 0;
-        yield* processCuesOnce(runtime, {
-          hab,
-          sink: {
-            *send() {
-              delivered++;
-              // A producer can append more work during delivery; the current turn keeps its initial extent.
-              reactor.cues.push({ kin: "oobiQueued", url: "https://example.test/next" });
-              yield* call(() => Promise.resolve());
-            },
-          },
-        });
-        assertEquals(delivered, 1);
-        assertEquals(reactor.cues.length, 1);
-        reactor.cues.clear();
+        runtime.cues.push({ kin: "oobiQueued", url: "https://example.test/first" });
+        let observed = 0;
+        runtime.querying.observeCue = (cue) => {
+          observed++;
+          observe(cue);
+          runtime.cues.push({ kin: "oobiQueued", url: "https://example.test/next" });
+        };
+        yield* processCuesOnce(runtime, { hab });
+        assertEquals([observed, runtime.cues.length], [1, 1]);
+        runtime.cues.clear();
+        runtime.querying.observeCue = observe;
       }
     } finally {
+      runtime.querying.observeCue = observe;
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });

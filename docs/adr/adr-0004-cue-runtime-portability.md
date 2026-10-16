@@ -14,8 +14,8 @@
   - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
 
 [ADR-0013](adr-0013-simple-component-flows.md) supersedes the lifecycle/scheduling
-instructions below. CueSink preparation hooks, generic delivery wrappers and
-separate command/host runtime driving remain removal work. Preserve concrete
+instructions below. CueSink hooks and generic delivery wrappers are removed;
+separate command/host driving remains removal work. Preserve concrete
 cue meanings and actual protocol/I/O obligations, not these coordination APIs.
 
 ## Context
@@ -204,12 +204,12 @@ These are intentional, not accidental:
    - KERIpy `escrowDo()` -> Effection `escrowDo()`
 
 2. Cue delivery is explicit.
-   - Hosts implement a `CueSink`.
+   - Composition routes data to existing query, mailbox and reply owners.
    - We do not hide transport/session side effects inside anonymous callbacks or
      root-owned transport queues.
 
 3. Cue results are structured.
-   - `CueEmission { cue, msgs, kind }` preserves semantics and supports better
+   - `CueEmission { cue, messages, kind }` preserves semantics and supports better
      tests and host logic.
 
 4. Habitat resolution is explicit.
@@ -217,15 +217,14 @@ These are intentional, not accidental:
    - When no explicit habitat is supplied and the habery owns exactly one local
      habitat, `keri-ts` uses that habitat.
    - When multiple local habitats exist and the runtime cannot resolve the
-     correct one honestly, cues are surfaced as notify/transport emissions
-     rather than silently guessing.
+     correct one honestly, routed query work stays deferred without guessing.
 
 ## Consequences
 
 - Future cue-producing work should add typed `AgentCue` variants before adding
   host-specific plumbing.
-- Future cue-consuming work should prefer `CueEmission` + `CueSink` over raw
-  byte iterators or new root-owned transport queues.
+- Cue consumers use concrete owners and ordinary records; do not restore a
+  CueSink protocol or generic root-owned delivery queue.
 - Future controller-facing app notifications should prefer `Notifier` / `Noter`
   / `Signaler` over new cue kinds unless the information is genuinely part of
   runtime protocol convergence.

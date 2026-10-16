@@ -17,7 +17,6 @@ import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
 import {
-  queryTransportSink,
   runAgentRuntime,
   runtimeHasPendingWork,
   runtimeTurn,
@@ -131,8 +130,6 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
       skipSignator: true,
     },
     function*({ hby, runtime, hab }) {
-      const sink = queryTransportSink(runtime, hab);
-
       let watchDone = () => false;
       if (anchor) {
         console.log(`Checking for anchor ${JSON.stringify(anchor)}...`);
@@ -152,7 +149,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
         watchDone = () => noticer.done;
       }
 
-      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab, sink }));
+      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab }));
       try {
         const deadline = Date.now() + QueryTimeoutMs;
         while (!watchDone() && Date.now() < deadline) {
