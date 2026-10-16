@@ -64,6 +64,13 @@ prepares/adopts pending queries synchronously over committed accepted state,
 without Reactor callbacks or parent-runtime arguments. Network waits remain in
 delivery, and failed/cancelled drains retain pending ownership through cleanup.
 
+Cancellable Promise leaves must expose late foreign failures during task halt,
+including cleanup errors combined with the owner's abort reason. Abort before
+child teardown, then join pending I/O through a registered resource finalizer;
+throwing only from the operation's own finally does not fail Effection's halt
+result. Suppress only the exact owned abort reason and preserve already reported
+failures without duplication.
+
 KERI/Tufa operations own lifecycle. Acquire source/frame/runtime resources before
 work children so cancellation aborts and joins I/O before releasing permits or
 owners. Promise adaptation belongs at real edges. FrameIntake is removed. The buffered
