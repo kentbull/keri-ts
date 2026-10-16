@@ -46,7 +46,9 @@ not renew the inception relationship. Missing KEL/approval evidence is a typed
 proof dependency, not a permanent invalidity verdict; lookup never repairs storage.
 Identity operators I2I/NI2I/DI2I conflict in wire order, with the last operative one
 winning. Without one, targeted far nodes default to I2I and untargeted nodes to NI2I.
-E1E remains independent. NOT needs its separate authenticated node-validity model.
+E1E remains the reference entity-comparison extension: on its own it does not
+imply I2I; an explicit identity operator adds that separate requirement. NOT
+needs its separate authenticated node-validity model.
 This profile follows the [operator specification](https://trustoverip.github.io/kswg-acdc-specification/#operator-o-field)
 and the approval boundary clarified in [KERIpy #1559](https://github.com/WebOfTrust/keripy/issues/1559);
 it is not Python IPEX DI2I parity.
