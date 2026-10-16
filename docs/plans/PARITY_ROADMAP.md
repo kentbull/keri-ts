@@ -75,6 +75,22 @@ A separate ownership/contract review must resolve this retained boundary before
 claiming every non-socket quota is absent. This documentation reconciliation does
 not change runtime behavior or authorize a replacement policy mechanism.
 
+## Deferred review questions
+
+The former root `TODOs.md` mixed delivered v2, mailbox, delegation and CLI work
+with unverified review ideas. Its duplicate tracker is retired. The existing
+[DB parity plan](db/DB_PARITY_PLAN.md) owns higher-level consumer/record parity;
+[CLI parity reference](../reference/cli/KLI_TUFA_COMMAND_PARITY_MATRIX.md) and
+[qualification plan][qualification] own command and interop coverage.
+
+Still-unresolved review questions from that scratchpad are logging-level behavior,
+passcode interoperability, cue mapping/filtering, and the scope of audits for
+key management/encryption, reply routing/watchers, challenge/authentication and
+well-known OOBIs. These are deferred questions, not confirmed defects or an
+activated implementation queue. A proposal to hide DB access, replace reflective
+dispatch, rename records or simplify generics needs a demonstrated current problem
+under ADR-0013; the old scratchpad does not authorize new facades or cleanup.
+
 ## Future change and release discipline
 
 Keep one implementation PR active, prefer reviewer-sized cohesive concerns and

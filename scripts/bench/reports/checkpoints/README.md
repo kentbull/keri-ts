@@ -1,5 +1,10 @@
 # Intermediate parser checkpoints
 
+> Historical measurements at the revisions below. Current buffered decoding is
+> governed by [ADR-0012](../../../../docs/adr/adr-0012-progressive-nested-parser.md);
+> these results neither describe its memory bounds nor require restoring the
+> superseded progressive architecture.
+
 These parser-only measurements preserve failed checkpoints as well as successful
 ones. They include source generation and correctness verification, but no crypto,
 network, or durable storage. Compressed JSONL carries the exact clean revision,
