@@ -170,8 +170,11 @@ Deno.test("CESR header egress normalizes binary attachments for HTTP", async () 
     const header = new Headers(init!.headers).get(CESR_ATTACHMENT_HEADER)!;
     assertEquals(/^[A-Za-z0-9_-]+$/.test(header), true);
     const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
-    const frame = await read(concatBytes(body, b(header)));
+    // The peer's counter context is v2; the JSON body protocol does not select it.
+    const frame = await read(concatBytes(Counter.makeGVC({ major: 2, minor: 0 }), body, b(header)));
 
+    assertEquals(frame.body.pvrsn, { major: 1, minor: 0 });
+    assertEquals(frame.gvrsn, { major: 2, minor: 0 });
     assertEquals(await collectPayload(essrRaw(frame.essrs!)), b("abcxyz"));
     requests++;
     return new Response(null, { status: 204 });

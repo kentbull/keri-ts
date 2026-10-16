@@ -160,12 +160,8 @@ function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions
     try {
       signal.throwIfAborted();
       // Detached attachments are always legal text, even if the input frame was binary.
-      const attachments = mode === "header"
-        ? attachmentPayload(frame, {
-          domain: "txt",
-          enclosingGvrsn: frame.body.gvrsn ?? frame.body.pvrsn,
-        })
-        : undefined;
+      // Counter context belongs to the selected frame genus, never the JSON body's protocol version.
+      const attachments = mode === "header" ? attachmentPayload(frame, { domain: "txt" }) : undefined;
       preparing = attachments ? collectPayload(attachments, signal) : undefined;
       // Detached-header mode materializes text attachments; body mode streams them.
       const header = preparing ? byteString(yield* call(() => preparing!)) : undefined;

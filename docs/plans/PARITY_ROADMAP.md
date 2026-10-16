@@ -55,6 +55,12 @@ ownership and full qualification remain open.
   rotations/interactions. Receipt classification and POST authorization cannot use
   later witnesses; missing dependencies remain escrowed. Periodic broad and final
   composed qualification remain required.
+- Detached HTTP framing now preserves the selected frame genus instead of guessing
+  it from body pvrsn. The redundant outer-genus hook is removed. A production-API
+  single-controller reverse disclosure probe accepts the negotiated partial and
+  refuses over-disclosure with KRAM enabled, without header rewriting or seeded
+  issuer state. Convert this scoped evidence into maintained composed coverage;
+  witnesses/mailboxes, multisig, restart and final qualification remain open.
 - Narrow public runtime exports to supported operations/data. Remove optional
   hooks and wrappers; condense contracts, learnings and plans to current decisions.
 - One finite decoder shared by complete input and a small network input loop.
