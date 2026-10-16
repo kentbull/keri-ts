@@ -1336,6 +1336,8 @@ Deno.test("Habery skips pending delegated group records during reopen", async ()
 
       assertEquals(hby.db.getHab(groupPre)?.mid, member1.pre);
       assertEquals(hby.db.getKever(groupPre), null);
+      assertEquals(hby.db.groups.has(groupPre), true, "local membership does not assert accepted key state");
+      assertEquals(hby.db.prefixes.has(groupPre), false);
     } finally {
       yield* hby.close();
     }
@@ -1347,6 +1349,8 @@ Deno.test("Habery skips pending delegated group records during reopen", async ()
       assertEquals(hby.db.getHab(groupPre)?.name, "team");
       assertEquals(hby.habs.has(groupPre), false);
       assertEquals(hby.db.getKever(groupPre), null);
+      assertEquals(hby.db.groups.has(groupPre), true, "local membership does not assert accepted key state");
+      assertEquals(hby.db.prefixes.has(groupPre), false);
     } finally {
       yield* hby.close(true);
     }

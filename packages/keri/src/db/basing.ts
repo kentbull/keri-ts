@@ -1505,6 +1505,8 @@ export class Baser {
 
     for (const [pre, habord] of this.getHabItemIter()) {
       const hid = habord.hid || pre;
+      // Prepared membership survives reopen independently of accepted key state.
+      if (habord.mid) this.groups.add(hid);
       const state = this.getState(hid);
       if (!state) {
         if (!habord.mid) {
@@ -1517,9 +1519,6 @@ export class Baser {
         const kever = Kever.fromState({ state, db: this });
         this.kevers.set(kever.pre, kever);
         this.prefixes.add(kever.pre);
-        if (habord.mid) {
-          this.groups.add(hid);
-        }
       } catch (error) {
         if (!habord.mid && isMissingReloadEventError(error)) {
           removes.push(pre);
