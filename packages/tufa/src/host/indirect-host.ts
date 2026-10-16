@@ -8,7 +8,6 @@ export interface IndirectHostOptions {
   listenHost?: string;
   serviceHab: Hab;
   hostedPrefixes?: readonly string[];
-  seedHabs?: readonly Hab[];
   directQueryResponses?: boolean;
   onListen?: (address: { port: number; hostname: string }) => void;
 }
@@ -18,29 +17,22 @@ export interface IndirectHostOptions {
  *
  * This is the reusable host seam that higher-level porcelain commands build
  * upon. Startup policy is intentionally explicit so mailbox-specific porcelain
- * can select one hosted prefix without inheriting `agent`-specific role
- * seeding.
+ * selects hosted prefixes after its operator has established accepted endpoint state.
  */
 export function* runIndirectHost(
   hby: Habery,
   options: IndirectHostOptions,
 ): Operation<void> {
-  const seedHabs = options.seedHabs ?? [options.serviceHab];
-  const hostedPrefixes = options.hostedPrefixes
-    ?? seedHabs.map((hab) => hab.pre);
   yield* runHostKernel(hby, {
     enableMailboxStore: true,
     serviceHab: options.serviceHab,
-    seedHabs,
-    hostedPrefixes,
+    hostedPrefixes: options.hostedPrefixes,
     http: {
       port: options.port,
       hostname: options.listenHost,
       onListen: options.onListen,
     },
     protocolPolicy: {
-      serviceHab: options.serviceHab,
-      hostedPrefixes,
       directQueryResponses: options.directQueryResponses ?? false,
     },
   });

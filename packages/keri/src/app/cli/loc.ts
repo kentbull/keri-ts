@@ -1,6 +1,6 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
+import { settleRuntimeIngress } from "../agent-runtime.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
 
 /** Parsed arguments for `tufa loc add`. */
@@ -71,23 +71,14 @@ export function* locAddCommand(args: Record<string, unknown>): Operation<void> {
     },
     function*({ hby, hab, runtime }) {
       const eid = commandArgs.eid ?? hab.pre;
-      ingestKeriBytes(
-        runtime,
-        hab.makeLocScheme(url, eid, scheme, commandArgs.time),
-      );
-
-      for (let i = 0; i < 4; i += 1) {
-        yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
-        if (
-          hby.db.locs.get([eid, scheme])?.url === url
-          && !!hby.db.lans.get([eid, scheme])
-          && hab.loadLocScheme(eid, scheme).length > 0
-        ) {
-          console.log(
-            `Location ${url} added for aid ${eid} with scheme ${scheme}`,
-          );
-          return;
-        }
+      yield* settleRuntimeIngress(runtime, [hab.makeLocScheme(url, eid, scheme, commandArgs.time)]);
+      if (
+        hby.db.locs.get([eid, scheme])?.url === url
+        && !!hby.db.lans.get([eid, scheme])
+        && hab.loadLocScheme(eid, scheme).length > 0
+      ) {
+        console.log(`Location ${url} added for aid ${eid} with scheme ${scheme}`);
+        return;
       }
 
       throw new ValidationError(

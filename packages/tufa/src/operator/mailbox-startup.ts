@@ -13,8 +13,7 @@ import {
   fetchEndpointUrls,
   type Hab,
   type Habery,
-  ingestKeriBytes,
-  processRuntimeTurn,
+  settleRuntimeIngress,
   ValidationError,
 } from "keri-ts/runtime";
 import {
@@ -265,24 +264,11 @@ function* reconcileMailboxIdentity(
 ): Operation<void> {
   const runtime = yield* createAgentRuntime(hby);
   try {
-    ingestKeriBytes(
-      runtime,
-      hab.makeLocScheme(
-        startup.url,
-        hab.pre,
-        schemeForUrl(startup.url),
-        startup.datetime,
-      ),
-    );
-    ingestKeriBytes(
-      runtime,
+    yield* settleRuntimeIngress(runtime, [
+      hab.makeLocScheme(startup.url, hab.pre, schemeForUrl(startup.url), startup.datetime),
       hab.makeEndRole(hab.pre, EndpointRoles.controller, true, startup.datetime),
-    );
-    ingestKeriBytes(
-      runtime,
       hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true, startup.datetime),
-    );
-    yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+    ]);
   } finally {
     yield* runtime.close();
   }

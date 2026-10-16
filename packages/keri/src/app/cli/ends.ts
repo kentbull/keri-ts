@@ -1,7 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { isEndpointRole } from "../../core/roles.ts";
-import { ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
+import { settleRuntimeIngress } from "../agent-runtime.ts";
 import { endpointRoleAccepted, isLocalGroupHab, proposeGroupEndpointRole } from "../endpoint-roleing.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
 
@@ -107,11 +107,7 @@ export function* endsAddCommand(
       if (commandArgs.multisigMode) {
         throw new ValidationError("--multisig-mode is only valid for local group aliases.");
       }
-      ingestKeriBytes(
-        runtime,
-        hab.makeEndRole(eid, role, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+      yield* settleRuntimeIngress(runtime, [hab.makeEndRole(eid, role, true)]);
 
       const end = hby.db.ends.get([hab.pre, role, eid]);
       if (!end?.allowed) {

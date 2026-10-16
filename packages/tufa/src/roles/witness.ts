@@ -31,19 +31,16 @@ export function* runWitnessHost(
   yield* runHostKernel(hby, {
     enableMailboxStore: true,
     serviceHab,
-    seedHabs: [serviceHab],
     hostedPrefixes: [serviceHab.pre],
     http: {
       port: httpPort,
       hostname: httpListenHost,
     },
     protocolPolicy: {
-      serviceHab,
-      hostedPrefixes: [serviceHab.pre],
       witnessHab: serviceHab,
     },
     companionHosts: [
-      ({ runtime }) =>
+      (runtime) =>
         startWitnessTcpServer(
           tcpPort,
           tcpListenHost,

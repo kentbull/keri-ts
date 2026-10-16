@@ -19,20 +19,20 @@ import {
   fetchResponseHandle,
   type Hab,
   type Habery,
-  ingestKeriBytes,
   isLocalGroupHab,
   loadAcceptedEndpointRole,
   makeNowIso8601,
   normalizeCesrBodyMode,
   Organizer,
   preferredUrl,
-  processRuntimeTurn,
   proposeGroupEndpointRole,
   Roles,
+  settleRuntimeIngress,
   streamBytes,
   TopicsRecord,
   ValidationError,
 } from "keri-ts/runtime";
+import { runIndirectHost } from "../host/indirect-host.ts";
 import { canonicalOrigin, configFileCandidates, mailboxAdminUrl } from "../operator/host-planning.ts";
 import {
   collectConfiguredMailboxes,
@@ -41,7 +41,6 @@ import {
   normalizeMailboxTopic,
 } from "../operator/mailbox-debug.ts";
 import { reconcileMailboxHostStartup, resolveMailboxHostStartup } from "../operator/mailbox-startup.ts";
-import { runMailboxHost } from "../roles/mailbox.ts";
 import { type CommandHaberyOptions, withExistingHab, withHabAndAgentRuntime } from "./support/context.ts";
 import { ensureHby } from "./support/existing.ts";
 import { writeJsonLine, writeTextLines } from "./support/rendering.ts";
@@ -140,12 +139,11 @@ export function* mailboxStartCommand(
       `Mailbox AID    ${startup.aidCreated ? "created" : "reused"}`,
     ]);
 
-    yield* runMailboxHost(hby, {
+    yield* runIndirectHost(hby, {
       port: startup.port,
       listenHost: startup.listenHost,
       serviceHab: startup.hab,
       hostedPrefixes: [startup.hab.pre],
-      seedHabs: [startup.hab],
     });
   } finally {
     yield* hby.close();
@@ -386,8 +384,7 @@ function* completeMailboxAdmin(
     );
   }
 
-  ingestKeriBytes(runtime, rpy);
-  yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+  yield* settleRuntimeIngress(runtime, [rpy]);
 
   const end = hby.db.ends.get([hab.pre, Roles.mailbox, mailboxAid]);
   if (allow && !end?.allowed) {
