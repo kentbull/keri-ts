@@ -7,6 +7,11 @@ applies post-acceptance effects. Kever has no queue dependency: decision-carried
 cue descriptions are data, and processing/publication stays with Kevery.
 Baser prepares and writes accepted-event row/FEL metadata; Kevery turns clone
 order anomalies into cues and owns write/commit/publication sequencing.
+Baser.acceptedEventWitnesses owns accepted receipt cohort lookup for Kevery,
+Hab and witness HTTP flows. As in KERIpy fetchWitnessState, walk the accepted KEL
+back to the governing establishment and read its wits rows, including empty.
+Interactions carry no separate witness projection. Current key state cannot
+classify a historical signature; keep partial-witness escrow derivation separate.
 Kever neither writes the event log nor prepares queue work. Delegation hint
 repairs/removals are decision data; Kevery writes them in the
 same transaction as acceptance/escrow. Same-bucket retry keeps its existing row

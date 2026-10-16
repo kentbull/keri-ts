@@ -18,7 +18,7 @@ import {
   streamCesrTcp,
   writeCesrTcpSocket,
 } from "../../../src/app/tcp-egress.ts";
-import { Receiptor, sendWitnessMessage, WitnessReceiptor } from "../../../src/app/witnessing.ts";
+import { Receiptor, sendWitnessMessage, WitnessReceiptor, witnessReceiptPost } from "../../../src/app/witnessing.ts";
 import { receipt as receiptEvent } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
 
@@ -373,6 +373,67 @@ Deno.test("HTTP receipt selection and cached completion use the requested event'
   } finally {
     await server.shutdown();
   }
+});
+
+Deno.test("a zero-witness historical rotation and interaction never contact later witnesses", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const before = hby.makeHab("before", undefined, { transferable: false });
+      const after = hby.makeHab("after", undefined, { transferable: false });
+      const controller = hby.makeHab("controller", undefined, { wits: [before.pre], toad: 1 });
+      controller.rotate({ cuts: [before.pre], toad: 0 });
+      const rotation = controller.kever!.serder;
+      controller.interact();
+      const interaction = controller.kever!.serder;
+      controller.rotate({ adds: [after.pre], toad: 1 });
+      for (const event of [rotation, interaction]) {
+        const expected = { witnesses: [], statuses: {} };
+        assertEquals(yield* new WitnessReceiptor(hby).submit(controller.pre, { sn: event.sn! }), expected);
+        assertEquals(yield* new Receiptor(hby).receipt(controller.pre, { sn: event.sn! }), expected);
+        assertThrows(() => after.witness(event), Error, "not an authorized witness");
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("receipt POST authorizes the accepted historical event and leaves missing events escrowed", async () => {
+  await run(function*() {
+    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const provider = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const before = provider.makeHab("before", undefined, { transferable: false });
+      const after = provider.makeHab("after", undefined, { transferable: false });
+      const controller = source.makeHab("controller", undefined, { wits: [before.pre], toad: 1 });
+      controller.interact();
+      const historical = acceptedEventReplayMessage(source, controller.pre, 1);
+      controller.rotate({ cuts: [before.pre], adds: [after.pre], toad: 1 });
+      const runtime = yield* createAgentRuntime(provider);
+      try {
+        for (const [sn, message] of [...source.db.clonePreIter(controller.pre)].entries()) {
+          const result = yield* witnessReceiptPost(runtime, sn < 2 ? before : after, message);
+          assertEquals(result.kind, "accepted");
+        }
+        assertEquals((yield* witnessReceiptPost(runtime, before, historical.message)).kind, "accepted");
+        assertEquals((yield* witnessReceiptPost(runtime, after, historical.message)).kind, "reject");
+        const proofs = provider.db.wigs.get([controller.pre, historical.serder.said!]);
+        assertEquals(proofs.map((sig) => sig.index), [0]);
+        assertEquals(before.kever!.verfers[0].verify(proofs[0].raw, historical.serder.raw), true);
+        controller.interact(); // Deliberately omit this dependency from the provider.
+        controller.interact();
+        const missing = acceptedEventReplayMessage(source, controller.pre, 4);
+        assertEquals(yield* witnessReceiptPost(runtime, after, missing.message), { kind: "escrow", status: 202 });
+        assertEquals(provider.db.kels.getLast(controller.pre, 4), null);
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* provider.close(true);
+      yield* source.close(true);
+    }
+  });
 });
 
 Deno.test("halting a receipt read closes the peer body without continuing its caller", async () => {

@@ -437,7 +437,7 @@ export function* processWitnessIngress(
   );
 }
 
-/** Decide whether the hosted witness can currently return a synchronous receipt. */
+/** Authorize the hosted witness against the accepted event, retaining pending dependencies in escrow. */
 function witnessReceiptEligibility(
   serviceHab: Hab,
   serder: SerderKERI,
@@ -454,14 +454,15 @@ function witnessReceiptEligibility(
     };
   }
 
-  const kever = serviceHab.db.getKever(pre);
-  if (!kever) {
-    return { kind: "escrow" };
-  }
-  if (!kever.wits.includes(serviceHab.pre)) {
+  const acceptedSaid = serder.sn === null ? null : serviceHab.db.kels.getLast(pre, serder.sn);
+  if (!acceptedSaid) return { kind: "escrow" };
+  if (acceptedSaid !== said) return { kind: "reject", message: "Receipted event is not the accepted KEL event." };
+  const witnesses = serviceHab.db.acceptedEventWitnesses(serder);
+  if (!witnesses) return { kind: "escrow" };
+  if (!witnesses.includes(serviceHab.pre)) {
     return {
       kind: "reject",
-      message: `${serviceHab.pre} is not an authorized witness for ${pre}:${said}: wits=${JSON.stringify(kever.wits)}.`,
+      message: `${serviceHab.pre} is not an authorized witness for ${pre}:${said}: wits=${JSON.stringify(witnesses)}.`,
     };
   }
 

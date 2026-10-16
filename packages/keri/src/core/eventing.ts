@@ -1839,7 +1839,7 @@ export class Kevery {
       }
       const witnessIndex = event.wits.indexOf(verfer.qb64);
       if (witnessIndex >= 0) {
-        // A detached non-transferable receipt from a current witness is
+        // A detached non-transferable receipt from an event-authorized witness is
         // promoted to an indexed witness signature before storage.
         this.db.wigs.add(
           dgkey,
@@ -1866,7 +1866,7 @@ export class Kevery {
         continue;
       }
       // Witness receipt verification assigns the verifier from the receipted
-      // event's current witness list, not from detached receipt material.
+      // event's historical witness list, not from detached receipt material.
       const verfer = new Verfer({ qb64: verferQb64 });
       if (verfer.transferable || !verfer.verify(wiger.raw, event.serder.raw)) {
         continue;
