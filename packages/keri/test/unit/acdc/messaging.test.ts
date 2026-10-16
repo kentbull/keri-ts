@@ -1,5 +1,14 @@
 import { assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
-import { Ilks, Kinds, Mapper, type MapperMap, SerderACDC, t } from "../../../../cesr/mod.ts";
+import {
+  Compactor,
+  DeserializeError,
+  Ilks,
+  Kinds,
+  Mapper,
+  type MapperMap,
+  SerderACDC,
+  t,
+} from "../../../../cesr/mod.ts";
 import {
   acdcatt,
   acdcmap,
@@ -56,6 +65,37 @@ Deno.test("acdc/messaging - bound JSON schema resources retain bundle URI IDs ac
     assertEquals(new SerderACDC({ raw: sections[1].raw }).schema, root.sed);
   }
   assertEquals(bundle.$id, "did:keri:EIVGZurJI7YwSxfzXgyrVPiqEmuZjKQcPy1AtLIhfvVQ");
+});
+
+Deno.test("acdc/messaging - canonical partial section commitments survive credential rebuilding", () => {
+  for (const kind of ["JSON", "CBOR", "MGPK", "CESR"] as const) {
+    for (const [label, option] of [["a", "attribute"], ["e", "edge"], ["r", "rule"]] as const) {
+      const section: MapperMap = {
+        d: "",
+        u: uuid,
+        status: { d: "", u: uuid, value: "citizen" },
+        private: { d: "", u: uuid, value: "hidden" },
+      };
+      const full = acdcmap(issuer, { kind, uuid, attribute: { d: "", role: "holder" }, [option]: section });
+      const compactor = new Compactor({ mad: full.sad![label] as MapperMap, kind, verify: false });
+      const path = `${label}/status/`;
+      compactor.compact([path], label);
+      const canonical = compactor.partials![path].mad;
+      if (kind === "JSON") {
+        // KERIpy 71438328 Compactor/SerderACDC retain this exact partial root.
+        assertEquals(canonical.d, "EGlDdoO2d6zwjbNqcaseCRbT9RVA8KgUL_-pzQPVUCTK");
+      }
+      const input = structuredClone(canonical);
+      const partial = new SerderACDC({ sad: { ...full.sad, [label]: canonical }, makify: true });
+      assertEquals(partial.sad![label], input, `${kind} ${label} disclosure must retain its canonical root d`);
+      assertEquals(canonical, input, "caller evidence remains unchanged");
+      assertEquals(partial.said, full.said, "disclosure retains the credential commitment");
+      assertEquals(new SerderACDC({ raw: partial.raw }).sad![label], input);
+      const tampered = structuredClone(partial.sad!);
+      ((tampered[label] as MapperMap).status as MapperMap).value = "changed";
+      assertThrows(() => new SerderACDC({ sad: tampered }), DeserializeError, "compact-form ACDC SAID");
+    }
+  }
 });
 
 Deno.test("acdc/messaging - regcept matches KERIpy JSON and CESR vectors", () => {

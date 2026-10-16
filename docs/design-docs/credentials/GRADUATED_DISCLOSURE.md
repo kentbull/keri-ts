@@ -96,6 +96,14 @@ an explicit TypeScript disclosure boundary, not issuer authentication. Serder
 verifies compact credential commitments, while Aggor independently verifies
 visible map claims and its list commitment.
 
+When a compactable credential carries an `a`, `e` or `r` map with a supplied
+commitment, Serder preserves that visible map, including its canonical partial
+root. It computes the credential SAID from a separate most-compact representation.
+Rehashing the visible partial changes its disclosure evidence even when the
+credential SAID stays stable, causing a KERIpy receiver to reject a negotiated
+disclosure. Blank semantic mappings are still saidified during construction;
+preserving disclosure evidence does not replace issuer or IPEX validation.
+
 An embedded schema with a verified shallow JSON bare root `$id` is one content-bound
 resource, independent of the credential body format. ACDC construction retains
 its bundled URI IDs and references, and the compact schema section is that root
