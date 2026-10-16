@@ -206,6 +206,7 @@ export class Baser {
   private evtsRaw!: Database<BinVal, BinKey>;
   readonly kevers = new Map<string, Kever>();
   readonly prefixes = new Set<string>();
+  /** Locally prepared/membered group identities; membership does not itself prove KEL acceptance. */
   readonly groups = new Set<string>();
 
   public evts!: SerderSuber<SerderKERI>; // Serialized KEL events keyed by event digest.
