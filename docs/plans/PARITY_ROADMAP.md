@@ -41,7 +41,8 @@ ownership and full qualification remain open.
   wrapper and unused host context/no-HTTP branch are removed. Protocol-only
   fixtures use exact direct intake, retaining their actual assertions and topology.
   Audit remaining
-  forwarding-only facades for actual responsibilities. AgentMode/runtimeMode are removed;
+  forwarding-only facades for actual responsibilities. Both Registrar wrappers are
+  removed after verifying they had no production callers. AgentMode/runtimeMode are removed;
   hosts choose provider mailbox construction explicitly.
 - Witness receipt, delegation and raw transport entrypoints now borrow actual
   Reactor/services instead of a parent runtime. Standalone receipting constructs

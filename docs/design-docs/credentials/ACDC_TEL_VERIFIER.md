@@ -149,10 +149,12 @@ Registry `present` and `vacate` reuse that frontier and disclosure derivation.
 Presentation validates only the grant target's digest syntax; it authenticates
 neither the grant nor its sender. Empty-target/state vacuous steps preserve the
 preceding binding only when `vetBinds` receives every intervening disclosure.
-`Registrar` delegates creation, issuance, presentation and vacuous updates over
-its borrowed Regery, resolving direct instances, then keys, then local aliases.
-These facades acquire no owners; runtime installation remains a separate gate.
-Frontier traversal still has local store-sized work; shared scan credit is pending.
+Call Regery for local creation and alias lookup, then Registry for blind/present/
+vacate. The legacy and v2 Registrar wrappers are removed: they had no production
+consumers or independent responsibility. KERIpy retains those convenience classes;
+TS uses its existing concrete owners with the same protocol behavior. No alias-
+resolving forwarding class replaces them. Frontier traversal still scans local
+store state; application scan accounting is removed.
 Acceptance advances already anchored successors one transaction at a time.
 Explicit `processEscrows` retries both families, pruning invalid prior links;
 later failures preserve earlier committed events. `anchorMsg` validates stored
