@@ -83,6 +83,8 @@ can republish approval unnecessarily.
 Direct stored-proposal approval is `approvePendingMultisigProposal`; it accepts
 only proposal selection and immediate UI decisions. Timed waits and delegated-group
 completion are private CLI orchestration, not exported workflow scheduling APIs.
+IPEX group coordination likewise exposes direct approval, publication and pending
+lookup; timed completion and proposal waits belong to the CLI.
 
 Normalization and Exchanger share supportsNestedExchange for the structural v2
 route gate. Handler opt-in, route-local child validation and independent proofs

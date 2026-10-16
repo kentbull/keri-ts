@@ -109,47 +109,60 @@ Deno.test("CLI - init command with valid arguments", async () => {
   );
 });
 
-Deno.test("CLI - IPEX runtime knobs validate before runtime startup", async () => {
-  await assertOperationThrows(
-    ipexGrantCommand({ said: "Ecredential", approvalTimeoutSeconds: -1 }),
-    "approval timeout seconds must be a finite nonnegative number",
-  );
-  await assertOperationThrows(
-    ipexGrantCommand({ said: "Ecredential", approvalTimeoutSeconds: Number.NaN }),
-    "approval timeout seconds must be a finite nonnegative number",
-  );
+Deno.test("CLI - IPEX elapsed deadlines validate before runtime startup", async () => {
+  for (const value of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    await assertOperationThrows(
+      ipexGrantCommand({ said: "Ecredential", approvalTimeoutSeconds: value }),
+      "approval timeout seconds must be a finite nonnegative number",
+    );
+    await assertOperationThrows(
+      ipexPollCommand({ timeout: value }),
+      "poll timeout seconds must be a finite nonnegative number",
+    );
+    await assertOperationThrows(
+      ipexJoinCommand({ approvalTimeoutSeconds: value }),
+      "approval timeout seconds must be a finite nonnegative number",
+    );
+  }
   await assertOperationThrows(
     ipexGrantCommand({ approvalTimeoutSeconds: 0 }),
     "Credential SAID is required and cannot be empty",
   );
+});
+
+Deno.test("CLI - IPEX empty poll and join deadlines close workers before store reopen", async () => {
+  const name = `ipex-deadline-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
+  await run(() => initCommand({ name, headDirPath, nopasscode: true }));
+  await run(function*() {
+    const hby = yield* setupHby(name, "", undefined, false, headDirPath, { skipConfig: true });
+    try {
+      hby.makeHab("holder", undefined, {});
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  const started = Date.now();
+  const polled = await captureCommand(ipexPollCommand({ name, headDirPath, alias: "holder", timeout: 0.05 }));
+  assertEquals(JSON.parse(polled.stdout), { batches: 0, messages: 0, ipex: [], saved: [] });
   await assertOperationThrows(
-    ipexPollCommand({ pollTurns: 0 }),
-    "poll turns must be a positive integer",
+    ipexJoinCommand({ name, headDirPath, approvalTimeoutSeconds: 0.05 }),
+    "No pending multisig IPEX proposal was available to join.",
   );
-  await assertOperationThrows(
-    ipexPollCommand({ pollTurns: 1.5 }),
-    "poll turns must be a positive integer",
-  );
-  await assertOperationThrows(
-    ipexPollCommand({ pollTurns: Number.NaN }),
-    "poll turns must be a positive integer",
-  );
-  await assertOperationThrows(
-    ipexPollCommand({ pollBudgetMs: 0 }),
-    "poll budget milliseconds must be a positive integer",
-  );
-  await assertOperationThrows(
-    ipexPollCommand({ pollBudgetMs: -1 }),
-    "poll budget milliseconds must be a positive integer",
-  );
-  await assertOperationThrows(
-    ipexPollCommand({ pollBudgetMs: 1.5 }),
-    "poll budget milliseconds must be a positive integer",
-  );
-  await assertOperationThrows(
-    ipexJoinCommand({ pollTurns: -1 }),
-    "poll turns must be a positive integer",
-  );
+  assertEquals(Date.now() - started < 3_000, true, "Empty command waits must obey their elapsed deadlines.");
+  await run(function*() {
+    const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
+      readonly: true,
+      skipConfig: true,
+      skipSignator: true,
+    });
+    try {
+      assertExists(hby.habByName("holder")?.kever);
+    } finally {
+      yield* hby.close();
+    }
+  });
 });
 
 Deno.test("CLI - multisig approval deadlines validate before runtime startup", async () => {

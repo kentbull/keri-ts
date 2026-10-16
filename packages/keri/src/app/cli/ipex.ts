@@ -1,11 +1,11 @@
 import { concatBytes, Counter, parse, SerderKERI, type Versionage } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
 import { Reger } from "../../db/reger.ts";
 import { abortable } from "../abortable.ts";
-import { type AgentRuntime, processMailboxTurn } from "../agent-runtime.ts";
+import { type AgentRuntime, runAgentRuntime, settleMailboxPollBatch } from "../agent-runtime.ts";
 import { fileBytes } from "../byte-source.ts";
 import { requireRegery } from "../credential-workflows.ts";
 import { isLocalGroupHab, localGroupMember } from "../group-members.ts";
@@ -20,13 +20,13 @@ import {
 } from "../ipex-credentialing.ts";
 import {
   approveMultisigIpex,
+  approveStoredMultisigIpexWrappers,
+  findPendingMultisigIpex,
   groupIpexPartial,
-  nextPendingMultisigIpex,
   publishGroupIpexProposal,
   requireStoredExchange,
   sendCredentialBytes,
   storedExchangeMessage,
-  waitForMultisigIpexCompletion,
 } from "../ipex-grouping.ts";
 import {
   IPEX_AGREE_ROUTE,
@@ -66,8 +66,7 @@ interface IpexAdmitArgs extends IpexBaseArgs {
 interface IpexJoinArgs extends IpexBaseArgs {
   said?: string;
   auto?: boolean;
-  pollTurns?: number;
-  pollBudgetMs?: number;
+  approvalTimeoutSeconds: number;
 }
 
 /** Implement `tufa ipex apply` by sending a schema/attribute request EXN. */
@@ -267,11 +266,10 @@ export function* ipexListCommand(args: Record<string, unknown>): Operation<void>
   });
 }
 
-/** Implement bounded mailbox polling plus stored grant replay for holders. */
+/** Observe settled mailbox input and stored grant replay until new IPEX state or an elapsed deadline. */
 export function* ipexPollCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
-  const pollTurns = positiveInteger(args.pollTurns, 8, "poll turns");
-  const pollBudgetMs = positiveInteger(args.pollBudgetMs, 5_000, "poll budget milliseconds");
+  const timeoutMs = nonNegativeNumber(args.timeout, 40, "poll timeout seconds") * 1000;
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
     const beforeExns = new Set(
@@ -283,15 +281,41 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
     let batchesSeen = 0;
     let messagesSeen = 0;
 
-    for (let turn = 0; turn < pollTurns; turn++) {
-      const batches = yield* processMailboxTurn(runtime, { hab, budgetMs: pollBudgetMs });
-      batchesSeen += batches.length;
-      messagesSeen += batches.reduce((total, batch) => total + batch.messages.length, 0);
-      yield* processStoredCredentialGrants(hby, runtime, reger, ipexArgs.gvrsn);
-      yield* runtime.reactor.processEscrowsOnce();
-      if (newIpexMessages(hby, beforeExns).length > 0 || newSavedCredentials(reger, beforeSaved).length > 0) {
-        break;
+    const signer = hab && isLocalGroupHab(hby, hab) ? localGroupMember(hby, hab.pre) : hab;
+    const deadline = Date.now() + timeoutMs;
+    let receiving = 0;
+    const host = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: false }));
+    try {
+      const mailbox = yield* spawn(function*() {
+        yield* runtime.mailboxPoller.pollDo(function*(batch) {
+          receiving++;
+          try {
+            yield* settleMailboxPollBatch(runtime, batch);
+            batchesSeen++;
+            messagesSeen += batch.messages.length;
+          } finally {
+            receiving--;
+          }
+        });
+      });
+      try {
+        while (true) {
+          yield* processStoredCredentialGrants(hby, runtime, reger, ipexArgs.gvrsn);
+          // State may become visible before the rest of a delivered batch settles.
+          if (
+            receiving === 0
+            && (newIpexMessages(hby, beforeExns).length > 0 || newSavedCredentials(reger, beforeSaved).length > 0)
+          ) {
+            break;
+          }
+          if (Date.now() >= deadline) break;
+          yield* sleep(Math.min(250, deadline - Date.now()));
+        }
+      } finally {
+        yield* mailbox.halt();
       }
+    } finally {
+      yield* host.halt();
     }
 
     console.log(JSON.stringify({
@@ -309,16 +333,16 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
     ...ipexBaseArgs(args),
     said: args.said as string | undefined,
     auto: args.auto as boolean | undefined,
-    pollTurns: args.pollTurns as number | undefined,
-    pollBudgetMs: args.pollBudgetMs as number | undefined,
+    approvalTimeoutSeconds: nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds"),
   };
-  const pollTurns = positiveInteger(ipexArgs.pollTurns, 32, "poll turns");
-  const pollBudgetMs = positiveInteger(ipexArgs.pollBudgetMs, 2000, "poll budget milliseconds");
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const pollHab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
     const exn = ipexArgs.said
       ? hby.db.exns.get([ipexArgs.said])
-      : yield* nextPendingMultisigIpex(hby, runtime, { hab: pollHab, pollTurns, pollBudgetMs });
+      : yield* nextPendingMultisigIpex(hby, runtime, {
+        hab: pollHab,
+        timeoutMs: ipexArgs.approvalTimeoutSeconds * 1000,
+      });
     if (!exn) {
       throw new ValidationError(
         ipexArgs.said
@@ -458,17 +482,6 @@ function requireString(value: string | undefined, label: string): string {
   return value!;
 }
 
-function positiveInteger(value: unknown, fallback: number, label: string): number {
-  if (value === undefined || value === null || value === "") {
-    return fallback;
-  }
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new ValidationError(`${label} must be a positive integer.`);
-  }
-  return parsed;
-}
-
 function nonNegativeNumber(value: unknown, fallback: number, label: string): number {
   if (value === undefined || value === null || value === "") {
     return fallback;
@@ -581,4 +594,57 @@ function grantSender(grant: SerderKERI): string {
     throw new ValidationError("Grant is missing sender AID.");
   }
   return sender;
+}
+
+/** Await group approval while the ordinary host owns mailbox, query and escrow progress. */
+function* waitForMultisigIpexCompletion(
+  hby: Habery,
+  runtime: AgentRuntime,
+  groupHab: Hab,
+  embeddedSaid: string,
+  approvalTimeoutSeconds: number,
+): Operation<boolean> {
+  const member = localGroupMember(hby, groupHab.pre);
+  const deadline = Date.now() + approvalTimeoutSeconds * 1000;
+  const host = yield* spawn(() => runAgentRuntime(runtime, { hab: member }));
+  try {
+    while (true) {
+      yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
+      if (runtime.reactor.exchanger.complete(embeddedSaid)) return true;
+      if (Date.now() >= deadline) return false;
+      yield* sleep(Math.min(250, deadline - Date.now()));
+    }
+  } finally {
+    yield* host.halt();
+  }
+}
+
+/** Observe stored proposals while the host progresses input, then join before approval. */
+function* nextPendingMultisigIpex(
+  hby: Habery,
+  runtime: AgentRuntime,
+  { hab, timeoutMs }: { hab?: Hab; timeoutMs: number },
+): Operation<SerderKERI | null> {
+  const found = findPendingMultisigIpex(hby, runtime);
+  if (found || timeoutMs === 0) return found;
+  const signer = hab && isLocalGroupHab(hby, hab) ? localGroupMember(hby, hab.pre) : hab;
+  const deadline = Date.now() + timeoutMs;
+  const host = yield* spawn(() => runAgentRuntime(runtime, { hab: signer }));
+  try {
+    while (true) {
+      const pending = findPendingMultisigIpex(hby, runtime);
+      if (pending) return pending;
+      if (Date.now() >= deadline) return null;
+      yield* sleep(Math.min(250, deadline - Date.now()));
+    }
+  } finally {
+    yield* host.halt();
+  }
+}
+
+function* sleep(ms: number): Operation<void> {
+  yield* action<void>((resolve) => {
+    const timeout = setTimeout(resolve, ms);
+    return () => clearTimeout(timeout);
+  });
 }

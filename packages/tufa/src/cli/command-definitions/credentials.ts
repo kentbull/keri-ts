@@ -297,9 +297,12 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
     addHabOption(
       addGvrsnOption(addStoreOptions(
         ipex.command("poll")
-          .description("Poll configured credential mailboxes once")
-          .option("--poll-turns <count>", "Maximum bounded mailbox polling turns", (value: string) => Number(value))
-          .option("--poll-budget-ms <ms>", "Per-turn mailbox polling budget", (value: string) => Number(value)),
+          .description("Wait for new IPEX mailbox state until an elapsed deadline")
+          .option(
+            "--timeout <seconds>",
+            "Elapsed mailbox wait in seconds (default 40)",
+            (value: string) => Number(value),
+          ),
       )),
     ),
     dispatch,
@@ -315,8 +318,11 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
             .description("Approve or validate a single-sig or multisig IPEX message")
             .option("--said <said>", "IPEX or multisig wrapper EXN SAID")
             .option("--auto", "Approve a multisig IPEX proposal without prompting", false)
-            .option("--poll-turns <count>", "Maximum bounded mailbox polling turns", (value: string) => Number(value))
-            .option("--poll-budget-ms <ms>", "Per-turn mailbox polling budget", (value: string) => Number(value)),
+            .option(
+              "--approval-timeout <seconds>",
+              "Elapsed proposal wait in seconds (default 60)",
+              (value: string) => Number(value),
+            ),
         ),
       ),
     ),

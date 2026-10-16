@@ -16,12 +16,12 @@ guarded until their processing is defined.
 `ipexExnBody` synchronously accepts parsed credential bodies and explicit route
 options. It reads no payload or storage and authenticates no signatures. Opening
 callers supply an exchange id; replies preserve parties and the prior id.
-`nestedPayload`/`framePayload` borrow parsed frames and owners through consumption.
-`prepareIpexExn` is the byte convenience operation: parse once, construct the
-body, collect nested wire under the existing 8 MiB ceiling, then join disposal of
-all parsed owners. Parent signatures and child evidence must share the outer
-attachment enclosure. Cancellation aborts reads and joins cleanup; no lazy owner
-escapes this operation.
+`nestedPayload`/`framePayload` serialize ordinary hydrated child values.
+`prepareIpexExn` is the byte convenience operation: decode finite input, construct
+the body and collect nested wire. Serialization observes cancellation; parsed
+frames need no disposal or application size policy. Parent signatures and child
+evidence must share the outer attachment enclosure. No lazy owner escapes this
+operation.
 
 Exchanger verifies before durable acceptance, retains missing issuer/KEL/TEL
 proofs in its existing escrow, retries from persisted children, and notifies only
@@ -67,6 +67,27 @@ outer EXNs with empty prior do not round-trip in the frozen low-level factory
 probe; they are unqualified here. Full format/production qualification remains
 in the [qualification plan](../../plans/qualification/QUALIFICATION_PLAN.md),
 separately from the mailbox-fork evidence.
+
+## CLI progress and observations
+
+Group approval and pending-proposal waits belong to CLI orchestration. Each wait
+starts the ordinary host workers when progress is needed and joins them before
+returning. Direct group approval, publication and stored-proposal lookup carry
+no polling options.
+
+`ipex poll --timeout <seconds>` observes new IPEX or saved-credential state under
+an elapsed deadline (default 40 seconds). The command consumes the existing
+continuous mailbox batch flow; the other host workers run with mailbox polling
+disabled. Its batch/message counts describe fully settled batches. State can
+become visible partway through a batch, so normal completion waits for delivered
+batches to finish. Deadline cancellation still joins real I/O before output and
+store teardown. With no new state, deadline expiry returns empty results.
+
+`ipex join --approval-timeout <seconds>` waits for a stored pending group proposal
+(default 60 seconds). Zero selects an immediate stored-state attempt. Group grant
+approval retains its separate elapsed approval deadline. These commands expose
+elapsed waits rather than polling-turn counts or per-turn budgets; protocol
+acceptance and saved-credential state remain distinct completion facts.
 
 ## Dependencies
 

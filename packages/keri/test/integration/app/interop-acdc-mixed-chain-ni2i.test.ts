@@ -658,10 +658,8 @@ async function pollTufaGrant(
           ...tufaStoreArgs(store),
           "--alias",
           store.alias,
-          "--poll-turns",
+          "--timeout",
           "3",
-          "--poll-budget-ms",
-          "1000",
         ],
         ctx.env,
         ctx.repoRoot,
@@ -669,7 +667,13 @@ async function pollTufaGrant(
       ),
     );
     attempts.push(poll.stdout);
-    grantSaid ??= grantSaidFromPoll(poll.stdout);
+    const receivedGrant = grantSaidFromPoll(poll.stdout);
+    if (receivedGrant) {
+      const observations = JSON.parse(extractLastNonEmptyLine(poll.stdout));
+      assertEquals(observations.batches > 0, true, "Received grants must report settled mailbox batches.");
+      assertEquals(observations.messages >= observations.batches, true, "Every settled batch contains messages.");
+    }
+    grantSaid ??= receivedGrant;
     const credentialSaved = expectedCredentialSaid ? savedSaidFromPoll(poll.stdout, expectedCredentialSaid) : true;
     if (grantSaid && credentialSaved) {
       return grantSaid;
