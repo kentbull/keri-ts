@@ -1,14 +1,5 @@
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
-import {
-  Compactor,
-  concatBytes,
-  Counter,
-  Kinds,
-  type MapperMap,
-  parseBytes,
-  SerderACDC,
-  Vrsn_2_0,
-} from "cesr-ts";
+import { Compactor, concatBytes, Counter, Kinds, type MapperMap, parseBytes, SerderACDC, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
@@ -32,7 +23,8 @@ import { assertKeriPyWitnessStores } from "./interop-witness-helpers.ts";
 import { accepted, anchor, introduce, nonce, post, signed } from "./ipex-witness-helpers.ts";
 
 for (const count of [1, 2]) {
-  Deno.test(`IPEX presentation cutoff: ${count}-signer TS holder, independent stores, three KERIpy witnesses`, async () => {
+  /** Concrete presentation workflow; registration chooses which maintained case runs it. */
+  async function presentationCutoff(): Promise<void> {
     const ctx = await createInteropContext();
     const aliases = ["wan", "wil", "wes"];
     try {
@@ -307,5 +299,9 @@ for (const count of [1, 2]) {
     } finally {
       await Deno.remove(ctx.home, { recursive: true });
     }
-  });
+  }
+  Deno.test(
+    `IPEX presentation cutoff: ${count}-signer TS holder, independent stores, three KERIpy witnesses`,
+    presentationCutoff,
+  );
 }
