@@ -949,7 +949,7 @@ export class Receiptor {
       pre,
       eventSn,
     );
-    const witnesses = [...kever.wits];
+    const witnesses = acceptedEventWitnesses(this.hby.db, serder)!;
     if (witnesses.length === 0) {
       return { witnesses: [], statuses: {} };
     }
@@ -959,10 +959,7 @@ export class Receiptor {
         yield* this.catchup(pre, witness);
       }
     }
-    const receiptGroups = new Map<
-      string,
-      { readonly wigers: readonly Siger[]; readonly cigars: readonly Cigar[] }
-    >();
+    const receiptGroups = new Map<string, readonly Siger[]>();
     const statuses: Record<string, number> = {};
     const said = serder.said;
     if (!said) {
@@ -980,63 +977,49 @@ export class Receiptor {
 
       if (allowTcp && !witnessHttpUrl(hab, witness) && witnessTcpUrl(hab, witness)) {
         yield* sendWitnessMessage(hab, witness, message, undefined, this.services, this.reactor);
-        // Same-socket drain is insufficient: only Kevery-verified, persisted evidence counts.
-        const index = witnesses.indexOf(witness);
-        const wigers = this.hby.db.wigs.get(dgKey(pre, said))
-          .filter((siger) => siger.index === index);
-        if (wigers.length === 0) {
-          throw new ValidationError(`Witness ${witness} did not receipt ${pre}:${eventSn.toString(16)}.`);
-        }
-        receiptGroups.set(witness, { wigers, cigars: [] });
         statuses[witness] = 200;
-        continue;
-      }
-
-      // A single receipt attempt owns its response until parsing and collection finish.
-      let response = yield* call(() =>
-        postWitnessReceiptEndpoint(
-          hab,
-          witness,
-          message,
-          auths[witness],
-        )
-      );
-      if (response.kind === "escrow") {
-        response = yield* pollWitnessReceipt(
-          hab,
-          witness,
-          pre,
-          eventSn,
-          said,
+      } else {
+        // A single receipt attempt owns its response until parsing and collection finish.
+        let response = yield* call(() =>
+          postWitnessReceiptEndpoint(
+            hab,
+            witness,
+            message,
+            auths[witness],
+          )
         );
+        if (response.kind === "escrow") {
+          response = yield* pollWitnessReceipt(
+            hab,
+            witness,
+            pre,
+            eventSn,
+            said,
+          );
+        }
+        statuses[witness] = response.status;
+        if (response.kind !== "accepted") {
+          const detail = response.kind === "reject" ? response.message : "receipt remained escrowed";
+          throw new ValidationError(
+            `Witness ${witness} failed to receipt ${pre}:${eventSn.toString(16)}: ${detail}`,
+          );
+        }
+        yield* this.reactor.processBytes(response.body, { local: false });
+        yield* this.reactor.processEscrowsOnce();
       }
-      statuses[witness] = response.status;
-      if (response.kind !== "accepted") {
-        const detail = response.kind === "reject" ? response.message : "receipt remained escrowed";
-        throw new ValidationError(
-          `Witness ${witness} failed to receipt ${pre}:${eventSn.toString(16)}: ${detail}`,
-        );
+      // HTTP status and socket drain are transport facts; only accepted witness proof counts.
+      const index = witnesses.indexOf(witness);
+      const wigers = this.hby.db.wigs.get(dgKey(pre, said)).filter((siger) => siger.index === index);
+      if (wigers.length === 0) {
+        throw new ValidationError(`Witness ${witness} did not receipt ${pre}:${eventSn.toString(16)}.`);
       }
-
-      receiptGroups.set(witness, {
-        wigers: response.wigers,
-        cigars: response.cigars,
-      });
-      yield* this.reactor.processBytes(response.body, { local: false });
-      yield* this.reactor.processEscrowsOnce();
+      receiptGroups.set(witness, wigers);
     }
 
     for (const witness of witnesses) {
-      const complements = [...receiptGroups.entries()]
-        .filter(([current]) => current !== witness)
-        .map(([, evidence]) => evidence);
-      const otherWigers = complements.flatMap((
-        evidence,
-      ) => [...evidence.wigers]);
-      const otherCigars = complements.flatMap((
-        evidence,
-      ) => [...evidence.cigars]);
-      if (otherWigers.length === 0 && otherCigars.length === 0) {
+      const otherWigers = [...receiptGroups.entries()]
+        .flatMap(([current, wigers]) => current === witness ? [] : [...wigers]);
+      if (otherWigers.length === 0) {
         continue;
       }
 
@@ -1056,10 +1039,7 @@ export class Receiptor {
       parts.push(
         buildDetachedReceiptMessage(
           receiptEvent(pre, eventSn, said),
-          {
-            wigers: otherWigers,
-            cigars: otherCigars,
-          },
+          { wigers: otherWigers },
         ),
       );
       yield* sendWitnessMessage(hab, witness, concatBytes(...parts), undefined, this.services, this.reactor);
@@ -1080,25 +1060,27 @@ export class Receiptor {
     if (!kever) {
       throw new ValidationError(`Missing accepted key state for ${pre}.`);
     }
-    const witness = [...kever.wits].sort()[0];
+    const eventSn = sn ?? kever.sn;
+    const knownSaid = this.hby.db.kels.getLast(pre, eventSn);
+    const known = knownSaid ? this.hby.db.getEvtSerder(pre, knownSaid) : null;
+    const witnesses = known ? acceptedEventWitnesses(this.hby.db, known)! : kever.wits;
+    const witness = [...witnesses].sort()[0];
     if (!witness) {
       return false;
     }
 
-    const response = yield* call(() =>
-      getWitnessReceiptEndpoint(hab, witness, {
-        pre,
-        sn: sn ?? kever.sn,
-        said,
-      })
-    );
+    const response = yield* call(() => getWitnessReceiptEndpoint(hab, witness, { pre, sn: eventSn, said }));
     if (response.kind !== "accepted") {
       return false;
     }
 
     yield* this.reactor.processBytes(response.body, { local: false });
     yield* this.reactor.processEscrowsOnce();
-    return true;
+    const expectedSaid = this.hby.db.kels.getLast(pre, eventSn);
+    const accepted = expectedSaid ? this.hby.db.getEvtSerder(pre, expectedSaid) : null;
+    const index = accepted ? acceptedEventWitnesses(this.hby.db, accepted)?.indexOf(witness) : -1;
+    return !!expectedSaid && (said === undefined || said === expectedSaid)
+      && this.hby.db.wigs.get(dgKey(pre, expectedSaid)).some((siger) => siger.index === index);
   }
 
   /** Catch one witness up through the same protocol processor used for receipt intake. */
@@ -1155,13 +1137,12 @@ export class WitnessReceiptor {
       throw new ValidationError(`Missing accepted key state for ${pre}.`);
     }
     const eventSn = sn ?? kever.sn;
-    const said = this.hby.db.kels.getLast(pre, eventSn);
-    const currentWitnessCount = said ? this.hby.db.wigs.get(dgKey(pre, said)).length : 0;
-    if (!this.force && currentWitnessCount >= kever.wits.length) {
-      const statuses = Object.fromEntries(
-        kever.wits.map((witness: string) => [witness, 200]),
-      );
-      return { witnesses: [...kever.wits], statuses };
+    const { serder } = acceptedEventReplayMessage(this.hby, pre, eventSn);
+    const witnesses = acceptedEventWitnesses(this.hby.db, serder)!;
+    const currentWitnessCount = this.hby.db.wigs.get(dgKey(pre, serder.said!)).length;
+    if (!this.force && currentWitnessCount >= witnesses.length) {
+      const statuses = Object.fromEntries(witnesses.map((witness) => [witness, 200]));
+      return { witnesses, statuses };
     }
     return yield* this.receiptor.receipt(pre, { sn: eventSn, auths, allowTcp: true });
   }

@@ -1,11 +1,13 @@
-import { concatBytes } from "cesr-ts";
+import { Cigar, concatBytes, parseBytes } from "cesr-ts";
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { once } from "node:events";
 import { createConnection, createServer, type Socket } from "node:net";
 import { abortable } from "../../../src/app/abortable.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { socketBytes } from "../../../src/app/socket-source.ts";
 import { streamCesrTcpConversation } from "../../../src/app/tcp-conversation.ts";
@@ -17,6 +19,8 @@ import {
   writeCesrTcpSocket,
 } from "../../../src/app/tcp-egress.ts";
 import { Receiptor, sendWitnessMessage, WitnessReceiptor } from "../../../src/app/witnessing.ts";
+import { receipt as receiptEvent } from "../../../src/core/protocol-eventing.ts";
+import { messagize } from "../../../src/core/protocol-serialization.ts";
 
 /** Seed accepted local identifiers and the remote HTTP location used by witness transport. */
 function fixture(hby: Habery, url: string) {
@@ -203,6 +207,171 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
   } finally {
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+Deno.test("HTTP receipt success requires the requested event's verified witness signature", async () => {
+  let body: Uint8Array = new Uint8Array(), requests = 0;
+  const server = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, async (request) => {
+    requests++;
+    await request.arrayBuffer();
+    return new Response(body.slice().buffer as ArrayBuffer, { headers: { "Content-Type": "application/cesr" } });
+  });
+  try {
+    await run(function*() {
+      const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const provider = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      try {
+        const witness = provider.makeHab("witness", undefined, { transferable: false });
+        const outsider = provider.makeHab("outsider", undefined, { transferable: false });
+        const controller = source.makeHab("controller", undefined, { wits: [witness.pre], toad: 1 });
+        source.db.locs.pin([witness.pre, "http"], { url: `http://127.0.0.1:${server.addr.port}` });
+        const old = acceptedEventReplayMessage(source, controller.pre, 0).serder;
+        controller.interact();
+        const current = acceptedEventReplayMessage(source, controller.pre, 1).serder;
+        const key = [controller.pre, current.said!] as const;
+        const submitter = new WitnessReceiptor(source), getter = new Receiptor(source);
+        const forged = new Cigar({ qb64: outsider.sign(current.raw, false)[0]!.qb64 }, witness.kever!.verfers[0]);
+        for (
+          const invalid of [
+            outsider.receipt(current),
+            witness.receipt(old),
+            messagize(receiptEvent(controller.pre, 1, current.said!), { cigars: [forged], pipelined: true }),
+          ]
+        ) {
+          body = invalid;
+          yield* call(() => assertRejects(() => run(() => submitter.submit(controller.pre)), Error, "did not receipt"));
+          assertEquals(yield* getter.get(controller.pre), false);
+          assertEquals(source.db.wigs.get(key).length, 0);
+        }
+        body = witness.receipt(current);
+        assertEquals(source.db.wigs.get(key).length, 0, "the independent signer cannot seed controller evidence");
+        assertEquals(yield* submitter.submit(controller.pre), {
+          witnesses: [witness.pre],
+          statuses: { [witness.pre]: 200 },
+        });
+        assertEquals(source.db.wigs.get(key).map((siger) => siger.index), [0]);
+        const completedRequests = requests;
+        yield* submitter.submit(controller.pre);
+        assertEquals(requests, completedRequests, "only verified persistence enables the convergence fast path");
+        assertEquals(
+          yield* getter.get(controller.pre, { sn: 0, said: current.said! }),
+          false,
+          "an accepted digest cannot satisfy a different requested sequence number",
+        );
+        controller.interact();
+        const next = acceptedEventReplayMessage(source, controller.pre, 2).serder;
+        body = witness.receipt(next);
+        assertEquals(source.db.wigs.get([controller.pre, next.said!]).length, 0);
+        assertEquals(yield* getter.get(controller.pre, { sn: 2 }), true);
+        assertEquals(source.db.wigs.get([controller.pre, next.said!]).map((siger) => siger.index), [0]);
+      } finally {
+        yield* source.close(true);
+        yield* provider.close(true);
+      }
+    });
+  } finally {
+    await server.shutdown();
+  }
+});
+
+Deno.test("HTTP three-witness fanout contains only verified complementary witness signatures", async () => {
+  const replies: Uint8Array[] = [], fanout: Array<{ witness: number; bytes: Uint8Array }> = [];
+  const server = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, async (request) => {
+    const path = new URL(request.url).pathname, index = Number(path.split("/")[1]);
+    const bytes = await readCesrRequestBytes(request);
+    if (path.endsWith("/receipts")) {
+      return new Response(replies[index]!.slice().buffer as ArrayBuffer, {
+        headers: { "Content-Type": "application/cesr" },
+      });
+    }
+    fanout.push({ witness: index, bytes });
+    return new Response(null, { status: 204 });
+  });
+  try {
+    await run(function*() {
+      const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const provider = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      try {
+        const witnesses = [0, 1, 2].map((index) =>
+          provider.makeHab(`witness-${index}`, undefined, { transferable: false })
+        );
+        const outsider = provider.makeHab("outsider", undefined, { transferable: false });
+        const controller = source.makeHab("controller", undefined, { wits: witnesses.map((hab) => hab.pre), toad: 2 });
+        const { serder } = acceptedEventReplayMessage(source, controller.pre, 0);
+        for (const [index, witness] of witnesses.entries()) {
+          source.db.locs.pin([witness.pre, "http"], { url: `http://127.0.0.1:${server.addr.port}/${index}` });
+          replies.push(messagize(receiptEvent(controller.pre, 0, serder.said!), {
+            cigars: [witness.sign(serder.raw, false)[0]!, outsider.sign(serder.raw, false)[0]!],
+            pipelined: true,
+          }));
+        }
+        yield* new Receiptor(source).receipt(controller.pre);
+        assertEquals(source.db.wigs.get([controller.pre, serder.said!]).map((siger) => siger.index).sort(), [0, 1, 2]);
+        assertEquals(fanout.map(({ witness }) => witness), [0, 1, 2]);
+        for (const { witness, bytes } of fanout) {
+          const frames = parseBytes(bytes), envelope = envelopeFromFrame(frames.at(-1)!);
+          assertEquals(envelope.serder.ilk, "rct");
+          assertEquals(
+            envelope.wigers.map((siger) => siger.index).sort(),
+            [0, 1, 2].filter((index) => index !== witness),
+          );
+          assertEquals(envelope.cigars, [], "untrusted response proof and non-witness signatures never enter fanout");
+        }
+      } finally {
+        yield* source.close(true);
+        yield* provider.close(true);
+      }
+    });
+  } finally {
+    await server.shutdown();
+  }
+});
+
+Deno.test("HTTP receipt selection and cached completion use the requested event's witness set", async () => {
+  const replies: Uint8Array[] = [], requests: string[] = [];
+  const server = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, async (request) => {
+    const path = new URL(request.url).pathname;
+    requests.push(path);
+    await request.arrayBuffer();
+    return new Response(replies[Number(path.split("/")[1])]!.slice().buffer as ArrayBuffer);
+  });
+  try {
+    await run(function*() {
+      const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const provider = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      try {
+        const before = provider.makeHab("before", undefined, { transferable: false });
+        const after = provider.makeHab("after", undefined, { transferable: false });
+        const controller = source.makeHab("controller", undefined, { wits: [before.pre], toad: 1 });
+        const old = acceptedEventReplayMessage(source, controller.pre, 0).serder;
+        controller.rotate({ cuts: [before.pre], adds: [after.pre], toad: 1 });
+        for (const [index, witness] of [before, after].entries()) {
+          source.db.locs.pin([witness.pre, "http"], { url: `http://127.0.0.1:${server.addr.port}/${index}` });
+          replies.push(witness.receipt(old));
+        }
+        const receiptor = new Receiptor(source);
+        assertEquals(yield* receiptor.get(controller.pre, { sn: 0 }), true);
+        const expected = { witnesses: [before.pre], statuses: { [before.pre]: 200 } };
+        assertEquals(yield* new WitnessReceiptor(source).submit(controller.pre, { sn: 0 }), expected);
+        assertEquals(
+          requests,
+          ["/0/receipts"],
+          "cached completion names the historical witness without another request",
+        );
+        assertEquals(yield* receiptor.receipt(controller.pre, { sn: 0 }), expected);
+        assertEquals(
+          requests,
+          ["/0/receipts", "/0/receipts"],
+          "explicit receipt retrieves the event's original witness",
+        );
+      } finally {
+        yield* source.close(true);
+        yield* provider.close(true);
+      }
+    });
+  } finally {
+    await server.shutdown();
   }
 });
 

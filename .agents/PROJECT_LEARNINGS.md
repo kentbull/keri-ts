@@ -43,6 +43,8 @@ the host workers, joining them before teardown; serial runtime pumping remains
 removal work. Local endpoint/startup intake uses direct protocol processing; host
 composition has no fake per-Hab seeding phase. Witness receipt/delegation/raw send owners borrow Reactor and transport services,
 not a parent runtime; standalone receipt processing opens no extra stores.
+HTTP status never proves witness receipt success: require accepted indexed proof
+for the requested event and fan out only verified complementary signatures.
 Local protocol fixtures use the same intake and preserve semantic assertions instead of driving unrelated work.
 Publish after owning writes/commit; preserve real iterator, reader and payload cleanup. Do not
 restore queue credit, capacity, inspection or synthetic retain/release handles.
