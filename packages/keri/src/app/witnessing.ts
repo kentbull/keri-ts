@@ -437,28 +437,6 @@ export function* processWitnessIngress(
   );
 }
 
-/** Resolve the authoritative witness list for one accepted event. */
-function acceptedEventWitnesses(
-  db: Baser,
-  serder: SerderKERI,
-): string[] | null {
-  const pre = serder.pre;
-  const said = serder.said;
-  if (!pre || !said) {
-    return null;
-  }
-
-  const stored = db.wits.get(dgKey(pre, said)).map((wit) => wit.qb64);
-  if (stored.length > 0) {
-    return stored;
-  }
-  if (serder.ilk === Ilks.icp || serder.ilk === Ilks.dip) {
-    return [...serder.backs];
-  }
-  const kever = db.getKever(pre);
-  return kever ? [...kever.wits] : null;
-}
-
 /** Decide whether the hosted witness can currently return a synchronous receipt. */
 function witnessReceiptEligibility(
   serviceHab: Hab,
@@ -578,7 +556,7 @@ export function witnessReceiptGet(
     };
   }
 
-  const wits = acceptedEventWitnesses(serviceHab.db, serder);
+  const wits = serviceHab.db.acceptedEventWitnesses(serder);
   if (!wits || !wits.includes(serviceHab.pre)) {
     return {
       kind: "reject",
@@ -949,7 +927,7 @@ export class Receiptor {
       pre,
       eventSn,
     );
-    const witnesses = acceptedEventWitnesses(this.hby.db, serder)!;
+    const witnesses = this.hby.db.acceptedEventWitnesses(serder)!;
     if (witnesses.length === 0) {
       return { witnesses: [], statuses: {} };
     }
@@ -1063,7 +1041,7 @@ export class Receiptor {
     const eventSn = sn ?? kever.sn;
     const knownSaid = this.hby.db.kels.getLast(pre, eventSn);
     const known = knownSaid ? this.hby.db.getEvtSerder(pre, knownSaid) : null;
-    const witnesses = known ? acceptedEventWitnesses(this.hby.db, known)! : kever.wits;
+    const witnesses = known ? this.hby.db.acceptedEventWitnesses(known)! : kever.wits;
     const witness = [...witnesses].sort()[0];
     if (!witness) {
       return false;
@@ -1078,7 +1056,7 @@ export class Receiptor {
     yield* this.reactor.processEscrowsOnce();
     const expectedSaid = this.hby.db.kels.getLast(pre, eventSn);
     const accepted = expectedSaid ? this.hby.db.getEvtSerder(pre, expectedSaid) : null;
-    const index = accepted ? acceptedEventWitnesses(this.hby.db, accepted)?.indexOf(witness) : -1;
+    const index = accepted ? this.hby.db.acceptedEventWitnesses(accepted)?.indexOf(witness) : -1;
     return !!expectedSaid && (said === undefined || said === expectedSaid)
       && this.hby.db.wigs.get(dgKey(pre, expectedSaid)).some((siger) => siger.index === index);
   }
@@ -1138,7 +1116,7 @@ export class WitnessReceiptor {
     }
     const eventSn = sn ?? kever.sn;
     const { serder } = acceptedEventReplayMessage(this.hby, pre, eventSn);
-    const witnesses = acceptedEventWitnesses(this.hby.db, serder)!;
+    const witnesses = this.hby.db.acceptedEventWitnesses(serder)!;
     const currentWitnessCount = this.hby.db.wigs.get(dgKey(pre, serder.said!)).length;
     if (!this.force && currentWitnessCount >= witnesses.length) {
       const statuses = Object.fromEntries(witnesses.map((witness) => [witness, 200]));

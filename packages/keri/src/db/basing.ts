@@ -1258,6 +1258,21 @@ export class Baser {
   }
 
   /**
+   * Resolve receipt witnesses from accepted event evidence, then live state.
+   * Partial-witness escrows derive their own cohort before event acceptance.
+   */
+  acceptedEventWitnesses(serder: SerderKERI): string[] | null {
+    const pre = serder.pre;
+    const said = serder.said;
+    if (!pre || !said) return null;
+    const stored = this.wits.get(dgKey(pre, said)).map((wit) => wit.qb64);
+    if (stored.length > 0) return stored;
+    if (serder.ilk === Ilks.icp || serder.ilk === Ilks.dip) return [...serder.backs];
+    const kever = this.getKever(pre);
+    return kever ? [...kever.wits] : null;
+  }
+
+  /**
    * Return true when `serder` currently satisfies the stored witness threshold.
    *
    * KERIpy correspondence:
