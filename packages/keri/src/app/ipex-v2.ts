@@ -3,20 +3,17 @@ import { IPEX_V2_PREDECESSORS, type IpexVerb, isIpexVerb, nestedIpexRoute } from
 import {
   type CesrFrame,
   Diger,
-  NumberPrimitive,
   ParserError,
   Prefixer,
-  type SealEvent,
   type SealSource,
   SerderACDC,
   type SerderKERI,
 } from "cesr-ts";
-import { validateRip, validateUpdate, verifyRegistryAnchor, vetBinds } from "../acdc/regeventing.ts";
+import { validateUpdate, verifyRegistryAnchor, vetBinds } from "../acdc/regeventing.ts";
 import type { RegistryStore } from "../acdc/registering.ts";
 import { validateSchema } from "../acdc/scheming.ts";
-import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseOperationError } from "../core/errors.ts";
-import { type ExchangeFactors, verifyExchangeProofs } from "../core/exchange-proofing.ts";
+import type { ExchangeFactors } from "../core/exchange-proofing.ts";
 import type { ExchangeRouteHandler, ExchangeRouteVerification } from "./exchanging.ts";
 import type { Habery } from "./habbing.ts";
 import {
@@ -27,6 +24,7 @@ import {
   verifyIpexRelations,
   walkIpexGraph,
 } from "./ipex-graph.ts";
+import { acceptedRegistryEvidence, authenticateIpexNode } from "./ipex-node-authentication.ts";
 import type { Notifier } from "./notifying.ts";
 import { envelopeFromFrame } from "./parsering.ts";
 
@@ -157,8 +155,11 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     const graph = walkIpexGraph(origin, nests, true);
     if (!graph || !verifyIpexDisclosure(plan, origin, graph)) return false;
     for (const said of graph.order) {
-      const result = this.issuer(graph.nodes.get(said)!);
-      if (result !== true) return result;
+      const frame = graph.nodes.get(said)!;
+      if (!frame.body.regid && this.presentationRegistries(frame.body) === null) return false;
+      const result = authenticateIpexNode(frame, this.hby.db, this.registry);
+      if (result.kind === "missing") return missing(result.reason);
+      if (result.kind === "reject") return false;
     }
     const schemas = this.nodeSchemas(graph);
     if (schemas !== true) return schemas;
@@ -278,104 +279,6 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     return event.seals.some((seal) => record(seal) && seal.d === serder.said);
   }
 
-  /** Assemble accepted ordinals only; a missing head is retryable, contradictory durable rows are corrupt. */
-  private registryEvidence(regid: string): { rip: SerderACDC; updates: SerderACDC[] } | null {
-    const store = this.registry!;
-    const marker = store.head(regid);
-    if (!marker) return null;
-    const rip = store.seqEvent(regid, 0), head = store.headEvent(regid);
-    if (
-      !rip || !head || head.said !== marker.qb64 || typeof head.sad?.n !== "string"
-      || !/^[0-9a-f]+$/.test(head.sad.n)
-    ) {
-      throw new DatabaseOperationError("Accepted registry evidence has a missing or corrupt head/inception.");
-    }
-    const last = BigInt(`0x${head.sad.n}`);
-    if (last > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new DatabaseOperationError("Accepted registry ordinal exceeds exact storage representation.");
-    }
-    if (validateRip(rip).kind !== "valid" || rip.said !== regid || store.seqSaider(regid, 0)?.qb64 !== regid) {
-      throw new DatabaseOperationError("Accepted registry inception is inconsistent.");
-    }
-    const updates: SerderACDC[] = [];
-    let prior = rip.said;
-    for (let sn = 1; sn <= Number(last); sn++) {
-      const item = store.seqEvent(regid, sn);
-      if (!item) throw new DatabaseOperationError("Accepted registry evidence has a missing sequence entry.");
-      const checked = validateUpdate(item, regid);
-      if (
-        checked.kind !== "valid" || checked.event.sn !== BigInt(sn) || checked.event.prior !== prior
-        || store.seqSaider(regid, sn)?.qb64 !== item.said
-      ) {
-        throw new DatabaseOperationError("Accepted registry sequence is inconsistent.");
-      }
-      updates.push(item);
-      prior = item.said;
-    }
-    if ((updates.at(-1) ?? rip).said !== marker.qb64) {
-      throw new DatabaseOperationError("Registry head and sequence disagree.");
-    }
-    return { rip, updates };
-  }
-
-  /** A declared registry, then supplied anchors, take precedence over current signatures. */
-  private issuer(frame: CesrFrame & { body: SerderACDC }): ExchangeRouteVerification {
-    const serder = frame.body;
-    const envelope = envelopeFromFrame(frame);
-    if (serder.regid) {
-      const proofs = [...envelope.bsqs, ...envelope.bsss];
-      if (!proofs.length || !this.registry) return false;
-      const chain = this.registryEvidence(serder.regid);
-      if (!chain) return missing(`Missing local TEL evidence for ${serder.regid}.`);
-      const result = vetBinds({
-        ...chain,
-        db: this.hby.db,
-        blinders: proofs,
-        target: serder.said!,
-        acdc: serder,
-      });
-      return result.kind === "verified"
-        ? result.state.regid === serder.regid
-        : result.kind === "missing"
-        ? missing(`Missing issuer TEL anchor for ${serder.regid}.`)
-        : false;
-    }
-    if (this.presentationRegistries(serder) === null || !serder.issuer) return false;
-    let issuer: Prefixer;
-    try {
-      issuer = new Prefixer({ qb64: serder.issuer });
-    } catch {
-      return false;
-    }
-    const sourceSeals: SealEvent[] = [
-      ...envelope.sscs.map((seal) => ({ i: issuer, ...seal })),
-      ...envelope.ssts.filter((seal) => seal.i.qb64 === issuer.qb64),
-    ];
-    if (sourceSeals.length) {
-      const result = verifyExchangeProofs(this.hby.db, serder, { sourceSeals });
-      return result.missing.length
-        ? missing(`Missing issuer KEL anchor for ${serder.said}.`)
-        : result.sourceSeals.length > 0;
-    }
-    const explicit = envelope.tsgs.filter((group) => group.pre === issuer.qb64);
-    const last = envelope.ssgs.filter((group) => group.pre === issuer.qb64);
-    const tsgs: TransIdxSigGroup[] = [];
-    if (issuer.transferable && (envelope.sigers.length || explicit.length || last.length)) {
-      const kever = this.hby.db.getKever(issuer.qb64);
-      if (!kever) return missing(`Missing current issuer key state for ${serder.said}.`);
-      const number = NumberPrimitive.fromNum(BigInt(kever.lastEst.s));
-      const diger = new Diger({ qb64: kever.lastEst.d });
-      if (envelope.sigers.length) tsgs.push(new TransIdxSigGroup(issuer, number, diger, [...envelope.sigers]));
-      tsgs.push(...explicit.filter((group) => group.sn === number.num && group.said === diger.qb64));
-      tsgs.push(...last.map((group) => new TransIdxSigGroup(issuer, number, diger, [...group.sigers])));
-    }
-    const cigars = envelope.cigars.filter((cigar) => cigar.verfer?.qb64 === issuer.qb64);
-    const result = verifyExchangeProofs(this.hby.db, serder, { tsgs, cigars });
-    return result.missing.length
-      ? missing(`Missing current issuer KEL evidence for ${serder.said}.`)
-      : result.tsgs.length + result.cigars.length > 0;
-  }
-
   /** Authenticate a grant target against this node's Issuee TEL and explicit fully witnessed KEL sources. */
   private presentation(
     frame: CesrFrame & { body: SerderACDC },
@@ -386,7 +289,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
   ): ExchangeRouteVerification {
     const envelope = envelopeFromFrame(frame), blinders = [...envelope.bsqs, ...envelope.bsss];
     if (!blinders.length || !this.registry) return false;
-    const chain = this.registryEvidence(regid);
+    const chain = acceptedRegistryEvidence(this.registry, regid);
     if (!chain) return missing(`Missing presentation TEL evidence for ${regid}.`);
     const sources = new Map<string, string>();
     let unresolved = false;
