@@ -97,6 +97,11 @@ match KERIpy extension semantics, while disclosure modifiers use a named dp fiel
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
 proof; metadata offers withhold issuer proofs but still validate carried schemas.
 Grant order is issuer authentication, own schemas, edge pins, then presentation.
+`ipex-node-authentication` reads only Baser/RegistryStore and returns authenticated
+proof, a missing dependency or refusal. A verified registration retains its actual
+bound state; authentication alone does not interpret it as credential validity.
+Conversation policy owns escrow and rejection. Issuer and presentation checks share
+accepted-chain reads, preserving corruption failures and source-proof precedence.
 Same-schema identity never bypasses payload constraints; missing schema is a
 typed dependency, while infrastructure/resource failures propagate.
 DI2I permits identity or an approved inception chain at any depth. Read each

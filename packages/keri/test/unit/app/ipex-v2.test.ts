@@ -16,10 +16,11 @@ import {
   type SealEvent,
   SerderACDC,
   SerderKERI,
+  type Siger,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
@@ -28,6 +29,7 @@ import { type ExchangeDecision, Exchanger } from "../../../src/app/exchanging.ts
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody, prepareIpexExn } from "../../../src/app/ipex-building.ts";
 import { verifyIpexRelations, walkIpexGraph } from "../../../src/app/ipex-graph.ts";
+import { authenticateIpexNode } from "../../../src/app/ipex-node-authentication.ts";
 import { IpexV2Handler } from "../../../src/app/ipex-v2.ts";
 import { type IpexRoute, loadIpexHandlers } from "../../../src/app/ipexing.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
@@ -45,6 +47,73 @@ async function learn(hby: Habery, wire: string | Uint8Array): Promise<void> {
     }
   }
 }
+Deno.test("IPEX node authentication keeps missing KEL evidence distinct from refused proofs", async () => {
+  await run(function*() {
+    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const issuer = source.makeHab("issuer"), foreign = source.makeHab("foreign");
+      const credential = acdcmap(issuer.pre, { attribute: { d: "", name: "Ada" } });
+      const signatures = issuer.sign(credential.raw, true);
+      const claimedIssuer = (signatures: readonly Siger[]) =>
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: issuer.pre }),
+          NumberPrimitive.fromNum(BigInt(issuer.kever!.lastEst.s)),
+          new Diger({ qb64: issuer.kever!.lastEst.d }),
+          [...signatures],
+        );
+      const node = (attachments: CesrFrame["attachments"]): CesrFrame & { body: SerderACDC } => ({
+        body: credential,
+        attachments,
+        gvrsn: Vrsn_2_0,
+      });
+      const authenticate = (frame: CesrFrame & { body: SerderACDC }) =>
+        authenticateIpexNode(frame.body, envelopeFromFrame(frame), receiver.db, null);
+      const signed = node(messageAttachmentGroups({ tsgs: [claimedIssuer(signatures)] }, Vrsn_2_0));
+      assertEquals(authenticate(signed).kind, "missing");
+      yield* call(() => learn(receiver, acceptedEventReplayMessage(source, issuer.pre, 0).message));
+      assertEquals(receiver.habs.has(issuer.pre), false, "only public issuer evidence crossed intake");
+      assertEquals(authenticate(signed), { kind: "authenticated", registration: null });
+      assertEquals(authenticate(node([])), { kind: "reject" });
+      assertEquals(
+        authenticate(
+          node(messageAttachmentGroups({ tsgs: [claimedIssuer(foreign.sign(credential.raw, true))] }, Vrsn_2_0)),
+        ),
+        { kind: "reject" },
+        "a known issuer does not authenticate a foreign signature",
+      );
+      issuer.interact({ data: [{ d: credential.said! }] });
+      const seal = {
+        i: new Prefixer({ qb64: issuer.pre }),
+        s: issuer.kever!.sner,
+        d: new Diger({ qb64: issuer.kever!.said }),
+      };
+      assertEquals(
+        authenticate(node(messageAttachmentGroups({ tsgs: [claimedIssuer(signatures)] }, Vrsn_2_0))).kind,
+        "authenticated",
+        "the signature-only counterpart remains valid before the issuer interaction arrives",
+      );
+      const anchored = node(
+        messageAttachmentGroups({ tsgs: [claimedIssuer(signatures)], sourceSeals: [seal] }, Vrsn_2_0),
+      );
+      assertEquals(
+        authenticate(anchored).kind,
+        "missing",
+        "declared source evidence must not silently fall back to a valid signature",
+      );
+      yield* call(() => learn(receiver, acceptedEventReplayMessage(source, issuer.pre, 1).message));
+      assertEquals(
+        authenticate(node(messageAttachmentGroups({ sourceSeals: [seal] }, Vrsn_2_0))),
+        { kind: "authenticated", registration: null },
+        "the actual accepted issuer anchor authenticates the child",
+      );
+      assertEquals(receiver.db.exns.get(credential.said!), null, "authentication never publishes the node");
+    } finally {
+      yield* receiver.close(true);
+      yield* source.close(true);
+    }
+  });
+});
 Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned authenticated disclosures", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `ipex-vectors-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -457,6 +526,17 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
       );
       observer.processEscrows(rip.said!);
       assertEquals(registry.head(rip.said!)!.qb64, issued.said);
+      assert(node.body instanceof SerderACDC);
+      const authenticated = authenticateIpexNode(node.body, envelopeFromFrame(node), hby.db, registry);
+      assert(authenticated.kind === "authenticated");
+      assertExists(authenticated.registration);
+      assertEquals(authenticated.registration.regid, credential.regid);
+      assertEquals(authenticated.registration.acdc, credential.said);
+      assertEquals(
+        authenticated.registration.state,
+        "issued",
+        "retain the authenticated state without deciding edge validity",
+      );
       const seqEvent = registry.seqEvent;
       try {
         const handler = new IpexV2Handler("/ipex/grant", hby, null, registry);

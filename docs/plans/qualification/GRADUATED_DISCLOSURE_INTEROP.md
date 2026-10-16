@@ -91,10 +91,12 @@ lookup neither repairs hints nor imposes a depth cap. Identity operator preceden
 and targeted/untargeted defaults are also covered; the reference E1E entity-only
 extension remains explicit. These are TS tests, not Python DI2I interop.
 
-For NOT, refactor authenticated node evidence, known validity/invalidity and
-missing dependencies before changing behavior. The current grant pipeline
-rejects every invalid node before edge evaluation; negating a relation boolean
-would not implement NOT. [KERIpy #1554](https://github.com/WebOfTrust/keripy/issues/1554)
+Node issuer authentication now returns concrete authenticated evidence, a missing
+dependency or refusal independently of conversation policy. Verified registrations
+retain their bound state. This extraction preserves existing grant outcomes; it
+does not implement NOT. Next separate known node validity/invalidity from missing
+evidence before changing edge behavior. The current grant pipeline rejects every
+invalid node before edge evaluation; negating a relation boolean is insufficient. [KERIpy #1554](https://github.com/WebOfTrust/keripy/issues/1554)
 and [discussion #1571](https://github.com/WebOfTrust/keripy/discussions/1571) identify
 revocation, freshness and reevaluation questions. Define the supported invalidity
 evidence and time basis explicitly, then test known-valid and proved-invalid far
