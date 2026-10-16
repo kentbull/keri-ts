@@ -2,9 +2,8 @@ import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
   createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
   runAgentRuntime,
+  settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
@@ -73,12 +72,10 @@ Deno.test("challenge respond and verify round-trip through direct controller del
 
       try {
         const bobUrl = `http://${address.hostname}:${address.port}`;
-        ingestKeriBytes(runtime, hab.makeLocScheme(bobUrl, hab.pre, "http"));
-        ingestKeriBytes(
-          runtime,
+        yield* settleRuntimeIngress(runtime, [
+          hab.makeLocScheme(bobUrl, hab.pre, "http"),
           hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-        );
-        yield* processRuntimeTurn(runtime, { hab });
+        ]);
 
         const bobResolved = yield* testCLICommand(
           oobiResolveCommand({
