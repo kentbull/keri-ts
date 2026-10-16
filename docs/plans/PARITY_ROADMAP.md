@@ -36,8 +36,10 @@ ownership and full qualification remain open.
   for genuine readonly registry absence. No speculative DI layer.
 - Finite CLI convergence now uses the host workers with elapsed deadlines and
   joined shutdown. Delete remaining serial processRuntimeTurn/mailbox/approval
-  pumping to finish one shared driving model. Remove
-  forwarding-only facades without real consumers. AgentMode/runtimeMode are removed;
+  pumping to finish one shared driving model. Local endpoint/startup callers now
+  use direct protocol intake; hollow per-Hab seeding, the mailbox host forwarding
+  wrapper and unused host context/no-HTTP branch are removed. Audit remaining
+  forwarding-only facades for actual responsibilities. AgentMode/runtimeMode are removed;
   hosts choose provider mailbox construction explicitly.
 - Narrow public runtime exports to supported operations/data. Remove optional
   hooks and wrappers; condense contracts, learnings and plans to current decisions.

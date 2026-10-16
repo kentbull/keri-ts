@@ -84,6 +84,19 @@ transitional removal work. Their remaining callers must move to real ingress or
 the shared workers, rather than a renamed whole-runtime pump. This finite-wait
 cut does not finish that migration or final composed qualification.
 
+Local endpoint commands and witness/mailbox operators submit their exact signed
+records through settleRuntimeIngress and verify accepted state. This is protocol
+intake, not a reason to drive OOBI, mailbox, query or delivery workers. Host operators
+establish their required endpoint state before entering the kernel. The removed
+seedHabs loop supplied no records; it merely pumped the whole runtime per Hab.
+
+The HTTP kernel owns serviceHab/hostedPrefixes once and lends only the runtime to
+its actual TCP companion. All supported callers configure HTTP; the unused no-HTTP
+wait branch and context bundle are deleted. Mailbox hosting calls the existing
+indirect host directly instead of a forwarding-only role wrapper. Agent selection
+still validates its explicit hosted controllers, and witness/mailbox startup still
+reconciles every required signed location/role before listening.
+
 ## Actual cancellation and cleanup
 
 Acquire actual source/socket/store owners before their work children. Cancellation

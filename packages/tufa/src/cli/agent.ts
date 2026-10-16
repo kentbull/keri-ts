@@ -96,9 +96,9 @@ function importHostedSchemas(
 
 function validateHostedControllerBootstrap(
   hby: Habery,
-  seedHabs: readonly Hab[],
+  hostedHabs: readonly Hab[],
 ): void {
-  for (const hab of seedHabs) {
+  for (const hab of hostedHabs) {
     if (!hab.hasConfigSection()) {
       throw new ValidationError(
         `Agent alias ${hab.name} is missing controller curls config.`,
@@ -185,25 +185,24 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
   );
 
   try {
-    const seedHabs = [...hby.habs.values()].filter((hab) => !hby.db.getHab(hab.pre)?.mid);
+    const hostedHabs = [...hby.habs.values()].filter((hab) => !hby.db.getHab(hab.pre)?.mid);
     importHostedSchemas(
       hby,
       agentArgs.schemas ?? [],
       agentArgs.schemaDirs ?? [],
     );
-    const cueHab = seedHabs[0];
+    const cueHab = hostedHabs[0];
     if (!cueHab) {
       throw new ValidationError(
         "Agent host requires at least one local identifier.",
       );
     }
-    validateHostedControllerBootstrap(hby, seedHabs);
+    validateHostedControllerBootstrap(hby, hostedHabs);
     yield* runIndirectHost(hby, {
       port,
       listenHost: "127.0.0.1",
       serviceHab: cueHab,
-      hostedPrefixes: seedHabs.map((hab) => hab.pre),
-      seedHabs,
+      hostedPrefixes: hostedHabs.map((hab) => hab.pre),
       directQueryResponses: true,
       onListen: ({ hostname, port }) => {
         console.log(`Server listening on http://${hostname}:${port}`);

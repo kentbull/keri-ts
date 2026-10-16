@@ -13,10 +13,9 @@ import {
   fetchEndpointUrls,
   type Hab,
   type Habery,
-  ingestKeriBytes,
   makeNowIso8601,
-  processRuntimeTurn,
   Schemes,
+  settleRuntimeIngress,
   ValidationError,
 } from "keri-ts/runtime";
 import {
@@ -313,32 +312,13 @@ function* reconcileWitnessIdentity(
 ): Operation<void> {
   const runtime = yield* createAgentRuntime(hby);
   try {
-    ingestKeriBytes(
-      runtime,
-      hab.makeLocScheme(
-        startup.httpUrl,
-        hab.pre,
-        schemeForUrl(startup.httpUrl),
-        startup.datetime,
-      ),
-    );
-    ingestKeriBytes(
-      runtime,
+    yield* settleRuntimeIngress(runtime, [
+      hab.makeLocScheme(startup.httpUrl, hab.pre, schemeForUrl(startup.httpUrl), startup.datetime),
       hab.makeLocScheme(startup.tcpUrl, hab.pre, Schemes.tcp, startup.datetime),
-    );
-    ingestKeriBytes(
-      runtime,
       hab.makeEndRole(hab.pre, EndpointRoles.controller, true, startup.datetime),
-    );
-    ingestKeriBytes(
-      runtime,
       hab.makeEndRole(hab.pre, EndpointRoles.witness, true, startup.datetime),
-    );
-    ingestKeriBytes(
-      runtime,
       hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true, startup.datetime),
-    );
-    yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+    ]);
   } finally {
     yield* runtime.close();
   }
