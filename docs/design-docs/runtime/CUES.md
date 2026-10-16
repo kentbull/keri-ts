@@ -153,7 +153,10 @@ Important code seams:
 **Respondant delivery**
 
 - KERIpy: `Respondant` / `Postman` forward non-`stream` cue results to resolved endpoints
-- `keri-ts`: `Respondant` forwards non-`stream` wire emissions via `Poster`
+- `keri-ts`: `Respondant` owns queued non-`stream` replies and lazy replay cursors,
+  captures routing/signing, and transmits through `Poster`. It retains exact failed
+  packets and joins actual output cleanup before store closure. The former generic
+  cue/direct-reply delivery wrappers are removed.
 - Why it matters: Outbound correspondence must stay separate from mailbox storage
 
 **Mailbox query transport**

@@ -11,178 +11,83 @@ import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
-import { Respondant } from "../../../src/app/respondant.ts";
 import { drainWitnessCues, processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
-import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
+import { query as queryEvent, reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
 Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forward through poster instead of mailbox storage", async () => {
-  const posterCalls: Array<{
-    hab: string;
-    recipient: string;
-    topic: string;
-    message: Uint8Array;
-  }> = [];
-  const retained: CueEmission["cue"][] = [];
-  const sourceHab = { pre: "EWIT" };
-  const responder = new Respondant(
-    {
-      habs: new Map([["EWIT", sourceHab]]),
-    } as never,
-    {
-      poster: {
-        *sendBytes(
-          hab: { pre: string },
-          args: {
-            recipient: string;
-            topic?: string;
-            message: Uint8Array;
-          },
-        ) {
-          posterCalls.push({
-            hab: hab.pre,
-            recipient: args.recipient,
-            topic: args.topic ?? "",
-            message: args.message,
-          });
-        },
-      } as never,
-      mailboxDirector: {
-        retainQueryCue(cue: CueEmission["cue"]) {
-          retained.push(cue);
-        },
-      } as never,
-    },
-  );
-
-  const cases: Array<{
-    emission: CueEmission;
-    recipient: string;
-    topic: string;
-    message: Uint8Array;
-  }> = [
-    {
-      emission: {
-        kind: "wire",
-        cue: { kin: "receipt", serder: { pre: "EDEST" } as never },
-        messages: [new Uint8Array([1])],
-      },
-      recipient: "EDEST",
-      topic: "/receipt",
-      message: new Uint8Array([1]),
-    },
-    {
-      emission: {
-        kind: "wire",
-        cue: { kin: "witness", serder: { pre: "EDEST" } as never },
-        messages: [new Uint8Array([2])],
-      },
-      recipient: "EDEST",
-      topic: "/receipt",
-      message: new Uint8Array([2]),
-    },
-    {
-      emission: {
-        kind: "wire",
-        cue: { kin: "reply", serder: replyEvent("/ksn", {}), src: "EWIT", dest: "EDEST" },
-        messages: [new Uint8Array([3])],
-      },
-      recipient: "EDEST",
-      topic: "/reply",
-      message: new Uint8Array([3]),
-    },
-    {
-      emission: {
-        kind: "wire",
-        cue: {
-          kin: "replay",
-          src: "EWIT",
-          dest: "EDEST",
-          messages: [new Uint8Array([4])],
-        },
-        messages: [new Uint8Array([4])],
-      },
-      recipient: "EDEST",
-      topic: "/replay",
-      message: new Uint8Array([4]),
-    },
-  ];
-
-  for (const current of cases) {
-    await run(function*() {
-      yield* responder.sendWithHab(current.emission, sourceHab as never);
-    });
-  }
-
-  assertEquals(retained, []);
-  assertEquals(posterCalls, [
-    {
-      hab: "EWIT",
-      recipient: "EDEST",
-      topic: "/receipt",
-      message: new Uint8Array([1]),
-    },
-    {
-      hab: "EWIT",
-      recipient: "EDEST",
-      topic: "/receipt",
-      message: new Uint8Array([2]),
-    },
-    {
-      hab: "EWIT",
-      recipient: "EDEST",
-      topic: "/reply",
-      message: new Uint8Array([3]),
-    },
-    {
-      hab: "EWIT",
-      recipient: "EDEST",
-      topic: "/replay",
-      message: new Uint8Array([4]),
-    },
-  ]);
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
+    const runtime = yield* createAgentRuntime(hby);
+    const posted: { hab: string; recipient: string; topic?: string; message: Uint8Array }[] = [];
+    const retained: CueEmission["cue"][] = [];
+    runtime.poster.sendBytes = function*(hab, args) {
+      posted.push({ hab: hab.pre, recipient: args.recipient, topic: args.topic, message: args.message });
+      return { deliveries: [] };
+    };
+    runtime.mailboxDirector.retainQueryCue = (cue) => {
+      retained.push(cue);
+    };
+    const cues: CueEmission["cue"][] = [
+      { kin: "receipt", serder: recipient.kever!.serder },
+      { kin: "witness", serder: recipient.kever!.serder },
+      { kin: "reply", serder: replyEvent("/ksn", {}), src: sender.pre, dest: recipient.pre },
+      { kin: "replay", src: sender.pre, dest: recipient.pre, messages: [Uint8Array.of(4)] },
+    ];
+    try {
+      for (const [index, cue] of cues.entries()) {
+        yield* runtime.respondant.sendWithHab({ kind: "wire", cue, messages: [Uint8Array.of(index + 1)] }, sender);
+      }
+      assertEquals(retained, []);
+      assertEquals(
+        posted,
+        ["/receipt", "/receipt", "/reply", "/replay"].map((topic, index) => ({
+          hab: sender.pre,
+          recipient: recipient.pre,
+          topic,
+          message: Uint8Array.of(index + 1),
+        })),
+      );
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
 });
 
 Deno.test("app/runtime-responder - stream cues stay with mailbox query correlation instead of poster delivery", async () => {
-  const posterCalls: CueEmission[] = [];
-  const retained: CueEmission["cue"][] = [];
-  const responder = new Respondant(
-    {
-      habs: new Map(),
-    } as never,
-    {
-      poster: {
-        *sendBytes() {
-          posterCalls.push({} as CueEmission);
-        },
-      } as never,
-      mailboxDirector: {
-        retainQueryCue(cue: CueEmission["cue"]) {
-          retained.push(cue);
-        },
-      } as never,
-    },
-  );
-  const cue: CueEmission["cue"] = {
-    kin: "stream",
-    serder: {} as never,
-    pre: "EDEST",
-    src: "EWIT",
-    topics: { "/reply": 0 },
-  };
-
   await run(function*() {
-    yield* responder.sendWithHab({
-      kind: "transport",
-      cue,
-      messages: [],
-    });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("sender");
+    const runtime = yield* createAgentRuntime(hby);
+    let posted = false;
+    const retained: CueEmission["cue"][] = [];
+    runtime.poster.sendBytes = function*() {
+      posted = true;
+      return { deliveries: [] };
+    };
+    runtime.mailboxDirector.retainQueryCue = (cue) => {
+      retained.push(cue);
+    };
+    const cue: CueEmission["cue"] = {
+      kin: "stream",
+      serder: queryEvent("mbx", { i: hab.pre, src: hab.pre }),
+      pre: hab.pre,
+      src: hab.pre,
+      topics: { "/reply": 0 },
+    };
+    try {
+      yield* runtime.respondant.sendWithHab({ kind: "transport", cue, messages: [] });
+      assertEquals(posted, false);
+      assertEquals(retained, [cue]);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
   });
-
-  assertEquals(posterCalls, []);
-  assertEquals(retained, [cue]);
 });
 
 Deno.test("app/runtime-responder - receipt cues for witness-only recipients land in the hosted witness mailbox store", async () => {
@@ -253,10 +158,10 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
         assertEquals(emitted[0].buffer === witnessWire!.buffer, false, "finite return owns independent wire");
         const published = runtime.mailboxer!.getTopicMsgs(mailboxTopicKey(recipient.pre, "/receipt"));
         assertEquals(published, [message, ...emitted], "the existing local mailbox policy uses that same wire");
-        for (let pass = 0; pass < 4 && runtime.deliveries.hasPending; pass++) {
-          yield* runtime.deliveries.process(runtime);
+        for (let pass = 0; pass < 4 && runtime.respondant.hasPending; pass++) {
+          yield* runtime.respondant.process();
         }
-        assertEquals(runtime.deliveries.hasPending, false);
+        assertEquals(runtime.respondant.hasPending, false);
 
         const chunk = new Uint8Array(4 * 1024 ** 2 + 1), messages = [chunk, chunk];
         const iterator = messages[Symbol.iterator].bind(messages), cleanupFailure = new Error("witness cursor cleanup");
@@ -470,11 +375,11 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
           yield* call(() => Promise.race([progressed, expired]));
           assertEquals(returned, false, "the real HTTP delivery is still paused");
           assertEquals(hby.db.getKever(controller.pre)?.sn, 1, "verified input progresses before delivery returns");
-          assertEquals(active.deliveries.hasPending, true);
+          assertEquals(active.respondant.hasPending, true);
           release();
           yield* accepting;
           yield* sending;
-          yield* active.deliveries.process(active);
+          yield* active.respondant.process();
           assertEquals(
             active.cues.toArray().map((cue) =>
               cue.kin === "receipt"

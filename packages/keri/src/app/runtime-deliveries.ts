@@ -1,7 +1,6 @@
 import { concatBytes } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
-import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Roles } from "../core/roles.ts";
@@ -9,14 +8,11 @@ import { Schemes } from "../core/schemes.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
-import { CueDelivery, type CueTargetPreparation } from "./cue-delivery.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
-import { DirectReplyDelivery } from "./direct-reply-delivery.ts";
-import { attemptPreparedCesrTarget, introduce, type PreparedCesrTarget, type RawCesrRoute } from "./forwarding.ts";
+import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
-import type { QueryReply } from "./query-replies.ts";
 import { converseCesrTcp } from "./tcp-conversation.ts";
 
 /**
@@ -69,24 +65,10 @@ interface QueryDelivery {
   destination: string;
 }
 
-/** One pending query record, delivery cursor or exact failed packet. */
-type PendingDelivery =
-  | { kind: "query"; delivery: QueryDelivery }
-  | { kind: "cue"; delivery: CueDelivery }
-  | { kind: "reply"; delivery: DirectReplyDelivery }
-  | { kind: "target"; delivery: PreparedCesrTarget };
-
-/** Retire the actual obligations for this queue entry after joined transport cleanup. */
-function releaseDelivery(entry: PendingDelivery): void {
-  if (entry.kind === "cue" || entry.kind === "reply") {
-    entry.delivery.release();
-  }
-}
-
-/** Own query/cue delivery on an ordinary queue; network work executes outside guarded preparation. */
+/** Deliver signed query records; responder cues and replay cursors belong to Respondant. */
 export class RuntimeDeliveries {
   /** Pending concrete deliveries; each active transport manages its actual I/O. */
-  private readonly pending = new Deck<PendingDelivery>();
+  private readonly pending = new Deck<QueryDelivery>();
   /** Command-local and background drains cannot deliver the same head concurrently. */
   private draining = false;
   /** Active delivery cancellation and its joined completion belong to runtime shutdown. */
@@ -99,84 +81,7 @@ export class RuntimeDeliveries {
   /** Append a prepared query record; signing and endpoint selection belong to the producer. */
   enqueue(delivery: QueryDelivery): void {
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    this.pending.push({ kind: "query", delivery });
-  }
-
-  /** Guarded interpretation and route resolution borrow prepared output synchronously. */
-  enqueueCue(
-    hab: Hab,
-    cues: Deck<AgentCue>,
-    route: (emission: CueEmission) => RawCesrRoute,
-    sender = hab,
-  ): { kind: "prepared" } | { kind: "empty" } {
-    if (this.closed) throw new Error("Runtime deliveries are closed");
-    const cue = cues.peekHead();
-    if (!cue) return { kind: "empty" };
-    const emission = hab.interpretCue(cue);
-    if (emission?.kind !== "wire") throw new RangeError("Cue delivery requires wire");
-    const captured = route(emission);
-    if (captured.targets.length) {
-      this.pending.push({ kind: "cue", delivery: new CueDelivery(emission, sender, captured) });
-    }
-    cues.pull();
-    return { kind: "prepared" };
-  }
-
-  /** Guarded witness transfer; the callback borrow and queued targets share one prepared wire lifetime. */
-  prepareWitnessCue(
-    runtime: AgentRuntime,
-    hab: Hab,
-    resolve: (emission: CueEmission) => RawCesrRoute | null,
-  ): CueEmission | undefined {
-    if (this.closed) throw new Error("Runtime deliveries are closed");
-    let borrow: CueEmission | undefined;
-    DirectReplyDelivery.prepareCue(runtime, hab, runtime.cues, resolve, (delivery, prepared) => {
-      const emission = prepared;
-      if (emission?.kind === "transport" && emission.cue.kin === "stream") {
-        runtime.mailboxDirector.retainQueryCue(emission.cue);
-      } else if (emission?.cue.kin === "query" && emission.kind !== "wire") {
-        runtime.querying.enqueueCue(emission.cue);
-      }
-      if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
-      else delivery.release();
-      borrow = prepared;
-    });
-    return borrow;
-  }
-
-  /** Atomically publish one direct-reply batch and its HTTP stream; no network runs here. */
-  openReply(
-    runtime: AgentRuntime,
-    hab: Hab,
-    reply: QueryReply,
-  ): ReadableStream<Uint8Array> | null {
-    if (this.closed) throw new Error("Runtime deliveries are closed");
-    return DirectReplyDelivery.prepare(runtime, hab, reply, (delivery, open) => {
-      const stream = open();
-      if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
-      else delivery.release();
-      return stream;
-    });
-  }
-
-  /** Atomically retain an earlier query reply without opening a request-local response stream. */
-  enqueueReply(
-    runtime: AgentRuntime,
-    hab: Hab,
-    reply: QueryReply,
-  ): boolean {
-    if (this.closed) throw new Error("Runtime deliveries are closed");
-    return DirectReplyDelivery.prepareQueued(runtime, hab, reply, (delivery) => {
-      if (delivery.hasTargets) this.pending.push({ kind: "reply", delivery });
-      else delivery.release();
-    });
-  }
-
-  /** A failed packet remains an ordinary record; no target advances if the queue cannot accept it. */
-  private retainFailed(target: PreparedCesrTarget): boolean {
-    if (this.closed) return false;
-    this.pending.push({ kind: "target", delivery: target });
-    return true;
+    this.pending.push(delivery);
   }
 
   /** Include queued transport in runtime convergence checks. */
@@ -184,26 +89,15 @@ export class RuntimeDeliveries {
     return this.draining || !this.pending.empty;
   }
 
-  /** Join active transport before clearing query records and closing delivery iterators. */
+  /** Join active query transport before clearing its pending records. */
   *close(): Operation<void> {
     this.closed = true;
     this.active?.abort();
     if (this.joined) yield* call(() => this.joined!);
-    const errors: unknown[] = [];
-    const count = this.pending.length;
-    for (let index = 0; index < count; index++) {
-      const entry = this.pending.pull()!;
-      try {
-        releaseDelivery(entry);
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-    if (errors.length === 1) throw errors[0];
-    if (errors.length) throw new AggregateError(errors, "Runtime delivery cleanup failed");
+    this.pending.clear();
   }
 
-  /** A bounded pass advances each owner once; cue preparation is guarded, all network waits are outside. */
+  /** Drain the captured query extent and join each response scope before removing its record. */
   process(runtime: AgentRuntime): Operation<{ retiredOwners: number; pending: boolean }> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
@@ -230,51 +124,10 @@ export class RuntimeDeliveries {
         const entry = self.pending.peekHead();
         if (!entry) break;
         active.signal.throwIfAborted();
-        let done = true;
-        if (entry.kind === "query") yield* call(() => postQueryMessage(runtime, entry.delivery, active));
-        else {
-          if (entry.kind === "cue" || entry.kind === "reply") {
-            // Preparation stays in the existing state turn; transport and joined cleanup stay outside it.
-            const preparation: { result?: CueTargetPreparation } = {};
-            if (entry.delivery.needsPreparation) {
-              yield* runtime.reactor.settle(undefined, {}, function*() {
-                preparation.result = entry.delivery.prepareTarget(runtime.poster);
-              });
-            } else {
-              preparation.result = entry.delivery.prepareTarget(runtime.poster);
-            }
-            const next = preparation.result!;
-            done = next.kind === "done";
-            if (next.kind === "target") {
-              const outcome = yield* call(() =>
-                attemptPreparedCesrTarget(next.target, runtime.services, active.signal, runtime)
-              );
-              if (outcome === "complete") {
-                active.signal.throwIfAborted();
-                entry.delivery.retireTarget();
-              } else if (outcome === "refused" && self.retainFailed(next.target)) {
-                entry.delivery.retireTarget();
-              }
-            }
-          } else {
-            done = (yield* call(() =>
-              attemptPreparedCesrTarget(entry.delivery, runtime.services, active.signal, runtime)
-            )) === "complete";
-          }
-        }
-        // A cancelled/closed owner cannot acknowledge after successful HTTP cleanup.
+        yield* call(() => postQueryMessage(runtime, entry, active));
         active.signal.throwIfAborted();
-        if (done) {
-          try {
-            releaseDelivery(entry);
-          } finally {
-            self.pending.pull();
-          }
-          retiredOwners++;
-        } else {
-          self.pending.pull();
-          self.pending.push(entry);
-        }
+        self.pending.pull();
+        retiredOwners++;
       }
       return { retiredOwners, pending: !self.pending.empty };
     });

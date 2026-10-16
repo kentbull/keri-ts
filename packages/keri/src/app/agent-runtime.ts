@@ -40,7 +40,7 @@ import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiU
 import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { ReplyStreams } from "./reply-streams.ts";
-import { recipientForCue, Respondant, senderHabForCue, topicForCue } from "./respondant.ts";
+import { Respondant } from "./respondant.ts";
 import { RuntimeDeliveries } from "./runtime-deliveries.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -52,24 +52,7 @@ export function respondantCueSink(runtime: AgentRuntime, hab?: Hab | null): CueS
     admitCue(source, interpreter) {
       const cue = source.peekHead();
       if (!cue || !interpreter) return "ineligible";
-      const recipient = recipientForCue(cue), topic = topicForCue(cue);
-      const sender = senderHabForCue(runtime.hby, cue, hab);
-      if (!recipient || !topic || !sender) return "ineligible";
-      const transferred = runtime.deliveries.enqueueCue(
-        interpreter,
-        source,
-        () =>
-          runtime.poster.findBytesRoute(sender, { recipient, topic }) ?? {
-            sender: sender.pre,
-            recipient,
-            topic,
-            bodyMode: runtime.hby.cesrBodyMode,
-            kind: "direct",
-            targets: [],
-          },
-        sender,
-      );
-      return transferred.kind === "prepared" ? "transferred" : "ineligible";
+      return runtime.respondant.enqueueCue(interpreter, source, hab) ? "transferred" : "ineligible";
     },
     send: (emission) => runtime.respondant.sendWithHab(emission, hab),
   };
@@ -113,7 +96,7 @@ export interface AgentRuntime {
   querying: QueryCoordinator;
   /** Live lazy HTTP replies, closed before their database owners. */
   replyStreams: ReplyStreams;
-  /** Bounded query/cue deliveries drained outside guarded cue handling. */
+  /** Transitional query-only output queue; reply state belongs to Respondant. */
   deliveries: RuntimeDeliveries;
   /** Concrete legacy TEL/credential owner; absent for a readonly Habery without an injected store. */
   readonly vdr: VdrRegery | null;
@@ -281,7 +264,14 @@ export function* createAgentRuntime(
     }
   });
   const poster = new Poster(hby, { mailboxer, services });
-  const respondant = new Respondant(hby, { poster, mailboxDirector });
+  const respondant = yield* resource<Respondant>(function*(provide) {
+    const respondant = new Respondant(hby, { poster, mailboxDirector, reactor, replyStreams });
+    try {
+      yield* provide(respondant);
+    } finally {
+      yield* respondant.close();
+    }
+  });
   if (mailboxer) {
     reactor.exchanger.addHandler(new ForwardHandler(mailboxDirector));
   }
@@ -351,6 +341,9 @@ export function* createAgentRuntime(
         },
         function*() {
           if (ownsSignaler) signaler?.close();
+        },
+        function*() {
+          yield* respondant.close();
         },
         function*() {
           yield* deliveries.close();
@@ -592,6 +585,7 @@ export function* processRuntimeTurn(
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
   yield* runtime.deliveries.process(runtime);
+  yield* runtime.respondant.process();
 }
 
 /**
@@ -617,7 +611,7 @@ export function runtimePendingState(
       || runtime.hby.db.dune.cnt() > 0
       || runtime.hby.db.dpub.cnt() > 0,
     queriesPending: runtime.querying.hasPendingWork(),
-    deliveriesPending: runtime.deliveries.hasPending,
+    deliveriesPending: runtime.deliveries.hasPending || runtime.respondant.hasPending,
   };
 }
 
@@ -754,6 +748,7 @@ export function* runAgentRuntime(
     yield* spawn(function*() {
       while (true) {
         yield* runtime.deliveries.process(runtime);
+        yield* runtime.respondant.process();
         yield* runtimeTurn();
       }
     }),

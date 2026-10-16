@@ -313,14 +313,14 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
         assertEquals(prefixes, [[alice.pre], [bob.pre]][index]);
       }
       assertEquals(background, []);
-      const open = runtime.deliveries.openReply.bind(runtime.deliveries);
+      const open = runtime.respondant.openReply.bind(runtime.respondant);
       for (const fault of [undefined, new DOMException("foreign late abort", "AbortError")]) {
         const abort = new AbortController();
         let cancelling!: () => void, finish!: () => void;
         const closing = new Promise<void>((resolve) => cancelling = resolve),
           gate = new Promise<void>((resolve) => finish = resolve);
-        runtime.deliveries.openReply = (current, hab, slot) => {
-          const response = open(current, hab, slot)!;
+        runtime.respondant.openReply = (hab, slot) => {
+          const response = open(hab, slot)!;
           const original = response.cancel.bind(response);
           response.cancel = async (reason) => {
             cancelling();
@@ -351,7 +351,7 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
         if (fault) assertStrictEquals(yield* call(() => assertRejects(() => pending)), fault);
         else assertEquals((yield* call(() => promptly(pending))).status, 408);
       }
-      runtime.deliveries.openReply = open;
+      runtime.respondant.openReply = open;
       yield* worker.halt();
     } finally {
       yield* runtime.close();
@@ -405,8 +405,8 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       }
       assertEquals(ordinary.includes(alice.pre), true);
       assertEquals(ordinary.includes(bob.pre), true);
-      for (let pass = 0; pass < 8 && runtime.deliveries.hasPending; pass++) yield* runtime.deliveries.process(runtime);
-      assertEquals(runtime.deliveries.hasPending, false);
+      for (let pass = 0; pass < 8 && runtime.respondant.hasPending; pass++) yield* runtime.respondant.process();
+      assertEquals(runtime.respondant.hasPending, false);
       const deniedBody = query("logs", { i: bob.pre, src: alice.pre }, { pre: alice.pre, pvrsn: Vrsn_2_0 });
       // An older matching capture must not authorize this exact denied frame's ordinary delivery.
       runtime.cues.push({

@@ -299,11 +299,15 @@ function* consumeWitnessCues(
       yield* runtime.reactor.settle(undefined, {}, function*() {
         if (deliver) {
           prepared = !cues.empty;
-          emission = runtime.deliveries.prepareWitnessCue(
-            runtime,
-            hab,
-            (output) => runtime.respondant.routeForEmission(output, hab),
-          );
+          const cue = cues.peekHead();
+          if (cue) {
+            emission = hab.interpretCue(cue);
+            if (emission?.kind === "wire") runtime.respondant.enqueueEmission(hab, emission);
+            else if (emission?.kind === "transport" && emission.cue.kin === "stream") {
+              runtime.mailboxDirector.retainQueryCue(emission.cue);
+            } else if (emission?.cue.kin === "query") runtime.querying.enqueueCue(emission.cue);
+            cues.pull();
+          }
         } else {
           const cue = cues.peekHead();
           if (cue) {
@@ -320,7 +324,10 @@ function* consumeWitnessCues(
       if (emission && consume) yield* consume(emission);
       return true;
     });
-    if (deliver) yield* runtime.deliveries.process(runtime);
+    if (deliver) {
+      yield* runtime.deliveries.process(runtime);
+      yield* runtime.respondant.process();
+    }
     if (!more) break;
   }
 }
