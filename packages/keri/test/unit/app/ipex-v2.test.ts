@@ -50,12 +50,15 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
     const hby = yield* createHabery({ name: `ipex-vectors-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const noter = yield* openNoterForHabery(hby);
     const notifier = new Notifier(hby, { noter });
+    const runtime = yield* createAgentRuntime(hby);
     const exchanger = new Exchanger(hby);
     loadIpexHandlers(hby, exchanger, { notifier });
     try {
       assertEquals(fixture.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
       let through = 0;
       let notifications = 0;
+      const vry = runtime.vdr!.vry;
+      const processACDC = vry.processACDC.bind(vry);
       for (const row of fixture.cases) {
         while (through < row.through) yield* call(() => learn(hby, fixture.wires[through++]));
         const frames = yield* call(() => parseBytes(b(row.wire)));
@@ -63,19 +66,24 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
           assertEquals(frames.length, 1, row.name);
           let decision: ExchangeDecision | undefined;
           let childDispatches = 0;
-          yield* dispatchEnvelope(envelopeFromFrame(frames[0]), hby.rvy, hby.kevery, {
-            /** Observe the real Exchanger decision without bypassing runtime normalization. */
-            *processEvent(args) {
-              decision = yield* exchanger.processEvent(args);
-              return decision;
-            },
-          }, {
-            vry: {
-              processACDC() {
-                childDispatches++;
+          vry.processACDC = (args) => {
+            childDispatches++;
+            return processACDC(args);
+          };
+          yield* dispatchEnvelope(
+            envelopeFromFrame(frames[0]),
+            hby.rvy,
+            hby.kevery,
+            {
+              /** Observe the real Exchanger decision without bypassing runtime normalization. */
+              *processEvent(args) {
+                decision = yield* exchanger.processEvent(args);
+                return decision;
               },
             },
-          });
+            undefined,
+            vry,
+          );
           assertEquals(decision?.kind, row.outcome, row.name);
           assertEquals(childDispatches, 0, "nested nodes are not independent credential intake");
           if (row.outcome === "accept") {
@@ -109,6 +117,7 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
         }
       }
     } finally {
+      yield* runtime.close();
       yield* noter.close(true);
       yield* hby.close(true);
     }
@@ -245,7 +254,7 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
       kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
       services: { clock: { now: () => now, setTimeout, clearTimeout: (timer) => clearTimeout(timer as number) } },
     });
-    const store = runtime.acdc.rgy!.store, observer = new RegistryObserver(hby.db, store);
+    const store = runtime.acdc!.store, observer = new RegistryObserver(hby.db, store);
     const anchor = (hab: typeof issuer, event: SerderACDC): SealEvent => {
       hab.interact({ data: [{ i: event.regid ?? event.said, s: event.sad!.n, d: event.said }] });
       return { i: new Prefixer({ qb64: hab.pre }), s: hab.kever!.sner, d: new Diger({ qb64: hab.kever!.said }) };

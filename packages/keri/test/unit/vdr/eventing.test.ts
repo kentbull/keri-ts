@@ -306,7 +306,7 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer");
     const runtime = yield* createAgentRuntime(hby);
-    const reger = runtime.vdr.reger! as Reger, tvy = runtime.vdr.tvy! as Tevery;
+    const reger = runtime.vdr!.reger! as Reger, tvy = runtime.vdr!.tvy! as Tevery;
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
       const credential = makeCredential(issuer.pre);
@@ -525,8 +525,8 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer"), outsider = hby.makeHab("outsider", undefined, { transferable: false });
     const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
-    const tvy = new Tevery({ db: hby.db, reger });
-    const runtime = yield* createAgentRuntime(hby, { vdr: { reger, tvy } });
+    const runtime = yield* createAgentRuntime(hby, { reger });
+    const tvy = runtime.vdr!.tvy;
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
       assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
@@ -742,7 +742,7 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const local = hby.makeHab("receiver");
     const runtime = yield* createAgentRuntime(hby);
-    const reger = runtime.vdr.reger! as Reger;
+    const reger = runtime.vdr!.reger! as Reger;
     try {
       const tvy = new Tevery({ db: sender.db, reger: source });
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
@@ -813,7 +813,7 @@ Deno.test("registry TSN partial proof ownership stays in finite Broker retry", a
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
     const runtime = yield* createAgentRuntime(hby);
-    const reger = runtime.vdr.reger! as Reger, tvy = runtime.vdr.tvy! as Tevery;
+    const reger = runtime.vdr!.reger! as Reger, tvy = runtime.vdr!.tvy! as Tevery;
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
       assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
@@ -851,7 +851,7 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer"), outsider = hby.makeHab("outsider", undefined, { transferable: false });
     const runtime = yield* createAgentRuntime(hby);
-    const reger = runtime.vdr.reger! as Reger, tvy = runtime.vdr.tvy! as Tevery;
+    const reger = runtime.vdr!.reger! as Reger, tvy = runtime.vdr!.tvy! as Tevery;
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
       assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
@@ -1009,7 +1009,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
     const issuer = sender.makeHab("issuer", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
     const source = yield* createReger({ name: crypto.randomUUID(), temp: true });
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby), reger = runtime.vdr.reger! as Reger;
+    const runtime = yield* createAgentRuntime(hby), reger = runtime.vdr!.reger! as Reger;
     try {
       const tvy = new Tevery({ db: sender.db, reger: source });
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
@@ -1022,7 +1022,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
         { pre: issuer.pre },
       );
       const cues = new Deck<AgentCue>();
-      const owned = new CredentialStateReceiver(runtime.vdr.tvy! as Tevery, new Revery(hby.db, { cues }));
+      const owned = new CredentialStateReceiver(runtime.vdr!.tvy! as Tevery, new Revery(hby.db, { cues }));
       const first = sender.db.getEvtSerder(issuer.pre, sender.db.kels.getLast(issuer.pre, 0)!)!;
       const incoming = {
         serder: notice,
@@ -1139,7 +1139,9 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
     const issuer = sender.makeHab("issuer"), runtime = yield* createAgentRuntime(sender);
     const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const requester = receiver.makeHab("requester"), target = yield* createAgentRuntime(receiver);
-    const reger = runtime.vdr.reger! as Reger, tvy = runtime.vdr.tvy! as Tevery, received = target.vdr.reger! as Reger;
+    const reger = runtime.vdr!.reger! as Reger,
+      tvy = runtime.vdr!.tvy! as Tevery,
+      received = target.vdr!.reger! as Reger;
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
       assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");

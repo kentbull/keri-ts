@@ -2,9 +2,8 @@ import type { Versionage } from "cesr-ts";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { Reger } from "../../db/reger.ts";
 import { createVerifierCueBaser } from "../../db/verifier-cueing.ts";
-import type { AgentRuntime } from "../agent-runtime.ts";
+import { requireRegery } from "../credential-workflows.ts";
 import { validatorsFromVerifierConfig, VerifierAgent } from "../verifier-agent.ts";
 import { withAgentRuntime } from "./common/context.ts";
 
@@ -47,7 +46,7 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
       skipConfig: true,
     },
     function*({ hby, runtime }) {
-      const reger = requireReger(runtime);
+      const reger = requireRegery(runtime).reger;
       const cdb = yield* createVerifierCueBaser({
         name: hby.name,
         base: hby.base,
@@ -87,14 +86,6 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
       }
     },
   );
-}
-
-function requireReger(runtime: AgentRuntime): Reger {
-  const reger = runtime.vdr.reger;
-  if (!(reger instanceof Reger)) {
-    throw new ValidationError("VDR runtime did not open Reger.");
-  }
-  return reger;
 }
 
 function* sleep(ms: number): Operation<void> {

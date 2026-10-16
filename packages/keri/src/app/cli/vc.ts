@@ -13,7 +13,7 @@ import {
   inceptCredentialRegistry,
   listCredentials,
   pinSchemaBytes,
-  requireReger,
+  requireRegery,
   revocationRecipients,
   revokeCredential,
 } from "../credential-workflows.ts";
@@ -294,7 +294,7 @@ function* withVcRuntime<TResult>(
 ): Operation<TResult> {
   requireNonEmpty(args.name, "Name");
   return yield* withAgentRuntime(args, vcOpenOptions(args), function*({ hby, runtime }) {
-    const reger = requireReger(runtime);
+    const reger = requireRegery(runtime).reger;
     return yield* use({ hby, runtime, reger });
   });
 }

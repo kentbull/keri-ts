@@ -132,7 +132,7 @@ async function assertIssuanceWebhook(gvrsn: Versionage): Promise<void> {
     });
     const requests: Array<{ body: Record<string, unknown>; headers: Headers }> = [];
     const runtime = yield* createAgentRuntime(verifierHby, {
-      vdr: { reger: verifierReger },
+      reger: verifierReger,
       services: {
         clock: fixedClock(),
         http: {
@@ -213,7 +213,7 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
     });
     const requests: Array<Record<string, unknown>> = [];
     const runtime = yield* createAgentRuntime(verifierHby, {
-      vdr: { reger: verifierReger },
+      reger: verifierReger,
       services: {
         clock: fixedClock(),
         http: {
@@ -322,7 +322,7 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
     });
     const requests: Array<Record<string, unknown>> = [];
     const runtime = yield* createAgentRuntime(verifierHby, {
-      vdr: { reger: verifierReger },
+      reger: verifierReger,
       services: {
         clock: fixedClock(),
         http: {

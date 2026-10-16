@@ -1,8 +1,8 @@
 /**
  * Credential registry and lifecycle workflow orchestration.
  *
- * CLI adapters parse inputs and render outputs. This module owns VDR runtime
- * service validation, registry state, credential issue/revoke/import/export,
+ * CLI adapters parse inputs and render outputs. This module owns registry state,
+ * credential issue/revoke/import/export,
  * and multisig VC proposal coordination.
  */
 import { concatBytes, Diger, NumberPrimitive, NumDex, Prefixer, Saider, Seqner, SerderACDC, TraitDex } from "cesr-ts";
@@ -14,14 +14,12 @@ import { RegistryRecord } from "../core/records.ts";
 import { Schemer } from "../core/scheming.ts";
 import { Reger } from "../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
-import { Tevery } from "../vdr/eventing.ts";
 import { type AgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
 import type { ExchangeDeliveryPreference } from "./forwarding.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { credentialStreamMessages } from "./ipex-credentialing.ts";
-import { Verifier } from "./verifying.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
@@ -137,7 +135,7 @@ export function credentialRegistryStatus(runtime: AgentRuntime, reger: Reger, re
   if (!record?.registryKey) {
     throw new ValidationError(`Registry ${registryName} not found.`);
   }
-  const tever = requireTevery(runtime).tevers.get(record.registryKey);
+  const tever = requireRegery(runtime).tvy.tevers.get(record.registryKey);
   return {
     name: registryName,
     registry: record.registryKey,
@@ -157,7 +155,7 @@ export function* createCredential(
   const registry = requireRegistry(rgy, options.registryName);
   const credentialer = new Credentialer(hby, {
     reger,
-    vry: requireVerifier(runtime),
+    vry: rgy.vry,
   });
   const creder = credentialer.create({
     registry,
@@ -197,7 +195,7 @@ export function listCredentials(
   options: CredentialListOptions,
 ): CredentialListItem[] {
   const wallet = new CredentialWallet(reger);
-  const tvy = requireTevery(runtime);
+  const tvy = requireRegery(runtime).tvy;
   return wallet.list({ issued: options.issued ?? false, aid: options.aid, schema: options.schema }).map((said) => {
     const [creder] = reger.cloneCred(said);
     const tever = creder.regid ? tvy.tevers.get(creder.regid) : null;
@@ -334,12 +332,12 @@ function* proposeGroupRegistryIncept(
     data: [eventSeal(vcp)],
   });
   const seal = sourceSeal(anchor.serder);
-  const decision = requireTevery(runtime).processEvent({
+  const decision = rgy.tvy.processEvent({
     serder: vcp,
     seqner: seal.seqner,
     saider: seal.saider,
   });
-  requireRegery(runtime).processEscrows();
+  rgy.processEscrows();
 
   const regk = requireSerderPrefix(vcp, "registry inception");
   registerRegistry(rgy, options.registryName, hab, regk, { noBackers, estOnly });
@@ -373,25 +371,26 @@ function* proposeGroupCredentialIssue(
   registry: Registry,
   creder: SerderACDC,
 ) {
+  const rgy = requireRegery(runtime);
   const regk = requireRegistryKey(registry);
   const iss = issueEvent(requireCredentialSaid(creder), regk);
   const anchor = hby.interactGroupHab(registry.hab.name, undefined, {
     data: [eventSeal(iss)],
   });
   const seal = sourceSeal(anchor.serder);
-  const telDecision = requireTevery(runtime).processEvent({
+  const telDecision = rgy.tvy.processEvent({
     serder: iss,
     seqner: seal.seqner,
     saider: seal.saider,
   });
-  requireRegery(runtime).processEscrows();
+  rgy.processEscrows();
   const credentialer = new Credentialer(hby, {
     reger,
-    vry: requireVerifier(runtime),
+    vry: rgy.vry,
   });
   credentialer.validate(creder);
   const credentialSeal = telCredentialSeal(iss);
-  const verifierDecision = requireVerifier(runtime).processCredential({
+  const verifierDecision = rgy.vry.processCredential({
     creder,
     prefixer: credentialSeal.prefixer,
     seqner: credentialSeal.seqner,
@@ -400,7 +399,7 @@ function* proposeGroupCredentialIssue(
   if (verifierDecision.kind === "accept") {
     reger.ccrd.pin(requireCredentialSaid(creder), creder);
   }
-  requireVerifier(runtime).processEscrows();
+  rgy.vry.processEscrows();
   if (
     telAccepted(
       runtime,
@@ -595,7 +594,7 @@ function telAccepted(
   sn: number,
   eventSaid: string,
 ): boolean {
-  return requireReger(runtime).tels.getOn(pre, sn)?.qb64 === eventSaid;
+  return requireRegery(runtime).reger.tels.getOn(pre, sn)?.qb64 === eventSaid;
 }
 
 function markTelComplete(
@@ -604,35 +603,15 @@ function markTelComplete(
   sn: number,
   eventSaid: string,
 ): void {
-  requireReger(runtime).ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
+  requireRegery(runtime).reger.ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
 }
 
-export function requireReger(runtime: AgentRuntime): Reger {
-  if (!(runtime.vdr.reger instanceof Reger)) {
-    throw new ValidationError("VDR runtime did not open Reger.");
-  }
-  return runtime.vdr.reger;
-}
-
+/** Require the optional concrete registry at an application workflow boundary. */
 export function requireRegery(runtime: AgentRuntime): Regery {
-  if (!(runtime.vdr.rgy instanceof Regery)) {
-    throw new ValidationError("VDR runtime did not open Regery.");
+  if (!runtime.vdr) {
+    throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
   }
-  return runtime.vdr.rgy;
-}
-
-export function requireTevery(runtime: AgentRuntime): Tevery {
-  if (!(runtime.vdr.tvy instanceof Tevery)) {
-    throw new ValidationError("VDR runtime did not open Tevery.");
-  }
-  return runtime.vdr.tvy;
-}
-
-export function requireVerifier(runtime: AgentRuntime): Verifier {
-  if (!(runtime.vdr.vry instanceof Verifier)) {
-    throw new ValidationError("VDR runtime did not open Verifier.");
-  }
-  return runtime.vdr.vry;
+  return runtime.vdr;
 }
 
 function savedCredentials(reger: Reger): Set<string> {

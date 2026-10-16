@@ -226,11 +226,8 @@ async function assertCredentialArtifactIntake(genus: Versionage, envelopeGenus =
       const holderTvy = new Tevery({ db: holderHby.db, reger: holderReger });
       const holderVry = new Verifier(holderHby, { reger: holderReger });
       const holderReactor = new Reactor(holderHby, {
-        vdr: {
-          reger: holderReger,
-          tvy: holderTvy,
-          vry: holderVry,
-        },
+        tevery: holderTvy,
+        verifier: holderVry,
       });
       for (const message of grant.support) {
         yield* holderReactor.processBytes(message);

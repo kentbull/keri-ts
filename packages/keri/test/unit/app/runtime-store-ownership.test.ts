@@ -48,8 +48,8 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
 
       assertEquals(runtime.delegating.services, runtime.services);
 
-      registry = runtime.acdc.rgy!.baser;
-      reger = runtime.vdr.reger as Reger;
+      registry = runtime.acdc!.baser;
+      reger = runtime.vdr!.reger;
       noter = runtime.noter!;
       mailboxer = runtime.mailboxer!;
       assertEquals(noter.opened, true);
@@ -58,7 +58,7 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
       assertEquals(reger.opened, true);
       assertEquals(registry.path === reger.path, false, "v1 and v2 use separate environments");
       const issuer = hby.makeHab("issuer");
-      const local = runtime.acdc.rgy!.makeRegistry("local", issuer.pre);
+      const local = runtime.acdc!.makeRegistry("local", issuer.pre);
       assertEquals(local.sn, -1n);
       issuer.interact({ data: [{ i: local.regk!, s: "0", d: local.regk! }] });
       yield* runtime.reactor.processEscrowsOnce();
@@ -89,17 +89,17 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
   try {
     await run(function*() {
       const runtime = yield* createAgentRuntime(hby, {
-        acdc: { rgy },
-        vdr: { reger },
+        acdc: rgy,
+        reger,
 
         noter,
         mailboxer,
         enableMailboxStore: false,
       });
 
-      assertEquals(runtime.acdc.rgy, rgy);
-      assertEquals(runtime.reactor.acdc.rgy, rgy);
-      assertEquals(runtime.vdr.reger, reger);
+      assertEquals(runtime.acdc, rgy);
+      assertEquals(runtime.reactor.registry, rgy);
+      assertEquals(runtime.vdr!.reger, reger);
       yield* runtime.close();
       assertEquals(registry.opened, true);
       assertEquals(reger.opened, true);
@@ -132,8 +132,8 @@ Deno.test("runtime stores - failed reply cleanup still joins owned database clos
             try {
               yield Uint8Array.of(1);
             } finally {
-              assertEquals(runtime.acdc.rgy!.baser.opened, true);
-              assertEquals((runtime.vdr.reger as Reger).opened, true);
+              assertEquals(runtime.acdc!.baser.opened, true);
+              assertEquals(runtime.vdr!.reger.opened, true);
               // deno-lint-ignore no-unsafe-finally -- database owners close even when replay cleanup fails.
               throw failure;
             }
@@ -147,8 +147,8 @@ Deno.test("runtime stores - failed reply cleanup still joins owned database clos
           assertEquals(error instanceof AggregateError, true);
           assertStrictEquals((error as AggregateError).errors[0].errors[1], failure);
         }
-        assertReleased(runtime.acdc.rgy!.baser);
-        assertReleased(runtime.vdr.reger as Reger);
+        assertReleased(runtime.acdc!.baser);
+        assertReleased(runtime.vdr!.reger);
 
         yield* call(() => assertRejects(() => reader.read(), AggregateError));
         reader.releaseLock();
@@ -171,8 +171,8 @@ Deno.test("runtime stores - readonly Habery acquires no default store", async ()
       try {
         const runtime = yield* createAgentRuntime(readonly);
         assertEquals(runtime.mailboxer, null);
-        assertEquals(runtime.acdc.rgy, undefined);
-        assertEquals(runtime.vdr.reger, undefined);
+        assertEquals(runtime.acdc, null);
+        assertEquals(runtime.vdr, null);
         yield* runtime.close();
         assertEquals(readonly.db.opened, true);
         assertThrows(() => Deno.statSync(`${headDirPath}/keri/acdc/reg`), Deno.errors.NotFound);
@@ -370,8 +370,8 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
         try {
           yield Uint8Array.of(1);
         } finally {
-          assertEquals(runtime.acdc.rgy!.baser.opened, true);
-          assertEquals((runtime.vdr.reger as Reger).opened, true);
+          assertEquals(runtime.acdc!.baser.opened, true);
+          assertEquals(runtime.vdr!.reger.opened, true);
           replyClosed = true;
         }
       },
@@ -406,8 +406,8 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     ]);
     const closing = Promise.resolve(task.halt());
     await cleanup.promise;
-    assertEquals(runtime.acdc.rgy!.baser.opened, true);
-    assertEquals((runtime.vdr.reger as Reger).opened, true);
+    assertEquals(runtime.acdc!.baser.opened, true);
+    assertEquals(runtime.vdr!.reger.opened, true);
     assertEquals(runtime.noter!.opened, true);
     assertEquals(runtime.mailboxer!.opened, true);
     assertEquals(replyClosed, false);
@@ -415,8 +415,8 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     await closing;
     assertEquals((await result) instanceof DOMException, true);
     assertEquals(replyClosed, true);
-    assertReleased(runtime.acdc.rgy!.baser);
-    assertReleased(runtime.vdr.reger as Reger);
+    assertReleased(runtime.acdc!.baser);
+    assertReleased(runtime.vdr!.reger);
     assertReleased(runtime.noter!);
     assertReleased(runtime.mailboxer!);
     assertEquals(hby.db.opened, true);
@@ -447,13 +447,13 @@ Deno.test("runtime stores - mailbox cleanup joins before stores and failure stil
           const closing = run(() => runtime.close());
           await entered.promise;
           assertEquals(runtime.mailboxer!.opened, true);
-          assertEquals(runtime.acdc.rgy!.baser.opened, true);
+          assertEquals(runtime.acdc!.baser.opened, true);
           release.resolve();
           assertEquals(await assertRejects(() => closing), failure);
         });
         assertEquals(runtime.mailboxer!.opened, false);
-        assertReleased(runtime.acdc.rgy!.baser);
-        assertReleased(runtime.vdr.reger as Reger);
+        assertReleased(runtime.acdc!.baser);
+        assertReleased(runtime.vdr!.reger);
         assertEquals(hby.db.opened, true);
       } finally {
         release.resolve();

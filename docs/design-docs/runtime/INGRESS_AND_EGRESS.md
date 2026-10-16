@@ -15,6 +15,16 @@ with `enableMailboxStore` or an injected Mailboxer; there is no host mode.
 RuntimeServices contains only the actual clock and HTTP client. Baser, Habery,
 Reactor, CLI and client constructors carry no shared accounting options.
 
+`runtime.vdr` is the existing legacy Regery with its concrete Reger, Tevery and
+Verifier; `runtime.acdc` is the independent v2 Regery. Both are null when a readonly
+Habery receives no injected store/manager. Composition supplies the actual Tevery,
+Verifier and v2 registry to Reactor. Dispatch borrows the concrete processors and
+never discovers them through a runtime or probes for optional processor methods.
+`AgentRuntimeOptions.reger` and `.acdc` borrow caller-owned stores/managers; shutdown
+closes only defaults it acquired. A legacy borrowed Reger gets runtime-created
+processors using the same cue Deck. Application workflows may reject genuine
+registry absence, without repeated class assertions or a replacement service bag.
+
 ## Input and state ordering
 
 `Reactor.process(source, options)` owns its parser iterator in an Effection

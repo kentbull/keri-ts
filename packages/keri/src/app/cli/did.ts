@@ -3,7 +3,6 @@
  */
 import { type Operation } from "effection";
 import { ValidationError } from "../../core/errors.ts";
-import { Reger } from "../../db/reger.ts";
 import {
   bindDesignatedAliases,
   DEFAULT_DESIGNATED_ALIASES_REGISTRY_NAME,
@@ -70,7 +69,6 @@ export function* dwsBindCommand(args: Record<string, unknown>): Operation<void> 
     commandArgs,
     runtimeOpenOptions(commandArgs),
     function*({ hby, runtime }) {
-      requireReger(runtime);
       const hab = hby.habByName(alias);
       const priorSn = hab?.kever?.sn ?? 0;
       const result = bindDesignatedAliases(runtime, {
@@ -108,7 +106,6 @@ export function* dwsGenerateCommand(args: Record<string, unknown>): Operation<vo
     commandArgs,
     runtimeOpenOptions(commandArgs),
     function*({ runtime }) {
-      requireReger(runtime);
       const artifacts = generateDidWebsArtifacts(runtime, {
         alias,
         did,
@@ -148,7 +145,6 @@ export function* dwsResolveCommand(args: Record<string, unknown>): Operation<voi
     commandArgs,
     runtimeOpenOptions(commandArgs),
     function*({ runtime }) {
-      requireReger(runtime);
       const result = yield* resolveDidWebs(runtime, {
         did,
         metadata: commandArgs.meta ?? false,
@@ -174,7 +170,6 @@ export function* dkrResolveCommand(args: Record<string, unknown>): Operation<voi
     commandArgs,
     runtimeOpenOptions(commandArgs),
     function*({ runtime }) {
-      requireReger(runtime);
       const result = yield* resolveDidKeri(runtime, {
         did,
         oobis: commandArgs.oobis,
@@ -200,14 +195,6 @@ function runtimeOpenOptions(args: DidBaseArgs) {
     compat: args.compat ?? false,
     skipConfig: true,
   };
-}
-
-function requireReger(runtime: AgentRuntime): Reger {
-  const reger = runtime.vdr.reger;
-  if (!(reger instanceof Reger)) {
-    throw new ValidationError("VDR runtime did not open Reger.");
-  }
-  return reger;
 }
 
 function* receiptNewWitnessEvents(

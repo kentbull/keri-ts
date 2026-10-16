@@ -9,7 +9,6 @@ import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import type { Hab } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { type Role, Roles } from "../../core/roles.ts";
-import { Reger } from "../../db/reger.ts";
 import { serializeCredential } from "../../vdr/credentialing.ts";
 import { listActiveDesignatedAliasCredentials, pinDesignatedAliasesSchema } from "./designated-aliases.ts";
 import { parseDidWebs } from "./dids.ts";
@@ -132,8 +131,8 @@ function designatedAliasMessages(
   runtime: AgentRuntime,
   aid: string,
 ): Uint8Array[] {
-  const reger = runtime.vdr.reger;
-  if (!(reger instanceof Reger)) {
+  const reger = runtime.vdr?.reger;
+  if (!reger) {
     throw new ValidationError("VDR runtime did not open Reger.");
   }
   const messages: Uint8Array[] = [];

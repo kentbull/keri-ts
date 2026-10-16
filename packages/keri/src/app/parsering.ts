@@ -43,7 +43,9 @@ import type { KeverDecision, QueryProcessDecision } from "../core/kever-decision
 import { type KramRefusal } from "../core/kraming.ts";
 import { supportsNestedExchange } from "../core/protocol-exchanging.ts";
 import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
+import type { Tevery } from "../vdr/eventing.ts";
 import type { ExchangeDecision } from "./exchanging.ts";
+import type { Verifier } from "./verifying.ts";
 
 /** Exchange admission may await durable payload storage before dispatch advances. */
 export interface ExchangerLike {
@@ -104,23 +106,6 @@ export interface AcdcDispatchArgs {
   tmqs: TypeMedia[];
 }
 
-export interface TeveryLike {
-  processEvent?(args: TelDispatchArgs): void;
-  /** TEL query owner; built-in replay is supported while TSN remains explicitly refused. */
-  processQuery?(args: QueryEnvelope): void | MessageDropDecision;
-  processEscrows?(): void;
-}
-
-export interface VerifierLike {
-  processACDC?(args: AcdcDispatchArgs): void;
-  processEscrows?(): void;
-}
-
-export interface VdrDispatchServices {
-  tvy?: TeveryLike | null;
-  vry?: VerifierLike | null;
-}
-
 /** A normal refusal before route processing; a parsed message is not accepted. */
 export interface MessageDropDecision {
   kind: "drop";
@@ -171,14 +156,15 @@ export function* dispatchEnvelope(
   revery: Revery,
   kevery: Kevery,
   exchanger?: ExchangerLike,
-  vdr: VdrDispatchServices = {},
+  tevery?: Tevery,
+  verifier?: Verifier,
   mailboxAid?: string | null,
   consume?: (ready: KeriDispatchEnvelope, decision: DispatchDecision) => Operation<void>,
 ): Operation<DispatchDecision> {
   const serder = envelope.serder as SerderKERI | SerderACDC;
   if (serder instanceof SerderACDC) {
     if (serder.ilk === null) {
-      vdr.vry?.processACDC?.(acdcEnvelopeFromDispatch(envelope, serder));
+      verifier?.processACDC(acdcEnvelopeFromDispatch(envelope, serder));
     }
     return;
   }
@@ -187,7 +173,7 @@ export function* dispatchEnvelope(
     serder.pvrsn.major >= 2
     && [Ilks.qry, Ilks.rpy, Ilks.exn, Ilks.xip, Ilks.pro, Ilks.bar].some((ilk) => ilk === serder.ilk)
   ) {
-    return yield* dispatchMessage(envelope, revery, kevery, exchanger, vdr, mailboxAid, consume);
+    return yield* dispatchMessage(envelope, revery, kevery, exchanger, tevery, mailboxAid, consume);
   }
 
   switch (serder.ilk) {
@@ -199,7 +185,7 @@ export function* dispatchEnvelope(
       });
     case Ilks.qry:
       if (["tels", "tsn"].includes(serder.route ?? "")) {
-        return dispatchTelQuery(queryEnvelopeFromDispatch(envelope), vdr);
+        return dispatchTelQuery(queryEnvelopeFromDispatch(envelope), tevery);
       }
       return kevery.processQuery(queryEnvelopeFromDispatch(envelope));
     case Ilks.rct:
@@ -218,7 +204,7 @@ export function* dispatchEnvelope(
     case Ilks.rev:
     case Ilks.bis:
     case Ilks.brv:
-      vdr.tvy?.processEvent?.(telEnvelopeFromDispatch(envelope, serder));
+      tevery?.processEvent(telEnvelopeFromDispatch(envelope, serder));
       break;
     case Ilks.icp:
     case Ilks.dip:
@@ -263,7 +249,7 @@ function* dispatchMessage(
   revery: Revery,
   kevery: Kevery,
   exchanger: ExchangerLike | undefined,
-  vdr: VdrDispatchServices,
+  tevery: Tevery | undefined,
   mailboxAid?: string | null,
   consume?: (ready: KeriDispatchEnvelope, decision: DispatchDecision) => Operation<void>,
 ): Operation<DispatchDecision> {
@@ -276,7 +262,15 @@ function* dispatchMessage(
   const result = kevery.kramer?.intake(envelope);
   if (result && result.kind !== "ready") return result;
   const ready = result?.envelope ?? envelope;
-  const decision = yield* dispatchReadyMessage(ready, revery, kevery, exchanger, vdr, mailboxAid, result?.receiverTime);
+  const decision = yield* dispatchReadyMessage(
+    ready,
+    revery,
+    kevery,
+    exchanger,
+    tevery,
+    mailboxAid,
+    result?.receiverTime,
+  );
   if (consume) yield* consume(ready, decision);
   return decision;
 }
@@ -287,7 +281,7 @@ function* dispatchReadyMessage(
   revery: Revery,
   kevery: Kevery,
   exchanger: ExchangerLike | undefined,
-  vdr: VdrDispatchServices,
+  tevery: Tevery | undefined,
   mailboxAid?: string | null,
   receiverTime?: string,
 ): Operation<DispatchDecision> {
@@ -298,7 +292,7 @@ function* dispatchReadyMessage(
       if (!query.source && !query.cigars?.length) return { kind: "drop", reason: "missingAuthentication" };
       if (["logs", "ksn", "mbx"].includes(serder.route ?? "")) return kevery.processQuery(query);
       if (serder.route === "tels" || serder.route === "tsn") {
-        return dispatchTelQuery(query, vdr);
+        return dispatchTelQuery(query, tevery);
       }
       return { kind: "drop", reason: "unsupportedRoute" };
     }
@@ -318,10 +312,10 @@ function* dispatchReadyMessage(
 }
 
 /** Both body versions preserve requester prerequisites and the TEL owner's typed refusal. */
-function dispatchTelQuery(query: QueryEnvelope, vdr: VdrDispatchServices): void | MessageDropDecision {
+function dispatchTelQuery(query: QueryEnvelope, tevery: Tevery | undefined): void | MessageDropDecision {
   if (!query.source && !query.cigars?.length) return { kind: "drop", reason: "missingAuthentication" };
-  if (!vdr.tvy?.processQuery) return { kind: "drop", reason: "missingProcessor" };
-  return vdr.tvy.processQuery(query);
+  if (!tevery) return { kind: "drop", reason: "missingProcessor" };
+  return tevery.processQuery(query);
 }
 
 /** Await the route owner while preserving parent, child and mailbox provenance. */

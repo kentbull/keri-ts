@@ -10,6 +10,7 @@ import {
   type SerderKERI,
   Vrsn_1_0,
 } from "../../../../cesr/mod.ts";
+import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { encodeHugeNumber } from "../../../src/app/keeping.ts";
 import { type AcdcDispatchArgs, dispatchEnvelope, type TelDispatchArgs } from "../../../src/app/parsering.ts";
@@ -30,14 +31,16 @@ Deno.test("dispatchEnvelope routes TEL events with the last source seal couple",
       temp: true,
       skipConfig: true,
     });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const revery = new Revery(hby.db);
       const kevery = new Kevery(hby.db, { rvy: revery });
       const calls: TelDispatchArgs[] = [];
-      const tvy = {
-        processEvent(args: TelDispatchArgs): void {
-          calls.push(args);
-        },
+      const tvy = runtime.vdr!.tvy;
+      const processEvent = tvy.processEvent;
+      tvy.processEvent = function(args) {
+        calls.push(args as TelDispatchArgs);
+        return processEvent.call(this, args);
       };
       const serder = incept(ISSUER, { baks: [], toad: 0 });
       const first = SealSource.fromTuple([
@@ -60,7 +63,7 @@ Deno.test("dispatchEnvelope routes TEL events with the last source seal couple",
           revery,
           kevery,
           undefined,
-          { tvy },
+          tvy,
         )
       );
 
@@ -70,6 +73,7 @@ Deno.test("dispatchEnvelope routes TEL events with the last source seal couple",
       assertEquals(calls[0]!.saider?.qb64, serder.said);
       assertEquals(calls[0]!.sscs.length, 2);
     } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });
@@ -82,14 +86,16 @@ Deno.test("dispatchEnvelope routes ACDC messages with the last source seal tripl
       temp: true,
       skipConfig: true,
     });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       const revery = new Revery(hby.db);
       const kevery = new Kevery(hby.db, { rvy: revery });
       const calls: AcdcDispatchArgs[] = [];
-      const vry = {
-        processACDC(args: AcdcDispatchArgs): void {
-          calls.push(args);
-        },
+      const vry = runtime.vdr!.vry;
+      const processACDC = vry.processACDC;
+      vry.processACDC = function(args) {
+        calls.push(args);
+        return processACDC.call(this, args);
       };
       const serder = new SerderACDC({
         sad: {
@@ -126,7 +132,8 @@ Deno.test("dispatchEnvelope routes ACDC messages with the last source seal tripl
           revery,
           kevery,
           undefined,
-          { vry },
+          undefined,
+          vry,
         )
       );
 
@@ -137,6 +144,7 @@ Deno.test("dispatchEnvelope routes ACDC messages with the last source seal tripl
       assertEquals(calls[0]!.saider?.qb64, serder.said);
       assertEquals(calls[0]!.ssts.length, 2);
     } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });
@@ -149,30 +157,27 @@ Deno.test("Reactor runs injected TEL and verifier escrow turns", async () => {
       temp: true,
       skipConfig: true,
     });
+    const runtime = yield* createAgentRuntime(hby);
     try {
       let telEscrows = 0;
       let verifierEscrows = 0;
-      const reactor = new Reactor(hby, {
-        vdr: {
-          tvy: {
-            processEvent(): void {},
-            processEscrows(): void {
-              telEscrows += 1;
-            },
-          },
-          vry: {
-            processACDC(): void {},
-            processEscrows(): void {
-              verifierEscrows += 1;
-            },
-          },
-        },
-      });
+      const { tvy, vry } = runtime.vdr!;
+      const telEscrow = tvy.processEscrows, verifierEscrow = vry.processEscrows;
+      tvy.processEscrows = function() {
+        telEscrows++;
+        return telEscrow.call(this);
+      };
+      vry.processEscrows = function() {
+        verifierEscrows++;
+        return verifierEscrow.call(this);
+      };
+      const reactor = new Reactor(hby, { tevery: tvy, verifier: vry, cues: runtime.cues });
 
       yield* reactor.processEscrowsOnce();
       assertEquals(telEscrows, 1);
       assertEquals(verifierEscrows, 1);
     } finally {
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });

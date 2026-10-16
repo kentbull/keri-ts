@@ -26,7 +26,9 @@ ownership and full qualification remain open.
 - Reactor has only justified protocol/connection responsibilities. Delete its
   general execution gate; no replacement universal executor, mutex or callback bus.
 - Choose concrete dependencies at construction. Remove vague service bags and
-  repeated requireReger/Regery/Tevery/Verifier narrowing. No speculative DI layer.
+  repeated class narrowing. Legacy/v2 Regery owners and direct processor injection
+  replace the placeholder VDR/ACDC bags. Application entrypoints retain one check
+  for genuine readonly registry absence. No speculative DI layer.
 - CLI and hosts drive the same workers. Delete duplicate whole-runtime pumping,
   forwarding-only facades without real consumers. AgentMode/runtimeMode are removed;
   hosts choose provider mailbox construction explicitly.
