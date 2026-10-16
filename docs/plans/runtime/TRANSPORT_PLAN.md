@@ -29,7 +29,8 @@ reconciled before affected implementation; it is not preservation authority.
   Respondant now owns lazy reply cursors, ordered batches and retry packets;
   CueDelivery/DirectReplyDelivery and their publication callbacks are removed.
   RuntimeDeliveries is deleted into QueryCoordinator with actual Reactor/services
-  dependencies. Delete the remaining optional CueSink hooks and root adapters. Real routing, signing, correlation and
+  dependencies. CueSink, optional hooks and root adapters are deleted; composition
+  routes records directly and default queries use concrete output. Real routing, signing, correlation and
   retry bytes stay with those owners. Reactor does no unrelated execution.
 - Choose actual dependencies at construction; CLI and hosts use the same workers.
   Network waits occur outside transactions and state-sensitive protocol turns.

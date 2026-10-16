@@ -9,7 +9,6 @@ import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
-  respondantCueSink,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest } from "../../../src/app/cesr-http.ts";
@@ -679,9 +678,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         );
         assertEquals(refusals, ["wire", "peer"]);
         const priorDrains = drains.length;
-        driver = yield* spawn(() =>
-          runAgentRuntime(runtime, { hab: witness, sink: respondantCueSink(runtime, witness) })
-        );
+        driver = yield* spawn(() => runAgentRuntime(runtime, { hab: witness }));
         active.write(controller.query(controller.pre, witness.pre, { route: "logs", q: { s: "3" } }));
         for (let attempt = 0; attempt < 200 && providerHby.db.qnfs.cnt() !== 1; attempt++) yield* sleepOp(10);
         assertEquals(providerHby.db.qnfs.cnt(), 1, "missing sequence is the actual KERIpy query-not-found escrow");

@@ -10,6 +10,7 @@ import {
   ingestKeriBytes,
   processRuntimeTurn,
   runAgentRuntime,
+  settleRuntimeIngress,
 } from "keri-ts/runtime";
 import { startServer } from "../../src/host/http-server.ts";
 import {
@@ -277,8 +278,8 @@ async function seedMailboxAndPeerState(
     ...mailboxReplies,
   ];
   await Promise.all([
-    ...stores.map((store) => ingestSharedState(store.name, store.headDirPath, store.alias, shared)),
-    ingestSharedState(provider.name, provider.headDirPath, provider.alias, shared),
+    ...stores.map((store) => ingestSharedState(store.name, store.headDirPath, shared)),
+    ingestSharedState(provider.name, provider.headDirPath, shared),
   ]);
 }
 
@@ -334,18 +335,14 @@ async function issueMailboxRole(
 async function ingestSharedState(
   name: string,
   headDirPath: string,
-  alias: string,
   messages: readonly Uint8Array[],
 ): Promise<void> {
   await run(function*(): Operation<void> {
     const hby = yield* createHabery({ name, headDirPath, skipConfig: true });
     const runtime = yield* createAgentRuntime(hby);
     try {
-      const hab = hby.habByName(alias);
-      for (const message of messages) {
-        ingestKeriBytes(runtime, message);
-      }
-      yield* processRuntimeTurn(runtime, { hab: hab ?? undefined, pollMailbox: false });
+      // Seed accepted protocol state before the provider host starts; this is not a sender turn.
+      yield* settleRuntimeIngress(runtime, messages);
     } finally {
       yield* runtime.close();
       yield* hby.close();

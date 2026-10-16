@@ -1,122 +1,49 @@
-import { call, type Operation } from "npm:effection@^3.6.0";
-import type { AgentCue } from "../core/cues.ts";
-import type { CueEmission, QueryCue } from "../core/cues.ts";
-import type { Deck } from "../core/deck.ts";
+import { type Operation } from "npm:effection@^3.6.0";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import type { Hab } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
-/** Immediate source-head transfer; ineligible records use the ordinary interpreter/sink path. */
-export type CueAdmission = "transferred" | "ineligible";
-
-/** Host-facing emissions and optional synchronous transfer of the guarded source head. */
-export interface CueSink {
-  /** Synchronous publication under the guard; waiting belongs to delivery. */
-  admitCue?(source: Deck<AgentCue>, interpreter: Hab | null): CueAdmission;
-  /** Prepare and publish one query synchronously before removing the source record. */
-  admitQuery?(cue: QueryCue, prepare: () => CueEmission | null): CueAdmission;
-  /** Synchronous local transformation under the Reactor guard. */
-  prepareEmission?(emission: CueEmission): CueEmission;
-  /** Delivery of a prepared emission; all waits/cleanup run outside the guard. */
-  sendPrepared?(emission: CueEmission): Operation<void>;
-  send(emission: CueEmission): Operation<void>;
-}
-
-function* ignoreEmission(_emission: CueEmission): Operation<void> {
-  return;
-}
-
-/** Default cue sink used when the host does not care about cue side effects. */
-export const ignoreCueSink: CueSink = { send: ignoreEmission };
-
-/**
- * Resolve the habitat used to interpret habitat-owned cue semantics.
- *
- * Rule:
- * - prefer an explicitly supplied habitat
- * - otherwise use the sole local habitat when the habery owns exactly one
- * - otherwise return `null` so the runtime can preserve the cue as a host
- *   notification without guessing which local habitat should sign for it
- */
-function resolveCueHab(
-  runtime: AgentRuntime,
-  hab?: Hab,
-): Hab | null {
-  if (hab) {
-    return hab;
-  }
+/** Use an explicitly selected or sole local habitat; never guess among hosted identities. */
+function resolveCueHab(runtime: AgentRuntime, hab?: Hab): Hab | null {
+  if (hab) return hab;
   const habitats = runtime.hby.habs.values();
   const first = habitats.next();
   return first.done || !habitats.next().done ? null : first.value;
 }
 
-/**
- * Drain one bounded cue-processing pass for a shared runtime host.
- *
- * Eligible sinks immediately transfer admitted work before source removal.
- * Ineligible/custom cues are interpreted in a short turn; sink waits and actual
- * I/O cleanup run outside the guard.
- * Only the initial bounded batch is drained. When no habitat can be resolved, cues are still
- * surfaced to the host as notify/transport emissions instead of being dropped.
- */
-export function processCuesOnce(
+/** Route one initial cue batch to its concrete owners before removing source records. */
+export function* processCuesOnce(
   runtime: AgentRuntime,
-  {
-    hab,
-    sink = ignoreCueSink,
-  }: {
-    hab?: Hab;
-    sink?: CueSink;
-  } = {},
+  { hab }: { hab?: Hab } = {},
 ): Operation<void> {
-  return call(function*() {
-    let cueHab: Hab | null = null, count = 0;
-    yield* runtime.reactor.settle(undefined, {}, function*() {
-      cueHab = resolveCueHab(runtime, hab);
-      count = runtime.cues.length;
-    });
-    for (let index = 0; index < count; index++) {
-      const more = yield* call(function*() {
-        let emission: CueEmission | undefined;
-        const result: { admission: CueAdmission; prepared: boolean } = { admission: "ineligible", prepared: false };
-        yield* runtime.reactor.settle(undefined, {}, function*() {
-          result.admission = sink.admitCue?.(runtime.cues, cueHab) ?? "ineligible";
-          if (result.admission === "transferred") return;
-          if (result.admission !== "ineligible") throw new TypeError("Invalid immediate cue admission");
-          const cue = runtime.cues.peekHead();
-          if (!cue) return;
-          const interpreted = cueHab ? cueHab.interpretCue(cue) : {
-            cue,
-            messages: [],
-            kind: cue.kin === "stream" ? "transport" as const : "notify" as const,
-          };
-          emission = interpreted ? sink.prepareEmission?.(interpreted) ?? interpreted : undefined;
-          runtime.cues.pull();
-          result.prepared = true;
-        });
-        if (result.admission === "transferred") return true;
-        if (!result.prepared) return false;
-        if (emission) yield* (sink.sendPrepared ?? sink.send).call(sink, emission);
-        return true;
-      });
-      if (!more) break;
-    }
+  let interpreter: Hab | null = null, count = 0;
+  yield* runtime.reactor.settle(undefined, {}, function*() {
+    interpreter = resolveCueHab(runtime, hab);
+    count = runtime.cues.length;
   });
+  for (let index = 0; index < count; index++) {
+    let available = false;
+    yield* runtime.reactor.settle(undefined, {}, function*() {
+      const cue = runtime.cues.peekHead();
+      if (!cue) return;
+      available = true;
+      if (cue.kin === "query") {
+        runtime.querying.enqueueCue(cue, interpreter);
+      } else if (cue.kin === "stream") {
+        runtime.mailboxDirector.retainQueryCue(cue);
+      } else if (interpreter && runtime.respondant.enqueueCue(interpreter, runtime.cues, hab)) {
+        runtime.querying.observeCue(cue);
+        return;
+      }
+      runtime.querying.observeCue(cue);
+      runtime.cues.pull();
+    });
+    if (!available) break;
+  }
 }
 
-/**
- * Continuous cue doer for long-lived runtime hosts.
- *
- * This is the Effection analogue of the KERIpy `cueDo` loop: interpret any
- * pending cues, hand them to the host sink, yield, and repeat forever.
- */
-export function* cueDo(
-  runtime: AgentRuntime,
-  options: {
-    hab?: Hab;
-    sink?: CueSink;
-  } = {},
-): Operation<never> {
+/** Continuous cue worker; network output belongs to the concrete query and reply workers. */
+export function* cueDo(runtime: AgentRuntime, options: { hab?: Hab } = {}): Operation<never> {
   while (true) {
     yield* processCuesOnce(runtime, options);
     yield* runtimeTurn();

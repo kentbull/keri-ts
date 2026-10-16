@@ -16,7 +16,6 @@ import { ValidationError } from "../../core/errors.ts";
 import {
   createAgentRuntime,
   processRuntimeUntil,
-  queryTransportSink,
 } from "../agent-runtime.ts";
 
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
@@ -223,11 +222,11 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
             communicationHab,
           });
           const snh = hab.kever.sn.toString(16);
-          const sink = queryTransportSink(runtime, communicationHab ?? hab);
+
           yield* processRuntimeUntil(
             runtime,
             () => runtime.delegating.complete(hab.pre, hab.kever!.sn),
-            { hab, sink, maxTurns: 512, pollMailbox: true },
+            { hab, maxTurns: 512, pollMailbox: true },
           );
           delegationPhase = runtime.delegating.workflowStatus(hab.pre, snh).phase;
         } finally {

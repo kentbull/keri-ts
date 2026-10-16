@@ -189,9 +189,10 @@ Maintainer rule:
 
 ## Query and cue source ownership
 
-CueSink admission takes the actual source queue and an interpreter. Composition
-wires responder delivery through respondantCueSink(runtime, hab); Respondant and
-QueryCoordinator do not receive the parent runtime or discover its siblings.
+Composition routes the actual source queue directly to query, mailbox and reply
+owners. CueSink, its optional preparation/admission hooks and root adapters are
+deleted. Respondant and QueryCoordinator do not receive the parent runtime or
+discover its siblings.
 QueryCoordinator's processPending/queryDo operations own their local pending
 state without an AgentRuntime argument or Reactor callback scheduler.
 
@@ -202,8 +203,9 @@ refusal and cancellation retain the pending head and its real lifetime through
 joined cleanup. Reactor still owns protocol dispatch and reply capture; this does
 not remove guards from other workers or declare the full flow migration complete.
 
-The root composition replaces Respondant.forHab with respondantCueSink. Internal
-address-selection helpers are not added to the runtime barrel's public surface.
+Respondant owns reply output directly; there is no forHab/emission-sink facade.
+QueryCoordinator prepares its signed packets directly without public custom-emission
+or raw-packet injection. Internal address selection stays private.
 After the signer-identifier refactor, pending queries use one private ordinary
 Deck of plain QueryRequest records with read-only inspection. Metadata reservation
 wrappers, configurable pending/continuation caps and partial-admission bookkeeping

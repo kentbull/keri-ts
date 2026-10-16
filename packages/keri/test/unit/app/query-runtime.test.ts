@@ -6,8 +6,6 @@ import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
-  queryTransportSink,
-  respondantCueSink,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 
@@ -137,7 +135,6 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       );
       yield* processRuntimeTurn(runtime, {
         hab,
-        sink: respondantCueSink(runtime, hab),
       });
     } finally {
       yield* hby.close();
@@ -155,7 +152,6 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, {
         hab: hab ?? undefined,
-        sink: respondantCueSink(runtime, hab),
       });
     });
     const serverTask = yield* spawn(function*() {
@@ -326,16 +322,13 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       enableMailboxStore: true,
     });
 
-    const witnessSink = respondantCueSink(witnessRuntime, witness);
-    const relaySink = respondantCueSink(relayRuntime, relay);
     const witnessRuntimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(witnessRuntime, {
         hab: witness,
-        sink: witnessSink,
       });
     });
     const relayRuntimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(relayRuntime, { hab: relay, sink: relaySink });
+      yield* runAgentRuntime(relayRuntime, { hab: relay });
     });
     const witnessServerTask = yield* spawn(function*() {
       yield* startServer(witnessPort, undefined, witnessRuntime, {
@@ -377,31 +370,20 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       );
       yield* processRuntimeTurn(relayRuntime, {
         hab: relay,
-        sink: relaySink,
         pollMailbox: false,
       });
 
       yield* waitForServer(witnessPort);
       yield* waitForServer(relayPort);
 
-      const query = proxy.query(
-        delegator.pre,
-        witness.pre,
-        { route: "logs", q: { fn: "0", s: "0", a: seal } },
-      );
-      const sink = queryTransportSink(proxyRuntime, proxy);
-      yield* sink.send({
-        kind: "wire",
-        cue: {
-          kin: "query",
-          pre: delegator.pre,
-          src: witness.pre,
-          route: "logs",
-          q: { fn: "0", s: "0", a: seal },
-          wits: [witness.pre],
-        },
-        messages: [query],
-      });
+      proxyRuntime.querying.enqueueCue({
+        kin: "query",
+        pre: delegator.pre,
+        src: witness.pre,
+        route: "logs",
+        q: { fn: "0", s: "0", a: seal },
+        wits: [witness.pre],
+      }, proxy);
 
       // Network response processing begins only after the cue consumer's guarded turn has ended.
       yield* proxyRuntime.querying.deliverOnce();
@@ -567,23 +549,26 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
       const emissions: Array<
         { kind: string; kin: string; messages: number; dest: string | null }
       > = [];
+      const interpret = witness.interpretCue;
+      witness.interpretCue = function(cue) {
+        const emission = interpret.call(this, cue);
+        if (emission) {
+          const messages = [...emission.messages];
+          emissions.push({
+            kind: emission.kind,
+            kin: cue.kin,
+            messages: messages.length,
+            dest: cue.kin === "replay" ? cue.dest ?? null : null,
+          });
+          return { ...emission, messages };
+        }
+        return emission;
+      };
       try {
         ingestKeriBytes(runtime, queryBytes);
         yield* processRuntimeTurn(runtime, {
           hab: witness,
           pollMailbox: false,
-          sink: {
-            *send(emission) {
-              emissions.push({
-                kind: emission.kind,
-                kin: emission.cue.kin,
-                messages: [...emission.messages].length,
-                dest: emission.cue.kin === "replay"
-                  ? emission.cue.dest ?? null
-                  : null,
-              });
-            },
-          },
         });
 
         assertEquals(

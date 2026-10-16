@@ -24,7 +24,8 @@ ownership and full qualification remain open.
   QueryReply admission callbacks and generic delivery wrappers. CueDelivery and
   DirectReplyDelivery are removed; Respondant owns actual reply state and output.
   RuntimeDeliveries is also deleted into QueryCoordinator, which owns its packets
-  and response I/O. Optional CueSink hooks and their root adapters remain to remove.
+  and response I/O. CueSink, its optional hooks and root adapters are deleted;
+  composition routes records directly, and default queries reach actual transport.
 - Reactor has only justified protocol/connection responsibilities. Delete its
   general execution gate; no replacement universal executor, mutex or callback bus.
 - Choose concrete dependencies at construction. Remove vague service bags and

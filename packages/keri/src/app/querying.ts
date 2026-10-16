@@ -1,13 +1,12 @@
 import { concatBytes, type SealEvent } from "cesr-ts";
-import { call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
-import type { AgentCue, CueEmission, QueryCue, QueryInstruction, QueryRequest } from "../core/cues.ts";
+import { call, type Operation, resource } from "npm:effection@^3.6.0";
+import type { AgentCue, QueryCue, QueryInstruction, QueryRequest } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Roles } from "../core/roles.ts";
 import { Schemes } from "../core/schemes.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
-import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
@@ -47,13 +46,6 @@ import { converseCesrTcp } from "./tcp-conversation.ts";
  * tests and maintainer reasoning stable at the correspondence layer.
  */
 const QUERY_ROLE_PRIORITY = [Roles.controller, Roles.agent, Roles.witness];
-
-/** Sink used when the runtime has no external transport side effects to perform. */
-const ignoreSink: CueSink = {
-  *send(_emission: CueEmission): Operation<void> {
-    return;
-  },
-};
 
 /** Copy only the owned query-body level without erasing its route/payload relationship. */
 function copyQuery(instruction: QueryInstruction): QueryInstruction {
@@ -429,11 +421,10 @@ interface QueryDelivery {
  *
  * Responsibilities:
  * - turn incomplete portable `query` cues into honest outbound `qry` wire
- *   emissions when a local habitat and remote attester can be resolved
+ *   packets when a local habitat and remote attester can be resolved
  * - host KERIpy-style query continuations such as `KeyStateNoticer`
- * - forward all other cue emissions unchanged to the configured downstream sink
  */
-export class QueryCoordinator implements CueSink {
+export class QueryCoordinator {
   readonly hby: Habery;
   private readonly reactor: Reactor;
   private readonly services: RuntimeServices;
@@ -446,39 +437,26 @@ export class QueryCoordinator implements CueSink {
   get pending(): Pick<Deck<QueryRequest>, "length" | "empty" | "peekHead"> {
     return this.requests;
   }
-  /** Prevent a cue consumer and the background worker from sending the same head concurrently. */
-  private processing = false;
   private closed = false;
-  private active?: Task<void>;
-  private joined?: Promise<void>;
-  /** Retain the joined halt result across a cancelled close so the next owner still observes late failure. */
-  private stopping?: { task: Task<void>; cleanup: Promise<void> };
-  private sink: CueSink;
   private hab: Hab | null;
   private continuations: QueryContinuation[] = [];
 
   constructor(
     hby: Habery,
-    { reactor, services = defaultRuntimeServices, sink = ignoreSink, hab = null }: {
+    { reactor, services = defaultRuntimeServices, hab = null }: {
       reactor: Reactor;
       services?: RuntimeServices;
-      sink?: CueSink;
       hab?: Hab | null;
     },
   ) {
     this.hby = hby;
     this.reactor = reactor;
     this.services = services;
-    this.sink = sink;
     this.hab = hab;
   }
 
-  /** Rebind the active downstream sink and optional local habitat hint. */
-  configure({ sink = ignoreSink, hab = null }: {
-    sink?: CueSink;
-    hab?: Hab | null;
-  } = {}): void {
-    this.sink = sink;
+  /** Select the local habitat used when queued requests have no explicit signer. */
+  configure({ hab = null }: { hab?: Hab | null } = {}): void {
     this.hab = hab;
   }
 
@@ -536,55 +514,13 @@ export class QueryCoordinator implements CueSink {
     });
   }
 
-  /** Retain routed work only; unresolved schema/credential notices have no outbound query instruction. */
-  enqueueCue(cue: QueryCue): boolean {
+  /** Prepare routed query cues before source removal, or retain unresolved requests for a later turn. */
+  enqueueCue(cue: QueryCue, hab?: Hab | null): void {
     if (this.closed) throw new Error("Query coordinator is closed");
-    if (!cue.route || !cue.pre) return false;
+    if (!cue.route || !cue.pre) return;
     const { kin: _, ...request } = cue;
-    this.enqueue(request);
-    return true;
-  }
-
-  /** Capture a signed query and introduction before removing the source request. */
-  queueEmission(hab: Hab, emission: CueEmission | null): boolean {
-    if (emission === null) return false;
-    if (!emission || emission.kind !== "wire" && emission.kind !== "notify" && emission.kind !== "transport") {
-      throw new TypeError("Query preparation must return a synchronous emission or null");
-    }
-    if (emission.kind !== "wire" || emission.cue.kin !== "query") return false;
-    const destination = emission.cue.src, queriedPre = emission.cue.pre;
-    if (!destination || !queriedPre) return false;
-    const signer = emission.cue.signer === undefined ? hab : this.hby.habs.get(emission.cue.signer);
-    if (!signer) return false;
-    const url = resolveQueryDestinationUrl(signer, queriedPre, destination, {
-      explicitWitness: emission.cue.wits?.includes(destination) ?? false,
-    });
-    if (!url) throw new ValidationError(`No endpoint URL found for query destination ${destination}.`);
-    const messages = emission.messages[Symbol.iterator]();
-    let message: Uint8Array | undefined, failed = false, failure: unknown;
-    try {
-      message = messages.next().value;
-    } catch (error) {
-      failed = true;
-      failure = error;
-    }
-    try {
-      messages.return?.();
-    } catch (error) {
-      if (failed && error !== failure) throw new AggregateError([failure, error], "Query source cleanup failed");
-      throw error;
-    }
-    if (failed) throw failure;
-    if (!message) return false;
-    const intro = introduce(signer, destination);
-    this.enqueueDelivery({ url, body: concatBytes(intro, message), bodyMode: this.hby.cesrBodyMode, destination });
-    return true;
-  }
-
-  /** Append one ordinary signed query packet; its bytes remain borrowed until delivery or joined close. */
-  enqueueDelivery(delivery: QueryDelivery): void {
-    if (this.closed) throw new Error("Query coordinator is closed");
-    this.deliveries.push(delivery);
+    const selected = { ...request, signer: request.signer ?? hab?.pre };
+    if (!this.prepareRequest(selected)) this.enqueue(selected);
   }
 
   /** Include live query I/O and unsent packets in convergence. */
@@ -663,160 +599,31 @@ export class QueryCoordinator implements CueSink {
     );
   }
 
-  /** Observe a source cue only after its prepared delivery record is queued. */
-  admitCue(source: Deck<AgentCue>, interpreter: Hab | null, sink: CueSink = this.sink): CueAdmission {
-    const cue = source.peekHead();
-    let admission: CueAdmission;
-    if (cue?.kin === "query" && sink.admitQuery) {
-      admission = sink.admitQuery(cue, () => {
-        const emission = interpreter?.interpretCue(cue);
-        return emission?.kind === "wire" ? emission : this.transientQueryEmission(cue, interpreter ?? undefined);
-      });
-      if (admission === "transferred") {
-        if (source.peekHead() !== cue) throw new Error("Query source changed during admission");
-        source.pull();
-        this.observeCue(cue);
-        return "transferred";
+  /** Sign and queue one initial pass; unresolved requests rotate and appended work waits for the next turn. */
+  *processPending(): Operation<void> {
+    if (this.closed) return;
+    this.tickContinuations();
+    const count = this.requests.length;
+    for (let index = 0; index < count; index++) {
+      const request = this.requests.peekHead();
+      if (!request) break;
+      if (this.prepareRequest(request)) this.requests.pull();
+      else {
+        this.requests.pull();
+        this.requests.append(request);
       }
-    } else admission = sink.admitCue?.(source, interpreter) ?? "ineligible";
-    if (admission !== "transferred" && admission !== "ineligible") {
-      throw new TypeError("Invalid query source admission");
     }
-    if (cue && admission === "transferred") this.observeCue(cue);
-    return admission;
+    this.tickContinuations();
   }
 
-  /** Observe and resolve incomplete queries synchronously under the caller's state guard. */
-  prepareEmission(emission: CueEmission): CueEmission {
-    this.observeCue(emission.cue);
-    const prepared = emission.cue.kin === "query" && emission.kind !== "wire"
-      ? this.transientQueryEmission(emission.cue) ?? emission
-      : emission;
-    return this.sink.prepareEmission?.(prepared) ?? prepared;
-  }
-
-  /** Await downstream consumption of a prepared emission, with no repeated local signing or observation. */
-  *sendPrepared(emission: CueEmission): Operation<void> {
-    yield* (this.sink.sendPrepared ?? this.sink.send).call(this.sink, emission);
-  }
-
-  /**
-   * Direct convenience operation: the caller supplies local preparation ownership/guard
-   * and emission lifetime. Runtime cue drains prepare under their turn and send outside it.
-   */
-  *send(emission: CueEmission): Operation<void> {
-    yield* this.sendPrepared(this.prepareEmission(emission));
-    if (!this.sink.admitQuery) yield* this.processPending();
-  }
-
-  /**
-   * Drain one bounded pass of continuation-owned query work.
-   *
-   * This is the Effection analogue of the KERIpy query/noticer doers: inspect
-   * local state, emit any initial or follow-on queries that can honestly be
-   * constructed, and retain unresolved work for later turns.
-   * Preparation/admission are synchronous owner operations over committed accepted state.
-   * Admitted sinks retain wire ownership; no network wait occurs while signing or borrowing state.
-   * Plain pending records have no byte reservations or configured queue caps.
-   * Standalone/custom wire preparation retains caller-owned bounds.
-   */
-  processPending(): Operation<void> {
-    // deno-lint-ignore no-this-alias -- The isolated generator owns one complete drain pass.
-    const self = this;
-    return call(function*() {
-      if (self.processing || self.closed) return;
-      self.processing = true;
-      let finish!: () => void;
-      self.joined = new Promise<void>((resolve) => finish = resolve);
-      yield* resource<void>(function*(provide) {
-        try {
-          yield* provide();
-        } finally {
-          self.active = undefined;
-          self.processing = false;
-          self.joined = undefined;
-          finish();
-        }
-      });
-      let failure: { error: unknown } | undefined;
-      const task = yield* spawn(function*() {
-        try {
-          self.tickContinuations();
-          const count = self.requests.length;
-          for (let index = 0; index < count; index++) {
-            const request = self.requests.peekHead();
-            if (!request) break;
-            if (self.sink.admitQuery) {
-              const cue: QueryCue = { kin: "query", ...request };
-              const admission = self.sink.admitQuery(cue, () => self.wireEmissionForRequest(request));
-              if (admission === "transferred") {
-                self.requests.pull();
-                continue;
-              }
-              if (admission !== "ineligible") throw new TypeError("Invalid query admission");
-              self.requests.pull();
-              self.requests.append(request);
-              continue;
-            }
-            const emission = self.wireEmissionForRequest(request);
-            if (emission) {
-              // Keep the head while transport can suspend or fail.
-              yield* self.sink.send(emission);
-              self.requests.pull();
-            } else {
-              // Defer unresolved work to the next pass.
-              self.requests.pull();
-              self.requests.append(request);
-            }
-          }
-          self.tickContinuations();
-        } catch (error) {
-          failure = { error };
-          throw error;
-        }
-      });
-      self.active = task;
-      try {
-        yield* task;
-      } catch (error) {
-        const stopping = self.stopping;
-        if (!stopping || stopping.task !== task) throw error;
-        yield* call(() => stopping.cleanup);
-        if (failure) throw failure.error;
-      }
-    });
-  }
-
-  /** Stop active processing and join its children before clearing pending requests. Do not reenter from its sink. */
+  /** Abort and join real output before clearing packets and correspondence. */
   *close(): Operation<void> {
     this.closed = true;
     this.output?.abort();
-    const failures: unknown[] = [];
-    try {
-      if (this.active && !this.stopping) {
-        const task = this.active;
-        this.stopping = { task, cleanup: Promise.resolve().then(() => task.halt()) };
-      }
-      const stopping = this.stopping;
-      if (stopping) yield* call(() => stopping.cleanup);
-    } catch (error) {
-      failures.push(error);
-    }
-    try {
-      if (this.joined) yield* call(() => this.joined!);
-    } catch (error) {
-      if (!failures.includes(error)) failures.push(error);
-    }
-    try {
-      if (this.outputJoined) yield* call(() => this.outputJoined!);
-    } catch (error) {
-      if (!failures.includes(error)) failures.push(error);
-    }
+    if (this.outputJoined) yield* call(() => this.outputJoined!);
     this.requests.clear();
     this.deliveries.clear();
-    this.stopping = undefined;
-    if (failures.length === 1) throw failures[0];
-    if (failures.length) throw new AggregateError(failures, "Query coordinator cleanup failed");
+    this.continuations = [];
   }
 
   /** Continuous background query worker for long-lived runtime hosts. */
@@ -854,52 +661,21 @@ export class QueryCoordinator implements CueSink {
     this.continuations = this.continuations.filter((continuation) => !continuation.done);
   }
 
-  /**
-   * Convert one incomplete portable query cue into a wire-ready request when
-   * runtime can honestly resolve its queried prefix.
-   */
-  private transientQueryEmission(cue: QueryCue, hab?: Hab): CueEmission | null {
-    if (!cue.route || !cue.pre) return null;
-    return this.wireEmissionForRequest({
-      signer: cue.signer ?? hab?.pre,
-      pre: cue.pre,
-      ...copyQuery(cue),
-      src: cue.src,
-      wits: cue.wits,
-    });
-  }
-
-  /**
-   * Build one outbound wire emission after habitat and attester resolution.
-   *
-   * Returned `null` means runtime still lacks honest information and should
-   * defer the request rather than manufacture a query from guesswork.
-   */
-  private wireEmissionForRequest(request: QueryRequest): CueEmission | null {
+  /** Capture the selected signer's query, introduction and endpoint before retiring its source request. */
+  private prepareRequest(request: QueryRequest): boolean {
     const hab = this.configuredHab(request.signer);
-    if (!hab) {
-      return null;
-    }
-
-    const src = request.src
+    if (!hab) return false;
+    const destination = request.src
       ?? this.attestersFor(request.pre, { signer: hab.pre, wits: request.wits })[0];
-    if (!src) {
-      return null;
-    }
-
-    const instruction = copyQuery(request);
-    return {
-      cue: {
-        kin: "query",
-        pre: request.pre,
-        ...(request.signer === undefined ? {} : { signer: request.signer }),
-        src,
-        ...instruction,
-        wits: request.wits ? [...request.wits] : undefined,
-      },
-      messages: [hab.query(request.pre, src, instruction)],
-      kind: "wire",
-    };
+    if (!destination) return false;
+    const url = resolveQueryDestinationUrl(hab, request.pre, destination, {
+      explicitWitness: request.wits?.includes(destination) ?? false,
+    });
+    if (!url) throw new ValidationError(`No endpoint URL found for query destination ${destination}.`);
+    const message = hab.query(request.pre, destination, copyQuery(request));
+    const intro = introduce(hab, destination);
+    this.deliveries.push({ url, body: concatBytes(intro, message), bodyMode: this.hby.cesrBodyMode, destination });
+    return true;
   }
 
   /** Return eligible attester IDs in role priority; explicit witness overrides retain caller order. */

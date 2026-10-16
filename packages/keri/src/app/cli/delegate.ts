@@ -13,16 +13,13 @@
  */
 import { Diger, type SerderKERI } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import type { CueEmission } from "../../core/cues.ts";
+import type { QueryRequest } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import {
   type AgentRuntime,
-  type CueSink,
   processRuntimeTurn,
   processRuntimeUntil,
-  queryTransportSink,
-  respondantCueSink,
 } from "../agent-runtime.ts";
 
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../endpoint-roleing.ts";
@@ -137,24 +134,19 @@ function delegateWitnessLogsQuery(
   hab: Hab,
   serder: SerderKERI,
   witness: string,
-): CueEmission {
+): QueryRequest {
   if (!serder.pre || !serder.snh) {
     throw new ValidationError(
       "Delegated event is missing pre or sn for query.",
     );
   }
-  const query = { fn: "0", s: serder.snh };
   return {
-    kind: "wire",
-    cue: {
-      kin: "query",
-      pre: serder.pre,
-      src: witness,
-      route: "logs",
-      q: query,
-      wits: [witness],
-    },
-    messages: [hab.query(serder.pre, witness, { route: "logs", q: query })],
+    pre: serder.pre,
+    signer: hab.pre,
+    src: witness,
+    route: "logs",
+    q: { fn: "0", s: serder.snh },
+    wits: [witness],
   };
 }
 
@@ -204,26 +196,6 @@ function pinApprovalSeal(
   hab.kvy.processEscrowDelegables();
 }
 
-/** Route query cues through query transport and other cues through Respondant. */
-function delegateConfirmSink(
-  runtime: AgentRuntime,
-  hab: Hab,
-): CueSink {
-  const querySink = queryTransportSink(runtime, hab);
-  const responder = respondantCueSink(runtime, hab);
-  return {
-    admitQuery: querySink.admitQuery,
-    admitCue: responder.admitCue,
-    *send(emission: CueEmission): Operation<void> {
-      if (emission.kind === "wire" && emission.cue.kin === "query") {
-        yield* querySink.send(emission);
-        return;
-      }
-      yield* runtime.respondant.sendWithHab(emission, hab);
-    },
-  };
-}
-
 /** Approve pending delegated events for the selected local delegator habitat.
  *
  * This is the explicit use-case service for the delegation approval workflow.
@@ -237,11 +209,10 @@ export function* performDelegationApproval(
 ): Operation<void> {
   const interactionApproval = confirmArgs.interact ?? false;
 
-  const sink = delegateConfirmSink(runtime, hab);
   yield* processRuntimeUntil(
     runtime,
     () => pendingDelegations(hby, hab.pre).length > 0,
-    { hab, maxTurns: 64, pollMailbox: true, sink },
+    { hab, maxTurns: 64, pollMailbox: true },
   );
 
   const pending = pendingDelegations(hby, hab.pre);
@@ -299,30 +270,27 @@ export function* performDelegationApproval(
       const witnesses = delegateWitnesses(hby, serder).sort();
       const selectedWitness = witnesses[0];
       const member = localGroupMember(hby, hab.pre);
-      const memberSink = delegateConfirmSink(runtime, member);
 
       pinApprovalSeal(hby, hab, serder, approving);
       yield* processRuntimeTurn(runtime, {
         hab: member,
         pollMailbox: true,
-        sink: memberSink,
       });
 
       if (!delegateCommitted(hby, serder) && selectedWitness) {
-        yield* memberSink.send(
+        runtime.querying.enqueue(
           delegateWitnessLogsQuery(member, serder, selectedWitness),
         );
         yield* processRuntimeUntil(
           runtime,
           () => delegateCommitted(hby, serder),
-          { hab: member, maxTurns: 128, pollMailbox: true, sink: memberSink },
+          { hab: member, maxTurns: 128, pollMailbox: true },
         );
       }
       pinApprovalSeal(hby, hab, serder, approving);
       yield* processRuntimeTurn(runtime, {
         hab: member,
         pollMailbox: true,
-        sink: memberSink,
       });
 
       if (serder.pre && serder.said) {
@@ -371,13 +339,13 @@ export function* performDelegationApproval(
       // Witnessed delegates must prove the delegated event is committed
       // locally before we pin `aess.` and retry delegated unescrow. Doing
       // it earlier can make local state look approved but incomplete.
-      yield* sink.send(
+      runtime.querying.enqueue(
         delegateWitnessLogsQuery(hab, serder, selectedWitness),
       );
       yield* processRuntimeUntil(
         runtime,
         () => delegateCommitted(hby, serder),
-        { hab, maxTurns: 128, pollMailbox: true, sink },
+        { hab, maxTurns: 128, pollMailbox: true },
       );
     } else {
       const querier = runtime.querying.watchSeqNo(
@@ -392,10 +360,10 @@ export function* performDelegationApproval(
       yield* processRuntimeUntil(
         runtime,
         () => querier.done,
-        { hab, maxTurns: 128, pollMailbox: true, sink },
+        { hab, maxTurns: 128, pollMailbox: true },
       );
     }
-    yield* processRuntimeTurn(runtime, { hab, pollMailbox: true, sink });
+    yield* processRuntimeTurn(runtime, { hab, pollMailbox: true });
 
     // Match KERIpy sequencing: only record the approving seal and retry
     // delegated unescrow after the delegate event has been observed as

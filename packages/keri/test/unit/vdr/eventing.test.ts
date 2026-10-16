@@ -13,6 +13,7 @@ import {
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import { type AgentRuntime, createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
@@ -741,7 +742,21 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
     const source = yield* createReger({ name: crypto.randomUUID(), temp: true });
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const local = hby.makeHab("receiver");
-    const runtime = yield* createAgentRuntime(hby);
+    const queries: Record<string, unknown>[] = [];
+    hby.db.locs.pin([issuer.pre, "http"], { url: "http://issuer.test/" });
+    hby.db.ends.pin([issuer.pre, "controller", issuer.pre], { allowed: true });
+    const runtime = yield* createAgentRuntime(hby, {
+      services: {
+        http: {
+          async fetch(url, init) {
+            const wire = await readCesrRequestBytes(new Request(url, init));
+            const message = new SerderKERI({ raw: wire });
+            if (message.ilk === "qry") queries.push(message.ked!.q as Record<string, unknown>);
+            return new Response(null, { status: 204 });
+          },
+        },
+      },
+    });
     const reger = runtime.vdr!.reger! as Reger;
     try {
       const tvy = new Tevery({ db: sender.db, reger: source });
@@ -752,24 +767,7 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
       yield* runtime.reactor.processBytes(issuer.endorse(serder));
       assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 1);
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre]), null);
-      const queries: Record<string, unknown>[] = [];
-      const turn = () =>
-        processRuntimeTurn(runtime, {
-          hab: local,
-          pollMailbox: false,
-          sink: {
-            *send(emission) {
-              if (emission.cue.kin === "query" && emission.kind === "wire") {
-                for (const message of emission.messages) {
-                  const [frame] = yield* call(() => parseBytes(message));
-                  {
-                    queries.push(envelopeFromFrame(frame).serder.ked!.q as Record<string, unknown>);
-                  }
-                }
-              }
-            },
-          },
-        });
+      const turn = () => processRuntimeTurn(runtime, { hab: local, pollMailbox: false });
       yield* turn();
       assertEquals(queries[0].i, issuer.pre);
       for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);

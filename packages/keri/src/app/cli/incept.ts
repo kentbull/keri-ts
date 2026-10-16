@@ -4,7 +4,6 @@ import {
   type AgentRuntime,
   createAgentRuntime,
   processRuntimeUntil,
-  queryTransportSink,
   runtimeHasPendingWork,
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
@@ -191,11 +190,11 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
           runtime.delegating.beginLatest(hab.pre, 0, {
             communicationHab,
           });
-          const sink = queryTransportSink(runtime, communicationHab);
+
           yield* processRuntimeUntil(
             runtime,
             () => runtime.delegating.complete(hab.pre, 0),
-            { hab, sink, maxTurns: 512, pollMailbox: true },
+            { hab, maxTurns: 512, pollMailbox: true },
           );
           delegationPhase = runtime.delegating.workflowStatus(hab.pre, "0").phase;
         } finally {

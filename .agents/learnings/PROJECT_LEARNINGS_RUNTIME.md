@@ -43,22 +43,26 @@ interpretation where the local attester is known. Preserve exact required fields
 
 ## Cues, queries and state turns
 
-Hab.processCuesIter/interpretCue own cue semantics. CueSink receives the actual
-source queue. Composition wires respondantCueSink; Respondant does not receive
-a runtime-shaped delivery bundle. Respondant owns its private reply cursors,
-ordered correlation batches and exact failed packets. CueDelivery and
-DirectReplyDelivery are deleted; their routing/publication callbacks are gone.
-Respondant borrows the actual Poster, Reactor and ReplyStreams. RuntimeDeliveries
-is deleted; QueryCoordinator owns query routing/signing, ordinary queued packets
-and joined response I/O using actual Reactor/clock/HTTP dependencies. Its producer
-and transport passes preserve source records and exact wire on failure/cancellation.
-Ordinary cues, routes, packets and reply batches have no synthetic lifecycle.
-Consumers perform interpretation/publication/source removal directly, without a
-generic callback-based cue publication helper. Failure preserves the source.
-Drains use the initial queue extent, and no-emission records do not stop the pass.
-Real iterator cleanup occurs once, even if it throws. Custom sinks run outside
-guarded interpretation. Optional CueSink hooks, the broad Reactor gate and
-duplicate whole-runtime driving remain removal inputs, not new abstractions.
+Hab.processCuesIter/interpretCue own cue semantics. Composition routes the actual
+cue Deck directly: QueryCoordinator prepares or defers routed query records,
+MailboxDirector retains stream correlation, and Respondant owns reply/receipt/replay
+routing. CueSink, optional admission/preparation hooks and root sink adapters are
+deleted, with no replacement callbacks. Default queued queries use actual transport;
+notifications cannot silently select a no-op sender. Schema/credential notices do
+not become invented query requests. Unresolved identities/endpoints stay deferred.
+
+Respondant owns private lazy reply cursors, ordered correlation batches and exact
+failed packets through actual Poster/Reactor/ReplyStreams dependencies. It has no
+mailbox stream-routing or emission-sink facade. CueDelivery/DirectReplyDelivery and
+RuntimeDeliveries are deleted. QueryCoordinator owns actual signed packets and
+joined response I/O through concrete Reactor/clock/HTTP dependencies. Query signing
+and introductions are synchronous owner work; producer task/halt state and public
+raw-packet/custom-emission injection are removed. Real I/O still aborts and joins.
+
+Consumers publish before removing source records. Preparation failure preserves the
+source, and finite passes use their initial queue extent. Ordinary cues, routes,
+packets and batches have no synthetic lifetime. Real iterator cleanup runs once.
+The broad Reactor gate and duplicate whole-runtime driving remain removal inputs.
 
 Reactor currently serializes dispatch, escrows and cue handling. Never reenter it
 from its guarded consumer. Remove this general callback guard only after moving
@@ -76,7 +80,10 @@ re-signs on retry. Failed/cancelled sends retain the head, unresolved records ro
 and appended work waits for another pass. Close joins consumption before clearing.
 Anchor continuations ask each eligible attester once; one retired witness must not
 strand recovery. Ordinary query selection stays first-choice. Completion uses actual
-accepted seal/key/TEL state. CLI query starts the shared concurrent runner and joins
+accepted seal/key/TEL state. OOBI convergence excludes background reply delivery:
+a static OOBI server may refuse unsolicited receipts without invalidating accepted
+resolution. Ingress/query/escrow work still blocks completion; close joins real I/O.
+CLI query starts the shared concurrent runner and joins
 it before display/close; serial mailbox polling must not exhaust the query window.
 
 QueryReplies reserves SAIDs for correlation, not capacity. Capture matching replies

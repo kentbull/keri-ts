@@ -7,7 +7,6 @@ import {
   type Hab,
   processCuesOnce,
   type QueryReply,
-  respondantCueSink,
   rethrowCleanupFailure,
   socketBytes,
   writeCesrTcpSocket,
@@ -215,7 +214,7 @@ function* processWitnessSocket(
                 } else batch = slot?.takeAll();
               }
             });
-            yield* processCuesOnce(runtime, { hab: serviceHab, sink: respondantCueSink(runtime, serviceHab) });
+            yield* processCuesOnce(runtime, { hab: serviceHab });
             if (batch) yield* sendBatch(batch);
           };
           while (!rxEOF || pending) {

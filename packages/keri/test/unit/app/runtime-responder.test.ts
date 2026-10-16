@@ -1,10 +1,10 @@
 import { call, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { SerderKERI } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
-  respondantCueSink,
 } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
@@ -22,14 +22,10 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
     const runtime = yield* createAgentRuntime(hby);
-    const posted: { hab: string; recipient: string; topic?: string; message: Uint8Array }[] = [];
-    const retained: CueEmission["cue"][] = [];
-    runtime.poster.sendBytes = function*(hab, args) {
-      posted.push({ hab: hab.pre, recipient: args.recipient, topic: args.topic, message: args.message });
-      return { deliveries: [] };
-    };
-    runtime.mailboxDirector.retainQueryCue = (cue) => {
-      retained.push(cue);
+    const posted: { hab: string; recipient: string; topic?: string }[] = [];
+    runtime.poster.findBytesRoute = (hab, args) => {
+      posted.push({ hab: hab.pre, recipient: args.recipient, topic: args.topic });
+      return null;
     };
     const cues: CueEmission["cue"][] = [
       { kin: "receipt", serder: recipient.kever!.serder },
@@ -39,16 +35,14 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
     ];
     try {
       for (const [index, cue] of cues.entries()) {
-        yield* runtime.respondant.sendWithHab({ kind: "wire", cue, messages: [Uint8Array.of(index + 1)] }, sender);
+        runtime.respondant.enqueueEmission(sender, { kind: "wire", cue, messages: [Uint8Array.of(index + 1)] });
       }
-      assertEquals(retained, []);
       assertEquals(
         posted,
         ["/receipt", "/receipt", "/reply", "/replay"].map((topic, index) => ({
           hab: sender.pre,
           recipient: recipient.pre,
           topic,
-          message: Uint8Array.of(index + 1),
         })),
       );
     } finally {
@@ -80,7 +74,8 @@ Deno.test("app/runtime-responder - stream cues stay with mailbox query correlati
       topics: { "/reply": 0 },
     };
     try {
-      yield* runtime.respondant.sendWithHab({ kind: "transport", cue, messages: [] });
+      runtime.cues.push(cue);
+      yield* processCuesOnce(runtime, { hab });
       assertEquals(posted, false);
       assertEquals(retained, [cue]);
     } finally {
@@ -124,14 +119,12 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
         yield* processRuntimeTurn(runtime, { pollMailbox: false });
 
         const message = new Uint8Array([8, 8, 8]);
-        yield* runtime.respondant.sendWithHab(
-          {
-            kind: "wire",
-            cue: { kin: "receipt", serder: { pre: recipient.pre } as never },
-            messages: [message],
-          },
-          witness,
-        );
+        runtime.respondant.enqueueEmission(witness, {
+          kind: "wire",
+          cue: { kin: "receipt", serder: recipient.kever!.serder },
+          messages: [message],
+        });
+        yield* runtime.respondant.process();
 
         const stored = runtime.mailboxer?.getTopicMsgs(
           mailboxTopicKey(recipient.pre, "/receipt"),
@@ -327,7 +320,6 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
         const interpretation = sender.interpretCue;
         const active = runtime;
         active.cues.push(cue);
-        const sink = respondantCueSink(active, sender);
 
         const foreign = new Error("foreign cue preparation busy");
         const resolve = active.poster.findBytesRoute;
@@ -341,7 +333,7 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
             };}
           try {
             assertStrictEquals(
-              yield* call(() => assertRejects(() => run(() => processCuesOnce(active, { hab: sender, sink })))),
+              yield* call(() => assertRejects(() => run(() => processCuesOnce(active, { hab: sender })))),
               foreign,
             );
             assertStrictEquals(active.cues.peekHead(), cue);
@@ -354,7 +346,6 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
         const sending = yield* spawn(function*() {
           yield* processRuntimeTurn(active, {
             hab: sender,
-            sink: respondantCueSink(active, sender),
             pollMailbox: false,
           });
           returned = true;
@@ -414,4 +405,52 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
     abort.abort();
     await server.finished;
   }
+});
+
+Deno.test("witness recovery queries use the concrete query owner and sign only once", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const witness = hby.makeHab("witness", undefined, { transferable: false, ncount: 0 });
+    const subject = hby.makeHab("subject");
+    hby.db.locs.pin([subject.pre, "http"], { url: "http://query.test/" });
+    let signatures = 0, sent = 0;
+    const query = witness.query;
+    witness.query = function(...args) {
+      signatures++;
+      return query.apply(this, args);
+    };
+    const runtime = yield* createAgentRuntime(hby, {
+      services: {
+        http: {
+          async fetch(url, init) {
+            const wire = await readCesrRequestBytes(new Request(url, init));
+            if (new SerderKERI({ raw: wire }).ilk === "qry") sent++;
+            return new Response(null, { status: 204 });
+          },
+        },
+      },
+    });
+    try {
+      runtime.cues.push({
+        kin: "query",
+        pre: subject.pre,
+        src: subject.pre,
+        route: "logs",
+        q: {},
+        wits: [subject.pre],
+      });
+      const replies = yield* drainWitnessCues(runtime, witness, runtime.cues);
+      assertEquals([signatures, sent, replies.length, runtime.cues.length, runtime.querying.hasPendingWork()], [
+        1,
+        1,
+        0,
+        0,
+        false,
+      ]);
+    } finally {
+      witness.query = query;
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
 });

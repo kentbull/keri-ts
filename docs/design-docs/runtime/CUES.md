@@ -23,8 +23,8 @@ same architecture with more explicit runtime ownership and typed host seams.
 runtime ownership direction and supersedes conflicting ADR-0004 layering.
 The generic prepareCueEmission helper and QueryReply.admit callback are removed:
 consumers interpret and publish before pulling the source. QueryReplies exposes peek/take data; it does not execute
-destination callbacks. Optional CueSink lifecycle and generic delivery wrappers
-still require removal. This document is broader: it explains the whole cross-runtime
+destination callbacks. CueSink and its lifecycle/root adapters and generic delivery
+wrappers are deleted. This document is broader: it explains the whole cross-runtime
 cue graph so mailbox, query/reply, OOBI, and host work can be understood as one
 system.
 
@@ -99,8 +99,8 @@ explicit:
 - `Reactor`, runtime `Kevery`, `Revery`, `Oobiery`, and `Exchanger` push typed
   `AgentCue` values
 - `Hab.processCuesIter()` is the habitat-owned interpretation seam
-- `processCuesOnce()` and `cueDo()` drain interpreted `CueEmission` values into
-  a host-facing `CueSink`
+- `processCuesOnce()` and `cueDo()` route records directly to concrete query,
+  mailbox and reply owners
 - `QueryCoordinator` owns incomplete `query` cue correspondence
 - `Respondant` owns non-`stream` cue delivery such as `reply`, `replay`,
   `receipt`, and `witness`
@@ -141,7 +141,7 @@ Important code seams:
 **Host delivery**
 
 - KERIpy: `cueDo()`-style doers route cues to responders, query handlers, or noticers
-- `keri-ts`: `processCuesOnce()` / `cueDo()` deliver `CueEmission`s to a `CueSink`
+- `keri-ts`: `processCuesOnce()` / `cueDo()` route data to concrete component owners
 - Why it matters: Host-specific transport work should not be hidden inside protocol processors
 
 **Query correspondence**
@@ -268,7 +268,7 @@ Detailed mailbox, respondant, query and habitat traces are in the
 
 **HIO doers that route cues straight to responders**
 
-- `keri-ts` seam: typed `CueSink` implementations
+- `keri-ts` seam: direct composition through QueryCoordinator, MailboxDirector and Respondant
 - Correspondence: explicit host delivery seam
 
 **raw byte yields from cue interpretation**
