@@ -147,7 +147,7 @@ attester. Continuations and pending work carry identifiers, not Hab references.
 The existing coordinator resolves an explicit selection through Habery at signing;
 an unavailable selection remains unresolved and never falls back to another Hab.
 A Hab interpreting a cue selected for another signer leaves it to correspondence.
-Anchorer receives only a QueryRequest enqueue port; composition owns the consuming
+Anchorer's query dependency is only a QueryRequest enqueue port; composition owns the consuming
 coordinator and its lifetime. KERIpy 714 normally resolves its queued src through
 Habery, but also permits a Hab override. This queue uses an identifier in both
 cases; the explicit signer name distinguishes it from our existing remote-attester

@@ -107,7 +107,7 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
         const runtime = yield* createAgentRuntime(hby, { services });
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
         const task = run(function*() {
-          yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime);
+          yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime.reactor);
           continued = true;
         });
         try {
@@ -117,7 +117,7 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
         }
         assertEquals(continued, false);
         finish = true;
-        yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime);
+        yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime.reactor);
         assertEquals(connections, 2);
       } finally {
         yield* hby.close(true);
@@ -151,10 +151,13 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url });
         const runtime = yield* createAgentRuntime(hby);
-        const submitter = new WitnessReceiptor(hby, { runtime });
+        const submitter = new WitnessReceiptor(hby, { reactor: runtime.reactor, services: runtime.services });
         yield* call(() =>
           assertRejects(
-            () => run(() => new Receiptor(hby, { runtime }).receipt(controller.pre)),
+            () =>
+              run(() =>
+                new Receiptor(hby, { reactor: runtime.reactor, services: runtime.services }).receipt(controller.pre)
+              ),
             Error,
             "HTTP(S) receipt endpoint",
           )
@@ -162,7 +165,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         assertEquals(connections, 0, "explicit endpoint receipting retains its HTTP-only contract");
         const { serder, message } = acceptedEventReplayMessage(hby, controller.pre, 0);
         const key = [controller.pre, serder.said!] as const;
-        yield* sendWitnessMessage(controller, witness.pre, message, undefined, runtime.services, runtime);
+        yield* sendWitnessMessage(controller, witness.pre, message, undefined, runtime.services, runtime.reactor);
         assertEquals(hby.db.wigs.get(key).length, 0, "generic drain makes no receipt success claim");
         yield* call(() => assertRejects(() => run(() => submitter.submit(controller.pre)), Error, "did not receipt"));
         const outsider = hby.makeHab("outsider", undefined, { transferable: false });
@@ -182,7 +185,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         const priorConnections = connections;
         yield* submitter.submit(controller.pre);
         assertEquals(connections, priorConnections, "verified persistence enables the existing convergence fast path");
-        // A borrowed runtime remains usable after submission; receipt cleanup never closes its stores.
+        // A borrowed protocol processor remains usable after submission; receipt cleanup never closes its stores.
         yield* runtime.reactor.processEscrowsOnce();
         yield* runtime.close();
         controller.interact();
@@ -192,7 +195,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         yield* new WitnessReceiptor(hby).submit(controller.pre);
         assertEquals(hby.db.wigs.get([controller.pre, next.said!]).length, 1);
 
-        assertEquals(controller.kever?.sn, 1, "standalone receiver cleanup retains the caller's Habery");
+        assertEquals(controller.kever?.sn, 1, "standalone processing retains the caller's Habery");
       } finally {
         yield* hby.close(true);
       }

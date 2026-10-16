@@ -144,8 +144,17 @@ AgentRuntime. Its close stops production and joins response I/O before clearing
 records or closing stores. Query requests always use this concrete output path;
 there is no optional no-op downstream sink. Unresolved records remain deferred.
 Synchronous producer preparation has no task/halt bookkeeping, raw-packet injector
-or custom-emission API. The broad Reactor gate and duplicate whole-runtime driving
-remain unfinished.
+or custom-emission API. Reactor's general application gate is removed; duplicate
+whole-runtime driving remains unfinished.
+
+Anchorer selects its optional same-socket Reactor and transport services at
+construction; its escrow passes receive no parent runtime. Receiptor uses a
+borrowed Reactor or creates a protocol processor over the caller's existing
+Habery. It does not construct AgentRuntime, unrelated registry/notification
+stores or background workers. Receipt intake still runs verification and escrows;
+TCP success still requires the selected witness's persisted signature. Raw
+witness/Poster sends receive the actual Reactor, while transport retains native
+socket ownership. Every actual HTTP/TCP operation joins cleanup before returning.
 
 QueryCoordinator owns a private ordinary Deck of QueryRequest records. Its
 inspection surface exposes length/empty/peekHead. The selected local signer is

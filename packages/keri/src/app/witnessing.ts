@@ -24,13 +24,14 @@ import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { abortable, rethrowCleanupFailure } from "./abortable.ts";
-import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
+import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, collectBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
 import { buildCesrRequest, CESR_CONTENT_TYPE, inspectCesrRequest, KERIPY_CESR_JSON_CONTENT_TYPE } from "./cesr-http.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { envelopeFromFrame } from "./parsering.ts";
+import { Reactor } from "./reactor.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { converseCesrTcp } from "./tcp-conversation.ts";
 import { sendCesrTcp } from "./tcp-egress.ts";
@@ -696,9 +697,9 @@ function witnessSchemeReplies(
   return replies.length === 0 ? new Uint8Array() : concatBytes(...replies);
 }
 /**
- * Send via HTTP first; TCP parses local replies when an owning runtime is supplied.
- * Without receiver context TCP reports local transmission only. Borrowed runtimes
- * outlive joined cleanup; receipt orchestration supplies its one receiver explicitly.
+ * Send via HTTP first; an explicit Reactor processes same-socket TCP replies.
+ * Without a Reactor TCP reports local transmission only. Actual socket/parser
+ * cleanup finishes before this borrowed protocol processor can be released.
  */
 export function* sendWitnessMessage(
   hab: Hab,
@@ -706,7 +707,7 @@ export function* sendWitnessMessage(
   bytes: Uint8Array,
   auth?: string,
   services?: RuntimeServices,
-  runtime?: AgentRuntime,
+  reactor?: Reactor,
 ): Operation<void> {
   const url = preferredWitnessTransportUrl(hab, witness);
   if (!url) {
@@ -718,10 +719,10 @@ export function* sendWitnessMessage(
   const parsed = new URL(url);
   if (parsed.protocol === "tcp:") {
     yield* call(function*() {
-      if (runtime) {
+      if (reactor) {
         yield* converseCesrTcp(url, bytes, {
           clock: services?.clock,
-          replies: { reactor: runtime.reactor, local: true },
+          replies: { reactor, local: true },
         });
       } else {
         yield* sendCesrTcp(url, bytes, { clock: services?.clock });
@@ -903,17 +904,22 @@ function* getWitnessReceiptEndpoint(
  * Responsibilities:
  * - publish through HTTP receipt endpoints (generic submission opts into TCP reply intake)
  * - catch up newly added witnesses before receipting
- * - persist returned receipts locally through the shared runtime path
+ * - persist returned receipts locally through the protocol processor
  * - fan witness receipts out to the complementary witnesses
  */
 export class Receiptor {
   readonly hby: Habery;
-  readonly runtime?: AgentRuntime;
-  /** Borrow a matching active runtime; standalone attempts own a scoped receiver. */
-  constructor(hby: Habery, { runtime }: { runtime?: AgentRuntime } = {}) {
-    if (runtime && runtime.hby !== hby) throw new RangeError("Receiptor runtime must own the same Habery");
+  readonly reactor: Reactor;
+  readonly services: RuntimeServices;
+  /** Borrow the protocol processor or create one over the caller's existing Habery; no stores or workers are opened. */
+  constructor(hby: Habery, { reactor, services = defaultRuntimeServices }: {
+    reactor?: Reactor;
+    services?: RuntimeServices;
+  } = {}) {
+    if (reactor && reactor.hby !== hby) throw new RangeError("Receiptor Reactor must own the same Habery");
     this.hby = hby;
-    this.runtime = runtime;
+    this.reactor = reactor ?? new Reactor(hby);
+    this.services = services;
   }
   /** Submit the latest or specified event to all witnesses and gather receipts. */
   *receipt(pre: string, { sn, auths = {}, allowTcp = false }: {
@@ -924,7 +930,7 @@ export class Receiptor {
   } = {}): Operation<WitnessReceiptRunResult> {
     return yield* call(() => this.receiptOnce(pre, { sn, auths }, allowTcp));
   }
-  /** One scoped attempt borrows its receiver or joins its owned runtime before returning. */
+  /** One scoped attempt joins actual receipt HTTP/TCP work before returning. */
   private *receiptOnce(pre: string, { sn, auths }: {
     sn?: number;
     auths: WitnessAuthMap;
@@ -948,122 +954,118 @@ export class Receiptor {
       return { witnesses: [], statuses: {} };
     }
 
-    const runtime = this.runtime ?? (yield* createAgentRuntime(this.hby, {}));
-    try {
-      if (serder.ilk === Ilks.rot || serder.ilk === Ilks.drt) {
-        for (const witness of serder.adds) {
-          yield* this.catchup(pre, witness, runtime);
-        }
+    if (serder.ilk === Ilks.rot || serder.ilk === Ilks.drt) {
+      for (const witness of serder.adds) {
+        yield* this.catchup(pre, witness);
       }
-      const receiptGroups = new Map<
-        string,
-        { readonly wigers: readonly Siger[]; readonly cigars: readonly Cigar[] }
-      >();
-      const statuses: Record<string, number> = {};
-      const said = serder.said;
-      if (!said) {
-        throw new ValidationError(
-          "Local event must expose a SAID before witness receipting.",
-        );
-      }
-
-      for (const witness of witnesses) {
-        if (kever.delegated) {
-          for (const dmsg of this.hby.db.cloneDelegation(kever)) {
-            yield* sendWitnessMessage(hab, witness, dmsg, undefined, runtime.services, runtime);
-          }
-        }
-
-        if (allowTcp && !witnessHttpUrl(hab, witness) && witnessTcpUrl(hab, witness)) {
-          yield* sendWitnessMessage(hab, witness, message, undefined, runtime.services, runtime);
-          // Same-socket drain is insufficient: only Kevery-verified, persisted evidence counts.
-          const index = witnesses.indexOf(witness);
-          const wigers = this.hby.db.wigs.get(dgKey(pre, said))
-            .filter((siger) => siger.index === index);
-          if (wigers.length === 0) {
-            throw new ValidationError(`Witness ${witness} did not receipt ${pre}:${eventSn.toString(16)}.`);
-          }
-          receiptGroups.set(witness, { wigers, cigars: [] });
-          statuses[witness] = 200;
-          continue;
-        }
-
-        // A single receipt attempt owns its response until parsing and collection finish.
-        let response = yield* call(() =>
-          postWitnessReceiptEndpoint(
-            hab,
-            witness,
-            message,
-            auths[witness],
-          )
-        );
-        if (response.kind === "escrow") {
-          response = yield* pollWitnessReceipt(
-            hab,
-            witness,
-            pre,
-            eventSn,
-            said,
-          );
-        }
-        statuses[witness] = response.status;
-        if (response.kind !== "accepted") {
-          const detail = response.kind === "reject" ? response.message : "receipt remained escrowed";
-          throw new ValidationError(
-            `Witness ${witness} failed to receipt ${pre}:${eventSn.toString(16)}: ${detail}`,
-          );
-        }
-
-        receiptGroups.set(witness, {
-          wigers: response.wigers,
-          cigars: response.cigars,
-        });
-        yield* settleRuntimeIngress(runtime, [response.body], { local: false });
-      }
-
-      for (const witness of witnesses) {
-        const complements = [...receiptGroups.entries()]
-          .filter(([current]) => current !== witness)
-          .map(([, evidence]) => evidence);
-        const otherWigers = complements.flatMap((
-          evidence,
-        ) => [...evidence.wigers]);
-        const otherCigars = complements.flatMap((
-          evidence,
-        ) => [...evidence.cigars]);
-        if (otherWigers.length === 0 && otherCigars.length === 0) {
-          continue;
-        }
-
-        const introWitnesses = witnesses.filter((current) => current !== witness && receiptGroups.has(current));
-        const parts: Uint8Array[] = [];
-        if (
-          serder.ilk === Ilks.icp
-          || serder.ilk === Ilks.dip
-          || ((serder.ilk === Ilks.rot || serder.ilk === Ilks.drt)
-            && serder.adds.includes(witness))
-        ) {
-          const schemes = witnessSchemeReplies(hab, introWitnesses);
-          if (schemes.length > 0) {
-            parts.push(schemes);
-          }
-        }
-        parts.push(
-          buildDetachedReceiptMessage(
-            receiptEvent(pre, eventSn, said),
-            {
-              wigers: otherWigers,
-              cigars: otherCigars,
-            },
-          ),
-        );
-        yield* sendWitnessMessage(hab, witness, concatBytes(...parts), undefined, runtime.services, runtime);
-      }
-
-      return { witnesses, statuses };
-    } finally {
-      if (!this.runtime) yield* runtime.close();
     }
+    const receiptGroups = new Map<
+      string,
+      { readonly wigers: readonly Siger[]; readonly cigars: readonly Cigar[] }
+    >();
+    const statuses: Record<string, number> = {};
+    const said = serder.said;
+    if (!said) {
+      throw new ValidationError(
+        "Local event must expose a SAID before witness receipting.",
+      );
+    }
+
+    for (const witness of witnesses) {
+      if (kever.delegated) {
+        for (const dmsg of this.hby.db.cloneDelegation(kever)) {
+          yield* sendWitnessMessage(hab, witness, dmsg, undefined, this.services, this.reactor);
+        }
+      }
+
+      if (allowTcp && !witnessHttpUrl(hab, witness) && witnessTcpUrl(hab, witness)) {
+        yield* sendWitnessMessage(hab, witness, message, undefined, this.services, this.reactor);
+        // Same-socket drain is insufficient: only Kevery-verified, persisted evidence counts.
+        const index = witnesses.indexOf(witness);
+        const wigers = this.hby.db.wigs.get(dgKey(pre, said))
+          .filter((siger) => siger.index === index);
+        if (wigers.length === 0) {
+          throw new ValidationError(`Witness ${witness} did not receipt ${pre}:${eventSn.toString(16)}.`);
+        }
+        receiptGroups.set(witness, { wigers, cigars: [] });
+        statuses[witness] = 200;
+        continue;
+      }
+
+      // A single receipt attempt owns its response until parsing and collection finish.
+      let response = yield* call(() =>
+        postWitnessReceiptEndpoint(
+          hab,
+          witness,
+          message,
+          auths[witness],
+        )
+      );
+      if (response.kind === "escrow") {
+        response = yield* pollWitnessReceipt(
+          hab,
+          witness,
+          pre,
+          eventSn,
+          said,
+        );
+      }
+      statuses[witness] = response.status;
+      if (response.kind !== "accepted") {
+        const detail = response.kind === "reject" ? response.message : "receipt remained escrowed";
+        throw new ValidationError(
+          `Witness ${witness} failed to receipt ${pre}:${eventSn.toString(16)}: ${detail}`,
+        );
+      }
+
+      receiptGroups.set(witness, {
+        wigers: response.wigers,
+        cigars: response.cigars,
+      });
+      yield* this.reactor.processBytes(response.body, { local: false });
+      yield* this.reactor.processEscrowsOnce();
+    }
+
+    for (const witness of witnesses) {
+      const complements = [...receiptGroups.entries()]
+        .filter(([current]) => current !== witness)
+        .map(([, evidence]) => evidence);
+      const otherWigers = complements.flatMap((
+        evidence,
+      ) => [...evidence.wigers]);
+      const otherCigars = complements.flatMap((
+        evidence,
+      ) => [...evidence.cigars]);
+      if (otherWigers.length === 0 && otherCigars.length === 0) {
+        continue;
+      }
+
+      const introWitnesses = witnesses.filter((current) => current !== witness && receiptGroups.has(current));
+      const parts: Uint8Array[] = [];
+      if (
+        serder.ilk === Ilks.icp
+        || serder.ilk === Ilks.dip
+        || ((serder.ilk === Ilks.rot || serder.ilk === Ilks.drt)
+          && serder.adds.includes(witness))
+      ) {
+        const schemes = witnessSchemeReplies(hab, introWitnesses);
+        if (schemes.length > 0) {
+          parts.push(schemes);
+        }
+      }
+      parts.push(
+        buildDetachedReceiptMessage(
+          receiptEvent(pre, eventSn, said),
+          {
+            wigers: otherWigers,
+            cigars: otherCigars,
+          },
+        ),
+      );
+      yield* sendWitnessMessage(hab, witness, concatBytes(...parts), undefined, this.services, this.reactor);
+    }
+
+    return { witnesses, statuses };
   }
   /** Query a stored witness receipt and apply it to local state when found. */
   *get(pre: string, { sn, said }: {
@@ -1094,43 +1096,25 @@ export class Receiptor {
       return false;
     }
 
-    const runtime = this.runtime ?? (yield* createAgentRuntime(this.hby, {}));
-    try {
-      yield* settleRuntimeIngress(runtime, [response.body], { local: false });
-      return true;
-    } finally {
-      if (!this.runtime) yield* runtime.close();
-    }
+    yield* this.reactor.processBytes(response.body, { local: false });
+    yield* this.reactor.processEscrowsOnce();
+    return true;
   }
 
-  /** Catch one witness up to the current accepted KEL before receipting. */
-  *catchup(
-    pre: string,
-    witness: string,
-    runtime = this.runtime,
-  ): Operation<void> {
-    yield* call(() => this.catchupOnce(pre, witness, runtime));
-  }
-  /** Catchup uses the submission receiver when borrowed, otherwise owns one scoped receiver. */
-  private *catchupOnce(pre: string, witness: string, borrowed?: AgentRuntime): Operation<void> {
+  /** Catch one witness up through the same protocol processor used for receipt intake. */
+  *catchup(pre: string, witness: string): Operation<void> {
     const hab = this.hby.habs.get(pre) ?? null;
     if (!hab) {
       throw new ValidationError(`${pre} not a valid local AID.`);
     }
-
-    const runtime = borrowed ?? (yield* createAgentRuntime(this.hby, {}));
-    try {
-      const kever = hab.kever;
-      if (kever?.delegated) {
-        for (const msg of this.hby.db.cloneDelegation(kever)) {
-          yield* sendWitnessMessage(hab, witness, msg, undefined, runtime.services, runtime);
-        }
+    const kever = hab.kever;
+    if (kever?.delegated) {
+      for (const msg of this.hby.db.cloneDelegation(kever)) {
+        yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.reactor);
       }
-      for (const msg of this.hby.db.clonePreIter(pre)) {
-        yield* sendWitnessMessage(hab, witness, msg, undefined, runtime.services, runtime);
-      }
-    } finally {
-      if (!borrowed) yield* runtime.close();
+    }
+    for (const msg of this.hby.db.clonePreIter(pre)) {
+      yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.reactor);
     }
   }
 }
@@ -1147,11 +1131,15 @@ export class WitnessReceiptor {
 
   constructor(
     hby: Habery,
-    { force = false, runtime }: { force?: boolean; runtime?: AgentRuntime } = {},
+    { force = false, reactor, services }: {
+      force?: boolean;
+      reactor?: Reactor;
+      services?: RuntimeServices;
+    } = {},
   ) {
     this.hby = hby;
     this.force = force;
-    this.receiptor = new Receiptor(hby, { runtime });
+    this.receiptor = new Receiptor(hby, { reactor, services });
   }
   /** Ensure the current event reaches full witness receipt convergence. */
   *submit(pre: string, { sn, auths = {} }: {
