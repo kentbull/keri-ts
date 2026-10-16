@@ -19,8 +19,8 @@ export interface QueryReply {
   readonly ready: boolean;
   /** Take the receipt/witness or ordered TSN pair. */
   takeAll(): QueryReplyBatch | undefined;
-  /** Immediate atomic destination publication; failures preserve the original slot. */
-  admit(accept: (cues: readonly DirectReply[]) => undefined): boolean;
+  /** Inspect the current ordered batch without removing its correlation records. */
+  peekAll(): QueryReplyBatch | undefined;
   /** Remove this request from correlation and discard untaken records. Safe to repeat. */
   close(): void;
 }
@@ -58,19 +58,14 @@ export class QueryReplies {
           if (slot.notify === notify) slot.notify = undefined;
         };
       },
-      takeAll() {
+      peekAll() {
         if (!slot.reply) return;
-        const cues = slot.companion ? [slot.reply, slot.companion] : [slot.reply];
-        slot.reply = slot.companion = undefined;
-        return { cues };
+        return { cues: slot.companion ? [slot.reply, slot.companion] : [slot.reply] };
       },
-      admit(accept) {
-        if (!slot.reply) return false;
-        const cues = slot.companion ? [slot.reply, slot.companion] : [slot.reply];
-        const result: unknown = accept(cues);
-        if (result !== undefined) throw new TypeError("Reply acceptance must be synchronous");
+      takeAll() {
+        const batch = this.peekAll();
         slot.reply = slot.companion = undefined;
-        return true;
+        return batch;
       },
       close: () => {
         if (closed) return;

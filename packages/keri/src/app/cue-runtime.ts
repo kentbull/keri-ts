@@ -3,7 +3,6 @@ import type { AgentCue } from "../core/cues.ts";
 import type { CueEmission, QueryCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
-import { prepareCueEmission } from "./cue-preparation.ts";
 import type { Hab } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
@@ -84,15 +83,16 @@ export function processCuesOnce(
           result.admission = sink.admitCue?.(runtime.cues, cueHab) ?? "ineligible";
           if (result.admission === "transferred") return;
           if (result.admission !== "ineligible") throw new TypeError("Invalid immediate cue admission");
-          result.prepared = prepareCueEmission(
-            cueHab,
-            runtime.cues,
-            (prepared) => {
-              emission = prepared;
-              return undefined;
-            },
-            (emission) => sink.prepareEmission?.(emission) ?? emission,
-          );
+          const cue = runtime.cues.peekHead();
+          if (!cue) return;
+          const interpreted = cueHab ? cueHab.interpretCue(cue) : {
+            cue,
+            messages: [],
+            kind: cue.kin === "stream" ? "transport" as const : "notify" as const,
+          };
+          emission = interpreted ? sink.prepareEmission?.(interpreted) ?? interpreted : undefined;
+          runtime.cues.pull();
+          result.prepared = true;
         });
         if (result.admission === "transferred") return true;
         if (!result.prepared) return false;

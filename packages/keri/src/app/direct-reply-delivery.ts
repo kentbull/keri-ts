@@ -3,7 +3,6 @@ import type { AgentCue, CueEmission } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { CueDelivery, type CueTargetPreparation } from "./cue-delivery.ts";
-import { prepareCueEmission } from "./cue-preparation.ts";
 import type { Poster, RawCesrRoute } from "./forwarding.ts";
 import type { Hab } from "./habbing.ts";
 import type { QueryReply } from "./query-replies.ts";
@@ -46,17 +45,19 @@ export class DirectReplyDelivery {
     resolve: (emission: CueEmission) => RawCesrRoute | null,
     accept: (delivery: DirectReplyDelivery, emission: CueEmission | undefined) => void,
   ): boolean {
+    const cue = cues.peekHead();
+    if (!cue) return false;
+    const emission = hab.interpretCue(cue);
     const batch = new DirectReplyDelivery();
-    return prepareCueEmission(hab, cues, (emission) => {
-      if (emission?.kind === "wire") {
-        const route = resolve(emission);
-        if (route?.targets.length) {
-          batch.deliveries.push(new CueDelivery(emission, runtime.hby.habs.get(route.sender) ?? hab, route));
-        }
+    if (emission?.kind === "wire") {
+      const route = resolve(emission);
+      if (route?.targets.length) {
+        batch.deliveries.push(new CueDelivery(emission, runtime.hby.habs.get(route.sender) ?? hab, route));
       }
-      accept(batch, emission);
-      return undefined;
-    });
+    }
+    accept(batch, emission);
+    cues.pull();
+    return true;
   }
 
   /** One atomic wire preparation serves either queue-only delivery or the existing two consumers. */
@@ -69,32 +70,32 @@ export class DirectReplyDelivery {
   ): ReadableStream<Uint8Array> | null {
     const batch = new DirectReplyDelivery();
     let stream: ReadableStream<Uint8Array> | null = null;
-    reply.admit((cues) => {
-      const emissions: CueEmission[] = [];
-      for (const cue of cues) {
-        const emission = hab.interpretCue(cue);
-        if (emission?.kind !== "wire") throw new RangeError("Direct reply requires wire");
-        emissions.push(emission);
-        const sender = ("src" in cue && cue.src ? runtime.hby.habs.get(cue.src) : undefined) ?? hab;
-        const route = "dest" in cue && cue.dest
-          ? runtime.poster.findBytesRoute(sender, {
-            recipient: cue.dest,
-            recipientIsPrefix: true,
-            topic: cue.kin === "replay" ? "/replay" : "/reply",
-          })
-          : null;
-        if (route?.targets.length) batch.deliveries.push(new CueDelivery(emission, sender, route));
-      }
-      if (publish) {
-        stream = publish(batch, () =>
-          runtime.replyStreams.open({
-            *[Symbol.iterator]() {
-              for (const emission of emissions) yield* emission.messages;
-            },
-          }));
-      } else enqueue!(batch);
-      return undefined;
-    });
+    const captured = reply.peekAll();
+    if (!captured) return null;
+    const emissions: CueEmission[] = [];
+    for (const cue of captured.cues) {
+      const emission = hab.interpretCue(cue);
+      if (emission?.kind !== "wire") throw new RangeError("Direct reply requires wire");
+      emissions.push(emission);
+      const sender = ("src" in cue && cue.src ? runtime.hby.habs.get(cue.src) : undefined) ?? hab;
+      const route = "dest" in cue && cue.dest
+        ? runtime.poster.findBytesRoute(sender, {
+          recipient: cue.dest,
+          recipientIsPrefix: true,
+          topic: cue.kin === "replay" ? "/replay" : "/reply",
+        })
+        : null;
+      if (route?.targets.length) batch.deliveries.push(new CueDelivery(emission, sender, route));
+    }
+    if (publish) {
+      stream = publish(batch, () =>
+        runtime.replyStreams.open({
+          *[Symbol.iterator]() {
+            for (const emission of emissions) yield* emission.messages;
+          },
+        }));
+    } else enqueue!(batch);
+    reply.takeAll();
     return stream;
   }
 

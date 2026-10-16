@@ -28,7 +28,6 @@ import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "./a
 import { chunkBytes, collectBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
 import { buildCesrRequest, CESR_CONTENT_TYPE, inspectCesrRequest, KERIPY_CESR_JSON_CONTENT_TYPE } from "./cesr-http.ts";
-import { prepareCueEmission } from "./cue-preparation.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { envelopeFromFrame } from "./parsering.ts";
@@ -306,10 +305,12 @@ function* consumeWitnessCues(
             (output) => runtime.respondant.routeForEmission(output, hab),
           );
         } else {
-          prepared = prepareCueEmission(hab, cues, (output) => {
-            emission = output;
-            return undefined;
-          });
+          const cue = cues.peekHead();
+          if (cue) {
+            emission = hab.interpretCue(cue);
+            cues.pull();
+            prepared = true;
+          }
         }
         if (emission) runtime.querying.observeCue(emission.cue);
       });

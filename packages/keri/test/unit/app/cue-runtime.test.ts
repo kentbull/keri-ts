@@ -3,7 +3,6 @@ import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "j
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { CueDelivery } from "../../../src/app/cue-delivery.ts";
-import { prepareCueEmission } from "../../../src/app/cue-preparation.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
@@ -208,69 +207,6 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
   ]);
 });
 
-Deno.test("cue interpretation publishes synchronously, preserves failures and leaves replay lazy", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    try {
-      const hab = hby.makeHab("interpreter");
-      const cue: AgentCue = {
-        kin: "reply",
-        serder: replyEvent("/loc/scheme", { eid: hab.pre, scheme: "http", url: "http://localhost" }),
-      };
-      const cues = new Deck([cue]);
-      const fault = new Error("publication failed");
-      const interpret = hab.interpretCue;
-      hab.interpretCue = () => {
-        throw fault;
-      };
-      assertStrictEquals(assertThrows(() => prepareCueEmission(hab, cues, () => undefined)), fault);
-      assertStrictEquals(cues.peekHead(), cue);
-      hab.interpretCue = interpret;
-      assertStrictEquals(
-        assertThrows(() =>
-          prepareCueEmission(hab, cues, () => {
-            throw fault;
-          })
-        ),
-        fault,
-      );
-      assertStrictEquals(cues.peekHead(), cue);
-      assertEquals(
-        prepareCueEmission(hab, cues, (emission) => {
-          assertStrictEquals(cues.peekHead(), cue, "publication precedes removal");
-          assertEquals(emission?.kind, "wire");
-          return undefined;
-        }),
-        true,
-      );
-      assertEquals(cues.empty, true);
-      assertEquals(
-        prepareCueEmission(hab, cues, () => {
-          throw new Error("empty source published");
-        }),
-        false,
-      );
-
-      const wire = new Uint8Array(9 * 1024 ** 2);
-      const messages = [wire];
-      messages[Symbol.iterator] = () => {
-        throw new Error("replay opened during preparation");
-      };
-      const replay = new Deck<AgentCue>([{ kin: "replay", messages }]);
-      assertEquals(
-        prepareCueEmission(hab, replay, (emission) => {
-          assertStrictEquals(emission!.messages, messages);
-          return undefined;
-        }),
-        true,
-      );
-      assertEquals(replay.empty, true);
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-});
-
 Deno.test("cue delivery accepts ordinary routes and preserves source on resolution failure", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -280,6 +216,21 @@ Deno.test("cue delivery accepts ordinary routes and preserves source on resoluti
     const cues = new Deck([cue]);
     const failure = new Error("endpoint lookup failed");
     try {
+      const interpret = hab.interpretCue;
+      hab.interpretCue = () => {
+        throw failure;
+      };
+      assertStrictEquals(
+        assertThrows(() =>
+          runtime.deliveries.enqueueCue(hab, cues, () => {
+            throw new Error("routing must follow interpretation");
+          })
+        ),
+        failure,
+      );
+      assertStrictEquals(cues.peekHead(), cue);
+      assertEquals(runtime.deliveries.hasPending, false);
+      hab.interpretCue = interpret;
       assertStrictEquals(
         assertThrows(() =>
           runtime.deliveries.enqueueCue(hab, cues, () => {
@@ -314,6 +265,17 @@ Deno.test("cue delivery accepts ordinary routes and preserves source on resoluti
         { kind: "prepared" },
       );
       assertEquals([resolutions, cues.empty, runtime.deliveries.hasPending], [1, true, true]);
+      const messages = {
+        [Symbol.iterator](): Iterator<Uint8Array> {
+          throw new Error("replay opened during queue publication");
+        },
+      };
+      const replay = new Deck<AgentCue>([{ kin: "replay", messages }]);
+      runtime.deliveries.enqueueCue(hab, replay, () => ({
+        ...route,
+        targets: [{ eid: hab.pre, url: "https://peer.test/" }],
+      }));
+      assertEquals(replay.empty, true);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

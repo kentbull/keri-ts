@@ -19,8 +19,12 @@ This document is the primary end-to-end explainer for:
 KERIpy remains the behavioral reference implementation. `keri-ts` documents the
 same architecture with more explicit runtime ownership and typed host seams.
 
-`docs/adr/adr-0004-cue-runtime-portability.md` remains the normative `keri-ts`
-runtime contract. This document is broader: it explains the whole cross-runtime
+[ADR-0013](../../adr/adr-0013-simple-component-flows.md) governs the current
+runtime ownership direction and supersedes conflicting ADR-0004 layering.
+The generic prepareCueEmission helper and QueryReply.admit callback are removed:
+consumers interpret and publish before pulling the source. QueryReplies exposes peek/take data; it does not execute
+destination callbacks. Optional CueSink lifecycle and generic delivery wrappers
+still require removal. This document is broader: it explains the whole cross-runtime
 cue graph so mailbox, query/reply, OOBI, and host work can be understood as one
 system.
 

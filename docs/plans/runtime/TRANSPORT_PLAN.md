@@ -24,7 +24,9 @@ reconciled before affected implementation; it is not preservation authority.
   policies. Remaining client, Reactor queue, listener and reply-proof accounting,
   shared ResourcePolicy/errors and constructor plumbing are removed;
   retain deadlines, actual I/O chunking, regular-file extents and joined cleanup.
-- Plain cues reach their concrete Respondant/Poster/response owner. Delete generic
+- Callback-based cue publication and QueryReply.admit are removed. Existing
+  consumers inspect data and synchronously publish before source removal.
+  Plain cues must reach their concrete Respondant/Poster/response owner. Delete remaining generic
   preparation/delivery lifecycle wrappers. Real routing, signing, correlation and
   retry bytes stay with those owners. Reactor does no unrelated execution.
 - Choose actual dependencies at construction; CLI and hosts use the same workers.

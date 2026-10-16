@@ -79,7 +79,9 @@ before closing owned stores. Scoped checks do not replace composed qualification
 Protocol owners write within their transactions and publish cues after commit.
 Cues and query-reply batches are ordinary records in Decks. `Hab.interpretCue` and
 `processCuesIter` interpret semantics; source removal follows successful transfer.
-Preparation failure preserves the source. Custom/ineligible sinks consume emissions
+Preparation failure preserves the source. Each consumer sequences interpretation,
+publication and source removal directly, without prepareCueEmission callbacks.
+Custom/ineligible sinks consume emissions
 outside the guarded turn. A pass consumes its initial extent, so newly appended
 work waits for the next pass. A cue with no emission is still consumed.
 
@@ -99,7 +101,9 @@ waits for the next finite pass. Close joins active consumption before clearing.
 Continuations prepare against committed state without a parent runtime callback.
 
 QueryReplies correlates exact requesting SAIDs before background consumption.
-These reservations are correlation records, not capacity leases. Only the final
+These reservations are correlation records, not capacity leases. A response owner
+peeks the ordered batch, prepares/publishes its concrete output synchronously, then
+takes the correlation records. QueryReply executes no destination callback. Only the final
 query controls an HTTP response; earlier authorized replies transfer to ordinary
 delivery. Duplicate requests can iterate the same readonly replay reference.
 Authorization uses the exact frame signatures and current dispatch decision; an

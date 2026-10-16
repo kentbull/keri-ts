@@ -10,7 +10,6 @@ import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
 import { CueDelivery, type CueTargetPreparation } from "./cue-delivery.ts";
-import { prepareCueEmission } from "./cue-preparation.ts";
 import type { CueAdmission, CueSink } from "./cue-runtime.ts";
 import { DirectReplyDelivery } from "./direct-reply-delivery.ts";
 import { attemptPreparedCesrTarget, introduce, type PreparedCesrTarget, type RawCesrRoute } from "./forwarding.ts";
@@ -111,15 +110,16 @@ export class RuntimeDeliveries {
     sender = hab,
   ): { kind: "prepared" } | { kind: "empty" } {
     if (this.closed) throw new Error("Runtime deliveries are closed");
-    const prepared = prepareCueEmission(hab, cues, (emission) => {
-      if (emission?.kind !== "wire") throw new RangeError("Cue delivery requires wire");
-      const captured = route(emission);
-      if (captured.targets.length) {
-        this.pending.push({ kind: "cue", delivery: new CueDelivery(emission, sender, captured) });
-      }
-      return undefined;
-    });
-    return { kind: prepared ? "prepared" : "empty" };
+    const cue = cues.peekHead();
+    if (!cue) return { kind: "empty" };
+    const emission = hab.interpretCue(cue);
+    if (emission?.kind !== "wire") throw new RangeError("Cue delivery requires wire");
+    const captured = route(emission);
+    if (captured.targets.length) {
+      this.pending.push({ kind: "cue", delivery: new CueDelivery(emission, sender, captured) });
+    }
+    cues.pull();
+    return { kind: "prepared" };
   }
 
   /** Guarded witness transfer; the callback borrow and queued targets share one prepared wire lifetime. */
