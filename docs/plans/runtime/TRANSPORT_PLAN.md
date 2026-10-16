@@ -10,7 +10,10 @@ reconciled before affected implementation; it is not preservation authority.
 
 - Concrete HTTP/TCP readers receive bytes, observe EOF/failure and close actual
   I/O. The parser buffers complete counted enclosures and decodes synchronously.
-  Complete messages pass to concrete protocol processors.
+  Complete messages pass to concrete protocol processors. The parser and finite
+  annotation accept no cancellation options. Consuming operations check before
+  and after pulls and halt waiting dispatch/active consumers on external abort;
+  concrete readers still interrupt and join actual I/O.
 - Existing host operation scopes start, cancel and join readers, dispatch and
   output. Remove FrameIntake, TcpRead.open, FrameChannel/toEffectionFrames,
   admission hooks and parser-option propagation. No substitute intake framework.

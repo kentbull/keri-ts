@@ -182,7 +182,7 @@ export class Reactor {
       const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
       try {
         signal.throwIfAborted();
-        const frames = parse(source(signal), { signal });
+        const frames = parse(source(signal));
         let pending: ReturnType<typeof frames.next> | undefined;
         // This earlier resource joins I/O after dispatch/read children have stopped.
         yield* ensure(function*() {

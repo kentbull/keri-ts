@@ -520,7 +520,7 @@ export class Multiplexor {
       const signal = controller.signal;
       try {
         signal.throwIfAborted();
-        const frames = parse(self.replay.replay(said, signal), { signal });
+        const frames = parse(self.replay.replay(said, signal));
         let pending: ReturnType<typeof frames.next> | undefined;
         // The earlier resource joins the read after processing children stop.
         yield* ensure(function*() {

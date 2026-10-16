@@ -3,7 +3,7 @@
 [ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) requires one finite
 buffered decoder. `parser/decoder.ts` decodes finite byte ranges;
 `parser/complete.ts` supplies synchronous `parseBytes(bytes)` and
-`parser/parser.ts` receives fragments for async `parse(source, { signal })`.
+`parser/parser.ts` receives fragments for async `parse(source)`.
 Both use the same grammar. There is no progressive engine, cursor, parser staging,
 alternate strategy or compatibility API.
 
@@ -24,7 +24,7 @@ first-child latency proportional to the complete group.
 | Inner shortage in a complete enclosure      | Reject with GroupSizeError; later bytes cannot repair it.                           |
 | EOF before a declared extent                | Reject with ShortageError.                                                          |
 | Malformed later sibling in a received group | Keep earlier delivered siblings; terminate once.                                    |
-| Cancellation or early return                | Join the source iterator's actual cleanup.                                          |
+| Source failure or consumer return           | Join the source iterator's actual cleanup.                                          |
 
 Network chunk boundaries and annotation separators never delimit messages.
 Explicit framing must complete without waiting for connection EOF. Buffering a
@@ -58,12 +58,15 @@ not lengths. All bounded groups must exhaust their declared extent.
 Async `parse` wraps intrinsic wire failures in `WireParseError` with their precise
 finite-decoder cause. Source failures and unexpected codec failures preserve
 identity. The synchronous finite API throws the underlying error directly.
-An abort reason retains its identity, including when it is itself a ParserError.
+An I/O source abort failure retains its identity, including when it is a ParserError.
 Distinct parsing and source-cleanup failures propagate together.
 
-Transport owns the AbortSignal and must settle its blocked reads on cancellation.
-Generator return cannot interrupt arbitrary pending I/O. The parser joins source
-return; it does not install timers, pending-reader registries or a host scheduler.
+The parser and finite annotation APIs have no cancellation options. Consuming
+operations check before and after pulls, before done/dispatch, and stop suspended
+processing on external cancellation. Concrete transport owns the AbortSignal and
+must interrupt its blocked I/O before joining it. Generator return cannot interrupt
+arbitrary pending reads. The parser joins source return; it does not install
+timers, pending-reader registries or a host scheduler.
 The CESR root has no Effection dependency. The optional Effection frame adapter
 remains transitional transport removal work; see the
 [replacement plan](../../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md).
@@ -71,7 +74,7 @@ remains transitional transport removal work; see the
 ## Regression mapping
 
 - `buffered.test.ts`: complete-enclosure delivery, truncation, source identity,
-  cancellation and mixed native codecs.
+  source-abort cleanup and mixed native codecs.
 - `nests.test.ts`: independent Python bodies/signatures, tree scope and invalid wrappers.
 - `chunk-completion.test.ts`, `boundary-shortage.test.ts`, `eof.test.ts`:
   actual boundaries and terminal failures.

@@ -164,8 +164,10 @@ registry, or arbitrary callback job queue.
 
 ### 7. Keep scheduling separate from protocol semantics
 
-Effection and application lifecycle code start, cancel, and join workers. Reactor
-and protocol processors do protocol work. Sibling workers must not borrow
+Effection and application lifecycle code start, cancel, and join workers. External
+input cancellation must stop waiting dispatch and active consumers, not only byte
+reads. Parser and finite transformations take no lifetime options; DispatchOptions
+contains protocol choices only. Reactor and protocol processors do protocol work. Sibling workers must not borrow
 `Reactor.settle(undefined, ..., callback)` to sign, prepare deliveries, clean up
 cursors, or run unrelated state changes. Do not rename this to a universal
 `runExclusive` or scheduler callback API and call the migration complete.

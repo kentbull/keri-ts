@@ -2,8 +2,6 @@ import type { CesrFrame } from "../core/types.ts";
 
 /** Rendering options for maintainer-facing CESR annotation output. */
 export interface AnnotateOptions {
-  /** Reject annotation when already cancelled. */
-  signal?: AbortSignal;
   /** Place comments beside or above each rendered token. */
   commentMode?: "inline" | "above";
   /** Spaces added by each presentation nesting level. */
@@ -12,8 +10,8 @@ export interface AnnotateOptions {
   pretty?: boolean;
 }
 
-/** Resolved presentation options, separate from parsing and cancellation. */
-export type RenderOptions = Required<Omit<AnnotateOptions, "signal">>;
+/** Resolved presentation defaults. */
+export type RenderOptions = Required<AnnotateOptions>;
 
 /** Annotated line set for one independently delivered root and its owned descendants. */
 export interface AnnotatedFrame {

@@ -413,6 +413,44 @@ Deno.test("external cancellation removes an input waiting for the protocol turn"
   });
 });
 
+Deno.test("input cancellation stops buffered dispatch and cannot become successful source EOF", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const hab = hby.makeHab("sender"), reactor = new Reactor(hby);
+      const bytes = acceptedEventReplayMessage(hby, hab.pre, 0).message;
+      for (const endAtSource of [false, true]) {
+        const controller = new AbortController(), reason = new Error("stop input");
+        let dispatches = 0, closed = false;
+        const input = run(() =>
+          reactor.process(
+            async function*() {
+              try {
+                if (endAtSource) {
+                  controller.abort(reason);
+                  return;
+                }
+                yield concatBytes(bytes, bytes, bytes);
+              } finally {
+                closed = true;
+              }
+            },
+            { signal: controller.signal },
+            function*() {
+              dispatches++;
+              controller.abort(reason);
+            },
+          )
+        );
+        assertStrictEquals(yield* call(() => assertRejects(() => input)), reason);
+        assertEquals([dispatches, closed], [endAtSource ? 0 : 1, true]);
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("stream cancellation joins the actual source cleanup", async () => {
   for (const fail of [false, true]) {
     const expected = fail ? new Error("late source cleanup failure") : undefined;

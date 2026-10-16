@@ -102,7 +102,4 @@ Deno.test("nested annotation preserves ordinary ESSR values and the exact wire",
   assertEquals(denot(annotate(wire)), wire);
   assertThrows(() => annotateFrames(wire, { indent: Infinity }), RangeError);
   assertThrows(() => annotateFrames(new Uint8Array([...wire, ...wire.slice(0, -4)])));
-  const controller = new AbortController();
-  controller.abort();
-  assertThrows(() => annotateFrames(wire, { signal: controller.signal }), DOMException);
 });

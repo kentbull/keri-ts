@@ -361,7 +361,7 @@ export function* processWitnessIngressSource(
     const signal = controller.signal;
     try {
       signal.throwIfAborted();
-      const frames = parse(source(signal), { signal });
+      const frames = parse(source(signal));
       let pending: ReturnType<typeof frames.next> | undefined;
       // The earlier resource joins the read after processing children stop.
       yield* ensure(function*() {

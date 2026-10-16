@@ -2,7 +2,7 @@ import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { WireParseError } from "../../src/core/errors.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
-import { parse, type ParseOptions } from "../../src/parser/parser.ts";
+import { parse } from "../../src/parser/parser.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "./counter-token-fixtures.ts";
@@ -44,14 +44,13 @@ export interface ParsedSummaryPair {
 export async function parseFrames(
   input: Uint8Array,
   boundaries: number[] = [],
-  options?: ParseOptions,
 ): Promise<CesrFrame[]> {
   /** Each split represents a separate producer read, with no feed/flush compatibility adapter. */
   async function* source(): AsyncGenerator<Uint8Array> {
     yield* chunkByBoundaries(input, boundaries);
   }
   const frames: CesrFrame[] = [];
-  for await (const frame of parse(source(), options)) frames.push(frame);
+  for await (const frame of parse(source())) frames.push(frame);
   return frames;
 }
 
@@ -79,13 +78,12 @@ export function summarizeFrames(frames: CesrFrame[]): FrameSummary[] {
 export async function parseTxtQb2Summaries(
   txtStream: string,
   boundaries: number[] = [],
-  options?: ParseOptions,
 ): Promise<ParsedSummaryPair> {
   const txtBytes = encode(txtStream);
   const qb2Bytes = decodeB64(txtStream);
   return {
-    txt: summarizeFrames(await parseFrames(txtBytes, boundaries, options)),
-    qb2: summarizeFrames(await parseFrames(qb2Bytes, boundaries, options)),
+    txt: summarizeFrames(await parseFrames(txtBytes, boundaries)),
+    qb2: summarizeFrames(await parseFrames(qb2Bytes, boundaries)),
   };
 }
 
@@ -98,9 +96,8 @@ export async function parseTxtQb2Summaries(
 export async function assertTxtQb2Parity(
   txtStream: string,
   boundaries: number[] = [],
-  options?: ParseOptions,
 ): Promise<FrameSummary[]> {
-  const { txt, qb2 } = await parseTxtQb2Summaries(txtStream, boundaries, options);
+  const { txt, qb2 } = await parseTxtQb2Summaries(txtStream, boundaries);
   assertEquals(qb2, txt);
   return txt;
 }

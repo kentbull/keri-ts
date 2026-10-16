@@ -248,7 +248,7 @@ function* ingest(
       const signal = AbortSignal.any([controller.signal, context.req.signal]);
       try {
         signal.throwIfAborted();
-        const frames = parse(requestBytes(context.req, { signal }), { signal });
+        const frames = parse(requestBytes(context.req, { signal }));
         let pending: ReturnType<typeof frames.next> | undefined;
         // The earlier resource joins the read after processing children stop.
         yield* ensure(function*() {

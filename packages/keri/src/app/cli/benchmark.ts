@@ -9,7 +9,7 @@ import { collectBytes, fileBytes, streamBytes } from "../byte-source.ts";
 import { writeStdout } from "./output.ts";
 
 /** CLI transport choices extend the shared benchmark controls without a second parser loop. */
-interface BenchmarkArgs extends Omit<BenchmarkOptions, "parserOptions"> {
+interface BenchmarkArgs extends Omit<BenchmarkOptions, "signal"> {
   /** Corpus file; omission reads stdin. */
   inPath?: string;
   /** Emit machine-readable metrics instead of terminal text. */
@@ -41,7 +41,7 @@ export function* benchmarkCommand(args: Record<string, unknown>): Operation<void
   const result = yield* abortable((signal) =>
     benchmarkParser(bytes, {
       ...options,
-      parserOptions: { signal },
+      signal,
     })
   );
   const text = options.json ? JSON.stringify({ source, ...result }) : formatBenchmarkText(source, result);

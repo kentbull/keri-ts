@@ -71,7 +71,7 @@ async function promptly<T>(operation: Promise<T>): Promise<T> {
     clearTimeout(timer);
   }
 }
-Deno.test("buffered wire classification preserves source and cancellation failure identity", async () => {
+Deno.test("buffered wire classification preserves source failure identity", async () => {
   const wire = encode(vector(2).selector + vector(2).frame.slice(0, -4));
   const classified = await assertRejects(() => collect(parse(chunks(wire))), WireParseError);
   assertInstanceOf(classified.cause, ShortageError);
@@ -80,17 +80,6 @@ Deno.test("buffered wire classification preserves source and cancellation failur
     yield await Promise.reject(external);
   };
   assert(await assertRejects(() => collect(parse(source()))) === external);
-  const controller = new AbortController();
-  controller.abort(external);
-  assert(
-    await assertRejects(() => collect(parse(chunks(wire), { signal: controller.signal })))
-      === external,
-  );
-  const afterDelivery = new AbortController();
-  const delivered = parse(chunks(encode(vector(2).frame)), { signal: afterDelivery.signal });
-  assertEquals((await delivered.next()).done, false);
-  afterDelivery.abort(external);
-  assert(await assertRejects(() => delivered.next()) === external);
 });
 Deno.test("buffered GenericGroup waits for the complete enclosure in both genera/domains", async () => {
   for (const major of [1, 2] as const) {
@@ -308,7 +297,7 @@ Deno.test("cancellation joins a cooperating source and consumer return stops pul
       };
     },
   };
-  const parser = parse(blocked, { signal: controller.signal });
+  const parser = parse(blocked);
   // The actual input owner aborts its pending read. Parsing joins source cleanup.
   const pending = parser.next();
   await waiting.promise;
@@ -346,8 +335,7 @@ Deno.test("JSON parent and descendants preserve framing through cancellation", a
   const parent = wrap(body);
   const child = vector(1).group("BodyWithAttachmentGroup", parent);
   const wire = vector(1).group("BodyWithAttachmentGroup", parent + child);
-  const options = {};
-  const parser = parse(chunks(encode(wire)), options);
+  const parser = parse(chunks(encode(wire)));
   const frame = (await parser.next()).value!;
   assertEquals(frame.nests?.length, 1);
   assertEquals([frame.body.ked, frame.nests![0].body.ked], [{ v: "KERI10JSON000020_", a: [] }, {
@@ -361,9 +349,10 @@ Deno.test("JSON parent and descendants preserve framing through cancellation", a
   const source = async function*() {
     yield encode(wire.slice(0, -4));
     controller.abort(cancellation);
+    controller.signal.throwIfAborted();
   };
   assert(
-    await assertRejects(() => collect(parse(source(), { ...options, signal: controller.signal }))) === cancellation,
+    await assertRejects(() => collect(parse(source()))) === cancellation,
   );
 });
 Deno.test("wrapped JSON retains intrinsic opaque fallback and propagates decoder failures unchanged", async () => {
@@ -394,8 +383,7 @@ Deno.test("JSON and MGPK descendants hydrate mixed codec children and cancel inc
   const wrap = (raw: Uint8Array) => v.group("NonNativeBodyGroup", new Texter({ raw, code: "4B" }).qb64);
   const child = v.group("BodyWithAttachmentGroup", wrap(msgpackBody));
   const wire = v.group("BodyWithAttachmentGroup", wrap(encode(jsonBody)) + child);
-  const options = {};
-  const parser = parse(chunks(encode(wire)), options);
+  const parser = parse(chunks(encode(wire)));
   const frame = (await parser.next()).value!;
   assertEquals(frame.nests?.length, 1);
   assertEquals(frame.nests![0].body.raw, msgpackBody);
@@ -410,9 +398,10 @@ Deno.test("JSON and MGPK descendants hydrate mixed codec children and cancel inc
   const source = async function*() {
     yield encode(pending.slice(0, -v.sig.length));
     controller.abort(cancellation);
+    controller.signal.throwIfAborted();
   };
   assert(
-    await assertRejects(() => collect(parse(source(), { ...options, signal: controller.signal }))) === cancellation,
+    await assertRejects(() => collect(parse(source()))) === cancellation,
   );
 });
 Deno.test("JSON and CBOR descendants hydrate mixed codec children and cancel incomplete attachments", async () => {
@@ -422,8 +411,7 @@ Deno.test("JSON and CBOR descendants hydrate mixed codec children and cancel inc
   const wrap = (raw: Uint8Array) => v.group("NonNativeBodyGroup", new Texter({ raw, code: "4B" }).qb64);
   const child = v.group("BodyWithAttachmentGroup", wrap(cborBody));
   const wire = v.group("BodyWithAttachmentGroup", wrap(encode(jsonBody)) + child);
-  const options = {};
-  const parser = parse(chunks(encode(wire)), options);
+  const parser = parse(chunks(encode(wire)));
   const frame = (await parser.next()).value!;
   assertEquals(frame.nests?.length, 1);
   assertEquals(frame.nests![0].body.raw.slice(), cborBody);
@@ -438,8 +426,9 @@ Deno.test("JSON and CBOR descendants hydrate mixed codec children and cancel inc
   const source = async function*() {
     yield encode(pending.slice(0, -v.sig.length));
     controller.abort(cancellation);
+    controller.signal.throwIfAborted();
   };
   assert(
-    await assertRejects(() => collect(parse(source(), { ...options, signal: controller.signal }))) === cancellation,
+    await assertRejects(() => collect(parse(source()))) === cancellation,
   );
 });

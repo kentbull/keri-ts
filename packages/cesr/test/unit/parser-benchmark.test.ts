@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { benchmarkParser, countFrames } from "../../src/bench/parser-benchmark.ts";
 
 const TEXT_ENCODER = new TextEncoder();
@@ -30,4 +30,11 @@ Deno.test("benchmark rejects malformed input", async () => {
     (await benchmarkParser(stream, { iterations: 1, warmupIterations: 0 })).totalFrames,
     1,
   );
+});
+
+Deno.test("benchmark operation owns cancellation independently of parser options", async () => {
+  const input = TEXT_ENCODER.encode(SAMPLE_FRAME);
+  const reason = new Error("benchmark cancelled"), signal = AbortSignal.abort(reason);
+  assertStrictEquals(await assertRejects(() => countFrames(input, { signal })), reason);
+  assertStrictEquals(await assertRejects(() => benchmarkParser(input, { signal })), reason);
 });
