@@ -268,7 +268,7 @@ Deno.test("tufa/cli - delegate confirm dispatches expected command args", () => 
   });
 });
 
-Deno.test("tufa/cli - IPEX runtime knobs dispatch renamed args", () => {
+Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", () => {
   const grant = parseCommandSelection([
     "ipex",
     "grant",
@@ -295,33 +295,25 @@ Deno.test("tufa/cli - IPEX runtime knobs dispatch renamed args", () => {
     "store",
     "-a",
     "holder",
-    "--poll-turns",
+    "--timeout",
     "3",
-    "--poll-budget-ms",
-    "1000",
     "--gvrsn",
     "2.0",
   ]);
   assertEquals(poll.name, "ipex.poll");
-  assertEquals(poll.args.pollTurns, 3);
+  assertEquals(poll.args.timeout, 3);
   assertEquals(poll.args.gvrsn, "2.0");
-  assertEquals(poll.args.pollBudgetMs, 1000);
-  assertEquals("maxTurns" in poll.args, false);
-  assertEquals("budgetMs" in poll.args, false);
 
   const join = parseCommandSelection([
     "ipex",
     "join",
     "-n",
     "store",
-    "--poll-turns",
+    "--approval-timeout",
     "5",
-    "--poll-budget-ms",
-    "1500",
   ]);
   assertEquals(join.name, "ipex.join");
-  assertEquals(join.args.pollTurns, 5);
-  assertEquals(join.args.pollBudgetMs, 1500);
+  assertEquals(join.args.approvalTimeoutSeconds, 5);
 });
 
 Deno.test("tufa/cli - DID Webs and DID KERI commands dispatch expected handlers", () => {

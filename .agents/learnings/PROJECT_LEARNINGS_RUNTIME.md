@@ -112,9 +112,13 @@ member as query/cue signer. Direct seal pinning and delegation escrow processing
 retain protocol ordering. Multisig commands own one host too; stored approvals
 and endpoint/KEL acceptance wait under elapsed deadlines, including delegated-group
 completion without a nested host. Join shares its deadline with local-completion
-fallback and uses `--approval-timeout`, not poll-turn/budget knobs. Serial IPEX
-callers and fixture counterparts remain removal work; one driving model is not
-complete yet.
+fallback and uses `--approval-timeout`, not poll-turn/budget knobs. IPEX group
+completion and pending-proposal waits likewise observe the host workers. IPEX poll
+owns the existing mailbox batch consumer while the other host workers run without
+another poller; counts describe fully settled batches and messages. Normal state
+completion waits for delivered batches to settle, and deadlines join cancellation.
+Production serial pumps are gone; fixture callers and obsolete pump APIs still
+require removal before claiming one driving model is complete.
 
 QueryReplies reserves SAIDs for correlation, not capacity. Capture matching replies
 before background consumption; duplicates may iterate the same readonly replay.
