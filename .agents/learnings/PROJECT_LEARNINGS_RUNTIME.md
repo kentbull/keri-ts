@@ -17,8 +17,9 @@ hosts select enableMailboxStore or borrow a Mailboxer. Hosted-AID selection is
 separate; do not auto-host every Hab or expose signatory/AEID as normal identity.
 RuntimeServices contains only clock/HTTP. Baser and CLI carry no shared policy.
 Choose real dependencies at construction. Generic cue preparation/delivery
-wrappers and Reactor's application callback gate are removed. Duplicate runtime driving still requires simplification; these cuts
-do not complete the architecture or qualification work.
+wrappers and Reactor's application callback gate are removed. Finite CLI waits
+start the same workers as hosts and join them before returning; serial whole-
+runtime pumping still requires removal. These cuts do not complete qualification.
 
 ## Protocol records and publication
 
@@ -89,8 +90,15 @@ strand recovery. Ordinary query selection stays first-choice. Completion uses ac
 accepted seal/key/TEL state. OOBI convergence excludes background reply delivery:
 a static OOBI server may refuse unsolicited receipts without invalidating accepted
 resolution. Ingress/query/escrow work still blocks completion; close joins real I/O.
-CLI query starts the shared concurrent runner and joins
-it before display/close; serial mailbox polling must not exhaust the query window.
+Finite command convergence uses runAgentRuntimeUntil over the same concrete
+workers as runAgentRuntime, with a caller-owned elapsed deadline and completion
+predicate. There is no max-turn policy or compatibility alias. Blocked mailbox/
+OOBI I/O cannot serialize unrelated ingress progress; success, deadline, failure
+and cancellation join workers before caller/store teardown. A genuine command may
+omit mailbox polling. Query keeps its own completion/display policy over the same
+runner. The supervisor suspends instead of polling; component loops still own
+progress. processRuntimeTurn and explicit serial mailbox/approval callers remain
+removal work; do not claim one driving model is fully implemented yet.
 
 QueryReplies reserves SAIDs for correlation, not capacity. Capture matching replies
 before background consumption; duplicates may iterate the same readonly replay.

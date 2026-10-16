@@ -3,7 +3,7 @@ import { ValidationError } from "../../core/errors.ts";
 import {
   type AgentRuntime,
   createAgentRuntime,
-  processRuntimeUntil,
+  runAgentRuntimeUntil,
   runtimeHasPendingWork,
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
@@ -135,10 +135,10 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
       if (hby.db.oobis.cnt() > 0 || hby.db.woobi.cnt() > 0) {
         const runtime = yield* createAgentRuntime(hby);
         try {
-          yield* processRuntimeUntil(
+          yield* runAgentRuntimeUntil(
             runtime,
             () => !runtimeHasPendingWork(runtime),
-            { maxTurns: 128, pollMailbox: false },
+            { timeoutMs: 30_000, pollMailbox: false },
           );
           if (hby.db.eoobi.cnt() > 0) {
             throw new ValidationError(
@@ -191,10 +191,10 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
             communicationHab,
           });
 
-          yield* processRuntimeUntil(
+          yield* runAgentRuntimeUntil(
             runtime,
             () => runtime.delegating.complete(hab.pre, 0),
-            { hab, maxTurns: 512, pollMailbox: true },
+            { hab, timeoutMs: 120_000, pollMailbox: true },
           );
           delegationPhase = runtime.delegating.workflowStatus(hab.pre, "0").phase;
         } finally {

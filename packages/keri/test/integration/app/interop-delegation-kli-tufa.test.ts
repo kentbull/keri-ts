@@ -704,7 +704,7 @@ for (const profile of DELEGATE_KEY_PROFILES) {
         ({ hby, runtime }) =>
           hby.db.delegables.cnt() >= 1
           || (runtime.notifier?.count() ?? 0) >= 1,
-        { maxTurns: 160 },
+        { timeoutMs: 60_000 },
       );
 
       const confirmDip = await requireSuccess(
@@ -795,7 +795,7 @@ for (const profile of DELEGATE_KEY_PROFILES) {
         ({ hby, runtime }) =>
           hby.db.delegables.cnt() >= 1
           || (runtime.notifier?.count() ?? 0) >= 1,
-        { maxTurns: 160 },
+        { timeoutMs: 60_000 },
       );
 
       const confirmDrt = await requireSuccess(

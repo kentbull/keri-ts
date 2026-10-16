@@ -559,7 +559,7 @@ async function waitForTufaDelegable(
       }
       return false;
     },
-    { maxTurns: 256, timeoutMs: 120_000 },
+    { timeoutMs: 120_000 },
   );
   if (!event) {
     throw new Error("Expected a Tufa delegable group event.");
@@ -987,7 +987,7 @@ Deno.test("Interop delegation: public KLI approval completes a Tufa-generated de
     await pumpTufaRuntimeUntil(
       member1,
       ({ hby }) => hby.db.getKever(group.group)?.sn === 0,
-      { maxTurns: 256 },
+      { timeoutMs: 120_000 },
     );
 
     assertEquals(

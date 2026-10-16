@@ -34,7 +34,9 @@ ownership and full qualification remain open.
   repeated class narrowing. Legacy/v2 Regery owners and direct processor injection
   replace the placeholder VDR/ACDC bags. Application entrypoints retain one check
   for genuine readonly registry absence. No speculative DI layer.
-- CLI and hosts drive the same workers. Delete duplicate whole-runtime pumping,
+- Finite CLI convergence now uses the host workers with elapsed deadlines and
+  joined shutdown. Delete remaining serial processRuntimeTurn/mailbox/approval
+  pumping to finish one shared driving model. Remove
   forwarding-only facades without real consumers. AgentMode/runtimeMode are removed;
   hosts choose provider mailbox construction explicitly.
 - Narrow public runtime exports to supported operations/data. Remove optional

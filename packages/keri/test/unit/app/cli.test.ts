@@ -419,7 +419,7 @@ Deno.test("CLI - delegate confirm does not pin aess or accept the delegate befor
         headDirPath,
         alias: "delegator",
       })),
-      "Runtime did not converge within 128 turns.",
+      "Runtime did not converge within 30000ms.",
     );
 
     await run(function*() {

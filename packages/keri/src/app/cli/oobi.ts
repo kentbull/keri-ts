@@ -1,7 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
-import { enqueueOobi, processRuntimeUntil, runtimeOobiConverged, runtimeOobiTerminalState } from "../agent-runtime.ts";
+import { enqueueOobi, runAgentRuntimeUntil, runtimeOobiConverged, runtimeOobiTerminalState } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { sendExchangeMessage } from "../forwarding.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../oobiery.ts";
@@ -163,7 +163,7 @@ export function* oobiGenerateCommand(
 /**
  * Implement `tufa oobi resolve` using a command-local shared runtime host.
  *
- * The command queues one OOBI job, runs one runtime turn, and succeeds only if
+ * The command queues one OOBI job, runs the shared workers, and succeeds only if
  * the URL lands in `roobi.`. Any reply/event material fetched from the OOBI is
  * forced through the same parser/routing path used by the long-lived host.
  */
@@ -201,10 +201,10 @@ export function* oobiResolveCommand(
         url,
         alias: commandArgs.oobiAlias,
       });
-      yield* processRuntimeUntil(
+      yield* runAgentRuntimeUntil(
         runtime,
         () => runtimeOobiConverged(runtime, url),
-        { maxTurns: 128, pollMailbox: false },
+        { timeoutMs: 30_000, pollMailbox: false },
       );
 
       const terminal = runtimeOobiTerminalState(runtime, url);

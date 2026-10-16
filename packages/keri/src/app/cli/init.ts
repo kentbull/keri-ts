@@ -3,7 +3,7 @@ import { PathError, ValidationError } from "../../core/errors.ts";
 import {
   type AgentRuntime,
   createAgentRuntime,
-  processRuntimeUntil,
+  runAgentRuntimeUntil,
   runtimeHasPendingWork,
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
@@ -152,10 +152,10 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
       if (runtimeBootstrapNeeded(hby)) {
         const runtime = yield* createAgentRuntime(hby);
         try {
-          yield* processRuntimeUntil(
+          yield* runAgentRuntimeUntil(
             runtime,
             () => !runtimeHasPendingWork(runtime),
-            { maxTurns: 128, pollMailbox: false },
+            { timeoutMs: 30_000, pollMailbox: false },
           );
           if (hby.db.eoobi.cnt() > 0) {
             throw new ValidationError(

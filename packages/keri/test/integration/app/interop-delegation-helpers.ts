@@ -7,7 +7,7 @@
  * so protocol assertions stay separate from subprocess plumbing.
  */
 import { type Operation, race, run, sleep } from "npm:effection@^3.6.0";
-import { type AgentRuntime, createAgentRuntime, processRuntimeUntil } from "../../../src/app/agent-runtime.ts";
+import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import {
   type CmdResult,
@@ -915,10 +915,9 @@ export async function waitForChildSuccess(
 }
 
 /**
- * Reopen a Tufa store, create a local runtime, and process turns until done.
+ * Reopen a Tufa store and run the production component workers until state completes.
  *
- * This mirrors what a live agent host would do while keeping tests deterministic
- * and bounded around mailbox polling and escrow continuation.
+ * Preserve the host worker model and join it before closing the reopened store.
  */
 export async function pumpTufaRuntimeUntil(
   store: {
@@ -930,7 +929,6 @@ export async function pumpTufaRuntimeUntil(
   },
   done: (snapshot: TufaRuntimeSnapshot) => boolean,
   options: {
-    maxTurns?: number;
     pollMailbox?: boolean;
     timeoutMs?: number;
   } = {},
@@ -948,23 +946,11 @@ export async function pumpTufaRuntimeUntil(
       const hab = store.alias ? hby.habByName(store.alias) ?? undefined : undefined;
       const runtime = yield* createAgentRuntime(hby);
       try {
-        const process = () =>
-          processRuntimeUntil(runtime, () => done({ hby, runtime, hab }), {
-            hab,
-            maxTurns: options.maxTurns ?? 128,
-            pollMailbox: options.pollMailbox ?? true,
-          });
-        if (options.timeoutMs !== undefined) {
-          yield* race([
-            process(),
-            (function*() {
-              yield* sleep(options.timeoutMs!);
-              throw new Error(`Tufa runtime did not converge within ${options.timeoutMs}ms.`);
-            })(),
-          ]);
-        } else {
-          yield* process();
-        }
+        yield* runAgentRuntimeUntil(runtime, () => done({ hby, runtime, hab }), {
+          hab,
+          timeoutMs: options.timeoutMs ?? 60_000,
+          pollMailbox: options.pollMailbox ?? true,
+        });
       } finally {
         yield* runtime.close();
       }
