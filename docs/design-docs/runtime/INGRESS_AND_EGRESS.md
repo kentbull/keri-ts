@@ -494,6 +494,13 @@ removal work; no broad release qualification is implied by these focused checks.
 Receipt endpoints intentionally return one finite proof: collection admits at
 most 1 MiB, failed-response diagnostics at most 16 KiB, and parsing requires one
 complete frame. Cancellation joins the body reader and releases its lock.
+The shared HTTP response resource forwards RequestInit.signal into its actual
+request/body controller, preserving its reason through headers and body consumption.
+Pre-aborted requests acquire no fetch. Only the owner's header timeout becomes
+mailbox null; a later deadline cannot relabel earlier caller cancellation. The
+Node host reports a late foreign AbortError even after host cancellation and
+suppresses only its exact owned reason. Generic ingress composes request
+disconnect and operation lifetime before supplying requestBytes.
 The shared HTTP response resource also owns the handoff after headers arrive;
 continuous OOBI, authentication, query and mailbox workers close a finite call
 scope after each response so neither bodies nor resource registrations accumulate.

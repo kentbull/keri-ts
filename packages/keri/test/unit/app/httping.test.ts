@@ -257,3 +257,120 @@ Deno.test("HTTP fetch cancellation preserves late I/O and foreign timeout failur
     );
   }
 });
+
+Deno.test("HTTP fetch honors the caller signal before acquisition and during headers", async () => {
+  for (const preAborted of [true, false]) {
+    const external = new AbortController(), entered = Promise.withResolvers<void>();
+    const reason = new DOMException("caller cancelled request", "AbortError");
+    let fetched = 0;
+    if (preAborted) external.abort(reason);
+    const task = run(() =>
+      fetchResponseHandle("https://peer.test/", { signal: external.signal }, {
+        services: services((_url, init) => {
+          fetched++;
+          entered.resolve();
+          return new Promise<Response>((_resolve, reject) => {
+            init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
+          });
+        }),
+      })
+    );
+    // Bound the regression before this owner starts forwarding the external signal.
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const failed = assertRejects(() =>
+      Promise.race([
+        Promise.resolve(task),
+        new Promise<never>((_resolve, reject) => {
+          deadline = setTimeout(() => reject(new Error("caller cancellation was not forwarded")), 1000);
+        }),
+      ])
+    );
+    try {
+      if (!preAborted) {
+        await entered.promise;
+        external.abort(reason);
+      }
+      assertStrictEquals(await failed, reason);
+      assertEquals(fetched, preAborted ? 0 : 1);
+    } finally {
+      clearTimeout(deadline);
+      await task.halt();
+    }
+  }
+});
+
+Deno.test("HTTP external cancellation keeps its reason when a later header deadline fires", async () => {
+  const external = new AbortController(), entered = Promise.withResolvers<void>();
+  const reason = new Error("external cancellation precedes deadline");
+  let expire!: () => void, rejectFetch!: (error: unknown) => void;
+  const task = run(() =>
+    fetchResponseHandleOrNull("https://peer.test/", { signal: external.signal }, {
+      timeoutMs: 10,
+      services: {
+        ...services(() =>
+          new Promise<Response>((_resolve, reject) => {
+            rejectFetch = reject;
+            entered.resolve();
+          })
+        ),
+        clock: {
+          ...defaultRuntimeServices.clock,
+          setTimeout(callback) {
+            expire = callback;
+          },
+          clearTimeout() {},
+        },
+      },
+    })
+  );
+  await entered.promise;
+  external.abort(reason);
+  expire();
+  rejectFetch(reason);
+  assertStrictEquals(await assertRejects(() => Promise.resolve(task)), reason);
+});
+
+Deno.test("HTTP caller cancellation after headers aborts the body reader with the same reason", async () => {
+  const external = new AbortController(), reading = Promise.withResolvers<void>();
+  const reason = new DOMException("caller cancelled response", "AbortError");
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const task = run(function*() {
+    const { response } = yield* fetchResponseHandle("https://peer.test/", { signal: external.signal }, {
+      services: services((_url, init) =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                init!.signal!.addEventListener("abort", () => controller.error(init!.signal!.reason), { once: true });
+              },
+            }),
+          ),
+        )
+      ),
+    });
+    reader = response.body!.getReader();
+    reading.resolve();
+    try {
+      yield* call(() => reader!.read());
+    } finally {
+      reader.releaseLock();
+    }
+  });
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const failed = assertRejects(() =>
+    Promise.race([
+      Promise.resolve(task),
+      new Promise<never>((_resolve, reject) => {
+        deadline = setTimeout(() => reject(new Error("body cancellation was not forwarded")), 1000);
+      }),
+    ])
+  );
+  try {
+    await reading.promise;
+    external.abort(reason);
+    assertStrictEquals(await failed, reason);
+  } finally {
+    clearTimeout(deadline);
+    await task.halt();
+  }
+});

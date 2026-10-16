@@ -128,13 +128,18 @@ Suppress only the intentional controller's exact abort reason from body cancella
 foreign AbortErrors and cleanup failures still propagate after shared credit releases.
 HTTP/TCP prepared attempts consume the sender's joined expected-refusal result directly;
 strict source/frame APIs keep their throwing contract. HTTP owns its parser refusal
-bridge; TCP's application conversation owns parser admission while byte egress
-returns only its own capacity refusals. Prepared delivery does not observe exception
+bridge; TCP's application conversation owns its parser iterator while byte egress
+uses native socket backpressure without capacity-refusal accounting. Prepared delivery does not observe exception
 identities. Strict and attempt APIs share the same connection and cleanup owners.
 Transport refusal observers are removed. Attempt helpers stay internal to their
 modules; the runtime package exposes supported strict sender/conversation APIs.
 Fetch teardown joins pending rejection as well as late response cleanup. Timeout
-null recognizes only its controller's exact reason; foreign same-class AbortErrors
+null recognizes only its controller's exact reason; RequestInit.signal is forwarded
+into that request/body controller through scope exit. Pre-aborted requests acquire
+no fetch; a later header deadline cannot reclassify earlier external cancellation.
+Node late-body suppression likewise compares the exact owned reason, never the
+AbortError class plus aborted state. Generic CESR ingress already composes request
+disconnect and operation lifetime before requestBytes. Foreign same-class AbortErrors
 and I/O failures propagate without repeating an already-reported object.
 Generic and CESR requests share the pending-fetch/response owner; CESR upload and
 diagnostic leaves stay separate. Register HTTP credit before response owners so
