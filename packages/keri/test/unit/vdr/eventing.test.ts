@@ -12,7 +12,7 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { type AgentRuntime, createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
@@ -767,18 +767,31 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
       yield* runtime.reactor.processBytes(issuer.endorse(serder));
       assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 1);
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre]), null);
-      const turn = () => processRuntimeTurn(runtime, { hab: local, pollMailbox: false });
-      yield* turn();
+      yield* runAgentRuntimeUntil(runtime, () => queries.length > 0 && !runtime.querying.hasPendingDelivery, {
+        hab: local,
+        timeoutMs: 2_000,
+        pollMailbox: false,
+      });
       assertEquals(queries[0].i, issuer.pre);
       for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
-      yield* turn();
+      yield* runAgentRuntimeUntil(
+        runtime,
+        () =>
+          reger.txnsb.escrowdb.get(["registry-ooo", vcp.pre!, issuer.pre]).length === 1
+          && queries.at(-1)?.ri === vcp.pre && !runtime.querying.hasPendingDelivery,
+        { hab: local, timeoutMs: 2_000, pollMailbox: false },
+      );
       assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 0);
       assertEquals(reger.txnsb.escrowdb.get(["registry-ooo", vcp.pre!, issuer.pre]).length, 1);
       assertExists(reger.txnsb.serderdb.get([serder.said!]), "Broker retains the pending authenticated body");
       assertEquals(hby.db.rpys.get([serder.said!]), null, "Pending proof has one external owner");
       assertEquals(queries.at(-1), { ri: vcp.pre!, i: "", src: issuer.pre }, "Recovery preserves TEL coordinates");
       yield* runtime.reactor.processBytes(source.cloneTvt(vcp.pre!, vcp.said!));
-      yield* turn();
+      yield* runAgentRuntimeUntil(runtime, () => reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64 === serder.said, {
+        hab: local,
+        timeoutMs: 2_000,
+        pollMailbox: false,
+      });
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, serder.said);
       assertEquals(reger.txnsb.escrowdb.cnt(), 0);
       issuer.rotate({ ncount: 1, nsith: "1", toad: 0 });
@@ -791,7 +804,11 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
       );
       assertEquals(hby.db.rpes.cnt(), 0, "External proof ownership does not double-index legacy RPE");
       for (const wire of sender.db.clonePreIter(issuer.pre, 2)) yield* runtime.reactor.processBytes(wire);
-      yield* turn();
+      yield* runAgentRuntimeUntil(runtime, () => reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64 === fresh.said, {
+        hab: local,
+        timeoutMs: 2_000,
+        pollMailbox: false,
+      });
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, fresh.said);
       assertEquals(reger.txnsb.escrowdb.cnt(), 0);
       yield* reger.close();

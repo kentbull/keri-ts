@@ -87,10 +87,13 @@ introductions and observe the existing host's convergence; they never start a
 second set of workers. Both entry points finish all supplied introductions before
 projection rather than counting runtime turns or stopping at the first known key.
 
-The older serial processRuntimeTurn and explicit mailbox/approval pumping remain
-transitional removal work. Their remaining callers must move to real ingress or
-the shared workers, rather than a renamed whole-runtime pump. This finite-wait
-cut does not finish that migration or final composed qualification.
+Serial whole-runtime and finite mailbox turn APIs are removed. Phase-specific
+unit tests call actual component operations; convergence tests observe accepted
+state while the host workers run. Mailbox polling has one worker per remote
+endpoint, with separate request-open and SSE read deadlines. It has no command-
+local turn budget, resume index or no-op configuration hook. The consumer finishes
+before the remote cursor advances or another event is read. Final composed
+qualification remains required.
 
 Local endpoint commands and witness/mailbox operators submit their exact signed
 records through settleRuntimeIngress and verify accepted state. This is protocol

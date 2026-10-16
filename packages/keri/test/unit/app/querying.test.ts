@@ -3,13 +3,14 @@ import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, 
 import { parseBytes, ParserError, SerderKERI } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
-  processRuntimeTurn,
+  runAgentRuntimeUntil,
   runtimeHasPendingWork,
   runtimeOobiConverged,
   runtimePendingState,
 } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { queryCommand } from "../../../src/app/cli/query.ts";
+import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { type AnchorQuerier, QueryCoordinator } from "../../../src/app/querying.ts";
@@ -103,7 +104,11 @@ Deno.test("default runtime sends queued and cue queries through its concrete own
     try {
       runtime.querying.enqueue({ pre: subject.pre, signer: sender.pre, route: "logs", q: {} });
       runtime.cues.push({ kin: "query", pre: subject.pre, route: "ksn", q: {} });
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      yield* runAgentRuntimeUntil(
+        runtime,
+        () => messages.length === 2 && runtime.querying.pending.empty && !runtime.querying.hasPendingDelivery,
+        { hab: sender, timeoutMs: 1_000, pollMailbox: false },
+      );
       assertEquals(
         [messages.length, signatures, runtime.querying.pending.length, runtime.querying.hasPendingDelivery],
         [2, 2, 0, false],
@@ -159,17 +164,19 @@ Deno.test("unrouted notices create no requests; ambiguous identities and missing
     try {
       runtime.cues.push({ kin: "query", q: { r: "schema", said: subject.pre } });
       runtime.cues.push({ kin: "query", q: { r: "tels", pre: subject.pre } });
-      yield* processRuntimeTurn(runtime, { pollMailbox: false });
+      yield* processCuesOnce(runtime);
       assertEquals([runtime.cues.length, runtime.querying.pending.length, messages.length], [0, 0, 0]);
       runtime.cues.push({ kin: "query", pre: subject.pre, route: "logs", q: {} });
-      yield* processRuntimeTurn(runtime, { pollMailbox: false });
+      yield* processCuesOnce(runtime);
       assertEquals([runtime.querying.pending.length, messages.length], [1, 0]);
       const pending = runtime.querying.pending.peekHead();
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      runtime.querying.configure({ hab: sender });
+      yield* runtime.querying.processPending();
       assertStrictEquals(runtime.querying.pending.peekHead(), pending);
       assertEquals(messages.length, 0);
       seedControllerEndpoint(hby, subject.pre);
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      yield* runtime.querying.processPending();
+      yield* runtime.querying.deliverOnce();
       assertEquals([runtime.querying.pending.length, messages.length], [0, 1]);
       yield* call(() => assertQuerySigner(messages[0], sender));
     } finally {
@@ -191,7 +198,8 @@ Deno.test("mailbox-only query transport retains the controller as attester", asy
     const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages, urls) });
     try {
       runtime.cues.push({ kin: "query", pre: subject.pre, route: "logs", q: {} });
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      yield* processCuesOnce(runtime, { hab: sender });
+      yield* runtime.querying.deliverOnce();
       assertEquals(urls, ["http://mailbox.test/"]);
       assertEquals(new SerderKERI({ raw: messages[0] }).ked?.q, { i: subject.pre, src: subject.pre });
     } finally {
@@ -219,17 +227,26 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
         cid: subject.pre,
         role: Roles.controller,
       });
+      runtime.querying.configure({ hab: sender });
       const current = runtime.querying.watchKeyState(subject.pre, { signer: sender.pre });
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      yield* processCuesOnce(runtime, { hab: sender });
+      yield* runtime.querying.processPending();
+      yield* runtime.querying.deliverOnce();
       assertEquals(new SerderKERI({ raw: messages[0] }).route, "ksn");
       runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      yield* processCuesOnce(runtime, { hab: sender });
+      yield* runtime.querying.processPending();
+      yield* runtime.querying.deliverOnce();
       assertEquals([current.done, messages.length], [true, 1]);
       const ahead = runtime.querying.watchKeyState(subject.pre, { signer: sender.pre });
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      yield* processCuesOnce(runtime, { hab: sender });
+      yield* runtime.querying.processPending();
+      yield* runtime.querying.deliverOnce();
       const interaction = subject.interact();
       runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      yield* processCuesOnce(runtime, { hab: sender });
+      yield* runtime.querying.processPending();
+      yield* runtime.querying.deliverOnce();
       assertEquals(messages.map((wire) => new SerderKERI({ raw: wire }).route), ["ksn", "ksn", "logs"]);
       assertEquals([
         ahead.done,
@@ -238,7 +255,9 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
         runtimeOobiConverged(runtime, resolvedUrl),
       ], [false, true, true, false]);
       yield* runtime.reactor.processBytes(interaction);
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      yield* processCuesOnce(runtime, { hab: sender });
+      yield* runtime.querying.processPending();
+      yield* runtime.querying.deliverOnce();
       assertEquals(runtimePendingState(runtime).deliveriesPending, true);
       assertEquals([ahead.done, runtime.querying.hasPendingWork(), runtimeOobiConverged(runtime, resolvedUrl)], [
         true,
@@ -269,14 +288,16 @@ Deno.test("sequence and anchor continuations preserve the seal snapshot and comp
       const sequence = runtime.querying.watchSeqNo(subject.pre, 1, { signer: sender.pre });
       const anchor = runtime.querying.watchAnchor(subject.pre, original, { signer: sender.pre });
       original.d = sender.pre;
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      yield* runtime.querying.processPending();
+      yield* runtime.querying.deliverOnce();
       assertEquals(messages.length, 2);
       const query = new SerderKERI({ raw: messages[1] }).ked?.q as { a: object };
       assertEquals(query.a, expected);
       assertEquals(Object.keys(query.a), ["i", "s", "d"]);
       assertEquals([sequence.done, anchor.done], [false, false]);
       yield* runtime.reactor.processBytes(subject.interact({ data: [expected] }));
-      yield* processRuntimeTurn(runtime, { hab: sender, pollMailbox: false });
+      yield* runtime.querying.processPending();
+      yield* runtime.querying.deliverOnce();
       assertEquals([sequence.done, anchor.done, runtime.querying.hasPendingWork()], [true, true, false]);
     } finally {
       yield* runtime.close();

@@ -6,15 +6,15 @@ import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handle
 import {
   createAgentRuntime,
   enqueueOobi,
-  ingestKeriBytes,
-  processRuntimeTurn,
   runAgentRuntime,
+  runAgentRuntimeUntil,
   runtimeHasWellKnownAuth,
   runtimeOobiConverged,
   runtimeOobiTerminalState,
   runtimePendingState,
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
+import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
@@ -347,12 +347,14 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         enqueueOobi(runtime, { url: controllerUrl });
         enqueueOobi(runtime, { url: wellKnownUrl });
 
-        yield* processRuntimeTurn(runtime);
+        yield* runtime.oobiery.processOnce();
+        yield* runtime.authenticator.processOnce();
         assertEquals(hby.db.roobi.get(controllerUrl)?.state, "resolved");
         assertEquals(runtimePendingState(runtime).authQueued, false);
         assertEquals(runtimePendingState(runtime).authInFlight, true);
         assertEquals(runtimeOobiConverged(runtime, wellKnownUrl), false);
-        yield* processRuntimeTurn(runtime);
+        yield* runtime.authenticator.processOnce();
+        yield* processCuesOnce(runtime);
         assertEquals(hby.db.rmfa.get(wellKnownUrl)?.state, "resolved");
         assertEquals(runtimeHasWellKnownAuth(runtime, wellKnownUrl), true);
         assertEquals(
@@ -362,9 +364,9 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         assertEquals(runtimeOobiConverged(runtime, wellKnownUrl), true);
 
         enqueueOobi(runtime, { url: failingWellKnownUrl });
-        yield* processRuntimeTurn(runtime);
+        yield* runtime.authenticator.processOnce();
         assertEquals(runtimePendingState(runtime).authInFlight, true);
-        yield* processRuntimeTurn(runtime);
+        yield* runtime.authenticator.processOnce();
         assertEquals(hby.db.rmfa.get(failingWellKnownUrl)?.state, "http-404");
         assertEquals(
           runtimeOobiTerminalState(runtime, failingWellKnownUrl).status,
@@ -484,16 +486,11 @@ Deno.test("controller and witness OOBIs generate and resolve through shared runt
       }
 
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(url, hab.pre, "http"),
         witnessHab.makeLocScheme(url, witnessHab.pre, "http"),
-      );
-      ingestKeriBytes(
-        runtime,
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
     } finally {
       yield* hby.close();
     }
@@ -663,13 +660,11 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
 
       const runtime = yield* createAgentRuntime(hby);
       for (const hab of [iHab, dHab]) {
-        ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
-        ingestKeriBytes(
-          runtime,
+        yield* settleRuntimeIngress(runtime, [
+          hab.makeLocScheme(url, hab.pre, "http"),
           hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-        );
+        ]);
       }
-      yield* processRuntimeTurn(runtime, { hab: iHab });
     } finally {
       yield* hby.close();
     }
@@ -718,9 +713,10 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
       });
       try {
         const targetRuntime = yield* createAgentRuntime(target);
-        for (let i = 0; i < 6; i += 1) {
-          yield* processRuntimeTurn(targetRuntime);
-        }
+        yield* runAgentRuntimeUntil(targetRuntime, () =>
+          target.db.roobi.get(iurl)?.state === "resolved"
+          && target.db.roobi.get(durl)?.state === "resolved"
+          && target.db.rmfa.get(wurl)?.state === "resolved", { timeoutMs: 5_000, pollMailbox: false });
 
         assertEquals(target.db.roobi.get(iurl)?.state, "resolved");
         assertEquals(target.db.roobi.get(durl)?.state, "resolved");
@@ -777,12 +773,10 @@ Deno.test("init command waits for configured well-known auth before exit", async
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
 
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(hostUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
 
       controllerBytes = new Uint8Array(
         hab.replyToOobi(pre, EndpointRoles.controller),
@@ -898,12 +892,10 @@ Deno.test("incept command waits for configured well-known auth before inception"
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
 
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(hostUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
 
       controllerBytes = new Uint8Array(
         hab.replyToOobi(pre, EndpointRoles.controller),
@@ -1039,12 +1031,10 @@ Deno.test("reply-based `/oobi/controller` JSON fans out child OOBIs through moob
       ];
 
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(hostUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
 
       controllerBytes = new Uint8Array(
         hab.replyToOobi(pre, EndpointRoles.controller),
@@ -1093,18 +1083,18 @@ Deno.test("reply-based `/oobi/controller` JSON fans out child OOBIs through moob
         const runtime = yield* createAgentRuntime(hby);
         enqueueOobi(runtime, { url: parentUrl });
 
-        yield* processRuntimeTurn(runtime);
+        yield* runtime.oobiery.processOnce();
         assertEquals(hby.db.moobi.get(parentUrl)?.state, "pending-multi-oobi");
         assertEquals(runtimePendingState(runtime).multiPending, true);
         assertEquals(runtimePendingState(runtime).oobiQueued, true);
         assertEquals(runtimeOobiConverged(runtime, parentUrl), false);
 
-        yield* processRuntimeTurn(runtime);
-        yield* processRuntimeTurn(runtime);
+        yield* runtime.oobiery.processOnce();
+        yield* runtime.oobiery.processOnce();
         assertEquals(runtimePendingState(runtime).multiPending, true);
         assertEquals(runtimeOobiConverged(runtime, parentUrl), false);
 
-        yield* processRuntimeTurn(runtime);
+        yield* runtime.oobiery.processOnce();
         assertEquals(hby.db.moobi.get(parentUrl), null);
         assertEquals(hby.db.roobi.get(parentUrl)?.state, "resolved");
         for (const childUrl of childUrls) {
@@ -1114,6 +1104,7 @@ Deno.test("reply-based `/oobi/controller` JSON fans out child OOBIs through moob
           runtimeOobiTerminalState(runtime, parentUrl).status,
           "resolved",
         );
+        yield* processCuesOnce(runtime);
         assertEquals(runtimeOobiConverged(runtime, parentUrl), true);
       } finally {
         yield* hby.close();
@@ -1179,16 +1170,11 @@ Deno.test("reply-based `/oobi/witness` JSON fans out child OOBIs through moobi",
       }
 
       const runtime = yield* createAgentRuntime(hby);
-      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
-      ingestKeriBytes(
-        runtime,
+      yield* settleRuntimeIngress(runtime, [
+        hab.makeLocScheme(hostUrl, hab.pre, "http"),
         witnessHab.makeLocScheme(hostUrl, witnessHab.pre, "http"),
-      );
-      ingestKeriBytes(
-        runtime,
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      yield* processRuntimeTurn(runtime, { hab });
+      ]);
 
       witnessBytes = new Uint8Array(
         hab.replyToOobi(pre, EndpointRoles.witness, [witnessPre]),
@@ -1237,15 +1223,15 @@ Deno.test("reply-based `/oobi/witness` JSON fans out child OOBIs through moobi",
         const runtime = yield* createAgentRuntime(hby);
         enqueueOobi(runtime, { url: parentUrl });
 
-        yield* processRuntimeTurn(runtime);
+        yield* runtime.oobiery.processOnce();
         assertEquals(hby.db.moobi.get(parentUrl)?.state, "pending-multi-oobi");
         assertEquals(runtimePendingState(runtime).multiPending, true);
         assertEquals(runtimePendingState(runtime).oobiQueued, true);
         assertEquals(runtimeOobiConverged(runtime, parentUrl), false);
 
-        yield* processRuntimeTurn(runtime);
-        yield* processRuntimeTurn(runtime);
-        yield* processRuntimeTurn(runtime);
+        yield* runtime.oobiery.processOnce();
+        yield* runtime.oobiery.processOnce();
+        yield* runtime.oobiery.processOnce();
 
         assertEquals(hby.db.roobi.get(parentUrl)?.state, "resolved");
         assertEquals(
@@ -1259,6 +1245,7 @@ Deno.test("reply-based `/oobi/witness` JSON fans out child OOBIs through moobi",
           runtimeOobiTerminalState(runtime, parentUrl).status,
           "resolved",
         );
+        yield* processCuesOnce(runtime);
         assertEquals(runtimeOobiConverged(runtime, parentUrl), true);
       } finally {
         yield* hby.close();
