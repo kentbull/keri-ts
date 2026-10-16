@@ -52,8 +52,8 @@ global freshness, or semantics for reference stubs. Existing resource, recovery,
 transport, maintained-test and npm-publication obligations remain required.
 
 The [preserved bulk-import algorithm][import] remains available as historical
-reference. Its active implementation is removed only when its callers use the
-qualified public intake; direct accepted-row writes are not a replacement.
+reference. Its active implementation is removed and callers use public intake;
+direct accepted-row writes are not a replacement.
 
 [current]: https://github.com/WebOfTrust/keripy/commit/7143832813cac6a394ab1faf9be83bb3372be87c
 [parser]: https://github.com/WebOfTrust/keripy/blob/7143832813cac6a394ab1faf9be83bb3372be87c/src/keri/core/parsing.py#L1517

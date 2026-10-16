@@ -78,7 +78,7 @@ qualification. Cached/override validation alone does not qualify that builder.
 Explicit schema OOBIs work; automatic discovery from a bare SAID lacks an upstream
 host-resolution path and is not an indefinitely blocking port requirement.
 
-## Remaining qualification
+## Regression standards and unqualified profiles
 
 1. Exercise composed issuer creation, blind/present/vacate, observer intake,
    accepted-chain assembly and IPEX receipt cutoffs through actual runtime owners.
@@ -94,7 +94,7 @@ host-resolution path and is not an indefinitely blocking port requirement.
 4. Prove default/injected/readonly runtime ownership and joined construction,
    cancellation and explicit-close cleanup. Keep parent EXN, child issuer and
    registry-binding proofs separate. Conversation acceptance is not wallet acceptance.
-5. Run affected maintained workflows after the final Mapper/schema change, then
+5. For future Mapper/schema changes, run affected maintained workflows, then
    the [full qualification inventory][qualification]. Identify historical v1,
    unmodified upstream and mailbox-fork evidence separately, including imports.
 

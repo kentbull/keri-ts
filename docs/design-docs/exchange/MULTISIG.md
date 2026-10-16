@@ -47,7 +47,8 @@ with empty ri/x/p does not round-trip in the frozen reference and remains unqual
 JSON/CBOR/MGPK acceptance/storage/replay evidence is recorded in the
 [multisig plan](../../plans/exchange/MULTISIG_PLAN.md). The
 [proof contract](EXCHANGE_PROOFS.md) and [storage contract](../db/PAYLOAD_STORAGE.md)
-govern authentication and durability; full runtime qualification remains open.
+govern authentication and durability. The [1.0.0 release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md)
+records composed qualification and its topology/profile limits.
 
 ## Event proposal input contract
 

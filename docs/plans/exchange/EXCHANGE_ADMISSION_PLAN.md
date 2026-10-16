@@ -28,10 +28,10 @@ issuance, which actual 714 accepts. TSN wire routes append the attester absent f
 714 cue serialization; focused query/HTTP-pair/independent-receiver composition is
 qualified. The maintained full workflow matrix remains required.
 
-## Remaining processing boundary
+## Maintained processing boundary
 
-The [KRAM units K1–K10](KRAM_PLAN.md) replace the unmerged #172 snapshot with
-reviewable policy, evidence, authentication, replay and runtime changes. Intake
+The implemented [KRAM units K1–K10](KRAM_PLAN.md) supersede the unmerged #172
+snapshot. They own policy, evidence, authentication, replay and runtime intake. Intake
 must precede route processing without replacing Exchanger proof policy.
 3f also owns built-in TEL query processing. `tels/tsn` are real legacy
 `vdr/eventing.py` processors at frozen 927 and unchanged in inspected 714, not
@@ -41,7 +41,7 @@ workflow. Reuse existing state records and transaction-state Broker ownership.
 
 Inspected 714 emits bare schema-SAID query cues without adding host URL discovery.
 Existing explicit schema data-OOBI retrieval verifies the expected SAID in both
-implementations. That supported OOBI path requires qualification; inventing an
+implementations. Retain the supported explicit OOBI path and its regressions; inventing an
 automatic SAID-to-URL resolver is not an additional completion gate.
 Inspect `core/parsing.py`, `core/eventing.py` and `core/kraming.py` at
 `7143832813cac6a394ab1faf9be83bb3372be87c` before editing. Verify the imported

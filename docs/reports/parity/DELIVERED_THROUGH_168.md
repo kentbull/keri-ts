@@ -1,5 +1,10 @@
 # Progressive runtime delivery evidence through #168
 
+> Historical snapshot at the source revision below. Its pending items and
+> implementation names are not a current queue or preservation contract. See the
+> [release and post-release record](CLEANUP_RELEASE_2026-10-16.md) and ADR-0012/0013
+> for subsequent delivery and supersession. Original measurements remain unchanged.
+
 Snapshot: 2026-10-13, keri-ts `691998a2317881db484f216c00e81a68030dc3a2`.
 This is historical evidence, not an execution plan. The [roadmap][roadmap] owns
 remaining acceptance. The full prior narrative is retained in

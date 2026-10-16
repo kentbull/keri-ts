@@ -1,5 +1,10 @@
 # Documentation reorganization audit — 2026-10-13
 
+> Historical snapshot at the source revision below. Its pending items and
+> implementation names are not a current queue or preservation contract. See the
+> [release and post-release record](../parity/CLEANUP_RELEASE_2026-10-16.md) and ADR-0012/0013
+> for subsequent delivery and supersession. Original measurements remain unchanged.
+
 Base: `691998a2317881db484f216c00e81a68030dc3a2` (#168). Scope covers every
 tracked plan/design and project/topic learning file, source-adjacent contracts,
 the versioning plan and existing archives. Review here means purpose, subject,
@@ -81,7 +86,7 @@ historical protocol claim or execute archived proposals.
 - [QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md](../../design-docs/runtime/QUERY_REPLY.md): Reviewed ownership/status and links; retained normative substance in subject design.
 - [TUFA_SIGN_QUERY_ROTATE_MAINTAINER_GUIDE.md](../../design-docs/cli/SIGN_QUERY_ROTATE.md): Reviewed ownership/status and links; retained normative substance in subject design.
 - [WEIGHTED_THRESHOLD_PARITY.md](../../design-docs/kel/WEIGHTED_THRESHOLDS.md): Reviewed ownership/status and links; retained normative substance in subject design.
-- [mailbox-durable-admission.md](../../design-docs/mailbox/DURABLE_ADMISSION.md): Reviewed ownership/status and links; retained normative substance in subject design.
+- [mailbox-durable-admission.md](../../design-docs/mailbox/MAILBOX.md): Reviewed ownership/status and links; retained normative substance in subject design.
 - [witness-key-state-http.md](../../design-docs/runtime/WITNESS_HTTP.md): Reviewed ownership/status and links; retained normative substance in subject design.
 - [MULTISIG_IPEX_WORKFLOWS_IMPLEMENTATION_PLAN.md](../../archived-plan-docs/exchange/MULTISIG_IPEX_WORKFLOWS_IMPLEMENTATION_PLAN.md): Archived superseded checklist; current owners linked from indexes.
 - [DB_LAYER_PARITY_MATRIX.md](../../reference/db/DB_PARITY_AUDIT_2026-04-03.md): Classified inventory/example; removed obsolete scheduling; preserved provenance.

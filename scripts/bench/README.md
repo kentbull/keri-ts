@@ -1,4 +1,4 @@
-# Progressive CESR qualification
+# CESR parser investigation
 
 The corpus generator keeps one reusable ESSR item and a bounded output chunk,
 not the aggregate transfer. It uses independent byte encoding so a broken
@@ -27,9 +27,9 @@ Source generation and digest verification are included in worker time. Corpus
 construction and process startup are excluded from worker elapsed time but
 included in supervisor wall time. Reports expose both.
 
-This initial harness is parser-only and synthetic. It does not claim encryption,
-signature verification, network, disk, or consumer qualification. Later phases
-add those paths and compare them separately. Failures and killed processes have
+This harness is parser-only and synthetic. It does not claim encryption,
+signature verification, network, disk, or consumer qualification. The qualification
+plan owns separate observations of those paths. Failures and killed processes have
 no throughput result. A fast rejection is never a performance improvement.
 
 Preserve historical parser checkpoints and raw runs without automatically
@@ -43,7 +43,9 @@ evidence is uploaded even when a case fails; both extended job caps stay 15 minu
 This job has no PR trigger, is not a dependency of the PR stage gate, and must
 not be configured as a required check for merging to master.
 
-The phase sequence is: baseline; safe decoding; lifecycle/ownership contract;
-byte cursor; generator traversal; payload sinks; streaming ESSR; recipient
-decryption; durable references; HTTP ingress; runtime/egress; final qualification
-and removal of the superseded parser. No protocol version compatibility is cut.
+Current architecture is the complete-enclosure buffered decoder defined by
+[ADR-0012](../../docs/adr/adr-0012-progressive-nested-parser.md). The old cursor,
+generator, payload-sink and streaming migration sequence is retired. Historical
+checkpoints describe their measured revisions, not current memory bounds or
+instructions to restore progressive parsing. No protocol version compatibility
+is cut.

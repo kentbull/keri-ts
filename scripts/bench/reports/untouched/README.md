@@ -1,5 +1,10 @@
 # Untouched parser checkpoint
 
+> Historical measurements at the revisions below. Current buffered decoding is
+> governed by [ADR-0012](../../../../docs/adr/adr-0012-progressive-nested-parser.md);
+> these results neither describe its memory bounds nor require restoring the
+> superseded progressive architecture.
+
 Measured 2026-10-12 on macOS 26.6.2 arm64. All workers used clean commit
 `3654e2b9907c00fd6bd5784f7ece1496724fe3b0`; its production parser is unchanged
 from master `b7b43f12f50f06aeaaaecdece79fa148d18df0a4`. The exact harness at that

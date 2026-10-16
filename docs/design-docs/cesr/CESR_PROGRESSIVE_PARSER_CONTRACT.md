@@ -66,8 +66,8 @@ not acquire synthetic resource lifetimes.
 
 The receiving loop preserves input order and successive open-connection messages.
 It does not guarantee early children of incomplete groups or constant memory for
-arbitrary groups. The optional Effection bridge remains a separate transport
-migration; it must join existing I/O until concrete callers replace it.
+arbitrary groups. The Effection bridge is removed; concrete callers own and join
+their actual I/O.
 
 ## Related contracts
 

@@ -63,7 +63,7 @@ The isolated cleanup ran the same recursive suite before and after: 437 passes
 before, 425 after, no failures; Deno reported 11 seconds for each. These single runs
 are coverage evidence, not a reliable performance comparison or CI speedup claim.
 
-## Progressive migration
+## Buffered parser regression boundary
 
 Parser tests consume async input or the finite `parseBytes` collector. They assert
 EOF, enclosure boundaries, and thrown parser errors directly. Feed/flush/reset
@@ -71,7 +71,7 @@ and one-frame-per-feed compatibility registrations are removed. Independent
 KERIpy vectors, v1/v2 genus selection, text/binary partitioning, and malformed
 wire rejection retain their original protocol assertions.
 
-`parser/progressive.test.ts` retains already-delivered enclosed siblings before
-a later truncation. `parser/chunk-completion.test.ts` verifies that chunk
+`parser/buffered.test.ts` requires the complete counted enclosure before delivering
+children and retains earlier delivered siblings when later decoding fails. `parser/chunk-completion.test.ts` verifies that chunk
 exhaustion does not complete an open attachment set, and that a following body
 or declared enclosure does complete it without waiting for source EOF.

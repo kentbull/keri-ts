@@ -59,8 +59,8 @@ Group leader selection considers the group's own signatures only, a deliberate
 correction relative to the frozen reference's first stored signature group.
 Safe-integer ordinal bounds are JavaScript/database limits, not protocol limits.
 Legacy v1 parser intake still requires signatures; source-only intake is a v2
-behavior. Unresolved sender last groups remain guarded pending consolidated
-processMsg admission. IPEX route verification consumes these factors separately
-from child issuer proofs; sender/KRAM admission policy remains incomplete.
+behavior. Unresolved sender state retains its dependency/refusal semantics. IPEX route
+verification consumes these factors separately from child issuer proofs;
+[message admission](MESSAGE_ADMISSION.md) owns implemented sender filtering and optional KRAM.
 
-See the [exchange plan](../../plans/exchange/EXCHANGE_ADMISSION_PLAN.md) for remaining sender/KRAM admission.
+See the [exchange plan](../../plans/exchange/EXCHANGE_ADMISSION_PLAN.md) for its regression obligations and reference limits.
