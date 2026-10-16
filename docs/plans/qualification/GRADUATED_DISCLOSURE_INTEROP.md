@@ -3,7 +3,13 @@
 This is the acceptance matrix for the cleanup/release goal, extended by Kent's
 2026-10-15 request. The single-controller HTTP apply/grant probe passes at
 `366808c8`; it is standalone evidence and does not satisfy this maintained matrix.
-No row below is complete until its real peer assertions run successfully.
+The maintained `interop-ipex-disclosure.test.ts` now covers both single-controller
+HTTP directions for apply-first and offer-first conversations through admit, plus
+spurn after apply and offer. Both stores assert accepted lineage and retained
+partial nodes. The local eight-case run uses consolidated mailbox fork `331f32e4`.
+This does not cover chained edges, multiple/progressive attribute disclosures,
+multisig, witnesses/mailboxes, restart or presentation-registry KRAM cutoffs.
+The broader family gates below remain open until their real assertions pass.
 
 ## Pairwise cases
 
@@ -89,9 +95,9 @@ actual stored representation, not a separately retained producer object.
 
 ## Reviewable implementation rounds
 
-1. Bring the proven pairwise single-controller HTTP path into maintained tests,
-   extending it through offer/agree/admit and adding dedicated spurn cases. Refresh
-   the consolidated mailbox reference pin and verify its actual imports.
+1. Qualify the maintained pairwise single-controller HTTP cases and refreshed
+   consolidated mailbox reference pin in CI. Local real-peer coverage now includes
+   offer/agree/admit and dedicated spurn cases in both directions.
 2. Add focused chained-credential and supported leaf/group edge cases in both
    directions. In separate keri-ts-only cases, refactor operator/node-validity
    decisions first, then implement DI2I and sufficiently defined NOT semantics in

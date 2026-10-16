@@ -76,6 +76,7 @@ export const suites: Record<string, TestSuite> = {
     files: [
       "test/integration/app/interop-acdc-mixed-chain-i2i.test.ts",
       "test/integration/app/interop-acdc-mixed-chain-ni2i.test.ts",
+      "test/integration/app/interop-ipex-disclosure.test.ts",
     ],
   },
   "interop-acdc-extended": {
