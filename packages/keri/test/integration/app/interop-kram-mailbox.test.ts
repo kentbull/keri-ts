@@ -1,10 +1,9 @@
 /** KRAM admission through real mailbox hosts; controller keys never cross implementations. */
 import { Diger, NumberPrimitive, parseBytes, Prefixer, Siger, t, Vrsn_2_0 } from "cesr-ts";
-import { call, ensure, run } from "effection";
+import { call, run } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { decodeBase64, encodeBase64 } from "jsr:@std/encoding/base64";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/cesr-egress.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
@@ -19,7 +18,8 @@ import {
   withStartedChild,
 } from "./interop-test-helpers.ts";
 
-const PEER = fromFileUrl(new URL("../../fixtures/kram-mailbox-peer.py", import.meta.url));
+const PYTHON_PEER = fromFileUrl(new URL("../../fixtures/kram-mailbox-peer.py", import.meta.url));
+const TYPESCRIPT_PEER = fromFileUrl(new URL("../../fixtures/kram-mailbox-peer.ts", import.meta.url));
 const PAYLOAD = "authenticated-mailbox-payload";
 
 /** Captured packets carry public evidence only, including separate member signatures. */
@@ -252,7 +252,7 @@ for (const count of [1, 2]) {
       const ctx = await createInteropContext();
       const port = randomPort();
       const pythonUrl = `http://127.0.0.1:${port}/`;
-      const child = spawnChild(ctx.pythonCommand, [PEER, String(port), String(count)], ctx.env, ctx.repoRoot);
+      const child = spawnChild(ctx.pythonCommand, [PYTHON_PEER, String(port), String(count)], ctx.env, ctx.repoRoot);
       try {
         await withStartedChild(child, port, async () => {
           if (direction === "keri-ts -> KERIpy") {
@@ -266,46 +266,25 @@ for (const count of [1, 2]) {
               }));
           } else {
             const bundle = await control<ControllerPackets>(pythonUrl, { action: "info" });
-            await run(function*() {
-              const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-              yield* ensure(() => hby.close(true));
-              const runtime = yield* createAgentRuntime(hby, {
-                enableMailboxStore: true,
-                kram: {
-                  enabled: true,
-                  denials: [],
-                  caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] },
-                },
-              });
-              yield* ensure(() => runtime.close());
-              const hab = hby.makeHab("relay", undefined, { transferable: false });
-              runtime.mailboxer!.storeMsg(`${bundle.pre}/reply`, new TextEncoder().encode(PAYLOAD));
-              const handler = createProtocolHandler(runtime, { serviceHab: hab });
-              yield* ensure(() => call(() => handler.close?.()));
-              const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, handler);
-              yield* ensure(() => call(() => server.shutdown()));
-              const url = `http://127.0.0.1:${server.addr.port}/`;
-              yield* call(() =>
-                exercise(
-                  bundle,
-                  (wire, readEvent) => control<Sent>(pythonUrl, { action: "send", url, wire, readEvent }),
-                  () =>
-                    Promise.resolve({
-                      known: !!hby.db.getKever(bundle.pre),
-                      rows: Object.values(bundle.packets).map(({ said }) => {
-                        const cache = hby.db.msgc.get([bundle.pre, said]);
-                        return {
-                          said,
-                          cached: !!cache,
-                          pending: !!hby.db.pmkm.get([bundle.pre, said]),
-                          stamp: cache?.mdt ?? null,
-                        };
-                      }),
-                      streams: [...runtime.mailboxDirector.queryCues].map((cue) =>
-                        "serder" in cue ? cue.serder?.said! : ""
-                      ),
-                    }),
-                )
+            const providerPort = randomPort();
+            const url = `http://127.0.0.1:${providerPort}/`;
+            const provider = spawnChild(
+              Deno.execPath(),
+              ["run", "-A", TYPESCRIPT_PEER, String(providerPort)],
+              ctx.env,
+              ctx.repoRoot,
+            );
+            await withStartedChild(provider, providerPort, async () => {
+              await control(url, { action: "store", pre: bundle.pre });
+              await exercise(
+                bundle,
+                (wire, readEvent) => control<Sent>(pythonUrl, { action: "send", url, wire, readEvent }),
+                () =>
+                  control<Snapshot>(url, {
+                    action: "inspect",
+                    pre: bundle.pre,
+                    saids: Object.values(bundle.packets).map((packet) => packet.said),
+                  }),
               );
             });
           }
