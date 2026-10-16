@@ -15,7 +15,6 @@
  * - one runtime host receives an explicit mailbox sidecar instead of
  *   discovering mailbox storage through `Habery`
  */
-import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy, type ResourceReservation } from "cesr-ts";
 import type { AgentCue, StreamCue } from "./../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -26,14 +25,9 @@ import { mailboxQueryTopics, mailboxTopicKey, updateMailboxRemoteCursor } from "
 
 /** Shared encoder for SSE mailbox stream framing. */
 const textEncoder = new TextEncoder();
+/** Transport pull granularity; it does not restrict complete mailbox message size. */
+const STREAM_CHUNK_BYTES = 65536;
 
-/** Configured mailbox output policy, independent of valid protocol topic/message sizes. */
-export interface MailboxStreamLimits {
-  maxMessageBytes?: number;
-  maxChunkBytes?: number;
-  maxTopics?: number;
-  maxMetadataBytes?: number;
-}
 interface MailboxStreamOptions {
   retryMs?: number;
   pollIntervalMs?: number;
@@ -67,9 +61,7 @@ export class MailboxDirector {
   readonly queryCues: Deck<AgentCue>;
   readonly topics: Set<string>;
   private readonly streamCleanups = new Set<() => Promise<void>>();
-  private readonly resources: ResourcePolicy;
-  private readonly limits: Required<MailboxStreamLimits>;
-  private correlationsClosed = false;
+  private closed = false;
 
   constructor(
     hby: Habery,
@@ -77,31 +69,16 @@ export class MailboxDirector {
       mailboxer,
       queryCues,
       topics = [],
-      resources = new ResourcePolicy(),
-      streamLimits = {},
     }: {
       mailboxer?: Mailboxer;
       queryCues?: Deck<AgentCue>;
       topics?: readonly string[];
-      resources?: ResourcePolicy;
-      streamLimits?: MailboxStreamLimits;
     } = {},
   ) {
     this.hby = hby;
     this.mailboxer = mailboxer ?? null;
     this.queryCues = queryCues ?? new Deck<AgentCue>();
     this.topics = new Set(topics);
-    this.resources = resources;
-    this.limits = {
-      maxMessageBytes: 4 * 1024 ** 2,
-      maxChunkBytes: 65536,
-      maxTopics: 64,
-      maxMetadataBytes: 65536,
-      ...streamLimits,
-    };
-    for (const limit of Object.values(this.limits)) {
-      if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Invalid mailbox stream limit");
-    }
   }
 
   /** Return true when provider-side mailbox storage is available. */
@@ -123,7 +100,7 @@ export class MailboxDirector {
 
   /** Stop every request-owned mailbox stream before its backing store closes. */
   async close(): Promise<void> {
-    this.correlationsClosed = true;
+    this.closed = true;
     const outcomes = await Promise.allSettled(
       [...this.streamCleanups].map((cleanup) => Promise.resolve().then(cleanup)),
     );
@@ -137,37 +114,16 @@ export class MailboxDirector {
     if (failures.length) throw new AggregateError(failures, "Mailbox stream cleanup failed");
   }
 
-  /** Reserve message-copy, emitted-chunk and metadata allowance before any stream or native row acquisition. */
-  private admit(): ResourceReservation {
-    const { maxMessageBytes, maxChunkBytes, maxMetadataBytes } = this.limits;
-    const credit = this.resources.reserve({
-      streams: 1,
-      bytes: 2 * maxMessageBytes + maxChunkBytes + 4 * maxMetadataBytes + 512,
-    });
-    if (credit.kind === "refuse") {
-      throw new ResourceAdmissionError(`Mailbox stream admission refused: ${credit.reason}`, credit.reason);
-    }
-    return credit.reservation;
-  }
-
-  /** Bound labels/ordinals before making a cursor copy or Object.entries allocation. */
+  /** Validate exact cursor ordinals before copying the caller's query positions. */
   private cursor(pre: string, topics: MbxTopicCursor): MbxTopicCursor {
     if (typeof pre !== "string" || !topics || typeof topics !== "object" || Array.isArray(topics)) {
       throw new RangeError("Invalid mailbox topic metadata");
     }
-    let characters = pre.length, count = 0;
     for (const topic in topics) {
       if (!Object.hasOwn(topics, topic)) continue;
-      characters += topic.length;
-      if (++count > this.limits.maxTopics || 4 * characters > this.limits.maxMetadataBytes) {
-        throw new ResourceLimitError("Mailbox topic metadata exceeds configured policy");
-      }
       if (!Number.isSafeInteger(topics[topic]) || topics[topic] < 0) {
         throw new RangeError("Invalid mailbox topic cursor");
       }
-    }
-    if (4 * characters > this.limits.maxMetadataBytes) {
-      throw new ResourceLimitError("Mailbox prefix metadata exceeds configured policy");
     }
     return { ...topics };
   }
@@ -176,7 +132,7 @@ export class MailboxDirector {
   retainQueryCue(
     cue: StreamCue,
   ): void {
-    if (this.correlationsClosed) throw new Error("Mailbox query correlation is closed");
+    if (this.closed) throw new Error("Mailbox query correlation is closed");
     this.queryCues.push(cue);
   }
 
@@ -235,16 +191,11 @@ export class MailboxDirector {
     topicCursor: MbxTopicCursor,
     options: MailboxStreamOptions = {},
   ): ReadableStream<Uint8Array> {
-    const credit = this.admit();
-    try {
-      return this.mailboxStream(pre, this.cursor(pre, topicCursor), options, () => credit.release(), true);
-    } catch (error) {
-      credit.release();
-      throw error;
-    }
+    if (this.closed) throw new Error("Mailbox stream is closed");
+    return this.mailboxStream(pre, this.cursor(pre, topicCursor), options, true);
   }
 
-  /** A query response lends its existing lease to this nested stream instead of charging it twice. */
+  /** Own one demand-driven mailbox reader; query responses join their nested reader themselves. */
   private mailboxStream(
     pre: string,
     cursors: MbxTopicCursor,
@@ -254,7 +205,6 @@ export class MailboxDirector {
       idleTimeoutMs = 2000,
       emitRetryHeader = true,
     }: MailboxStreamOptions,
-    release: () => void,
     tracked: boolean,
   ): ReadableStream<Uint8Array> {
     for (const value of [retryMs, pollIntervalMs, idleTimeoutMs]) {
@@ -273,7 +223,6 @@ export class MailboxDirector {
     let idleSince: number | undefined;
     let pending: Promise<void> | undefined;
     let closing: Promise<void> | undefined;
-    let released = false;
     /** Closing wakes a pending pull before its database owner is released. */
     const stop = () => {
       if (closed) return;
@@ -283,10 +232,7 @@ export class MailboxDirector {
       parts = [];
     };
     const finish = () => {
-      if (released) return;
-      released = true;
       this.streamCleanups.delete(close);
-      release();
     };
     const cleanup = (): Promise<void> => {
       stop();
@@ -318,7 +264,7 @@ export class MailboxDirector {
           while (!closed) {
             if (parts.length) {
               const part = parts[0];
-              const end = Math.min(part.length, offset + this.limits.maxChunkBytes);
+              const end = Math.min(part.length, offset + STREAM_CHUNK_BYTES);
               controller.enqueue(part.slice(offset, end));
               offset = end;
               if (offset === part.length) {
@@ -337,9 +283,6 @@ export class MailboxDirector {
                 items.return(undefined);
               }
               if (!item) continue;
-              if (item.msg.buffer.byteLength > this.limits.maxMessageBytes) {
-                throw new ResourceLimitError("Mailbox SSE message exceeds byte limit");
-              }
               parts = [
                 textEncoder.encode(`id: ${item.idx}\nevent: ${topic}\nretry: ${retryMs}\ndata: `),
                 item.msg,
@@ -394,33 +337,10 @@ export class MailboxDirector {
    */
   streamQueryResponse(
     said: string,
-    options: Pick<MailboxStreamOptions, "retryMs" | "pollIntervalMs"> = {},
+    { retryMs = 5000, pollIntervalMs = 50 }: Pick<MailboxStreamOptions, "retryMs" | "pollIntervalMs"> = {},
   ): ReadableStream<Uint8Array> {
-    if (this.correlationsClosed) throw new Error("Mailbox query correlation is closed");
-    const credit = this.admit();
-    try {
-      if (typeof said !== "string" || 4 * said.length > this.limits.maxMetadataBytes) {
-        throw new ResourceLimitError("Mailbox query metadata exceeds configured policy");
-      }
-      return this.queryStream(said, options, () => credit.release());
-    } catch (error) {
-      credit.release();
-      throw error;
-    }
-  }
-
-  /** The outer query owner joins its nested reader before returning shared stream credit. */
-  private queryStream(
-    said: string,
-    {
-      retryMs = 5000,
-      pollIntervalMs = 50,
-    }: {
-      retryMs?: number;
-      pollIntervalMs?: number;
-    },
-    release: () => void,
-  ): ReadableStream<Uint8Array> {
+    if (this.closed) throw new Error("Mailbox query correlation is closed");
+    if (typeof said !== "string") throw new RangeError("Invalid mailbox query SAID");
     if (!Number.isSafeInteger(retryMs) || retryMs < 0 || !Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 1) {
       throw new RangeError("Invalid mailbox query timing");
     }
@@ -458,7 +378,6 @@ export class MailboxDirector {
         }
         selected = undefined;
         this.streamCleanups.delete(close);
-        release();
         if (failures.length === 1) throw failures[0];
         if (failures.length) throw new AggregateError(failures, "Nested mailbox cleanup failed");
       })();
@@ -496,7 +415,6 @@ export class MailboxDirector {
                   idleTimeoutMs: null,
                   emitRetryHeader: false,
                 },
-                () => {},
                 false,
               ).getReader();
               break;

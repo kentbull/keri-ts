@@ -35,7 +35,7 @@ import {
 import { loadMultisigHandlers } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { loadIpexHandlers } from "./ipexing.ts";
-import { MailboxDirector, type MailboxStreamLimits } from "./mailbox-director.ts";
+import { MailboxDirector } from "./mailbox-director.ts";
 import { mailboxerOptionsForHabery } from "./mailboxing.ts";
 import { noterOptionsForHabery, Notifier } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
@@ -145,7 +145,6 @@ export interface AgentRuntimeOptions {
   enableMailboxStore?: boolean;
   services?: Partial<RuntimeServices>;
   mailboxPollTransport?: MailboxPollTransport;
-  mailboxStreamLimits?: MailboxStreamLimits;
   vdr?: VdrRuntimeServices;
   /** An injected v2 manager and its backing store remain caller-owned. */
   acdc?: AcdcRuntimeServices;
@@ -308,8 +307,6 @@ export function* createAgentRuntime(
   const mailboxDirector = yield* resource<MailboxDirector>(function*(provide) {
     const director = new MailboxDirector(hby, {
       ...(mailboxer ? { mailboxer } : {}),
-      resources,
-      streamLimits: options.mailboxStreamLimits,
     });
     try {
       yield* provide(director);

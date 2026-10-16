@@ -20,7 +20,8 @@ reconciled before affected implementation; it is not preservation authority.
   RX/TX at the application. Remove remaining admission/delivery hooks without
   introducing another intake framework. Generic HTTP requests, Fetch input, client
   SSE and static artifact responses now have no accounting or size ceilings.
-  Provider mailbox, listener/runtime and finite receipt policies still need removal;
+  Provider mailbox responses now also own readers directly without byte/stream/
+  topic/metadata policies. Listener/runtime and finite receipt policies still need removal;
   retain deadlines, actual I/O chunking, regular-file extents and joined cleanup.
 - Plain cues reach their concrete Respondant/Poster/response owner. Delete generic
   preparation/delivery lifecycle wrappers. Real routing, signing, correlation and

@@ -444,9 +444,13 @@ batches; long-lived pollDo is sink-based. Disconnect/timeout discards unfinished
 events so their cursors can retry. Pollers hand off ordinary bytes and retain only
 protocol topic cursors; there is no durable consumer inbox or acknowledgement API.
 Continuous sinks finish before cursor advancement and the next event read.
-Provider query/nested streams share one runtime lease. Validate cursor metadata
-before copying and use bounded native row reads; join director close before stores.
-Attempt every owner's cleanup and propagate failures after releasing its credit.
+Provider responses have no byte/stream/topic/metadata policy or release callback.
+A query response owns and joins its nested reader; direct responses are tracked
+by the director. Validate exact cursor ordinals and keep correlation order and
+polling cursors. Clone one demanded row and close its iterator before suspension;
+64 KiB chunks control output granularity, not accepted message size. Director
+close stops polling and rejects both new direct and correlated responses before
+stores close. Attempt every actual cleanup and propagate independent failures.
 
 ## CLI and follow-ups
 

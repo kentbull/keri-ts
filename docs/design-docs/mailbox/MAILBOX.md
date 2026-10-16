@@ -75,11 +75,17 @@ Expose origin-rooted controller/mailbox/witness OOBIs from accepted endpoint
 state. Path-prefixed mailbox OOBIs are outside this model. Discovery, authorization
 update, payload storage and private retrieval are separate checks.
 
-## Lifecycle and limits
+## Lifecycle
 
 One runtime/listener selects hosted identities explicitly. Close response streams
-before listener drain; release LMDB cursors before transport suspension. Existing
-configured provider streams preflight native row size before owned copies.
-Other reads and aggregate runtime/mapped memory still require qualification. Those remain [resource](../../plans/runtime/RESOURCE_POLICY_PLAN.md),
+before listener drain; release LMDB cursors before transport suspension. Direct
+responses are tracked by the director; correlated responses own and join their
+nested reader. Closing the director rejects both kinds of new response before
+backing stores close. Provider responses have no byte/stream/topic/metadata policy
+or synthetic release callback. Their 64 KiB output chunks control transport
+granularity without restricting message size. A demanded row remains resident
+while emitted; chunking does not bound whole-message residency. Keep exact cursor ordinals,
+query correlation and underlying errors. Remaining listener/runtime accounting
+removal and final storage/recovery qualification follow the
 [storage](../../plans/db/STORAGE_RECOVERY_PLAN.md) and
-[transport](../../plans/runtime/TRANSPORT_PLAN.md) obligations.
+[transport](../../plans/runtime/TRANSPORT_PLAN.md) plans.

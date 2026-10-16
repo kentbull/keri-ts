@@ -1,4 +1,3 @@
-import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy } from "cesr-ts";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import type { Habery } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
@@ -34,6 +33,7 @@ Deno.test("mailbox director stops active stream polling before its store closes"
 
   assertEquals(polls, pollsAtClose);
   assertEquals(await finished, { value: undefined, done: true });
+  assertThrows(() => director.streamMailbox("aid", { "/challenge": 0 }), Error, "closed");
 });
 
 Deno.test("mailbox director closes a pending query response during runtime shutdown", async () => {
@@ -71,7 +71,7 @@ Deno.test("mailbox SSE provider clones only the event requested by HTTP demand",
   assertEquals(cloned, 0); // Creating an unread response cannot scan the mailbox.
   await reader.read(); // The header requires exactly one stored event.
   assertEquals([cloned, returned], [1, 1]);
-  await reader.read(); // Payload and delimiter consume transport credit independently.
+  await reader.read(); // Payload and delimiter each wait for a separate consumer read.
   await reader.read();
   assertEquals(cloned, 1);
   await reader.read();
@@ -80,62 +80,39 @@ Deno.test("mailbox SSE provider clones only the event requested by HTTP demand",
   await director.close();
 });
 
-Deno.test("mailbox query and nested provider share admission before metadata or row reads", async () => {
+Deno.test("mailbox query owns its nested provider and validates exact cursor ordinals", async () => {
   let rows = 0;
   const mailboxer = {
     *cloneTopicIter(_topic: string, from: number) {
       rows++;
-      yield [from, "", new Uint8Array([1, 2, 3])];
+      yield [from, "", new Uint8Array(4 * 1024 ** 2 + 1)];
     },
   } as unknown as Mailboxer;
-  const resources = new ResourcePolicy({ streams: 1 });
-  const director = new MailboxDirector({} as Habery, {
-    mailboxer,
-    resources,
-    streamLimits: { maxTopics: 1, maxMetadataBytes: 128 },
-  });
+  const director = new MailboxDirector({} as Habery, { mailboxer });
   const reader = director.streamQueryResponse("query-said").getReader();
   await reader.read();
-  director.retainQueryCue(
-    {
-      kin: "stream",
-      src: "aid",
-      serder: { said: "query-said" },
-      pre: "aid",
-      topics: { "/reply": 0 },
-    } as unknown as StreamCue,
-  );
+  assertEquals(rows, 0, "The retry header does not acquire mailbox rows");
+  director.retainQueryCue({
+    kin: "stream",
+    src: "aid",
+    serder: { said: "query-said" },
+    pre: "aid",
+    topics: { "/reply": 0 },
+  } as unknown as StreamCue);
   await reader.read();
-  assertEquals([resources.used.streams, rows], [1, 1]);
-  assertThrows(() => director.streamMailbox("aid", { "/reply": 0 }), ResourceAdmissionError, "busy");
   assertEquals(rows, 1);
-  await director.close();
-  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+  await reader.cancel();
   assertEquals((await reader.read()).done, true);
-  let copied = false;
-  const topics = {
-    "/reply": 0,
-    get "/other"() {
-      copied = true;
-      return 0;
-    },
-  };
-  assertThrows(() => director.streamMailbox("aid", topics), ResourceLimitError, "metadata");
-  assertEquals(copied, false);
-  assertEquals(resources.used.streams, 0);
-  const limited = new MailboxDirector({} as Habery, { mailboxer, resources: new ResourcePolicy({ bytes: 1 }) });
-  assertThrows(() => limited.streamMailbox("aid", { "/reply": 0 }), ResourceAdmissionError, "limit");
-  assertEquals(rows, 1);
-  const retry = director.streamMailbox("aid", { "/reply": 0 }).getReader();
-  await retry.cancel();
-  assertEquals(resources.used.streams, 0);
+  for (const idx of [-1, 0.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assertThrows(() => director.streamMailbox("aid", { "/reply": idx }), RangeError, "cursor");
+  }
+  assertEquals(rows, 1, "Invalid query cursors cannot read storage");
+  await director.close();
 });
 
 Deno.test("mailbox correlation preserves preceding order through joined shutdown", async () => {
-  const resources = new ResourcePolicy({ streams: 1 });
   const queryCues = new Deck<StreamCue>();
   const director = new MailboxDirector({} as Habery, {
-    resources,
     queryCues,
     mailboxer: { *cloneTopicIter() {} } as unknown as Mailboxer,
   });
@@ -148,10 +125,9 @@ Deno.test("mailbox correlation preserves preceding order through joined shutdown
       topics: { "/reply": 0 },
     } as unknown as StreamCue);
   }
-  const retained = resources.used.bytes;
   assertEquals(director.hasQueryCue("selected"), true);
   assertEquals(director.hasQueryCue("absent"), false);
-  assertEquals(resources.used.bytes, retained);
+
   const reader = director.streamQueryResponse("selected", { pollIntervalMs: 1 }).getReader();
   await reader.read();
   const pending = reader.read();
@@ -162,24 +138,20 @@ Deno.test("mailbox correlation preserves preceding order through joined shutdown
     "selected",
     "after",
   ]);
-  assertEquals(resources.used.streams, 1);
-  const closing = director.close();
-  assertEquals(resources.used.streams, 1); // Cancellation must join the pending nested read first.
-  await closing;
+
+  await director.close();
   assertEquals(await pending, { value: undefined, done: true });
   assertEquals(queryCues.empty, true);
-  assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
+
   await director.close();
   assertThrows(() => director.streamQueryResponse("selected"), Error, "closed");
 });
 
 Deno.test("mailbox correlation consumes only the selected cue on provider failure", async () => {
-  const resources = new ResourcePolicy();
   const queryCues = new Deck<StreamCue>();
   const failure = new Error("provider storage failure");
   let opened = 0;
   const director = new MailboxDirector({} as Habery, {
-    resources,
     queryCues,
     mailboxer: {
       *cloneTopicIter() {
@@ -204,7 +176,6 @@ Deno.test("mailbox correlation consumes only the selected cue on provider failur
   assertStrictEquals(caught, failure);
   assertEquals(opened, 1);
   assertEquals([...queryCues].map((cue) => cue.serder.said), ["unmatched"]);
-  assertEquals(resources.used.streams, 0);
+
   await director.close();
-  assertEquals(resources.used.bytes, 0);
 });
