@@ -156,8 +156,9 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (!graph || !verifyIpexDisclosure(plan, origin, graph)) return false;
     for (const said of graph.order) {
       const frame = graph.nodes.get(said)!;
+      const envelope = envelopeFromFrame(frame);
       if (!frame.body.regid && this.presentationRegistries(frame.body) === null) return false;
-      const result = authenticateIpexNode(frame, this.hby.db, this.registry);
+      const result = authenticateIpexNode(frame.body, envelope, this.hby.db, this.registry);
       if (result.kind === "missing") return missing(result.reason);
       if (result.kind === "reject") return false;
     }

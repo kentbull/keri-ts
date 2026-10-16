@@ -1,12 +1,17 @@
 /** Node issuer authentication over public KEL/TEL evidence; no conversation or validity policy. */
-import { type CesrFrame, Diger, NumberPrimitive, Prefixer, type SealEvent, type SerderACDC } from "cesr-ts";
+import { Diger, NumberPrimitive, Prefixer, type SealEvent, type SerderACDC } from "cesr-ts";
 import { type RegistryState, validateRip, validateUpdate, vetBinds } from "../acdc/regeventing.ts";
 import type { RegistryStore } from "../acdc/registering.ts";
-import { TransIdxSigGroup } from "../core/dispatch.ts";
+import { type KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseOperationError } from "../core/errors.ts";
 import { verifyExchangeProofs } from "../core/exchange-proofing.ts";
 import type { Baser } from "../db/basing.ts";
-import { envelopeFromFrame } from "./parsering.ts";
+
+/** Borrow only normalized issuer proof families; routing and frame projection belong to intake. */
+type IpexNodeProofs = Pick<
+  KeriDispatchEnvelope,
+  "bsqs" | "bsss" | "sscs" | "ssts" | "sigers" | "tsgs" | "ssgs" | "cigars"
+>;
 
 /** Authenticated registry state is evidence, never an implicit credential-validity verdict. */
 export type IpexNodeAuthentication =
@@ -58,12 +63,11 @@ export function acceptedRegistryEvidence(
 
 /** A declared registry, then supplied anchors, take precedence over current signatures. */
 export function authenticateIpexNode(
-  frame: CesrFrame & { body: SerderACDC },
+  serder: SerderACDC,
+  envelope: IpexNodeProofs,
   db: Baser,
   registry: RegistryStore | null,
 ): IpexNodeAuthentication {
-  const serder = frame.body;
-  const envelope = envelopeFromFrame(frame);
   if (serder.regid) {
     const proofs = [...envelope.bsqs, ...envelope.bsss];
     if (!proofs.length || !registry) return { kind: "reject" };
