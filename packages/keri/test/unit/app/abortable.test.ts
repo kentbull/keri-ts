@@ -1,5 +1,5 @@
 import { run } from "effection";
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { abortable } from "../../../src/app/abortable.ts";
 
 Deno.test("abortable joins cancelled I/O cleanup before its task halts", async () => {
@@ -66,4 +66,38 @@ Deno.test("abortable preserves the leaf result and failure and rejects an aborte
     "upstream stopped",
   );
   assertEquals(started, false);
+});
+
+Deno.test("abortable preserves foreign I/O failures while joining cancellation", async () => {
+  for (const aggregate of [false, true]) {
+    const ready = Promise.withResolvers<void>();
+    const failure = new Error("I/O cleanup failed");
+    const task = run(() =>
+      abortable(async (signal) => {
+        ready.resolve();
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+        throw aggregate ? new AggregateError([signal.reason, failure], "Read and cleanup failed") : failure;
+      })
+    );
+    await ready.promise;
+    assertStrictEquals(await assertRejects(() => task.halt()), failure);
+  }
+});
+
+Deno.test("abortable suppresses its own abort reason after joining the leaf", async () => {
+  const ready = Promise.withResolvers<void>();
+  const task = run(() =>
+    abortable(async (signal) => {
+      ready.resolve();
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      signal.throwIfAborted();
+    })
+  );
+  await ready.promise;
+  await task.halt();
+});
+
+Deno.test("abortable preserves already reported aggregate failures without duplicating them", async () => {
+  const failure = new AggregateError([new Error("read failed"), new Error("close failed")], "I/O failed");
+  assertStrictEquals(await assertRejects(() => run(() => abortable(() => Promise.reject(failure)))), failure);
 });

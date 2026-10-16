@@ -238,7 +238,13 @@ async function writeBorrowedSource(
       try {
         let writable = false;
         pendingWrite = new Promise<void>((resolve, reject) => {
-          writable = socket.write(part.value, (error) => error ? reject(error) : resolve());
+          writable = socket.write(part.value, (error) => {
+            // Destroying our socket cancels its queued write; preserve that owner's abort reason.
+            if (signal.aborted && (error as NodeJS.ErrnoException | undefined)?.code === "ECANCELED") {
+              reject(signal.reason);
+            } else if (error) reject(error);
+            else resolve();
+          });
         });
         await interrupted(pendingWrite, signal);
         pendingWrite = undefined;
