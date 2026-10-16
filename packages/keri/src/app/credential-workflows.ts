@@ -14,12 +14,12 @@ import { RegistryRecord } from "../core/records.ts";
 import { Schemer } from "../core/scheming.ts";
 import { Reger } from "../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
-import { type AgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
-import type { ExchangeDeliveryPreference } from "./forwarding.ts";
+import type { ExchangeDeliveryPreference, Poster } from "./forwarding.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { credentialStreamMessages } from "./ipex-credentialing.ts";
+import type { Reactor } from "./reactor.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
@@ -94,14 +94,14 @@ export function pinSchemaBytes(hby: Habery, raw: Uint8Array): string {
 
 /** Create a single-sig registry or propose a group registry inception. */
 export function* inceptCredentialRegistry(
-  hby: Habery,
-  runtime: AgentRuntime,
+  rgy: Regery,
+  poster: Poster,
   hab: Hab,
   options: CredentialRegistryInceptOptions,
 ) {
-  const rgy = requireRegery(runtime);
+  const { hby } = rgy;
   if (isLocalGroupHab(hby, hab)) {
-    return yield* proposeGroupRegistryIncept(hby, runtime, rgy, hab, options);
+    return yield* proposeGroupRegistryIncept(rgy, poster, hab, options);
   }
   const registry = rgy.makeRegistry(options.registryName, hab, {
     noBackers: options.noBackers ?? true,
@@ -130,12 +130,12 @@ export function credentialRegistryRecords(
 }
 
 /** Return current TEL status for one local registry name. */
-export function credentialRegistryStatus(runtime: AgentRuntime, reger: Reger, registryName: string) {
-  const record = reger.regs.get(registryName);
+export function credentialRegistryStatus(rgy: Regery, registryName: string) {
+  const record = rgy.reger.regs.get(registryName);
   if (!record?.registryKey) {
     throw new ValidationError(`Registry ${registryName} not found.`);
   }
-  const tever = requireRegery(runtime).tvy.tevers.get(record.registryKey);
+  const tever = rgy.tvy.tevers.get(record.registryKey);
   return {
     name: registryName,
     registry: record.registryKey,
@@ -146,12 +146,11 @@ export function credentialRegistryStatus(runtime: AgentRuntime, reger: Reger, re
 
 /** Create and issue one registry-backed credential. */
 export function* createCredential(
-  hby: Habery,
-  runtime: AgentRuntime,
-  reger: Reger,
+  rgy: Regery,
+  poster: Poster,
   options: CredentialCreateOptions,
 ): Operation<CredentialCreateResult> {
-  const rgy = requireRegery(runtime);
+  const { hby, reger } = rgy;
   const registry = requireRegistry(rgy, options.registryName);
   const credentialer = new Credentialer(hby, {
     reger,
@@ -168,7 +167,7 @@ export function* createCredential(
   const recipient = options.recipient ?? creder.issuee ?? "";
 
   if (isLocalGroupHab(hby, registry.hab)) {
-    const output = yield* proposeGroupCredentialIssue(hby, runtime, reger, registry, creder);
+    const output = yield* proposeGroupCredentialIssue(rgy, poster, registry, creder);
     return { creder, recipient, output };
   }
 
@@ -190,12 +189,12 @@ export function* createCredential(
 
 /** List locally saved credentials through wallet indexes. */
 export function listCredentials(
-  runtime: AgentRuntime,
-  reger: Reger,
+  rgy: Regery,
   options: CredentialListOptions,
 ): CredentialListItem[] {
+  const { reger } = rgy;
   const wallet = new CredentialWallet(reger);
-  const tvy = requireRegery(runtime).tvy;
+  const tvy = rgy.tvy;
   return wallet.list({ issued: options.issued ?? false, aid: options.aid, schema: options.schema }).map((said) => {
     const [creder] = reger.cloneCred(said);
     const tever = creder.regid ? tvy.tevers.get(creder.regid) : null;
@@ -227,24 +226,25 @@ export function exportCredentialStream(
 
 /** Import one CESR credential stream and return newly saved credential SAIDs. */
 export function* importCredentialStream(
-  runtime: AgentRuntime,
+  reactor: Reactor,
   reger: Reger,
   bytes: Uint8Array,
 ): Operation<CredentialImportResult> {
   const before = savedCredentials(reger);
-  yield* settleRuntimeIngress(runtime, [bytes]);
-  yield* runtime.reactor.processEscrowsOnce();
+  yield* reactor.processBytes(bytes);
+  yield* reactor.processEscrowsOnce();
+  yield* reactor.processEscrowsOnce();
   return { saved: [...savedCredentials(reger)].filter((said) => !before.has(said)) };
 }
 
 /** Revoke one credential and optionally deliver revocation stream bytes. */
 export function* revokeCredential(
-  hby: Habery,
-  runtime: AgentRuntime,
-  reger: Reger,
+  rgy: Regery,
+  poster: Poster,
   options: CredentialRevokeOptions,
 ): Operation<CredentialRevokeResult> {
-  const registry = requireRegistry(requireRegery(runtime), options.registryName);
+  const { hby, reger } = rgy;
+  const registry = requireRegistry(rgy, options.registryName);
   const result = registry.revoke(options.credentialSaid);
   const [creder] = reger.cloneCred(options.credentialSaid);
   const deliveries: string[] = [];
@@ -256,7 +256,7 @@ export function* revokeCredential(
     const messages = revocationStreamMessages(hby, reger, creder);
     for (const recipient of options.sendRecipients ?? []) {
       for (const message of messages) {
-        const sent = yield* runtime.poster.sendBytes(options.senderHab, {
+        const sent = yield* poster.sendBytes(options.senderHab, {
           recipient,
           message,
           topic: CREDENTIAL_MAILBOX_TOPIC,
@@ -312,12 +312,12 @@ function revocationStreamMessages(
 }
 
 function* proposeGroupRegistryIncept(
-  hby: Habery,
-  runtime: AgentRuntime,
   rgy: Regery,
+  poster: Poster,
   hab: Hab,
   options: CredentialRegistryInceptOptions,
 ) {
+  const { hby, reger } = rgy;
   const noBackers = options.noBackers ?? true;
   const estOnly = options.estOnly ?? false;
   if (!noBackers) {
@@ -341,11 +341,11 @@ function* proposeGroupRegistryIncept(
 
   const regk = requireSerderPrefix(vcp, "registry inception");
   registerRegistry(rgy, options.registryName, hab, regk, { noBackers, estOnly });
-  if (telAccepted(runtime, regk, 0, requireSerderSaid(vcp, "registry inception"))) {
-    markTelComplete(runtime, regk, 0, requireSerderSaid(vcp, "registry inception"));
+  if (telAccepted(reger, regk, 0, requireSerderSaid(vcp, "registry inception"))) {
+    markTelComplete(reger, regk, 0, requireSerderSaid(vcp, "registry inception"));
   }
 
-  const deliveries = yield* publishGroupVcProposal(runtime, hab, MULTISIG_VCP_ROUTE, {
+  const deliveries = yield* publishGroupVcProposal(hby, poster, hab, MULTISIG_VCP_ROUTE, {
     gid: hab.pre,
     usage: options.usage ?? options.registryName ?? "credential registry",
   }, {
@@ -359,19 +359,18 @@ function* proposeGroupRegistryIncept(
     issuer: hab.pre,
     route: MULTISIG_VCP_ROUTE,
     status: decision.kind,
-    accepted: telAccepted(runtime, regk, 0, requireSerderSaid(vcp, "registry inception")),
+    accepted: telAccepted(reger, regk, 0, requireSerderSaid(vcp, "registry inception")),
     deliveries,
   };
 }
 
 function* proposeGroupCredentialIssue(
-  hby: Habery,
-  runtime: AgentRuntime,
-  reger: Reger,
+  rgy: Regery,
+  poster: Poster,
   registry: Registry,
   creder: SerderACDC,
 ) {
-  const rgy = requireRegery(runtime);
+  const { hby, reger } = rgy;
   const regk = requireRegistryKey(registry);
   const iss = issueEvent(requireCredentialSaid(creder), regk);
   const anchor = hby.interactGroupHab(registry.hab.name, undefined, {
@@ -402,16 +401,16 @@ function* proposeGroupCredentialIssue(
   rgy.vry.processEscrows();
   if (
     telAccepted(
-      runtime,
+      reger,
       requireSerderPrefix(iss, "credential issue"),
       iss.sn ?? 0,
       requireSerderSaid(iss, "credential issue"),
     )
   ) {
-    markTelComplete(runtime, requireCredentialSaid(creder), iss.sn ?? 0, requireSerderSaid(iss, "credential issue"));
+    markTelComplete(reger, requireCredentialSaid(creder), iss.sn ?? 0, requireSerderSaid(iss, "credential issue"));
   }
 
-  const deliveries = yield* publishGroupVcProposal(runtime, registry.hab, MULTISIG_ISS_ROUTE, {
+  const deliveries = yield* publishGroupVcProposal(hby, poster, registry.hab, MULTISIG_ISS_ROUTE, {
     gid: registry.hab.pre,
   }, {
     acdc: serializeCredential(
@@ -440,19 +439,20 @@ function* proposeGroupCredentialIssue(
 }
 
 function* publishGroupVcProposal(
-  runtime: AgentRuntime,
+  hby: Habery,
+  poster: Poster,
   groupHab: Hab,
   route: typeof MULTISIG_VCP_ROUTE | typeof MULTISIG_ISS_ROUTE,
   payload: Record<string, unknown>,
   embeds: Record<string, Uint8Array>,
 ) {
-  const member = localGroupMember(runtime.hby, groupHab.pre);
+  const member = localGroupMember(hby, groupHab.pre);
   const deliveries: string[] = [];
-  for (const recipient of groupSigningMembers(runtime.hby, groupHab.pre)) {
-    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
+  for (const recipient of groupSigningMembers(hby, groupHab.pre)) {
+    if (recipient === member.pre || hby.habs.has(recipient)) {
       continue;
     }
-    const result = yield* runtime.poster.sendExchange(member, {
+    const result = yield* poster.sendExchange(member, {
       recipient,
       route,
       payload,
@@ -589,29 +589,21 @@ function requireSerderSaid(
 }
 
 function telAccepted(
-  runtime: AgentRuntime,
+  reger: Reger,
   pre: string,
   sn: number,
   eventSaid: string,
 ): boolean {
-  return requireRegery(runtime).reger.tels.getOn(pre, sn)?.qb64 === eventSaid;
+  return reger.tels.getOn(pre, sn)?.qb64 === eventSaid;
 }
 
 function markTelComplete(
-  runtime: AgentRuntime,
+  reger: Reger,
   pre: string,
   sn: number,
   eventSaid: string,
 ): void {
-  requireRegery(runtime).reger.ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
-}
-
-/** Require the optional concrete registry at an application workflow boundary. */
-export function requireRegery(runtime: AgentRuntime): Regery {
-  if (!runtime.vdr) {
-    throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
-  }
-  return runtime.vdr;
+  reger.ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
 }
 
 function savedCredentials(reger: Reger): Set<string> {

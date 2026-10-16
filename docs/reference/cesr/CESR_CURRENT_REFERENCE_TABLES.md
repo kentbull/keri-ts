@@ -124,9 +124,8 @@ Regression tests cover every truncated header/token prefix, malformed declared
 nonce lengths, wrong nonce roles, removed Matter codes, partition-invariant
 attachment rejection, native event rejection, and preserved v1 receipt input.
 
-The separate text-escape primitive port, FirstSeen/current semantic accessor
-audit, imported v2 event replay, nested attachments, and runtime qualification
-remain follow-ons under the progressive parser plan. In particular, frozen
-`SealKind.d` and the `TypedDigestSealCouples` attachment reader use `Noncer`, while
-this slice retains their existing `Diger` roles. That additional accepted-token
-delta belongs to follow-on 1a; table parity is not semantic primitive completeness.
+The original table-only slice did not qualify semantic accessors or runtime
+consumers. Later delivery includes text escapes, FirstSeen, Noncer-capable seal
+roles, nested evidence and the 1.0.0 composed runtime qualification. Current
+[CESR learnings](../../../.agents/learnings/PROJECT_LEARNINGS_CESR.md) route those
+contracts; table parity still does not certify every accessor or consumer.

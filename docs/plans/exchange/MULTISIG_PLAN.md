@@ -35,7 +35,7 @@ construction/notifications and individual revocation, but its CLI peer workflow
 is unfinished. This is existing legacy behavior outside the approved V2 foundation
 scope, not a reference stub or a new release-gating implementation project.
 
-## Remaining qualification
+## Regression standards and unqualified profiles
 
 - Preserve real local-first/remote-first approval, retry, duplicate, reopen,
   failed publication and cancellation evidence in phase 7.

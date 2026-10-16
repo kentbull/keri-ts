@@ -13,7 +13,6 @@ import {
   resolveDidWebs,
 } from "../../did/index.ts";
 import { type AgentRuntime, runAgentRuntimeUntil, runtimeOobiConverged } from "../agent-runtime.ts";
-import { requireRegery } from "../credential-workflows.ts";
 import type { Habery } from "../habbing.ts";
 import { WitnessReceiptor } from "../witnessing.ts";
 import { withAgentRuntime } from "./common/context.ts";
@@ -71,9 +70,11 @@ export function* dwsBindCommand(args: Record<string, unknown>): Operation<void> 
     commandArgs,
     runtimeOpenOptions(commandArgs),
     function*({ hby, runtime }) {
+      const rgy = runtime.vdr;
+      if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
       const hab = hby.habByName(alias);
       const priorSn = hab?.kever?.sn ?? 0;
-      const result = bindDesignatedAliases(runtime, {
+      const result = bindDesignatedAliases(rgy, {
         alias,
         dids: commandArgs.dids,
         registryName: commandArgs.registryName ?? DEFAULT_DESIGNATED_ALIASES_REGISTRY_NAME,
@@ -108,7 +109,9 @@ export function* dwsGenerateCommand(args: Record<string, unknown>): Operation<vo
     commandArgs,
     runtimeOpenOptions(commandArgs),
     function*({ runtime }) {
-      const artifacts = generateDidWebsArtifacts(runtime, {
+      const rgy = runtime.vdr;
+      if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
+      const artifacts = generateDidWebsArtifacts(rgy, {
         alias,
         did,
         metadata: commandArgs.meta ?? false,
@@ -147,7 +150,9 @@ export function* dwsResolveCommand(args: Record<string, unknown>): Operation<voi
     commandArgs,
     runtimeOpenOptions(commandArgs),
     function*({ runtime }) {
-      const result = yield* resolveDidWebs(runtime, {
+      const rgy = runtime.vdr;
+      if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
+      const result = yield* resolveDidWebs(rgy, runtime.reactor, runtime.services.http, {
         did,
         metadata: commandArgs.meta ?? false,
         insecureHttp: commandArgs.insecureHttp ?? false,
@@ -172,6 +177,8 @@ export function* dkrResolveCommand(args: Record<string, unknown>): Operation<voi
     commandArgs,
     runtimeOpenOptions(commandArgs),
     function*({ hby, runtime }) {
+      const rgy = runtime.vdr;
+      if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
       for (const oobi of commandArgs.oobis) runtime.oobiery.resolve(oobi);
       if (commandArgs.oobis.length > 0) {
         yield* runAgentRuntimeUntil(
@@ -180,7 +187,7 @@ export function* dkrResolveCommand(args: Record<string, unknown>): Operation<voi
           { timeoutMs: 30_000, pollMailbox: false },
         );
       }
-      const result = resolveDidKeri(hby, requireRegery(runtime), did);
+      const result = resolveDidKeri(hby, rgy, did);
       console.log(JSON.stringify(commandArgs.meta ? result.resolution : result.document, null, 2));
     },
   );

@@ -3,7 +3,6 @@ import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
-import { requireRegery } from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -63,7 +62,7 @@ Deno.test("did/webs - pins DA schema from JSON resource and rebinds active alias
       const schema = pinDesignatedAliasesSchema(hby.db);
       assertEquals(schema.said, DESIGNATED_ALIASES_SCHEMA_SAID);
 
-      const first = bindDesignatedAliases(runtime, {
+      const first = bindDesignatedAliases(runtime.vdr!, {
         alias: "issuer",
         dids: [
           `did:webs:127.0.0.1%3A7678:dws:${hab.pre}`,
@@ -72,13 +71,13 @@ Deno.test("did/webs - pins DA schema from JSON resource and rebinds active alias
       });
       assertEquals(first.revoked, []);
 
-      const second = bindDesignatedAliases(runtime, {
+      const second = bindDesignatedAliases(runtime.vdr!, {
         alias: "issuer",
         dids: [`did:webs:example.com:dws:${hab.pre}`],
       });
       assertEquals(second.revoked, [first.issued]);
 
-      const active = listActiveDesignatedAliasCredentials(requireRegery(runtime), hab.pre);
+      const active = listActiveDesignatedAliasCredentials(runtime.vdr!, hab.pre);
       assertEquals(active.map((item) => item.creder.said), [second.issued]);
       assertEquals(active.flatMap((item) => item.aliases), [
         `did:webs:example.com:dws:${hab.pre}`,
@@ -116,7 +115,7 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
           toad: 0,
         });
         aid = hab.pre;
-        const first = bindDesignatedAliases(runtime, {
+        const first = bindDesignatedAliases(runtime.vdr!, {
           alias,
           dids: [`did:webs:example.com:dws:${aid}`],
         });
@@ -136,7 +135,7 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
       });
       const runtime = yield* createAgentRuntime(hby);
       try {
-        const second = bindDesignatedAliases(runtime, {
+        const second = bindDesignatedAliases(runtime.vdr!, {
           alias,
           dids: [`did:webs:example.org:dws:${aid}`],
         });
@@ -184,8 +183,8 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
     };
     const hab = issuer.makeHab("issuer", undefined, { toad: 0 });
     const did = `did:webs:example.com:dws:${hab.pre}`;
-    const aliases = bindDesignatedAliases(source, { alias: "issuer", dids: [did, `did:keri:${hab.pre}`] });
-    const artifacts = generateDidWebsArtifacts(source, { alias: "issuer", did });
+    const aliases = bindDesignatedAliases(source.vdr!, { alias: "issuer", dids: [did, `did:keri:${hab.pre}`] });
+    const artifacts = generateDidWebsArtifacts(source.vdr!, { alias: "issuer", did });
     const clearSavedCue = () => {
       assertEquals(runtime.cues.toArray().map((cue) => cue.kin === "saved" ? cue.creder.said : cue.kin), [
         aliases.issued,
@@ -205,7 +204,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       }, { highWaterMark: 0 });
       let complete = false;
       const task = yield* spawn(function*() {
-        const result = yield* resolveDidWebs(runtime, { did });
+        const result = yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
         complete = true;
         return result;
       });
@@ -244,7 +243,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         },
       }, { highWaterMark: 0 });
       const stopped = yield* spawn(function*() {
-        yield* resolveDidWebs(runtime, { did });
+        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
       });
       for (let i = 0; i < 100 && !fetches.length; i++) yield* sleep(1);
       yield* sleep(5);
@@ -268,7 +267,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       }, { highWaterMark: 0 });
       const failed = yield* spawn(function*() {
         try {
-          yield* resolveDidWebs(runtime, { did });
+          yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
         } catch (error) {
           return error;
         }
@@ -291,7 +290,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         throw fault;
       };
       try {
-        yield* resolveDidWebs(runtime, { did });
+        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
         throw new Error("Expected escrow infrastructure failure");
       } catch (error) {
         assertEquals(error, fault);
@@ -310,7 +309,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       });
       let truncated: unknown;
       try {
-        yield* resolveDidWebs(runtime, { did });
+        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
       } catch (error) {
         truncated = error;
       }
@@ -320,7 +319,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       fetches = [];
       mode = "injected";
       try {
-        yield* resolveDidWebs(runtime, { did });
+        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
         throw new Error("Expected injected failure");
       } catch (error) {
         assertEquals(error, injected);
@@ -334,7 +333,10 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
           current.close();
         },
       });
-      assertEquals((yield* resolveDidWebs(runtime, { did })).document.id, did);
+      assertEquals(
+        (yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did })).document.id,
+        did,
+      );
       assertEquals(fetches.slice(0, 2).map((url) => new URL(url).protocol), ["https:", "http:"]);
       clearSavedCue();
 
@@ -349,7 +351,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         });
         let rejected: unknown;
         try {
-          yield* resolveDidWebs(runtime, { did });
+          yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
         } catch (error) {
           rejected = error;
         }
@@ -389,7 +391,7 @@ Deno.test("did/webs - keri.cesr replays controller KEL once and appends DA mater
         hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true),
       ]);
 
-      bindDesignatedAliases(runtime, {
+      bindDesignatedAliases(runtime.vdr!, {
         alias: "issuer",
         dids: [
           did,
@@ -397,7 +399,7 @@ Deno.test("did/webs - keri.cesr replays controller KEL once and appends DA mater
         ],
       });
 
-      const artifacts = generateDidWebsArtifacts(runtime, {
+      const artifacts = generateDidWebsArtifacts(runtime.vdr!, {
         alias: "issuer",
         did,
       });
@@ -498,7 +500,7 @@ Deno.test("did/webs - numeric thresholds project as conditionThreshold methods",
         nsith: "2",
         toad: 0,
       });
-      const document = generateBareDidDocument(runtime.hby, requireRegery(runtime), didFor(hab.pre));
+      const document = generateBareDidDocument(runtime.hby, runtime.vdr!, didFor(hab.pre));
       const methods = verificationMethodMap(document);
       const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
       const root = requireVerificationMethod(methods, `#${hab.pre}`);
@@ -530,7 +532,7 @@ Deno.test("did/webs - flat weighted thresholds project with scaled integer weigh
         nsith: ["1/2", "1/2"],
         toad: 0,
       });
-      const document = generateBareDidDocument(runtime.hby, requireRegery(runtime), didFor(hab.pre));
+      const document = generateBareDidDocument(runtime.hby, runtime.vdr!, didFor(hab.pre));
       const methods = verificationMethodMap(document);
       const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
       const root = requireVerificationMethod(methods, `#${hab.pre}`);
@@ -565,7 +567,7 @@ Deno.test("did/webs - nested weighted thresholds project recursively without pat
         nsith: [{ "1": ["1/2", "1/2"] }, "1"],
         toad: 0,
       });
-      const document = generateBareDidDocument(runtime.hby, requireRegery(runtime), didFor(hab.pre));
+      const document = generateBareDidDocument(runtime.hby, runtime.vdr!, didFor(hab.pre));
       const methods = verificationMethodMap(document);
       const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
       const root = requireVerificationMethod(methods, `#${hab.pre}`);
@@ -608,7 +610,7 @@ Deno.test("did/webs - multi-clause weighted thresholds project as conditionAnd c
         nsith: [["1/2", "1/2"], ["1/2", "1/2"]],
         toad: 0,
       });
-      const document = generateBareDidDocument(runtime.hby, requireRegery(runtime), didFor(hab.pre));
+      const document = generateBareDidDocument(runtime.hby, runtime.vdr!, didFor(hab.pre));
       const methods = verificationMethodMap(document);
       const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
       const root = requireVerificationMethod(methods, `#${hab.pre}`);
@@ -671,7 +673,7 @@ Deno.test("did/webs - CLI generate writes artifacts under the DID path", async (
           toad: 0,
         });
         did = `did:webs:example.com:dws:${hab.pre}`;
-        bindDesignatedAliases(runtime, {
+        bindDesignatedAliases(runtime.vdr!, {
           alias: "issuer",
           dids: [did],
         });

@@ -6,7 +6,8 @@ import { createRegery as createAcdcRegery, Regery as AcdcRegery } from "../../..
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
-import { openNoterForHabery } from "../../../src/app/notifying.ts";
+import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
+import { Signaler } from "../../../src/app/signaling.ts";
 import { LMDBer } from "../../../src/db/core/lmdber.ts";
 import { PathManager } from "../../../src/db/core/path-manager.ts";
 import { Mailboxer } from "../../../src/db/mailboxing.ts";
@@ -498,4 +499,42 @@ Deno.test("registry opener - failed and cancelled acquisition joins backing-stor
   assertEquals(closed.opened, false);
   await run(() => closed.close(true));
   await assertRejects(() => run(() => openRegistry({ web: true })), Error, "web registry backend");
+});
+
+Deno.test("runtime notification injection rejects conflicting concrete dependencies before acquisition", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ ...habitatOptions, name: crypto.randomUUID(), skipSignator: false });
+    const other = yield* createHabery({ ...habitatOptions, name: crypto.randomUUID(), skipSignator: false });
+    const noter = yield* openNoterForHabery(hby);
+    const otherNoter = yield* openNoterForHabery(other);
+    const notifier = new Notifier(hby.signator!, { noter });
+    const foreign = new Notifier(other.signator!, { noter: otherNoter });
+    const signaler = new Signaler();
+    try {
+      for (
+        const options of [
+          { notifier: foreign },
+          { notifier, signaler },
+          { notifier, noter: otherNoter },
+        ]
+      ) {
+        yield* call(() => assertRejects(() => run(() => createAgentRuntime(hby, options)), RangeError));
+        assertEquals(noter.opened, true);
+        assertEquals(otherNoter.opened, true);
+      }
+      const runtime = yield* createAgentRuntime(hby, { notifier, noter, signaler: notifier.signaler });
+      assertStrictEquals(runtime.notifier, notifier);
+      yield* runtime.close();
+      assertEquals(noter.opened, true);
+      assertEquals(notifier.add({ test: "still borrowed" }), true);
+    } finally {
+      signaler.close();
+      foreign.close();
+      notifier.close();
+      yield* otherNoter.close(true);
+      yield* noter.close(true);
+      yield* other.close(true);
+      yield* hby.close(true);
+    }
+  });
 });

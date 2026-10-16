@@ -7,6 +7,11 @@ reference limits. The cleanup is complete; the subject plans below retain future
 regression obligations and explicit deferred profiles, not another migration queue.
 Historical October 14 reports remain evidence at their own revisions.
 
+Post-release #523 (`e42b28cf`) moves TSN admission, routes and retries under
+Tevery with independent record validators and a shared composed Revery. Published
+1.0.0 packages do not contain this refactor. Its scoped evidence is separate from
+the release battery; see the release report's post-release section.
+
 ## Retained architecture
 
 [ADR-0013](../adr/adr-0013-simple-component-flows.md) governs concrete
@@ -58,6 +63,33 @@ from Python interop while unsupported there. Missing/malformed/unknown evidence
 cannot satisfy negation. Do not seed accepted reference rows to manufacture parity.
 Global TEL freshness, arbitrary nested-depth/topology cross-products and the broader
 unfinished protocol backlog are not activated by this completed release.
+
+## Unresolved source/contract discrepancy
+
+At `e42b28cf`, `packages/cesr/src/primitives/tholder.ts` still exposes deployment
+caps `maxWeights = 1_000` and `maxSithLength = 65_536`; its unit tests enforce them,
+including qualified wire input. These are configurable local limits, not numeric
+representation or wire maxima. Frozen KERIpy coring.py also carries Limit/MaxSith,
+which explains provenance but does not settle the accepted no-quota constraint.
+A separate ownership/contract review must resolve this retained boundary before
+claiming every non-socket quota is absent. This documentation reconciliation does
+not change runtime behavior or authorize a replacement policy mechanism.
+
+## Deferred review questions
+
+The former root `TODOs.md` mixed delivered v2, mailbox, delegation and CLI work
+with unverified review ideas. Its duplicate tracker is retired. The existing
+[DB parity plan](db/DB_PARITY_PLAN.md) owns higher-level consumer/record parity;
+[CLI parity reference](../reference/cli/KLI_TUFA_COMMAND_PARITY_MATRIX.md) and
+[qualification plan][qualification] own command and interop coverage.
+
+Still-unresolved review questions from that scratchpad are logging-level behavior,
+passcode interoperability, cue mapping/filtering, and the scope of audits for
+key management/encryption, reply routing/watchers, challenge/authentication and
+well-known OOBIs. These are deferred questions, not confirmed defects or an
+activated implementation queue. A proposal to hide DB access, replace reflective
+dispatch, rename records or simplify generics needs a demonstrated current problem
+under ADR-0013; the old scratchpad does not authorize new facades or cleanup.
 
 ## Future change and release discipline
 

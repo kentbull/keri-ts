@@ -13,7 +13,14 @@ import {
 } from "../../../../cesr/mod.ts";
 import issueeVectors from "../../../../cesr/test/fixtures/issuee-vectors.json" with { type: "json" };
 import { createAgentRuntime, enqueueOobi } from "../../../src/app/agent-runtime.ts";
-import { revocationRecipients } from "../../../src/app/credential-workflows.ts";
+import {
+  createCredential,
+  credentialRegistryStatus,
+  inceptCredentialRegistry,
+  listCredentials,
+  revocationRecipients,
+  revokeCredential,
+} from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
@@ -357,4 +364,32 @@ Deno.test("credentialing: revoke delivery includes disclosed aggregate issuees o
     assertEquals(revocationRecipients(credential, explicit, true), explicit, row.name);
     assertEquals(revocationRecipients(credential, ["observer"], false), ["observer"], row.name);
   }
+});
+
+Deno.test("credential workflows share the supplied registry store and processors", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true });
+    const runtime = yield* createAgentRuntime(hby);
+    try {
+      const rgy = runtime.vdr!;
+      const hab = hby.makeHab("issuer");
+      const schema = new Schemer({ sed: schemaSed() });
+      hby.db.schema.pin(schema.said, schema);
+      const registry = yield* inceptCredentialRegistry(rgy, runtime.poster, hab, { registryName: "explicit" });
+      assertEquals(credentialRegistryStatus(rgy, "explicit").registry, registry.registry);
+      const { creder } = yield* createCredential(rgy, runtime.poster, {
+        registryName: "explicit",
+        schema: schema.said,
+        recipient: hab.pre,
+        data: { role: "holder" },
+      });
+      assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre }).map((item) => item.said), [creder.said]);
+      assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre })[0].status, "iss");
+      yield* revokeCredential(rgy, runtime.poster, { registryName: "explicit", credentialSaid: creder.said! });
+      assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre })[0].status, "rev");
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
 });

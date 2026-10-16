@@ -1,6 +1,6 @@
 # ADR-0013: Simple component flows and explicit ownership
 
-- Status: Accepted; final composed qualification remains open
+- Status: Accepted; 1.0.0 composed qualification complete; Tevery ownership refined after release
 - Date: 2026-10-14
 - Scope: Component interaction, decisions, scheduling and actual resource lifetime
 - Related: [composition](adr-0003-agent-runtime-composition-root.md),
@@ -53,6 +53,11 @@ turn. Do not wait on network I/O while holding a transaction or protocol turn.
 Reactor serializes actual dispatch/escrows, captures replies before application
 publication and returns decision data. It exposes no arbitrary callback gate.
 Output owners sign, route and consume request slots directly.
+
+Tevery owns registry/credential TSN admission, route registration and dependency
+retries. Independent record validators decode notice fields; composition supplies
+the shared Revery. Reactor calls Tevery operations without knowing its handlers.
+This ownership refinement landed in #523 after the 1.0.0 publications.
 
 Use named fields and discriminated alternatives; require variant-specific data.
 Do not replace a bag with an interface of unrelated optional fields or duplicate
@@ -131,7 +136,8 @@ imports/pins using [reference environments](../plans/qualification/REFERENCE_ENV
 
 The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md) owns concrete
 operational invariants. The [roadmap](../plans/PARITY_ROADMAP.md) owns remaining
-cleanup, composed tests and release gates. Acceptance requires real event/receipt,
+work and future release gates; the [release report](../reports/parity/CLEANUP_RELEASE_2026-10-16.md)
+records completed qualification at its exact baseline. Future acceptance requires real event/receipt,
 TCP, HTTP/SSE, OOBI, retry, failure and restart evidence plus installed packages;
 a renamed class or green narrow test is not architectural or release completion.
 

@@ -16,7 +16,8 @@ responsibilities into one vague "VC" layer.
 - Internal `acdc/regengine.ts` owns local event acceptance and anchor/order escrows,
   borrowing an issuer's public KEL and RegistryStore without acquiring secrets.
 - `vdr/eventing.ts` owns legacy TEL state processing: registry inception, rotation,
-  issue, revoke, accepted-state persistence, and TEL escrows.
+  issue, revoke, accepted-state persistence, TEL escrows and TSN admission/routes/retries.
+  Tevery shares the composed Revery; this TSN ownership landed after 1.0.0 in #523.
 - `db/reger.ts` owns KERIpy-shaped VDR storage and credential/TEL clone helpers.
 - `vdr/credentialing.ts` owns issuer-side registry and credential orchestration.
 - `app/verifying.ts` owns verifier acceptance, schema/registry/chain escrows,
@@ -64,7 +65,8 @@ these helpers emit no cues and do no writes. Database and programming failures
 propagate. They are exported from `keri-ts/runtime` as `vet` and `vetBinds`, matching the
 reference module names. Pure verification does not acquire or dispose resources.
 The [verified-import preservation record](../../reference/credentials/VERIFIED_IMPORT_SNAPSHOT.md)
-retains the custom store workflow pending its separately owned intake audit.
+preserves the removed custom bulk-import design. Public RegistryObserver intake
+now uses the registry engine; do not restore direct accepted-row publication.
 
 Every supplied event must have a valid chain position and issuer KEL anchor.
 Verifier anchors compare seal digests, including bare digest seals; sequence
@@ -101,8 +103,8 @@ KEL hints to fit the database's safe-integer API. Shared `time/mod.ts` parsing
 restricts cutoff text to timezone-qualified RFC3339 with at most six fractional
 digits and retains exact microseconds; events at the cutoff are included.
 `makeNowIso8601` accepts a caller-supplied `Date` for clock injection, padding its
-milliseconds to six digits. Python accepts a broader datetime grammar. The issuer
-engine's public orchestration and end-to-end production qualification remain unfinished.
+milliseconds to six digits. Python accepts a broader datetime grammar. Public issuer orchestration and the supported composed workflows are implemented;
+the [release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md) records qualification and limits.
 
 The internal event entry point returns accept, duplicate, anchor/order escrow or
 typed rejection. It discovers full, fully witnessed KEL seals; stored anchors
@@ -116,7 +118,7 @@ cannot satisfy ordering. Missing anchors take precedence over missing predecesso
 Protocol ordinals retain bigint precision, but the current storage API supports
 only safe integer ordinals; larger updates receive an explicit `ordinalRange`
 refusal before storage conversion. This is an unfinished storage boundary.
-Named services are explicitly acquired; runtime scheduling remains a later gate.
+Named services are explicitly acquired and composed into the runtime workers.
 `acdc/registraring.ts` supplies explicit local Regery/Registry creation and alias
 lookup. Reopen resolves the controlling Hab from the stored inception issuer;
 multiple aliases share one instance. Inception staging and alias publication

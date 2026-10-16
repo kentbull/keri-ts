@@ -21,7 +21,9 @@ Use the checked-in `.tool-versions` file for local maintainer work:
 - Node `25.9.0`
 - Deno `2.7.11`
 
-These exact versions match CI. This matters here because the repo depends on a
+CI currently pins Deno `2.8.2` and Node `25.9.0`; the local Deno pin differs.
+Record the actual runtime when comparing results. This matters because the repo
+depends on a
 native `lmdb-js` addon rebuilt with `LMDB_DATA_V1=true`, and addon behavior has
 been sensitive to runtime drift.
 
@@ -40,7 +42,8 @@ Local macOS note:
   package directory we assume should be used
 - Run `deno task setup:compat-lmdb` explicitly before compat-dependent tests;
   the test runner never mutates native dependency builds.
-- the cleanup-hook source patch comes from the forked `lmdb-js` dependency
+- the dependency is upstream `lmdb@3.5.3`; do not restore the retired fork or
+  cleanup-hook patch
 - if the macOS data-v1 lock path still fails with `ENOSPC`, treat it as a host
   OS/resource-exhaustion problem to document separately, not as justification
   for weakening LMDB locking semantics in `keri-ts`
@@ -55,25 +58,9 @@ for exact files, topology, provenance, concurrency limits and retained timings.
 
 ## Release and versioning
 
-Primary reference:
-
-- `docs/versioning/release-versioning.md`
-
-Quick commands:
-
-```bash
-# Add release intent
-deno task release:changeset
-
-# Apply version bumps/changelog updates
-deno task release:version
-
-# Verify generated/runtime versions
-deno task version:check
-
-# Validate the full Tufa release path before tagging
-deno task release:verify:tufa
-```
+[Release operations](docs/versioning/release-versioning.md) owns versioning,
+shared tag workflows, publish order and exact artifact verification. Use it for
+release commands; a successful build or Changesets PR does not prove publication.
 
 ## Build and smoke-test npm artifacts
 
@@ -103,26 +90,6 @@ To test a specific prebuilt tarball:
 bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
 bash scripts/smoke-test-tufa-npm.sh packages/tufa/npm/keri-ts-tufa-<version>.tgz
 ```
-
-## CI workflows
-
-- `/.github/workflows/changesets-version-pr.yml`
-- `/.github/workflows/keri-ts-npm-release.yml`
-- `/.github/workflows/cesr-npm-release.yml`
-- `/.github/workflows/tufa-npm-release.yml`
-
-Tag-triggered release workflows require package version/tag alignment.
-
-Tufa release order rule:
-
-- if `@keri-ts/tufa` depends on new `cesr-ts` or `keri-ts` versions, publish
-  those first, then publish `@keri-ts/tufa`
-
-Tufa release prep rule:
-
-- add a changeset when `@keri-ts/tufa` changes in a publishable way, run
-  `deno task release:version`, then run `deno task release:verify:tufa` before
-  creating `tufa-v<version>`
 
 ## Deno global install notes for tufa
 

@@ -7,11 +7,11 @@
 
 import { call, type Operation } from "effection";
 import { abortable } from "../../app/abortable.ts";
-import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import { collectBytes, streamBytes } from "../../app/byte-source.ts";
-import { requireRegery } from "../../app/credential-workflows.ts";
+import type { Reactor } from "../../app/reactor.ts";
 import { defaultRuntimeHttpClient, type RuntimeHttpClient } from "../../app/runtime-services.ts";
 import { ValidationError } from "../../core/errors.ts";
+import type { Regery } from "../../vdr/credentialing.ts";
 import { pinDesignatedAliasesSchema } from "./designated-aliases.ts";
 import { didWebsArtifactUrls, normalizeHostedDidDocument, parseDidWebs } from "./dids.ts";
 import {
@@ -35,32 +35,39 @@ export interface ResolveDidWebsResult {
 
 /** Resolve one `did:webs` by fetching and verifying hosted artifacts. */
 export function resolveDidWebs(
-  runtime: AgentRuntime,
+  rgy: Regery,
+  reactor: Reactor,
+  http: RuntimeHttpClient,
   options: ResolveDidWebsOptions,
 ): Operation<ResolveDidWebsResult> {
-  return call(() => resolveArtifacts(runtime, options));
+  return call(() => resolveArtifacts(rgy, reactor, http, options));
 }
 
 /** Keep finite JSON ownership local even when a long-lived caller resolves multiple DIDs. */
-function* resolveArtifacts(runtime: AgentRuntime, options: ResolveDidWebsOptions): Operation<ResolveDidWebsResult> {
+function* resolveArtifacts(
+  rgy: Regery,
+  reactor: Reactor,
+  http: RuntimeHttpClient,
+  options: ResolveDidWebsOptions,
+): Operation<ResolveDidWebsResult> {
   const parsed = parseDidWebs(options.did);
   const urls = didWebsArtifactUrls(parsed, { scheme: "https" });
   const fallbackUrls = didWebsArtifactUrls(parsed, { scheme: "http" });
-  pinDesignatedAliasesSchema(runtime.hby.db);
+  pinDesignatedAliasesSchema(rgy.hby.db);
   const preferHttp = options.insecureHttp ?? false;
   yield* call(function*() {
-    yield* runtime.reactor.process(
-      (signal) => artifactBytes(runtime.services.http, urls.keriCesr, fallbackUrls.keriCesr, preferHttp, signal),
+    yield* reactor.process(
+      (signal) => artifactBytes(http, urls.keriCesr, fallbackUrls.keriCesr, preferHttp, signal),
       { local: false },
     );
   });
   // EOF and parser cleanup precede convergence and any claim of a complete DID.
-  yield* runtime.reactor.processEscrowsOnce();
+  yield* reactor.processEscrowsOnce();
   // Preserve the second convergence turn previously run after settleRuntimeIngress's own pass.
-  yield* runtime.reactor.processEscrowsOnce();
-  const expected = generateBareDidDocument(runtime.hby, requireRegery(runtime), parsed.canonical);
+  yield* reactor.processEscrowsOnce();
+  const expected = generateBareDidDocument(rgy.hby, rgy, parsed.canonical);
   const bytes = yield* abortable((signal) =>
-    collectBytes(artifactBytes(runtime.services.http, urls.didJson, fallbackUrls.didJson, preferHttp, signal))
+    collectBytes(artifactBytes(http, urls.didJson, fallbackUrls.didJson, preferHttp, signal))
   );
   let hosted: unknown;
   try {

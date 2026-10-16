@@ -28,7 +28,7 @@ import { RegistryRecord } from "../core/records.ts";
 import { Credentialer, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
 import { type AgentRuntime } from "./agent-runtime.ts";
 
-import { requireRegery } from "./credential-workflows.ts";
+import type { Reger } from "../db/reger.ts";
 import {
   endpointRoleAccepted,
   groupEndorseReply,
@@ -240,10 +240,11 @@ export function* approvePendingMultisigProposal(
     if (!exn?.ked) {
       continue;
     }
+    const rgy = isVdrRoute(route) ? runtime.vdr : null;
     const result = isKelRoute(route)
       ? yield* approveKelProposal(hby, runtime, exn, route, options)
       : isVdrRoute(route)
-      ? yield* approveVdrProposal(hby, runtime, exn, route, options)
+      ? yield* approveVdrProposal(hby, rgy, runtime, exn, route, options)
       : yield* approveRpyProposal(hby, runtime, exn, route, options);
     if (result) {
       notifier.remove(note.rid);
@@ -367,6 +368,7 @@ function* approveKelProposal(
 
 function* approveVdrProposal(
   hby: Habery,
+  rgy: Regery | null,
   runtime: AgentRuntime,
   exn: SerderKERI,
   route: MultisigVdrRoute,
@@ -407,6 +409,9 @@ function* approveVdrProposal(
     return null;
   }
 
+  // Declined or malformed proposals remain inert; require VDR before signing or intake.
+  if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
+
   const smids = groupSigningMembers(hby, groupPre);
   const keys = groupEventKeys(hby, groupPre, anchorSerder);
   const sigers = signLocalGroupEvent(hby, anchorSerder, smids, keys);
@@ -419,7 +424,7 @@ function* approveVdrProposal(
   let publication: VdrPublication;
   const attrs = { gid: groupPre, ...multisigChildGenusAttrs(anchorSerder, genus) };
   if (proposal.route === MULTISIG_VCP_ROUTE) {
-    accepted = approveRegistryIncept(runtime, groupHab, embeddedSerder, anchorSerder, options);
+    accepted = approveRegistryIncept(rgy, groupHab, embeddedSerder, anchorSerder, options);
     publication = {
       route: proposal.route,
       payload: { ...attrs, ...(typeof payload.usage === "string" ? { usage: payload.usage } : {}) },
@@ -427,7 +432,7 @@ function* approveVdrProposal(
     };
   } else {
     const creder = proposal.credential;
-    accepted = approveCredentialIssue(runtime, hby, creder, embeddedSerder, anchorSerder);
+    accepted = approveCredentialIssue(rgy, creder, embeddedSerder, anchorSerder);
     const seal = telCredentialSeal(embeddedSerder);
     publication = {
       route: proposal.route,
@@ -479,13 +484,12 @@ function kelApproval(hby: Habery, exn: SerderKERI, route: MultisigKelRoute): Kel
 }
 
 function approveRegistryIncept(
-  runtime: AgentRuntime,
+  rgy: Regery,
   groupHab: Hab,
   vserder: SerderKERI,
   anchorSerder: SerderKERI,
   options: MultisigApprovalOptions,
 ): boolean {
-  const rgy = requireRegery(runtime);
   const seal = sourceSeal(anchorSerder);
   rgy.tvy.processEvent({ serder: vserder, seqner: seal.seqner, saider: seal.saider });
   rgy.processEscrows();
@@ -499,20 +503,19 @@ function approveRegistryIncept(
   });
 
   const eventSaid = requireSerderSaid(vserder, "registry inception");
-  if (telAccepted(runtime, regk, 0, eventSaid)) {
-    markTelComplete(runtime, regk, 0, eventSaid);
+  if (telAccepted(rgy.reger, regk, 0, eventSaid)) {
+    markTelComplete(rgy.reger, regk, 0, eventSaid);
   }
-  return telAccepted(runtime, regk, 0, eventSaid);
+  return telAccepted(rgy.reger, regk, 0, eventSaid);
 }
 
 function approveCredentialIssue(
-  runtime: AgentRuntime,
-  hby: Habery,
+  rgy: Regery,
   creder: SerderACDC,
   iserder: SerderKERI,
   anchorSerder: SerderKERI,
 ): boolean {
-  const rgy = requireRegery(runtime);
+  const { hby } = rgy;
   const seal = sourceSeal(anchorSerder);
   rgy.tvy.processEvent({ serder: iserder, seqner: seal.seqner, saider: seal.saider });
   rgy.processEscrows();
@@ -536,8 +539,8 @@ function approveCredentialIssue(
   const telPre = requireSerderPrefix(iserder, "credential issue");
   const eventSaid = requireSerderSaid(iserder, "credential issue");
   const sn = iserder.sn ?? 0;
-  if (telAccepted(runtime, telPre, sn, eventSaid)) {
-    markTelComplete(runtime, requireCredentialSaid(creder), sn, eventSaid);
+  if (telAccepted(rgy.reger, telPre, sn, eventSaid)) {
+    markTelComplete(rgy.reger, requireCredentialSaid(creder), sn, eventSaid);
   }
   return credentialer.complete(requireCredentialSaid(creder))
     || reger.saved.get([requireCredentialSaid(creder)]) !== null;
@@ -622,12 +625,12 @@ function requireCredentialSaid(creder: SerderACDC): string {
   return creder.said;
 }
 
-function telAccepted(runtime: AgentRuntime, pre: string, sn: number, eventSaid: string): boolean {
-  return requireRegery(runtime).reger.tels.getOn(pre, sn)?.qb64 === eventSaid;
+function telAccepted(reger: Reger, pre: string, sn: number, eventSaid: string): boolean {
+  return reger.tels.getOn(pre, sn)?.qb64 === eventSaid;
 }
 
-function markTelComplete(runtime: AgentRuntime, pre: string, sn: number, eventSaid: string): void {
-  requireRegery(runtime).reger.ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
+function markTelComplete(reger: Reger, pre: string, sn: number, eventSaid: string): void {
+  reger.ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
 }
 
 function rpyAttrs(serder: SerderKERI): { cid: string; role: string; eid: string } {

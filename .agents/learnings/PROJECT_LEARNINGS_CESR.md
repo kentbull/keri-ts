@@ -1,18 +1,11 @@
 # CESR learnings
 
-ADR-0012 now requires buffered complete-enclosure decoding. The progressive
-decoder now replaces the progressive engine/cursor/staging lifecycle. Keep real wire rules and actual I/O cleanup.
+ADR-0012 now requires buffered complete-enclosure decoding. The finite
+decoder replaces the progressive engine/cursor/staging lifecycle. Keep real wire rules and actual I/O cleanup.
 
-## Removal precedence (2026-10-15)
-
-[ADR-0013](../../docs/adr/adr-0013-simple-component-flows.md) now requires removal
-of all application budgeting and unsupported outbox, mailbox consumer-ack and
-KRAM ready/snapshot durability. Any descriptions below of credits, reservations,
-capacity admission or those delivery guarantees describe transitional code, not
-instructions to preserve it. Remove those passages with their owning code rounds.
-Preserve independent wire/crypto/transaction correctness and actual cleanup.
-Only a minimal private socket constraint justified by production evidence may
-remain; no parser, domain, storage, runtime or CLI accounting exception exists.
+[ADR-0013](../../docs/adr/adr-0013-simple-component-flows.md) owns the completed
+accounting/durability removal and the prohibition on restoring it. Preserve
+protocol evidence, transactions and actual resource cleanup.
 
 ## Parser and evidence
 
@@ -94,7 +87,9 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
 - Tholder uses exact semantic thresholds and left-to-right clause slots. Its
   1,000-weight/65,536-character defaults are deployment limits, including qualified
   input (an intentional correction to frozen Python's limen bypass). Numeric
-  thresholds retain their domain. Configure before admitting work.
+  thresholds retain their domain. These retained deployment caps conflict with the
+  no-quota direction; the [roadmap discrepancy](../../docs/plans/PARITY_ROADMAP.md#unresolved-sourcecontract-discrepancy)
+  owns the unresolved review. Do not treat their presence as permission for new policy plumbing.
 - Accessor parity includes wrapper projections (`sner`, `tholder`, `ntholder`,
   `bner`, `berfers`), and legacy intive `bt` needs normalization. `SerderKERI.uuid`
   reads `u`, falling back to `n` only for v1.0 `vcp`; `nonce` is its alias, as in 714.
@@ -110,7 +105,7 @@ remain; no parser, domain, storage, runtime or CLI accounting exception exists.
 ## Owners and follow-ups
 
 [State-machine contract](../../docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md),
-[progressive contract](../../docs/design-docs/cesr/CESR_PROGRESSIVE_PARSER_CONTRACT.md),
+[finite evidence contract](../../docs/design-docs/cesr/CESR_PROGRESSIVE_PARSER_CONTRACT.md),
 [serialization](../../docs/design-docs/cesr/SERIALIZATION.md),
 [table reference](../../docs/reference/cesr/CESR_CURRENT_REFERENCE_TABLES.md).
 The [parser plan](../../docs/plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) owns remaining

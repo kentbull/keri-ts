@@ -15,8 +15,9 @@ On 2026-10-12, the user approved progressive nested parsing for many smaller
 ESSR messages in large transfers. ADR-0012 replaces the long-term decision below.
 This ADR records the removed atomic implementation. Its separate-strategy,
 feature-flag, and explicit-stack suggestions are historical proposals, not
-requirements for the generator design. Phase 12 removed the atomic production
-path.
+requirements for current code. The October 15 revision of ADR-0012 subsequently
+replaced progressive traversal with a new complete-enclosure finite decoder. It
+does not restore this historical implementation, feature flags or alternate strategies.
 
 ## Context
 

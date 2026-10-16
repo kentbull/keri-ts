@@ -1,15 +1,8 @@
 # Storage learnings
 
-## Removal precedence (2026-10-15)
-
-[ADR-0013](../../docs/adr/adr-0013-simple-component-flows.md) now requires removal
-of all application budgeting and unsupported outbox, mailbox consumer-ack and
-KRAM ready/snapshot durability. Any descriptions below of credits, reservations,
-capacity admission or those delivery guarantees describe transitional code, not
-instructions to preserve it. Remove those passages with their owning code rounds.
-Preserve independent wire/crypto/transaction correctness and actual cleanup.
-Only a minimal private socket constraint justified by production evidence may
-remain; no parser, domain, storage, runtime or CLI accounting exception exists.
+[ADR-0013](../../docs/adr/adr-0013-simple-component-flows.md) owns the completed
+accounting/durability removal and the prohibition on restoring it. Preserve
+protocol evidence, transactions and actual resource cleanup.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
@@ -120,8 +113,7 @@ parent-tree budget or storage-copy reservation. Key cursors close before suspens
 publication stays inside its caller's transaction. Reopened frames are claimed
 before cardinality checks and disposed after handler/replay completion or failure.
 ESSR rows retain their actual insertion order, qualified framing and exact
-size/count metadata without storage quotas. Parser accounting is removed;
-runtime composition/transport policy remains separate removal work.
+size/count metadata without storage quotas. Parser and runtime/transport accounting are removed; actual file ownership remains.
 
 Stored reply reconstruction uses the typed reply store, 714 key-ordered groups
 and exactly one optional cigar. The shared serializer owns framing; do not duplicate

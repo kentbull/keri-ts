@@ -6,6 +6,9 @@ owns remaining work. Buffered parsing, accounting/durability removal, concrete
 component ownership and the public runtime API reduction are implemented; the 1.0.0
 cleanup/release baseline is qualified. The [release report](../docs/reports/parity/CLEANUP_RELEASE_2026-10-16.md)
 owns its evidence and limits; future changes still require relevant qualification.
+Post-release Tevery ownership (#523) has separate scoped evidence and is not in
+published 1.0.0. Historical inventories must never become fresh implementation
+queues; the roadmap explicitly records unresolved contract/source contradictions.
 
 ## Read by subject
 
@@ -28,7 +31,8 @@ then behavior. No runtime-shaped sibling bundles, generic execution gates or
 forwarding-only facades. Lower transport knows actual byte I/O, not AgentRuntime. Tevery owns TSN route
 admission/retries; Reactor composes and advances the processor without naming
 its registry/credential handlers.
-Finite commands run the host workers under elapsed deadlines and join them before
+Application boundaries select optional owners before effects; subordinate helpers receive
+concrete dependencies, not root lookup guards. Finite commands run the host workers under elapsed deadlines and join them before
 store teardown; phase-specific tests invoke actual component operations.
 
 No application accounting, quotas, estimates, synthetic leases or no-op policy

@@ -60,6 +60,6 @@ wrappers and callback-based reply admission are removed.
 
 The [cue design](../design-docs/runtime/CUES.md) explains the current graph and
 KERIpy correspondence. The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md)
-owns operational invariants; the [roadmap](../plans/PARITY_ROADMAP.md) owns remaining
-composed qualification. Wire interpretation exists; broad KERIpy parity and
-release readiness require their actual tests, not this ADR's acceptance.
+owns operational invariants; the [roadmap](../plans/PARITY_ROADMAP.md) owns future
+regression standards. The [release report](../reports/parity/CLEANUP_RELEASE_2026-10-16.md)
+records completed 1.0.0 qualification. Broader parity requires its own evidence.

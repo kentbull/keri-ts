@@ -155,10 +155,11 @@ export function* createAgentRuntime(
 ): Operation<AgentRuntime> {
   const injectedSignaler = options.signaler ?? options.notifier?.signaler;
   if (
-    (options.notifier && options.notifier.hby !== hby)
+    (options.notifier && options.notifier.signator !== hby.signator)
+    || (options.noter && options.notifier && options.noter !== options.notifier.noter)
     || (options.signaler && options.notifier && options.signaler !== options.notifier.signaler)
   ) {
-    throw new RangeError("AgentRuntime notification services require its exact Habery and Signaler");
+    throw new RangeError("AgentRuntime notification services require its exact Signator, Noter and Signaler");
   }
   const services = resolveRuntimeServices(options.services);
   const mailboxer = options.mailboxer
@@ -182,7 +183,7 @@ export function* createAgentRuntime(
     && options.notifier === undefined
     && noter !== null;
   const notifier = options.notifier
-    ?? (noter && signaler ? new Notifier(hby, { noter, signaler }) : null);
+    ?? (hby.signator && noter && signaler ? new Notifier(hby.signator, { noter, signaler }) : null);
   const reger = options.reger ?? (!hby.readonly ? (yield* openRegerForHabery(hby)) : null);
   const ownsReger = options.reger === undefined && reger !== null;
   const acdc = options.acdc ?? (!hby.readonly ? (yield* openAcdcRegeryForHabery(hby)) : null);

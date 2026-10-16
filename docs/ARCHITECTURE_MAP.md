@@ -130,7 +130,7 @@ reference material and historical reports.
 ### CESR Stack
 
 1. Public API (`packages/cesr/src/index.ts`)
-2. Progressive parser (`parser/progressive.ts`, `parser/cursor.ts`, `parser/body.ts`, `parser/attachments.ts`, `parser/essr.ts`); finite collection uses `parser/complete.ts`
+2. Finite decoder (`parser/decoder.ts`, `parser/body.ts`, `parser/attachments.ts`, `parser/essr.ts`); `parser/complete.ts` decodes finite input and `parser/parser.ts` buffers incoming fragments
 3. Primitive parsers + table codex
    - executable crypto primitives live here as well: `Signer.sign()`,
      `Verfer.verify()`, and `Salter.signer()` are the public behavior seams.

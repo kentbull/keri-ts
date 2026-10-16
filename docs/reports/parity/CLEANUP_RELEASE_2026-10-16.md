@@ -113,3 +113,19 @@ foreign-registry parity. Python attachment regrouping preserves signed bodies,
 signatures, ordered state proofs and source seals; wrapper byte identity is not
 required. The workspace-lock mirror defect has a red/green actual-CLI regression.
 The expanded installed smoke found a coverage gap, not an additional native defect.
+
+## Post-release Tevery ownership (2026-10-16)
+
+[#523](https://github.com/kentbull/keri-ts/pull/523) merged at
+`e42b28cfd5f0a505bf8ba9e52f6334fd64941ee2`. Tevery now owns TSN admission,
+route registration and dependency retries; independent record validators replace
+RegistryStateReceiver/CredentialStateReceiver. Composition supplies the shared
+Revery and Reactor advances Tevery without naming its handlers.
+
+This is **not in the published 1.0.0 packages**. Tested head
+`0d7e6bac23410c0536fe9719a4d1ce49e702d4be` has the merge's tree. Its recorded
+83 focused Docker cases, five CI-scope cases, static/type/export checks and
+31 selected interop cases passed [CI 38943071878](https://github.com/kentbull/keri-ts/actions/runs/38943071878).
+These scoped results do not extend the older 1,508/1,509-case full-suite evidence
+to the post-release head. Local records are in
+`~/.codex/artifacts/keri-ts/tevery-tsn-2026-10-16/{completion,unit-summary,ci-counts,merge}.json`.

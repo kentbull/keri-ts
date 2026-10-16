@@ -83,7 +83,7 @@ export function collectConfiguredMailboxes(
   hby: Habery,
   hab: Hab,
 ): ConfiguredMailboxRow[] {
-  const organizer = new Organizer(hby);
+  const organizer = new Organizer(hby.db, hby.signator);
   const rows: ConfiguredMailboxRow[] = [];
   for (
     const [keys, end] of hby.db.ends.getTopItemIter([hab.pre, Roles.mailbox], {

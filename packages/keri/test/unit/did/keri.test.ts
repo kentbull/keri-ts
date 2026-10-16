@@ -2,7 +2,6 @@ import { call, run } from "effection";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { dkrResolveCommand } from "../../../src/app/cli/did.ts";
-import { requireRegery } from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -40,7 +39,7 @@ Deno.test("did/keri - CLI owns signed HTTP introduction before accepted local pr
       try {
         assertEquals(accepted.db.getKever(hab.pre)?.said, hab.kever!.said);
         assertEquals(accepted.db.roobi.get(oobi)?.state, "resolved");
-        const local = resolveDidKeri(accepted, requireRegery(runtime), did);
+        const local = resolveDidKeri(accepted, runtime.vdr!, did);
         assertEquals(local.document, document);
         assertEquals(local.resolution.didDocument, local.document);
       } finally {
