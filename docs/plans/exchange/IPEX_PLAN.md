@@ -26,10 +26,12 @@ exists; bare-SAID host discovery is an upstream integration gap.
 
 Evidence includes the frozen-upstream wire oracle, real two-Habery dependency
 retry/reopen, observer intake, independent child proofs, and cancellation
-that joins blocked reads and disposes owners. This is not full composed production-path qualification. Buffered enclosures
+that joins blocked reads and disposes owners. The complete 1.0.0 composed qualification is recorded in the
+[release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md), with explicit
+reference and topology limits. Buffered enclosures
 accept size-dependent memory use; bounded-memory qualification is not a gate.
 
-## Remaining acceptance
+## Retained acceptance floor
 
 1. Qualify composed presentations through the [registry services](../credentials/REGISTRY_PLAN.md)
    and [KRAM intake](KRAM_PLAN.md), including dependency retry, reopen and replay.
@@ -50,8 +52,8 @@ accept size-dependent memory use; bounded-memory qualification is not a gate.
    operators from Python interop until the reference supports them. Preserve the
    qualified progressive/multiple/nested blinding and refusal controls in the
    [operator acceptance matrix](../qualification/GRADUATED_DISCLOSURE_INTEROP.md)
-   while closing KRAM/composed mailbox and residual architecture acceptance.
-   Final-source full qualification must rerun the maintained cases.
+   alongside the qualified KRAM/composed mailbox baseline.
+   Future final-source qualification must rerun affected maintained cases.
 3. Exercise actual grant/admit coordination, dependencies, escrow/retry,
    duplicates, durable replay and failure cleanup in the complete maintained
    workflow inventory. Match route-specific Python commitments and signatures.
@@ -64,4 +66,4 @@ accept size-dependent memory use; bounded-memory qualification is not a gate.
    credentials and registry freshness; none implies all the others.
 
 Issuer-side v2 registry machinery and public observer intake have separate owners.
-Full wire transport and runtime resource evidence remain phases 4–7.
+Separate transport/runtime/qualification owners retain their regression floor.

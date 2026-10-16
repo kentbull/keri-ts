@@ -2,8 +2,10 @@
 
 Buffered intake, concrete input/output owners, protocol-only Reactor serialization
 and shared host workers are implemented. Final composed and installed-package
-qualification remains open. The [roadmap](../PARITY_ROADMAP.md) owns the remaining
-sequence; the [runtime contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md)
+qualification passes for the published 1.0.0 baseline; the
+[release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md) owns evidence
+and explicit limits. The [roadmap](../PARITY_ROADMAP.md) owns future change
+discipline; the [runtime contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md)
 owns delivered operational invariants. Historical progressive and accounting
 instructions are not preservation authority.
 
@@ -73,7 +75,7 @@ JSON endpoint, export, mailbox command or cache to streaming. Preserve unpublish
 lazy-DID work without activating or publishing it. No new outbox, unsupported
 acknowledgement, accepted-state eviction or borrowing framework is in scope.
 
-## Remaining acceptance
+## Retained acceptance floor
 
 Ownership migration is not a second workstream to recreate. Audit residual
 facades/options only for a demonstrated current responsibility, and retain the

@@ -8,7 +8,9 @@ The recipient and outcome extraction exist (#133/#163). Apply
 older recipient accounting requirements are superseded. The accepted
 [buffered parser](../cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) also removes parser
 staging and progressive extraction; ordinary Texter evidence and finite decoding now replace that parser lifecycle.
-Transport bridge removal and composed qualification remain.
+Transport bridge removal and composed/installed qualification are delivered for
+1.0.0. The [release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md)
+records exact scope and limits; retain the following regression floor.
 
 ## Removal and correctness
 

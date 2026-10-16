@@ -7,7 +7,8 @@ buffering replace speculative frameworks; protocol correctness and real cleanup 
 Owner: roadmap **3f**, reusing proof work from **3e** (#162/165) and nested
 runtime consumers (#159–168). The [proof contract][proof] is implemented;
 sender filtering, non-event routing and optional KRAM are implemented; composed
-workflow qualification remains incomplete.
+workflow qualification passes for 1.0.0, with limits in the
+[release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md).
 
 ## Current boundary
 

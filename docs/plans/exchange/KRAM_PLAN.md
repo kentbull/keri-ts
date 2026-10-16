@@ -11,20 +11,21 @@ staging and cache pruning. The added ready/snapshot acknowledgement handoff
 has been removed; synchronous intake returns ordinary decisions. The donor [#172][snapshot] remains
 recoverable evidence, not a merge target.
 
-## Implemented boundaries requiring composed qualification
+## Qualified boundaries and regression floor
 
-| Unit | Boundary                       | Remaining evidence                                                         |
+| Unit | Boundary                       | Qualified evidence                                                         |
 | ---- | ------------------------------ | -------------------------------------------------------------------------- |
-| K10a | Optional runtime/HTTP intake   | Final workflow qualification                                               |
+| K10a | Optional runtime/HTTP intake   | Bidirectional single/group mailbox admission and restart                   |
 | K10b | Scoped receipt into EXN escrow | KERIpy receipt timing and cache semantics                                  |
-| K10c | IPEX presentation cutoff       | Witnessed TS HTTP/mailbox grants covered; final full qualification remains |
+| K10c | IPEX presentation cutoff       | Witnessed TS HTTP/mailbox grants, immutable cutoffs and final full battery |
 
-Remove branded KramReceipt authority and downstream acknowledgement machinery.
+Branded KramReceipt authority and downstream acknowledgement machinery are removed.
 Use KERIpy receiver-observed acceptance time and replay/cache semantics; sender
 input cannot supply authoritative receiver time. K10c belongs to
 the [IPEX plan](IPEX_PLAN.md); child proof, registry and receiver-cutoff checks
-are implemented. Their complete maintained workflow qualification
-remain open; do not infer completion from isolated receipt/cutoff tests.
+are implemented. Their complete maintained workflow qualification passes for 1.0.0; the
+[release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md) records the
+actual composed scenarios and limits, distinct from isolated receipt/cutoff tests.
 The `interop-kram` owner includes independent-store TS presentations with single
 and two-of-two holders, three live KERIpy witnesses and offer-through-admit HTTP
 traffic. Two companion cases forward each grant contribution and replay through
@@ -35,7 +36,7 @@ the public engine, never accepted-row seeding. Credential peers are TS; Python
 witness participation does not establish pairwise presentation-registry parity.
 
 Cancellation, I/O, corruption and programming failures propagate. Normal intake
-refusals remain typed. Each remaining unit follows the roadmap's allowance of
+refusals remain typed. Future changes follow the roadmap's allowance of
 1,000–3,000 changed lines for cohesive deletion/refactoring, with smaller cuts
 where appropriate. Preserve published history.
 
@@ -70,8 +71,8 @@ supported partial/restart behavior without an added ready snapshot or downstream
 acknowledgement. Children remain independently unaccepted. Cancellation joins real
 reads and disposal; downstream failure must follow KERIpy acceptance semantics.
 
-Keep kready./kpnd., ready-resume paths and factor/copy credits deleted. Remove remaining body/item quotas and
-policy arguments. Keep verified distinct signatures, sender establishment state,
+Keep kready./kpnd., ready-resume paths and factor/copy credits deleted. Body/item
+quotas and policy arguments are removed. Keep verified distinct signatures, sender establishment state,
 foreign attachment factors and KERIpy replay/timeliness caches and pruning.
 No old-version data migration or compatibility tests. Optional intake retains
 sender policy, OOBI verification and HTTP authorization. `xip/pro/bar` remain
@@ -81,7 +82,7 @@ Require live KERIpy ↔ keri-ts single-signature and multisig tests with witness
 and mailboxes. Frozen fixtures alone are insufficient; include replay, refusal,
 partial/restart and a downstream failure at KERIpy's actual acceptance boundary.
 
-V2 registry foundations proceed alongside this sequence; dependent IPEX
-presentations require both those foundations and receiver-observed KRAM cutoffs.
+V2 registry foundations and receiver-observed KRAM cutoffs are implemented;
+future IPEX presentation changes must retain both ownership boundaries.
 
 [snapshot]: https://github.com/kentbull/keri-ts/pull/172

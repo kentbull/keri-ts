@@ -4,8 +4,9 @@ Planning constraint: the [accepted simplification](PARITY_ROADMAP.md) supersedes
 architecture requirements. Concrete owners, one worker model and complete-enclosure
 buffering replace speculative frameworks; protocol correctness and real cleanup remain.
 
-The [parity roadmap](PARITY_ROADMAP.md) coordinates the existing incremental PR
-sequence. Subject files below own acceptance, without duplicating that sequence.
+The [parity roadmap](PARITY_ROADMAP.md) records the completed 1.0.0 baseline and
+future change discipline. Subject files below retain acceptance standards and
+explicit profile limits; they do not resume the completed cleanup sequence.
 
 - [CESR parser](cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) and [Mapper](cesr/MAPPER_PLAN.md).
 - [Multisig](exchange/MULTISIG_PLAN.md), [IPEX](exchange/IPEX_PLAN.md),
