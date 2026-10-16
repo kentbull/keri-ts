@@ -12,19 +12,16 @@
  *   and the delegator's own KEL state
  */
 import { Diger, type SerderKERI } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { type Operation, spawn } from "npm:effection@^3.6.0";
 import type { QueryRequest } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";
-import {
-  type AgentRuntime,
-  processRuntimeTurn,
-  runAgentRuntimeUntil,
-} from "../agent-runtime.ts";
+import { type AgentRuntime, runAgentRuntime } from "../agent-runtime.ts";
 
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../endpoint-roleing.ts";
 import { MULTISIG_IXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
+import { runtimeTurn } from "../runtime-turn.ts";
 import { WitnessReceiptor } from "../witnessing.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
 import { resolveWitnessAuths } from "./common/witness-auth.ts";
@@ -196,12 +193,17 @@ function pinApprovalSeal(
   hab.kvy.processEscrowDelegables();
 }
 
-/** Approve pending delegated events for the selected local delegator habitat.
- *
- * This is the explicit use-case service for the delegation approval workflow.
- * The public CLI command is now a thin adapter: parse → open context → call → render → close.
- */
-export function* performDelegationApproval(
+/** Observe approval state while the command's host workers own background progress. */
+function* waitForDelegation(done: () => boolean, timeoutMs: number): Operation<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!done()) {
+    if (Date.now() >= deadline) throw new Error(`Runtime did not converge within ${timeoutMs}ms.`);
+    yield* runtimeTurn();
+  }
+}
+
+/** Approve pending events without starting or serially driving background workers. */
+function* performDelegationApproval(
   hby: Habery,
   hab: Hab,
   runtime: AgentRuntime,
@@ -209,10 +211,9 @@ export function* performDelegationApproval(
 ): Operation<void> {
   const interactionApproval = confirmArgs.interact ?? false;
 
-  yield* runAgentRuntimeUntil(
-    runtime,
+  yield* waitForDelegation(
     () => pendingDelegations(hby, hab.pre).length > 0,
-    { hab, timeoutMs: 15_000, pollMailbox: true },
+    15_000,
   );
 
   const pending = pendingDelegations(hby, hab.pre);
@@ -272,26 +273,17 @@ export function* performDelegationApproval(
       const member = localGroupMember(hby, hab.pre);
 
       pinApprovalSeal(hby, hab, serder, approving);
-      yield* processRuntimeTurn(runtime, {
-        hab: member,
-        pollMailbox: true,
-      });
 
       if (!delegateCommitted(hby, serder) && selectedWitness) {
         runtime.querying.enqueue(
           delegateWitnessLogsQuery(member, serder, selectedWitness),
         );
-        yield* runAgentRuntimeUntil(
-          runtime,
+        yield* waitForDelegation(
           () => delegateCommitted(hby, serder),
-          { hab: member, timeoutMs: 30_000, pollMailbox: true },
+          30_000,
         );
       }
       pinApprovalSeal(hby, hab, serder, approving);
-      yield* processRuntimeTurn(runtime, {
-        hab: member,
-        pollMailbox: true,
-      });
 
       if (serder.pre && serder.said) {
         const stillPending = hby.db.delegables.get([serder.pre]).includes(
@@ -342,10 +334,9 @@ export function* performDelegationApproval(
       runtime.querying.enqueue(
         delegateWitnessLogsQuery(hab, serder, selectedWitness),
       );
-      yield* runAgentRuntimeUntil(
-        runtime,
+      yield* waitForDelegation(
         () => delegateCommitted(hby, serder),
-        { hab, timeoutMs: 30_000, pollMailbox: true },
+        30_000,
       );
     } else {
       const querier = runtime.querying.watchSeqNo(
@@ -357,13 +348,11 @@ export function* performDelegationApproval(
       // after the delegator has anchored approval; the delegate still
       // discovers approval through its own delegator-KEL query path.
       pinApprovalSeal(hby, hab, serder, approving);
-      yield* runAgentRuntimeUntil(
-        runtime,
+      yield* waitForDelegation(
         () => querier.done,
-        { hab, timeoutMs: 30_000, pollMailbox: true },
+        30_000,
       );
     }
-    yield* processRuntimeTurn(runtime, { hab, pollMailbox: true });
 
     // Match KERIpy sequencing: only record the approving seal and retry
     // delegated unescrow after the delegate event has been observed as
@@ -425,6 +414,12 @@ export function* delegateConfirmCommand(
     if (!hab.kever) {
       throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
     }
-    yield* performDelegationApproval(hby, hab, runtime, confirmArgs);
+    const signer = isLocalGroupHab(hby, hab) ? localGroupMember(hby, hab.pre) : hab;
+    const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: signer }));
+    try {
+      yield* performDelegationApproval(hby, hab, runtime, confirmArgs);
+    } finally {
+      yield* worker.halt();
+    }
   });
 }
