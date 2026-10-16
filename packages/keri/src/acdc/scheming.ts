@@ -8,6 +8,7 @@ import type { Baser } from "../db/basing.ts";
 /** Normal schema dependencies/invalid content stay distinct from infrastructure failures. */
 export type SchemaValidation = { kind: "valid" } | { kind: "missing"; said: string } | {
   kind: "invalid";
+  subject: "schema" | "credential";
   reason: string;
 };
 /** Local issuance caller must supply this dependency before a disclosure can be derived. */
@@ -188,7 +189,7 @@ export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | 
     if (!root) {
       return missing
         ? { kind: "missing", said: missing }
-        : { kind: "invalid", reason: "Invalid ACDC schema field" };
+        : { kind: "invalid", subject: "schema", reason: "Invalid ACDC schema field" };
     }
     for (;;) {
       while (work.length) {
@@ -253,19 +254,21 @@ export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | 
       validate = validator.getSchema(uri(root.said));
     } catch (error) {
       if (error instanceof SyntaxError && error.message.includes("regular expression")) {
-        return { kind: "invalid", reason: error.message };
+        return { kind: "invalid", subject: "schema", reason: error.message };
       }
       if (
         error instanceof Error && /^reference "urn:said:[^"]+" resolves to more than one schema$/.test(error.message)
       ) {
-        return { kind: "invalid", reason: error.message };
+        return { kind: "invalid", subject: "schema", reason: error.message };
       }
       throw error;
     }
     if (!validate) throw new Error("Admitted schema was not registered");
-    return validate(acdc.sad) ? { kind: "valid" } : { kind: "invalid", reason: validator.errorsText(validate.errors) };
+    return validate(acdc.sad)
+      ? { kind: "valid" }
+      : { kind: "invalid", subject: "credential", reason: validator.errorsText(validate.errors) };
   } catch (error) {
-    if (error instanceof InvalidSchema) return { kind: "invalid", reason: error.message };
+    if (error instanceof InvalidSchema) return { kind: "invalid", subject: "schema", reason: error.message };
     throw error;
   }
 }

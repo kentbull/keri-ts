@@ -9,6 +9,8 @@ export type DisclosurePlan = readonly (readonly [schema: string, path: string, f
 export interface IpexGraph {
   nodes: ReadonlyMap<string, CesrFrame & { body: SerderACDC }>;
   order: readonly string[];
+  /** Far nodes precede their parents; disclosure still uses the independent BFS order. */
+  dependencyOrder: readonly string[];
 }
 type MissingSchema = Extract<SchemaValidation, { kind: "missing" }>;
 /** Absent edge evidence remains distinct from a disproved relationship. */
@@ -90,12 +92,15 @@ export function walkIpexGraph(origin: string, nests: readonly CesrFrame[], close
   if (!nodes.has(origin)) return null;
   const seen = new Set<string>();
   const order: string[] = [];
+  const dependencies = new Map<string, Set<string>>();
   const queue = [origin];
   for (let index = 0; index < queue.length; index++) {
     const said = queue[index];
     if (seen.has(said)) continue;
     seen.add(said);
     order.push(said);
+    const farNodes = new Set<string>();
+    dependencies.set(said, farNodes);
     const edges = blocks(nodes.get(said)!.body.sad!.e);
     if (!edges) return null;
     const groups = edges.map((edge) => ({ edge, nested: false }));
@@ -105,7 +110,10 @@ export function walkIpexGraph(origin: string, nests: readonly CesrFrame[], close
         if (Object.keys(edge).some((key) => !nodeLabels.has(key)) || !validSaid(edge.n)) return null;
         if (!nodes.has(edge.n)) {
           if (closed) return null;
-        } else if (!seen.has(edge.n)) queue.push(edge.n);
+        } else {
+          farNodes.add(edge.n);
+          if (!seen.has(edge.n)) queue.push(edge.n);
+        }
       } else {
         const labels = nested ? groupLabels : sectionLabels;
         for (const [key, value] of Object.entries(edge)) {
@@ -116,7 +124,23 @@ export function walkIpexGraph(origin: string, nests: readonly CesrFrame[], close
       }
     }
   }
-  return seen.size === nodes.size ? { nodes, order } : null;
+  if (seen.size !== nodes.size) return null;
+  const parents = new Map<string, Set<string>>();
+  for (const [near, children] of dependencies) {
+    for (const far of children) {
+      if (!parents.has(far)) parents.set(far, new Set());
+      parents.get(far)!.add(near);
+    }
+  }
+  const dependencyOrder = order.filter((said) => dependencies.get(said)!.size === 0);
+  for (let i = 0; i < dependencyOrder.length; i++) {
+    for (const near of parents.get(dependencyOrder[i]) ?? []) {
+      const children = dependencies.get(near)!;
+      children.delete(dependencyOrder[i]);
+      if (!children.size) dependencyOrder.push(near);
+    }
+  }
+  return dependencyOrder.length === nodes.size ? { nodes, order, dependencyOrder } : null;
 }
 
 /** Compare SAD values structurally while retaining list order; map insertion order is not semantic here. */
@@ -308,19 +332,25 @@ function groupRelation(
   return !results.length ? null : op === "OR" ? results.some(Boolean) : results.every(Boolean);
 }
 
+/** Preserve malformed/dependency outcomes separately from a disproved node relationship. */
+function nodeRelations(near: SerderACDC, graph: IpexGraph, db: Baser): Relation {
+  const edges = blocks(near.sad!.e);
+  if (!edges) return null;
+  for (const edge of edges) {
+    const matched = Object.hasOwn(edge, "n")
+      ? leafRelation(edge, near, graph, null, db)
+      : groupRelation(edge, near, graph, null, false, db);
+    if (matched !== true) return matched;
+  }
+  return true;
+}
+
 /** Validate edge blocks against authenticated nodes; unavailable schemas remain typed dependencies. */
 export function verifyIpexRelations(graph: IpexGraph, db: Baser): boolean | RelationDependency {
   for (const said of graph.order) {
-    const near = graph.nodes.get(said)!.body;
-    const edges = blocks(near.sad!.e);
-    if (!edges) return false;
-    for (const edge of edges) {
-      const matched = Object.hasOwn(edge, "n")
-        ? leafRelation(edge, near, graph, null, db)
-        : groupRelation(edge, near, graph, null, false, db);
-      if (matched !== null && typeof matched === "object") return matched;
-      if (matched !== true) return false;
-    }
+    const matched = nodeRelations(graph.nodes.get(said)!.body, graph, db);
+    if (matched !== null && typeof matched === "object") return matched;
+    if (matched !== true) return false;
   }
   return true;
 }
