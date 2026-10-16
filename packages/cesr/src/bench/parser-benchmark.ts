@@ -1,5 +1,4 @@
-import { discardFrame } from "../core/frame.ts";
-import { parse, type ParseOptions } from "../parser/progressive.ts";
+import { parse, type ParseOptions } from "../parser/parser.ts";
 
 /** Controls repeated progressive parses; every run must consume valid input completely. */
 export interface BenchmarkOptions {
@@ -9,7 +8,7 @@ export interface BenchmarkOptions {
   warmupIterations?: number;
   /** Independent copied source chunks; default 64 KiB. */
   chunkSize?: number;
-  /** Parser staging and cancellation passed directly to the single engine. */
+  /** Optional cancellation for the input receiving loop. */
   parserOptions?: ParseOptions;
 }
 
@@ -38,13 +37,11 @@ export interface BenchmarkResult {
   /** Complete frames per second. */
   framesPerSec: number;
 }
-
 /** Reject invalid control values rather than silently changing the requested workload. */
 function integer(value: number, name: string, minimum = 1): number {
   if (!Number.isSafeInteger(value) || value < minimum) throw new RangeError(`${name} must be an integer >= ${minimum}`);
   return value;
 }
-
 /** Consume one progressive pass, releasing ESSR on every delivered frame. */
 export async function countFrames(
   input: Uint8Array,
@@ -60,20 +57,14 @@ export async function countFrames(
   }
   let frameCount = 0;
   for await (const frame of parse(source(), options.parserOptions)) {
-    try {
+    {
       frameCount++;
-    } finally {
-      await discardFrame(frame);
     }
   }
   return frameCount;
 }
-
 /** Measure valid finite input repeatedly; malformed warmup or measured input rejects immediately. */
-export async function benchmarkParser(
-  input: Uint8Array,
-  options: BenchmarkOptions = {},
-): Promise<BenchmarkResult> {
+export async function benchmarkParser(input: Uint8Array, options: BenchmarkOptions = {}): Promise<BenchmarkResult> {
   if (input.length === 0) throw new Error("Benchmark input stream must not be empty");
   const iterations = integer(options.iterations ?? 50, "iterations");
   const warmupIterations = integer(options.warmupIterations ?? 5, "warmupIterations", 0);

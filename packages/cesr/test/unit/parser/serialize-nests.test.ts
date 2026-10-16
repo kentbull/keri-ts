@@ -1,14 +1,14 @@
-import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals } from "jsr:@std/assert";
 import { decodeHex } from "jsr:@std/encoding/hex";
 import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
-import { discardFrame } from "../../../src/core/frame.ts";
-import { collectPayload, MemoryPayloadSink } from "../../../src/core/payload.ts";
+import { collectPayload } from "../../../src/core/payload.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { essrPayload } from "../../../src/parser/essr.ts";
+import { essrRaw } from "../../../src/parser/essr.ts";
 import { attachmentPayload, framePayload } from "../../../src/parser/serialize.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Siger } from "../../../src/primitives/siger.ts";
+import { Texter } from "../../../src/primitives/texter.ts";
 import { Verfer } from "../../../src/primitives/verfer.ts";
 import depthVector from "../../fixtures/nested-depth.json" with { type: "json" };
 import vectors from "../../fixtures/nested-vectors.json" with { type: "json" };
@@ -34,8 +34,7 @@ function summary(frame: CesrFrame): unknown {
 function nodes(frame: CesrFrame): CesrFrame[] {
   return [frame, ...(frame.nests ?? []).flatMap(nodes)];
 }
-
-Deno.test("nested serialization preserves admitted deep trees under the default enclosure limit", async () => {
+Deno.test("nested serialization preserves admitted deep trees without adding wrapper levels", async () => {
   const body = decodeHex(depthVector.body);
   for (const input of [b(depthVector.qb64), decodeHex(depthVector.qb2)]) {
     const [frame] = await parseBytes(input);
@@ -105,133 +104,20 @@ Deno.test("nested children without evidence retain an explicit empty attachment 
   assertEquals(roundtrip.nests![0].attachments[0].items.length, 0);
   assertEquals(summary(roundtrip.nests![1]), summary(frame.nests![1]));
 });
-
-Deno.test("nested ESSR serialization is lazy and reopenable without transferring or discarding owners", async () => {
-  const [frame] = await parseBytes(b(vectors.rows.find((row) => row.name === "deep")!.qb64));
-  let opens = 0;
-  let discarded = 0;
+Deno.test("nested ESSR serialization preserves ordered duplicates across repeated reads and both domains", async () => {
+  const [frame] = parseBytes(b(vectors.rows.find((row) => row.name === "deep")!.qb64));
   for (const node of nodes(frame)) {
-    const sink = new MemoryPayloadSink();
-    await sink.write(b("4BABYWJj4BABeHl6"));
-    const owner = await sink.finish();
-    node.essr = essrPayload(
-      {
-        size: owner.size,
-        /** Observe lazy readers while retaining the actual reopenable storage owner. */
-        open(signal) {
-          opens++;
-          return owner.open(signal);
-        },
-        /** Only discardFrame, never serialization, releases this owner. */
-        async discard() {
-          discarded++;
-          await owner.discard();
-        },
-      },
-      2,
-      6,
-      node.gvrsn!,
-    );
+    node.essrs = ["abc", "abc", "xyz"].map((raw) => new Texter({ raw: b(raw), code: "4B" }));
   }
   for (const domain of ["txt", "bny"] as const) {
-    const before = opens;
     const payload = framePayload(frame, { domain });
-    assertEquals(opens, before);
-    let previous: Uint8Array | undefined;
-    for (let read = 0; read < 2; read++) {
-      const wire = await collectPayload(payload);
-      if (previous) assertEquals(wire, previous);
-      previous = wire;
-      const [roundtrip] = await parseBytes(wire);
-      try {
-        assertEquals(summary(roundtrip), summary(frame));
-        for (const node of nodes(roundtrip)) {
-          assertEquals(node.essr?.count, 2);
-          assertEquals(t(await collectPayload(node.essr!.raw)), "abcxyz");
-        }
-      } finally {
-        await discardFrame(roundtrip);
-      }
+    const first = await collectPayload(payload);
+    assertEquals(await collectPayload(payload), first);
+    const [roundtrip] = parseBytes(first);
+    assertEquals(summary(roundtrip), summary(frame));
+    for (const node of nodes(roundtrip)) {
+      assertEquals(node.essrs?.length, 3);
+      assertEquals(t(await collectPayload(essrRaw(node.essrs!))), "abcabcxyz");
     }
-  }
-  assertEquals(opens, nodes(frame).length * 4);
-  assertEquals(discarded, 0);
-  await discardFrame(frame);
-  assertEquals(discarded, nodes(frame).length);
-});
-
-Deno.test("cancellation closes a pending nested ESSR reader and leaves tree owners with the caller", async () => {
-  const [frame] = await parseBytes(b(vectors.rows[0].qb64));
-  const entered = Promise.withResolvers<void>();
-  let closed = 0;
-  let discarded = 0;
-  frame.nests![0].essr = essrPayload(
-    {
-      size: 8,
-      /** Block a real child read until the shared output signal aborts it. */
-      async *open(signal) {
-        try {
-          entered.resolve();
-          await new Promise<void>((_, reject) =>
-            signal!.addEventListener("abort", () => reject(signal!.reason), { once: true })
-          );
-          yield b("4BABYWJj");
-        } finally {
-          closed++;
-        }
-      },
-      /** Record that cancelling a non-owning view must not dispose its owner. */
-      discard() {
-        discarded++;
-        return Promise.resolve();
-      },
-    },
-    1,
-    3,
-    frame.nests![0].gvrsn!,
-  );
-  const controller = new AbortController();
-  const payload = framePayload(frame, { domain: "bny" });
-  const pending = (async () => {
-    for await (const _chunk of payload.open(controller.signal)) { /* Drain to child I/O. */ }
-  })();
-  await entered.promise;
-  controller.abort(new Error("cancel child output"));
-  await assertRejects(() => pending, Error, "cancel child output");
-  assertEquals(closed, 1);
-  assertEquals(discarded, 0);
-  await discardFrame(frame);
-  assertEquals(discarded, 1);
-});
-
-Deno.test("nested serialization checks caller-supplied ESSR extent before opening its wire", async () => {
-  const [frame] = await parseBytes(b(vectors.rows[0].qb64));
-  let opened = false;
-  const wire = {
-    size: 8,
-    /** Invalid extent must fail before acquiring an output reader. */
-    async *open() {
-      opened = true;
-      yield b("4BABYWJj");
-    },
-    async discard() {},
-  };
-  const valid = essrPayload(wire, 1, 3, frame.gvrsn!);
-  try {
-    for (
-      const extent of [
-        { ...valid, count: -1 },
-        { ...valid, count: 1.5 },
-        { ...valid, raw: { ...valid.raw, size: NaN } },
-        { ...valid, wire: { ...wire, size: Infinity } },
-        { ...valid, count: 0, raw: { ...valid.raw, size: 0 } },
-      ]
-    ) {
-      frame.nests![0].essr = extent;
-      assertThrows(() => framePayload(frame), Error, "Invalid ESSR payload extent");
-    }
-    assertEquals(opened, false);
-  } finally {
-    await discardFrame(frame);
   }
 });

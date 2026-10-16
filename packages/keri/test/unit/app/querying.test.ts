@@ -1,13 +1,6 @@
 import { call, resource, run, spawn, suspend } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import {
-  discardFrame,
-  parseBytes,
-  ParserError,
-  ResourceAdmissionError,
-  SerderKERI,
-  type Siger,
-} from "../../../../cesr/mod.ts";
+import { parseBytes, ParserError, ResourceAdmissionError, SerderKERI, type Siger } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
   processRuntimeTurn,
@@ -108,11 +101,10 @@ function captureSink(
     },
   };
 }
-
 /** Assert the actual V1 query endorsement, whose signer is in attachments rather than the body. */
 async function assertQuerySigner(bytes: Uint8Array, selected: Hab): Promise<void> {
   const frames = await parseBytes(bytes);
-  try {
+  {
     assertEquals(frames.length, 1);
     const query = queryEnvelopeFromDispatch(envelopeFromFrame(frames[0]));
     assertEquals(query.source?.qb64, selected.pre);
@@ -120,8 +112,6 @@ async function assertQuerySigner(bytes: Uint8Array, selected: Hab): Promise<void
     assertEquals(query.sigers.length, 1);
     const signature = query.sigers[0];
     assert(selected.kever!.verfers[signature.index].verify(signature.raw, query.serder.raw));
-  } finally {
-    for (const frame of frames) await discardFrame(frame);
   }
 }
 
@@ -880,7 +870,6 @@ Deno.test("query cancellation preserves its in-flight request and permits the ne
     }
   });
 });
-
 Deno.test("runtime close joins active query consumption and preserves cleanup failures", async () => {
   for (const fault of [undefined, new ResourceAdmissionError("foreign cleanup busy", "busy")]) {
     let entered!: () => void, cleaning!: () => void, release!: () => void;
@@ -903,8 +892,10 @@ Deno.test("runtime close joins active query consumption and preserves cleanup fa
               } finally {
                 cleaning();
                 yield* call(() => gate);
-                // deno-lint-ignore no-unsafe-finally -- Qualify propagation of an injected cleanup failure.
-                if (fault) throw fault;
+                if (fault) {
+                  // deno-lint-ignore no-unsafe-finally -- Qualify propagation of an injected cleanup failure.
+                  throw fault;
+                }
               }
             });
             entered();

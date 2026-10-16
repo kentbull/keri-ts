@@ -25,8 +25,7 @@ state escrows only for opted-in routes; MissingSignatureError counterparts prese
 existing escrow. Signature/dependency cues follow actual new escrow insertion.
 Ordinary Decks carry records without reservation, inspection or retained-byte credit.
 Authentication queries deduplicate coordinates in input order; already published
-queries remain available after later verification or rejection. Nested staging
-and joined payload cleanup remain real resource lifetimes. Exchanger and stored
+queries remain available after later verification or rejection. Nested staging remains publication work; hydrated frames are ordinary values. Exchanger and stored
 ESSR/nested helpers have no policy, tree/copy budget or token/byte quota. The local
 admission guard protects publication/recovery ordering; preserve it independently. Determine whether to
 publish a pending cue from the escrow write result, not a pre-I/O membership plan.
@@ -191,7 +190,7 @@ KRAM pruning closes read cursors before atomic cleanup. Finite orphan scans rest
 can postpone cleanup. Remove the shared opener only after the final participant.
 
 Optional runtime KRAM returns explicit intake decisions to parser dispatch;
-never authorize HTTP from an older cue after refusal. The parser owns payload disposal.
+never authorize HTTP from an older cue after refusal. ESSR and nested evidence are ordinary parsed values.
 Completed nonexempt intake passes receiverTime explicitly through dispatch.
 There is no receipt token or envelope WeakMap. Freeze the first exchange
 receiverTime through route proof escrow, retry and reopen; recheck publication

@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { b, codeB64ToB2, concatBytes } from "../../../src/core/bytes.ts";
 import { SerializeError } from "../../../src/core/errors.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
@@ -88,13 +88,13 @@ Deno.test("native seals: stream genus stays independent of protocol 1/2 JSON and
     const frames = await parseBytes(concatBytes(selector2, encode(typed.qb64)));
     assertEquals(frames.length, 1);
     assertEquals(frames[0].body.ked, typed.sad);
-    await assertRejects(() => parseBytes(concatBytes(selector1, encode(typed.qb64))));
+    assertThrows(() => parseBytes(concatBytes(selector1, encode(typed.qb64))));
     for (const row of vectors.jsonEvents) {
       assertEquals((await parseBytes(concatBytes(selector2, b(row.raw))))[0].body.ked, row.sad);
       if (row.name === "json-1") {
         assertEquals((await parseBytes(concatBytes(selector1, b(row.raw))))[0].body.ked, row.sad);
       } else {
-        await assertRejects(() => parseBytes(concatBytes(selector1, b(row.raw))));
+        assertThrows(() => parseBytes(concatBytes(selector1, b(row.raw))));
       }
     }
   }

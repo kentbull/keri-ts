@@ -1,15 +1,5 @@
 /** Frozen registry decisions use independently signed KELs through the real runtime. */
-import {
-  b,
-  BlindState,
-  BoundState,
-  Diger,
-  discardFrame,
-  NumberPrimitive,
-  parseBytes,
-  Saider,
-  SerderACDC,
-} from "cesr-ts";
+import { b, BlindState, BoundState, Diger, NumberPrimitive, parseBytes, Saider, SerderACDC } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
@@ -38,14 +28,11 @@ function disclosure(name: string): RegistryDisclosure {
   const value = fixture.disclosures[name as keyof typeof fixture.disclosures];
   return "bn" in value ? BoundState.fromSad(value) : BlindState.fromSad(value);
 }
-
 /** Process only real signed bootstrap material and release each parsed frame. */
 async function ingest(hby: Habery, wire: string | Uint8Array): Promise<void> {
   for (const frame of await parseBytes(typeof wire === "string" ? b(wire) : wire)) {
-    try {
+    {
       await run(() => dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery));
-    } finally {
-      await discardFrame(frame);
     }
   }
 }
@@ -189,7 +176,6 @@ Deno.test("v2 registry vetting matches frozen decisions through missing evidence
     }
   });
 });
-
 Deno.test("registry field validation shares parsed facts without accepting a chain", () => {
   const body = (name: keyof typeof fixture.bodies) => new SerderACDC({ raw: b(fixture.bodies[name]) });
   const rip = body("rip"), update = body("issued");
@@ -219,12 +205,11 @@ Deno.test("registry field validation shares parsed facts without accepting a cha
   assertEquals(validateUpdate(body("wrong-prior"), rip.said!, rip.said!), { kind: "reject", reason: "prior" });
   assertEquals(validateUpdate(body("gap"), rip.said!).kind, "valid", "sequence continuity belongs to the engine");
   assertEquals(validateUpdate(update, rip.said!, rip.said!).kind, "valid");
-  assertEquals(
-    validateUpdate(blindate(rip.said!, rip.said!, update.sad!.b as string, { sn: 0 }), rip.said!),
-    { kind: "reject", reason: "sequence" },
-  );
+  assertEquals(validateUpdate(blindate(rip.said!, rip.said!, update.sad!.b as string, { sn: 0 }), rip.said!), {
+    kind: "reject",
+    reason: "sequence",
+  });
 });
-
 Deno.test("local registry anchors require the full seal and verified witness receipts", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-anchor-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -374,7 +359,6 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
     }
   });
 });
-
 Deno.test("registry updates require accepted predecessors and preserve decided slots and heads", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-order-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -407,7 +391,6 @@ Deno.test("registry updates require accepted predecessors and preserve decided s
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true });
       assertEquals(baser.ooes!.get(rip.said!, 2), [[second.said!]], "order escrow survives reopen");
-
       issuer.interact({ data: [{ i: rip.said!, s: "1", d: first.said! }] });
       assertEquals(engine.processEvent(first).kind, "accept");
       assertEquals(engine.processEvent(wrong), { kind: "reject", reason: "prior" });
@@ -460,7 +443,6 @@ Deno.test("registry updates require accepted predecessors and preserve decided s
     }
   });
 });
-
 Deno.test("registry anchor retry selects verified siblings independently of arrival order", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-retry-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -532,7 +514,6 @@ Deno.test("registry anchor retry selects verified siblings independently of arri
     }
   });
 });
-
 Deno.test("registry queued replay retains earliest anchors and advances a contiguous chain", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-queued-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -611,7 +592,6 @@ Deno.test("registry queued replay retains earliest anchors and advances a contig
     }
   });
 });
-
 Deno.test("registry blind updates extend one staged frontier across reopen and refuse forks", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });

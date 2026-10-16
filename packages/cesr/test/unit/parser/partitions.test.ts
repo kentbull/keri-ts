@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert";
+import { WireParseError } from "../../../src/core/errors.ts";
 import { CtrDexV1 } from "../../../src/tables/counter-codex.ts";
 import { counterV1 } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
@@ -16,7 +17,8 @@ import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 async function checkErrors(bytes: Uint8Array, boundaries: number[]): Promise<void> {
   try {
     await parseFrames(bytes, boundaries);
-  } catch (error) {
+  } catch (failure) {
+    const error = failure instanceof WireParseError ? failure.cause : failure;
     const allowed = [
       "ParserError",
       "ShortageError",

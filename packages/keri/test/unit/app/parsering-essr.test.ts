@@ -1,4 +1,4 @@
-import { collectPayload } from "cesr-ts";
+import { collectPayload, essrRaw, essrWire } from "cesr-ts";
 import { assertEquals, assertStrictEquals } from "jsr:@std/assert";
 import { decodeB64 } from "../../../../cesr/src/core/bytes.ts";
 import { parseBytes } from "../../../../cesr/src/parser/complete.ts";
@@ -7,7 +7,7 @@ import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../../../cesr/test/fixtures/ex
 import { v1ify } from "../../../../cesr/test/fixtures/versioned-body-fixtures.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
 
-Deno.test("ESSR payload ownership transfers unchanged into the KERI envelope", async () => {
+Deno.test("ESSR evidence passes unchanged into the KERI envelope", async () => {
   const payload = "4BABYWJj4BACZGVmZ2hp";
   const v1Body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}");
   const streams = [
@@ -23,13 +23,12 @@ Deno.test("ESSR payload ownership transfers unchanged into the KERI envelope", a
       assertEquals(frames.length, 1);
       const envelopes = envelopesFromFrames(frames);
       assertEquals(envelopes.length, 1);
-      const essr = envelopes[0].essr!;
-      assertStrictEquals(essr, frames[0].essr);
-      assertEquals(essr.count, 2);
-      assertEquals(new TextDecoder().decode(await collectPayload(essr.raw)), "abcdefghi");
-      assertEquals(new TextDecoder().decode(await collectPayload(essr.wire)), payload);
+      const essr = envelopes[0].essrs!;
+      assertStrictEquals(essr, frames[0].essrs);
+      assertEquals(essr.length, 2);
+      assertEquals(new TextDecoder().decode(await collectPayload(essrRaw(essr))), "abcdefghi");
+      assertEquals(new TextDecoder().decode(await collectPayload(essrWire(essr))), payload);
       assertStrictEquals(envelopes[0].serder, frames[0].body);
-      await essr.discard();
     }
   }
 });

@@ -1,5 +1,5 @@
 /** Qualify real enst. rows against frozen Python extraction, forwarding policy, and duplicate replacement. */
-import { b, discardFrame, parseBytes, SerderKERI } from "cesr-ts";
+import { b, parseBytes, SerderKERI } from "cesr-ts";
 import { call, run } from "npm:effection@^3.6.0";
 import vectors from "../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
 import { createHabery } from "../src/app/habbing.ts";
@@ -17,7 +17,7 @@ await run(function*() {
       await hby.db.openPayloads();
       for (const vector of vectors.rows) {
         const [frame] = await parseBytes(b(vector.qb64));
-        try {
+        {
           // The actual production publisher preserves the same Python IoSet bytes without private pointers.
           await stageNests(hby.db, frame.body.said!, [frame]);
           hby.db.env!.transactionSync(() => {
@@ -27,8 +27,6 @@ await run(function*() {
           for (const wire of hby.db.enst.getIter([frame.body.said!])) {
             rows.push({ name: vector.name, wire, tree: vector.tree });
           }
-        } finally {
-          await discardFrame(frame);
         }
       }
     });

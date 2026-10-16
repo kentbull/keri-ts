@@ -1,13 +1,5 @@
 /** Public registry intake preserves accepted prefixes and current storage bytes across reopen. */
-import {
-  b,
-  BoundState,
-  Diger,
-  discardFrame,
-  NumberPrimitive,
-  parseBytes,
-  SerderACDC,
-} from "cesr-ts";
+import { b, BoundState, Diger, NumberPrimitive, parseBytes, SerderACDC } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
@@ -126,7 +118,6 @@ Deno.test("named registry acquisition closes its owned store when alias loading 
     await run(() => hby.close(true));
   }
 });
-
 Deno.test("public registry intake preserves accepted prefixes across missing anchors and reopen", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -145,10 +136,8 @@ Deno.test("public registry intake preserves accepted prefixes across missing anc
         const wires = sn ? [anchor] : [acceptedEventReplayMessage(source, issuer.pre, 0).message, anchor];
         for (const wire of wires) {
           const frames = yield* call(() => parseBytes(wire));
-          try {
+          {
             for (const frame of frames) yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
-          } finally {
-            yield* call(() => Promise.all(frames.map(discardFrame)));
           }
         }
         observer.processEscrows(rip.said!);
@@ -306,7 +295,6 @@ Deno.test("registry storage facade preserves aliases, earliest anchors, accepted
     }
   });
 });
-
 Deno.test("v2 Registrar stages presentation and vacuous bindings through instances, keys and aliases", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });

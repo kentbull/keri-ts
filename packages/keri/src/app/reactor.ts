@@ -2,7 +2,6 @@ import type { ParseOptions } from "cesr-ts";
 import {
   type CesrFrame,
   Cigar,
-  discardFrame,
   Ilks,
   ResourceAdmissionError,
   ResourceLimitError,
@@ -12,6 +11,7 @@ import {
   Siger,
   Verfer,
 } from "cesr-ts";
+import { toEffectionFrames } from "cesr-ts/effection";
 import { action, call, each, type Operation, resource } from "npm:effection@^3.6.0";
 import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
@@ -25,7 +25,6 @@ import { Tevery } from "../vdr/eventing.ts";
 import { RegistryStateReceiver } from "../vdr/registry-tsn.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
-import { FrameIntake } from "./frame-intake.ts";
 import type { Habery } from "./habbing.ts";
 import {
   type DispatchDecision,
@@ -52,7 +51,6 @@ interface IngressRecord {
   bytes: Uint8Array;
   reservation?: ResourceReservation;
 }
-
 /**
  * Shared message-routing component for one `Habery`.
  *
@@ -83,7 +81,6 @@ export class Reactor {
   /** Bounded direct-response reservations, captured before any guarded cue consumer runs. */
   readonly replies: QueryReplies;
   /** Input parsing/lifetime is separate from the guarded protocol turn. */
-  private readonly intake: FrameIntake;
   /** Whether one dispatch/escrow/cue turn currently owns shared runtime state. */
   private busy = false;
   /** Waiting turns are bounded independently of the lifetime of their input streams. */
@@ -100,7 +97,6 @@ export class Reactor {
   readonly acdc: AcdcRuntimeServices;
   private readonly registryStates?: RegistryStateReceiver;
   private readonly credentialStates?: CredentialStateReceiver;
-
   constructor(
     hby: Habery,
     {
@@ -114,7 +110,6 @@ export class Reactor {
       resources = hby.db.resources,
       kram,
       now,
-      intake,
     }: {
       cues?: Deck<AgentCue>;
       local?: boolean;
@@ -132,8 +127,6 @@ export class Reactor {
       /** Omitted preserves disabled intake; the receiver clock is runtime-owned. */
       kram?: KramConfig;
       now?: () => number;
-      /** Composition-owned source lifetime; standalone processors construct their local intake owner. */
-      intake?: FrameIntake;
     } = {},
   ) {
     for (const limit of [maxSources, maxQueuedBytes]) {
@@ -146,10 +139,6 @@ export class Reactor {
     this.replies = new QueryReplies();
     this.hby = hby;
     this.resources = resources;
-    this.intake = intake
-      ?? new FrameIntake(
-        async (signal) => (await hby.db.openPayloads(signal)).files.stage(signal),
-      );
     this.cues = cues ?? new Deck();
     this.ingress = new Deck();
     this.router = new Router();
@@ -175,7 +164,6 @@ export class Reactor {
   get hasIngress(): boolean {
     return !this.ingress.empty;
   }
-
   /** Finish dispatch before returning input credit for the next complete frame. */
   *process(
     source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
@@ -185,14 +173,13 @@ export class Reactor {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     yield* call(function*() {
-      const channel = yield* self.intake.frames(source, options);
+      const channel = yield* toEffectionFrames(source, options);
       for (const frame of yield* each(channel.frames)) {
         yield* self.settle(frame, options, consume);
         yield* each.next();
       }
     });
   }
-
   /**
    * Own one dispatch, optional escrow pass, and cue-consumption turn.
    * The callback runs under the same guard and must not call another guarded Reactor method.
@@ -206,16 +193,6 @@ export class Reactor {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     return call(function*() {
-      if (frame) {
-        // Register ownership before dispatch: reverse resource teardown joins its work before deleting input.
-        yield* resource<void>(function*(provide) {
-          try {
-            yield* provide();
-          } finally {
-            yield* call(() => discardFrame(frame));
-          }
-        });
-      }
       return yield* self.turn(function*() {
         let envelope: KeriDispatchEnvelope | undefined;
         let decision: DispatchDecision = undefined;
@@ -246,7 +223,6 @@ export class Reactor {
       });
     });
   }
-
   /** Acquire a bounded runtime turn; cancellation removes waiters and always releases acquired ownership. */
   private turn<T>(work: () => Operation<T>): Operation<T> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
@@ -319,7 +295,6 @@ export class Reactor {
     this.queuedBytes += bytes.byteLength;
     this.ingressRecords++;
   }
-
   /** Clear queued owners and invalidate late retries; active processing releases after joined cleanup. */
   clearIngress(): void {
     this.ingressGeneration++;
@@ -338,7 +313,6 @@ export class Reactor {
     // Copy already resident input in fixed-size chunks for the progressive source.
     yield* this.process((signal) => chunkBytes(bytes, { signal }), options);
   }
-
   /**
    * Drain one bounded message-processing pass.
    *
@@ -352,7 +326,6 @@ export class Reactor {
       if (yield* this.processIngress(record, generation)) return;
     }
   }
-
   /** Install the owner before work so cancellation joins child cleanup before returning credit. */
   private processIngress(record: IngressRecord, generation: number): Operation<boolean> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.

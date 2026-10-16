@@ -6,7 +6,6 @@ import {
   Cigar,
   Dater,
   Diger,
-  type EssrPayload,
   FirstSeen,
   type GroupEntry,
   Ilks,
@@ -29,6 +28,7 @@ import {
   TypeMedia,
   Verfer,
   Verser,
+  type Versionage,
 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import {
@@ -53,14 +53,15 @@ export interface ExchangerLike {
     tsgs: TransIdxSigGroup[];
     cigars: Cigar[];
     ptds: PathedMaterialGroup[];
+    gvrsn?: Versionage;
     /** Receipt-time unresolved foreign last references are not current proof. */
     unresolvedLast?: readonly Prefixer[];
     /** Source and last-establishment factors retain their own proof ownership. */
     sscs?: readonly SealSource[];
     sourceSeals?: readonly SealEvent[];
     lsgs?: readonly TransLastIdxSigGroup[];
-    /** Reopenable payload views owned by the dispatch caller. */
-    essr?: EssrPayload;
+    /** Ordered ordinary ESSR fragments. */
+    essrs?: readonly Texter[];
     /** Borrowed parent-owned descendants for a supported route. */
     nests?: readonly CesrFrame[];
     /** Hosted endpoint that received this message, independent of its claimed sender. */
@@ -95,8 +96,8 @@ export interface AcdcDispatchArgs {
   attachmentGroups: readonly AttachmentGroup[];
   local: boolean;
   ptds: PathedMaterialGroup[];
-  /** Reopenable ESSR views carried alongside credential attachments. */
-  essr?: EssrPayload;
+  /** Ordered ordinary ESSR fragments carried alongside credential attachments. */
+  essrs?: readonly Texter[];
   ssts: SealEvent[];
   bsqs: BlindState[];
   bsss: BoundState[];
@@ -147,7 +148,7 @@ export type DispatchDecision =
  * Convert one or more already-parsed CESR frames into KERI dispatch envelopes.
  *
  * Architectural rule:
- * - CESR parsing belongs to the real progressive CESR parser
+ * - CESR parsing belongs to the buffered finite CESR decoder
  * - KERI normalization belongs here
  * - routing into `Revery` / `Kevery` / `Exchanger` happens separately via
  *   `dispatchEnvelope(...)`
@@ -339,7 +340,8 @@ function* dispatchExchange(
     unresolvedLast: envelope.unresolvedLast,
     cigars: envelope.cigars,
     ptds: envelope.ptds,
-    essr: envelope.essr,
+    essrs: envelope.essrs,
+    gvrsn: envelope.gvrsn,
     nests: envelope.nests,
     mailboxAid,
     receiverTime,
@@ -382,7 +384,7 @@ function acdcEnvelopeFromDispatch(
     attachmentGroups: envelope.attachmentGroups,
     local: envelope.local,
     ptds: [...envelope.ptds],
-    essr: envelope.essr,
+    essrs: envelope.essrs,
     ssts: [...envelope.ssts],
     bsqs: [...envelope.bsqs],
     bsss: [...envelope.bsss],
@@ -565,7 +567,7 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
   }
 }
 
-/** Project one complete frame for progressive routing without an intermediate event array. */
+/** Project one complete frame for message routing without an intermediate event array. */
 export function envelopeFromFrame(
   message: CesrFrame,
   local = false,
@@ -583,7 +585,8 @@ export function envelopeFromFrame(
   const envelope = new KeriDispatchEnvelope({
     serder,
     attachmentGroups: message.attachments,
-    essr: message.essr,
+    essrs: message.essrs,
+    gvrsn: message.gvrsn,
     nests: message.nests,
     local,
   });

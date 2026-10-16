@@ -4,6 +4,7 @@ import { Counter } from "../../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
+import { assertWireError } from "../../fixtures/parser-test-helpers.ts";
 import { parseFrames, splitIntoThirds } from "../../fixtures/parser-test-helpers.ts";
 import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 import { v1ify } from "../../fixtures/versioned-body-fixtures.ts";
@@ -44,7 +45,7 @@ Deno.test("parser rejects nested mixed-version wrapper groups that require fallb
   const wrappedV1Attachment = `${counterV1(CtrDexV1.AttachmentGroup, v2OnlyNested.length / 4)}${v2OnlyNested}`;
   const stream = `${body}${wrappedV1Attachment}`;
 
-  await assertRejects(() => parseFrames(encode(stream)), UnknownCodeError, "Unsupported counter code");
+  await assertWireError(() => parseFrames(encode(stream)), UnknownCodeError, "Unsupported counter code");
 });
 
 Deno.test("latest genus-version inside wrapper payload controls subsequent nested groups", async () => {

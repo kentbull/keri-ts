@@ -3,11 +3,12 @@ import { decodeB64 } from "../../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { parse } from "../../../src/parser/progressive.ts";
+import { parse } from "../../../src/parser/parser.ts";
 import { CtrDexV1, CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV1, groupV2, sigerToken, token } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
 import { KERIPY_STRUCTOR_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
+import { assertWireError } from "../../fixtures/parser-test-helpers.ts";
 import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 
 /** Genus v1 uses item counts for the attachment cases below. */
@@ -153,7 +154,7 @@ Deno.test("a complete malformed v2 signature group fails without requesting EOF"
     throw new Error("Parser read beyond a malformed bounded group");
   }
   const parser = parse(source());
-  await assertRejects(() => parser.next(), GroupSizeError);
+  await assertWireError(() => parser.next(), GroupSizeError);
   assertEquals((await parser.next()).done, true);
 });
 

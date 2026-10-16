@@ -1,6 +1,6 @@
 # ADR-0012: Buffered CESR Decoding and Concrete Input Ownership
 
-- Status: Accepted replacement decision; implementation migration pending
+- Status: Accepted; finite decoding implemented, transport migration pending
 - Updated: 2026-10-15
 - Scope: CESR framing, decoding, ESSR evidence and transport integration
 - Related: [simple component flows](adr-0013-simple-component-flows.md)
@@ -56,7 +56,8 @@ whole-enclosure database transaction or rollback framework.
 
 ## Migration and qualification
 
-The current progressive implementation is transitional. First establish finite
+Finite decoding and ordinary ESSR evidence replace the progressive engine.
+TcpRead and the Effection bridge remain transport migration work. First establish finite
 decoding responsibility, then switch behavior and delete its cursor/staging and
 dependent contracts in cohesive cuts. Keep one engine, no compatibility aliases
 or alternate strategy. The old early-delivery tests must become complete-enclosure

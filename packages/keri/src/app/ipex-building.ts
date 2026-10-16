@@ -1,13 +1,5 @@
 /** Pure v2 IPEX body construction and finite, cancellable byte-input preparation. */
-import {
-  collectPayload,
-  discardFrame,
-  nestedPayload,
-  parseBytes,
-  SerderACDC,
-  type SerderKERI,
-  Vrsn_2_0,
-} from "cesr-ts";
+import { collectPayload, nestedPayload, parseBytes, SerderACDC, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import type { Operation } from "effection";
 import { exchange, IPEX_V2_PREDECESSORS, isIpexVerb } from "../core/protocol-exchanging.ts";
 import { abortable } from "./abortable.ts";
@@ -26,7 +18,6 @@ export interface IpexV2BodyOptions extends Omit<IpexBuilderOptions, "version" | 
   attrs?: Record<string, unknown>;
 }
 const nodeIlks = new Set([null, "acm", "ace", "act", "acg"]);
-
 /**
  * Construct an EXN body from parsed credential bodies, without reading or owning wire.
  * The first node is the origin SAID commitment; offer callers may send just that
@@ -130,11 +121,10 @@ export function ipexExnBody(
     gvrsn: options.gvrsn ?? Vrsn_2_0,
   })[0];
 }
-
 /**
  * Parse a finite stream of direct child messages once, then consume their nested
- * wire under one collection ceiling. This operation owns every parsed frame and
- * joins disposal on success, rejection and cancellation; no lazy owner escapes.
+ * wire for the enclosing exchange. Parsed frames and Texters are ordinary values;
+ * serialization observes the operation signal.
  * Returned nested bytes must share the enclosure with the parent's own proofs.
  */
 export function* prepareIpexExn(
@@ -144,35 +134,19 @@ export function* prepareIpexExn(
   options: IpexV2BodyOptions,
 ): Operation<IpexMessage> {
   return yield* abortable(async (signal) => {
-    const frames = await parseBytes(wire, { signal });
-    const errors: unknown[] = [];
-    try {
-      if (frames.some((frame) => !(frame.body instanceof SerderACDC) || frame.nests?.length)) {
-        throw new Error("IPEX requires direct credential node frames.");
-      }
-      const body = ipexExnBody(sender, route, frames.map((frame) => frame.body as SerderACDC), options);
-      const payloads = frames.map((frame) => nestedPayload(frame, Vrsn_2_0));
-      const payload = {
-        size: payloads.reduce((sum, child) => sum + child.size, 0),
-        /** Borrow each frame only until collection completes or aborts. */
-        async *open(signal?: AbortSignal) {
-          for (const child of payloads) yield* child.open(signal);
-        },
-      };
-      return [body, await collectPayload(payload, signal)] as const;
-    } catch (error) {
-      errors.push(error);
-      throw error;
-    } finally {
-      const results = await Promise.allSettled(frames.map(discardFrame));
-      const failed = results.filter((result) => result.status === "rejected");
-      if (failed.length) {
-        // deno-lint-ignore no-unsafe-finally -- Preserve processing and cleanup failures together.
-        throw new AggregateError(
-          [...errors, ...failed.map((result) => result.reason)],
-          "IPEX preparation cleanup failed.",
-        );
-      }
+    const frames = parseBytes(wire);
+    if (frames.some((frame) => !(frame.body instanceof SerderACDC) || frame.nests?.length)) {
+      throw new Error("IPEX requires direct credential node frames.");
     }
+    const body = ipexExnBody(sender, route, frames.map((frame) => frame.body as SerderACDC), options);
+    const payloads = frames.map((frame) => nestedPayload(frame, Vrsn_2_0));
+    const payload = {
+      size: payloads.reduce((sum, child) => sum + child.size, 0),
+      /** Borrow each frame only until collection completes or aborts. */
+      async *open(signal?: AbortSignal) {
+        for (const child of payloads) yield* child.open(signal);
+      },
+    };
+    return [body, await collectPayload(payload, signal)] as const;
   });
 }

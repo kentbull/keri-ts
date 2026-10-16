@@ -1,14 +1,5 @@
 /** Parsed frozen observations exercise source decisions against genuinely accepted KELs. */
-import {
-  b,
-  Diger,
-  discardFrame,
-  NumberPrimitive,
-  parseBytes,
-  Prefixer,
-  SerderKERI,
-  Siger,
-} from "cesr-ts";
+import { b, Diger, NumberPrimitive, parseBytes, Prefixer, SerderKERI, Siger } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -21,7 +12,6 @@ import { stageKram } from "../../../src/core/kram-staging.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import signatureFixture from "../../fixtures/kram-signatures-927.json" with { type: "json" };
 import fixture from "../../fixtures/kram-source-auth-927.json" with { type: "json" };
-
 Deno.test("KRAM source decisions match frozen last-candidate and exact missing-state observations", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -29,19 +19,17 @@ Deno.test("KRAM source decisions match frozen last-candidate and exact missing-s
       assertEquals(fixture.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
       for (const wire of fixture.kel) {
         const [frame] = yield* call(() => parseBytes(b(wire)));
-        try {
+        {
           const envelope = envelopeFromFrame(frame);
           yield* dispatchEnvelope(envelope, hby.rvy, hby.kevery);
           assertEquals(hby.db.kels.getLast(envelope.serder.pre!, envelope.serder.sn!), envelope.serder.said);
-        } finally {
-          yield* call(() => discardFrame(frame));
         }
       }
       const bodies: Record<string, string> = fixture.bodies;
       let anchored: SerderKERI | undefined;
       for (const row of fixture.cases) {
         const [frame] = yield* call(() => parseBytes(b(bodies[row.body] + row.attachments)));
-        try {
+        {
           const input = envelopeFromFrame(frame);
           if (row.name === "known valid") anchored = input.serder;
           if ("missingEvent" in row) {
@@ -53,7 +41,7 @@ Deno.test("KRAM source decisions match frozen last-candidate and exact missing-s
           const signatures = input.sigers.map((v) => v.qb64);
           if (row.name === "foreign triple alone cannot authenticate") {
             const [child] = yield* call(() => parseBytes(b(bodies.sealed + fixture.cases[0].attachments)));
-            try {
+            {
               assertEquals(authenticateKramSource(hby.db, envelopeFromFrame(child)), { kind: "valid" });
               const parent = new KeriDispatchEnvelope({
                 serder: input.serder,
@@ -64,8 +52,6 @@ Deno.test("KRAM source decisions match frozen last-candidate and exact missing-s
               });
               assertEquals(authenticateKramSource(hby.db, parent), { kind: "invalid", reason: "noSource" });
               assertStrictEquals(parent.nests[0], child, "child source evidence remains independent");
-            } finally {
-              yield* call(() => discardFrame(child));
             }
           }
           const result = authenticateKramSource(hby.db, input);
@@ -77,25 +63,20 @@ Deno.test("KRAM source decisions match frozen last-candidate and exact missing-s
           assertEquals(input.sscs.map((v) => [v.s.qb64, v.d.qb64]), couples);
           assertEquals(input.ssts.map((v) => [v.i.qb64, v.s.qb64, v.d.qb64]), triples);
           assertEquals(input.sigers.map((v) => v.qb64), signatures);
-        } finally {
-          yield* call(() => discardFrame(frame));
         }
       }
       assertEquals(hby.db.msgc.get([anchored!.pre!, anchored!.said!]), null, "helper never publishes intake state");
       const [frame] = yield* call(() => parseBytes(b(bodies.sealed + fixture.cases[0].attachments)));
-      try {
+      {
         const envelope = envelopeFromFrame(frame);
         hby.db.setEvt(dgKey(anchored!.pre!, envelope.sscs[0].d.qb64), b("invalid"));
         assertThrows(() => authenticateKramSource(hby.db, envelope), Error);
-      } finally {
-        yield* call(() => discardFrame(frame));
       }
     } finally {
       yield* hby.close(true);
     }
   });
 });
-
 Deno.test("KRAM sender normalization and signatures preserve frozen factor ordering and ownership", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -106,21 +87,19 @@ Deno.test("KRAM sender normalization and signatures preserve frozen factor order
     try {
       for (const wire of [...fixture.kel, ...signatureFixture.kel]) {
         const [frame] = yield* call(() => parseBytes(b(wire)));
-        try {
+        {
           const envelope = envelopeFromFrame(frame);
           yield* dispatchEnvelope(envelope, hby.rvy, hby.kevery);
           assertEquals(hby.db.kels.getLast(envelope.serder.pre!, envelope.serder.sn!), envelope.serder.said);
-        } finally {
-          yield* call(() => discardFrame(frame));
         }
       }
       const [child] = yield* call(() =>
         parseBytes(b(bodies[signatureFixture.cases[0].body] + signatureFixture.cases[0].attachments))
       );
-      try {
+      {
         for (const row of signatureFixture.cases) {
           const [frame] = yield* call(() => parseBytes(b(bodies[row.body] + row.attachments)));
-          try {
+          {
             const parsed = envelopeFromFrame(frame);
             const input = new KeriDispatchEnvelope({
               ...parsed,
@@ -189,19 +168,14 @@ Deno.test("KRAM sender normalization and signatures preserve frozen factor order
             assertEquals([input.sscs, input.ssts, input.ssgs, input.tsgs], [couples, triples, lastGroups, groups]);
             assertStrictEquals(result.envelope.nests[0], child);
             assertEquals(hby.db.msgc.get([input.serder.pre!, input.serder.said!]), null);
-          } finally {
-            yield* call(() => discardFrame(frame));
           }
         }
-      } finally {
-        yield* call(() => discardFrame(child));
       }
     } finally {
       yield* hby.close(true);
     }
   });
 });
-
 Deno.test("KRAM staging atomically pools frozen proofs, retires accepted partials and discards rotated partials", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -223,10 +197,8 @@ Deno.test("KRAM staging atomically pools frozen proofs, retires accepted partial
     /** Accept actual fixture KEL wire and join its frame owner before staging. */
     const acceptKel = function*(wire: string) {
       const [frame] = yield* call(() => parseBytes(b(wire)));
-      try {
+      {
         yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
-      } finally {
-        yield* call(() => discardFrame(frame));
       }
     };
     try {

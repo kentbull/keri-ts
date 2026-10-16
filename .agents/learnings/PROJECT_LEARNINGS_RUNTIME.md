@@ -66,10 +66,10 @@ delivery, and failed/cancelled drains retain pending ownership through cleanup.
 
 KERI/Tufa operations own lifecycle. Acquire source/frame/runtime resources before
 work children so cancellation aborts and joins I/O before releasing permits or
-owners. Promise adaptation belongs at real edges. FrameIntake owns demand-driven parser/source acquisition and source concurrency;
-application composition shares that owner with HTTP, witness and TCP intake.
-Its admission stays private and predates parser cleanup; per-source options do
-not expose a resource policy. Reactor serializes dispatch,
+owners. Promise adaptation belongs at real edges. FrameIntake is removed. The buffered
+CESR decoder has ordinary values; current transport adapters own source
+cancellation and joined cleanup while their concrete replacement remains pending.
+Reactor serializes dispatch,
 escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 QueryCoordinator owns an ordinary private Deck of plain QueryRequest records.
 Pending inspection exposes length/empty/peekHead, never queue mutation. Query
@@ -153,12 +153,11 @@ GET reserves handle/URL credit before fetch; busy retains durable pending work.
 Joined response cleanup precedes credit release and authorization publication.
 Native fetch headers/buffering and pending-row allocation remain separate bounds.
 
-FrameIntake binds actual ESSR staging to the parser adapter. It has no policy,
-source slots, cursor caps or reservation resource. The adapter owns cancellation,
-source advancement and joined cleanup. Reactor queued-record accounting and
-composition/transport policy remain removal work. HTTP requests retain their own
-actual transport scope independently of parsing; do not restore a parser slot
-merely to coordinate HTTP/TCP resource lifetime.
+Parser-owned ESSR staging and ordinary-frame disposal are removed. Ordered
+Texters carry evidence; actual files and network readers retain their own cleanup.
+Reactor queued-record accounting, transport policy, TcpRead and the optional
+Effection frame bridge remain removal work. HTTP requests keep actual transport
+scopes independently of parsing; do not restore parser slots for coordination.
 Protocol producers and consumers share ordinary Deck records. KEL/Revery/KSN,
 registry/credential TSN, EXN, verifier and OOBI publish cues after the owning
 writes. KEL live state and cues wait for native commit. Broker membership controls

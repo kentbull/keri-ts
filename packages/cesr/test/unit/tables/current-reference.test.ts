@@ -12,7 +12,7 @@ import {
 import { collectPayload } from "../../../src/core/payload.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { parse } from "../../../src/parser/progressive.ts";
+import { parse } from "../../../src/parser/parser.ts";
 import { attachmentPayload } from "../../../src/parser/serialize.ts";
 import { Counter, parseCounter } from "../../../src/primitives/counter.ts";
 import { Matter, parseMatter } from "../../../src/primitives/matter.ts";
@@ -31,6 +31,7 @@ import vectors from "../../fixtures/current-reference-vectors.json" with { type:
 import { currentReferenceVectors, hexWire, wireHex } from "../../fixtures/current-reference-vectors.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY as native } from "../../fixtures/external-vectors.ts";
 import { expectedNativeKeriIcpSad } from "../../fixtures/native-serder-test-helpers.ts";
+import { assertWireError } from "../../fixtures/parser-test-helpers.ts";
 import { v1ify } from "../../fixtures/versioned-body-fixtures.ts";
 
 /** Yield byte partitions without changing version selection or wire contents. */
@@ -145,17 +146,17 @@ Deno.test("nonce seals and obsolete v2 receipts never become attachments across 
       assertThrows(() => parseAttachmentGroup(attachment, V2, domain), UnknownCodeError);
       const wire = concatBytes(domain === "txt" ? b(native) : decodeB64(native), attachment);
       for (const parts of [Array.from(wire, (byte) => Uint8Array.of(byte)), [wire]]) {
-        await assertRejects(
+        await assertWireError(
           () => Array.fromAsync(parse(chunks(...parts))),
           UnknownCodeError,
         );
       }
-      await assertRejects(() => annotate(wire), UnknownCodeError);
+      assertThrows(() => annotate(wire), UnknownCodeError);
     }
   }
   const bodyPayload = native.slice(4, -4) + groupV2("-J", "-NAB1AAP");
   for (const encode of [b, decodeB64]) {
-    await assertRejects(() => parseBytes(encode(groupV2("-F", bodyPayload))));
+    assertThrows(() => parseBytes(encode(groupV2("-F", bodyPayload))));
   }
   const sad = { ...expectedNativeKeriIcpSad(), a: [{ nd: "1AAP" }] };
   assertThrows(() => dumpCesrNativeSad(sad as never), SerializeError, "NonceSealSingles");

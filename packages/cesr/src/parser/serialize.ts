@@ -2,7 +2,7 @@
 import { b, byteString, concatBytes, decodeB64, encodeB64 } from "../core/bytes.ts";
 import { SerializeError } from "../core/errors.ts";
 import type { Payload } from "../core/payload.ts";
-import type { AttachmentGroup, CesrDomain, CesrFrame, EssrPayload } from "../core/types.ts";
+import type { AttachmentGroup, CesrDomain, CesrFrame } from "../core/types.ts";
 import { Counter } from "../primitives/counter.ts";
 import { OpaqueSpan } from "../primitives/opaque.ts";
 import { type GroupEntry, isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
@@ -37,7 +37,7 @@ function sameVersion(left: Versionage, right: Versionage): boolean {
 /** Choose an output genus that can carry the body's independently declared protocol version. */
 function frameGenus(frame: CesrFrame, requested?: Versionage): Versionage {
   // ESSR retains the resolved frame genus; scoped ordinary leaves may select an older genus locally.
-  const selected = requested ?? frame.gvrsn ?? frame.essr?.gvrsn ?? frame.attachments[0]?.version ?? frame.body.gvrsn
+  const selected = requested ?? frame.gvrsn ?? frame.attachments[0]?.version ?? frame.body.gvrsn
     ?? frame.body.pvrsn;
   // A non-native protocol version still establishes a minimum compatible counter genus.
   const required = frame.body.gvrsn ?? frame.body.pvrsn;
@@ -144,59 +144,25 @@ async function* chunks(bytes: Uint8Array, signal?: AbortSignal): AsyncGenerator<
   }
 }
 
-/** Convert canonical wire incrementally; only a partial final quadlet crosses source chunks. */
-async function* wireChunks(wire: Payload, domain: CesrDomain, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
-  // At most three base64 characters await the next producer chunk.
-  let carry = new Uint8Array();
-  // The declared wire size is checked even for caller-supplied payload implementations.
-  let size = 0;
-  for await (const chunk of wire.open(signal)) {
-    signal?.throwIfAborted();
-    size += chunk.length;
-    if (size > wire.size) throw new SerializeError("ESSR wire exceeds its declared size");
-    if (domain === "txt") {
-      yield* chunks(chunk, signal);
-      continue;
-    }
-    // Copy only the short carry and this producer chunk, never the preceding stream.
-    const bytes = concatBytes(carry, chunk);
-    // Only complete quadlets may be decoded; the remainder becomes the next carry.
-    const end = bytes.length - bytes.length % 4;
-    for (let offset = 0; offset < end; offset += CHUNK_BYTES) {
-      yield qualify(bytes.subarray(offset, Math.min(offset + CHUNK_BYTES, end)), "txt", "bny");
-    }
-    carry = bytes.slice(end);
-  }
-  if (size !== wire.size || carry.length) throw new SerializeError("Incomplete canonical ESSR wire");
+/** Count qualified fragments from their authoritative primitive values. */
+function essrHeader(texters: readonly Texter[], gvrsn: Versionage, domain: CesrDomain): Uint8Array {
+  const size = texters.reduce((size, texter) => size + (domain === "txt" ? texter.qb64b.length : texter.qb2.length), 0);
+  return counter(
+    "ESSRPayloadGroup",
+    gvrsn.major === 1 ? texters.length : size / (domain === "txt" ? 4 : 3),
+    gvrsn,
+    domain,
+  );
 }
 
-/** One counter calculation serves both streamed output and the enclosing payload size. */
-function essrHeader(essr: EssrPayload, gvrsn: Versionage, domain: CesrDomain): Uint8Array {
-  // Caller-supplied nested frames must satisfy metadata framing without a separate tree walk.
-  if (
-    [essr.count, essr.raw.size, essr.wire.size].some((value) => !Number.isSafeInteger(value) || value < 0)
-    || essr.wire.size > 4 * Math.ceil(essr.raw.size / 3) + 12 * essr.count
-  ) throw new SerializeError("Invalid ESSR payload extent");
-  // Canonical Texters include their qualified headers and are always quadlet aligned.
-  const count = gvrsn.major === 1 ? essr.count : essr.wire.size / 4;
-  return counter("ESSRPayloadGroup", count, gvrsn, domain);
-}
-
-/** Prefix a canonical ESSR payload with the selected genus/domain counter, without collecting it. */
+/** Serialize ordinary ESSR fragments under their selected counter genus. */
 export async function* essrChunks(
-  essr: EssrPayload,
-  options: SerializeOptions & {
-    /** Abort the current payload read and its conversion loop. */
-    signal?: AbortSignal;
-  } = {},
+  texters: readonly Texter[],
+  { gvrsn, domain = "txt", signal }: { gvrsn: Versionage; domain?: CesrDomain; signal?: AbortSignal },
 ): AsyncGenerator<Uint8Array> {
-  // Canonical Texters are already quadlet aligned, including their qualified headers.
-  const gvrsn = options.gvrsn ?? essr.gvrsn;
-  // One attachment enclosure cannot mix text and binary qualification.
-  const domain = options.domain ?? "txt";
-  options.signal?.throwIfAborted();
-  yield essrHeader(essr, gvrsn, domain);
-  yield* wireChunks(essr.wire, domain, options.signal);
+  signal?.throwIfAborted();
+  yield essrHeader(texters, gvrsn, domain);
+  for (const texter of texters) yield* chunks(domain === "txt" ? texter.qb64b : texter.qb2, signal);
 }
 
 /**
@@ -212,7 +178,7 @@ export function nestedPayload(frame: CesrFrame, enclosing: Versionage, options: 
   // A selector inside the child wrapper cannot alter the following sibling's counter interpretation.
   const selector = sameVersion(enclosing, gvrsn) ? new Uint8Array() : qualify(Counter.makeGVC(gvrsn), "txt", domain);
   // Python's nested extractor expects at least one counter after the body, even without authenticators.
-  const empty = !frame.attachments.length && !frame.nests?.length && !frame.essr
+  const empty = !frame.attachments.length && !frame.nests?.length && !frame.essrs
     ? counter("ControllerIdxSigs", 0, gvrsn, domain)
     : undefined;
   const attachments: Payload = empty
@@ -270,11 +236,12 @@ function attachmentContent(frame: CesrFrame, options: SerializeOptions): Payload
   );
   const nested = children.reduce((size, child) => size + child.size, 0);
   // Only the ESSR header is resident; its canonical wire stays in its owning sink.
-  const essr = frame.essr;
+  const essr = frame.essrs;
   // The same helper is used when the stream emits this counted payload.
   const essrPrefix = essr ? essrHeader(essr, gvrsn, domain) : new Uint8Array();
   // Each four text characters encode exactly three binary bytes.
-  const essrSize = essr ? essr.wire.size * (domain === "txt" ? 1 : 0.75) : 0;
+  const essrSize =
+    essr?.reduce((size, texter) => size + (domain === "txt" ? texter.qb64b.length : texter.qb2.length), 0) ?? 0;
   return {
     size: ordinary + nested + essrPrefix.length + essrSize,
     /** Each reopen retains the existing owner and streams the same logical attachment bytes. */

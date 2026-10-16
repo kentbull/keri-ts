@@ -1,5 +1,5 @@
-import { t } from "../core/bytes.ts";
-import { UnknownCodeError } from "../core/errors.ts";
+import { decodeB64, t } from "../core/bytes.ts";
+import { DeserializeError, UnknownCodeError } from "../core/errors.ts";
 import type { CesrDomain } from "../core/types.ts";
 import { TEXTER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
@@ -34,5 +34,14 @@ export function parseTexter(
   input: Uint8Array,
   cold: CesrDomain,
 ): Texter {
-  return new Texter(parseMatter(input, cold));
+  const texter = new Texter(parseMatter(input, cold));
+  const wire = texter.qb64;
+  if (!/^[A-Za-z0-9_-]+$/.test(wire)) throw new DeserializeError("Invalid Texter base64 payload");
+  const lead = Matter.leadSizeForCode(texter.code);
+  const headerSize = texter.code.length * 2;
+  const padding = decodeB64(wire.slice(headerSize, headerSize + 4));
+  for (let index = 0; index < lead; index++) {
+    if (padding[index] !== 0) throw new DeserializeError("Nonzero Texter lead padding");
+  }
+  return texter;
 }

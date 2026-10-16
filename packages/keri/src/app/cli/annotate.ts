@@ -5,7 +5,7 @@ import { collectBytes, fileBytes, streamBytes } from "../byte-source.ts";
 import { colorizeAnnotatedOutput } from "./annotate-color.ts";
 import { writeStdout } from "./output.ts";
 
-/** CLI presentation flags and an explicit finite annotation admission policy. */
+/** CLI presentation flags. */
 interface AnnotateArgs {
   /** File input; omitted input reads stdin. */
   inPath?: string;
@@ -23,12 +23,7 @@ export function* annotateCommand(args: Record<string, unknown>): Operation<void>
   const bytes = yield* abortable((signal) =>
     collectBytes(options.inPath ? fileBytes(options.inPath, { signal }) : streamBytes(Deno.stdin.readable, { signal }))
   );
-  const text = yield* abortable((signal) =>
-    annotate(bytes, {
-      pretty: options.pretty,
-      signal,
-    })
-  );
+  const text = annotate(bytes, { pretty: options.pretty });
   if (options.outPath) {
     yield* abortable((signal) => Deno.writeTextFile(options.outPath!, text, { signal }));
   } else {

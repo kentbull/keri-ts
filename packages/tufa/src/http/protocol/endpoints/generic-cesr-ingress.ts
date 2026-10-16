@@ -1,3 +1,4 @@
+import { toEffectionFrames } from "cesr-ts/effection";
 /**
  * Generic CESR POST/PUT ingress for the Tufa HTTP edge.
  *
@@ -5,7 +6,7 @@
  * the remaining raw CESR traffic and decides whether it belongs to local
  * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
  */
-import { discardFrame, Ilks, ParserError, ResourceAdmissionError, ResourceLimitError, type SerderKERI } from "cesr-ts";
+import { Ilks, ParserError, ResourceAdmissionError, ResourceLimitError, type SerderKERI } from "cesr-ts";
 import { call, each, type Operation, resource, run } from "effection";
 import {
   type AgentRuntime,
@@ -115,7 +116,6 @@ function querySseResponse(
     },
   );
 }
-
 /** Wait for this request's reserved response while other runtime turns continue fairly. */
 function* deferredDirectQueryResponse(
   context: ProtocolRequestContext,
@@ -142,13 +142,16 @@ function* deferredDirectQueryResponse(
         }
       }
     });
-    if (response) return response;
-    if (serder.route !== "logs") return null;
+    if (response) {
+      return response;
+    }
+    if (serder.route !== "logs") {
+      return null;
+    }
     yield* runtimeTurn();
   } while (Date.now() < expires);
   return null;
 }
-
 /** Run one request in a single owned Effection task and join it on disconnect. */
 export async function handleGenericCesrIngress(
   context: ProtocolRequestContext,
@@ -199,7 +202,9 @@ export async function handleGenericCesrIngress(
       try {
         await context.req.body.cancel();
       } catch (error) {
-        if (error !== context.req.signal.reason) note(error);
+        if (error !== context.req.signal.reason) {
+          note(error);
+        }
       }
     }
   }
@@ -227,7 +232,6 @@ export async function handleGenericCesrIngress(
   if (cleanup.length) throw new AggregateError(cleanup, "HTTP ingress cleanup failed");
   return context.req.signal.aborted ? textResponse("Request cancelled", 408) : response!;
 }
-
 /** Parse on demand, dispatch each completed child, and retain only the final response query. */
 function* ingest(
   context: ProtocolRequestContext,
@@ -240,20 +244,11 @@ function* ingest(
   try {
     // This child scope closes its parser before an optional deferred query wait begins.
     yield* call(function*() {
-      const channel = yield* runtime.intake.frames(
-        (signal) => requestBytes(context.req, { signal }),
-        { signal: context.req.signal },
-      );
+      const channel = yield* toEffectionFrames((signal) => requestBytes(context.req, { signal }), {
+        signal: context.req.signal,
+      });
       for (const frame of yield* each(channel.frames)) {
         yield* call(function*() {
-          // Invalid trailing frames still own payloads even when they never reach runtime dispatch.
-          yield* resource<void>(function*(provide) {
-            try {
-              yield* provide();
-            } finally {
-              yield* call(() => discardFrame(frame));
-            }
-          });
           if (query?.reply) {
             const previous = query.reply;
             // A later frame makes this an ordinary query; transfer its reply before releasing its reservation.

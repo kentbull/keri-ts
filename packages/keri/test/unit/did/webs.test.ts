@@ -1,4 +1,4 @@
-import { ResourceAdmissionError, ResourceLimitError, ResourcePolicy, ShortageError } from "cesr-ts";
+import { ResourcePolicy, ShortageError, WireParseError } from "cesr-ts";
 import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
@@ -170,20 +170,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
             if (mode === "injected") throw injected;
             if (mode === "status" && fetches.length === 1) return new Response(null, { status: 503 });
             if (url.endsWith("did.json")) {
-              assertEquals(resources.used.streams, 1);
-              assertEquals(resources.used.bytes >= 64 * 1024 ** 2, true);
               if (mode === "mismatch") return new Response(JSON.stringify({ id: did }));
-              if (mode === "limit") {
-                let remaining = 9;
-                return new Response(
-                  new ReadableStream({
-                    pull(current) {
-                      if (remaining--) current.enqueue(new Uint8Array(1024 ** 2));
-                      else current.close();
-                    },
-                  }),
-                );
-              }
             }
             return new Response(url.endsWith("did.json") ? Uint8Array.from(artifacts.didJson) : body);
           },
@@ -205,7 +192,6 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         aliases.issued,
       ]);
       assertEquals((runtime.vdr.reger as Reger).saved.get([aliases.issued])?.qb64, aliases.issued);
-      assertEquals(resources.used, { bytes: 5487, streams: 0, decryptions: 0 });
       runtime.cues.clear();
     };
     const first = [...issuer.db.clonePreIter(hab.pre)][0];
@@ -226,7 +212,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       });
       for (let i = 0; i < 100 && !target.db.getState(hab.pre); i++) yield* sleep(1);
       assertExists(target.db.getState(hab.pre), "Independent KEL becomes accepted before artifact EOF");
-      assertEquals([complete, fetches.length, resources.used.streams], [false, 1, 1]);
+      assertEquals([complete, fetches.length], [false, 1]);
       controller!.enqueue(artifacts.keriCesr.slice(first.length));
       controller!.close();
       assertEquals((yield* task).document.id, did);
@@ -247,10 +233,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       );
       assertEquals(target.db.getState(hab.pre)?.d, hab.kever!.said);
       assertEquals((runtime.vdr.reger as Reger).saved.get([aliases.issued])?.qb64, aliases.issued);
-      assertEquals(resources.used, { bytes: 17882, streams: 0, decryptions: 0 });
-      runtime.cues.clear(); // Preserve the zero below as a transport-owner check after queued output disposal.
-      assertEquals(resources.used, { bytes: 0, streams: 0, decryptions: 0 });
-
+      runtime.cues.clear();
       fetches = [];
       body = new ReadableStream({
         start(current) {
@@ -272,12 +255,10 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         joined = true;
       });
       for (let i = 0; i < 100 && !canceled; i++) yield* sleep(1);
-      assertEquals([canceled, joined, fetches.length, resources.used.streams], [true, false, 1, 1]);
+      assertEquals([canceled, joined, fetches.length], [true, false, 1]);
       finishCleanup();
       yield* halt;
-      assertEquals(resources.used.bytes, 0);
       assertExists(target.db.getState(hab.pre));
-
       fetches = [];
       const fault = new Error("late artifact read failed");
       body = new ReadableStream({
@@ -298,7 +279,6 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       assertEquals(yield* failed, fault);
       assertEquals(fetches.length, 1, "Started body failures cannot fall back to an alternate URL");
       assertExists(target.db.getState(hab.pre), "Late failure preserves prior accepted state");
-      assertEquals(resources.used.bytes, 0);
       fetches = [];
       mode = "stream";
       body = new ReadableStream({
@@ -321,8 +301,6 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       }
       assertEquals(fetches.length, 1, "Escrow/storage failures cannot become an alternate artifact fetch");
       clearSavedCue();
-      assertEquals(resources.used.bytes, 0);
-
       fetches = [];
       body = new ReadableStream({
         start(current) {
@@ -337,11 +315,9 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       } catch (error) {
         truncated = error;
       }
-      assertEquals(truncated instanceof ShortageError, true);
+      assertEquals(truncated instanceof WireParseError && truncated.cause instanceof ShortageError, true);
       assertEquals(fetches.length, 1, "Truncated EOF cannot finish a cached DID or trigger fallback");
       assertExists(target.db.getState(hab.pre));
-      assertEquals(resources.used.bytes, 0);
-
       fetches = [];
       mode = "injected";
       try {
@@ -351,18 +327,6 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         assertEquals(error, injected);
       }
       assertEquals(fetches.length, 1);
-      const occupied = resources.reserve({ streams: 2 });
-      if (occupied.kind !== "reserve") throw new Error("Expected stream credit");
-      fetches = [];
-      try {
-        yield* resolveDidWebs(runtime, { did });
-      } catch (error) {
-        assertEquals(error instanceof ResourceAdmissionError, true);
-      } finally {
-        occupied.reservation.release();
-      }
-      assertEquals(fetches.length, 0, "Shared parser admission precedes fetch/acquisition");
-
       fetches = [];
       mode = "status";
       body = new ReadableStream({
@@ -374,8 +338,8 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       assertEquals((yield* resolveDidWebs(runtime, { did })).document.id, did);
       assertEquals(fetches.slice(0, 2).map((url) => new URL(url).protocol), ["https:", "http:"]);
       clearSavedCue();
-      assertEquals(resources.used.bytes, 0);
-      for (const [failure, expected] of [["mismatch", ValidationError], ["limit", ResourceLimitError]] as const) {
+
+      for (const [failure, expected] of [["mismatch", ValidationError]] as const) {
         mode = failure;
         fetches = [];
         body = new ReadableStream({
@@ -390,10 +354,9 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         } catch (error) {
           rejected = error;
         }
-        assertEquals(rejected instanceof expected, true);
+        assertEquals(rejected instanceof expected, true, `${failure}: ${String(rejected)}`);
         assertEquals(fetches.length, 2, "DID JSON/content failures cannot trigger transport fallback");
         clearSavedCue();
-        assertEquals(resources.used.bytes, 0);
       }
     } finally {
       finishCleanup();

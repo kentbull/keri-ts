@@ -1,5 +1,5 @@
 /** Qualify actual multisig builders, accepted exchange storage, and replay against frozen Python927. */
-import { b, type CesrFrame, concatBytes, Counter, discardFrame, Kinds, parseBytes, t, Vrsn_2_0 } from "cesr-ts";
+import { b, type CesrFrame, concatBytes, Counter, Kinds, parseBytes, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
 import { Exchanger } from "../src/app/exchanging.ts";
 import {
@@ -88,7 +88,6 @@ await run(function*() {
           });
         } finally {
           yield* call(async () => {
-            for (const frame of frames) await discardFrame(frame);
           });
         }
       }
@@ -114,10 +113,8 @@ if (!result.success) throw new Error("Frozen Python rejected nested multisig evi
 const returned = JSON.parse(t(result.stdout)) as { said: string; wire: number[] }[];
 for (const row of returned) {
   const frames: CesrFrame[] = await parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), new Uint8Array(row.wire)));
-  try {
+  {
     if (frames.length !== 1 || frames[0].body.said !== row.said) throw new Error("Reference replay child mismatch");
-  } finally {
-    for (const frame of frames) await discardFrame(frame);
   }
 }
 console.log(

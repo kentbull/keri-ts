@@ -1,8 +1,7 @@
-/** Application composition of a byte-level TCP connection with CESR parsing and guarded dispatch. */
 import { ResourceAdmissionError } from "cesr-ts";
+import { toEffectionFrames } from "cesr-ts/effection"; /** Application composition of a byte-level TCP connection with CESR parsing and guarded dispatch. */
 import { call, each, type Operation, resource } from "npm:effection@^3.6.0";
 import type { KeriDispatchEnvelope } from "../core/dispatch.ts";
-import type { FrameIntake } from "./frame-intake.ts";
 import type { DispatchDecision } from "./parsering.ts";
 import type { Reactor } from "./reactor.ts";
 import type { RuntimeServices } from "./runtime-services.ts";
@@ -18,7 +17,6 @@ import {
 /** Components borrowed by this application flow; the transport receives only a byte consumer. */
 export interface TcpReplyReceiver {
   services: RuntimeServices;
-  intake: FrameIntake;
   reactor: Reactor;
 }
 
@@ -93,9 +91,8 @@ function conversation(
       maxChunkBytes: 65536,
       open(source, signal) {
         return resource<Operation<void>>(function*(provide) {
-          const channel = yield* replies.intake.frames(source, {
+          const channel = yield* toEffectionFrames(source, {
             signal,
-            classifyWireErrors: true,
           });
           yield* provide(call(function*() {
             for (const frame of yield* each(channel.frames)) {

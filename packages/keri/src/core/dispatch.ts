@@ -5,7 +5,6 @@ import {
   type CesrFrame,
   Cigar,
   Diger,
-  type EssrPayload,
   type FirstSeen,
   NumberPrimitive,
   Prefixer,
@@ -15,7 +14,9 @@ import {
   Seqner,
   SerderKERI,
   Siger,
+  type Texter,
   type TypeMedia,
+  type Versionage,
 } from "cesr-ts";
 
 /** Fixed-width or compact ordinal primitive accepted by runtime dispatch groups. */
@@ -158,6 +159,8 @@ export class PathedMaterialGroup {
 
 /** Construction arguments for one normalized KERI dispatch envelope. */
 export interface KeriDispatchEnvelopeInit {
+  /** Resolved wire genus, independent of body protocol version. */
+  gvrsn?: Versionage;
   serder: SerderKERI;
   attachmentGroups: AttachmentGroup[];
   local: boolean;
@@ -175,7 +178,7 @@ export interface KeriDispatchEnvelopeInit {
   tdcs?: SealKind[];
   ptds?: PathedMaterialGroup[];
   /** Reopenable ESSR wire and decoded view; the dispatch caller owns disposal. */
-  essr?: EssrPayload;
+  essrs?: readonly Texter[];
   /** Borrowed child trees retain separate evidence and caller-owned payloads. */
   nests?: readonly CesrFrame[];
   bsqs?: BlindState[];
@@ -200,6 +203,8 @@ export interface KeriDispatchEnvelopeInit {
  *   with attached `.verfer` before they reach reply/runtime processors
  */
 export class KeriDispatchEnvelope {
+  /** Resolved wire genus for faithful exchange replay. */
+  readonly gvrsn?: Versionage;
   readonly serder: SerderKERI;
   readonly attachmentGroups: readonly AttachmentGroup[];
   readonly local: boolean;
@@ -216,7 +221,7 @@ export class KeriDispatchEnvelope {
   readonly tdcs: SealKind[];
   readonly ptds: PathedMaterialGroup[];
   /** Shared payload views preserve parser ownership through dispatch. */
-  readonly essr?: EssrPayload;
+  readonly essrs?: readonly Texter[];
   /** Child evidence is route-specific and never merged into parent signatures. */
   readonly nests: readonly CesrFrame[];
   readonly bsqs: BlindState[];
@@ -240,7 +245,8 @@ export class KeriDispatchEnvelope {
     this.ssts = [...(init.ssts ?? [])];
     this.tdcs = [...(init.tdcs ?? [])];
     this.ptds = [...(init.ptds ?? [])];
-    this.essr = init.essr;
+    this.essrs = init.essrs;
+    this.gvrsn = init.gvrsn;
     this.nests = init.nests ?? [];
     this.bsqs = [...(init.bsqs ?? [])];
     this.bsss = [...(init.bsss ?? [])];

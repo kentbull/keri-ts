@@ -2,7 +2,6 @@ import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import {
   Diger,
-  discardFrame,
   NumberPrimitive,
   NumDex,
   parseBytes,
@@ -302,7 +301,6 @@ Deno.test("protocol-vdr-eventing - NoBackers inception rejects configured backer
     "NoBackers",
   );
 });
-
 Deno.test("tels queries reach the built-in owner and retain captured management/credential replay", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -364,14 +362,12 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
           assertEquals(messages.length, 2, "Later revocation remains outside both captured responses");
           for (const [index, message] of messages.entries()) {
             const [frame] = yield* call(() => parseBytes(message));
-            try {
+            {
               const envelope = envelopeFromFrame(frame);
               assertEquals(envelope.serder.raw, [vcp, iss][index].raw);
               assertEquals(envelope.lastSsc?.s.num, anchors[index].seqner.num);
               assertEquals(envelope.lastSsc?.d.qb64, anchors[index].saider.qb64);
               assertEquals(frame.gvrsn?.major, 2);
-            } finally {
-              yield* call(() => discardFrame(frame));
             }
           }
         }
@@ -415,7 +411,6 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
     }
   });
 });
-
 Deno.test("TSN producer prepares ordered independent state replies without publishing cues", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -441,7 +436,7 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
           gvrsn: Vrsn_2_0,
         }))
       );
-      try {
+      {
         const result = prepareTsnQuery(queryEnvelopeFromDispatch(envelopeFromFrame(frame)), tvy.tevers);
         if (result.kind !== "reply") throw new Error("Expected TSN replies");
         // Actual714 parsed query emits registry then hits vcpre= TypeError; positional vcState proves this record.
@@ -475,8 +470,6 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
         });
         result.replies[0].data.b = ["foreign"];
         assertEquals(tvy.tevers.get(vcp.pre!)!.baks, [], "Replies are detached record data");
-      } finally {
-        yield* call(() => discardFrame(frame));
       }
       const partial = prepareTsnQuery({ serder: request(vcp.pre!, issuer.pre), source }, tvy.tevers);
       if (partial.kind !== "reply") throw new Error("Expected registry reply");
@@ -527,7 +520,6 @@ Deno.test("TSN producer prepares ordered independent state replies without publi
     }
   });
 });
-
 Deno.test("registry TSN runtime verifies independent proof, accepted trust and microsecond BADA", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -570,7 +562,9 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
           notice({ ...state, c: [1] }),
           reply(`/tsn/registry/${issuer.pre}suffix`, state, { pre: issuer.pre }),
         ]
-      ) yield* runtime.reactor.processBytes(issuer.endorse(malformed));
+      ) {
+        yield* runtime.reactor.processBytes(issuer.endorse(malformed));
+      }
       assertEquals(reger.txnsb.escrowdb.cnt(), 0, "Malformed qualified coordinates never reach storage");
       assertEquals(runtime.cues.length, 0);
       const habRecord = hby.db.getHab(issuer.pre)!;
@@ -740,7 +734,6 @@ Deno.test("registry TSN admits prospective state and dependency cues before proo
     }
   });
 });
-
 Deno.test("registry TSN missing issuer and TEL retry through the normal runtime turn", async () => {
   await run(function*() {
     const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -769,10 +762,8 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
               if (emission.cue.kin === "query" && emission.kind === "wire") {
                 for (const message of emission.messages) {
                   const [frame] = yield* call(() => parseBytes(message));
-                  try {
+                  {
                     queries.push(envelopeFromFrame(frame).serder.ked!.q as Record<string, unknown>);
-                  } finally {
-                    yield* call(() => discardFrame(frame));
                   }
                 }
               }
@@ -1012,7 +1003,6 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
     }
   });
 });
-
 Deno.test("credential TSN missing registry, TEL and partial proofs retry through the runtime", async () => {
   await run(function*() {
     const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -1143,7 +1133,6 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
     }
   });
 });
-
 Deno.test("TSN runtime query delivers ordered replies with independent credential acceptance", async () => {
   await run(function*() {
     const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -1177,10 +1166,8 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
         const bodies = [];
         for (const emission of replies) {
           const [frame] = yield* call(() => parseBytes([...emission.messages][0]));
-          try {
+          {
             bodies.push(envelopeFromFrame(frame).serder);
-          } finally {
-            yield* call(() => discardFrame(frame));
           }
         }
         assertEquals(bodies.map((body) => body.route), [

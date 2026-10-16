@@ -1,8 +1,7 @@
-import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { assertEquals } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../../src/core/bytes.ts";
-import { discardFrame } from "../../../src/core/frame.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
-import { parse } from "../../../src/parser/progressive.ts";
+import { parse } from "../../../src/parser/parser.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
@@ -137,47 +136,6 @@ Deno.test(
     assertEquals(summary[4].attachments, [`${CtrDexV2.ControllerIdxSigs}:22`]);
   },
 );
-
-Deno.test("annotation work yields a host turn and cancellation joins its source", async () => {
-  const body = encode(v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}"));
-  // Separator scanning consumes once per byte; two 4,096-operation checkpoints suffice.
-  const wire = concatBytes(new Uint8Array(8 * 1024).fill(10), body);
-  for (const cancel of [false, true]) {
-    const controller = new AbortController();
-    const reason = new Error("annotation work cancelled");
-    let timerRan = false, closed = false;
-    const parser = parse(
-      (async function*() {
-        try {
-          yield wire;
-        } finally {
-          closed = true;
-        }
-      })(),
-      { signal: controller.signal },
-    );
-    const timer = setTimeout(() => {
-      timerRan = true;
-      if (cancel) controller.abort(reason);
-    }, 0);
-    try {
-      if (cancel) {
-        assertStrictEquals(await assertRejects(() => parser.next()), reason);
-        assertEquals(closed, true);
-      } else {
-        const result = await parser.next();
-        assertEquals(result.done, false);
-        assertEquals(result.value!.body.raw, body);
-        assertEquals(timerRan, true, "annotation traversal must let host work run before delivery");
-        await discardFrame(result.value!);
-      }
-    } finally {
-      clearTimeout(timer);
-      await parser.return(undefined);
-    }
-    assertEquals(closed, true);
-  }
-});
 
 Deno.test(
   "interleaved annotation bytes between heterogeneous domains and wrapper styles preserve ordering",

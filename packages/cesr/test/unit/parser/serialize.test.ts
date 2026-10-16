@@ -1,10 +1,10 @@
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
 import { SerializeError } from "../../../src/core/errors.ts";
-import { collectPayload, type OwnedPayload } from "../../../src/core/payload.ts";
+import { collectPayload } from "../../../src/core/payload.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
-import { essrPayload } from "../../../src/parser/essr.ts";
-import { parse } from "../../../src/parser/progressive.ts";
+import { essrRaw } from "../../../src/parser/essr.ts";
+import { parse } from "../../../src/parser/parser.ts";
 import { attachmentPayload, essrChunks, framePayload } from "../../../src/parser/serialize.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
@@ -58,31 +58,24 @@ Deno.test("frame serialization normalizes both genera/domains and preserves inne
     const original = fixture(incoming);
     for (const encode of [b, decodeB64]) {
       const frame = await read(encode(original.frame));
-      try {
-        for (const major of [1, 2] as const) {
-          const expected = fixture(major);
-          for (const domain of ["txt", "bny"] as const) {
-            // Only one frame is collected here; production consumers iterate open().
-            const output = framePayload(frame, { gvrsn: expected.gvrsn, domain });
-            const roundtrip = await read(await collectPayload(output));
-            try {
-              assertEquals(roundtrip.body.raw, b(json));
-              assertEquals(roundtrip.attachments.length, 1);
-              assertEquals(roundtrip.attachments[0].version, expected.gvrsn);
-              assertEquals(
-                roundtrip.attachments[0].raw,
-                domain === "txt" ? b(expected.group) : decodeB64(expected.group),
-              );
-              assertExists(roundtrip.essr);
-              assertEquals(roundtrip.essr.count, 2);
-              assertEquals(await collectPayload(roundtrip.essr.raw), b("abcxyz"));
-            } finally {
-              await roundtrip.essr?.discard();
-            }
-          }
+
+      for (const major of [1, 2] as const) {
+        const expected = fixture(major);
+        for (const domain of ["txt", "bny"] as const) {
+          // Only one frame is collected here; production consumers iterate open().
+          const output = framePayload(frame, { gvrsn: expected.gvrsn, domain });
+          const roundtrip = await read(await collectPayload(output));
+          assertEquals(roundtrip.body.raw, b(json));
+          assertEquals(roundtrip.attachments.length, 1);
+          assertEquals(roundtrip.attachments[0].version, expected.gvrsn);
+          assertEquals(
+            roundtrip.attachments[0].raw,
+            domain === "txt" ? b(expected.group) : decodeB64(expected.group),
+          );
+          assertExists(roundtrip.essrs);
+          assertEquals(roundtrip.essrs.length, 2);
+          assertEquals(await collectPayload(essrRaw(roundtrip.essrs)), b("abcxyz"));
         }
-      } finally {
-        await frame.essr?.discard();
       }
     }
   }
@@ -96,53 +89,28 @@ Deno.test("flattened wrapper-local genera serialize as one legal attachment genu
   const wire = t(Counter.makeGVC(two.gvrsn))
     + two.wrap("BodyWithAttachmentGroup", two.body + two.wrap("AttachmentGroup", nested + two.group + two.essr));
   const frame = await read(b(wire));
-  try {
-    for (const domain of ["txt", "bny"] as const) {
-      const output = attachmentPayload(frame, { gvrsn: two.gvrsn, domain });
-      const bytes = await collectPayload(output);
-      // Exact bytes prove no hidden selectors and unchanged inner signature qualification.
-      const expected = two.wrap("AttachmentGroup", two.group + two.group + two.essr);
-      assertEquals(bytes, domain === "txt" ? b(expected) : decodeB64(expected));
-    }
-  } finally {
-    await frame.essr?.discard();
+  for (const domain of ["txt", "bny"] as const) {
+    const output = attachmentPayload(frame, { gvrsn: two.gvrsn, domain });
+    const bytes = await collectPayload(output);
+    // Exact bytes prove no hidden selectors and unchanged inner signature qualification.
+    const expected = two.wrap("AttachmentGroup", two.group + two.group + two.essr);
+    assertEquals(bytes, domain === "txt" ? b(expected) : decodeB64(expected));
   }
 });
 
-Deno.test("ESSR binary serialization carries split quadlets and cancels its source", async () => {
-  // Every qualified character is a separate read, including headers and fragment boundaries.
-  const value = fixture(1);
-  let closed = false;
-  const wire: OwnedPayload = {
-    size: value.wire.length,
-    /** Deliberately split canonical quadlets to exercise the bounded conversion carry. */
-    async *open(signal?: AbortSignal) {
-      try {
-        for (const byte of b(value.wire)) {
-          signal?.throwIfAborted();
-          yield Uint8Array.of(byte);
-        }
-      } finally {
-        closed = true;
-      }
-    },
-    /** No external storage is owned by this small in-memory fixture. */
-    discard: () => Promise.resolve(),
-  };
-  const essr = essrPayload(wire, 2, 6, value.gvrsn);
-  const parts: Uint8Array[] = [];
-  for await (const chunk of essrChunks(essr, { domain: "bny" })) parts.push(chunk);
-  assertEquals(concatBytes(...parts), decodeB64(value.essr));
-  assertEquals(closed, true);
-  // Cancellation propagates to the reopened source; earlier reads cannot retain it.
-  const controller = new AbortController();
-  const iterator = essrChunks(essr, { domain: "bny", signal: controller.signal });
-  await iterator.next();
-  await iterator.next();
-  closed = false;
-  controller.abort(new Error("stop serialization"));
-  await assertRejects(() => iterator.next(), Error, "stop serialization");
-  assertEquals(closed, true);
+Deno.test("ESSR serialization derives genus counts from ordinary Texters and honors cancellation", async () => {
+  for (const major of [1, 2] as const) {
+    const value = fixture(major);
+    const essrs = ["abc", "xyz"].map((raw) => new Texter({ raw: b(raw), code: "4B" }));
+    const parts: Uint8Array[] = [];
+    for await (const chunk of essrChunks(essrs, { gvrsn: value.gvrsn, domain: "bny" })) parts.push(chunk);
+    assertEquals(concatBytes(...parts), decodeB64(value.essr));
+    const controller = new AbortController();
+    const iterator = essrChunks(essrs, { gvrsn: value.gvrsn, domain: "bny", signal: controller.signal });
+    await iterator.next();
+    controller.abort(new Error("stop serialization"));
+    await assertRejects(() => iterator.next(), Error, "stop serialization");
+  }
 });
 
 Deno.test("opaque attachment content cannot be silently retagged to another genus", async () => {
@@ -160,21 +128,13 @@ Deno.test("detached HTTP attachments use body-inferred enclosure genus before on
   const one = fixture(1);
   const two = fixture(2);
   const frame = await read(b(two.frame));
-  try {
-    const payload = attachmentPayload(frame, { gvrsn: two.gvrsn, enclosingGvrsn: one.gvrsn });
-    const expected = one.wrap("AttachmentGroup", t(Counter.makeGVC(two.gvrsn)) + two.group + two.essr);
-    assertEquals(await collectPayload(payload), b(expected));
-    const roundtrip = await read(concatBytes(b(json), b(expected)));
-    try {
-      assertEquals(roundtrip.attachments[0].version, two.gvrsn);
-      assertExists(roundtrip.essr);
-      assertEquals(await collectPayload(roundtrip.essr.raw), b("abcxyz"));
-    } finally {
-      await roundtrip.essr?.discard();
-    }
-  } finally {
-    await frame.essr?.discard();
-  }
+  const payload = attachmentPayload(frame, { gvrsn: two.gvrsn, enclosingGvrsn: one.gvrsn });
+  const expected = one.wrap("AttachmentGroup", t(Counter.makeGVC(two.gvrsn)) + two.group + two.essr);
+  assertEquals(await collectPayload(payload), b(expected));
+  const roundtrip = await read(concatBytes(b(json), b(expected)));
+  assertEquals(roundtrip.attachments[0].version, two.gvrsn);
+  assertExists(roundtrip.essrs);
+  assertEquals(await collectPayload(essrRaw(roundtrip.essrs)), b("abcxyz"));
 });
 
 Deno.test("genus conversion rejects a transferable signature tuple needing an unsupported big inner counter", async () => {
@@ -190,24 +150,4 @@ Deno.test("genus conversion rejects a transferable signature tuple needing an un
     SerializeError,
     "small inner counter",
   );
-});
-
-Deno.test("ESSR serialization preserves exact wire from a view over larger backing", async () => {
-  // A producer's short visible slice must not conceal an unbounded resident buffer.
-  const value = fixture(1);
-  const backing = new Uint8Array(1024 * 1024 + 1);
-  backing.set(b(value.wire));
-  const wire: OwnedPayload = {
-    size: value.wire.length,
-    /** Return the hostile view exactly as a foreign sink reader could. */
-    async *open() {
-      yield backing.subarray(0, value.wire.length);
-    },
-    /** The fixture owns no resource beyond the local allocation. */
-    discard: () => Promise.resolve(),
-  };
-  const essr = essrPayload(wire, 2, 6, value.gvrsn);
-  const pieces: Uint8Array[] = [];
-  for await (const chunk of essrChunks(essr)) pieces.push(chunk);
-  assertEquals(pieces.at(-1), b(value.wire));
 });

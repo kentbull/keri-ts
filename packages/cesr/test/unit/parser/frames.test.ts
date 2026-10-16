@@ -1,10 +1,10 @@
-import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../../src/core/bytes.ts";
 import { ParserError, ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { sniff } from "../../../src/parser/cold-start.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { parse } from "../../../src/parser/progressive.ts";
+import { parse } from "../../../src/parser/parser.ts";
 import { smell } from "../../../src/serder/smell.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { COUNTER_CODE_NAMES_V1 } from "../../../src/tables/counter.tables.generated.ts";
@@ -89,20 +89,20 @@ Deno.test("parser emits the semantic leaf inside a nested attachment group", asy
   assertEquals(frames[0].attachments[0].count, 1);
 });
 
-Deno.test("parser rejects a truncated attachment stream", async () => {
+Deno.test("parser rejects a truncated attachment stream", () => {
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  await assertRejects(() => parseBytes(encode(`${body}-AAB`)), ShortageError);
+  assertThrows(() => parseBytes(encode(`${body}-AAB`)), ShortageError);
 });
 
-Deno.test("parser rejects attachments requiring an undeclared major version", async () => {
+Deno.test("parser rejects attachments requiring an undeclared major version", () => {
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   const v2OnlyAttachment = `${counterV2(selectV2OnlyQuadletGroupCode(), 1)}AAAA`;
-  await assertRejects(() => parseBytes(encode(`${body}${v2OnlyAttachment}`)), ParserError);
+  assertThrows(() => parseBytes(encode(`${body}${v2OnlyAttachment}`)), ParserError);
 });
 
-Deno.test("parser rejects a NonNativeBodyGroup payload size mismatch", async () => {
+Deno.test("parser rejects a NonNativeBodyGroup payload size mismatch", () => {
   const ims = `-HAB${sigerToken()}`; // One declared quadlet cannot contain this much larger token.
-  await assertRejects(() => parseBytes(encode(ims)), ParserError);
+  assertThrows(() => parseBytes(encode(ims)), ParserError);
 });
 
 Deno.test("parser emits opaque CESR body for size-consistent NonNativeBodyGroup non-serder payload", async () => {
@@ -145,18 +145,18 @@ Deno.test("parser ignores leading and repeated annotation bytes before first fra
   }
 });
 
-Deno.test("parser rejects malformed native fix-body payload tokenization", async () => {
+Deno.test("parser rejects malformed native fix-body payload tokenization", () => {
   const bad = `${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(0, 4)}!${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(5)}`;
-  await assertRejects(() => parseBytes(encode(bad)), ParserError);
+  assertThrows(() => parseBytes(encode(bad)), ParserError);
 });
 
 Deno.test("sniff throws on empty buffer", () => {
   assertThrows(() => sniff(new Uint8Array(0)));
 });
 
-Deno.test("parser rejects malformed v1 signatures without emitting a frame", async () => {
+Deno.test("parser rejects malformed v1 signatures without emitting a frame", () => {
   const body = encode(v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}"));
   for (const attachment of [encode("-AABzzzz"), decodeB64("-AABzzzz")]) {
-    await assertRejects(() => parseBytes(concatBytes(body, attachment)), UnknownCodeError);
+    assertThrows(() => parseBytes(concatBytes(body, attachment)), UnknownCodeError);
   }
 });

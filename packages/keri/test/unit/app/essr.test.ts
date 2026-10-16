@@ -3,7 +3,6 @@ import {
   concatBytes,
   Diger,
   Encrypter,
-  essrPayload,
   MtrDex,
   type Payload,
   Prefixer,
@@ -107,12 +106,11 @@ async function accept(
     sender.sign(serder.raw, true),
   );
   const texter = new Texter({ raw: cipher, code: MtrDex.Bytes_L0 });
-  const wire = fragmentsPayload(texter.qb64b);
   const result = await run(() =>
     new Exchanger(hby).processEvent({
       serder,
       tsgs: [tsg],
-      essr: essrPayload({ ...wire, discard: async () => {} }, 1, cipher.length, Vrsn_1_0),
+      essrs: [texter],
     })
   );
   assertEquals(result.kind, "accept");

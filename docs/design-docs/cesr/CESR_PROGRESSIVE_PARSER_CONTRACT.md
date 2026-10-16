@@ -1,19 +1,13 @@
-# Progressive CESR Parser Contract
+# CESR finite decoding and evidence contract
 
-## Status and scope
-
-One progressive engine is implemented and is transitional removal work.
-[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) requires buffered
-complete-enclosure decoding and removal of the cursor, staging and channel bridge.
-Early child delivery and parser-owned resource lifetimes below describe current
-behavior, not requirements to preserve in that replacement.
-[ADR-0013](../../adr/adr-0013-simple-component-flows.md) requires removal of all
-application accounting. Codec allocation estimators, decoded-body budgets and
-CBOR expansion refusals are removed. Parser cursor/tree/frame/ESSR quotas, source slots and frame-credit plumbing
-are removed. Runtime/transport accounting remains separate removal work.
-The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) owns lifecycle
-and framing; the [plan](../../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) owns the
-remaining migration. There is one async engine and no atomic/push compatibility path.
+The filename is retained for existing documentation links.
+[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) replaces progressive
+traversal with buffered finite decoding. The
+[state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) owns completion,
+genus scope and source lifecycle; the
+[plan](../../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) owns remaining work.
+[ADR-0013](../../adr/adr-0013-simple-component-flows.md) prohibits application
+accounting. There are no parser byte, frame, tree, depth or ESSR quotas.
 
 ## Codec correctness
 
@@ -27,8 +21,7 @@ capacity callbacks or speculative tag allowlist may be restored.
 Wrapped non-native material falls back to opaque bytes only for intrinsic syntax
 failures. MessagePack/CBOR token-extent inspection runs after native decode failure
 solely to distinguish known incomplete/trailing boundaries from unexpected errors.
-It does not reject valid input or run before allocation. Source, sink, decoder and
-cleanup failure provenance remains independent of removed accounting.
+It does not reject valid input or run before allocation. Source, decoder and actual I/O cleanup failures retain their identities.
 
 CBOR decoding restores map mode and resets message-bearing decoder globals before
 returning. The captured native decode of private fixed null clears source, strings,
@@ -40,168 +33,44 @@ Keep the pinned MessagePack 3.1.3 and cbor-x 1.6.0 dependencies while these code
 and reset assumptions depend on their source. cbor-x extension shapes do not claim
 byte or semantic parity with KERIpy cbor2 unknown-tag representations.
 
-## Pull-based lifecycle
+## Ordinary ESSR evidence
 
-The canonical stream operation is an async generator over an async byte source,
-with nested generators delegated through `yield*`. Each requested result grants
-one complete frame. Source exhaustion supplies the record/stream end.
-There is no permanent push-parser compatibility wrapper, `framed` cadence flag,
-or separate reset/flush lifecycle.
+`CesrFrame.essrs` stores ordered Texters. Preserve qualified codes, fragmentation
+and duplicates, including a big code carrying a small value. The signed ESSR
+commitment covers concatenated raw bytes; fragment boundaries do not create
+separate ciphertexts. The finite primitive reader validates alphabet, declared
+extent and zero lead padding before admitting an incoming Texter.
 
-- Yield complete `CesrFrame` values in wire order.
-- Await downstream payload writes before reading more input.
-- On malformed input, fail once and terminate. Earlier yielded frames remain
-  delivered; an unfinished frame is never yielded as complete.
-- A new record or stream gets a new parser invocation and fresh genus selection.
-- Complete-input helpers materialize their input; use the progressive engine for streams.
+`essrRaw(texters)` and `essrWire(texters)` provide derived read-only Payload views
+for existing crypto/storage consumers. They create no staging files or owners.
+`essrChunks(texters, { gvrsn, domain, signal })` emits counters derived from the
+actual array and primitive extents. There is no caller-supplied count/size
+manifest, lazy parser source, sink factory or discardFrame lifecycle.
 
-Synchronous primitive readers remain useful for complete tokens. Old
-keri-ts aliases and compatibility-only tests are removed; KERI,
-CESR, and ACDC wire/version compatibility is retained.
+`annotateFrames` and `annotate` are synchronous finite operations. Rendering walks
+each hydrated node exactly once inside its original enclosure, preserving
+headers, indentation, signatures, scoped selectors and ESSR order. GenericGroup
+children get independent root ordinals. Deannotation restores original qualified
+text, including from qb2 input. Parsed values remain usable after rendering.
 
-## Frame completion and progressive enclosure reads
+## Real resource boundaries
 
-Only `GenericGroup` and its big form currently describe progressive sequences of
-frames. Enter their declared bounds and parse available children immediately;
-do not wait for the entire payload or accumulate all siblings.
+`Payload { size, open(signal) }` describes an actual byte source. File sinks and
+`OwnedPayload.discard()` remain for demonstrated storage/crypto consumers.
+`collectPayload` enforces its source's declared extent and joins its reader;
+that is framing, not an allocation quota. Consumers own cancellation and cleanup
+of actual files, sockets, readers and database work. Ordinary parsed values do
+not acquire synthetic resource lifetimes.
 
-A frame still completes only at a following body boundary, the end of an
-explicit frame/attachment enclosure, or genuine source EOF. Chunk exhaustion,
-empty chunks, and annotation separators never close an attachment set. An
-unwrapped frame may require a bounded lookahead into the next body's header.
+The receiving loop preserves input order and successive open-connection messages.
+It does not guarantee early children of incomplete groups or constant memory for
+arbitrary groups. The optional Effection bridge remains a separate transport
+migration; it must join existing I/O until concrete callers replace it.
 
-`BodyWithAttachmentGroup` contains exactly one parent message and its enclosed
-attachment region. There, native/non-native body groups or body-with-attachment
-groups introduce owned children, matching frozen KERIpy `927c0cb8` extraction.
-A child's own enclosure controls its descendants; a following body outside an
-attachment enclosure remains an independent message. GenericGroups inside an
-attachment region, multiple wrapper-only messages without a parent body, and
-extra evidence after a closed attachment enclosure are rejected.
+## Related contracts
 
-`CesrFrame.nests` holds the plain child records in wire order. Each record retains
-its own body, ordinary signatures/attachments, resolved `gvrsn`, and optional ESSR.
-The body's genus metadata remains independent. The parser always supplies the
-resolved frame genus; manually constructed serializer inputs may omit it.
-No child is publicly yielded separately from its parent. Parse the complete owned
-tree and check exact wrapper exhaustion before delivering the parent. The same source
-can still yield earlier independent GenericGroup siblings before this tree completes.
-
-Parsing and authorization remain separate. A `GenericGroup` is structural
-framing; no new ancestor authorization mechanism is invented for it. Content
-whose validity depends on evidence inside its own unfinished message remains
-unaccepted until that message and its evidence are complete.
-
-## Bounds and version scopes
-
-One segmented queue owns absolute consumption and the source iterator. Bounded
-views share that position with immutable end offsets; generators use them
-lexically, never concurrently. Parent bounds are checked before entering a
-child. Length arithmetic must remain safe.
-
-| Condition                                                             | Required outcome                                 |
-| --------------------------------------------------------------------- | ------------------------------------------------ |
-| More bytes are needed and the requested extent fits the current bound | Await input without reparsing completed items    |
-| A header declares an extent beyond the enclosing end                  | `GroupSizeError` before another source pull      |
-| An exact enclosure end leaves a primitive, tuple, or frame unfinished | `GroupSizeError`; outside bytes cannot repair it |
-| Source EOF precedes a still-valid declared extent                     | Terminal `ShortageError`                         |
-| Root EOF follows an otherwise complete open frame                     | Complete that frame                              |
-| Root EOF interrupts an attachment                                     | Fail without yielding its pending frame          |
-
-Read token headers in bounded stages, derive the exact length, then hydrate once.
-Do not peek a maximum header length when a shorter valid header may end the
-scope. Release consumed segments promptly. Long-lived views must not retain a
-large backing allocation accidentally.
-
-Preserve the existing genus contract: `pvrsn` is message protocol metadata;
-explicit genus selection controls counters and attachments. Nested selectors
-apply only to subsequent siblings in that scope. Unselected top-level legacy
-inference remains available, without locking the next frame to that genus.
-Selected/enclosed parsing never retries an error under another major version.
-
-V1 item counts and v2 payload quadlet/triplet counts remain separate loops.
-Sized v1 wrappers also count payload units. Genus selectors carry a version,
-not a payload size. All bounded groups must exhaust their declared extent.
-
-## Payload interfaces and ownership
-
-CESR core depends on the small read-only contract `Payload { size, open() }`,
-`OwnedPayload` with `discard()`, and `PayloadSink { write(), finish(), abort() }`. `open()` returns a fresh async byte
-iterator and accepts an optional abort signal; `write()` provides backpressure;
-`finish()` returns the reopenable owner; borrowed wire/raw views remain read-only. Sinks capture their operation signal.
-Aborting a sink after successful finish must not delete the returned payload.
-If ESSR qualification or returned metadata fails after sink finish, the writer
-owns and joins disposal of that untransferred payload. Disposal failure propagates
-an aggregate preserving the qualification failure and cleanup cause.
-Finite annotation uses the progressive engine through an internal complete-input
-collector. Failed collection releases every
-undelivered payload, even when another cleanup fails. `annotate()` releases its
-temporary tree owners; `annotateFrames()` transfers them to the caller for
-recursive `discardFrame` cleanup. Each `AnnotatedFrame` represents one root
-with its descendants rendered inside that root's lines. GenericGroup siblings
-retain independent entries and one-based root ordinals. Ownership-scoped traversal
-consumes every hydrated node exactly once while preserving original wrapper
-headers, indentation, scoped genus selectors, signatures, and ESSR wire order.
-Deannotation restores the original qualified text, including for qb2 inputs. Validation
-consumes file/stdin chunks progressively and discards each delivered payload.
-Convenience benchmarks retain a finite corpus, defaulting to 64 MiB, and reject
-malformed runs instead of reporting successful throughput. No implicit `.raw`
-getter may materialize an external payload.
-
-Runtime implementations own filesystem paths, staged storage, promotion, and
-cleanup. A parsed large attachment must not also retain a full `CounterGroup.raw`
-copy or an unbounded array of items/references. Use sequential payload storage
-without an in-memory fragment manifest. `CesrFrame.essr` stores one canonical
-counterless qb64 Texter sequence in `wire`, its ordered item count, resolved frame
-`gvrsn`, and a non-owning `raw` view that incrementally decodes that wire. The
-canonical sequence retains item codes and boundaries, but not incoming enclosing
-counters or text/binary presentation. Replay chooses counters for its requested
-genus/domain. `discard()` releases the sole wire owner and invalidates both views.
-`essrPayload()` reconstructs these views from an owned stored wire payload.
-Readers accept the source's immutable bytes without backing-allocation quotas.
-Actual source closure and prompt consumed-segment release remain required.
-
-The parser owns unfinished frame resources. On parse failure or cancellation it
-aborts those resources. At yield, completed payload ownership for the entire tree passes to the
-consumer. `discardFrame(frame)` claims every descendant owner before awaiting
-cleanup, so overlapping or repeated consumer cleanup releases each owner once.
-It attempts all owners even when one discard fails. Internal recursive yields do not transfer ownership: parent message
-wrappers hold all descendant stages until exact validation and finalization. A later sibling error or generator close must not delete earlier
-yielded payloads. Consumers discard rejected/unclaimed owners and promote
-accepted content only after required verification.
-
-## Cancellation and failure provenance
-
-Hosts may opt into `classifyWireErrors` to receive `WireParseError` for intrinsic
-progressive wire decoding failures, with the original parser failure as its cause.
-Default error classes stay unchanged. Invocation-local provenance preserves errors
-thrown by supplied sources and sink factories/writes. Payload
-finish/metadata, cancellation, source/sink/owner cleanup and consumer work remain
-outside this classification. Cleanup failure still propagates its aggregate;
-hosts must not classify an arbitrary `ParserError` as peer misconduct.
-
-Generator `.return()` alone cannot interrupt an in-flight awaited source
-`.next()`. Owned HTTP/file adapters, cursor reads, and sinks must honor a shared
-abort signal. Cancellation interrupts pending I/O, then `finally` closes the
-source once and aborts unfinished stages. KERI/Tufa Effection scopes own the same
-cancellation; an async iterable must not escape its runtime lifetime. A supplied
-generic async source must cooperate with cancellation to stop its own I/O; the
-parser cannot force an arbitrary pending promise to settle. Parser cancellation
-must not wait indefinitely for an uncooperative iterator to close.
-
-## Framework boundary
-
-The CESR root exposes async iterables and AbortSignal without importing Effection.
-The supported optional `cesr-ts/effection` entrypoint exports FrameChannel and
-toEffectionFrames. Its single-subscription Effection Stream supplies pull
-backpressure and owns source cancellation and joined cleanup. KERI and Tufa use
-Operation scopes around parsing, dispatch, and transport lifetimes; merely
-awaiting a Promise with `call` does not cancel the underlying I/O.
-
-## Related ownership contracts
-
-- [Serialization](SERIALIZATION.md) borrows complete frame trees.
-- [ESSR recipient](../essr/RECIPIENT.md) owns authenticated plaintext.
-- [Exchange proofs](../exchange/EXCHANGE_PROOFS.md) never authenticate child proofs implicitly.
-- [Payload storage](../db/PAYLOAD_STORAGE.md) owns durable publication and recovery.
-- [Runtime ingress/egress](../runtime/INGRESS_AND_EGRESS.md) owns processing and transport scopes.
-- [Parser plan](../../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) owns remaining parser-specific gates.
+- [Serialization](SERIALIZATION.md): counters and complete trees.
+- [ESSR recipient](../essr/RECIPIENT.md): authenticated plaintext.
+- [Exchange proofs](../exchange/EXCHANGE_PROOFS.md): independent authentication.
+- [Payload storage](../db/PAYLOAD_STORAGE.md): durable publication and recovery.
+- [Runtime ingress/egress](../runtime/INGRESS_AND_EGRESS.md): transport ownership.

@@ -1,16 +1,16 @@
-import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { annotate, annotateFrames } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
 import { renderAnnotatedFrames } from "../../src/annotate/render.ts";
 import { b, t } from "../../src/core/bytes.ts";
 import { DeserializeError } from "../../src/core/errors.ts";
-import { discardFrame } from "../../src/core/frame.ts";
-import { collectPayload, MemoryPayloadSink, type OwnedPayload } from "../../src/core/payload.ts";
+import { collectPayload } from "../../src/core/payload.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { parseBytes } from "../../src/parser/complete.ts";
-import { essrPayload } from "../../src/parser/essr.ts";
+import { essrRaw } from "../../src/parser/essr.ts";
 import { framePayload } from "../../src/parser/serialize.ts";
 import { Siger } from "../../src/primitives/siger.ts";
+import { Texter } from "../../src/primitives/texter.ts";
 import { Verfer } from "../../src/primitives/verfer.ts";
 import { groupV2 } from "../fixtures/counter-token-fixtures.ts";
 import vectors from "../fixtures/nested-vectors.json" with { type: "json" };
@@ -90,49 +90,19 @@ Deno.test("annotation requires each hydrated node exactly once within its owning
   frame.nests = children;
   assertThrows(() => renderAnnotatedFrames([frame, frame], options, wire), DeserializeError, "every parsed root");
 });
-
-Deno.test("nested annotation transfers or releases every ESSR owner on success, failure and cancellation", async () => {
-  const [source] = await parseBytes(b(vectors.rows[0].qb64));
-  for (const node of nodes(source)) {
-    const sink = new MemoryPayloadSink();
-    await sink.write(b("4BABYWJj"));
-    node.essr = essrPayload(await sink.finish(), 1, 3, node.gvrsn!);
-  }
+Deno.test("nested annotation preserves ordinary ESSR values and the exact wire", async () => {
+  const [source] = parseBytes(b(vectors.rows[0].qb64));
+  for (const node of nodes(source)) node.essrs = [new Texter({ raw: b("abc"), code: "4B" })];
   const wire = await collectPayload(framePayload(source));
-  await discardFrame(source);
-  const finish = MemoryPayloadSink.prototype.finish;
-  for (const mode of ["transfer", "text", "render-failure", "parse-failure", "cancel"] as const) {
-    const owners: OwnedPayload[] = [];
-    const controller = new AbortController();
-    // Observe the real default sink: annotation has no sink-injection API and must keep that finite boundary.
-    MemoryPayloadSink.prototype.finish = async function() {
-      const owner = await finish.call(this);
-      owners.push(owner);
-      if (mode === "cancel" && owners.length === 2) controller.abort();
-      return owner;
-    };
-    try {
-      if (mode === "transfer") {
-        const [entry] = await annotateFrames(wire);
-        for (const node of nodes(entry.frame)) assertEquals(t(await collectPayload(node.essr!.raw)), "abc");
-        await discardFrame(entry.frame);
-        await discardFrame(entry.frame);
-      } else if (mode === "text") {
-        const [restored] = await parseBytes(denot(await annotate(wire)));
-        for (const node of nodes(restored)) assertEquals(t(await collectPayload(node.essr!.raw)), "abc");
-        await discardFrame(restored);
-      } else if (mode === "render-failure") {
-        await assertRejects(() => annotateFrames(wire, { indent: Infinity }), RangeError);
-      } else if (mode === "parse-failure") {
-        // Finite collection must dispose the earlier complete tree when the next root is incomplete.
-        await assertRejects(() => annotateFrames(new Uint8Array([...wire, ...wire.slice(0, -4)])));
-      } else {
-        await assertRejects(() => annotateFrames(wire, { signal: controller.signal }), DOMException);
-      }
-      assertEquals(owners.length, mode === "cancel" ? 2 : mode === "text" ? 6 : 3);
-      for (const owner of owners) await assertRejects(() => collectPayload(owner), Error, "discarded");
-    } finally {
-      MemoryPayloadSink.prototype.finish = finish;
-    }
+  const [entry] = annotateFrames(wire);
+  const [restored] = parseBytes(denot(annotate(wire)));
+  for (const frame of [entry.frame, restored]) {
+    for (const node of nodes(frame)) assertEquals(t(await collectPayload(essrRaw(node.essrs!))), "abc");
   }
+  assertEquals(denot(annotate(wire)), wire);
+  assertThrows(() => annotateFrames(wire, { indent: Infinity }), RangeError);
+  assertThrows(() => annotateFrames(new Uint8Array([...wire, ...wire.slice(0, -4)])));
+  const controller = new AbortController();
+  controller.abort();
+  assertThrows(() => annotateFrames(wire, { signal: controller.signal }), DOMException);
 });

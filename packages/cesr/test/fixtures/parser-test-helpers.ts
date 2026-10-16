@@ -1,7 +1,8 @@
-import { assert, assertEquals } from "jsr:@std/assert";
+import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
+import { WireParseError } from "../../src/core/errors.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
-import { parse, type ParseOptions } from "../../src/parser/progressive.ts";
+import { parse, type ParseOptions } from "../../src/parser/parser.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "./counter-token-fixtures.ts";
@@ -285,4 +286,15 @@ export function assertExpectedParserError(error: unknown): void {
   ]);
   assert(error instanceof Error, "mutation must fail with a typed parser error");
   assert(allowed.has(error.name), `unexpected mutation error: ${error.name} (${error.message})`);
+}
+
+/** Check both the stream refusal boundary and its precise finite-decoder cause. */
+export async function assertWireError<T extends Error>(
+  operation: () => PromiseLike<unknown>,
+  ErrorClass: new(...args: never[]) => T,
+  message?: string,
+): Promise<T> {
+  const failure = await assertRejects(operation, WireParseError, message);
+  assertInstanceOf(failure.cause, ErrorClass);
+  return failure.cause;
 }

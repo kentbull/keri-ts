@@ -19,7 +19,6 @@ import {
   concatBytes,
   Counter,
   CtrDexV1,
-  discardFrame,
   Ilks,
   ResourceAdmissionError,
   ResourceLimitError,
@@ -39,12 +38,7 @@ import { abortable } from "./abortable.ts";
 import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
 import { chunkBytes, collectBytes, streamBytes } from "./byte-source.ts";
 import { postCesr } from "./cesr-egress.ts";
-import {
-  buildCesrRequest,
-  CESR_CONTENT_TYPE,
-  inspectCesrRequest,
-  KERIPY_CESR_JSON_CONTENT_TYPE,
-} from "./cesr-http.ts";
+import { buildCesrRequest, CESR_CONTENT_TYPE, inspectCesrRequest, KERIPY_CESR_JSON_CONTENT_TYPE } from "./cesr-http.ts";
 import { prepareCueEmission } from "./cue-preparation.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
@@ -98,18 +92,11 @@ export interface WitnessReceiptRunResult {
   readonly witnesses: readonly string[];
   readonly statuses: Readonly<Record<string, number>>;
 }
-
 /** Build one attached `rct` message carrying detached receipt material. */
-function buildDetachedReceiptMessage(
-  serder: SerderKERI,
-  {
-    wigers = [],
-    cigars = [],
-  }: {
-    wigers?: readonly Siger[];
-    cigars?: readonly Cigar[];
-  },
-): Uint8Array {
+function buildDetachedReceiptMessage(serder: SerderKERI, { wigers = [], cigars = [] }: {
+  wigers?: readonly Siger[];
+  cigars?: readonly Cigar[];
+}): Uint8Array {
   if (wigers.length === 0 && cigars.length === 0) {
     return serder.raw;
   }
@@ -161,7 +148,6 @@ function buildDetachedReceiptMessage(
     atc,
   );
 }
-
 /**
  * Build one KERIpy-style endpoint `rct` message without an attachment-group
  * wrapper.
@@ -170,16 +156,10 @@ function buildDetachedReceiptMessage(
  * directly. KLI's receiptor depends on that exact shape when it re-fans the
  * returned receipt material out to the other witnesses.
  */
-function buildEndpointDetachedReceiptMessage(
-  serder: SerderKERI,
-  {
-    wigers = [],
-    cigars = [],
-  }: {
-    wigers?: readonly Siger[];
-    cigars?: readonly Cigar[];
-  },
-): Uint8Array {
+function buildEndpointDetachedReceiptMessage(serder: SerderKERI, { wigers = [], cigars = [] }: {
+  wigers?: readonly Siger[];
+  cigars?: readonly Cigar[];
+}): Uint8Array {
   const parts: Uint8Array[] = [serder.raw];
   if (wigers.length > 0) {
     parts.push(
@@ -219,7 +199,6 @@ function buildWitnessReceiptMessage(
 ): Uint8Array {
   return buildEndpointDetachedReceiptMessage(serder, { wigers });
 }
-
 /** Parse exactly one finite receipt while keeping parser and payload cleanup inside this operation. */
 function inspectReceiptMessage(
   bytes: Uint8Array,
@@ -228,15 +207,6 @@ function inspectReceiptMessage(
     const channel = yield* toEffectionFrames((signal) => chunkBytes(bytes, { signal }));
     let result: { serder: SerderKERI; wigers: readonly Siger[]; cigars: readonly Cigar[] } | undefined;
     for (const frame of yield* each(channel.frames)) {
-      if (frame.essr || frame.nests?.length) {
-        yield* resource<void>(function*(provide) {
-          try {
-            yield* provide();
-          } finally {
-            yield* call(() => discardFrame(frame));
-          }
-        });
-      }
       if (result) throw new ValidationError("Expected one witness receipt message.");
       const envelope = envelopeFromFrame(frame, false);
       result = { serder: envelope.serder, wigers: envelope.wigers, cigars: envelope.cigars };
@@ -269,7 +239,6 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
   const first = habitats.next();
   return first.done || !habitats.next().done ? null : first.value;
 }
-
 /**
  * Consume a finite runtime cue pass outside Reactor, using the selected habitat.
  *
@@ -282,15 +251,12 @@ export function* drainWitnessCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
   cues: Deck<AgentCue>,
-  {
-    deliver = true,
-  }: {
+  { deliver = true }: {
     deliver?: boolean;
   } = {},
 ): Operation<CueEmission[]> {
   return yield* finiteWitnessEmissions((consume) => consumeWitnessCues(runtime, serviceHab, cues, deliver, consume));
 }
-
 /** Copy finite wrapper output and close each actual replay iterator before returning. */
 function finiteWitnessEmissions(
   process: (consume: (emission: CueEmission) => Operation<void>) => Operation<void>,
@@ -330,7 +296,6 @@ function finiteWitnessEmissions(
     return emissions;
   });
 }
-
 /** Transfer a finite source pass, borrowing emissions only through joined callback cleanup outside Reactor. */
 function* consumeWitnessCues(
   runtime: AgentRuntime,
@@ -341,7 +306,9 @@ function* consumeWitnessCues(
 ): Operation<void> {
   if (cues !== runtime.cues) throw new RangeError("Witness cue drain requires the runtime source deck");
   const hab = cueHab(runtime, serviceHab);
-  if (!hab) return;
+  if (!hab) {
+    return;
+  }
   let count = 0;
   yield* runtime.reactor.settle(undefined, {}, function*() {
     count = cues.length;
@@ -365,7 +332,9 @@ function* consumeWitnessCues(
         }
         if (emission) runtime.querying.observeCue(emission.cue);
       });
-      if (!prepared) return false;
+      if (!prepared) {
+        return false;
+      }
       if (emission && consume) yield* consume(emission);
       return true;
     });
@@ -373,17 +342,14 @@ function* consumeWitnessCues(
     if (!more) break;
   }
 }
-
 /** Witness-local dispatch and existing responder delivery policy for one ingress source. */
 export interface WitnessIngressOptions {
   /** Let hosts distinguish intrinsic wire refusals from source, storage and cleanup failures. */
-  classifyWireErrors?: boolean;
   /** Accept with witness-local semantics; default false preserves ordinary ingress policy. */
   local?: boolean;
   /** Deliver through the existing responder; receipts use false to produce their own finite proof. */
   deliver?: boolean;
 }
-
 /**
  * Own one progressive witness parser and settle each frame before requesting more input.
  * Consume emissions individually, without retaining an aggregate result. The callback
@@ -396,11 +362,11 @@ export function* processWitnessIngressSource(
   runtime: AgentRuntime,
   serviceHab: Hab,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
-  { local = false, deliver = true, classifyWireErrors = false }: WitnessIngressOptions = {},
+  { local = false, deliver = true }: WitnessIngressOptions = {},
   consume?: (emission: CueEmission) => Operation<void>,
 ): Operation<void> {
   yield* call(function*() {
-    const channel = yield* runtime.intake.frames(source, { classifyWireErrors });
+    const channel = yield* toEffectionFrames(source);
     for (const frame of yield* each(channel.frames)) {
       yield* runtime.reactor.settle(frame, { local, escrows: true });
       yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume);
@@ -710,7 +676,6 @@ function witnessSchemeReplies(
     .filter((msg) => msg.length > 0);
   return replies.length === 0 ? new Uint8Array() : concatBytes(...replies);
 }
-
 /**
  * Send via HTTP first; TCP parses local replies when an owning runtime is supplied.
  * Without receiver context TCP reports local transmission only. Borrowed runtimes
@@ -737,7 +702,7 @@ export function* sendWitnessMessage(
       if (runtime) {
         yield* converseCesrTcp(url, bytes, {
           services,
-          replies: { services: runtime.services, intake: runtime.intake, reactor: runtime.reactor, local: true },
+          replies: { services: runtime.services, reactor: runtime.reactor, local: true },
         });
       } else {
         yield* sendCesrTcp(url, bytes, { services });
@@ -913,7 +878,6 @@ function* getWitnessReceiptEndpoint(
     cigars: inspected.cigars,
   };
 }
-
 /**
  * Controller-side synchronous witness receipt orchestration.
  *
@@ -926,37 +890,26 @@ function* getWitnessReceiptEndpoint(
 export class Receiptor {
   readonly hby: Habery;
   readonly runtime?: AgentRuntime;
-
   /** Borrow a matching active runtime; standalone attempts own a scoped receiver. */
   constructor(hby: Habery, { runtime }: { runtime?: AgentRuntime } = {}) {
     if (runtime && runtime.hby !== hby) throw new RangeError("Receiptor runtime must own the same Habery");
     this.hby = hby;
     this.runtime = runtime;
   }
-
   /** Submit the latest or specified event to all witnesses and gather receipts. */
-  *receipt(
-    pre: string,
-    {
-      sn,
-      auths = {},
-      allowTcp = false,
-    }: {
-      sn?: number;
-      auths?: WitnessAuthMap;
-      /** Generic WitnessReceiptor permits TCP; explicit receipt endpoints remain HTTP-only. */
-      allowTcp?: boolean;
-    } = {},
-  ): Operation<WitnessReceiptRunResult> {
+  *receipt(pre: string, { sn, auths = {}, allowTcp = false }: {
+    sn?: number;
+    auths?: WitnessAuthMap;
+    /** Generic WitnessReceiptor permits TCP; explicit receipt endpoints remain HTTP-only. */
+    allowTcp?: boolean;
+  } = {}): Operation<WitnessReceiptRunResult> {
     return yield* call(() => this.receiptOnce(pre, { sn, auths }, allowTcp));
   }
-
   /** One scoped attempt borrows its receiver or joins its owned runtime before returning. */
-  private *receiptOnce(
-    pre: string,
-    { sn, auths }: { sn?: number; auths: WitnessAuthMap },
-    allowTcp: boolean,
-  ): Operation<WitnessReceiptRunResult> {
+  private *receiptOnce(pre: string, { sn, auths }: {
+    sn?: number;
+    auths: WitnessAuthMap;
+  }, allowTcp: boolean): Operation<WitnessReceiptRunResult> {
     const hab = this.hby.habs.get(pre) ?? null;
     if (!hab) {
       throw new ValidationError(`${pre} not a valid local AID.`);
@@ -965,7 +918,6 @@ export class Receiptor {
     if (!kever) {
       throw new ValidationError(`Missing accepted key state for ${pre}.`);
     }
-
     const eventSn = sn ?? kever.sn;
     const { serder, message } = acceptedEventReplayMessage(
       this.hby,
@@ -1094,18 +1046,11 @@ export class Receiptor {
       if (!this.runtime) yield* runtime.close();
     }
   }
-
   /** Query a stored witness receipt and apply it to local state when found. */
-  *get(
-    pre: string,
-    {
-      sn,
-      said,
-    }: {
-      sn?: number;
-      said?: string;
-    } = {},
-  ): Operation<boolean> {
+  *get(pre: string, { sn, said }: {
+    sn?: number;
+    said?: string;
+  } = {}): Operation<boolean> {
     const hab = this.hby.habs.get(pre) ?? null;
     if (!hab) {
       throw new ValidationError(`${pre} not a valid local AID.`);
@@ -1147,7 +1092,6 @@ export class Receiptor {
   ): Operation<void> {
     yield* call(() => this.catchupOnce(pre, witness, runtime));
   }
-
   /** Catchup uses the submission receiver when borrowed, otherwise owns one scoped receiver. */
   private *catchupOnce(pre: string, witness: string, borrowed?: AgentRuntime): Operation<void> {
     const hab = this.hby.habs.get(pre) ?? null;
@@ -1171,7 +1115,6 @@ export class Receiptor {
     }
   }
 }
-
 /**
  * Higher-level full witness submission helper.
  *
@@ -1191,18 +1134,11 @@ export class WitnessReceiptor {
     this.force = force;
     this.receiptor = new Receiptor(hby, { runtime });
   }
-
   /** Ensure the current event reaches full witness receipt convergence. */
-  *submit(
-    pre: string,
-    {
-      sn,
-      auths = {},
-    }: {
-      sn?: number;
-      auths?: WitnessAuthMap;
-    } = {},
-  ): Operation<WitnessReceiptRunResult> {
+  *submit(pre: string, { sn, auths = {} }: {
+    sn?: number;
+    auths?: WitnessAuthMap;
+  } = {}): Operation<WitnessReceiptRunResult> {
     const hab = this.hby.habs.get(pre) ?? null;
     if (!hab) {
       throw new ValidationError(`${pre} not a valid local AID.`);
@@ -1228,7 +1164,6 @@ export class WitnessReceiptor {
 export type WitnessKeyStateGetResult =
   | { kind: "accepted"; status: 200; body: Uint8Array }
   | { kind: "reject"; status: number; message: string };
-
 /** Return an actual signed KERI reply; unknown or incompletely witnessed state is not advertised. */
 export function witnessKeyStateGet(
   serviceHab: Hab,
