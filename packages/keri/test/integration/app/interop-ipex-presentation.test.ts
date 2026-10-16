@@ -1,7 +1,21 @@
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
-import { Compactor, concatBytes, Counter, Kinds, type MapperMap, parseBytes, SerderACDC, Vrsn_2_0 } from "cesr-ts";
+import {
+  type CesrFrame,
+  collectPayload,
+  Compactor,
+  concatBytes,
+  Counter,
+  framePayload,
+  Kinds,
+  type MapperMap,
+  parseBytes,
+  Prefixer,
+  SerderACDC,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
+import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
@@ -11,23 +25,45 @@ import {
   runAgentRuntimeUntil,
   runtimeOobiTerminalState,
 } from "../../../src/app/agent-runtime.ts";
+import { requestFrame } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex-building.ts";
+import { consumeMailboxSse } from "../../../src/app/mailbox-sse.ts";
+import { envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { WitnessReceiptor } from "../../../src/app/witnessing.ts";
+import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { loadNests } from "../../../src/db/exchange-nests.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
-import { createInteropContext, startKeriPyWitnessHarness } from "./interop-test-helpers.ts";
+import {
+  createInteropContext,
+  randomPort,
+  spawnChild,
+  startKeriPyWitnessHarness,
+  withStartedChild,
+} from "./interop-test-helpers.ts";
 import { assertKeriPyWitnessStores } from "./interop-witness-helpers.ts";
-import { accepted, anchor, introduce, nonce, post, signed } from "./ipex-witness-helpers.ts";
+import {
+  accepted,
+  anchor,
+  inspectMailbox,
+  introduce,
+  introduceProvider,
+  nonce,
+  post,
+  signed,
+} from "./ipex-witness-helpers.ts";
+
+const PROVIDER = fromFileUrl(new URL("../../fixtures/kram-mailbox-peer.py", import.meta.url));
 
 for (const count of [1, 2]) {
   /** Concrete presentation workflow; registration chooses which maintained case runs it. */
-  async function presentationCutoff(): Promise<void> {
+  const presentationCutoff = async (mailboxUrl?: string): Promise<void> => {
     const ctx = await createInteropContext();
     const aliases = ["wan", "wil", "wes"];
     try {
+      const providerPre = mailboxUrl ? (await inspectMailbox(mailboxUrl, "unknown")).provider : undefined;
       const witnesses = await startKeriPyWitnessHarness(ctx, { aliases });
       try {
         await run(function*() {
@@ -62,7 +98,7 @@ for (const count of [1, 2]) {
             const [issuerRuntime, receiverRuntime, ...holderRuntimes] = runtimes;
             const wit = { wits: witnesses.nodes.map((node) => node.pre), toad: 2 };
             const issuer = issuerHby.makeHab("issuer", undefined, wit);
-            const receiver = receiverHby.makeHab("receiver");
+            const receiver = receiverHby.makeHab("receiver", undefined, mailboxUrl ? wit : {});
             const members = holderHbys.map((hby) => hby.makeHab("member", undefined, count === 1 ? wit : {}));
             let holders = members;
             if (count === 2) {
@@ -82,23 +118,35 @@ for (const count of [1, 2]) {
               holders = groups.map(({ hab }) => hab);
             }
             const holder = holders[0], holderRuntime = holderRuntimes[0];
-            for (const [runtime, signer] of [[issuerRuntime, issuer], [holderRuntime, members[0]]] as const) {
-              for (const node of witnesses.nodes) runtime.oobiery.resolve(node.controllerOobi);
+            const introductions = [
+              [issuerRuntime, issuer],
+              [holderRuntime, members[0]],
+              ...(mailboxUrl ? [[receiverRuntime, receiver] as const] : []),
+            ] as const;
+            for (const [runtime, signer] of introductions) {
+              const oobis = [
+                ...witnesses.nodes.map((node) => node.controllerOobi),
+                ...(mailboxUrl ? [`${mailboxUrl}oobi/${providerPre}/controller`] : []),
+              ];
+              for (const url of oobis) runtime.oobiery.resolve(url);
               yield* runAgentRuntimeUntil(
                 runtime,
-                () =>
-                  witnesses.nodes.every((node) =>
-                    runtimeOobiTerminalState(runtime, node.controllerOobi).status !== "pending"
-                  ),
+                () => oobis.every((url) => runtimeOobiTerminalState(runtime, url).status !== "pending"),
                 { hab: signer, timeoutMs: 20_000, pollMailbox: false },
               );
-              for (const node of witnesses.nodes) {
-                assertEquals(runtimeOobiTerminalState(runtime, node.controllerOobi).status, "resolved");
+              for (const url of oobis) {
+                assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved");
               }
             }
 
             // Establish both controllers at every witness before publishing subsequent anchors.
-            for (const [runtime, hab] of [[issuerRuntime, issuer], [holderRuntime, holder]] as const) {
+            for (
+              const [runtime, hab] of [
+                [issuerRuntime, issuer],
+                [holderRuntime, holder],
+                ...(mailboxUrl ? [[receiverRuntime, receiver] as const] : []),
+              ] as const
+            ) {
               yield* new WitnessReceiptor(runtime.hby, { reactor: runtime.reactor, services: runtime.services }).submit(
                 hab.pre,
               );
@@ -199,6 +247,83 @@ for (const count of [1, 2]) {
             const source = yield* anchor(presented, holders, holderRuntimes);
             accepted(presentation, presented);
             yield* call(() => introduce(receiverUrl, holderHbys[0], holder.pre));
+            let cursor = 0;
+            if (mailboxUrl) {
+              for (
+                const [hby, pre] of [
+                  [receiverHby, receiver.pre],
+                  ...holderHbys.map((hby, i) => [hby, members[i].pre] as const),
+                  [holderHbys[0], holder.pre],
+                ] as const
+              ) {
+                yield* call(() => introduceProvider(mailboxUrl, hby, pre));
+              }
+              const authorization = reply("/end/role/add", { cid: receiver.pre, role: "mailbox", eid: providerPre }, {
+                pre: receiver.pre,
+                pvrsn: Vrsn_2_0,
+              });
+              for (const url of [...urls, mailboxUrl]) {
+                yield* call(() => post(url, signed(authorization, [receiver])));
+              }
+            }
+            /** The grant crosses the selected real transport before normal receiver HTTP verification. */
+            const receiveGrant = function*(frame: CesrFrame) {
+              if (!mailboxUrl) {
+                yield* call(() => post(receiverUrl, frame));
+                return;
+              }
+              const message = yield* call(() => collectPayload(framePayload(frame)));
+              const delivery = yield* holderRuntime.poster.sendBytes(members[0], {
+                recipient: receiver.pre,
+                topic: "/credential",
+                message,
+                delivery: "indirect",
+              });
+              assertEquals(delivery.deliveries, [mailboxUrl]);
+              const body = query("mbx", { i: receiver.pre, src: providerPre, topics: { "/credential": cursor } }, {
+                pre: receiver.pre,
+                pvrsn: Vrsn_2_0,
+              });
+              const [request] = parseBytes(messagize(body, {
+                sigers: receiver.sign(body.raw, true),
+                seal: { i: new Prefixer({ qb64: receiver.pre }) },
+                gvrsn: Vrsn_2_0,
+                genusify: true,
+              }));
+              const response = yield* requestFrame(mailboxUrl, request, { signal: AbortSignal.timeout(10_000) });
+              assertEquals(response.status, 200);
+              let received = false;
+              yield* consumeMailboxSse(response, new AbortController(), function*(event) {
+                const forwarded = parseBytes(event.msg);
+                assertEquals(forwarded.length, 1);
+                assertEquals(forwarded[0].body.raw, frame.body.raw);
+                assertEquals(
+                  forwarded[0].attachments.map((group) => group.raw),
+                  frame.attachments.map((group) => group.raw),
+                );
+                assertEquals(forwarded[0].nests?.length, 1);
+                const carried = forwarded[0].nests![0];
+                assertEquals(carried.body.raw, node.body.raw);
+                const parsed = envelopeFromFrame(carried);
+                const original = envelopeFromFrame(node);
+                // Python coalesces the two blind-state groups and puts the source seal first.
+                // Compare every ordered proof and its actual anchor, not an incidental wrapper layout.
+                assertEquals(parsed.bsqs, original.bsqs);
+                assertEquals(parsed.ssts, original.ssts);
+                assertEquals(new TextDecoder().decode(event.msg).includes("hidden-value"), false);
+                yield* call(() => post(receiverUrl, forwarded[0]));
+                cursor = event.idx + 1;
+                received = true;
+                return false;
+              }, { idleTimeoutMs: 2000, maxDurationMs: 5000 });
+              assertEquals(received, true, "grant crossed provider storage and authenticated SSE retrieval");
+              const state = yield* call(() => inspectMailbox(mailboxUrl, receiver.pre, [body.said!]));
+              assertEquals(state.rows[0].cached, true);
+              assertEquals(state.rows[0].pending, false);
+              assertEquals(state.sender?.witnesses, wit.wits);
+              assertEquals(state.sender?.threshold, 2);
+              assertEquals(state.sender?.receipts, [0, 1, 2]);
+            };
             const proofs = [issuance, presentationProof].map((proof) =>
               Counter.enclose({
                 code: "BlindedStateQuadruples",
@@ -222,7 +347,7 @@ for (const count of [1, 2]) {
             yield* call(() => post(holderUrl, frame));
             assertExists(holderHbys[0].db.exns.get(grant.said!));
             for (const [index, signer] of holders.entries()) {
-              yield* call(() => post(receiverUrl, signed(grant, [signer], [node])));
+              yield* receiveGrant(signed(grant, [signer], [node]));
               if (index < holders.length - 1) {
                 assertExists(receiverHby.db.pmkm.get([holder.pre, grant.said!]));
                 assertEquals(receiverHby.db.exns.get(grant.said!), null);
@@ -264,7 +389,7 @@ for (const count of [1, 2]) {
               null,
               "parent acceptance does not dispatch its credential",
             );
-            yield* call(() => post(receiverUrl, frame));
+            yield* receiveGrant(frame);
             assertEquals(
               receiverHby.db.tmsc.get([holder.pre, credential.said!, grant.said!])?.rdt,
               receipt,
@@ -282,6 +407,11 @@ for (const count of [1, 2]) {
             }
             yield* call(() => assertKeriPyWitnessStores(ctx, witnesses, aliases, issuer.pre, issuer.kever!.sn, 3));
             yield* call(() => assertKeriPyWitnessStores(ctx, witnesses, aliases, holder.pre, holder.kever!.sn, 3));
+            if (mailboxUrl) {
+              yield* call(() =>
+                assertKeriPyWitnessStores(ctx, witnesses, aliases, receiver.pre, receiver.kever!.sn, 3)
+              );
+            }
           } finally {
             for (const { server, handler } of listeners.reverse()) {
               yield* call(() => server.shutdown());
@@ -299,9 +429,23 @@ for (const count of [1, 2]) {
     } finally {
       await Deno.remove(ctx.home, { recursive: true });
     }
-  }
+  };
   Deno.test(
     `IPEX presentation cutoff: ${count}-signer TS holder, independent stores, three KERIpy witnesses`,
-    presentationCutoff,
+    () => presentationCutoff(),
   );
+  Deno.test(`IPEX mailbox presentation cutoff: ${count}-signer holder, Python provider and three witnesses`, async () => {
+    const ctx = await createInteropContext(), port = randomPort();
+    const provider = spawnChild(
+      ctx.pythonCommand,
+      [PROVIDER, String(port), "1", `${ctx.home}/mailbox`],
+      ctx.env,
+      ctx.repoRoot,
+    );
+    try {
+      await withStartedChild(provider, port, () => presentationCutoff(`http://127.0.0.1:${port}/`));
+    } finally {
+      await Deno.remove(ctx.home, { recursive: true });
+    }
+  });
 }

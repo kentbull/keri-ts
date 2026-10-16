@@ -166,8 +166,8 @@ and retired partial evidence. After another crash, replay cannot redispatch and
 a fresh query retrieves the previously stored payload without republishing it.
 No receiver KEL/proof seeding, migration or previous-version TS compatibility is
 involved. Crash/reopen and witnessed cases are separate scenarios; the latter do
-not claim witnessed restart coverage. Composed IPEX and presentation-registry
-behavior remain required. No business-ack/outbox machinery.
+not claim witnessed restart coverage. Composed IPEX and presentation evidence
+below remain distinct from provider authentication. No business-ack/outbox machinery.
 
 `interop-ipex-presentation.test.ts`, also owned by `interop-kram`, composes TS
 issuer, holder and receiver stores with three real KERIpy witnesses. Single and
@@ -178,9 +178,19 @@ waits for missing presentation TEL evidence across store reopen. A later accepte
 binding cannot change its inclusive KRAM receipt cutoff. The group case separates
 first-signature arrival from threshold completion; replay cannot refresh that
 completed receipt. Stored partial credentials retain commitments and hidden data.
-These are TS credential processors with Python witnesses, not pairwise Python
-presentation-registry processing or mailbox-delivered IPEX. Those limits remain
-distinct from the bidirectional mailbox authentication cases above.
+Two additional cases preserve these HTTP controls and deliver the grant, each
+independent group contribution and its replay through the actual Python mailbox.
+Production Poster forwarding follows signed mailbox endpoint authorization;
+authenticated KRAM queries retrieve stored payloads over SSE before ordinary
+receiver HTTP verification. Both grant/child bodies and parent signatures remain
+exact; the ordered blind-state proofs and source seal survive Python's group
+coalescing. Missing TEL escrow, reopen, immutable inclusive threshold-completion
+receipt and later binding controls remain unchanged. The added receiver also has
+three witnesses with threshold two; provider and independent witness stores prove
+its accepted KEL and receipts. Offer/agree/admit remain direct HTTP in these cutoff
+cases; the separate full mailbox conversations below cover their delivery.
+These are TS credential processors with Python witnesses/provider, not pairwise
+Python presentation-registry processing or process-crash recovery.
 
 `interop-ipex-mailbox.test.ts` separately completes apply → offer → agree → grant
 → admit between independent TS issuer/holder/recipient stores through the actual
@@ -208,8 +218,8 @@ dispatch. Provider KEL/receipt/cache observations and each witness store establi
 actual authentication and witnessing, separately from HTTP status.
 
 These cases use signed unregistered credentials. They do not qualify Python
-presentation-registry intake, mailbox presentation cutoffs or witnessed crash
-recovery. The v1 witness KEL/OOBI context is explicit and independent of v2 IPEX
+presentation-registry intake or witnessed crash recovery. The TS mailbox grant
+cutoff cases above retain their separate registry evidence. The v1 witness KEL/OOBI context is explicit and independent of v2 IPEX
 and mailbox framing. No reference source or accepted protocol rows are patched.
 
 Check accepted exchange lineage and both parties' state through admit, verified
