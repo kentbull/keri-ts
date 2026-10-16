@@ -20,6 +20,7 @@ import {
   Counter,
   CtrDexV1,
   Ilks,
+  parseBytes,
   ResourceAdmissionError,
   ResourceLimitError,
   type SerderKERI,
@@ -199,22 +200,14 @@ function buildWitnessReceiptMessage(
 ): Uint8Array {
   return buildEndpointDetachedReceiptMessage(serder, { wigers });
 }
-/** Parse exactly one finite receipt while keeping parser and payload cleanup inside this operation. */
+/** Inspect one complete receipt; hydrated proof values have no asynchronous lifetime. */
 function inspectReceiptMessage(
   bytes: Uint8Array,
-): Operation<{ serder: SerderKERI; wigers: readonly Siger[]; cigars: readonly Cigar[] }> {
-  return call(function*() {
-    const channel = yield* toEffectionFrames((signal) => chunkBytes(bytes, { signal }));
-    let result: { serder: SerderKERI; wigers: readonly Siger[]; cigars: readonly Cigar[] } | undefined;
-    for (const frame of yield* each(channel.frames)) {
-      if (result) throw new ValidationError("Expected one witness receipt message.");
-      const envelope = envelopeFromFrame(frame, false);
-      result = { serder: envelope.serder, wigers: envelope.wigers, cigars: envelope.cigars };
-      yield* each.next();
-    }
-    if (!result) throw new ValidationError("Expected one witness receipt message.");
-    return result;
-  });
+): { serder: SerderKERI; wigers: readonly Siger[]; cigars: readonly Cigar[] } {
+  const frames = parseBytes(bytes);
+  if (frames.length !== 1) throw new ValidationError("Expected one witness receipt message.");
+  const envelope = envelopeFromFrame(frames[0], false);
+  return { serder: envelope.serder, wigers: envelope.wigers, cigars: envelope.cigars };
 }
 
 /** Receipt endpoints return one finite proof; cancellation joins the reader before leaving this operation. */
@@ -506,7 +499,7 @@ export function* witnessReceiptPost(
     return { kind: "escrow", status: 202 };
   }
 
-  const inspected = yield* inspectReceiptMessage(
+  const inspected = inspectReceiptMessage(
     serviceHab.receipt(eligibility.accepted),
   );
   const body = buildEndpointDetachedReceiptMessage(inspected.serder, {
@@ -809,7 +802,7 @@ function* postWitnessReceiptEndpoint(
     }
     if (response.status === 200) {
       const body = yield* readResponseBytes(response);
-      const inspected = yield* inspectReceiptMessage(body);
+      const inspected = inspectReceiptMessage(body);
       return {
         kind: "accepted",
         status: 200,
@@ -869,7 +862,7 @@ function* getWitnessReceiptEndpoint(
     };
   }
   const body = yield* readResponseBytes(response);
-  const inspected = yield* inspectReceiptMessage(body);
+  const inspected = inspectReceiptMessage(body);
   return {
     kind: "accepted",
     status: 200,

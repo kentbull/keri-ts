@@ -11,6 +11,7 @@ import {
   Texter,
   Vrsn_1_0,
   Vrsn_2_0,
+  WireParseError,
 } from "../../../../cesr/mod.ts";
 import { tufa } from "../../../../tufa/src/cli/cli.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
@@ -654,7 +655,7 @@ Deno.test("CLI - query help exposes KLI-compatible core flags", async () => {
   assertStringIncludes(res.stdout, "--anchor <file>");
 });
 
-Deno.test("CLI - grant-file admission requires valid EOF and keeps the selected body after payload cleanup", async () => {
+Deno.test("CLI - grant-file admission requires valid EOF and keeps the selected body independently of attachments", async () => {
   const headDirPath = await Deno.makeTempDir({ prefix: "ipex-grant-file-" });
   const name = "grant-file";
   const grantFile = `${headDirPath}/grant.cesr`;
@@ -685,7 +686,8 @@ Deno.test("CLI - grant-file admission requires valid EOF and keeps the selected 
     const args = { name, headDirPath, alias: "holder", grantFile, out, noWait: true };
     // Seeing a grant before a malformed tail must not produce an admit file.
     await Deno.writeFile(grantFile, concatBytes(wire, new TextEncoder().encode("-A")));
-    await assertRejects(() => run(() => ipexAdmitCommand(args)), ShortageError);
+    const error = await assertRejects(() => run(() => ipexAdmitCommand(args)), WireParseError);
+    assertEquals(error.cause instanceof ShortageError, true);
     await assertRejects(() => Deno.stat(out), Deno.errors.NotFound);
     await Deno.writeFile(grantFile, wire);
     const result = await captureCommand(ipexAdmitCommand(args));

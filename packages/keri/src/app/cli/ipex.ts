@@ -1,10 +1,10 @@
-import { concatBytes, Counter, SerderKERI, type Versionage } from "cesr-ts";
-import { toEffectionFrames } from "cesr-ts/effection";
-import { call, each, type Operation } from "npm:effection@^3.6.0";
+import { concatBytes, Counter, parse, SerderKERI, type Versionage } from "cesr-ts";
+import { type Operation } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
 import { Reger } from "../../db/reger.ts";
+import { abortable } from "../abortable.ts";
 import { type AgentRuntime, processMailboxTurn } from "../agent-runtime.ts";
 import { fileBytes } from "../byte-source.ts";
 import { isLocalGroupHab, localGroupMember } from "../group-members.ts";
@@ -551,21 +551,17 @@ function parseJsonArg(value: string | undefined): Record<string, unknown> | unde
   const text = value.startsWith("@") ? Deno.readTextFileSync(value.slice(1)) : value;
   return JSON.parse(text) as Record<string, unknown>;
 }
-/** Read a grant from bounded progressive file input or its already persisted exchange record. */
+/** Scan a file through valid EOF before choosing a grant, or use its persisted exchange record. */
 function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<SerderKERI> {
   if (args.grantFile) {
-    return yield* call(function*() {
-      const channel = yield* toEffectionFrames((signal) => fileBytes(args.grantFile!, { signal }));
+    const path = args.grantFile;
+    return yield* abortable(async (signal) => {
       let grant: SerderKERI | undefined;
-      for (const frame of yield* each(channel.frames)) {
-        {
-          if (!grant && frame.body instanceof SerderKERI && frame.body.route === IPEX_GRANT_ROUTE) grant = frame.body;
-        }
-        yield* each.next();
+      for await (const frame of parse(fileBytes(path, { signal }), { signal })) {
+        if (!grant && frame.body instanceof SerderKERI && frame.body.route === IPEX_GRANT_ROUTE) grant = frame.body;
       }
-      if (grant) return grant; // Require valid EOF before accepting the selected grant.
-      // Require valid EOF before accepting the selected grant.
-      throw new ValidationError(`Grant file ${args.grantFile} does not contain an IPEX grant.`);
+      if (grant) return grant;
+      throw new ValidationError(`Grant file ${path} does not contain an IPEX grant.`);
     });
   }
   requireNonEmpty(args.said, "Grant SAID");

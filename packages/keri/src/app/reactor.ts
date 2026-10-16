@@ -1,8 +1,8 @@
-import type { ParseOptions } from "cesr-ts";
 import {
   type CesrFrame,
   Cigar,
   Ilks,
+  parse,
   ResourceAdmissionError,
   ResourceLimitError,
   ResourcePolicy,
@@ -11,8 +11,7 @@ import {
   Siger,
   Verfer,
 } from "cesr-ts";
-import { toEffectionFrames } from "cesr-ts/effection";
-import { action, call, each, type Operation, resource } from "npm:effection@^3.6.0";
+import { action, call, ensure, type Operation, resource } from "npm:effection@^3.6.0";
 import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
@@ -36,8 +35,9 @@ import {
 import { QueryReplies } from "./query-replies.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
-/** Request-local provenance and parser staging; each source keeps independent parser state. */
-export interface IngressOptions extends ParseOptions {
+/** Request-local provenance and input cancellation. */
+export interface IngressOptions {
+  signal?: AbortSignal;
   /** Treat witness/controller ingress as locally received protocol events. */
   local?: boolean;
   /** Hosted mailbox endpoint that received this source. */
@@ -164,7 +164,7 @@ export class Reactor {
   get hasIngress(): boolean {
     return !this.ingress.empty;
   }
-  /** Finish dispatch before returning input credit for the next complete frame. */
+  /** Own this input and finish dispatch before reading its next complete frame. */
   *process(
     source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
     options: IngressOptions = {},
@@ -173,10 +173,40 @@ export class Reactor {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     yield* call(function*() {
-      const channel = yield* toEffectionFrames(source, options);
-      for (const frame of yield* each(channel.frames)) {
-        yield* self.settle(frame, options, consume);
-        yield* each.next();
+      const controller = new AbortController();
+      const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
+      const frames = parse(source(signal), { signal });
+      let pending: ReturnType<typeof frames.next> | undefined;
+      // This earlier resource joins I/O after dispatch/read children have stopped.
+      yield* ensure(function*() {
+        try {
+          if (pending) {
+            try {
+              yield* call(() => pending!);
+            } catch (error) {
+              if (error !== signal.reason) throw error;
+            }
+          }
+        } finally {
+          yield* call(() => frames.return());
+        }
+      });
+      try {
+        while (true) {
+          pending = frames.next();
+          let result: Awaited<typeof pending>;
+          try {
+            result = yield* call(() => pending!);
+          } catch (error) {
+            pending = undefined; // Already reported; the parser has joined its source cleanup.
+            throw error;
+          }
+          pending = undefined;
+          if (result.done) return;
+          yield* self.settle(result.value, options, consume);
+        }
+      } finally {
+        controller.abort();
       }
     });
   }
