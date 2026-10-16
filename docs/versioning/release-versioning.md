@@ -1,207 +1,57 @@
 # Versioning and release process
 
-## Maintainer quick release checklist
+Package manifests own versions independently for cesr-ts, keri-ts and @keri-ts/tufa.
+`manifest:sync` updates Deno mirrors and npm workspace-lock versions;
+`manifest:check` rejects drift. `release:version` applies Changesets, synchronizes
+manifests and generates runtime version modules. Ordinary generation is deterministic;
+release builds explicitly add `build.<run>.<sha>` metadata.
 
-1. Ensure `master` is up to date and working tree is clean.
-2. Decide release scope:
-   - `keri-ts` only
-   - `cesr-ts` only
-   - `@keri-ts/tufa` only
-   - `cesr-ts`, `keri-ts`, and `@keri-ts/tufa` together
-3. Create changeset(s):
-   - `deno task release:changeset` once per publishable package in the release
-4. Apply version/changelog/runtime version updates:
-   - `deno task release:version`
-5. Validate generated versions are in sync:
-   - `deno task version:check`
-6. Run quality/build checks:
-   - `keri-ts` only: `deno task quality` and `deno task build:npm`
-   - `@keri-ts/tufa` only: `deno task release:verify:tufa`
-   - joint release: `deno task quality` and `deno task npm:build:all`
-7. Smoke test packed npm artifacts:
-   - `deno task smoke:keri:npm`
-   - `deno task smoke:tufa:npm`
-8. Commit release changes:
-   - `git add -A`
-   - `git commit -m "release: ..."`
-9. Tag exact release versions:
-   - `git tag keri-v<keri-version>`
-   - `git tag cesr-v<cesr-version>` (joint release only)
-   - `git tag tufa-v<tufa-version>` (`@keri-ts/tufa` release only)
-10. Push commit and tags:
-    - `git push origin master --follow-tags`
-11. Confirm GitHub release workflow success:
-    - `.github/workflows/keri-ts-npm-release.yml`
-    - `.github/workflows/cesr-npm-release.yml` (if `cesr-ts` released)
-    - `.github/workflows/tufa-npm-release.yml` (if `@keri-ts/tufa` released)
+## Prepare an authorized release
 
-Rules that must hold:
+1. Work from reviewed, clean source on a topic branch. Add package Changesets for
+   publishable changes; documentation/tooling-only PRs use an empty changeset.
+2. Apply `deno task release:version`, then `deno task manifest:check` and
+   `deno task version:check`. Inspect package dependencies and generated changes.
+3. Follow the [qualification standard](../plans/qualification/QUALIFICATION_PLAN.md).
+   Record exact source, reference imports, native environment and test inventory.
+   Scoped PR checks are not full release qualification.
+4. Build and smoke the exact packed artifacts, including strict declarations,
+   >16 MiB LMDB read/reopen and owned bytes, crypto, TCP and Tufa CLI/HTTP.
+   Exercise Node 20.3 and the selected current runtime. Install compiler tools
+   after runtime checks so they cannot mask missing runtime dependencies.
+5. Commit only explicit release paths, with an explanatory body, and merge after
+   exact-head checks pass. Never stage unrelated work or publish from a dirty tree.
+6. With publication authorization, create annotated `cesr-v<VERSION>`,
+   `keri-v<VERSION>` and/or `tufa-v<VERSION>` tags at the verified release commit.
+   Push each selected tag explicitly in dependency order CESR → KERI → Tufa,
+   waiting for dependencies to become available. Do not use an unqualified
+   `--follow-tags` command or rewrite a published tag.
 
-- Tag version must match package manifest version for each package.
-- `keri-ts`, `cesr-ts`, and `@keri-ts/tufa` are independently versioned;
-  matching versions are optional.
-- `deno task release:version` already runs `changeset version`, `manifest:sync`,
-  and `version:generate`.
+## Workflow and artifact ownership
 
-## Version model
+The three package tag workflows call
+[shared npm release](../../.github/workflows/npm-release.yml). It performs
+package-owned checks, builds and smokes the primary artifact, publishes that
+uploaded tarball to npm, then creates the GitHub release using registry bytes.
+Tufa builds supporting dependency artifacts for smoke and verifies its declared
+CESR/KERI versions are already published. The shared workflow does not itself
+repeat the full interoperability/manual qualification battery.
 
-- `keri-ts`, `cesr-ts`, and `@keri-ts/tufa` are versioned independently.
-- Canonical versions are sourced from:
-  - `packages/keri/package.json` (`keri-ts`)
-  - `packages/cesr/package.json` (`cesr-ts`)
-  - `packages/tufa/package.json` (`@keri-ts/tufa`)
-- `deno.json` versions are synchronized from package manifests:
-  - `deno task manifest:sync`
-  - `deno task manifest:check`
+Verify every selected version's registry metadata, internal dependencies,
+workflow/npm/GitHub tarball equality and final registry-only installs. A merged
+version PR, built tarball or successful source test is not publication evidence.
+Changesets record version intent; the Changesets version-PR workflow does not
+replace the package tag publication workflows.
 
-## Runtime CLI version strings
+Publication and GitHub release creation can fail separately. Inspect which side
+effects completed before recovery. Existing exact versions are skipped by the
+publish helper; preserve artifact identity and original tag provenance. If a
+workflow-only repair runs at another commit, record both source identities and
+verify package/manifests/build inputs rather than relabeling the tag.
 
-- Generated files:
-- `packages/keri/src/app/version.ts`
-- `packages/cesr/src/version.ts`
-- `packages/tufa/src/version.ts`
-- Generator:
-  - `scripts/generate_versions.ts`
-- Output format:
-  - local/default: `x.y.z`
-  - explicit CI artifact builds: `x.y.z+build.<run>.<sha>`
-- Rule:
-  - `version:check` is deterministic and does not infer build metadata from the
-    ambient GitHub Actions environment.
-  - CI/release artifact workflows must opt into build metadata explicitly when
-    they want stamped runtime version modules.
+## Recorded baseline
 
-## Release intent and version bumps
-
-### Common sequence: bump `keri-ts` after `cesr-ts`
-
-Use this when `cesr-ts` is already bumped (for example `0.2.3`) and you want to
-bump only `keri-ts` to the matching version.
-
-```bash
-# 1) Create a changeset for keri-ts only
-deno task release:changeset
-# select package: keri-ts
-# select bump type (usually patch)
-
-# 2) Apply versioning updates
-deno task release:version
-
-# 3) Validate
-deno task quality
-deno task build:npm
-
-# 4) Commit and tag
-git add -A
-git commit -m "release: bump keri-ts to <version>"
-git tag keri-v<version>
-git push origin master --follow-tags
-```
-
-Notes:
-
-- `keri-ts` and `cesr-ts` are independent; matching versions are optional.
-- `keri-ts` npm dependency range for `cesr-ts` is derived at build time from
-  `packages/cesr/package.json`.
-- Deno import-map entries for `cesr-ts` (for example in `deno.json` and
-  `packages/keri/deno.json`) are managed manually and are not CI-enforced.
-
-### Common sequence: bump and release `@keri-ts/tufa` only
-
-Use this when only the published Tufa CLI artifact changes.
-
-```bash
-# 1) Create a changeset for @keri-ts/tufa
-deno task release:changeset
-# select package: @keri-ts/tufa
-
-# 2) Apply versioning updates
-deno task release:version
-
-# 3) Validate the release path
-deno task release:verify:tufa
-
-# 4) Commit and tag
-git add -A
-git commit -m "release: bump @keri-ts/tufa to <version>"
-git tag tufa-v<version>
-git push origin master --follow-tags
-```
-
-### Common sequence: bump and release `cesr-ts` + `keri-ts` together
-
-Use this when both packages changed and you want to release both in one cycle.
-
-```bash
-# 1) Add changesets (one for cesr-ts, one for keri-ts)
-deno task release:changeset
-deno task release:changeset
-
-# 2) Apply version updates for both packages
-deno task release:version
-
-# 3) Validate and build both npm artifacts
-deno task quality
-deno task npm:build:all
-
-# 4) Commit and tag both releases
-git add -A
-git commit -m "release: bump cesr-ts and keri-ts"
-git tag cesr-v<cesr-version>
-git tag keri-v<keri-version>
-git push origin master --follow-tags
-```
-
-1. Add a changeset in feature PRs:
-
-```bash
-deno task release:changeset
-```
-
-2. Apply version bumps and changelog updates:
-
-```bash
-deno task release:version
-```
-
-This command now runs:
-
-- `changeset version`
-- `manifest:sync` (package.json -> deno.json)
-- `version:generate` (runtime version modules)
-
-3. Validate generated runtime version modules:
-
-```bash
-deno task version:check
-```
-
-4. Smoke test the packed npm artifacts in `node:alpine`:
-
-```bash
-deno task smoke:keri:npm
-deno task smoke:tufa:npm
-```
-
-To smoke test a specific tarball (already packed):
-
-```bash
-bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
-bash scripts/smoke-test-tufa-npm.sh packages/tufa/npm/keri-ts-tufa-<version>.tgz
-```
-
-## Publishing
-
-- `keri-ts` release workflow: `.github/workflows/keri-ts-npm-release.yml`
-- `cesr-ts` release workflow: `.github/workflows/cesr-npm-release.yml`
-- `@keri-ts/tufa` release workflow: `.github/workflows/tufa-npm-release.yml`
-- Tag formats:
-  - `keri-v<version>`
-  - `cesr-v<version>`
-  - `tufa-v<version>`
-- Each workflow validates that the tag version matches package manifest version
-  before publishing.
-- `keri-ts` release workflow also runs Docker smoke validation (`node:alpine`)
-  against the packed tarball before `npm publish`.
-- `@keri-ts/tufa` release workflow validates that its exact `keri-ts` and
-  `cesr-ts` dependency versions are already published before `npm publish`.
+The [1.0.0 qualification report](../reports/parity/CLEANUP_RELEASE_2026-10-16.md)
+records the three publications, Tufa's fixture-only recovery and installed checks.
+It separately records post-release Tevery ownership; those later source changes
+are not included in the published packages. Future releases need fresh evidence.

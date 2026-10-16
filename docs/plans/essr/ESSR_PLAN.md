@@ -3,8 +3,8 @@
 The [accepted simplification](../PARITY_ROADMAP.md) governs architecture and takes precedence
 over conflicting older requirements here; existing protocol obligations remain.
 
-The recipient and outcome extraction exist (#133/#163). Apply
-[ADR-0013](../../adr/adr-0013-simple-component-flows.md) before final qualification;
+The recipient and outcome extraction exist (#133/#163). Follow
+[ADR-0013](../../adr/adr-0013-simple-component-flows.md) for future changes;
 older recipient accounting requirements are superseded. The accepted
 [buffered parser](../cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) also removes parser
 staging and progressive extraction; ordinary Texter evidence and finite decoding now replace that parser lifecycle.

@@ -1,7 +1,7 @@
 # ADR-0012: Buffered CESR Decoding and Concrete Input Ownership
 
-- Status: Accepted; finite decoding implemented, transport migration pending
-- Updated: 2026-10-15
+- Status: Accepted; implemented and qualified for the 1.0.0 release
+- Updated: 2026-10-16
 - Scope: CESR framing, decoding, ESSR evidence and transport integration
 - Related: [simple component flows](adr-0013-simple-component-flows.md)
 - Execution: [parser replacement plan](../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md)
@@ -63,8 +63,8 @@ Finite decoding and ordinary ESSR evidence replace the progressive engine.
 TcpRead and the Effection bridge/export are removed; application scopes compose
 actual TCP sockets, receive processing and output. Finite decoding responsibility
 is established and its cursor/staging and dependent contracts are deleted. Keep one engine, no compatibility aliases
-or alternate strategy. The old early-delivery tests must become complete-enclosure
-checks when production behavior switches; retain fragmentation, framing, evidence,
+or alternate strategy. Complete-enclosure tests replace the old early-delivery expectations; retain
+fragmentation, framing, evidence,
 real network cleanup and current KERIpy interoperability coverage.
 
 Application accounting is prohibited by ADR-0013. Full maintained integration,

@@ -20,24 +20,24 @@ or erase existing escrows.
 Queries prefer the last transferable last-establishment group. V2 queries with
 raw indexed signatures fall back to the claimed sender. Missing requester
 material is refused. `logs/ksn/mbx` delegate to Kevery; `tels/tsn` require an
-explicit TEL query processor. Built-in legacy Tevery serves `tels`; `tsn` remains
-explicitly refused until its producer and both receiving processors work. Replies
+explicit TEL query processor. Built-in legacy Tevery serves `tels` and `tsn`,
+including ordered registry/credential notices. Replies
 require cigars or transferable signature groups; exchanges also permit source
 couples or triples. Reply/exchange processors verify their proofs and dependencies.
 
 TEL replay captures management then optional credential extents from accepted
 `Reger.tels.` without collecting body bytes, releasing each cursor before yielding.
-Every complete message has an 8 MiB default assembly cap including its selector.
+Replay has no application message-size cap; actual framing lengths remain validated.
 The frozen processor uses default v2 proof counters for both query body versions;
 TypeScript prefixes an explicit v2 genus selector so v1 TEL bodies remain parseable.
 Bodies, proof bytes and ordering are preserved. Missing TELs produce no response.
 Frozen query signature validation is TODO: requester material identifies a
 destination and does not itself authenticate the request. Sender policy and
 optional KRAM remain independent; this is not v2 `RegistryStore` query support.
-Whole-row reads still allocate before their size checks and retain phase 5 ownership.
+Native reads return owned row bytes; cursor and replay lifetime remain storage responsibilities.
 
 Internal `prepareTsnQuery` prepares registry then optional credential reply data,
-correlated to the query SAID, without publishing cues or enabling TSN dispatch.
+correlated to the query SAID. Tevery.processQuery publishes those ordinary reply cues.
 Unknown registries return unavailable; absent credentials retain the registry
 reply with a typed missing-credential diagnostic. Actual 714 parsed credential
 queries emit the registry reply then fail: `processQuery` passes `vcpre=` to
@@ -59,7 +59,7 @@ The legacy exception adapter remains separate and must not drive TSN runtime ret
 Actual 714 registry replies store a TEL digest as Broker's current pointer, while
 Revery indexes proof/timestamp metadata by the outer reply SAID: a direct parsed
 probe accepted an older signed reply. Receiving must instead retain the outer
-reply SAID for BADA; state production and TSN dispatch guards remain unchanged.
+reply SAID for BADA; Tevery owns both receiving routes and dependency retries.
 
 Tevery registers `/tsn/registry/{aid}` on the shared Revery router and owns its
 dependency retries. Admission requires independent reply proof,
@@ -101,9 +101,9 @@ route. Actual 714 emits bare TSN wire routes although its receivers require that
 suffix; this repair complements the recorded `vcState(vci)` query correction.
 Missing credentials return only the registry notice; no response or HTTP success
 proves acceptance. Direct HTTP capture retains at most the complementary pair.
-Admitted cue fanout retains owner credit through response EOF/cancel/failure and
-source cleanup, even without an initial pull. Ordinary single-replay capture stays
-unchanged; separate receiver checks decide both notices. Query requester material selects
+Reply capture carries ordinary data with request-SAID correlation, not owner credit.
+Concrete response operations own EOF/cancellation/failure cleanup. Ordinary
+single-replay capture stays unchanged; independent receiver checks decide both notices. Query requester material selects
 the destination; actual 714 still leaves query signature validation TODO.
 
 Legacy TEL/TSN ordinals above `Number.MAX_SAFE_INTEGER` are explicitly refused;
@@ -163,8 +163,8 @@ clears stale partials without removing the replay cache.
 `Kramer.intake` returns an ordinary synchronous ready/pending/refusal decision.
 There is no private snapshot store, hydration scope, callback permit, ready receipt
 store or downstream acknowledgement. Scalar partial proofs persist; nested frames
-and ESSR payloads come only from the current input. The parser owns their lifetime
-through dispatch and joined disposal. Downstream failure cannot revive acceptance.
+and ESSR payloads come only from the current input. Ordinary parsed frames have no disposal lifecycle;
+concrete consumers own actual I/O through dispatch and joined cleanup. Downstream failure cannot revive acceptance.
 
 Internal `KramPruner` advances finite MSGC/TMSC/opener passes with no read cursor
 held across writes. Stored pruning windows retain inclusive microsecond cutoffs;
@@ -177,8 +177,8 @@ are visited next pass. Intake and pruning are synchronous transactions with no c
 Optional `createAgentRuntime({ kram })` composes the policy, intake and
 finite pruner using the trusted services clock. Configuration must cover admitted
 message types. V2 sender policy precedes all intake effects; v1 paths stay separate.
-The parser dispatches the ready envelope before joined disposal of its input.
-Reactor returns only its original borrowed input. HTTP refuses current pending,
+Reactor dispatches the ready envelope and joins its concrete input operation.
+Dispatch returns the processed envelope, including combined KRAM proofs. HTTP refuses current pending,
 missing and replay outcomes despite older cues.
 HTTP recovery queries enter the bounded coordinator and drain on ordinary host turns.
 No automatic ESSR decryption or child dispatch is enabled. Disclosed IPEX

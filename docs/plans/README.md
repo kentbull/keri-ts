@@ -12,7 +12,7 @@ explicit profile limits; they do not resume the completed cleanup sequence.
 - [Multisig](exchange/MULTISIG_PLAN.md), [IPEX](exchange/IPEX_PLAN.md),
   [exchange proofs and v2 admission](exchange/EXCHANGE_ADMISSION_PLAN.md).
 - [V1/V2 registries](credentials/REGISTRY_PLAN.md) and [KRAM](exchange/KRAM_PLAN.md).
-- [ESSR](essr/ESSR_PLAN.md) and [retired resource policy](runtime/RESOURCE_POLICY_PLAN.md).
+- [ESSR](essr/ESSR_PLAN.md) and [retired resource policy](../adr/adr-0013-simple-component-flows.md).
 - [Storage/recovery](db/STORAGE_RECOVERY_PLAN.md) and [transport](runtime/TRANSPORT_PLAN.md).
 - [Full qualification](qualification/QUALIFICATION_PLAN.md) and
   [reference environments](qualification/REFERENCE_ENVIRONMENTS.md).

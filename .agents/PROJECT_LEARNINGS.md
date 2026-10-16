@@ -6,6 +6,9 @@ owns remaining work. Buffered parsing, accounting/durability removal, concrete
 component ownership and the public runtime API reduction are implemented; the 1.0.0
 cleanup/release baseline is qualified. The [release report](../docs/reports/parity/CLEANUP_RELEASE_2026-10-16.md)
 owns its evidence and limits; future changes still require relevant qualification.
+Post-release Tevery ownership (#523) has separate scoped evidence and is not in
+published 1.0.0. Historical inventories must never become fresh implementation
+queues; the roadmap explicitly records unresolved contract/source contradictions.
 
 ## Read by subject
 

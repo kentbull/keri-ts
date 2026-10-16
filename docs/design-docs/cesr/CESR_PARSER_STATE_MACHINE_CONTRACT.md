@@ -67,8 +67,8 @@ processing on external cancellation. Concrete transport owns the AbortSignal and
 must interrupt its blocked I/O before joining it. Generator return cannot interrupt
 arbitrary pending reads. The parser joins source return; it does not install
 timers, pending-reader registries or a host scheduler.
-The CESR root has no Effection dependency. The optional Effection frame adapter
-remains transitional transport removal work; see the
+The CESR root has no Effection dependency. The frame adapter and its subpath are
+removed; concrete applications compose I/O directly. See the
 [replacement plan](../../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md).
 
 ## Regression mapping

@@ -1,5 +1,10 @@
 # Runtime parity pre-release qualification checkpoint — 2026-10-14
 
+> Historical snapshot at the source revision below. Its pending items and
+> implementation names are not a current queue or preservation contract. See the
+> [release and post-release record](CLEANUP_RELEASE_2026-10-16.md) and ADR-0012/0013
+> for subsequent delivery and supersession. Original measurements remain unchanged.
+
 The complete maintained inventory ran once on clean candidate
 `576064bf4830750159fd9aa15c0ae725f73d357c`, whose entire tree matches implementation
 merge `1aa470fd48119ae35c908e24f2703aa0a15d2548` (#328/#330–332).

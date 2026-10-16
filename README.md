@@ -6,6 +6,11 @@ TypeScript packages for KERI and CESR:
 - `keri-ts`: KERI protocol/runtime library
 - `cesr-ts`: CESR parsing and annotation library
 
+Current source includes the post-release Tevery ownership refactor. Published
+1.0.0 packages use the earlier release baseline; see the
+[qualification record](docs/reports/parity/CLEANUP_RELEASE_2026-10-16.md) for exact
+source/artifact identities and limits, and [documentation](docs/README.md) for contracts.
+
 ## Install
 
 ```bash

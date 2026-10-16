@@ -6,7 +6,7 @@ acceptance live in [plans](../plans/README.md); dated evidence lives in [reports
 ## CESR and crypto
 
 - [Parser lifecycle](cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md),
-  [progressive ownership](cesr/CESR_PROGRESSIVE_PARSER_CONTRACT.md),
+  [finite decoding and evidence](cesr/CESR_PROGRESSIVE_PARSER_CONTRACT.md),
   [maintainer guide](cesr/CESR_PARSER_MAINTAINER_GUIDE.md).
 - [Serialization](cesr/SERIALIZATION.md) and [attachment genus](cesr/ATTACHMENT_COUNTER_GVRSN.md).
 - [Argon2 allocation ownership](crypto/ARGON2_OWNERSHIP.md).
@@ -22,11 +22,10 @@ acceptance live in [plans](../plans/README.md); dated evidence lives in [reports
 
 ## Runtime and storage
 
-- [Resource reservations](runtime/RESOURCE_POLICY.md),
+- [Accounting prohibition](../adr/adr-0013-simple-component-flows.md),
   [ingress/egress](runtime/INGRESS_AND_EGRESS.md), [cues](runtime/CUES.md),
   [query/reply](runtime/QUERY_REPLY.md), [witness HTTP](runtime/WITNESS_HTTP.md).
-- [Mailbox](mailbox/MAILBOX.md), [read authorization](mailbox/READ_AUTHORIZATION.md),
-  [retired consumer inbox](mailbox/DURABLE_ADMISSION.md).
+- [Mailbox](mailbox/MAILBOX.md) and [read authorization](mailbox/READ_AUTHORIZATION.md).
 - [DB invariants](db/db-architecture.md), [payload storage](db/PAYLOAD_STORAGE.md),
   [deferred provider proposal](db/PROVIDER_PROPOSAL.md).
 

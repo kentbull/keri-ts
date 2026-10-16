@@ -284,8 +284,8 @@ reader slots (`MDB_BAD_RSLOT`, sometimes surfaced as `Invalid argument`). Reuse
 the owning Habery or inspect a live host from a separate process. The live-agent
 mailbox test uses the actual CLI child and retains HTTP and stored endpoint-role
 assertions while that host remains running. This test correction adds no shared
-handle pool or runtime admission guarantee; handle accounting remains in the
-progressive storage/resource follow-ons.
+handle pool or runtime admission guarantee. No handle-accounting framework is planned;
+actual environment ownership and joined closure remain the contract.
 
 1. DB open/close/reopen flows are safe and idempotent.
    `createBaser` and `createKeeper` retain ownership until
