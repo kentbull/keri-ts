@@ -5,13 +5,14 @@
  * verifies both manifest-target existence and the public import surfaces that
  * users rely on after installing the packed tarball.
  */
-import { existsSync, readFileSync } from "node:fs";
+import * as keri from "keri-ts";
+import * as db from "keri-ts/db";
+import * as runtime from "keri-ts/runtime";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as db from "keri-ts/db";
-import * as keri from "keri-ts";
-import * as runtime from "keri-ts/runtime";
 import { collectManifestTargets } from "./package-targets.mjs";
 
 /** Throw an actionable smoke failure when a package invariant is false. */
@@ -32,8 +33,14 @@ for (const target of collectManifestTargets(manifest)) {
   assert(existsSync(installedPath), `installed keri-ts package is missing export target ${target}`);
 }
 
-assert(typeof keri.PACKAGE_VERSION === "string" && keri.PACKAGE_VERSION.length > 0, "keri-ts root missing PACKAGE_VERSION");
-assert(typeof keri.DISPLAY_VERSION === "string" && keri.DISPLAY_VERSION.length > 0, "keri-ts root missing DISPLAY_VERSION");
+assert(
+  typeof keri.PACKAGE_VERSION === "string" && keri.PACKAGE_VERSION.length > 0,
+  "keri-ts root missing PACKAGE_VERSION",
+);
+assert(
+  typeof keri.DISPLAY_VERSION === "string" && keri.DISPLAY_VERSION.length > 0,
+  "keri-ts root missing DISPLAY_VERSION",
+);
 assert(typeof runtime.createAgentRuntime === "function", "keri-ts/runtime missing createAgentRuntime");
 assert(typeof runtime.Kevery === "function", "keri-ts/runtime missing Kevery");
 assert(typeof runtime.messagize === "function", "keri-ts/runtime missing messagize");
@@ -74,3 +81,31 @@ try {
   await payloadStore.close();
   await rm(payloadRoot, { recursive: true });
 }
+
+// Install compiler tools only after runtime checks, so they cannot mask missing
+// runtime dependencies. Check the actual packed declarations without skipping libs.
+execFileSync("npm", [
+  "install",
+  "--no-save",
+  "--ignore-scripts",
+  "--no-audit",
+  "--no-fund",
+  "typescript@5.9.3",
+  "@types/node@20.19.43",
+], { stdio: "inherit" });
+// npm init defaults to CommonJS; compile the maintained fixture as a Node ESM client.
+copyFileSync("keri-consumer.ts", "keri-consumer.mts");
+execFileSync(process.execPath, [
+  "node_modules/typescript/bin/tsc",
+  "--noEmit",
+  "--strict",
+  "--module",
+  "NodeNext",
+  "--target",
+  "ES2022",
+  "--lib",
+  "ES2022,DOM,DOM.Iterable",
+  "keri-consumer.mts",
+], { stdio: "inherit" });
+
+console.error("Installed keri-ts declarations passed strict NodeNext checking.");

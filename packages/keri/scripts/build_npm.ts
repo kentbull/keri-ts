@@ -9,6 +9,7 @@ import { build, emptyDir } from "@deno/dnt";
 import {
   assertPackagePathExists,
   findGeneratedEntrypoint,
+  listFilesSync,
   readPackageVersionSync,
   setIgnoreScriptsDefault,
   writeDntImportMapSync,
@@ -207,6 +208,23 @@ function normalizeBuiltManifest(): void {
   writeJsonFileSync(packageJsonPath, manifest);
 }
 
+/**
+ * Select LMDB 3.5.3's valid CommonJS declarations for published type-only imports.
+ * Its ESM declaration uses export assignment; DNT omits source resolution
+ * attributes. Normalize emitted declarations without changing runtime bindings.
+ */
+function normalizeLmdbDeclarations(): void {
+  for (const path of listFilesSync(`${OUT_DIR}/types`)) {
+    if (!path.endsWith(".d.ts")) continue;
+    const source = Deno.readTextFileSync(path);
+    const normalized = source.replace(
+      /(import type\s+\{[^}]+\}\s+from "lmdb")\s*;/g,
+      "$1 with { \"resolution-mode\": \"require\" };",
+    );
+    if (normalized !== source) Deno.writeTextFileSync(path, normalized);
+  }
+}
+
 /** Remove DNT's now-unreferenced local workspace copy of the external CESR dependency. */
 function pruneBundledCesr(): void {
   for (const path of [`${OUT_DIR}/esm/cesr`, `${OUT_DIR}/types/cesr`]) {
@@ -299,6 +317,7 @@ try {
     },
     postBuild() {
       normalizeBuiltManifest();
+      normalizeLmdbDeclarations();
       pruneBundledCesr();
       Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
       Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
