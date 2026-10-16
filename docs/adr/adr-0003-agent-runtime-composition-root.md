@@ -1,103 +1,61 @@
-# ADR-0003: `AgentRuntime` As A Composition Root Over Component-Owned Doers
+# ADR-0003: AgentRuntime composes component-owned workers
 
-- Status: Accepted
+- Status: Accepted; refined by [ADR-0013](adr-0013-simple-component-flows.md)
 - Date: 2026-03-28
-- Scope: `packages/keri` Gate E runtime orchestration
-- Related:
-  - `packages/keri/src/app/agent-runtime.ts`
-  - `packages/keri/src/app/reactor.ts`
-  - `packages/keri/src/app/oobiery.ts`
-  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
-
-Current direction: [ADR-0013](adr-0013-simple-component-flows.md) supersedes the
-older runtime/gate/worker preservation rules below. Host modes are removed;
-composition chooses concrete capabilities, including provider mailbox storage.
-The concrete-owner and single-driver migration remains incomplete.
-
-## Context
-
-Gate E introduced a shared `AgentRuntime` seam so the same KERI runtime work
-could be hosted:
-
-- command-local inside CLI commands such as `ends add` and `oobi resolve`
-- long-lived inside `tufa agent`
-
-The first bootstrap slice proved the viability of that seam, but the initial
-shape was too flat:
-
-- `AgentRuntime` owned ingress, OOBI jobs, completions, transport, parser,
-  routing, reply handling, KEL processing, and orchestration all at once
-- topic-local queues such as OOBI resolution work lived at the runtime root
-- the result taught the wrong mental model to maintainers coming from KERIpy,
-  where stateful components own their own queues/state and expose doer methods
-
-In KERIpy terms, the problem was not "there is a plain helper like
-`processIngress()`." KERIpy also has plain processing helpers called by doers.
-The real problem was ownership: a composition root had drifted into becoming a
-bag of all subsystem state.
+- Scope: KERI runtime construction and host lifetime
 
 ## Decision
 
-`AgentRuntime` is a composition root, not a bag of every runtime queue.
+AgentRuntime constructs concrete components, connects their data flows and owns
+its acquisitions and worker lifetime. It is not a container passed down so a
+child can discover siblings. One runtime serves a Habery or command invocation.
 
-Concretely:
+| Owner                           | Responsibility                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------- |
+| Reactor                         | Buffered protocol intake, routing, dispatch/escrow ordering and reply capture   |
+| Oobiery                         | Durable introduction jobs and joined retrieval/intake                           |
+| Authenticator                   | Well-known authorization retrieval                                              |
+| QueryCoordinator                | Query correspondence, selected signer/attester, signed packets and response I/O |
+| Respondant / Poster             | Reply/replay interpretation, routing, exact retry bytes and actual delivery     |
+| MailboxDirector / MailboxPoller | Provider response correlation and continuous client polling                     |
+| Regery owners                   | Distinct legacy VDR and v2 registry processing/storage                          |
 
-- `AgentRuntime` keeps only truly shared state:
-  - `hby`
-  - shared `cues` deck
-- `Reactor` owns:
-  - transient ingress deck
-  - CESR parser
-  - `Router`
-  - `Revery`
-  - reply route handler registration
-  - `Kevery`
-  - message and escrow doers
-- `Oobiery` owns:
-  - durable OOBI processing over `oobis.` / `coobi.` / `eoobi.` / `roobi.`
-  - OOBI fetch/parse/persist flow
-  - OOBI doer
-- Hosts compose the component workers under one lifecycle. Finite commands use
-  the same workers until accepted state or an elapsed deadline, then join them.
-  Phase-specific tests call the actual component operation. Serial whole-runtime
-  and finite mailbox turn APIs are removed; do not restore a parallel driver.
+The root retains references needed for composition and application orchestration.
+Mutable subsystem state stays with its owner: durable OOBI jobs stay in their DB
+families, query work stays with QueryCoordinator, and provider messages stay in
+Mailboxer. A class name matching KERIpy does not justify a forwarding-only facade.
 
-## Effection Mapping To KERIpy
+## Host and command execution
 
-- KERIpy `Doer` -> a long-running Effection `Operation` method such as
-  `msgDo()`, `escrowDo()`, or `oobiDo()`
-- KERIpy `DoDoer` -> a stateful component that owns local state and exposes
-  multiple doer-like operation methods
-- `AgentRuntime` -> a composition root that assembles those components and hosts
-  them in one shared lifecycle
+runAgentRuntime starts the existing workers and suspends under their supervision.
+runAgentRuntimeUntil uses those same workers until accepted state satisfies the
+caller's predicate or its elapsed deadline expires. Both join children before
+caller/store teardown. Commands select their required mailbox polling and signer;
+there is no serial whole-runtime or finite mailbox turn API.
 
-This is the preferred mental model for future Gate E/F work.
+Direct protocol intake and phase-specific tests call the actual operation. They
+do not run unrelated OOBI, mailbox and delivery work to settle a signed endpoint
+record. Do not add a renamed test pump or another scheduler.
 
-## Why This Shape
+## Construction and lifetime
 
-1. It mirrors KERIpy's ownership model more closely. `Reactor` and `Oobiery` are
-   recognizable component seams for maintainers who already think in terms of
-   KERIpy reactor/OOBI doer sets.
+Choose actual processors and clock/HTTP dependencies at construction. Provider
+storage is an explicit capability, not a runtime mode. Readonly Haberies acquire
+no implicit writable registry. Defaults are owned; injected stores remain borrowed.
+Acquire stores before their consumers so reverse teardown joins output first.
 
-2. It preserves the shared-runtime host goal. The same component graph still
-   supports one-shot command-local hosting and long-lived `tufa agent` hosting.
+Only existing protocol durability belongs here: escrows, accepted evidence,
+mailbox storage/cursors and replay state. No application accounting, outbox or
+unsupported delivery acknowledgement is introduced by composition.
 
-3. It keeps durability where KERIpy keeps durability. OOBI queue state belongs
-   in DB families such as `oobis.`, not in a root in-memory deck.
+## KERIpy correspondence
 
-4. It keeps the shared runtime cue model. The runtime cue deck remains
-   root-level because it is genuinely cross-component runtime state, while
-   habery-local cue ownership can still exist separately for non-runtime local
-   habitat processing.
+A KERIpy Doer corresponds to an Effection operation such as msgDo, escrowDo or
+oobiDo. A stateful component can expose several such operations, like a DoDoer.
+The host assembles them; it does not replace them with a generic actor framework.
+KERIpy also shares domain objects and uses direct subordinate calls.
 
-## Consequences
-
-- New runtime subsystems should usually be added as component-owned classes with
-  local state plus named long-running operations, not as more root-level decks
-  on `AgentRuntime`.
-- Durable queue-like workflow state should default to KERIpy-style DB-backed
-  storage unless there is a strong reason not to.
-- Plain `process*()` helpers are still acceptable, but they should live on the
-  component that owns the corresponding state/doer.
-- Future Gate E/F work should prefer additions like `Exchanger` or `Tevery`
-  components over enlarging the root runtime surface.
+The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md) owns exact
+input, output, cleanup and store boundaries. The [roadmap](../plans/PARITY_ROADMAP.md)
+owns remaining qualification and releases. Earlier migration chronology remains
+in Git; it is not preservation authority.

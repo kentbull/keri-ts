@@ -80,11 +80,11 @@ chronology unless they are themselves durable operational knowledge.
 
 ### Parser Contract
 
-- ADR-0012 now requires buffered complete-enclosure decoding. Progressive traversal,
-  parser cursors/staging and FrameIntake/TcpRead are transitional removal work.
-- The state-machine/progressive contracts describe current behavior until the
-  replacement lands; their early-delivery/lifecycle instructions do not override
-  the buffered decision.
+- ADR-0012 requires buffered complete-enclosure decoding. Progressive traversal,
+  parser cursors/staging, FrameIntake and TcpRead are removed.
+- Buffer complete counted enclosures before synchronous decoding. Concrete input
+  operations own cancellation and joined I/O cleanup; finite parser/codec APIs
+  have no lifetime options. Historical early-delivery rules are superseded.
 - `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is normative for
   parser lifecycle work
 - Keep contract, tests, and parity vectors in sync when parser behavior changes
@@ -154,10 +154,9 @@ For new modules, classes, and functions:
 - Prefer readability-first implementation unless an approved perf phase says
   otherwise
 - Do not add perf-oriented complexity without an explicit perf plan
-- Before 1.0 parity, prefer KERIpy compatibility over prior `keri-ts`
-  compatibility
-- Do not add backward-compatibility shims unless interop or the task requires
-  them
+- Preserve KERIpy protocol interoperability. Previous `keri-ts` API/data
+  compatibility is not required; add no shims, migration readers or new-to-old
+  version tests
 - Treat exact KERI CBOR byte parity as a project rule; route protocol/storage
   CBOR through the shared CESR codec rather than direct `cbor-x` use
 

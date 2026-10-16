@@ -6,9 +6,10 @@ requires concrete component flows without application accounting. ResourcePolicy
 its errors, reservations and constructor plumbing are removed. No compatibility
 policy, renamed ledger or queue/client/listener quota belongs here. A necessary
 private socket constraint requires production evidence; use native backpressure.
-The [transport plan](../../plans/runtime/TRANSPORT_PLAN.md) owns unfinished cue
-ownership, general Reactor-gate removal, shared worker driving and qualification.
-These architecture tasks remain incomplete.
+Concrete cue ownership, protocol-only Reactor serialization and shared CLI/host
+workers are implemented. The [transport plan](../../plans/runtime/TRANSPORT_PLAN.md)
+and [qualification plan](../../plans/qualification/QUALIFICATION_PLAN.md) retain
+composed, failure/restart and installed-package evidence gates.
 
 One runtime serves a Habery or command invocation. Provider storage is selected
 with `enableMailboxStore` or an injected Mailboxer; there is no host mode.
@@ -155,8 +156,8 @@ AgentRuntime. Its close stops production and joins response I/O before clearing
 records or closing stores. Query requests always use this concrete output path;
 there is no optional no-op downstream sink. Unresolved records remain deferred.
 Synchronous producer preparation has no task/halt bookkeeping, raw-packet injector
-or custom-emission API. Reactor's general application gate is removed; duplicate
-whole-runtime driving remains unfinished.
+or custom-emission API. Reactor has no general application gate, and commands
+use the host workers described above.
 
 Anchorer selects its optional same-socket Reactor and transport services at
 construction; its escrow passes receive no parent runtime. Receiptor uses a
@@ -288,11 +289,11 @@ validates actual proof framing without a group-count/work cap.
 
 ## Mailbox, OOBI and DID
 
-Mailbox SSE awaits each complete event's consumer before another read. Poll windows
-and idle timeouts remain; EOF/timeout/cancellation discard an unterminated event.
-Command-local polling resumes across habitats/endpoints using integer positions,
-so one empty long poll cannot starve another proxy. Continuous sinks finish before
-protocol cursor advancement. There is no durable consumer inbox/acknowledgement.
+Mailbox polling runs one worker per remote endpoint with actual request-open and
+SSE read deadlines. One empty long poll cannot serialize another endpoint's work.
+Each complete event's consumer finishes before another read or cursor advancement;
+EOF/timeout/cancellation discard an unterminated event. There is no finite polling
+turn, command-local resume index or durable consumer inbox/acknowledgement.
 
 Provider SSE reads only on demand and closes each LMDB iterator before suspension.
 One demanded row is framed in 64 KiB output chunks without rejecting larger rows.

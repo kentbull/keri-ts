@@ -4,8 +4,7 @@ Date: 2026-04-05
 
 ## Purpose
 
-Capture the maintainer contract for the Gate E query/reply correspondence slice
-that was ported from KERIpy into `keri-ts`.
+Describe the current query/reply correspondence contract and its KERIpy model.
 
 This document describes query/reply ownership. It focuses
 on:
@@ -99,7 +98,8 @@ teach the wrong mental model. Habitat cue interpretation should not guess:
 **`app/agenting.py::WitnessInquisitor.query(...)`**
 
 - KERIpy role: choose endpoint target and send query later
-- `keri-ts` role: `QueryCoordinator.wireEmissionForRequest(...)` resolves habitat and attester, then emits one wire query cue
+- `keri-ts` role: `QueryCoordinator` resolves signer/attester and prepares exact
+  packets in `enqueueCue()` / `processPending()`; `deliverOnce()` owns response I/O
 
 **`core/routing.py` missing-signer cue**
 
@@ -147,6 +147,9 @@ attester. Continuations and pending work carry identifiers, not Hab references.
 The existing coordinator resolves an explicit selection through Habery at signing;
 an unavailable selection remains unresolved and never falls back to another Hab.
 A Hab interpreting a cue selected for another signer leaves it to correspondence.
+The runtime router sends all query cues to QueryCoordinator; its resolved requests
+use Hab.query. Direct component callers can still interpret already-resolved cues
+through Hab.processCuesIter.
 Anchorer's query dependency is only a QueryRequest enqueue port; composition owns the consuming
 coordinator and its lifetime. KERIpy 714 normally resolves its queued src through
 Habery, but also permits a Hab override. This queue uses an identifier in both
@@ -205,7 +208,8 @@ publishing ordinary cues to the application Deck. A reservation also claims
 already-published matching replies synchronously; exact dispatch authorization
 still controls whether that request may use them. Request owners consume slots
 and Respondant prepares output directly, without borrowing a Reactor callback gate.
-Duplicate runtime driving and final qualification remain separate work.
+CLI and hosts run the same component workers; final composed qualification remains
+separate from these ownership contracts.
 
 Respondant owns reply output directly; there is no forHab/emission-sink facade.
 QueryCoordinator prepares its signed packets directly without public custom-emission
@@ -245,19 +249,21 @@ Cost:
 - it differs from KERIpy's transport-spread behavior
 - it does not attempt witness load balancing in this layer
 
-That is acceptable because Gate E is still a runtime/correspondence slice, not
-full transport closure.
+Ordinary requests keep this stable first-choice policy. Anchor recovery explicitly
+asks the eligible alternatives as described below; it does not introduce general
+load balancing or a retry scheduler.
 
 ## Habitat Resolution Contract
 
 `QueryCoordinator` resolves the signing habitat in this order:
 
-1. explicit `hab` on the request
-2. runtime-configured `hab`
+1. explicit local `signer` AID on the request, resolved from Habery
+2. coordinator-configured `hab`
 3. the sole local habitat, if exactly one exists
 
-If multiple habitats exist and none is explicit, `keri-ts` does not guess. The
-request remains pending until some caller provides enough information.
+A missing explicit signer never falls back to another habitat. If multiple habitats
+exist without a selection, `keri-ts` does not guess. The request remains pending
+until a caller provides enough information.
 
 That is an intentional honesty rule. Silent multi-hab guessing would make the
 runtime appear to work while signing from the wrong local controller.
@@ -334,8 +340,6 @@ runtime-owned coordinator instead of as independent HIO doers.
 - emits `logs` with anchor search criteria
 - asks each eligible attester once through the existing pending queue; a retired
   witness must not prevent another known witness from answering
-- resumes unqueued candidates after capacity refusal, without resending admitted
-  candidates; accepted seal state ends the continuation
 - retains the ordinary deferred-resolution request when no endpoint is yet known
 - completes when the local database contains a sealing event for that anchor
 - accepts the existing CESR event-seal SAD contract (`i`, hexadecimal `s`, `d`),
@@ -366,9 +370,8 @@ Why:
 - local runtime work can still be incomplete even when ingress, cues, and OOBI
   queues are empty
 
-Without `queriesPending`, bounded command-local flows such as `init`, `incept`,
-or focused runtime tests can terminate while the correspondence layer still has
-unfinished work.
+Without `queriesPending`, finite commands or focused runtime tests can terminate
+while the correspondence layer still has unfinished work.
 
 ## Maintainer Checklist
 
