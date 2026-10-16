@@ -11,7 +11,9 @@ export interface IpexGraph {
   order: readonly string[];
 }
 type MissingSchema = Extract<SchemaValidation, { kind: "missing" }>;
-type Relation = boolean | null | MissingSchema;
+/** Absent edge evidence remains distinct from a disproved relationship. */
+type RelationDependency = MissingSchema | { kind: "missingKel"; pre: string };
+type Relation = boolean | null | RelationDependency;
 const sectionLabels = new Set(["d", "u", "o", "w"]);
 const groupLabels = new Set([...sectionLabels, "s"]);
 const nodeLabels = new Set(["d", "u", "n", "s", "o", "w"]);
@@ -195,6 +197,15 @@ export function verifyIpexDisclosure(plan: DisclosurePlan, origin: string, graph
   return equal(selected, graph.order);
 }
 
+/** Identity policy is separate from edge shape and additional far-node schema validation. */
+function identityRelation(operators: readonly string[], near: SerderACDC, far: SerderACDC): boolean {
+  // The frozen reference recognizes these operators but leaves them unsatisfied.
+  if (operators.includes("NOT") || operators.includes("DI2I")) return false;
+  if (operators.includes("E1E") && (!near.issuee || !far.issuee || near.issuee !== far.issuee)) return false;
+  if (operators.includes("I2I") && (!far.issuee || near.issuer !== far.issuee)) return false;
+  return true;
+}
+
 /** Check one declared edge relation and its schema pin after the graph's issuer proofs pass. */
 function leafRelation(
   group: Record<string, unknown>,
@@ -215,10 +226,7 @@ function leafRelation(
     ? op
     : null;
   if (!operators || operators.some((item) => !unaryOps.has(item))) return null;
-  // The frozen reference recognizes these operators but leaves them unsatisfied.
-  if (operators.includes("NOT") || operators.includes("DI2I")) return false;
-  if (operators.includes("E1E") && (!near.issuee || !far.issuee || near.issuee !== far.issuee)) return false;
-  if (operators.includes("I2I") && (!far.issuee || near.issuer !== far.issuee)) return false;
+  if (!identityRelation(operators, near, far)) return false;
   const schema = Object.hasOwn(group, "s") ? group.s : inheritedSchema;
   if (schema == null) return true;
   if (typeof schema !== "string" && !record(schema)) return false;
@@ -254,7 +262,7 @@ function groupRelation(
 }
 
 /** Validate edge blocks against authenticated nodes; unavailable schemas remain typed dependencies. */
-export function verifyIpexRelations(graph: IpexGraph, db: Baser): boolean | MissingSchema {
+export function verifyIpexRelations(graph: IpexGraph, db: Baser): boolean | RelationDependency {
   for (const said of graph.order) {
     const near = graph.nodes.get(said)!.body;
     const edges = blocks(near.sad!.e);

@@ -164,6 +164,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (schemas !== true) return schemas;
     const relations = verifyIpexRelations(graph, this.hby.db);
     if (typeof relations === "object") {
+      if (relations.kind === "missingKel") return missing(`Missing delegation KEL approval for ${relations.pre}.`);
       return { kind: "escrow", reason: "Missing edge schema.", schema: relations.said };
     }
     if (!relations) return false;

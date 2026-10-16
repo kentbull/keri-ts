@@ -38,6 +38,19 @@ propagate. NOT/DI2I remain unsatisfied in the inspected reference; hidden aggreg
 and deeper-nest guards remain. Schema fetching and full IPEX/resource qualification
 are separate work. Preserve the 927 commitment/wire labels and expectations.
 
+The TypeScript DI2I contract admits identity or an approved delegation chain at any
+depth. Every hop needs the delegator's accepted approval of the delegated inception;
+local/witness-held `delpre` alone is no authority. Read DND from each delegator's
+inception, independently of protected KEL acceptance. Later delegate rotations do
+not renew the inception relationship. Missing KEL/approval evidence is a typed
+proof dependency, not a permanent invalidity verdict; lookup never repairs storage.
+Identity operators I2I/NI2I/DI2I conflict in wire order, with the last operative one
+winning. Without one, targeted far nodes default to I2I and untargeted nodes to NI2I.
+E1E remains independent. NOT needs its separate authenticated node-validity model.
+This profile follows the [operator specification](https://trustoverip.github.io/kswg-acdc-specification/#operator-o-field)
+and the approval boundary clarified in [KERIpy #1559](https://github.com/WebOfTrust/keripy/issues/1559);
+it is not Python IPEX DI2I parity.
+
 Explicit `RegistryObserver` intake delegates parsed public rip/bup events to the
 normal engine with full witnessed tuple anchors and per-event atomic acceptance.
 Missing evidence remains in registry escrow; accepted-prefix replay cannot lower
