@@ -4,6 +4,10 @@ Planning constraint: the [accepted simplification](../PARITY_ROADMAP.md) superse
 architecture requirements. Concrete owners, one worker model and complete-enclosure
 buffering replace speculative frameworks; protocol correctness and real cleanup remain.
 
+The [1.0.0 release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md)
+closes the implemented cleanup qualification. This document retains the standards
+for future changes, not a pending cleanup pipeline.
+
 Owner: roadmap **7**, after the actual runtime/storage/transport paths
 work. Preserve the original test topology and benchmark checkpoints. #134's test
 reorganization is complete; use the maintained inventory, not its historical count.

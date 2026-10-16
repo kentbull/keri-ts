@@ -4,13 +4,14 @@ The [accepted simplification](../PARITY_ROADMAP.md) governs architecture and tak
 over conflicting older requirements here; existing protocol obligations remain.
 
 Owner: roadmap **5**, under [ADR-0013](../../adr/adr-0013-simple-component-flows.md).
-Remove storage accounting and unsupported delivery persistence. Existing payload
-and accepted-evidence foundations still need final composed qualification; this
-plan does not preserve their byte-credit architecture. The accepted
+Storage accounting and unsupported delivery persistence are removed. Payload
+and accepted-evidence paths pass the 1.0.0 composed and installed qualification
+recorded in the [release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md);
+this plan retains their regression floor, not the retired credit architecture. The accepted
 [buffered parser](../cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) removes parser-owned
-staging; this is a target decision, not a claim of completed implementation.
+staging; the buffered implementation and its qualification are delivered.
 
-## Removal units
+## Delivered removal boundaries
 
 1. Remove native row-size billing, getValBounded/getBounded/beforeCopy callbacks,
    replay byte ceilings and copy reservations. Keep native buffer validity, actual
@@ -64,8 +65,8 @@ qualification remain mandatory.
 KEL/TEL replay and stored endpoint-reply output no longer carry accounting options.
 Keep immutable replay horizons, cursor closure, delegation-cycle detection,
 qualified ordinal/framing rules and current proof reconstruction. General bounded-row
-helpers and before-copy callbacks are removed. Mailbox output accounting still requires removal; do not reintroduce row/replay
-ceilings to coordinate those later cuts.
+helpers and before-copy callbacks are removed. Mailbox output accounting is removed; do not reintroduce row/replay
+ceilings during future maintenance.
 
 Payload collectors and memory/file stages no longer accept quotas. Keep exact
 Payload.size validation, truncated/overlong source failures and actual file/reader

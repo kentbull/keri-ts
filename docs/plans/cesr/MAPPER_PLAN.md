@@ -6,7 +6,10 @@ buffering replace speculative frameworks; protocol correctness and real cleanup 
 
 Owner: final qualification in the [parity roadmap](../PARITY_ROADMAP.md).
 Claim verification (#223) and bundled schema identities (#226) are implemented;
-only composed qualification and the explicit default-builder boundary remain.
+their composed 1.0.0 qualification is recorded in the
+[release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md). The explicit
+default-builder boundary below remains a profile limit, not missing evidence
+for the qualified supplied-resource path.
 Standalone saidive Mapper now verifies configured top-level claims through the
 same semantic/raw/native binary constructor hook, with independent frozen Aggor
 maps and tampered variants across JSON, CBOR, MGPK and CESR. Wire round-trip

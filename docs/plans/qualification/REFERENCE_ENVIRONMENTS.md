@@ -91,8 +91,10 @@ rerunning the same four cases resolved those environment failures. Raw failures,
 retained in the dated cleanup qualification artifacts. The original count omitted
 a 158-passed summary containing child-step notation; the corrected count does
 not change execution or source evidence. This is an aggregate after
-environment repair, not a claim that the first command succeeded. Final versioned
-artifacts, package dependencies, CI and publication still require their own gates.
+environment repair, not a claim that the first command succeeded. Final 1.0.0
+artifacts, dependencies, CI and publication are qualified in the
+[release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md). Future runs
+need their own source/import/artifact evidence.
 
 ## Historical import observations (2026-10-13)
 

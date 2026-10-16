@@ -9,7 +9,9 @@ separate v2 storage, event engine, issuer services, public observer intake,
 IPEX accepted-chain assembly, presentation cutoffs and explicit runtime ownership.
 Keep the delivered v1 VDR protocol stack operational; old keri-ts data compatibility
 is not required. The
-[current contract][contract] owns behavior; this plan owns remaining evidence.
+[current contract][contract] owns behavior; the
+[1.0.0 release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md) records
+qualified evidence and reference gaps. This plan retains the regression boundary.
 
 Pinned reference: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 Inspect `acdc/regbasing.py`, `registering.py`, `regeventing.py`, `registraring.py`,

@@ -229,18 +229,18 @@ operator a negative case proves; include a valid counterpart so missing setup
 cannot masquerade as a security refusal. Reopen/replay assertions must inspect the
 actual stored representation, not a separately retained producer object.
 
-## Remaining qualification
+## Qualified baseline and regression floor
 
 The maintained pairwise owner covers the requested conversation, graph/operator,
 multiple/nested attribute, progressive, failure and spurn families. TS DI2I and
 NOT remain separately qualified profiles, excluded from Python interop until
 supported there. Preserve these cases rather than rebuilding the matrix.
 
-Audit the composed KRAM/mailbox obligations next, retaining the topology and
-reference limits above, then residual architecture work under the sole ENCTX
-execution tracker. The complete final maintained/manual battery and clean installed
-Node minimum/current qualification still gate all publications. Passing this
-matrix at a scoped PR head does not qualify the eventual package set.
+The composed KRAM/mailbox, residual architecture, complete maintained/manual and
+clean installed Node minimum/current gates pass for the published 1.0.0 baseline.
+The [release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md) records
+exact heads, packages and limits. Future changes must preserve this matrix and
+receive relevant qualification; an old scoped result does not certify a new set.
 
 Share only necessary signing/transport/credential fixture setup. Do not build a
 scenario framework or hide all assertions in one parameterized mega-test. Existing

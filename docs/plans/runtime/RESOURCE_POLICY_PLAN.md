@@ -12,7 +12,8 @@ cross-layer plumbing are removed. No parser, codec, domain, queue, storage, repl
 may remain. A necessary private socket constraint requires production evidence;
 native stream backpressure is preferred. Do not retain no-op compatibility APIs.
 
-Remaining runtime composition and final qualification are separate work. Preserve
+Runtime composition and final qualification are delivered for 1.0.0; see the
+[release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md). Preserve
 real framing, cryptographic validation,
 transactions and actual file/socket/iterator cleanup while deleting accounting.
 Do not describe logical allowances as a process-memory guarantee.

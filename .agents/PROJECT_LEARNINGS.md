@@ -3,8 +3,9 @@
 Routing and durable rules only. Current source, tests and normative contracts
 outrank these summaries. The [parity roadmap](../docs/plans/PARITY_ROADMAP.md)
 owns remaining work. Buffered parsing, accounting/durability removal, concrete
-component ownership and the public runtime API reduction are implemented; final
-composed and installed-package qualification remains open.
+component ownership and the public runtime API reduction are implemented; the 1.0.0
+cleanup/release baseline is qualified. The [release report](../docs/reports/parity/CLEANUP_RELEASE_2026-10-16.md)
+owns its evidence and limits; future changes still require relevant qualification.
 
 ## Read by subject
 

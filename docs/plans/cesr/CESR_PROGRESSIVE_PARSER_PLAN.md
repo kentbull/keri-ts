@@ -18,23 +18,15 @@ frame channel. HTTP, witness and stored-replay inputs now own their iterators
 at the composition point. TCP applications now compose real connections with
 native receive/send tasks; the frame bridge, TcpRead and exported adapter are removed.
 
-## Remaining cuts
+## Delivered sequence
 
-1. Input owners now bind external cancellation to native operations and check
-   pulls/results before EOF or dispatch. Parser, finite annotation and benchmark
-   parser-options forwarding are removed; benchmark operations own a direct signal.
-   TCP callers also own blocked I/O interruption and joined cleanup directly;
-   no custom parser/channel bridge remains.
-2. Remove remaining runtime/transport accounting and delivery/pump indirection
-   under ADR-0013 without weakening actual socket/file cleanup.
-3. Resolve the reverse HTTP KERIpy genus contract and qualify successive messages,
-   same-socket replies, half-close and failure paths.
-4. Complete maintained composed disclosure/KRAM interoperability and final release
-   qualification from the parity roadmap.
-
-Combine cuts where separation would require temporary interfaces. Refactor
-responsibilities before changing behavior. Buffering accepts memory and latency
-proportional to complete groups; no giant-transfer performance gate remains.
+Concrete input cancellation/join, runtime/transport accounting removal, direct
+output ownership and the reverse HTTP genus correction are delivered. Maintained
+successive-message, same-socket reply, half-close, failure and disclosure/KRAM
+cases pass the complete 1.0.0 release qualification. The
+[release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md) owns evidence
+and limits; do not reopen the old migration sequence. Refactor responsibilities
+before future behavior changes, and retain the regression floor below.
 
 ## Regression floor
 
