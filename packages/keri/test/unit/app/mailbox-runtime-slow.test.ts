@@ -9,7 +9,11 @@ import {
   mailboxUpdateCommand,
 } from "../../../../tufa/src/cli/mailbox.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
-import { createAgentRuntime, runAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  runAgentRuntime,
+  settleRuntimeIngress,
+} from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest, inspectCesrRequest } from "../../../src/app/cesr-http.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";

@@ -42,7 +42,11 @@ import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { loadEvent } from "../../../src/core/protocol-serialization.ts";
 import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import { rehydrateKramFactors, removeKramFactors, storeKramFactors } from "../../../src/db/kram-factors.ts";
+import {
+  rehydrateKramFactors,
+  removeKramFactors,
+  storeKramFactors,
+} from "../../../src/db/kram-factors.ts";
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 import replayVectors from "../../fixtures/replay-927.json" with { type: "json" };
 

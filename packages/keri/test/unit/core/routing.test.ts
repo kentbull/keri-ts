@@ -1,6 +1,12 @@
 import { run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
-import { Dater, Diger, NumberPrimitive, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
+import {
+  Dater,
+  Diger,
+  NumberPrimitive,
+  Prefixer,
+  SerderKERI,
+} from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";

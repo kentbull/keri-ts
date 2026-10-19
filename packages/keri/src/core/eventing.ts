@@ -1,4 +1,15 @@
-import { Cigar, Dater, Diger, Ilks, NumberPrimitive, Prefixer, SealSource, SerderKERI, Siger, Verfer } from "cesr-ts";
+import {
+  Cigar,
+  Dater,
+  Diger,
+  Ilks,
+  NumberPrimitive,
+  Prefixer,
+  SealSource,
+  SerderKERI,
+  Siger,
+  Verfer,
+} from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey, snKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";

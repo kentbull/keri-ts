@@ -1,6 +1,14 @@
 import { run } from "effection";
 import { assertEquals, assertExists, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { Diger, Ilks, NumberPrimitive, NumDex, Prefixer, SerderACDC, Signer } from "../../../../cesr/mod.ts";
+import {
+  Diger,
+  Ilks,
+  NumberPrimitive,
+  NumDex,
+  Prefixer,
+  SerderACDC,
+  Signer,
+} from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Verifier, type VerifierCue, type VerifierDecision } from "../../../src/app/verifying.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";

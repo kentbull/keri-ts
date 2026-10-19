@@ -3,7 +3,9 @@ import { decodeB64 } from "../../../src/core/bytes.ts";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
-import { COUNTER_CODE_NAMES_V1 } from "../../../src/tables/counter.tables.generated.ts";
+import {
+  COUNTER_CODE_NAMES_V1,
+} from "../../../src/tables/counter.tables.generated.ts";
 import { counterV2, sigerToken, token } from "../../fixtures/counter-token-fixtures.ts";
 import { encode } from "../../fixtures/stream-byte-fixtures.ts";
 

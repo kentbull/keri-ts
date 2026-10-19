@@ -1,6 +1,15 @@
 import { call, type Operation, run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes, assertThrows } from "jsr:@std/assert";
-import { b, concatBytes, Diger, parseBytes, Prefixer, Seqner, SerderKERI, Vrsn_2_0 } from "../../../../cesr/mod.ts";
+import {
+  b,
+  concatBytes,
+  Diger,
+  parseBytes,
+  Prefixer,
+  Seqner,
+  SerderKERI,
+  Vrsn_2_0,
+} from "../../../../cesr/mod.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";

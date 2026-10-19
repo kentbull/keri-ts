@@ -1,7 +1,10 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { SerderKERI } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  settleRuntimeIngress,
+} from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";

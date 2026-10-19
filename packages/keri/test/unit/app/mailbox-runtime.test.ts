@@ -27,7 +27,10 @@ import {
   mailboxUpdateCommand,
 } from "../../../../tufa/src/cli/mailbox.ts";
 import { spawnTufa, stopChild } from "../../../../tufa/test/test-helpers.ts";
-import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  settleRuntimeIngress,
+} from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";

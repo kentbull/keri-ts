@@ -1,7 +1,15 @@
 /** Exact wire and evidence checks for CLI exports with independently selected genera. */
 import { assert, assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { type CesrFrame, Counter, Dater, isGroupTuple, NumberPrimitive, parse, Siger } from "../../../../cesr/mod.ts";
+import {
+  type CesrFrame,
+  Counter,
+  Dater,
+  isGroupTuple,
+  NumberPrimitive,
+  parse,
+  Siger,
+} from "../../../../cesr/mod.ts";
 import { extractKelStream, normalizeCesr } from "./interop-test-helpers.ts";
 
 /** Read-only reference cloning both wire encodings from the same KERIpy store. */

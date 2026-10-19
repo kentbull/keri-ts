@@ -20,7 +20,12 @@ import { Mapper, type MapperMap } from "../primitives/mapper.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import { isMediarCode, Mediar } from "../primitives/mediar.ts";
 import { NumberPrimitive } from "../primitives/number.ts";
-import { type CounterGroupLike, type GroupEntry, isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
+import {
+  type CounterGroupLike,
+  type GroupEntry,
+  isCounterGroupLike,
+  isGroupTuple,
+} from "../primitives/primitive.ts";
 import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
 import { SealDescriptors, SealEvent, type SealRecord } from "../primitives/structing.ts";

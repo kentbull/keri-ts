@@ -1,5 +1,11 @@
 /** Internal atomic KRAM staging; the intake owner supplies queries and plain ready decisions. */
-import { Dater, Diger, NumberPrimitive, type Prefixer, type Siger } from "cesr-ts";
+import {
+  Dater,
+  Diger,
+  NumberPrimitive,
+  type Prefixer,
+  type Siger,
+} from "cesr-ts";
 import type { Baser } from "../db/basing.ts";
 import { rehydrateKramFactors, removeKramFactors, storeKramFactors } from "../db/kram-factors.ts";
 import { encodeDateTimeToDater } from "../time/mod.ts";

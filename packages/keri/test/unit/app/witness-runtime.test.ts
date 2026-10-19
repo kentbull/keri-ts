@@ -5,7 +5,11 @@ import { createConnection, type Socket } from "node:net";
 import { b, parseBytes, ParserError, WireParseError } from "../../../../cesr/mod.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
-import { createAgentRuntime, runAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  runAgentRuntime,
+  settleRuntimeIngress,
+} from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest } from "../../../src/app/cesr-http.ts";
 import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";

@@ -1,6 +1,10 @@
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { createAgentRuntime, runAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  runAgentRuntime,
+  settleRuntimeIngress,
+} from "../../../src/app/agent-runtime.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";

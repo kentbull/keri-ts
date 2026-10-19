@@ -1,6 +1,14 @@
 import { IPEX_V2_PREDECESSORS, type IpexVerb, isIpexVerb, nestedIpexRoute } from "../core/protocol-exchanging.ts";
 /** V2 IPEX route policy; v1 routing remains independently registered. */
-import { type CesrFrame, Diger, ParserError, Prefixer, type SealSource, SerderACDC, type SerderKERI } from "cesr-ts";
+import {
+  type CesrFrame,
+  Diger,
+  ParserError,
+  Prefixer,
+  type SealSource,
+  SerderACDC,
+  type SerderKERI,
+} from "cesr-ts";
 import { type RegistryState, validateUpdate, verifyRegistryAnchor, vetBinds } from "../acdc/regeventing.ts";
 import type { RegistryStore } from "../acdc/registering.ts";
 import { validateSchema } from "../acdc/scheming.ts";

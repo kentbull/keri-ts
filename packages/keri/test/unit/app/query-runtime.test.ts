@@ -5,7 +5,11 @@ import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
-import { createAgentRuntime, runAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  runAgentRuntime,
+  settleRuntimeIngress,
+} from "../../../src/app/agent-runtime.ts";
 
 import { createHabery } from "../../../src/app/habbing.ts";
 import { readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";

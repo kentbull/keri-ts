@@ -21,7 +21,12 @@ import {
   proposeGroupEndpointRole,
 } from "../endpoint-roleing.ts";
 import { uniqueMembers } from "../group-members.ts";
-import { MULTISIG_ICP_ROUTE, MULTISIG_IXN_ROUTE, MULTISIG_ROT_ROUTE, MULTISIG_RPY_ROUTE } from "../grouping.ts";
+import {
+  MULTISIG_ICP_ROUTE,
+  MULTISIG_IXN_ROUTE,
+  MULTISIG_ROT_ROUTE,
+  MULTISIG_RPY_ROUTE,
+} from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import {
   type ApprovalPromptContext,

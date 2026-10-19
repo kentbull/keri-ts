@@ -2,7 +2,10 @@ import { call, run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
 import { attachmentPayload, collectPayload, concatBytes, parse } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  settleRuntimeIngress,
+} from "../../../src/app/agent-runtime.ts";
 import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -12,7 +15,10 @@ import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { introduce } from "../../../src/app/forwarding.ts";
-import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
+import {
+  acceptedEventReplayMessage,
+  createHabery,
+} from "../../../src/app/habbing.ts";
 
 import { EndpointRoles } from "../../../src/core/roles.ts";
 

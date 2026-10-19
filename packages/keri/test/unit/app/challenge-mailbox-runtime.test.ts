@@ -1,7 +1,11 @@
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertInstanceOf, assertStringIncludes } from "jsr:@std/assert";
 import { mailboxAddCommand } from "../../../../tufa/src/cli/mailbox.ts";
-import { createAgentRuntime, runAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  runAgentRuntime,
+  settleRuntimeIngress,
+} from "../../../src/app/agent-runtime.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";

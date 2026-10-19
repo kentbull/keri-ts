@@ -7,7 +7,10 @@
  * internal export must not silently expand this package contract.
  */
 // Host lifecycle, direct ingress and concrete I/O boundaries.
-export { abortable, rethrowCleanupFailure } from "../app/abortable.ts";
+export {
+  abortable,
+  rethrowCleanupFailure,
+} from "../app/abortable.ts";
 export {
   type AgentRuntime,
   type AgentRuntimeOptions,
@@ -18,7 +21,12 @@ export {
   settleMailboxPollBatch,
   settleRuntimeIngress,
 } from "../app/agent-runtime.ts";
-export { chunkBytes, collectBytes, fileBytes, type SourceOptions } from "../app/byte-source.ts";
+export {
+  chunkBytes,
+  collectBytes,
+  fileBytes,
+  type SourceOptions,
+} from "../app/byte-source.ts";
 export {
   CesrHttpRefusal,
   type CesrPostResult,
@@ -46,7 +54,10 @@ export {
   readRequiredCesrRequestBytes,
   requestBytes,
 } from "../app/cesr-http.ts";
-export { cueDo, processCuesOnce } from "../app/cue-runtime.ts";
+export {
+  cueDo,
+  processCuesOnce,
+} from "../app/cue-runtime.ts";
 export {
   FetchHttpClient,
   type HttpClient,
@@ -54,8 +65,14 @@ export {
   type HttpResponse,
   type HttpStreamResponse,
 } from "../app/http-client.ts";
-export { type DispatchResult, envelopeFromFrame, queryEnvelopeFromDispatch } from "../app/parsering.ts";
-export { type ProtocolHostPolicy } from "../app/protocol-host-policy.ts";
+export {
+  type DispatchResult,
+  envelopeFromFrame,
+  queryEnvelopeFromDispatch,
+} from "../app/parsering.ts";
+export {
+  type ProtocolHostPolicy,
+} from "../app/protocol-host-policy.ts";
 export {
   createProtocolProcessor,
   type DispatchOptions,
@@ -63,10 +80,17 @@ export {
   ProtocolProcessor,
 } from "../app/protocol-processing.ts";
 export type { QueryReply } from "../app/query-replies.ts";
-export { Reactor } from "../app/reactor.ts";
-export { Respondant } from "../app/respondant.ts";
+export {
+  Reactor,
+} from "../app/reactor.ts";
+export {
+  Respondant,
+} from "../app/respondant.ts";
 
-export { socketBytes, type SocketSourceOptions } from "../app/socket-source.ts";
+export {
+  socketBytes,
+  type SocketSourceOptions,
+} from "../app/socket-source.ts";
 export {
   type TCPConversation,
   TCPMessenger,
@@ -96,7 +120,11 @@ export {
   markChallengeVerified,
   parseChallengeWords,
 } from "../app/challenging.ts";
-export { Configer, type ConfigerOptions, createConfiger } from "../app/configing.ts";
+export {
+  Configer,
+  type ConfigerOptions,
+  createConfiger,
+} from "../app/configing.ts";
 export {
   createCredential,
   type CredentialCreateOptions,
@@ -129,8 +157,16 @@ export {
   loadAcceptedEndpointRole,
   proposeGroupEndpointRole,
 } from "../app/endpoint-roleing.ts";
-export { type EssrDecision, type EssrMessage, EssrRecipient } from "../app/essr.ts";
-export { createExchangeMessage, type ExchangeMessageArgs, sendExchangeMessage } from "../app/exchange-messaging.ts";
+export {
+  type EssrDecision,
+  type EssrMessage,
+  EssrRecipient,
+} from "../app/essr.ts";
+export {
+  createExchangeMessage,
+  type ExchangeMessageArgs,
+  sendExchangeMessage,
+} from "../app/exchange-messaging.ts";
 export {
   type ExchangeAttachment,
   type ExchangeDecision,
@@ -218,7 +254,9 @@ export {
   type ManagerSignArgs,
   type SigningPath,
 } from "../app/keeping.ts";
-export { MailboxDirector } from "../app/mailbox-director.ts";
+export {
+  MailboxDirector,
+} from "../app/mailbox-director.ts";
 export {
   consumeMailboxSse,
   type MailboxSseMessage,
@@ -240,10 +278,21 @@ export {
   preferredUrl,
   resolveHostedEndpointPath,
 } from "../app/mailboxing.ts";
-export { Notifier } from "../app/notifying.ts";
-export { Oobiery, oobiRequestExn } from "../app/oobiery.ts";
-export { type ContactRecord, Organizer } from "../app/organizing.ts";
-export { Signal, Signaler } from "../app/signaling.ts";
+export {
+  Notifier,
+} from "../app/notifying.ts";
+export {
+  Oobiery,
+  oobiRequestExn,
+} from "../app/oobiery.ts";
+export {
+  type ContactRecord,
+  Organizer,
+} from "../app/organizing.ts";
+export {
+  Signal,
+  Signaler,
+} from "../app/signaling.ts";
 export {
   VerifierAgent,
   type VerifierAgentOptions,
@@ -261,7 +310,11 @@ export {
   type VerifierOptions,
   type VerifierRejectReason,
 } from "../app/verifying.ts";
-export { BUILD_METADATA, DISPLAY_VERSION, PACKAGE_VERSION } from "../app/version.ts";
+export {
+  BUILD_METADATA,
+  DISPLAY_VERSION,
+  PACKAGE_VERSION,
+} from "../app/version.ts";
 export {
   drainWitnessCues,
   processWitnessIngress,
@@ -308,7 +361,10 @@ export {
   update,
   type UpdateOptions,
 } from "../acdc/messaging.ts";
-export { RegistryObserver, type RegistryObserverDecision } from "../acdc/observing.ts";
+export {
+  RegistryObserver,
+  type RegistryObserverDecision,
+} from "../acdc/observing.ts";
 export {
   type RegistryBindingEvidence,
   type RegistryDisclosure,
@@ -364,7 +420,12 @@ export {
   type QueryEnvelope,
   type ReceiptEnvelope,
 } from "../core/eventing.ts";
-export { Kever, type KeverEventInit, type KeverStateInit, type LastEstLoc } from "../core/kever.ts";
+export {
+  Kever,
+  type KeverEventInit,
+  type KeverStateInit,
+  type LastEstLoc,
+} from "../core/kever.ts";
 export { type KramConfig, Kramer, type KramRefusal } from "../core/kraming.ts";
 export {
   consoleLogger,
@@ -445,9 +506,24 @@ export {
   WellKnownAuthN,
   type WellKnownAuthNShape,
 } from "../core/records.ts";
-export { type EndpointRole, EndpointRoles, isEndpointRole, isRole, type Role, Roles } from "../core/roles.ts";
-export { isScheme, type Scheme, Schemes } from "../core/schemes.ts";
-export { dumpSchema, Schemer, type SchemerInit } from "../core/scheming.ts";
+export {
+  type EndpointRole,
+  EndpointRoles,
+  isEndpointRole,
+  isRole,
+  type Role,
+  Roles,
+} from "../core/roles.ts";
+export {
+  isScheme,
+  type Scheme,
+  Schemes,
+} from "../core/schemes.ts";
+export {
+  dumpSchema,
+  Schemer,
+  type SchemerInit,
+} from "../core/scheming.ts";
 export {
   type AnchorSeal,
   credential,
@@ -473,7 +549,10 @@ export {
   type TeveryOptions,
 } from "../vdr/eventing.ts";
 // Accepted-state DID projection and artifact operations.
-export { resolveDidKeri, type ResolveDidKeriResult } from "../did/keri/resolving.ts";
+export {
+  resolveDidKeri,
+  type ResolveDidKeriResult,
+} from "../did/keri/resolving.ts";
 export {
   type DidWebsArtifacts,
   type DidWebsJsonArtifact,
@@ -514,8 +593,14 @@ export {
   generateBareDidDocument,
   generateDidDocument,
 } from "../did/webs/documenting.ts";
-export { resolveDidWebs, type ResolveDidWebsOptions, type ResolveDidWebsResult } from "../did/webs/resolving.ts";
-export { makeNowIso8601 } from "../time/mod.ts";
+export {
+  resolveDidWebs,
+  type ResolveDidWebsOptions,
+  type ResolveDidWebsResult,
+} from "../did/webs/resolving.ts";
+export {
+  makeNowIso8601,
+} from "../time/mod.ts";
 
 export { HTTPMessenger, type HTTPMessengerOptions } from "../app/http-messenger.ts";
 export type { IngressOptions } from "../app/message-source.ts";

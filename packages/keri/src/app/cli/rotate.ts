@@ -18,7 +18,10 @@ import { systemClock } from "../runtime-clock.ts";
  */
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { createAgentRuntime, runAgentRuntimeUntil } from "../agent-runtime.ts";
+import {
+  createAgentRuntime,
+  runAgentRuntimeUntil,
+} from "../agent-runtime.ts";
 
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";

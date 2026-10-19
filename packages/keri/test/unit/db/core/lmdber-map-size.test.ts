@@ -1,5 +1,8 @@
 import { assertEquals } from "jsr:@std/assert";
-import { readStoredLmdbMapSize, resolveLmdbMapSize } from "../../../../src/db/core/lmdber.ts";
+import {
+  readStoredLmdbMapSize,
+  resolveLmdbMapSize,
+} from "../../../../src/db/core/lmdber.ts";
 
 Deno.test("db/core lmdber map size - resolve prefers option, then env aliases, then default", () => {
   assertEquals(

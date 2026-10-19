@@ -10,7 +10,10 @@
 import { run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Counter, CtrDexV1, Diger, SerderKERI, Siger } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  settleRuntimeIngress,
+} from "../../../src/app/agent-runtime.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, eventPayloadMessage, type Hab, type Habery } from "../../../src/app/habbing.ts";
