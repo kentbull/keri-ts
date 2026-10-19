@@ -41,9 +41,13 @@ export type QueryInstruction =
 
 /** Deferred query work names its local signer and remote attester; it never borrows a Hab. */
 export type QueryRequest = QueryInstruction & {
+  /** Subject AID whose state is requested. */
   pre: string;
+  /** Explicit local signer; unavailable means unresolved, without fallback. */
   signer?: string;
+  /** Remote attester receiving the query, not the local signer. */
   src?: string;
+  /** Ordered witness/attester overrides; copied when the request is queued. */
   wits?: string[];
 };
 
@@ -64,11 +68,25 @@ export type QueryCue =
 export interface ReplayCue extends CueBase {
   /** Query SAID that requested this response, including deferred escrow results. */
   querySaid?: string;
+  /**
+   * Selects replay handling in the cue router.
+   */
   kin: "replay";
-  /** Reiterating reopens the captured replay extent without collecting its event bytes. */
+  /**
+   * Reopenable bounded local replay. Respondant materializes the complete sequence before Poster admission; request-owned readers may consume it lazily.
+   */
   msgs: Iterable<Uint8Array>;
+  /**
+   * Subject AID whose local history is being replayed, when supplied.
+   */
   pre?: string;
+  /**
+   * Local attester/sender AID for reply production, when supplied.
+   */
   src?: string;
+  /**
+   * Remote requester AID for outbound delivery, when supplied.
+   */
   dest?: string;
 }
 

@@ -1027,9 +1027,12 @@ export class Tevery {
     }
   }
 
-  /** Serve legacy TEL replay or an ordered TSN pair with independent receiver verification.
+  /**
+   * Serve legacy TEL replay or an ordered TSN pair with independent receiver verification.
    * Actual 714 leaves query signature validation TODO. Requester material identifies the destination;
    * optional KRAM and sender policy remain separate. Replay output uses the reference's default v2 genus.
+   *
+   * @param args TEL query body, authenticated source and nontransferable cigar evidence.
    */
   processQuery({ serder, source, cigars }: QueryEnvelope): TelQueryDecision {
     if (serder.route === "tsn") {

@@ -46,7 +46,12 @@ import { TCPMessenger } from "./tcp-messenger.ts";
  */
 const QUERY_ROLE_PRIORITY = [Roles.controller, Roles.agent, Roles.witness];
 
-/** Copy only the owned query-body level without erasing its route/payload relationship. */
+/**
+ * Copy only the owned query-body level without erasing its route/payload relationship.
+ *
+ * @param instruction Typed route and query body; nested values remain borrowed immutable data.
+ * @returns A copy of the route/body level preserving its discriminated shape.
+ */
 function copyQuery(instruction: QueryInstruction): QueryInstruction {
   switch (instruction.route) {
     case "logs":
@@ -79,6 +84,9 @@ interface QueryContinuation {
  * Honesty rule:
  * - one habitat means runtime may safely use it as an implicit signer
  * - more than one habitat means runtime must not guess
+ *
+ * @param hby Borrowed local habitat collection and accepted-state database.
+ * @returns Only local habitat, or null when selection is ambiguous or absent.
  */
 function soleHab(hby: Habery): Hab | null {
   const habitats = hby.habs.values();
@@ -86,7 +94,12 @@ function soleHab(hby: Habery): Hab | null {
   return first.done || !habitats.next().done ? null : first.value;
 }
 
-/** Parse one hex sequence number field from key-state/query payloads. */
+/**
+ * Parse one hex sequence number field from key-state/query payloads.
+ *
+ * @param value Remote query/key-state ordinal field.
+ * @returns parseInt base-16 result, or null for empty/non-string/NaN input; this is not full-string validation.
+ */
 function parseHexOrdinal(value: unknown): number | null {
   if (typeof value !== "string" || value.length === 0) {
     return null;
@@ -95,7 +108,12 @@ function parseHexOrdinal(value: unknown): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-/** Encode one non-negative sequence number in KERI hex-ordinal form. */
+/**
+ * Encode one non-negative sequence number in KERI hex-ordinal form.
+ *
+ * @param num Sequence/FEL ordinal; negative input is clamped to zero.
+ * @returns Lowercase hexadecimal representation.
+ */
 function encodeHexOrdinal(num: number): string {
   return Math.max(0, num).toString(16);
 }
@@ -115,13 +133,37 @@ function encodeHexOrdinal(num: number): string {
  * - later `logs` through `LogQuerier` if remote state is ahead
  */
 export class KeyStateNoticer implements QueryContinuation {
+  /**
+   * Queried AID whose accepted state determines completion.
+   */
   readonly pre: string;
+  /**
+   * Optional local signing AID; distinct from remote attester src.
+   */
   readonly signer?: string;
+  /**
+   * Copied ordered attester overrides, or undefined for endpoint-role selection.
+   */
   readonly wits?: string[];
+  /**
+   * Whether this continuation's accepted-state predicate has completed.
+   */
   done = false;
+  /**
+   * Whether the initial request(s) have been admitted; prevents repeated enqueue on ticks.
+   */
   private queried = false;
+  /**
+   * Follow-on log continuation when remote key state is ahead; null until needed.
+   */
   private logQuerier: LogQuerier | null = null;
 
+  /**
+   * Initialize an in-memory query continuation; no network work starts in construction.
+   *
+   * @param pre AID whose accepted KEL state must satisfy this continuation.
+   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   */
   constructor(
     pre: string,
     { signer, wits }: { signer?: string; wits?: string[] } = {},
@@ -131,6 +173,12 @@ export class KeyStateNoticer implements QueryContinuation {
     this.wits = wits ? [...wits] : undefined;
   }
 
+  /**
+   * Observe saved remote key state and request missing logs when needed.
+   *
+   * @param cue Published cue inspected for matching saved key state.
+   * @param coordinator Borrowed query owner supplying accepted state and follow-on admission.
+   */
   observe(cue: AgentCue, coordinator: QueryCoordinator): void {
     if (this.done || cue.kin !== "keyStateSaved" || cue.ksn.i !== this.pre) {
       return;
@@ -153,6 +201,11 @@ export class KeyStateNoticer implements QueryContinuation {
     this.done = true;
   }
 
+  /**
+   * Advance this continuation once, enqueueing its initial query only once and marking done when its accepted-state predicate holds.
+   *
+   * @param coordinator Borrowed query owner used for request admission and accepted-state lookups.
+   */
   tick(coordinator: QueryCoordinator): void {
     if (this.done) {
       return;
@@ -191,13 +244,38 @@ export class KeyStateNoticer implements QueryContinuation {
  * - `logs` with `{ fn: "0", s: "0" }`
  */
 export class LogQuerier implements QueryContinuation {
+  /**
+   * Queried AID whose accepted state determines completion.
+   */
   readonly pre: string;
+  /**
+   * Inclusive accepted KEL sequence threshold as a number.
+   */
   readonly targetSn: number;
+  /**
+   * Optional local signing AID; distinct from remote attester src.
+   */
   readonly signer?: string;
+  /**
+   * Copied ordered attester overrides, or undefined for endpoint-role selection.
+   */
   readonly wits?: string[];
+  /**
+   * Whether this continuation's accepted-state predicate has completed.
+   */
   done = false;
+  /**
+   * Whether the initial request(s) have been admitted; prevents repeated enqueue on ticks.
+   */
   private queried = false;
 
+  /**
+   * Initialize an in-memory query continuation; no network work starts in construction.
+   *
+   * @param pre AID whose accepted KEL state must satisfy this continuation.
+   * @param targetSn Required event sequence number as a number, inclusive.
+   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   */
   constructor(
     pre: string,
     targetSn: number,
@@ -209,10 +287,21 @@ export class LogQuerier implements QueryContinuation {
     this.wits = wits ? [...wits] : undefined;
   }
 
+  /**
+   * Leave cue observation empty; completion is checked from accepted state in tick.
+   *
+   * @param _cue Unused; this continuation reads accepted database state in tick.
+   * @param _coordinator Unused on cue observation.
+   */
   observe(_cue: AgentCue, _coordinator: QueryCoordinator): void {
     return;
   }
 
+  /**
+   * Advance this continuation once, enqueueing its initial query only once and marking done when its accepted-state predicate holds.
+   *
+   * @param coordinator Borrowed query owner used for request admission and accepted-state lookups.
+   */
   tick(coordinator: QueryCoordinator): void {
     if (this.done) {
       return;
@@ -249,14 +338,42 @@ export class LogQuerier implements QueryContinuation {
  * - `logs` with explicit `fn` and `s`
  */
 export class SeqNoQuerier implements QueryContinuation {
+  /**
+   * Queried AID whose accepted state determines completion.
+   */
   readonly pre: string;
+  /**
+   * Inclusive accepted KEL sequence threshold as a number.
+   */
   readonly targetSn: number;
+  /**
+   * First-seen ordinal used as the replay start, encoded as hexadecimal in the query.
+   */
   readonly fn: number;
+  /**
+   * Optional local signing AID; distinct from remote attester src.
+   */
   readonly signer?: string;
+  /**
+   * Copied ordered attester overrides, or undefined for endpoint-role selection.
+   */
   readonly wits?: string[];
+  /**
+   * Whether this continuation's accepted-state predicate has completed.
+   */
   done = false;
+  /**
+   * Whether the initial request(s) have been admitted; prevents repeated enqueue on ticks.
+   */
   private queried = false;
 
+  /**
+   * Initialize an in-memory query continuation; no network work starts in construction.
+   *
+   * @param pre AID whose accepted KEL state must satisfy this continuation.
+   * @param targetSn Required event sequence number as a number, inclusive.
+   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation. fn is the first-seen ordinal start, default zero.
+   */
   constructor(
     pre: string,
     targetSn: number,
@@ -277,10 +394,21 @@ export class SeqNoQuerier implements QueryContinuation {
     this.wits = wits ? [...wits] : undefined;
   }
 
+  /**
+   * Leave cue observation empty; completion is checked from accepted state in tick.
+   *
+   * @param _cue Unused; this continuation reads accepted database state in tick.
+   * @param _coordinator Unused on cue observation.
+   */
   observe(_cue: AgentCue, _coordinator: QueryCoordinator): void {
     return;
   }
 
+  /**
+   * Advance this continuation once, enqueueing its initial query only once and marking done when its accepted-state predicate holds.
+   *
+   * @param coordinator Borrowed query owner used for request admission and accepted-state lookups.
+   */
   tick(coordinator: QueryCoordinator): void {
     if (this.done) {
       return;
@@ -319,13 +447,38 @@ export class SeqNoQuerier implements QueryContinuation {
  * - `logs` from `{ fn: "0", s: "0", a: anchor }`
  */
 export class AnchorQuerier implements QueryContinuation {
+  /**
+   * Queried AID whose accepted state determines completion.
+   */
   readonly pre: string;
+  /**
+   * Copied event seal that must appear in the queried AID's accepted KEL.
+   */
   readonly anchor: ReturnType<typeof SealEvent.toSad>;
+  /**
+   * Optional local signing AID; distinct from remote attester src.
+   */
   readonly signer?: string;
+  /**
+   * Copied ordered attester overrides, or undefined for endpoint-role selection.
+   */
   readonly wits?: string[];
+  /**
+   * Whether this continuation's accepted-state predicate has completed.
+   */
   done = false;
+  /**
+   * Whether the initial request(s) have been admitted; prevents repeated enqueue on ticks.
+   */
   private queried = false;
 
+  /**
+   * Initialize an in-memory query continuation; no network work starts in construction.
+   *
+   * @param pre AID whose accepted KEL state must satisfy this continuation.
+   * @param anchor Event seal copied by i/s/d and sought in the queried AID's accepted KEL.
+   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   */
   constructor(
     pre: string,
     anchor: AnchorQuerier["anchor"],
@@ -337,10 +490,21 @@ export class AnchorQuerier implements QueryContinuation {
     this.wits = wits ? [...wits] : undefined;
   }
 
+  /**
+   * Leave cue observation empty; completion is checked from accepted state in tick.
+   *
+   * @param _cue Unused; this continuation reads accepted database state in tick.
+   * @param _coordinator Unused on cue observation.
+   */
   observe(_cue: AgentCue, _coordinator: QueryCoordinator): void {
     return;
   }
 
+  /**
+   * Advance this continuation once, enqueueing its initial query only once and marking done when its accepted-state predicate holds.
+   *
+   * @param coordinator Borrowed query owner used for request admission and accepted-state lookups.
+   */
   tick(coordinator: QueryCoordinator): void {
     if (this.done) return;
     if (coordinator.hby.db.fetchLastSealingEventByEventSeal(this.pre, this.anchor)) {
@@ -376,6 +540,12 @@ export class AnchorQuerier implements QueryContinuation {
  *   matches an advertised end role
  * - in mailbox-only topologies, allow queries addressed to the controller AID
  *   to ride the first mailbox endpoint URL
+ *
+ * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
+ * @param queriedPre Subject AID whose state is requested.
+ * @param destination Remote attester AID, distinct from the local signer.
+ * @param options explicitWitness resolves directly through witness location records; default false.
+ * @returns Preferred endpoint URL, or null if no permitted route exists.
  */
 function resolveQueryDestinationUrl(
   hab: Hab,
@@ -409,9 +579,21 @@ function resolveQueryDestinationUrl(
 
 /** One signed query packet captured before asynchronous transport. */
 interface QueryDelivery {
+  /**
+   * Captured transport endpoint for this packet.
+   */
   url: string;
+  /**
+   * Signed query plus introduction captured before asynchronous delivery.
+   */
   body: Uint8Array;
+  /**
+   * HTTP framing selected at preparation.
+   */
   bodyMode: "header" | "body";
+  /**
+   * Remote attester AID carried to the messenger.
+   */
   destination: string;
 }
 
@@ -453,7 +635,15 @@ export class QueryCoordinator {
   /** Domain query workflows observing accepted state until their own completion. */
   private continuations: QueryContinuation[] = [];
 
-  /** Bind actual protocol and I/O collaborators; acquire no store or network lifetime. */
+  /**
+   * Bind actual protocol and I/O collaborators; acquire no store or network lifetime.
+   *
+   * @param hby Borrowed local habitat collection and accepted-state database.
+   * @param protocol Borrowed same-database processor for incoming query replies.
+   * @param http Borrowed HTTP implementation selected by composition.
+   * @param clock Borrowed clock for transport deadlines; times are milliseconds.
+   * @param hab Optional default local signer; null requires an unambiguous sole habitat.
+   */
   constructor(hby: Habery, protocol: ProtocolProcessor, http: HttpClient, clock: RuntimeClock, hab: Hab | null = null) {
     if (protocol.kvy.db !== hby.db) throw new RangeError("Query protocol must use the same database");
     this.hby = hby;
@@ -463,12 +653,22 @@ export class QueryCoordinator {
     this.hab = hab;
   }
 
-  /** Select the local habitat used when queued requests have no explicit signer. */
+  /**
+   * Select the local habitat used when queued requests have no explicit signer.
+   *
+   * @param options Optional default signing habitat; omission/null clears the explicit selection.
+   */
   configure({ hab = null }: { hab?: Hab | null } = {}): void {
     this.hab = hab;
   }
 
-  /** Register one persistent key-state continuation. */
+  /**
+   * Register one persistent key-state continuation.
+   *
+   * @param pre Subject AID whose accepted state is observed.
+   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   * @returns The registered in-memory continuation; registration alone does not send a query.
+   */
   watchKeyState(
     pre: string,
     options: { signer?: string; wits?: string[] } = {},
@@ -479,7 +679,14 @@ export class QueryCoordinator {
     return noticer;
   }
 
-  /** Register one persistent logs-until-sequence continuation. */
+  /**
+   * Register one persistent logs-until-sequence continuation.
+   *
+   * @param pre Subject AID whose accepted state is observed.
+   * @param sn Inclusive accepted KEL sequence threshold.
+   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   * @returns The registered in-memory continuation; registration alone does not send a query.
+   */
   watchSeqNo(
     pre: string,
     sn: number,
@@ -491,7 +698,14 @@ export class QueryCoordinator {
     return querier;
   }
 
-  /** Register one persistent logs-until-anchor continuation. */
+  /**
+   * Register one persistent logs-until-anchor continuation.
+   *
+   * @param pre Subject AID whose accepted state is observed.
+   * @param anchor Seal that must appear in the accepted subject KEL.
+   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   * @returns The registered in-memory continuation; registration alone does not send a query.
+   */
   watchAnchor(
     pre: string,
     anchor: AnchorQuerier["anchor"],
@@ -512,6 +726,8 @@ export class QueryCoordinator {
   /**
    * Queue for later resolution/delivery: copy the top level/witness list only.
    * Nested query values remain borrowed immutable data until consumption or joined close retires the record.
+   *
+   * @param request Typed request; signer names a local AID and src names a remote attester.
    */
   enqueue(request: QueryRequest): void {
     if (this.closed) throw new Error("Query coordinator is closed");
@@ -522,7 +738,12 @@ export class QueryCoordinator {
     });
   }
 
-  /** Prepare routed query cues before source removal, or retain unresolved requests for a later turn. */
+  /**
+   * Prepare routed query cues before source removal, or retain unresolved requests for a later turn.
+   *
+   * @param cue Typed query cue; missing route/subject produces no request.
+   * @param hab Optional local signer hint when the cue has no explicit signer.
+   */
   enqueueCue(cue: QueryCue, hab?: Hab | null): void {
     if (this.closed) throw new Error("Query coordinator is closed");
     if (!cue.route || !cue.pre) return;
@@ -568,7 +789,12 @@ export class QueryCoordinator {
     });
   }
 
-  /** One delivery scope owns upload frames and all response readers through completion or cancellation. */
+  /**
+   * One delivery scope owns upload frames and all response readers through completion or cancellation.
+   *
+   * @param delivery Retained signed packet including introduction, destination and HTTP body mode.
+   * @param controller Coordinator attempt cancellation; its signal covers response parsing and cleanup.
+   */
   private *postQueryMessage(
     delivery: QueryDelivery,
     controller: AbortController,
@@ -632,12 +858,19 @@ export class QueryCoordinator {
    * - explicitly selected local signer (unavailable means unresolved, never fallback)
    * - runtime-configured habitat
    * - sole local habitat
+   *
+   * @param signer Explicit local AID; if unavailable return null rather than falling back.
+   * @returns Explicit signer, configured habitat or sole local habitat; otherwise null.
    */
   private configuredHab(signer?: string): Hab | null {
     return signer === undefined ? this.hab ?? soleHab(this.hby) : this.hby.habs.get(signer) ?? null;
   }
 
-  /** Observe retained cue evidence after its immediate destination transfer. */
+  /**
+   * Observe retained cue evidence after its immediate destination transfer.
+   *
+   * @param cue Already-routed protocol observation borrowed by active continuations.
+   */
   observeCue(cue: AgentCue): void {
     for (const continuation of this.continuations) continuation.observe(cue, this);
     this.compactContinuations();
@@ -654,7 +887,13 @@ export class QueryCoordinator {
     this.continuations = this.continuations.filter((continuation) => !continuation.done);
   }
 
-  /** Capture/sign the selected query, introduction and endpoint; unresolved routing retains its source request. */
+  /**
+   * Capture/sign the selected query, introduction and endpoint; unresolved routing retains its source request.
+   *
+   * @param request Deferred unsigned request; nested query values must remain immutable.
+   * @returns True after signing and queueing a packet; false when signer/attester is unresolved.
+   * @throws A selected attester with no endpoint URL throws; source removal remains with the caller.
+   */
   private prepareRequest(request: QueryRequest): boolean {
     const hab = this.configuredHab(request.signer);
     if (!hab) return false;
@@ -671,7 +910,13 @@ export class QueryCoordinator {
     return true;
   }
 
-  /** Return eligible attester IDs in role priority; explicit witness overrides retain caller order. */
+  /**
+   * Return eligible attester IDs in role priority; explicit witness overrides retain caller order.
+   *
+   * @param pre Subject AID whose accepted endpoint roles are consulted.
+   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   * @returns Ordered eligible attester AIDs, or an empty array when unresolved.
+   */
   attestersFor(
     pre: string,
     { signer, wits }: { signer?: string; wits?: string[] } = {},
