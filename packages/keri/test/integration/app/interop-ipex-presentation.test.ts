@@ -274,7 +274,7 @@ for (const count of [1, 2]) {
               }
               const message = yield* call(() => collectPayload(framePayload(frame)));
               const delivery = yield* call(function*() {
-                const postman = holderRuntime.poster;
+                const postman = holderRuntime.postman;
                 yield* spawn(() => postman.deliverDo());
                 const evt = postman.send({
                   src: members[0].pre,

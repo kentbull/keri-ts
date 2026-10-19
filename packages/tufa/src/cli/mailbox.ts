@@ -319,7 +319,7 @@ function* withMailboxWorkflow(
         }
         if (args.multisigMode === "propose") {
           const result = yield* call(function*() {
-            const postman = runtime.poster;
+            const postman = runtime.postman;
             const worker = yield* spawn(() => postman.deliverDo());
             try {
               return yield* proposeGroupEndpointRole(runtime, hab, {

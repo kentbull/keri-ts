@@ -53,7 +53,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
 
       const sent: { recipient: string; said: string }[] = [];
       let sends = 0;
-      runtime.poster.send = function(evt) {
+      runtime.postman.send = function(evt) {
         const serder = new SerderKERI({ raw: evt.msg });
         assertEquals(evt.src, member.pre);
         assertEquals(evt.dest, [remote.pre, other.pre][sends]);
@@ -66,7 +66,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
         sends++;
         return evt;
       };
-      runtime.poster.wait = function*(evt) {
+      runtime.postman.wait = function*(evt) {
         return { kin: "sent", evt, deliveries: ["https://mailbox.test/"] };
       };
 
@@ -86,7 +86,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
 
       const failure = new Error("mailbox refused the proposal");
       sends = 0;
-      runtime.poster.wait = function*(evt) {
+      runtime.postman.wait = function*(evt) {
         return { kin: "failed", evt, deliveries: [], error: failure };
       };
       const caught = yield* call(() =>

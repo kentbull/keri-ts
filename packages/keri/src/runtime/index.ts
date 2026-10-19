@@ -172,8 +172,6 @@ export {
   Exchanger,
   type ExchangeRouteHandler,
   type ExchangeRouteVerification,
-  type ExchangeTransport,
-  sendSignedExchangeMessage,
 } from "../app/exchanging.ts";
 export {
   type ExchangeDeliveryPreference,
@@ -379,8 +377,6 @@ export {
   type AgentCue,
   type CredentialRevokedCue,
   type CredentialSavedCue,
-  type CueEmission,
-  type CueEmissionKind,
   type InvalidCue,
   type KelQueryFields,
   type KeyStateSavedCue,

@@ -16,7 +16,7 @@
  */
 import { Cigar, concatBytes, Counter, CtrDexV1, Ilks, parse, parseBytes, type SerderKERI, type Siger } from "cesr-ts";
 import { action, call, ensure, type Operation, resource, spawn } from "npm:effection@^3.6.0";
-import type { AgentCue, CueEmission } from "../core/cues.ts";
+import type { AgentCue } from "../core/cues.ts";
 import { type Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { receipt as receiptEvent, reply as replyEvent } from "../core/protocol-eventing.ts";
@@ -221,112 +221,39 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
   return first.done || !habitats.next().done ? null : first.value;
 }
 /**
- * Consume a finite runtime cue pass outside Reactor, using the selected habitat.
- *
- * The host keeps mailbox side effects here so synchronous HTTP/TCP route
- * handlers can inspect witness/receipt wire emissions before the outer runtime
- * loop sees them. Returned snapshots copy the initial cue pass; streaming source
- * callbacks consume each emission without collecting the complete response.
+ * Drain one finite runtime cue pass through its concrete owners.
+ * Wire preparation finishes before source removal. Even without delivery,
+ * receipt and witness construction must run to persist local proof material.
  */
 export function* drainWitnessCues(
   runtime: AgentRuntime,
   serviceHab: Hab | undefined,
   cues: Deck<AgentCue>,
-  { deliver = true }: {
-    deliver?: boolean;
-  } = {},
-): Operation<CueEmission[]> {
-  return yield* finiteWitnessEmissions((consume) => consumeWitnessCues(runtime, serviceHab, cues, deliver, consume));
-}
-/** Copy finite wrapper output and close each actual replay iterator before returning. */
-function finiteWitnessEmissions(
-  process: (consume: (emission: CueEmission) => Operation<void>) => Operation<void>,
-): Operation<CueEmission[]> {
-  return call(function*() {
-    const emissions: CueEmission[] = [];
-    yield* process(function*(emission) {
-      const messages: Uint8Array[] = [];
-      const source = emission.messages[Symbol.iterator]();
-      let failure: { error: unknown } | undefined;
-      try {
-        while (true) {
-          const next = source.next();
-          if (next.done) break;
-          const message = next.value;
-          if (!(message instanceof Uint8Array)) throw new TypeError("Witness output must be binary");
-          messages.push(new Uint8Array(message));
-        }
-      } catch (error) {
-        failure = { error };
-      }
-      try {
-        source.return?.();
-      } catch (error) {
-        if (failure && failure.error !== error) {
-          throw new AggregateError([failure.error, error], "Witness output cleanup failed");
-        }
-        throw error;
-      }
-      if (failure) throw failure.error;
-      emissions.push({
-        ...emission,
-        messages,
-        cue: emission.cue.kin === "replay" ? { ...emission.cue, messages } : emission.cue,
-      });
-    });
-    return emissions;
-  });
-}
-/** Transfer a finite source pass, borrowing emissions only through joined callback cleanup outside Reactor. */
-function* consumeWitnessCues(
-  runtime: AgentRuntime,
-  serviceHab: Hab | undefined,
-  cues: Deck<AgentCue>,
-  deliver: boolean,
-  consume?: (emission: CueEmission) => Operation<void>,
+  { deliver = true }: { deliver?: boolean } = {},
 ): Operation<void> {
   if (cues !== runtime.cues) throw new RangeError("Witness cue drain requires the runtime source deck");
   const hab = cueHab(runtime, serviceHab);
-  if (!hab) {
-    return;
-  }
+  if (!hab) return;
   const count = cues.length;
   for (let index = 0; index < count; index++) {
-    const more = yield* call(function*() {
-      let emission: CueEmission | undefined, prepared = false;
-      if (deliver) {
-        prepared = !cues.empty;
-        const cue = cues.peekHead();
-        if (cue) {
-          if (cue.kin === "query") {
-            runtime.querying.enqueueCue(cue, hab);
-            runtime.querying.observeCue(cue);
-          } else emission = hab.interpretCue(cue);
-          if (emission?.kind === "wire") runtime.respondant.enqueueEmission(hab, emission);
-          else if (emission?.kind === "transport" && emission.cue.kin === "stream") {
-            runtime.mailboxDirector.retainQueryCue(emission.cue);
-          }
-          cues.pull();
-        }
-      } else {
-        const cue = cues.peekHead();
-        if (cue) {
-          emission = hab.interpretCue(cue);
-          cues.pull();
-          prepared = true;
-        }
-      }
-      if (emission) runtime.querying.observeCue(emission.cue);
-      if (!prepared) {
-        return false;
-      }
-      if (emission && consume) yield* consume(emission);
-      return true;
-    });
+    const cue = cues.peekHead();
+    if (!cue) break;
     if (deliver) {
-      yield* runtime.querying.deliverOnce();
+      if (cue.kin === "query") {
+        runtime.querying.enqueueCue(cue, hab);
+      } else if (cue.kin === "stream") {
+        runtime.mailboxDirector.retainQueryCue(cue);
+      } else if (["receipt", "witness", "replay", "reply"].includes(cue.kin)) {
+        const msgs = [...hab.processCuesIter([cue])];
+        runtime.respondant.enqueueMsgs(hab, cue, msgs);
+      }
+    } else {
+      // Exhaust local signing side effects without collecting discarded wire.
+      for (const _msg of hab.processCuesIter([cue])) { /* local proof persisted */ }
     }
-    if (!more) break;
+    runtime.querying.observeCue(cue);
+    cues.pull();
+    if (deliver) yield* runtime.querying.deliverOnce();
   }
 }
 /** Witness-local dispatch and existing responder delivery policy for one ingress source. */
@@ -338,17 +265,14 @@ export interface WitnessIngressOptions {
 }
 /**
  * Own one witness input and settle each frame before requesting more input.
- * Consume emissions individually, without retaining an aggregate result. The callback
- * borrows emission iterators outside Reactor until consumption and cleanup finish.
+ * Each complete frame publishes its prepared replies before requesting more input.
  * Source abort and cleanup belong to this input scope.
- * Queued delivery and the callback share one interpretation until both finish.
  */
 export function* processWitnessIngressSource(
   runtime: AgentRuntime,
   serviceHab: Hab,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
   { local = false, deliver = true }: WitnessIngressOptions = {},
-  consume?: (emission: CueEmission) => Operation<void>,
 ): Operation<void> {
   yield* call(function*() {
     const controller = new AbortController();
@@ -386,7 +310,7 @@ export function* processWitnessIngressSource(
         if (result.done) break;
         const frame = result.value;
         yield* runtime.reactor.dispatch(frame, { local, escrows: true });
-        yield* consumeWitnessCues(runtime, serviceHab, runtime.cues, deliver, consume);
+        yield* drainWitnessCues(runtime, serviceHab, runtime.cues, { deliver });
       }
     } finally {
       controller.abort();
@@ -402,11 +326,7 @@ export function* processWitnessIngressSource(
  * Responsibilities:
  * - settle one inbound CESR payload with the correct witness-local semantics
  * - immediately drain the resulting cues through the hosted witness habitat
- * - return those cue emissions so the caller can make any request-scoped
- *   response decision
- *
- * Returned snapshots contain finite wire arrays. Source callbacks instead borrow
- * each emission's iterator through consumption and cleanup.
+ * - leave request-scoped receipt construction with the endpoint owner
  *
  * `local=true` is the crucial switch for the witness receipt path: accepted
  * events that list the hosted witness emit `witness` cues instead of ordinary
@@ -424,15 +344,12 @@ export function* processWitnessIngress(
   serviceHab: Hab,
   bytes: Uint8Array,
   options: WitnessIngressOptions = {},
-): Operation<CueEmission[]> {
-  return yield* finiteWitnessEmissions((consume) =>
-    processWitnessIngressSource(
-      runtime,
-      serviceHab,
-      (signal) => chunkBytes(bytes, { signal }),
-      options,
-      consume,
-    )
+): Operation<void> {
+  yield* processWitnessIngressSource(
+    runtime,
+    serviceHab,
+    (signal) => chunkBytes(bytes, { signal }),
+    options,
   );
 }
 

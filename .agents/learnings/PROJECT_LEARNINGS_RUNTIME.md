@@ -60,8 +60,8 @@ Poster accepts one complete CESR message. Target preparation is an owned operati
 using the shared codec: v2 bodies/genera use a signed body-digest `/fwd` with one
 independently authenticated nested message; legacy messages use pathed embeds.
 Qualified selectors must not reach the legacy body-only reaper. Poster awaits
-preparation and retains the exact prepared packet for retry; no replacement codec
-or generic output executor is needed.
+preparation for each attempt; explicit retry preserves the signed source message
+but rebuilds outer forwarding material. No generic output executor is needed.
 Poster is the single execution owner for admitted messages and cue output. Its
 independent deliverDo worker is composed beside query delivery; ingress publishes
 without running Poster. send accepts src/dest/topic/msg and copies the source
@@ -72,11 +72,18 @@ Standalone commands start and join their own Poster worker. Exchange producers
 construct/sign with createExchangeMessage in exchange-messaging; the standalone
 sendExchangeMessage helper accepts dest and uses the same queue/worker path.
 
-The queue temporarily also carries lazy cue cursors and exact retry packets;
-their finite-pass scheduling and automatic retry behavior are unchanged. The
-[cue delivery plan](../../docs/plans/runtime/cue-delivery-refactor.md) tracks this
-queue consolidation and its separate qualification. Eager FIFO delivery, cursor
-removal and retained whole-event failure policy remain phase 3 work.
+Respondant eagerly materializes local KEL/TEL replay and correlated TSN pairs
+before atomic publication and source removal. Hab.processCuesIter yields raw wire;
+typed cues route queries, streams and observations directly. ReplayCue uses msgs.
+Poster evts carry src/dest/topic/msg and execute FIFO with sequential targets.
+Observed refusal attempts remaining targets; failed whole events retain partial
+successes in failures and do not block later events. retry(evt) creates a fresh
+attempt from source bytes and consumes the failure; discard(evt) removes it.
+No automatic retry, final-packet cache, manual reply cursor or cross-batch fairness
+remains. Failures are process-local and excluded from idle. Unexpected construction,
+storage, parser and cleanup failures are retained/reported then propagate.
+The [cue delivery plan](../../docs/plans/runtime/cue-delivery-refactor.md) tracks
+transport completion qualification separately.
 QueryCoordinator owns plain requests, signed packets and joined response I/O.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
 query sender remains. QueryReply peek/take returns data; request owners publish

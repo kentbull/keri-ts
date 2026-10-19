@@ -303,7 +303,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
         }
       > = [];
       const queuedQueries: QueryRequest[] = [];
-      const poster = {
+      const postman = {
         send(evt: PosterEvent) {
           sent.push({ sender: evt.src, recipient: evt.dest, topic: evt.topic, message: evt.msg });
           return evt;
@@ -317,7 +317,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
           queuedQueries.push(request);
         },
       };
-      const coordinator = new Anchorer(hby, { poster, querying });
+      const coordinator = new Anchorer(hby, { postman, querying });
 
       const started = coordinator.beginLatest(delegate.pre, 0, {
         communicationHab: proxy,
@@ -431,7 +431,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
           delpre: delegator.pre,
         });
 
-        const poster = {
+        const postman = {
           send(evt: PosterEvent) {
             return evt;
           },
@@ -444,7 +444,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
             return;
           },
         };
-        const coordinator = new Anchorer(hby, { poster, querying });
+        const coordinator = new Anchorer(hby, { postman, querying });
 
         coordinator.beginLatest(delegate.pre, 0, {
           communicationHab: proxy,
@@ -488,8 +488,8 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
           delegator.interact({ data: [{ i: witnessed.pre, s: "0", d: event.said }] });
           const runtime = yield* createAgentRuntime(hby);
           try {
-            runtime.poster.send = poster.send; // Reuse the fixture's delegator mailbox sink; witness TCP is real.
-            runtime.poster.wait = poster.wait;
+            runtime.postman.send = postman.send; // Reuse the fixture's delegator mailbox sink; witness TCP is real.
+            runtime.postman.wait = postman.wait;
             runtime.delegating.beginLatest(witnessed.pre, 0, { communicationHab: proxy });
             // Start at the already-receipted anchor-waiting frontier; publication runs through the concrete Anchorer.
             hby.db.dpwe.rem([witnessed.pre, "0"]);
@@ -546,7 +546,7 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
         delpre: delegator.pre,
       });
 
-      const poster = {
+      const postman = {
         send() {
           throw new Error("delegated inception should not send without a proxy");
         },
@@ -558,7 +558,7 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
           );
         },
       };
-      const coordinator = new Anchorer(hby, { poster, querying });
+      const coordinator = new Anchorer(hby, { postman, querying });
 
       coordinator.beginLatest(delegate.pre, 0);
       const initial = yield* coordinator.processAllOnce();
@@ -629,7 +629,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
         { sender: string; recipient: string; message: Uint8Array }
       > = [];
       const queuedQueries: QueryRequest[] = [];
-      const poster = {
+      const postman = {
         send(evt: PosterEvent) {
           sent.push({ sender: evt.src, recipient: evt.dest, message: evt.msg });
           return evt;
@@ -643,7 +643,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
           queuedQueries.push(request);
         },
       };
-      const coordinator = new Anchorer(hby, { poster, querying });
+      const coordinator = new Anchorer(hby, { postman, querying });
 
       coordinator.beginLatest(delegate.pre, delegate.kever!.sn);
       const initial = yield* coordinator.processAllOnce();

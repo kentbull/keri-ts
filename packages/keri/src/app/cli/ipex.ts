@@ -76,7 +76,7 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
   requireNonEmpty(schema, "Schema");
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
-    const recipient = runtime.poster.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
+    const recipient = runtime.postman.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
     const { serder, msg } = createExchangeMessage(hab, {
       dest: recipient,
       route: IPEX_APPLY_ROUTE,
@@ -87,7 +87,7 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
         i: recipient,
       },
     });
-    const postman = runtime.poster;
+    const postman = runtime.postman;
     const worker = yield* spawn(() => postman.deliverDo());
     try {
       const evt = postman.send({
@@ -113,7 +113,7 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
   requireNonEmpty(acdcFile, "ACDC file");
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
-    const recipient = runtime.poster.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
+    const recipient = runtime.postman.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
     const { serder, msg } = createExchangeMessage(hab, {
       dest: recipient,
       route: IPEX_OFFER_ROUTE,
@@ -121,7 +121,7 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
       dig: args.apply as string | undefined,
       embeds: { acdc: Deno.readFileSync(acdcFile!) },
     });
-    const postman = runtime.poster;
+    const postman = runtime.postman;
     const worker = yield* spawn(() => postman.deliverDo());
     try {
       const evt = postman.send({
@@ -166,7 +166,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = ipexArgs.out
       ? resolveAid(hby, requireString(ipexArgs.recipient, "Recipient"))
-      : runtime.poster.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
+      : runtime.postman.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
     const grant = ipexCredentialGrant({
       hby,
       hab,
@@ -188,7 +188,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       yield* runtime.reactor.processEscrowsOnce();
 
       const deliveries = yield* call(function*() {
-        const postman = runtime.poster;
+        const postman = runtime.postman;
         const worker = yield* spawn(() => postman.deliverDo());
         try {
           return yield* publishGroupIpexProposal(runtime, hab, partialGrant, undefined, genus);
@@ -221,7 +221,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       if (ipexArgs.out) {
         Deno.writeFileSync(ipexArgs.out, stream);
       } else if (runtime.reactor.exchanger.lead(hab, completedGrant.said!)) {
-        const postman = runtime.poster;
+        const postman = runtime.postman;
         const worker = yield* spawn(() => postman.deliverDo());
         try {
           yield* sendCredentialBytes(postman, localGroupMember(hby, hab.pre), recipient, [
@@ -247,7 +247,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     if (ipexArgs.out) {
       Deno.writeFileSync(ipexArgs.out, stream);
     } else {
-      const postman = runtime.poster;
+      const postman = runtime.postman;
       const worker = yield* spawn(() => postman.deliverDo());
       try {
         yield* sendCredentialBytes(postman, hab, recipient, [...grant.support, grant.wire], ipexArgs.delivery);
@@ -281,7 +281,7 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void
     if (ipexArgs.out) {
       Deno.writeFileSync(ipexArgs.out, admit.wire);
     } else {
-      const postman = runtime.poster;
+      const postman = runtime.postman;
       const worker = yield* spawn(() => postman.deliverDo());
       try {
         yield* sendCredentialBytes(postman, hab, recipient, [admit.wire], ipexArgs.delivery);
@@ -428,7 +428,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
     }
 
     const approval = yield* call(function*() {
-      const postman = runtime.poster;
+      const postman = runtime.postman;
       const worker = yield* spawn(() => postman.deliverDo());
       try {
         return yield* approveMultisigIpex(hby, runtime, exn, {
@@ -463,14 +463,14 @@ function* sendPriorResponse(
   requireNonEmpty(prior, priorLabel);
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
-    const recipient = runtime.poster.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
+    const recipient = runtime.postman.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
     const { serder, msg } = createExchangeMessage(hab, {
       dest: recipient,
       route,
       payload: { m: ipexArgs.message ?? "" },
       dig: prior,
     });
-    const postman = runtime.poster;
+    const postman = runtime.postman;
     const worker = yield* spawn(() => postman.deliverDo());
     try {
       const evt = postman.send({

@@ -135,9 +135,9 @@ Deno.test("two request reservations survive an interleaved background cue drain"
     const runtime = yield* createAgentRuntime(hby), reactor = runtime.reactor;
     const first = reactor.replies.reserve("query-a"), second = reactor.replies.reserve("query-b");
     const ready = gate(), release = gate();
-    const replayA: ReplayCue = { kin: "replay", querySaid: "query-a", messages: [Uint8Array.of(1)] };
-    const replayB: ReplayCue = { kin: "replay", querySaid: "query-b", messages: [Uint8Array.of(2)] };
-    const ordinary: ReplayCue = { kin: "replay", messages: [Uint8Array.of(3)] };
+    const replayA: ReplayCue = { kin: "replay", querySaid: "query-a", msgs: [Uint8Array.of(1)] };
+    const replayB: ReplayCue = { kin: "replay", querySaid: "query-b", msgs: [Uint8Array.of(2)] };
+    const ordinary: ReplayCue = { kin: "replay", msgs: [Uint8Array.of(3)] };
     const seen: AgentCue[] = [];
     const observe = runtime.querying.observeCue.bind(runtime.querying);
     runtime.querying.observeCue = (cue) => {
@@ -237,7 +237,7 @@ Deno.test("queued cues do not prevent KEL acceptance or out-of-order escrow reco
 
       assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 1);
       reactor.cues.clear();
-      reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
+      reactor.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
       yield* reactor.process((signal) => chunkBytes(initial, { signal }));
       yield* reactor.processEscrowsOnce();
       assertEquals(target.db.getKever(sender.pre)!.sn, 1);
@@ -262,14 +262,14 @@ Deno.test("OOBI result publication preserves cues appended during HTTP fetch", a
           http: {
             fetch() {
               // Model another producer filling the shared queue while this request is suspended in transport.
-              reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
+              reactor.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
               return Promise.resolve(new Response(null, { status: 404 }));
             },
           },
         },
       });
       const url = "http://example.test/oobi";
-      reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
+      reactor.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
       oobi.resolve(url);
       yield* oobi.processOnce();
       assertEquals(hby.db.oobis.get(url), null);
@@ -317,7 +317,7 @@ Deno.test("queued ingress processes without waiting for cue delivery", async () 
 
       const reactor = new Reactor(target);
       reactor.ingest(wire);
-      reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
+      reactor.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
       yield* reactor.processOnce();
       assertEquals(target.db.getKever(sender.pre)!.sn, 0);
       assertEquals(reactor.hasIngress, false);

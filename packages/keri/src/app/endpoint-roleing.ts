@@ -83,7 +83,7 @@ export function* proposeGroupEndpointRole(
     });
     const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
     yield* runtime.reactor.processBytes(message, { local: true });
-    const postman = runtime.poster;
+    const postman = runtime.postman;
     const evt = postman.send({
       src: member.pre,
       dest: recipient,

@@ -27,7 +27,6 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { action, call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
-import type { CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
@@ -141,39 +140,6 @@ function remoteCesrTarget(
   return new URL(endpoint.url).protocol === "tcp:" ? { ...base, kind: "tcp" } : { ...base, kind: "http", bodyMode };
 }
 
-/** Join a prepared target attempt; local completion or peer refusal never implies protocol acceptance. */
-export function* attemptPreparedCesrTarget(
-  target: PreparedCesrTarget,
-  services: RuntimeServices,
-  signal?: AbortSignal,
-  receiver?: TcpReplyReceiver,
-): Operation<"complete" | "refused"> {
-  if (target.kind === "http") {
-    const result = yield* attemptPostCesr(target.url, (signal) => chunkBytes(target.message, { signal }), {
-      bodyMode: target.bodyMode,
-      destination: target.destination,
-      services,
-      signal,
-    });
-    signal?.throwIfAborted();
-    if (result.kind === "complete") return "complete";
-    return "refused";
-  }
-  if (target.kind === "stored") {
-    signal?.throwIfAborted();
-    return "complete";
-  }
-  receiver
-    ? yield* converseCesrTcp(target.url, target.message, {
-      clock: services.clock,
-      signal,
-      replies: { ...receiver, local: true },
-    })
-    : yield* sendCesrTcp(target.url, target.message, { clock: services.clock, signal });
-  signal?.throwIfAborted();
-  return "complete";
-}
-
 interface PosterOptions {
   reactor?: Reactor;
   mailboxer?: Mailboxer | null;
@@ -185,23 +151,6 @@ interface MailboxPollerOptions {
   services?: RuntimeServices;
   pollTransport?: MailboxPollTransport;
 }
-
-/** Live replay cursor and exact signed packet temporarily retained by Poster during the ownership refactor. */
-interface ReplyCursor {
-  emission: CueEmission;
-  hab: Hab;
-  route: RawCesrRoute;
-  iterator?: Iterator<Uint8Array>;
-  message?: Uint8Array;
-  targetIndex: number;
-  prepared?: PreparedCesrTarget;
-}
-
-/** A correlated reply batch stays ordered; refused packets retain their exact wire. */
-type OutboundReply =
-  | { kind: "cues"; cues: ReplyCursor[]; index: number }
-  | { kind: "packet"; packet: PreparedCesrTarget }
-  | { kind: "event"; evt: PosterEvent };
 
 /**
  * Mailbox-first postman for queued signed CESR messages.
@@ -218,7 +167,8 @@ export class Poster {
   readonly organizer: Organizer;
   readonly services: RuntimeServices;
 
-  private readonly evts = new Deck<OutboundReply>();
+  readonly evts = new Deck<PosterEvent>();
+  readonly failures: Extract<PosterOutcome, { kin: "failed" }>[] = [];
   readonly cues = new Deck<PosterOutcome>();
   private readonly notifications = new Set<PosterEvent>();
   private readonly waiters = new Set<PosterEvent>();
@@ -243,8 +193,36 @@ export class Poster {
     if (evt.replies && !this.reactor) throw new Error("TCP reply delivery requires a Reactor");
     const admitted = { ...evt, msg: evt.msg.slice() };
     if (notify) this.notifications.add(admitted);
-    this.evts.push({ kind: "event", evt: admitted });
+    this.evts.push(admitted);
     return admitted;
+  }
+
+  /** Construct all source records before atomically publishing a complete cue or reply pair. */
+  sendAll(evts: Iterable<PosterEvent>): void {
+    this.assertOpen();
+    const pending: PosterEvent[] = [];
+    for (const evt of evts) {
+      if (evt.replies && !this.reactor) throw new Error("TCP reply delivery requires a Reactor");
+      pending.push({ ...evt, msg: evt.msg.slice() });
+    }
+    this.evts.extend(pending);
+  }
+
+  /** Retry retained source bytes as a fresh attempt; successful destinations may receive duplicates. */
+  retry(evt: PosterEvent, options: { notify?: boolean } = {}): PosterEvent {
+    const index = this.failures.findIndex((failure) => failure.evt === evt);
+    if (index < 0) throw new Error("Event is not retained as a failure");
+    const admitted = this.send(evt, options);
+    this.failures.splice(index, 1);
+    return admitted;
+  }
+
+  /** Discard failed work without sending it again. */
+  discard(evt: PosterEvent): boolean {
+    const index = this.failures.findIndex((failure) => failure.evt === evt);
+    if (index < 0) return false;
+    this.failures.splice(index, 1);
+    return true;
   }
 
   /** Wait only for this admission; cancellation releases its completion observation. */
@@ -287,7 +265,7 @@ export class Poster {
     }
   }
 
-  /** Include active transport and lazy replies in runtime convergence. */
+  /** Runnable and active work determine convergence; retained failures and observations do not. */
   get hasPending(): boolean {
     return this.processing || !this.evts.empty;
   }
@@ -297,46 +275,18 @@ export class Poster {
     if (this.closed) throw new Error("Poster is closed");
   }
 
-  /** Admit a completely prepared reply batch; its existing scheduling policy stays local to Poster. */
-  enqueueReplies(cues: readonly { emission: CueEmission; hab: Hab; route: RawCesrRoute }[]): void {
-    this.assertOpen();
-    this.evts.push({ kind: "cues", cues: cues.map((cue) => ({ ...cue, targetIndex: 0 })), index: 0 });
-  }
-
-  /** Join actual transport before returning every opened replay cursor; ordinary cues need no release protocol. */
+  /** Abort and join actual I/O before releasing process-local queued and failed work. */
   *close(): Operation<void> {
     this.closed = true;
     this.active?.abort();
     if (this.joined) yield* call(() => this.joined!);
-    const errors: unknown[] = [];
-    while (!this.evts.empty) {
-      try {
-        this.closeReply(this.evts.pull()!);
-      } catch (error) {
-        errors.push(error);
-      }
-    }
+    this.evts.clear();
+    this.failures.length = 0;
     this.cues.clear();
     this.notifications.clear();
-    if (errors.length === 1) throw errors[0];
-    if (errors.length) throw new AggregateError(errors, "Poster cleanup failed");
   }
 
-  private closeReply(reply: OutboundReply): void {
-    if (reply.kind !== "cues") return;
-    const errors: unknown[] = [];
-    for (const cue of reply.cues.splice(0)) {
-      try {
-        cue.iterator?.return?.();
-      } catch (error) {
-        if (!errors.includes(error)) errors.push(error);
-      }
-    }
-    if (errors.length === 1) throw errors[0];
-    if (errors.length) throw new AggregateError(errors, "Reply cursor cleanup failed");
-  }
-
-  /** Advance each captured batch once; concrete target preparation and transport remain owned operations. */
+  /** Deliver the current FIFO contents; recognized refusals retain the whole event and allow later work. */
   process(): Operation<void> {
     // deno-lint-ignore no-this-alias -- The operation owns this finite output pass.
     const self = this;
@@ -357,89 +307,28 @@ export class Poster {
         }
       });
       const count = self.evts.length;
-      for (let index = 0; index < count && !self.closed; index++) {
-        const reply = self.evts.peekHead();
-        if (!reply) break;
+      for (let remaining = count; remaining > 0 && !self.closed; remaining--) {
+        const evt = self.evts.peekHead();
+        if (!evt) break;
         active.signal.throwIfAborted();
-        let done = true;
-        if (reply.kind === "event") {
-          const deliveries: string[] = [];
-          let outcome: PosterOutcome;
-          try {
-            outcome = yield* self.deliverEvent(reply.evt, deliveries, active.signal);
-          } catch (error) {
-            outcome = { kin: "failed", evt: reply.evt, deliveries, error };
-            self.evts.pull();
-            if (self.notifications.delete(reply.evt)) self.cues.push(outcome);
-            throw error;
-          }
-          self.evts.pull();
-          if (self.notifications.delete(reply.evt)) self.cues.push(outcome);
-          continue;
+        const deliveries: string[] = [];
+        let outcome: PosterOutcome;
+        try {
+          outcome = yield* self.deliverEvent(evt, deliveries, active.signal);
+        } catch (error) {
+          self.finish({ kin: "failed", evt, deliveries, error });
+          throw error;
         }
-        if (reply.kind === "packet") {
-          done = (yield* attemptPreparedCesrTarget(
-            reply.packet,
-            self.services,
-            active.signal,
-            self.reactor ? { reactor: self.reactor } : undefined,
-          )) === "complete";
-        } else {
-          const cue = reply.cues[reply.index];
-          const next = yield* self.prepareReplyTarget(reply);
-          done = next.kind === "done";
-          if (next.kind === "target") {
-            const target = next.target;
-            const outcome = yield* attemptPreparedCesrTarget(
-              target,
-              self.services,
-              active.signal,
-              self.reactor ? { reactor: self.reactor } : undefined,
-            );
-            if (outcome === "complete" || outcome === "refused" && !self.closed) {
-              active.signal.throwIfAborted();
-              if (outcome === "refused") self.evts.push({ kind: "packet", packet: target });
-              cue.prepared = undefined;
-              if (++cue.targetIndex === cue.route.targets.length) {
-                cue.targetIndex = 0;
-                cue.message = undefined;
-              }
-            }
-          }
-        }
-        active.signal.throwIfAborted();
-        if (done) {
-          try {
-            self.closeReply(reply);
-          } finally {
-            self.evts.pull();
-          }
-        } else {
-          self.evts.pull();
-          self.evts.push(reply);
-        }
+        self.finish(outcome);
       }
     });
   }
 
-  private *prepareReplyTarget(
-    reply: Extract<OutboundReply, { kind: "cues" }>,
-  ): Operation<{ kind: "target"; target: PreparedCesrTarget } | { kind: "done" | "more" }> {
-    const cue = reply.cues[reply.index];
-    if (!cue) return { kind: "done" };
-    if (cue.prepared) return { kind: "target", target: cue.prepared };
-    if (!cue.message) {
-      cue.iterator ??= cue.emission.messages[Symbol.iterator]();
-      const next = cue.iterator.next();
-      if (next.done) {
-        reply.index++;
-        return { kind: "more" };
-      }
-      cue.message = next.value;
-      if (!(cue.message instanceof Uint8Array)) throw new TypeError("Cue message must be binary");
-    }
-    cue.prepared = yield* this.prepareBytesTarget(cue.hab, cue.route, cue.targetIndex, cue.message);
-    return { kind: "target", target: cue.prepared };
+  /** Remove runnable work before publishing its optional terminal observation. */
+  private finish(outcome: PosterOutcome): void {
+    this.evts.pull();
+    if (outcome.kin === "failed") this.failures.push(outcome);
+    if (this.notifications.delete(outcome.evt)) this.cues.push(outcome);
   }
 
   /**
@@ -486,9 +375,8 @@ export class Poster {
       };
     }
     const failed: Error[] = [];
-    for (let index = 0; index < route.targets.length; index++) {
-      const endpoint = route.targets[index]!;
-      const target = yield* this.prepareBytesTarget(hab, route, index, evt.msg);
+    for (const endpoint of route.targets) {
+      const target = yield* this.prepareBytesTarget(hab, route, endpoint, evt.msg);
       if (target.kind === "http") {
         const outcome = yield* attemptPostCesr(target.url, (signal) => chunkBytes(target.message, { signal }), {
           bodyMode: target.bodyMode,
@@ -498,7 +386,6 @@ export class Poster {
         });
         if (outcome.kind === "refuse") {
           failed.push(outcome.error);
-          if (route.kind !== "mailbox") break;
           continue;
         }
       } else {
@@ -512,15 +399,24 @@ export class Poster {
       deliveries.push(endpoint.url);
     }
     if (failed.length) {
-      const error = route.kind !== "mailbox" ? failed[0] : new ValidationError(
-        `CESR delivery failed for ${route.recipient}: ${failed.map((error) => error.message).join("; ")}; completed: ${
-          deliveries.join(", ") || "none"
-        }`,
-        { cause: failed.length === 1 ? failed[0] : new AggregateError(failed, "Endpoint refusals") },
-      );
+      const error = failed.length === 1
+        ? failed[0]
+        : new AggregateError(failed, `CESR delivery failed for ${evt.dest}`);
       return { kin: "failed", evt, deliveries, error };
     }
     return { kin: "sent", evt, deliveries };
+  }
+
+  /** A request-owned HTTP response may omit optional outbound delivery when no endpoint exists. */
+  canDeliver(evt: PosterEvent): boolean {
+    const hab = this.hby.habs.get(evt.src);
+    if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
+    return this.findBytesRoute(hab, {
+      recipient: evt.dest,
+      recipientIsPrefix: true,
+      topic: evt.topic,
+      delivery: evt.delivery,
+    }) !== null;
   }
 
   /** Snapshot mailbox/direct/witness policy without opening transport or reading message bytes. */
@@ -570,12 +466,10 @@ export class Poster {
   *prepareBytesTarget(
     hab: Hab,
     route: RawCesrRoute,
-    index: number,
+    endpoint: { eid: string; url: string },
     message: Uint8Array,
   ): Operation<PreparedCesrTarget> {
     if (hab.pre !== route.sender) throw new Error("CESR route belongs to another sender");
-    const endpoint = route.targets[index];
-    if (!Number.isSafeInteger(index) || !endpoint) throw new RangeError("Invalid CESR delivery target");
     if (route.kind !== "direct") {
       const forwarded = yield* this.prepareForwardedTarget(hab, route.recipient, route.topic, message, endpoint);
       return forwarded.kind === "http" ? { ...forwarded, bodyMode: route.bodyMode } : forwarded;

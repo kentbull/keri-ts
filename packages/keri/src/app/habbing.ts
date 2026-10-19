@@ -31,7 +31,7 @@ import {
   Vrsn_1_0,
 } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import type { AgentCue, CueEmission, QueryInstruction } from "../core/cues.ts";
+import type { AgentCue, QueryInstruction } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -1179,81 +1179,43 @@ export class Hab {
   }
 
   /**
-   * Process KERI-style cues and yield structured runtime cue emissions.
+   * Yield signed wire messages for one finite cue pass, like KERIpy's BaseHab.
    *
-   * KERIpy correspondence:
-   * - this is the `keri-ts` equivalent of `BaseHab.processCuesIter()`
-   *
-   * `keri-ts` difference:
-   * - the cue identity is preserved in the yielded `CueEmission` instead of
-   *   collapsing everything immediately to raw bytes
-   *
-   * Current support:
-   * - `receipt`, `witness`, `replay`, `reply`, and complete `query` cues emit
-   *   wire messages
-   * - `stream` emits transport requests without flattening them into bytes
-   * - observer/runtime cues remain visible as notify emissions
+   * A Deck is consumed through its initial extent. Other iterables are copied to
+   * a local Deck, so callers can borrow an array while retaining their source.
+   * Query, stream, and notification ownership stays with the caller; only
+   * complete query instructions produce wire output here.
    */
   *processCuesIter(
     cues: Deck<AgentCue> | Iterable<AgentCue>,
-  ): Generator<CueEmission> {
+  ): Generator<Uint8Array> {
     const queue = cues instanceof Deck ? cues : new Deck(cues);
-    // One pass owns only its initial batch; producers may append while a consumer awaits delivery.
     const count = queue.length;
     for (let index = 0; index < count; index++) {
       const cue = queue.pull();
-      if (!cue) {
-        continue;
+      if (!cue) continue;
+      switch (cue.kin) {
+        case "receipt":
+          yield this.receipt(cue.serder);
+          break;
+        case "witness":
+          yield this.witness(cue.serder);
+          break;
+        case "replay":
+          yield* cue.msgs;
+          break;
+        case "reply":
+          yield cue.serder ? this.endorse(cue.serder) : this.reply(
+            `${cue.route}/${this.pre}`,
+            cue.data.asDict(),
+          );
+          break;
+        case "query":
+          if (cue.route && cue.pre && cue.src && (cue.signer === undefined || cue.signer === this.pre)) {
+            yield this.query(cue.pre, cue.src, cue);
+          }
+          break;
       }
-      const emission = this.interpretCue(cue);
-      if (emission) yield emission;
-    }
-  }
-
-  /** Interpret one borrowed cue synchronously; callers own queue removal and retained output. */
-  interpretCue(cue: AgentCue): CueEmission | undefined {
-    switch (cue.kin) {
-      case "receipt":
-        return { cue, messages: [this.receipt(cue.serder)], kind: "wire" };
-      case "witness":
-        return { cue, messages: [this.witness(cue.serder)], kind: "wire" };
-      case "replay":
-        return { cue, messages: cue.messages, kind: "wire" };
-      case "reply":
-        return {
-          cue,
-          messages: [
-            cue.serder ? this.endorse(cue.serder) : this.reply(
-              `${cue.route}/${this.pre}`,
-              cue.data.asDict(),
-            ),
-          ],
-          kind: "wire",
-        };
-      case "query": {
-        if (cue.route && cue.pre && cue.src && (cue.signer === undefined || cue.signer === this.pre)) {
-          return {
-            cue,
-            messages: [this.query(cue.pre, cue.src, cue)],
-            kind: "wire",
-          };
-        }
-        return { cue, messages: [], kind: "notify" };
-      }
-      case "stream":
-        return { cue, messages: [], kind: "transport" };
-      case "notice":
-      case "noticeBadCloneFN":
-      case "keyStateSaved":
-      case "txnStateSaved":
-      case "invalid":
-      case "psUnescrow":
-      case "remoteMemberedSig":
-      case "oobiQueued":
-      case "oobiResolved":
-      case "oobiFailed":
-        return { cue, messages: [], kind: "notify" };
-      default:
     }
   }
 }

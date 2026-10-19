@@ -37,11 +37,11 @@ KERIpy BaseHab.processCuesIter constructs protocol output; Respondant/Postman an
 host doers arrange its delivery. In keri-ts:
 
 1. Composition routes ordinary reply/replay/receipt/witness cues to Respondant.
-2. Hab interpretation prepares the protocol emissions. Successful transfer precedes
+2. Hab interpretation prepares raw protocol messages. Successful transfer precedes
    source removal; a preparation failure retains the cue.
-3. Respondant prepares routing and transfers queued work to Poster, or supplies
-   an independent direct response reader. Poster owns lazy traversal, exact
-   prepared retry bytes, delivery progress and joined cleanup.
+3. Respondant fully constructs local replay sequences before atomically publishing
+   Poster events and any independent direct response reader. Poster owns endpoint
+   selection, FIFO delivery, retained whole-event failures and joined cleanup.
 4. An authorized local forward can write Mailboxer; remote mailbox delivery stores
    at the recipient's provider and is later retrieved by polling.
 
@@ -50,12 +50,12 @@ Response correlation and outbound delivery have independent reader lifetimes.
 Request owners publish complete reply batches before taking their correlation
 records; a second TSN interpretation failure must leave the pair pending.
 
-This is the phase 1 ownership boundary of the
-[cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md), which tracks
-qualification. It retains finite-pass rotation and automatic exact-wire retries.
-Ingress still calls the finite Poster pass and the host still shares its output
-loop with query delivery. The later independent worker, eager FIFO queue and
-explicit failure policy remain plan items.
+The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) tracks
+qualification. The host runs Poster independently of QueryCoordinator. Ingress
+publishes without draining Poster. Target loops attempt remaining destinations
+after refusal; failed whole events await explicit retry or discard while later
+events continue. Retry can duplicate successful destinations and rebuilds outer
+wire from the retained signed source message.
 
 ## Missing state to outbound query
 

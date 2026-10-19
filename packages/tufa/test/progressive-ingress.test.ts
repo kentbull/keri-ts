@@ -394,10 +394,10 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       const prefixes = async (bytes: Uint8Array) =>
         (await parseBytes(bytes)).map(({ body }) => (body as SerderKERI).pre);
       assertEquals(yield* call(() => prefixes(direct)), [alice.pre]);
-      assertEquals(runtime.poster.hasPending, true, "HTTP publishes ordinary delivery without running Poster");
+      assertEquals(runtime.postman.hasPending, true, "HTTP publishes ordinary delivery without running Poster");
       assertEquals([...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)], []);
-      for (let pass = 0; pass < 8 && runtime.poster.hasPending; pass++) yield* runtime.poster.process();
-      assertEquals(runtime.poster.hasPending, false);
+      for (let pass = 0; pass < 8 && runtime.postman.hasPending; pass++) yield* runtime.postman.process();
+      assertEquals(runtime.postman.hasPending, false);
       const ordinary: (string | null)[] = [];
       for (const bytes of runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)) {
         ordinary.push(...(yield* call(() => prefixes(bytes))));
@@ -411,7 +411,7 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
         querySaid: deniedBody.said!,
         src: alice.pre,
         dest: alice.pre,
-        messages: [acceptedEventReplayMessage(hby, bob.pre, 0).message],
+        msgs: [acceptedEventReplayMessage(hby, bob.pre, 0).message],
       });
       runtime.reactor.kevery.denyList.add(alice.pre);
       const before = [...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)];
@@ -428,8 +428,8 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
         )
       );
       assertEquals(denied.status, 204, "the independent trailing event still controls its own result");
-      for (let pass = 0; pass < 8 && runtime.poster.hasPending; pass++) yield* runtime.poster.process();
-      assertEquals(runtime.poster.hasPending, false);
+      for (let pass = 0; pass < 8 && runtime.postman.hasPending; pass++) yield* runtime.postman.process();
+      assertEquals(runtime.postman.hasPending, false);
       assertEquals([...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)], before);
       runtime.reactor.kevery.denyList.clear();
     } finally {

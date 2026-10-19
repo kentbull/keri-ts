@@ -371,7 +371,7 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
  */
 export class Anchorer {
   readonly hby: Habery;
-  readonly poster: Poster;
+  readonly postman: Poster;
   /** Query producer port; composition owns the consuming coordinator and its lifetime. */
   readonly querying: { enqueue(request: QueryRequest): void };
   readonly services: RuntimeServices;
@@ -381,8 +381,8 @@ export class Anchorer {
 
   constructor(
     hby: Habery,
-    { poster, querying, services = defaultRuntimeServices, reactor }: {
-      poster: Poster;
+    { postman, querying, services = defaultRuntimeServices, reactor }: {
+      postman: Poster;
       querying: Anchorer["querying"];
       services?: RuntimeServices;
       reactor?: Reactor;
@@ -391,7 +391,7 @@ export class Anchorer {
     if (reactor && reactor.hby !== hby) throw new RangeError("Anchorer Reactor must own the same Habery");
     this.hby = hby;
     this.reactor = reactor;
-    this.poster = poster;
+    this.postman = postman;
     this.querying = querying;
     this.services = services;
   }
@@ -594,7 +594,7 @@ export class Anchorer {
       },
       embeds: { evt: message },
     });
-    const postman = this.poster;
+    const postman = this.postman;
     const request = postman.send({
       src: communicationHab.pre,
       dest: delpre,
@@ -866,7 +866,7 @@ export class Anchorer {
 
     const approvedEvent = eventReplayMessage(this.hby, kever.serder);
     if (kever.delpre) {
-      const postman = this.poster;
+      const postman = this.postman;
       const evt = postman.send({
         src: transportHab.pre,
         dest: kever.delpre,

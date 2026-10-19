@@ -7,13 +7,13 @@ general delivery/recovery framework.
 
 ## Baseline after the approved refactor
 
-The target is one ephemeral Poster `evts` queue, sequential FIFO delivery and
+Phase 3 implements one ephemeral Poster `evts` queue, sequential FIFO delivery and
 explicit whole-event failures. Ordinary records carry signed source messages.
 Known refusals allow the remaining destinations of that event to be attempted;
 partial results remain with the failed event. Explicit retry refreshes routing,
 introductions and forwarding envelopes, may repeat successful destinations, and
 does not promise byte-identical final packets. Explicit discard removes retained
-failed work. These are phase 3 targets, not claims about the phase 1 baseline.
+failed work. Phase 4 qualifies the concrete transport completion boundaries.
 
 Local TCP drain or completed successful HTTP exchange does not establish remote
 protocol acceptance. Independent request response streams keep their own

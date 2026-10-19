@@ -31,14 +31,11 @@ import { PathedMaterialGroup, TransIdxSigGroup, type TransLastIdxSigGroup } from
 import { ValidationError } from "../core/errors.ts";
 import { type ExchangeFactors, type MissingExchangeState, verifyExchangeProofs } from "../core/exchange-proofing.ts";
 import { Kever } from "../core/kever.ts";
-import { exchange as exchangeMessage, supportsNestedExchange } from "../core/protocol-exchanging.ts";
+import { supportsNestedExchange } from "../core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../core/protocol-serialization.ts";
-import { Roles } from "../core/roles.ts";
 import { hasNests, loadNests, publishNests, stageNests } from "../db/exchange-nests.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
-import { chunkBytes } from "./byte-source.ts";
-import { postCesr } from "./cesr-egress.ts";
 import type { Hab, Habery } from "./habbing.ts";
 
 const textDecoder = new TextDecoder();
@@ -56,9 +53,6 @@ function storedReceiverTime(
   if (time !== undefined && timestampMicros(time) === null) throw new Error("Corrupt exchange receiver receipt");
   return time;
 }
-
-/** Delivery mode used when choosing a remote exchange transport endpoint. */
-export type ExchangeTransport = "auto" | "direct" | "indirect";
 
 /** Pathed attachment projection exposed to exchange-route handlers. */
 export interface ExchangeAttachment {
@@ -1121,99 +1115,6 @@ export class Exchanger {
       });
     } else this.hby.db.env!.transactionSync(() => this.clearEscrow(said));
   }
-}
-
-/**
- * Create and deliver one signed exchange message through the selected
- * controller-to-controller transport path.
- */
-export function* sendSignedExchangeMessage(
-  hab: Hab,
-  args: {
-    route: string;
-    payload: Record<string, unknown>;
-    recipient: string;
-    transport?: ExchangeTransport;
-    modifiers?: Record<string, unknown>;
-    date?: string;
-    dig?: string;
-  },
-): Operation<{ serder: SerderKERI; url: string }> {
-  const url = resolveExchangeTransportUrl(
-    hab,
-    args.recipient,
-    args.transport ?? "auto",
-  );
-  if (!url) {
-    throw new ValidationError(
-      `No ${args.transport ?? "auto"} exchange endpoint is available for ${args.recipient}.`,
-    );
-  }
-
-  const [serder] = exchangeMessage(args.route, args.payload, {
-    sender: hab.pre,
-    recipient: args.recipient,
-    modifiers: args.modifiers,
-    stamp: args.date,
-    dig: args.dig,
-  });
-  const message = hab.endorse(serder, { pipelined: false });
-  yield* postCesr(url, (signal) => chunkBytes(message, { signal }), {
-    bodyMode: "header",
-    destination: args.recipient,
-  });
-
-  return { serder, url };
-}
-
-/**
- * Choose the remote URL that should receive one outbound exchange message.
- *
- * Current transport policy:
- * - `direct` sends to the recipient controller location
- * - `indirect` sends to an authorized mailbox endpoint, then falls back to
- *   agent endpoints when no mailbox URL is available
- * - `auto` prefers direct delivery because this codebase has not yet landed
- *   full witness-forwarding mailbox orchestration
- */
-export function resolveExchangeTransportUrl(
-  hab: Hab,
-  recipient: string,
-  transport: ExchangeTransport,
-): string | null {
-  const directUrl = preferredUrl(hab.fetchUrls(recipient));
-  const ends = hab.endsFor(recipient);
-  const mailboxUrl = preferredRoleUrl(ends[Roles.mailbox]);
-  const agentUrl = preferredRoleUrl(ends[Roles.agent]);
-
-  switch (transport) {
-    case "direct":
-      return directUrl;
-    case "indirect":
-      return mailboxUrl ?? agentUrl;
-    case "auto":
-    default:
-      return directUrl ?? mailboxUrl ?? agentUrl;
-  }
-}
-
-function preferredRoleUrl(
-  roleUrls?: Record<string, Record<string, string>>,
-): string | null {
-  if (!roleUrls) {
-    return null;
-  }
-  for (const urls of Object.values(roleUrls)) {
-    const preferred = preferredUrl(urls);
-    if (preferred) {
-      return preferred;
-    }
-  }
-  return null;
-}
-
-function preferredUrl(urls: Record<string, string>): string | null {
-  return urls.https ?? urls.http ?? Object.values(urls)[0] ?? null;
 }
 
 function normalizeAttachments(

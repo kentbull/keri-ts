@@ -31,14 +31,14 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
       hby.db.locs.pin([recipient.pre, "http"], { url: "https://recipient.test/" });
       hby.db.ends.pin([recipient.pre, Roles.controller, recipient.pre], { allowed: true });
       const wire = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
-      const cue = { kin: "replay" as const, src: sender.pre, dest: recipient.pre, messages: [wire] };
+      const cue = { kin: "replay" as const, src: sender.pre, dest: recipient.pre, msgs: [wire] };
       runtime.cues.push(cue);
       yield* drainRuntimeCues(runtime, sender, runtime.cues);
       assertEquals(runtime.cues.empty, true);
       assertEquals(sends, 0, "HTTP cue publication does not start outbound delivery");
-      assertEquals(runtime.poster.hasPending, true);
+      assertEquals(runtime.postman.hasPending, true);
 
-      const delivering = run(() => runtime.poster.process());
+      const delivering = run(() => runtime.postman.process());
       yield* call(() => started);
 
       runtime.cues.push({ kin: "query", pre: "unresolved", route: "logs", q: {} });
@@ -48,13 +48,17 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
       failure = new Error("foreign fetch failure");
       finish();
       assertStrictEquals(yield* call(() => assertRejects(() => Promise.resolve(delivering))), failure);
-      assertEquals(runtime.poster.hasPending, true);
+      assertEquals(runtime.postman.hasPending, false);
       assertEquals(posted, wire);
+      assertStrictEquals(runtime.postman.failures[0].error, failure);
+      yield* runtime.postman.process();
+      assertEquals(sends, 1, "retained failures do not retry automatically");
       failure = undefined;
-      for (let pass = 0; pass < 4 && runtime.poster.hasPending; pass++) {
-        yield* runtime.poster.process();
-      }
-      assertEquals(runtime.poster.hasPending, false);
+      runtime.postman.retry(runtime.postman.failures[0].evt);
+      yield* runtime.postman.process();
+      assertEquals(runtime.postman.hasPending, false);
+      assertEquals(runtime.postman.failures.length, 0);
+      assertEquals(sends, 2);
 
       started = new Promise<void>((resolve) => start = resolve);
       gate = new Promise<void>((resolve) => finish = resolve);
@@ -62,7 +66,7 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
       const beforeDelivery = sends;
       yield* drainRuntimeCues(runtime, sender, runtime.cues);
       assertEquals(sends, beforeDelivery, "publishing a second cue still does not start network work");
-      const cancelling = run(() => runtime.poster.process());
+      const cancelling = run(() => runtime.postman.process());
       yield* call(() => started);
       let joined = false;
       const halted = cancelling.halt().then(() => joined = true);
@@ -71,26 +75,20 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
 
       finish();
       yield* call(() => halted);
-      assertEquals(runtime.poster.hasPending, true, "cancelled transport retains independent delivery");
-      for (let pass = 0; pass < 4 && runtime.poster.hasPending; pass++) yield* runtime.poster.process();
+      assertEquals(runtime.postman.hasPending, true, "cancelled transport retains independent delivery");
+      for (let pass = 0; pass < 4 && runtime.postman.hasPending; pass++) yield* runtime.postman.process();
 
       hby.db.ends.rem([recipient.pre, Roles.controller, recipient.pre]);
-      const beforeSends = sends, interpret = sender.interpretCue.bind(sender);
-      let interpretations = 0;
-      sender.interpretCue = (...args) => {
-        interpretations++;
-        return interpret(...args);
-      };
+      const beforeSends = sends;
       runtime.cues.push(cue);
       yield* drainRuntimeCues(runtime, sender, runtime.cues);
-      assertEquals([interpretations, sends, runtime.cues.length, runtime.poster.hasPending], [
-        1,
-        beforeSends,
-        0,
-        false,
-      ], "absent endpoint remains a once-interpreted local no-op");
-
-      sender.interpretCue = interpret;
+      assertEquals(runtime.cues.empty, true, "cue production does not require a route");
+      yield* runtime.postman.process();
+      assertEquals(sends, beforeSends, "absent endpoints cannot transmit");
+      assertEquals(runtime.postman.hasPending, false);
+      assertEquals(runtime.postman.failures.length, 1, "missing endpoints retain the source for explicit retry");
+      assertEquals(runtime.postman.failures[0].evt.msg, wire);
+      runtime.postman.discard(runtime.postman.failures[0].evt);
 
       const event = hby.db.getEvtSerder(sender.pre, sender.kever!.serder.said!)!;
       const stream = { kin: "stream" as const, serder: event, pre: sender.pre, src: sender.pre, topics: { logs: 0 } };

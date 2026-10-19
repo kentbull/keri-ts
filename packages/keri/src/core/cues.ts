@@ -66,7 +66,7 @@ export interface ReplayCue extends CueBase {
   querySaid?: string;
   kin: "replay";
   /** Reiterating reopens the captured replay extent without collecting its event bytes. */
-  messages: Iterable<Uint8Array>;
+  msgs: Iterable<Uint8Array>;
   pre?: string;
   src?: string;
   dest?: string;
@@ -196,23 +196,6 @@ export interface OobiFailedCue extends CueBase {
   kin: "oobiFailed";
   url: string;
   reason: string;
-}
-
-/** Output category used by the runtime cue-delivery seam. */
-export type CueEmissionKind = "wire" | "notify" | "transport";
-
-/**
- * Structured cue interpretation result consumed by runtime hosts.
- *
- * `keri-ts` keeps the originating cue attached to any emitted wire messages so
- * command-local and long-lived hosts can observe KERI semantics without having
- * to reverse-engineer them back from raw bytes.
- */
-export interface CueEmission {
-  cue: AgentCue;
-  /** Reopenable bounded messages; each iterator owns at most its current message. */
-  messages: Iterable<Uint8Array>;
-  kind: CueEmissionKind;
 }
 
 /**

@@ -347,7 +347,7 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
           } finally {
             reger.cloneTvt = clone;
           }
-          responses.push(cue.messages);
+          responses.push(cue.msgs);
         } finally {
           reply.close();
         }
@@ -381,7 +381,7 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
       const duplicate = tvy.cues.pull();
       if (duplicate?.kin !== "replay") throw new Error("Expected duplicate TEL replay");
       const first = [...responses[0]][0];
-      assertEquals([...duplicate.messages], [first, first], "Repeated ranges preserve management/credential order");
+      assertEquals([...duplicate.msgs], [first, first], "Repeated ranges preserve management/credential order");
       assertEquals(tvy.processQuery({ serder: request(issuer.pre), source }), undefined);
       assertEquals(tvy.cues.length, 0, "Unknown TEL has no response or query escrow");
       assertEquals(tvy.processQuery({ serder: request(), source: undefined }), {
@@ -573,9 +573,8 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
       yield* runtime.reactor.processBytes(outsider.endorse(watcher));
       assertEquals(reger.txnsb.current([vcp.pre!, outsider.pre])?.qb64, watcher.said);
       const notification = runtime.cues.pull()!;
-      assertEquals([...issuer.processCuesIter([notification])].map((emission) => [emission.kind, emission.cue.kin]), [
-        ["notify", "txnStateSaved"],
-      ]);
+      assertEquals(notification.kin, "txnStateSaved");
+      assertEquals([...issuer.processCuesIter([notification])], []);
       habRecord.watchers = [];
       hby.db.habs.pin(issuer.pre, habRecord);
       const backed = inceptRegistry(issuer.pre, { baks: [outsider.pre], toad: 1 });
@@ -1242,15 +1241,15 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
       {
         const replies = [...issuer.processCuesIter(cues)];
         assertEquals(
-          replies.map((emission) => [emission.cue.kin, emission.cue.kin === "reply" ? emission.cue.dest : undefined]),
+          cues.map((cue) => [cue.kin, cue.kin === "reply" ? cue.dest : undefined]),
           [["reply", requester.pre], [
             "reply",
             requester.pre,
           ]],
         );
         const bodies = [];
-        for (const emission of replies) {
-          const [frame] = yield* call(() => parseBytes([...emission.messages][0]));
+        for (const msg of replies) {
+          const [frame] = yield* call(() => parseBytes(msg));
           {
             bodies.push(envelopeFromFrame(frame).serder);
           }
@@ -1259,7 +1258,7 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
           `/tsn/registry/${issuer.pre}`,
           `/tsn/credential/${issuer.pre}`,
         ]);
-        yield* target.reactor.processBytes([...replies[0].messages][0]);
+        yield* target.reactor.processBytes(replies[0]);
         assertEquals(received.txnsb.current([vcp.pre!, issuer.pre])?.qb64, bodies[0].said);
         assertEquals(
           received.txnsb.current([credential.said!, issuer.pre]),
@@ -1272,11 +1271,11 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
           null,
           "Foreign proof cannot authenticate credential attester",
         );
-        yield* target.reactor.processBytes([...replies[1].messages][0]);
+        yield* target.reactor.processBytes(replies[1]);
         assertEquals(received.txnsb.current([credential.said!, issuer.pre])?.qb64, bodies[1].said);
         yield* received.close();
         yield* received.reopen();
-        yield* target.reactor.processBytes([...replies[1].messages][0]);
+        yield* target.reactor.processBytes(replies[1]);
         assertEquals(received.txnsb.current([credential.said!, issuer.pre])?.qb64, bodies[1].said);
       }
       yield* runtime.reactor.processBytes(

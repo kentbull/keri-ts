@@ -157,19 +157,13 @@ function* processWitnessSocket(
               yield* closeReadOwner();
             }
           });
-          type Batch = NonNullable<ReturnType<QueryReply["takeAll"]>>;
-          /** Interpret captured replies and write them through the existing socket. */
-          const sendBatch = function*(batch: Batch): Operation<void> {
-            for (const cue of batch.cues) {
-              yield* call(function*() {
-                const output = serviceHab.interpretCue(cue);
-                yield* writeCesrTcpSocket(socket, async function*(signal) {
-                  for (const message of output!.messages) {
-                    yield* chunkBytes(message, { signal, maxChunkBytes: 65536 });
-                  }
-                }, { clock: runtime.services.clock });
-              });
-            }
+          /** Write fully prepared captured replies through their existing request socket. */
+          const sendMsgs = function*(msgs: Uint8Array[]): Operation<void> {
+            yield* writeCesrTcpSocket(socket, async function*(signal) {
+              for (const msg of msgs) {
+                yield* chunkBytes(msg, { signal, maxChunkBytes: 65536 });
+              }
+            }, { clock: runtime.services.clock });
           };
           /** Settle current input and retain at most one authorized missing-state query on this connection. */
           const processFrame = function*(frame: CesrFrame): Operation<void> {
@@ -186,7 +180,7 @@ function* processWitnessSocket(
                   && body.said
               ? runtime.reactor.replies.reserveEvent(pre, body.said)
               : undefined;
-            let batch: ReturnType<NonNullable<typeof slot>["takeAll"]>;
+            let msgs: Uint8Array[] | undefined;
             yield* resource<void>(function*(provide) {
               try {
                 yield* provide();
@@ -207,17 +201,27 @@ function* processWitnessSocket(
               ) {
                 pending = slot;
                 slot = undefined;
-              } else batch = slot?.takeAll();
+              } else {
+                const captured = slot?.peekAll();
+                if (captured) {
+                  msgs = [...serviceHab.processCuesIter(captured.cues)];
+                  slot!.takeAll();
+                }
+              }
             }
             yield* processCuesOnce(runtime, { hab: serviceHab });
-            if (batch) yield* sendBatch(batch);
+            if (msgs) yield* sendMsgs(msgs);
           };
           while (!rxEOF || pending) {
             signal.throwIfAborted();
             if (pending?.ready) {
               yield* call(function*() {
-                const batch = pending!.takeAll();
-                if (batch) yield* sendBatch(batch);
+                const captured = pending!.peekAll();
+                if (captured) {
+                  const msgs = [...serviceHab.processCuesIter(captured.cues)];
+                  pending!.takeAll();
+                  yield* sendMsgs(msgs);
+                }
               });
               pending.close();
               pending = undefined;

@@ -100,12 +100,15 @@ to a concrete queue admission, not an old success for the same SAID; cancelling
 their observation does not withdraw published work. EXN construction belongs to
 the producer, with standalone callers starting and joining an explicit worker.
 
-The private queue temporarily retains cue cursors and prepared retry packets
-beside ordinary events. Their existing finite-pass/retry policy is unchanged;
-eager FIFO and retained whole-event failure behavior land in a later focused cut.
-Qualification is separate from the 1.0.0 release. Do not infer a generic retry,
-durability or scheduling framework from the
-[deferred reliability roadmap](../plans/runtime/cue-reliability-roadmap.md).
+Respondant constructs every local replay message and every correlated reply before
+atomic publication. Poster owns ordinary FIFO events and sequential target loops.
+Recognized failures retain the whole event with partial successful deliveries;
+explicit retry reuses source bytes as a fresh attempt, and may duplicate earlier
+successes. Unexpected failures remain visible. Failures and optional completion
+cues do not determine pending work. There is no cursor, automatic retry, exact
+final-packet cache or cross-batch fairness mechanism. These omissions are explicit
+in the [deferred reliability roadmap](../plans/runtime/cue-reliability-roadmap.md).
+Transport qualification is separate from the 1.0.0 release.
 
 CLI and long-lived hosts start the same workers. Finite commands use accepted-state
 predicates and elapsed deadlines, then join workers before returning or closing

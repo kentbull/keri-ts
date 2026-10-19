@@ -152,13 +152,13 @@ Deno.test("replay sources reopen their captured extent without including later f
           },
           configurable: true,
         });
-        cues.push({ kin: "replay", messages: replay });
+        cues.push({ kin: "replay", msgs: replay });
       } finally {
         hby.db.getEvt = readBody;
         delete (hby.db as unknown as Record<string, unknown>).retainedProbe;
       }
       assertExists(replay!);
-      assertEquals(cues.pull(), { kin: "replay", messages: replay });
+      assertEquals(cues.pull(), { kin: "replay", msgs: replay });
       hab.interact();
       // The source was captured before interaction; two independent readers see the same event identities.
       for (let attempt = 0; attempt < 2; attempt++) {

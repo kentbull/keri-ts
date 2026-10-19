@@ -18,7 +18,6 @@ import vectors from "../../../../cesr/test/fixtures/nested-vectors.json" with { 
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { attemptPostCesr, CesrHttpRefusal, postCesr, requestFrame } from "../../../src/app/cesr-egress.ts";
 import { CESR_ATTACHMENT_HEADER } from "../../../src/app/cesr-http.ts";
-import { attemptPreparedCesrTarget } from "../../../src/app/forwarding.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
 import { sendCesrTcpFrame } from "../../../src/app/tcp-egress.ts";
 
@@ -565,38 +564,4 @@ Deno.test("transport attempt excludes identical typed errors from source, fetch 
       }
     }
   }
-});
-Deno.test("prepared attempt reports peer refusal and preserves foreign transport failure", async () => {
-  const transport = {
-    ...services(async (_url, init) => {
-      await new Response(init!.body).arrayBuffer();
-      return new Response(null, { status: 204 });
-    }),
-  };
-  const target = {
-    kind: "http" as const,
-    url: "https://peer.test/",
-    destination: "aid",
-    message: fixture(),
-    bodyMode: "body" as const,
-  };
-  assertEquals(await run(() => attemptPreparedCesrTarget(target, transport)), "complete");
-  transport.http = services(async (_url, init) => {
-    await new Response(init!.body).arrayBuffer();
-    return new Response("peer refusal", { status: 503 });
-  }).http;
-  assertEquals(await run(() => attemptPreparedCesrTarget(target, transport)), "refused");
-
-  const failure = new Error("foreign transport failure");
-  const controller = new AbortController();
-  transport.http = {
-    fetch() {
-      controller.abort();
-      return Promise.reject(failure);
-    },
-  };
-  assertStrictEquals(
-    await assertRejects(() => run(() => attemptPreparedCesrTarget(target, transport, controller.signal))),
-    failure,
-  );
 });

@@ -27,7 +27,6 @@ import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
 import {
-  attemptPreparedCesrTarget,
   type ExchangeDeliveryPreference,
   ForwardHandler,
   introduce,
@@ -169,9 +168,9 @@ Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
         oobi: "http://example.test/oobi/bob/controller",
       });
 
-      const poster = new Poster(hby);
-      assertEquals(poster.resolveRecipient(local.pre), local.pre);
-      assertEquals(poster.resolveRecipient("bob-contact"), remote.pre);
+      const postman = new Poster(hby);
+      assertEquals(postman.resolveRecipient(local.pre), local.pre);
+      assertEquals(postman.resolveRecipient("bob-contact"), remote.pre);
     } finally {
       yield* hby.close(true);
     }
@@ -207,14 +206,14 @@ Deno.test("Poster rejects missing and ambiguous contact aliases", async () => {
       persistResolvedContact(hby, remoteA.pre, { alias: "shared" });
       persistResolvedContact(hby, remoteB.pre, { alias: "shared" });
 
-      const poster = new Poster(hby);
+      const postman = new Poster(hby);
       assertThrows(
-        () => poster.resolveRecipient("missing"),
+        () => postman.resolveRecipient("missing"),
         Error,
         "no contact found with alias 'missing'",
       );
       assertThrows(
-        () => poster.resolveRecipient("shared"),
+        () => postman.resolveRecipient("shared"),
         Error,
         "multiple contacts match alias 'shared', use prefix instead",
       );
@@ -249,7 +248,7 @@ Deno.test("Indirect runtime owns one shared Mailboxer and persists remote mailbo
         throw new Error("Expected indirect runtime mailboxer.");
       }
       assertEquals(runtime.mailboxDirector.mailboxer, mailboxer);
-      assertEquals(runtime.poster.mailboxer, mailboxer);
+      assertEquals(runtime.postman.mailboxer, mailboxer);
 
       mailboxer.storeMsg(
         mailboxTopicKey(hab.pre, "/challenge"),
@@ -304,7 +303,7 @@ Deno.test("Local runtime defaults to no provider mailbox store", async () => {
       const runtime = yield* createAgentRuntime(hby);
       assertEquals(runtime.mailboxer, null);
       assertEquals(runtime.mailboxDirector.mailboxer, null);
-      assertEquals(runtime.poster.mailboxer, null);
+      assertEquals(runtime.postman.mailboxer, null);
       yield* runtime.close();
     } finally {
       yield* hby.close(true);
@@ -437,9 +436,9 @@ Deno.test("Queued exchanges carries embedded CESR attachments for delegation-sty
           throw new Error("Sender first-seen ordinal is missing.");
         }
         const evt = hby.db.cloneEvtMsg(sender.pre, fn, said);
-        const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
+        const postman = new Poster(hby, { mailboxer: runtime.mailboxer });
 
-        const { serder } = yield* deliverExchange(poster, sender, {
+        const { serder } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
           exchangeRecipient: null,
           route: DELEGATE_REQUEST_ROUTE,
@@ -472,7 +471,7 @@ Deno.test("Queued exchanges carries embedded CESR attachments for delegation-sty
           embeds: { evt },
         });
         const message = concatBytes(sender.endorse(prepared, { pipelined: false }), paths);
-        const sent = yield* deliverMessage(poster, sender, {
+        const sent = yield* deliverMessage(postman, sender, {
           recipient: recipient.pre,
           message,
           topic: DELEGATE_MAILBOX_TOPIC,
@@ -530,8 +529,8 @@ Deno.test("Queued exchanges defaults IPEX delivery to /credential", async () => 
           recipient.makeEndRole(recipient.pre, EndpointRoles.mailbox, true),
         ]);
 
-        const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
-        const { serder } = yield* deliverExchange(poster, sender, {
+        const postman = new Poster(hby, { mailboxer: runtime.mailboxer });
+        const { serder } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
           route: "/ipex/grant",
           payload: { m: "grant" },
@@ -665,8 +664,8 @@ Deno.test("Queued exchanges falls back to local witness mailbox storage", async 
       try {
         yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9124", witness.pre, "http")]);
 
-        const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
-        const { serder, deliveries } = yield* deliverExchange(poster, sender, {
+        const postman = new Poster(hby, { mailboxer: runtime.mailboxer });
+        const { serder, deliveries } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
           route: DELEGATE_REQUEST_ROUTE,
           payload: { delpre: recipient.pre },
@@ -684,12 +683,12 @@ Deno.test("Queued exchanges falls back to local witness mailbox storage", async 
         );
         const mailboxer = runtime.mailboxer!;
         const publish = mailboxer.storeMsg;
-        const route = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: DELEGATE_MAILBOX_TOPIC });
+        const route = postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: DELEGATE_MAILBOX_TOPIC });
         mailboxer.storeMsg = () => false;
         try {
           yield* call(() =>
             assertRejects(
-              () => run(() => poster.prepareBytesTarget(sender, route, 0, stored[0]!)),
+              () => run(() => postman.prepareBytesTarget(sender, route, route.targets[0], stored[0]!)),
               Error,
               "publication did not complete",
             )
@@ -779,9 +778,9 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           const introduction = yield* call(() => parseBytes(expectedIntro));
           const frameCount = introduction.length;
 
-          const poster = new Poster(hby, { services: runtime.services, reactor: runtime.reactor });
-          const route = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
-          const prepared = yield* poster.prepareBytesTarget(sender, route, 0, message);
+          const postman = new Poster(hby, { services: runtime.services, reactor: runtime.reactor });
+          const route = postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
+          const prepared = yield* postman.prepareBytesTarget(sender, route, route.targets[0], message);
           assertEquals(prepared.kind, "http");
           if (prepared.kind !== "http") throw new Error("Expected HTTP target");
           assertEquals(bodies.length, 0);
@@ -790,7 +789,7 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           assertEquals(concatBytes(...bodies.slice(0, frameCount)), expectedIntro);
           assertEquals(bodies.length, frameCount + 1);
           bodies.length = 0;
-          const result = yield* deliverMessage(poster, sender, {
+          const result = yield* deliverMessage(postman, sender, {
             recipient: recipient.pre,
             message,
             topic: "/receipt",
@@ -842,12 +841,12 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
             const url = `tcp://127.0.0.1:${addr.port}`;
             hby.db.locs.pin([remoteWitness.pre, "tcp"], { url });
             assertEquals(
-              poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" }).targets[0].url,
+              postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" }).targets[0].url,
               route.targets[0].url,
             );
             hby.db.locs.rem([remoteWitness.pre, "http"]);
-            const tcpRoute = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
-            const tcpTarget = yield* poster.prepareBytesTarget(sender, tcpRoute, 0, message);
+            const tcpRoute = postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
+            const tcpTarget = yield* postman.prepareBytesTarget(sender, tcpRoute, tcpRoute.targets[0], message);
             assertEquals(tcpTarget.kind, "tcp");
             if (tcpTarget.kind !== "tcp") throw new Error("Expected TCP target");
             assertEquals(
@@ -856,10 +855,11 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
               "TCP preserves signed introduction",
             );
             assertEquals(
-              (yield* poster.prepareBytesTarget(sender, { ...tcpRoute, kind: "direct" }, 0, message)).kind,
+              (yield* postman.prepareBytesTarget(sender, { ...tcpRoute, kind: "direct" }, tcpRoute.targets[0], message))
+                .kind,
               "tcp",
             );
-            const sent = yield* deliverMessage(poster, sender, {
+            const sent = yield* deliverMessage(postman, sender, {
               recipient: recipient.pre,
               message,
               topic: "/receipt",
@@ -876,16 +876,16 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
             hby.db.rcts.rem(receiptKey);
             runtime.respondant.enqueueCue(
               sender,
-              new Deck([{ kin: "replay", messages: [message], src: sender.pre, dest: recipient.pre }]),
+              new Deck([{ kin: "replay", msgs: [message], src: sender.pre, dest: recipient.pre }]),
             );
 
-            for (let pass = 0; pass < 4 && runtime.poster.hasPending; pass++) yield* runtime.poster.process();
-            assertEquals(runtime.poster.hasPending, false);
+            for (let pass = 0; pass < 4 && runtime.postman.hasPending; pass++) yield* runtime.postman.process();
+            assertEquals(runtime.postman.hasPending, false);
             assertEquals(hby.db.rcts.get(receiptKey).length, 1, "actual queue caller lends its receiver");
             assertEquals(concatBytes(...tcpBodies[1]).subarray(0, expectedIntro.length), expectedIntro);
 
             hby.db.rcts.rem(receiptKey);
-            assertEquals(yield* attemptPreparedCesrTarget(tcpTarget, runtime.services), "complete");
+            yield* sendPreparedCesrTarget(tcpTarget, runtime.services);
             assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");
             assertEquals(concatBytes(...tcpBodies[2]), tcpTarget.message);
           } finally {
@@ -1054,8 +1054,8 @@ Deno.test("Queued CESR with direct delivery does not fall back to witnesses", as
       try {
         yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9126", witness.pre, "http")]);
 
-        const poster = new Poster(hby);
-        yield* deliverMessage(poster, sender, {
+        const postman = new Poster(hby);
+        yield* deliverMessage(postman, sender, {
           recipient: recipient.pre,
           message: new Uint8Array([9]),
           topic: "/receipt",
@@ -1209,8 +1209,8 @@ Deno.test("Poster mailbox sends report partial failure and complete only after e
         for (const kind of ["raw", "exchange"]) {
           const send = () =>
             kind === "raw"
-              ? deliverMessage(runtime.poster, sender, { recipient: recipient.pre, message, topic: "/receipt" })
-              : deliverExchange(runtime.poster, sender, {
+              ? deliverMessage(runtime.postman, sender, { recipient: recipient.pre, message, topic: "/receipt" })
+              : deliverExchange(runtime.postman, sender, {
                 recipient: recipient.pre,
                 route: "/challenge/response",
                 payload: {},
@@ -1219,9 +1219,14 @@ Deno.test("Poster mailbox sends report partial failure and complete only after e
             mode = outcome;
             requests.length = 0;
             // Introduction and forwarded frames use separate POSTs; endpoint coverage is the invariant.
-            const error = yield* call(() => assertRejects(() => run(send), ValidationError, "delivery failed"));
+            const error = yield* call(() => assertRejects(() => run(send)));
             assertEquals([...new Set(requests)].sort(), ["/bad", "/good"]);
-            assertEquals(error.message.includes(outcome === "partial" ? "/good" : "completed: none"), true);
+            const retained = runtime.postman.failures.at(-1)!;
+            assertEquals(retained.error, error);
+            assertEquals(
+              retained.deliveries.map((url) => new URL(url).pathname),
+              outcome === "partial" ? ["/good"] : [],
+            );
           }
           mode = "success";
           requests.length = 0;
@@ -1248,7 +1253,7 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
       const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       try {
         const provider = remote.makeHab("provider", undefined, { transferable: false });
-        const poster = new Poster(hby);
+        const postman = new Poster(hby);
         for (const version of [Vrsn_1_0, Vrsn_2_0]) {
           const [body] = exchangeMessage("/application/message", { value: "retained" }, {
             sender: sender.pre,
@@ -1257,7 +1262,7 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
           const [child] = parseBytes(sender.endorse(body, { pipelined: false, gvrsn: version }));
           const message = yield* call(() => collectPayload(framePayload(child)));
           // Resolve policy separately; this contract check isolates complete-wire construction.
-          const target = yield* poster.prepareBytesTarget(
+          const target = yield* postman.prepareBytesTarget(
             sender,
             {
               kind: "mailbox",
@@ -1267,7 +1272,7 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
               bodyMode: "header",
               targets: [{ eid: provider.pre, url: "https://mailbox.test/" }],
             },
-            0,
+            { eid: provider.pre, url: "https://mailbox.test/" },
             message,
           );
           assertEquals(target.kind, "http");
