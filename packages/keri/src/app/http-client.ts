@@ -3,17 +3,14 @@ import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { TransportError } from "./transport-error.ts";
 
-/** A request-owned upload, opened lazily only when fetch requests its first bytes. */
-export type HttpBodySource = (signal: AbortSignal) => AsyncIterable<Uint8Array>;
-
 /** Existing HTTP request choices; protocol framing and retry policy belong to callers. */
 export interface HttpRequestInit {
   /** HTTP method, validated by Request before any network execution. */
   method?: string;
   /** Actual request headers, including protocol framing and optional Authorization. */
   headers?: HeadersInit;
-  /** Resident platform body or a cancellable pull source for streaming upload. */
-  body?: BodyInit | HttpBodySource | null;
+  /** Prepared request content; producers finish serialization before network execution. */
+  body?: string | Uint8Array | ArrayBuffer | null;
   /** Caller-selected redirect behavior; the HTTP owner adds no retry policy. */
   redirect?: RequestRedirect;
   /** Caller cancellation/deadline, forwarded into the request and its body. */
@@ -45,30 +42,23 @@ function throwFailures(errors: unknown[]): void {
 }
 
 /**
- * Own the native Request, fetch, upload and response reader for one attempt.
+ * Own the native Request, fetch and response reader for one attempt.
  * Construction errors remain outside network classification. Native fetch/read
  * errors retain their causes as TransportError; source and genuine cleanup errors
  * retain their identity. Protocol consumers never receive the native Response.
  */
 export class FetchHttpClient implements HttpClient {
-  /** Acquire a response whose body and active upload remain owned by the caller's request scope. */
+  /** Acquire a response whose body remains owned by the caller's request scope. */
   request(url: string, init: HttpRequestInit = {}): Operation<HttpResponse> {
     return resource<HttpResponse>(function*(provide) {
       const controller = new AbortController();
       const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
-      // An early response may cancel upload while the response itself remains readable.
-      const uploadController = new AbortController();
-      const uploadSignal = AbortSignal.any([signal, uploadController.signal]);
       let response: Response | undefined;
       let fetching: Promise<Response> | undefined;
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
       let reading: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
       let closing: Promise<void> | undefined;
       let closedResponse: Response | undefined;
-      let upload: AsyncIterator<Uint8Array> | undefined;
-      let uploading: Promise<IteratorResult<Uint8Array>> | undefined;
-      let uploadClosing: Promise<void> | undefined;
-      let uploadFailure: { error: unknown } | undefined;
       let readFailure: { raw: unknown; error: unknown } | undefined;
       let requestFailure: { error: unknown } | undefined;
       const reported: unknown[] = [];
@@ -80,17 +70,8 @@ export class FetchHttpClient implements HttpClient {
       const abortBody = () => controller.abort(bodySignal!.reason);
       /** Preserve native error provenance; source failures and exact cancellation remain distinct. */
       const transportFailure = (cause: unknown, message = "HTTP request failed"): unknown => {
-        if (uploadFailure) return uploadFailure.error;
         if (signal.aborted && cause === signal.reason) return cause;
         return new TransportError(`${message} for ${url}`, { cause });
-      };
-      /** Join the original upload before returning its iterator; never race next() with return(). */
-      const closeUpload = () => {
-        uploadController.abort();
-        return uploadClosing ??= (async () => {
-          await uploading?.catch(() => undefined);
-          await upload?.return?.();
-        })();
       };
       /** Cancel before joining a pending read, then unlock; retain distinct cleanup failures. */
       const closeBody = () =>
@@ -128,35 +109,11 @@ export class FetchHttpClient implements HttpClient {
         if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password) {
           throw new ValidationError("HTTP output requires an HTTP(S) URL without credentials");
         }
-        const source = typeof init.body === "function" ? init.body : undefined;
-        const body = source
-          ? new ReadableStream<Uint8Array>({
-            /** Fetch demand opens the source; Request construction itself starts no source work. */
-            async pull(stream) {
-              try {
-                uploadSignal.throwIfAborted();
-                upload ??= source(uploadSignal)[Symbol.asyncIterator]();
-                uploading = upload.next();
-                const result = await uploading;
-                if (result.done) stream.close();
-                else stream.enqueue(result.value);
-              } catch (error) {
-                if (!(uploadSignal.aborted && error === uploadSignal.reason)) uploadFailure = { error };
-                throw error;
-              } finally {
-                uploading = undefined;
-              }
-            },
-            /** Platform upload cancellation still joins the source's original cleanup. */
-            cancel: closeUpload,
-          }, { highWaterMark: 0 })
-          : init.body as BodyInit | null | undefined;
         // Construction is deliberately outside the catch that labels native execution failures.
         const request = new Request(url, {
           ...init,
           signal,
-          body,
-          ...(body instanceof ReadableStream ? { duplex: "half" as const } : {}),
+          body: init.body as BodyInit | null | undefined,
         });
         fetching = (async () => {
           try {
@@ -235,11 +192,6 @@ export class FetchHttpClient implements HttpClient {
           if (response && closedResponse !== response) closing = undefined;
           try {
             await closeBody();
-          } catch (error) {
-            remember(error);
-          }
-          try {
-            await closeUpload();
           } catch (error) {
             remember(error);
           }

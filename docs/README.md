@@ -10,6 +10,8 @@ The [messenger and protocol refactor](plans/runtime/messenger-protocol-refactor.
 tracks the phased separation of input/transport lifetimes from shared protocol processing.
 The [HTTP request ownership refactor](plans/runtime/http-request-ownership-refactor.md)
 consolidates Request validation, execution and body transport failures into the composed HTTP implementation.
+The proposed [HTTP client simplification](plans/runtime/http-client-simplification.md)
+narrows that owner to prepared bodies, finite results and a small scoped streaming path.
 
 | Area                                           | Purpose                                           |
 | ---------------------------------------------- | ------------------------------------------------- |

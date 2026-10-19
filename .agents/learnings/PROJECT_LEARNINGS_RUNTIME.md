@@ -158,12 +158,13 @@ directions/listeners before stores. Recognized wire/peer failures stay connectio
 local; infrastructure/cleanup failures reach the host.
 
 Composition supplies RuntimeHttpClient.request. FetchHttpClient constructs Request
-before native fetch classification and owns upload/read cancellation and joined
-cleanup. Consumers borrow HttpResponse metadata and body(signal), not raw Response.
+before native fetch classification and owns response-read cancellation and joined
+cleanup. Producers prepare finite HTTP bodies before requesting; no upload-source
+factory or upload pump remains. Consumers borrow HttpResponse metadata and body(signal), not raw Response.
 Source/parser/consumer errors remain distinct; test clients explicitly produce
 TransportError for simulated network failure. No client singleton identity check
 controls failure handling. Header-timeout and SSE window policy remains with callers.
-HTTP scopes own upload/fetch/body and preserve signal reasons. Pre-abort acquires
+HTTP scopes own fetch/body and preserve signal reasons. Pre-abort acquires
 no fetch; only the owned header timeout becomes mailbox null. Positive peer HTTP
 refusal is distinct from parser/source/storage/cleanup failure. Ordinary postCesr
 sends require full successful response EOF, refuse redirects without replay and

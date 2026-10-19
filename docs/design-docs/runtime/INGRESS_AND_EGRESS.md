@@ -261,9 +261,9 @@ unsupported acknowledgement or claim that transport proves remote acceptance.
 
 Composition supplies `RuntimeHttpClient.request` as an actual HTTP dependency.
 The concrete FetchHttpClient constructs Request before its native fetch catch,
-validates supported HTTP(S)/credential URLs, and owns upload/fetch/body I/O and joined
-cleanup. A streaming upload opens only on native demand; platform upload cancellation
-can stop the upload independently of a successful response. No lower CESR helper
+validates supported HTTP(S)/credential URLs, and owns fetch/body I/O and joined
+cleanup. Producers finish each finite request body before network execution; the HTTP
+client accepts prepared bytes or text, with no asynchronous upload source. No lower CESR helper
 compares client identities or selects a default HTTP implementation.
 
 HttpResponse contains status, derived ok, headers and one body(signal) byte source.
@@ -287,7 +287,7 @@ original causes in TransportError. Injected implementations use that same explic
 contract; arbitrary injected, parser/source and genuine cleanup failures retain
 their own identity. Cleanup deduplicates a repeated raw read cause while retaining
 distinct failures, including undefined rejection. Header mode carries CESR-ATTACHMENT;
-body mode streams one qualified frame. Preserve URL/path, destination, authentication
+body mode prepares one complete qualified frame before requesting. Preserve URL/path, destination, authentication
 and supported media-type negotiation within one attempt.
 KERIpy 714 HTTPStreamMessenger instead uses one bulk PUT to `/`; matching class
 names does not justify changing the supported POST contract.
