@@ -24,7 +24,7 @@ import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exch
 import { type Poster } from "./forwarding.ts";
 import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
-import type { Reactor } from "./reactor.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { sendWitnessMessage } from "./witnessing.ts";
 
@@ -375,22 +375,25 @@ export class Anchorer {
   /** Query producer port; composition owns the consuming coordinator and its lifetime. */
   readonly querying: { enqueue(request: QueryRequest): void };
   readonly services: RuntimeServices;
-  readonly reactor?: Reactor;
+  /** Borrowed receive processing for witness sends; absent explicitly permits transmit-only delivery. */
+  readonly protocol?: ProtocolProcessor;
   readonly communicationHabPins = new Map<string, string>();
   readonly anchorQueryRetryPasses = new Map<string, number>();
 
   constructor(
     hby: Habery,
-    { postman, querying, services = defaultRuntimeServices, reactor }: {
+    { postman, querying, services = defaultRuntimeServices, protocol }: {
       postman: Poster;
       querying: Anchorer["querying"];
       services?: RuntimeServices;
-      reactor?: Reactor;
+      protocol?: ProtocolProcessor;
     },
   ) {
-    if (reactor && reactor.kvy.db !== hby.db) throw new RangeError("Anchorer Reactor must own the same Habery");
+    if (protocol && protocol.kvy.db !== hby.db) {
+      throw new RangeError("Anchorer protocol processor must use the same database");
+    }
     this.hby = hby;
-    this.reactor = reactor;
+    this.protocol = protocol;
     this.postman = postman;
     this.querying = querying;
     this.services = services;
@@ -860,7 +863,7 @@ export class Anchorer {
     // matches the witness-visible material KERIpy sends for delegated approval.
     for (const msg of this.hby.db.cloneDelegation(kever)) {
       for (const witness of kever.wits) {
-        yield* sendWitnessMessage(transportHab, witness, msg, undefined, this.services, this.reactor);
+        yield* sendWitnessMessage(transportHab, witness, msg, undefined, this.services, this.protocol);
       }
     }
 
@@ -883,7 +886,7 @@ export class Anchorer {
         approvedEvent,
         undefined,
         this.services,
-        this.reactor,
+        this.protocol,
       );
     }
   }

@@ -95,12 +95,12 @@ export {
   type SocketSourceOptions,
 } from "../app/socket-source.ts";
 export {
-  converseCesrTcp,
-  streamCesrTcpConversation,
-  type TcpConversation,
-  type TcpConversationOptions,
-  type TcpReplyReceiver,
-} from "../app/tcp-conversation.ts";
+  type TCPConversation,
+  TCPMessenger,
+  type TCPMessengerOptions,
+  type TCPMessengerResult,
+} from "../app/tcp-messenger.ts";
+
 export {
   openTcpConnection,
   sendCesrTcp,

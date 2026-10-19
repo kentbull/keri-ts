@@ -214,7 +214,7 @@ Synchronous producer preparation has no task/halt bookkeeping, raw-packet inject
 or custom-emission API. Reactor has no general application gate, and commands
 use the host workers described above.
 
-Anchorer selects its optional same-socket Reactor and transport services at
+Anchorer selects its optional shared protocol processor and transport services at
 construction; its escrow passes receive no parent runtime. Receiptor uses a
 borrowed Reactor or creates a protocol processor over the caller's existing
 Habery. It does not construct AgentRuntime, unrelated registry/notification
@@ -226,7 +226,7 @@ signatures read from wigs; raw response proof and unrelated signer receipts do n
 establish completion or enter fanout.
 Use the requested accepted event's witness list for retrieval, proof indexes and
 cached completion; later witness replacements cannot reinterpret older proof.
-Raw witness/Poster sends receive the actual shared protocol processor, while transport retains native
+Raw witness/Poster sends construct TCPMessenger with the shared protocol processor and clock, while transport retains native
 socket ownership. Every actual HTTP/TCP operation joins cleanup before returning.
 
 QueryCoordinator owns a private ordinary Deck of QueryRequest records. Its
@@ -291,7 +291,7 @@ independent iterator ownership through response consumption and cancellation.
 
 `openTcpConnection` lends an actual paused socket, close completion and connection
 signal. It starts no parser or receive callback. Lower byte transport has no
-AgentRuntime/Reactor dependency. `tcp-conversation.ts` composes native RX/TX
+AgentRuntime/Reactor dependency. `TCPMessenger` composes native RX/TX
 siblings and owns parsing/dispatch at the application layer. Standalone sends
 remain transmit-only; explicit reply mode enables same-socket conversations.
 HTTP/HTTPS priority, TCP fallback and mailbox/direct routing remain unchanged.
@@ -407,3 +407,11 @@ request slots borrow `replies`; IPEX workflows observe `exc`. Poster borrows the
 shared ProtocolProcessor rather than Reactor. Minimal standalone input composition
 uses createProtocolProcessor over the caller's existing Habery, opening no stores
 or background workers. Reactor has no dispatch, escrow or semantic-handler proxies.
+
+TCPMessenger owns each TCP attempt, including concurrent receive parsing and its
+own Kevery when receive capability is supplied. Its required constructor receives
+the shared protocol processor (or explicit null for transmit-only) and clock.
+`send` adapts finite bytes to `stream`; no stream subclass or nested message queue
+exists. Explicit `replies` selects processed receive EOF. Socket/drain/cleanup facts
+remain in the lower TCP owner. The old conversation and prepared-target application
+wrappers are removed; QueryCoordinator and Poster retain separate queue policies.

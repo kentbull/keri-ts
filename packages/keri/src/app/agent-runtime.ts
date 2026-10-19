@@ -321,7 +321,7 @@ export function* createAgentRuntime(
       yield* coordinator.close();
     }
   });
-  const delegating = new Anchorer(hby, { postman, querying, services, reactor });
+  const delegating = new Anchorer(hby, { postman, querying, services, protocol });
   const oobiery = new Oobiery(hby, reactor, revery, { cues, services });
   oobiery.registerReplyRoutes(revery.rtr);
   const authenticator = new Authenticator(hby, { services });
