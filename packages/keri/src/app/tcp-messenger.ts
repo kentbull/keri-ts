@@ -49,7 +49,12 @@ export class TCPMessenger {
   /** Input-owned Kevery (kvy); null when no protocol receive capability was supplied. */
   readonly kvy: Kevery | null;
 
-  /** Bind the actual receiver and clock without opening a socket or acquiring stores. */
+  /**
+   * Bind the actual receiver and clock without opening a socket or acquiring stores.
+   *
+   * @param protocol Borrowed shared protocol owner, or null for transmit-only use. A supplied owner creates this messenger's Kevery.
+   * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
+   */
   constructor(
     /** Borrowed shared protocol owner; null explicitly permits transmit-only operation. */
     private readonly protocol: ProtocolProcessor | null,
@@ -59,18 +64,42 @@ export class TCPMessenger {
     this.kvy = protocol?.makeKevery() ?? null;
   }
 
-  /** Adapt resident signed wire to the same pull-source lifetime as streamed output. */
+  /**
+   * Adapt resident signed wire to the same pull-source lifetime as streamed output.
+   *
+   * @param url TCP endpoint with an explicit port in the range 1–65535.
+   * @param msg Resident signed CESR bytes; copied into chunks as transmitted.
+   * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines. Set replies to process same-socket input through EOF; local controls KEL intake policy.
+   * @returns Local transmission for send-only use, or transmission plus processed receive EOF for duplex.
+   * @throws Reply mode requires a protocol processor. Source/parser, dispatch, transport and cleanup failures propagate.
+   */
   send(url: string, msg: Uint8Array, options: TCPMessengerOptions = {}): Operation<TCPMessengerResult> {
     return this.stream(url, (signal) => chunkBytes(msg, { signal, maxChunkBytes: options.maxChunkBytes }), options);
   }
 
-  /** Send one source; duplex processing is explicit and never changes the local-only success contract. */
+  /**
+   * Send one source; duplex processing is explicit and never changes the local-only success contract.
+   *
+   * @param url TCP endpoint with an explicit port in the range 1–65535.
+   * @param source Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
+   * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines. Set replies to process same-socket input through EOF; local controls KEL intake policy.
+   * @returns Local transmission for send-only use, or transmission plus processed receive EOF for duplex.
+   * @throws Reply mode requires a protocol processor. Source/parser, dispatch, transport and cleanup failures propagate.
+   */
   stream(url: string, source: TcpSourceFactory, options: TCPMessengerOptions = {}): Operation<TCPMessengerResult> {
     if (options.replies) return this.converse(url, source, options);
     return streamCesrTcp(url, source, this.clock, { ...options });
   }
 
-  /** Run concurrent native RX/TX children; cancel and join them before releasing the borrowed socket. */
+  /**
+   * Run concurrent native RX/TX children; cancel and join them before releasing the borrowed socket.
+   *
+   * @param url TCP endpoint with an explicit port in the range 1–65535.
+   * @param source Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
+   * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines. Set replies to process same-socket input through EOF; local controls KEL intake policy.
+   * @returns Local transmission for send-only use, or transmission plus processed receive EOF for duplex.
+   * @throws Reply mode requires a protocol processor. Source/parser, dispatch, transport and cleanup failures propagate.
+   */
   private converse(url: string, source: TcpSourceFactory, options: TCPMessengerOptions): Operation<TCPConversation> {
     const protocol = this.protocol, kvy = this.kvy, clock = this.clock;
     if (!protocol || !kvy) throw new Error("TCP reply delivery requires a protocol processor");

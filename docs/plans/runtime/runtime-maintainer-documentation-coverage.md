@@ -59,44 +59,44 @@ Evidence: http-client, cesr-egress, query-transport.
 
 Evidence: witness-transport, query-transport; Tufa progressive-ingress.
 
-| Source / qualified symbol                                             | Status  |
-| --------------------------------------------------------------------- | ------- |
-| `packages/keri/src/app/tcp-egress.ts` — `TcpSendOptions`              | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `TcpSourceFactory`            | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `TcpTransmission`             | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `TcpConnection`               | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `positive`                    | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `openTcpConnection`           | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `sendCesrTcp`                 | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `streamCesrTcp`               | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `sendCesrTcpFrame`            | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `TcpSocketWriteOptions`       | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `writeCesrTcpSocket`          | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `sendCesrTcpSocket`           | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `finishTcpOutput`             | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `eof`                         | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `interrupted`                 | Pending |
-| `packages/keri/src/app/tcp-egress.ts` — `writeBorrowedSource`         | Pending |
-| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessengerOptions`      | Pending |
-| `packages/keri/src/app/tcp-messenger.ts` — `TCPConversation`          | Pending |
-| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessengerResult`       | Pending |
-| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessenger`             | Pending |
-| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessenger.constructor` | Pending |
-| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessenger.send`        | Pending |
-| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessenger.stream`      | Pending |
-| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessenger.converse`    | Pending |
-| `packages/tufa/src/host/witness-tcp.ts` — `WitnessTcpOptions`         | Pending |
-| `packages/tufa/src/host/witness-tcp.ts` — `isPeerError`               | Pending |
-| `packages/tufa/src/host/witness-tcp.ts` — `processWitnessSocket`      | Pending |
-| `packages/tufa/src/host/witness-tcp.ts` — `[Symbol.asyncIterator]`    | Pending |
-| `packages/tufa/src/host/witness-tcp.ts` — `return`                    | Pending |
-| `packages/tufa/src/host/witness-tcp.ts` — `witnessTcpListener`        | Pending |
-| `packages/tufa/src/host/witness-tcp.ts` — `startWitnessTcpServer`     | Pending |
-| `packages/keri/src/app/socket-source.ts` — `SocketSourceOptions`      | Pending |
-| `packages/keri/src/app/socket-source.ts` — `socketBytes`              | Pending |
-| `packages/keri/src/app/socket-source.ts` — `next`                     | Pending |
-| `packages/keri/src/app/socket-source.ts` — `return`                   | Pending |
-| `packages/keri/src/app/socket-source.ts` — `[Symbol.asyncIterator]`   | Pending |
+| Source / qualified symbol                                             | Status                       |
+| --------------------------------------------------------------------- | ---------------------------- |
+| `packages/keri/src/app/tcp-egress.ts` — `TcpSendOptions`              | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `TcpSourceFactory`            | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `TcpTransmission`             | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `TcpConnection`               | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `positive`                    | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `openTcpConnection`           | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `sendCesrTcp`                 | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `streamCesrTcp`               | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `sendCesrTcpFrame`            | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `TcpSocketWriteOptions`       | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `writeCesrTcpSocket`          | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `sendCesrTcpSocket`           | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `finishTcpOutput`             | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `eof`                         | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `interrupted`                 | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-egress.ts` — `writeBorrowedSource`         | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessengerOptions`      | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-messenger.ts` — `TCPConversation`          | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessengerResult`       | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessenger`             | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessenger.constructor` | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessenger.send`        | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessenger.stream`      | Reviewed; contracts expanded |
+| `packages/keri/src/app/tcp-messenger.ts` — `TCPMessenger.converse`    | Reviewed; contracts expanded |
+| `packages/tufa/src/host/witness-tcp.ts` — `WitnessTcpOptions`         | Reviewed; contracts expanded |
+| `packages/tufa/src/host/witness-tcp.ts` — `isPeerError`               | Reviewed; contracts expanded |
+| `packages/tufa/src/host/witness-tcp.ts` — `processWitnessSocket`      | Reviewed; contracts expanded |
+| `packages/tufa/src/host/witness-tcp.ts` — `[Symbol.asyncIterator]`    | Reviewed; contracts expanded |
+| `packages/tufa/src/host/witness-tcp.ts` — `return`                    | Reviewed; contracts expanded |
+| `packages/tufa/src/host/witness-tcp.ts` — `witnessTcpListener`        | Reviewed; contracts expanded |
+| `packages/tufa/src/host/witness-tcp.ts` — `startWitnessTcpServer`     | Reviewed; contracts expanded |
+| `packages/keri/src/app/socket-source.ts` — `SocketSourceOptions`      | Reviewed; contracts expanded |
+| `packages/keri/src/app/socket-source.ts` — `socketBytes`              | Reviewed; contracts expanded |
+| `packages/keri/src/app/socket-source.ts` — `next`                     | Reviewed; contracts expanded |
+| `packages/keri/src/app/socket-source.ts` — `return`                   | Reviewed; contracts expanded |
+| `packages/keri/src/app/socket-source.ts` — `[Symbol.asyncIterator]`   | Reviewed; contracts expanded |
 
 ## Phase 3
 

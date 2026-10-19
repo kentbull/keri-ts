@@ -6,6 +6,9 @@ const readers = new WeakSet<Socket>();
 
 /** Cancellation is mandatory so a stalled read can be interrupted before iterator cleanup joins. */
 export interface SocketSourceOptions extends SourceOptions {
+  /**
+   * Required owner cancellation; abort interrupts stalled reads before iterator cleanup can join.
+   */
   signal: AbortSignal;
 }
 
@@ -15,6 +18,11 @@ export interface SocketSourceOptions extends SourceOptions {
  * Socket/OS buffers and a returned native view can have larger backing; copied output is independent.
  * Abort, failure or early return destroys and joins the socket. Genuine receive EOF leaves its writable
  * half intact; the caller must own later socket errors, output drain and final close (allowHalfOpen).
+ *
+ * @param socket Borrowed binary socket with no competing readable/data consumer; receive ownership is acquired on first pull.
+ * @param options Required abort signal and optional positive chunk size in bytes; default 65536.
+ * @returns An exclusive iterator allowing one pending next call; each chunk owns its backing buffer.
+ * @throws Competing readers, text/object-mode sockets, invalid chunk sizes, I/O and cleanup failures.
  */
 export function socketBytes(
   socket: Socket,
@@ -141,12 +149,24 @@ export function socketBytes(
     }
   };
   return {
+    /**
+     * Perform the sole pending pull, acquiring readable ownership lazily.
+     *
+     * @returns The next copied chunk or EOF; overlapping calls reject.
+     */
     next() {
       if (busy) return Promise.reject(new Error("Concurrent socket pull"));
       if (done) return Promise.resolve({ done: true, value: undefined });
       busy = true;
       return pending = pull();
     },
+    /**
+     * Stop iteration early and join socket destruction.
+     * A source never pulled owns no socket resources; genuine EOF has already
+     * released readable ownership while preserving the writable half.
+     *
+     * @returns EOF after any acquired socket cleanup and outstanding pull join.
+     */
     async return() {
       done = true;
       if (started) {
@@ -156,6 +176,11 @@ export function socketBytes(
       }
       return { done: true, value: undefined };
     },
+    /**
+     * Expose the same reader to for-await iteration; do not create a second consumer.
+     *
+     * @returns This single-consumer iterator.
+     */
     [Symbol.asyncIterator]() {
       return this;
     },
