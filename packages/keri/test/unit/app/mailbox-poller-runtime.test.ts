@@ -1,5 +1,5 @@
 import { call, type Operation, run, spawn, suspend } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStrictEquals } from "jsr:@std/assert";
 import { createAgentRuntime, settleMailboxPollBatch } from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
 import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
@@ -530,6 +530,159 @@ Deno.test("continuous mailbox polling hands off one event before requesting its 
       yield* worker.halt();
       assertEquals([cancelled, responseBody.locked], [true, false]);
       yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("local mailbox cursors commit whole batches only after successful consumption", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const alice = hby.makeHab("alice"), bob = hby.makeHab("bob");
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      enableMailboxStore: true,
+    });
+    const { mailboxPoller: poller, mailboxDirector: director, mailboxer: mbx } = runtime;
+    assertExists(mbx);
+    director.topics.clear();
+    director.registerTopic("/first");
+    director.registerTopic("/second");
+    mbx.storeMsg(mailboxTopicKey(alice.pre, "/first"), new Uint8Array([1]));
+    mbx.storeMsg(mailboxTopicKey(alice.pre, "/second"), new Uint8Array([2]));
+    mbx.storeMsg(mailboxTopicKey(bob.pre, "/first"), new Uint8Array([3]));
+    const failure = new Error("consumer failed");
+    try {
+      // Both callback forms leave the complete first prefix/topic batch available.
+      for (const delayed of [false, true]) {
+        let observed: MailboxPollBatch | undefined, caught: unknown;
+        try {
+          yield* call(() =>
+            poller.pollDo((batch) => {
+              observed = batch;
+              if (!delayed) throw failure;
+              return (function*() {
+                yield* runtimeTurn();
+                throw failure;
+              })();
+            })
+          );
+        } catch (error) {
+          caught = error;
+        }
+        assertStrictEquals(caught, failure);
+        assertEquals(observed?.messages, [new Uint8Array([1]), new Uint8Array([2])]);
+      }
+
+      let entered = false, cleaned = false;
+      const cancelled = yield* spawn(() =>
+        poller.pollDo(function*(batch) {
+          assertEquals(batch.messages, [new Uint8Array([1]), new Uint8Array([2])]);
+          entered = true;
+          try {
+            yield* suspend();
+          } finally {
+            yield* runtimeTurn();
+            cleaned = true;
+          }
+        })
+      );
+      yield* waitForCondition(() => entered, "Expected the local consumer to suspend.");
+      yield* waitForTaskHalt(cancelled);
+      assertEquals(cleaned, true, "halting must join the consumer before restarting the same poller");
+
+      const consumed: MailboxPollBatch[] = [];
+      let caught: unknown;
+      try {
+        yield* call(() =>
+          poller.pollDo((batch) => {
+            consumed.push(batch);
+            if (batch.pre === bob.pre) throw failure;
+          })
+        );
+      } catch (error) {
+        caught = error;
+      }
+      assertStrictEquals(caught, failure);
+      assertEquals(consumed.map(({ pre, messages }) => ({ pre, messages })), [
+        { pre: alice.pre, messages: [new Uint8Array([1]), new Uint8Array([2])] },
+        { pre: bob.pre, messages: [new Uint8Array([3])] },
+      ]);
+
+      // Alice's committed batch stays advanced when Bob fails; later rows remain visible.
+      mbx.storeMsg(mailboxTopicKey(alice.pre, "/first"), new Uint8Array([4]));
+      const resumed: MailboxPollBatch[] = [];
+      const worker = yield* spawn(() =>
+        poller.pollDo((batch) => {
+          resumed.push(batch);
+        })
+      );
+      try {
+        yield* waitForCondition(() => resumed.length === 2, "Expected new Alice rows and Bob's uncommitted batch.");
+        yield* runtimeTurn();
+        assertEquals(resumed.map(({ pre, messages }) => ({ pre, messages })), [
+          { pre: alice.pre, messages: [new Uint8Array([4])] },
+          { pre: bob.pre, messages: [new Uint8Array([3])] },
+        ]);
+      } finally {
+        yield* waitForTaskHalt(worker);
+      }
+    } finally {
+      yield* runtime.close();
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("local mailbox collection failure publishes no batch or cursor progress", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("recipient");
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      enableMailboxStore: true,
+    });
+    const { mailboxPoller: poller, mailboxDirector: director, mailboxer: mbx } = runtime;
+    assertExists(mbx);
+    director.topics.clear();
+    director.registerTopic("/reply");
+    const msgs = [new Uint8Array([1]), new Uint8Array([2])];
+    for (const msg of msgs) mbx.storeMsg(mailboxTopicKey(hab.pre, "/reply"), msg);
+    const topicIter = director.topicIter.bind(director), failure = new Error("row read failed");
+    let published = false, caught: unknown;
+    // Fail after a real row was collected, at the existing provider read boundary.
+    director.topicIter = function*(...args) {
+      for (const row of topicIter(...args)) {
+        yield row;
+        throw failure;
+      }
+    };
+    try {
+      try {
+        yield* call(() =>
+          poller.pollDo(() => {
+            published = true;
+          })
+        );
+      } catch (error) {
+        caught = error;
+      } finally {
+        director.topicIter = topicIter;
+      }
+      assertStrictEquals(caught, failure);
+      assertEquals(published, false);
+      const batches: MailboxPollBatch[] = [];
+      const worker = yield* spawn(() =>
+        poller.pollDo((batch) => {
+          batches.push(batch);
+        })
+      );
+      try {
+        yield* waitForCondition(() => batches.length > 0, "Expected both rows after collection failure.");
+        assertEquals(batches[0].messages, msgs);
+      } finally {
+        yield* waitForTaskHalt(worker);
+      }
+    } finally {
+      yield* runtime.close();
+      yield* hby.close();
     }
   });
 });

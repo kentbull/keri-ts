@@ -958,7 +958,7 @@ export class MailboxPoller {
    * Each remote endpoint progresses independently, and awaits the consumer before
    * reading the next event or advancing its persisted cursor.
    *
-   * @param onBatch Awaited batch consumer. Remote durable cursors advance after it succeeds; local cursor behavior is documented by readLocalMailbox.
+   * @param onBatch Awaited batch consumer. Local batch cursors and remote durable event cursors advance only after it succeeds; failed/cancelled local batches may be delivered again.
    * @throws Consumer/transport failures propagate; endpoint workers are joined on scope exit.
    */
   *pollDo(
@@ -974,8 +974,10 @@ export class MailboxPoller {
         if (topics.length > 0) {
           for (const pre of this.hby.prefixes) {
             const local = this.readLocalMailbox(pre, topics);
-            if (local.length > 0) {
-              yield* call(() => onBatch({ source: "local", pre, messages: local }));
+            if (local) {
+              yield* call(() => onBatch({ source: "local", pre, messages: local.msgs }));
+              // Publish the whole prefix/topic batch only after its consumer completes.
+              this.localCursors.set(pre, local.cursor);
             }
           }
         }
@@ -990,55 +992,32 @@ export class MailboxPoller {
   }
 
   /**
-   * Read local provider rows and advance process-local cursors while collecting.
-   * This happens before pollDo invokes its consumer, unlike remote cursor publication.
-   * A failed local consumer does not roll these cursors back in the current process;
-   * a new poller starts local cursors from zero. No durable acknowledgement is implied.
+   * Collect a complete local batch and its proposed next-wanted cursors without publishing progress.
+   * The caller commits the cursor only after successful consumption. Collection,
+   * consumer failure or cancellation leaves the previous positions available for
+   * a later polling invocation; already processed messages may be repeated.
    *
-   * @param pre AID whose mailbox or accepted state is addressed.
-   * @param topics Registered topics to read from the optional local provider store.
-   * @returns Resident messages; local next-wanted cursors have already advanced.
+   * @param pre Local mailbox subject AID.
+   * @param topics Registered topics to read in order from the optional provider store.
+   * @returns Resident msgs and an independent proposed cursor, or null when no rows are available.
+   * @throws Provider read failures propagate without changing committed local progress.
    */
   private readLocalMailbox(
     pre: string,
     topics: readonly string[],
-  ): Uint8Array[] {
-    if (!this.mailboxDirector.hasMailboxStore()) {
-      return [];
-    }
-    const cursor = this.localCursor(pre);
-    const messages: Uint8Array[] = [];
+  ): { msgs: Uint8Array[]; cursor: Record<string, number> } | null {
+    if (!this.mailboxDirector.hasMailboxStore()) return null;
+    const cursor = { ...this.localCursors.get(pre) };
+    const msgs: Uint8Array[] = [];
 
     for (const topic of topics) {
-      for (
-        const item of this.mailboxDirector.topicIter(
-          pre,
-          topic,
-          cursor[topic] ?? 0,
-        )
-      ) {
+      for (const item of this.mailboxDirector.topicIter(pre, topic, cursor[topic] ?? 0)) {
         cursor[topic] = item.idx + 1;
-        messages.push(item.msg);
+        msgs.push(item.msg);
       }
     }
 
-    return messages;
-  }
-
-  /**
-   * Return the in-memory local mailbox cursor map for one local prefix.
-   *
-   * @param pre AID whose mailbox or accepted state is addressed.
-   * @returns Mutable process-local topic-to-next-wanted map, created empty on first use.
-   */
-  private localCursor(pre: string): Record<string, number> {
-    const current = this.localCursors.get(pre);
-    if (current) {
-      return current;
-    }
-    const created: Record<string, number> = {};
-    this.localCursors.set(pre, created);
-    return created;
+    return msgs.length ? { msgs, cursor } : null;
   }
 
   /**
