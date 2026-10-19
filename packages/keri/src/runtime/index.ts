@@ -172,8 +172,6 @@ export {
   Exchanger,
   type ExchangeRouteHandler,
   type ExchangeRouteVerification,
-  type ExchangeTransport,
-  sendSignedExchangeMessage,
 } from "../app/exchanging.ts";
 export {
   type ExchangeDeliveryPreference,
