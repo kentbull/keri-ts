@@ -22,11 +22,31 @@ export interface WitnessTcpOptions {
 
 const PEER_ERRORS = new Set(["ECONNRESET", "ECONNABORTED", "EPIPE", "ETIMEDOUT"]);
 
-/** Recognize peer I/O failures without treating native capacity/infrastructure errors as input refusal. */
+/**
+ * Recognize peer I/O failures without treating native capacity/infrastructure errors as input refusal.
+ *
+ * @param error Native socket error whose code is inspected.
+ * @returns True for the explicit reset/abort/pipe/timeout codes treated as peer failures.
+ */
 function isPeerError(error: Error): boolean {
   return PEER_ERRORS.has((error as NodeJS.ErrnoException).code ?? "");
 }
-/** Join one parser/watcher/socket lifetime before its connection scope ends. */
+/**
+ * Own one accepted connection from buffered input through response drain and close.
+ * Exact event/query correlations reserve request-owned output before dispatch.
+ * Only authorized results are sent on this socket; unrelated cues use ordinary
+ * routing. One unresolved query may survive receive EOF until ready or the fixed
+ * drain deadline. Teardown joins parser/read children and releases correlation
+ * slots before the outer socket resource finishes closing.
+ *
+ * @param socket Accepted paused, half-open-capable socket owned by this connection scope.
+ * @param runtime Borrowed composed host; supplies protocol processing, reply correlations and clock.
+ * @param serviceHab Hosted signer used to construct authorized responses on this socket.
+ * @param closed Native close promise registered before processing starts.
+ * @param onRefusal Observer called for recognized wire/peer refusal; other failures propagate.
+ * @param drainTimeoutMs Absolute deadline in milliseconds after receive EOF, covering pending replies and output drain.
+ * @throws Infrastructure, protocol-handler and cleanup failures reach the listener owner.
+ */
 function* processWitnessSocket(
   socket: Socket,
   runtime: AgentRuntime,
@@ -100,10 +120,20 @@ function* processWitnessSocket(
         const signal = receiveSignal = controller.signal;
         const input = socketBytes(socket, { signal });
         const source: AsyncIterableIterator<Uint8Array> = {
+          /**
+           * Keep parser iteration on the existing socket reader.
+           *
+           * @returns The same request-owned socket iterator.
+           */
           [Symbol.asyncIterator]() {
             return this;
           },
           next: () => input.next(),
+          /**
+           * Mark early parser return so connection watchers distinguish teardown from peer failure.
+           *
+           * @returns The socket source cleanup promise.
+           */
           return() {
             returning = !socket.readableEnded;
             return input.return!();
@@ -293,7 +323,19 @@ function* processWitnessSocket(
     else throw error;
   }
 }
-/** Keep connection children inside an isolated listener lifetime so fatal failures reach its caller. */
+/**
+ * Supervise accepted connection children within the listener lifetime.
+ * These functions provide the listener/connection responsibilities associated with
+ * KERIpy direct-mode owners. Shutdown stops acceptance, joins connection children,
+ * destroys remaining sockets and joins listener close before returning.
+ *
+ * @param port Local listen port; zero allows the operating system to select a port.
+ * @param hostname Local bind address.
+ * @param runtime Borrowed runtime whose stores must outlive all listener/connection children.
+ * @param serviceHab Hosted AID used for request-owned replies.
+ * @param options Positive drain timeout in milliseconds and refusal observer; defaults to 30000 and a console warning.
+ * @throws Listener setup and unexpected child/cleanup failures; recognized peer refusals stay connection-local.
+ */
 function* witnessTcpListener(
   port: number,
   hostname: string,
@@ -385,8 +427,17 @@ function* witnessTcpListener(
 }
 
 /**
- * Own paused sockets, one buffered parser per receive lifetime, and joined listener shutdown.
- * Exact event proofs and query replies use this connection; unrelated mailbox/direct cues retain ordinary routing.
+ * Run the witness TCP listener until cancellation or a fatal host failure.
+ * These functions provide the listener/connection responsibilities associated with
+ * KERIpy direct-mode owners. Shutdown stops acceptance, joins connection children,
+ * destroys remaining sockets and joins listener close before returning.
+ *
+ * @param port Local listen port; zero allows the operating system to select a port.
+ * @param hostname Local bind address.
+ * @param runtime Borrowed runtime whose stores must outlive all listener/connection children.
+ * @param serviceHab Hosted AID used for request-owned replies.
+ * @param options Positive drain timeout in milliseconds and refusal observer; defaults to 30000 and a console warning.
+ * @throws Listener setup and unexpected child/cleanup failures; recognized peer refusals stay connection-local.
  */
 export function startWitnessTcpServer(
   port: number,

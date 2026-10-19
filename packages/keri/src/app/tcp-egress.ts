@@ -16,34 +16,79 @@ export interface TcpSendOptions {
   connectTimeoutMs?: number;
   /** Absolute local-drain deadline from output EOF, also covering peer close for duplex; default 30 seconds. */
   drainTimeoutMs?: number;
+  /**
+   * Optional upstream cancellation; abort stops source/output and joins the owned connection.
+   */
   signal?: AbortSignal;
 }
 
 /** Producer observes abort and joins cleanup on return. */
 export type TcpSourceFactory = (signal: AbortSignal) => AsyncIterable<Uint8Array> | Promise<AsyncIterable<Uint8Array>>;
 
-/** Local flushed output and joined close, never authenticated remote acceptance. */
+/**
+ * Count bytes whose local write completion was observed.
+ * This result does not prove remote parsing or acceptance. Owning send operations
+ * join socket close; writeCesrTcpSocket only joins its source and leaves the
+ * caller-owned writable half open.
+ */
 export interface TcpTransmission {
+  /**
+   * Identifies local transmission completion, not a protocol receipt.
+   */
   kind: "transmitted";
+  /**
+   * Sum of nonempty source chunks whose write callbacks and required drains completed.
+   */
   bytes: number;
 }
 
 /** A borrowed real connection. Its owner joins close after application children stop. */
 export interface TcpConnection {
+  /**
+   * Paused binary socket with allowHalfOpen; borrower supplies any receive processing.
+   */
   readonly socket: Socket;
+  /**
+   * Settles on native socket close; does not itself imply successful transmission.
+   */
   readonly closed: Promise<void>;
+  /**
+   * Combined caller/connection cancellation, including the originating connection failure.
+   */
   readonly signal: AbortSignal;
-  /** Stop both directions immediately, retaining the originating failure. */
+  /**
+   * Stop both directions immediately, retaining the originating failure.
+   *
+   * @param reason Optional failure/cancellation reason retained by the connection signal.
+   */
   close(reason?: unknown): void;
 }
 
-/** Validate actual chunk sizes and deadlines before acquiring a socket. */
+/**
+ * Validate actual chunk sizes and deadlines before acquiring a socket.
+ *
+ * @param value Requested byte count or duration.
+ * @param name Option name used in the validation error.
+ * @returns The unchanged validated value.
+ * @throws RangeError for nonpositive or unsafe integers.
+ */
 function positive(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new RangeError(`${name} must be a positive safe integer`);
   return value;
 }
 
-/** Lend a paused, half-open-capable socket; no application receiver runs inside transport. */
+/**
+ * Open a socket and lend it to application-owned receive/transmit operations.
+ * This resource does not parse incoming data. Its scope destroys the socket and
+ * joins native close after child operations stop. Receive EOF can leave output
+ * open; the borrower must complete or cancel both directions before releasing it.
+ *
+ * @param url TCP endpoint with an explicit port in the range 1–65535.
+ * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
+ * @param options Connection timeout in milliseconds and optional upstream cancellation; default timeout is 30000.
+ * @returns A paused half-open-capable connection borrowed until the enclosing scope ends.
+ * @throws URL/option validation failures precede connection acquisition; connection errors retain their causes as TransportError.
+ */
 export function openTcpConnection(
   url: string,
   clock: RuntimeClock,
@@ -96,7 +141,16 @@ export function openTcpConnection(
   });
 }
 
-/** Send a resident value over the same concrete connection/source owner as streaming output. */
+/**
+ * Send a resident value over the same concrete connection/source owner as streaming output.
+ *
+ * @param url TCP endpoint with an explicit port in the range 1–65535.
+ * @param bytes Resident signed wire bytes; chunking copies each outgoing segment.
+ * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
+ * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines.
+ * @returns Locally flushed byte count after owned socket cleanup joins; no receive-EOF or protocol-acceptance guarantee.
+ * @throws Source/serialization, transport, cancellation and cleanup errors propagate.
+ */
 export function sendCesrTcp(
   url: string,
   bytes: Uint8Array,
@@ -107,7 +161,16 @@ export function sendCesrTcp(
   return streamCesrTcp(url, (signal) => chunkBytes(bytes, { signal, maxChunkBytes: cap }), clock, options);
 }
 
-/** Transmit-only flow completes local drain, then its connection owner joins close without awaiting peer EOF. */
+/**
+ * Transmit-only flow completes local drain, then its connection owner joins close without awaiting peer EOF.
+ *
+ * @param url TCP endpoint with an explicit port in the range 1–65535.
+ * @param source Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
+ * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
+ * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines.
+ * @returns Locally flushed byte count after owned socket cleanup joins; no receive-EOF or protocol-acceptance guarantee.
+ * @throws Source/serialization, transport, cancellation and cleanup errors propagate.
+ */
 export function streamCesrTcp(
   url: string,
   source: TcpSourceFactory,
@@ -121,7 +184,16 @@ export function streamCesrTcp(
   });
 }
 
-/** Borrow an already hydrated frame through serializer completion, without reparsing. */
+/**
+ * Borrow an already hydrated frame through serializer completion, without reparsing.
+ *
+ * @param url TCP endpoint with an explicit port in the range 1–65535.
+ * @param frame Borrowed parsed frame; serialization preserves its body and attachments without reparsing.
+ * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
+ * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines.
+ * @returns Locally flushed byte count after owned socket cleanup joins; no receive-EOF or protocol-acceptance guarantee.
+ * @throws Source/serialization, transport, cancellation and cleanup errors propagate.
+ */
 export function sendCesrTcpFrame(
   url: string,
   frame: CesrFrame,
@@ -143,10 +215,22 @@ export function sendCesrTcpFrame(
 
 /** Write options for a caller-owned socket; this operation never ends its writable half. */
 export interface TcpSocketWriteOptions {
+  /**
+   * Optional caller cancellation; abort destroys this socket but its caller owns joining close.
+   */
   signal?: AbortSignal;
 }
 
-/** Pull/write/drain one chunk at a time and join source cleanup before returning. */
+/**
+ * Pull/write/drain one chunk at a time and join source cleanup before returning.
+ *
+ * @param socket Borrowed writable socket; this operation never calls end on successful completion.
+ * @param factory Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
+ * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
+ * @param options Optional cancellation for this write/source lifetime.
+ * @returns Locally flushed byte count after source cleanup; caller still owns final socket close.
+ * @throws Source and write errors propagate; abort destroys the socket to interrupt pending output.
+ */
 export function writeCesrTcpSocket(
   socket: Socket,
   factory: TcpSourceFactory,
@@ -167,7 +251,17 @@ export function writeCesrTcpSocket(
   }, signal);
 }
 
-/** End local output after source EOF, then join peer close under one fixed drain deadline. */
+/**
+ * Finish output on a duplex connection and wait for native connection close.
+ * The receiver must run concurrently and consume the peer's readable half. The
+ * messenger separately joins receive processing before reporting duplex success.
+ *
+ * @param connection Borrowed connection with an application-owned concurrent receive operation.
+ * @param factory Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
+ * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
+ * @param options Absolute drain timeout starting at source EOF; default 30000 milliseconds.
+ * @returns Flushed bytes after local end and peer close, within the same drain deadline.
+ */
 export function sendCesrTcpSocket(
   connection: TcpConnection,
   factory: TcpSourceFactory,
@@ -177,7 +271,19 @@ export function sendCesrTcpSocket(
   return finishTcpOutput(connection, factory, clock, options, true);
 }
 
-/** One fixed deadline covers local end and, only for a duplex owner, peer close. */
+/**
+ * Write the source, end the writable half, and apply the selected close boundary.
+ * One deadline starts at source EOF and is never refreshed by activity. Transmit-only
+ * completion does not wait for arbitrary peer EOF. Its enclosing connection resource
+ * subsequently joins close; a later receive reset does not revise completed local output.
+ *
+ * @param connection Connection whose signal and close operation own both directions.
+ * @param factory Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
+ * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
+ * @param options Absolute post-source-EOF drain timeout in milliseconds.
+ * @param waitForPeer True for duplex: also await native close. False completes after local end.
+ * @returns Local transmission count at the selected completion boundary.
+ */
 function finishTcpOutput(
   connection: TcpConnection,
   factory: TcpSourceFactory,
@@ -195,6 +301,9 @@ function finishTcpOutput(
     try {
       const bytes = await writeBorrowedSource(connection.socket, factory, signal, clock, {
         fail: connection.close,
+        /**
+         * Start the absolute output-drain deadline only after the source reports EOF.
+         */
         eof() {
           timer = clock.setTimeout(() => connection.close(new TransportError("TCP drain deadline exceeded")), timeout);
         },
@@ -224,7 +333,15 @@ function finishTcpOutput(
   }, connection.signal);
 }
 
-/** Wake blocked I/O on cancellation without leaving the underlying promise unobserved. */
+/**
+ * Interrupt waiting without claiming to cancel or join the underlying I/O.
+ * The attached rejection observer avoids an unhandled late rejection; ownership
+ * and cleanup of the pending operation remain with the caller.
+ *
+ * @param pending Actual I/O promise; its owner must still join it after cancellation.
+ * @param signal Signal whose exact reason rejects the wait.
+ * @returns The I/O result if it wins the cancellation race.
+ */
 async function interrupted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
   let abort!: () => void;
@@ -241,7 +358,19 @@ async function interrupted<T>(pending: Promise<T>, signal: AbortSignal): Promise
   }
 }
 
-/** Shared source/read/callback/drain loop; connection owners handle abort and socket close. */
+/**
+ * Pull and flush one source chunk before requesting the next.
+ * Source EOF is distinct from socket.end. The owner receives failure before this
+ * helper joins pending reads/writes and returns the iterator, allowing it to unblock
+ * connection I/O. Distinct late cleanup failures remain visible.
+ *
+ * @param socket Borrowed socket; the connection owner handles final destruction and close.
+ * @param factory Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
+ * @param signal Owner cancellation, checked between pulls and native writes.
+ * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
+ * @param hooks Optional owner notifications: eof runs on source exhaustion; fail interrupts the connection before cleanup joins.
+ * @returns Bytes whose write callbacks and any backpressure drain completed.
+ */
 async function writeBorrowedSource(
   socket: Socket,
   factory: TcpSourceFactory,
