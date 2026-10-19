@@ -34,7 +34,8 @@ The [explicit dependency plan](../docs/plans/runtime/explicit-runtime-dependenci
 tracks removal of the remaining HTTP/clock service bundle and dependency options.
 All runtime owners and composition callers now take their actual HTTP/clock
 collaborators explicitly. The aggregate and dependency options are removed; the
-separate verifier clock correction remains pending.
+verifier workflow Daters, webhook headers and expiry now use one injected epoch
+clock. Final merged-source qualification remains pending.
 
 The [compatibility inventory](../docs/reference/compatibility/KERI_V1_V2_COMPATIBILITY.md)
 owns the v1/v2 matrix, implemented bridges and explicit gaps; its linked KERIpy

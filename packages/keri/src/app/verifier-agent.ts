@@ -166,7 +166,7 @@ export class VerifierAgent {
       }
       const issuer = requireString(creder.issuer, "credential issuer");
       this.cdb.snd.pin([credentialSaid], new Prefixer({ qb64: issuer }));
-      this.cdb.iss.pin([credentialSaid], nowDater());
+      this.cdb.iss.pin([credentialSaid], nowDater(this.now()));
       queued += 1;
     }
     return queued;
@@ -203,7 +203,7 @@ export class VerifierAgent {
     if (!said || this.hasRevocationQueuedOrSent(said)) return 0;
     const creder = this.reger.creds.get([said]);
     if (creder?.issuer) this.cdb.snd.pin([said], new Prefixer({ qb64: creder.issuer }));
-    this.cdb.rev.pin([said], nowDater());
+    this.cdb.rev.pin([said], nowDater(this.now()));
     return 1;
   }
 
@@ -226,7 +226,7 @@ export class VerifierAgent {
       if (creder.issuer) {
         this.cdb.snd.pin([said], new Prefixer({ qb64: creder.issuer }));
       }
-      this.cdb.rev.pin([said], nowDater());
+      this.cdb.rev.pin([said], nowDater(this.now()));
       queued += 1;
     }
     return queued;
@@ -489,8 +489,9 @@ function credentialState(reger: Reger, creder: SerderACDC): VcStateRecordShape |
   return (tever.vcState as (vcid: string) => VcStateRecordShape | null)(said);
 }
 
-function nowDater(): Dater {
-  return new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) });
+/** Encode a local workflow timestamp from the same epoch-millisecond source used for expiry. */
+function nowDater(now: number): Dater {
+  return new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601(new Date(now))) });
 }
 
 function requireString(value: string | null, label: string): string {

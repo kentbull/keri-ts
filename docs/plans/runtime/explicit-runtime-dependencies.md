@@ -1,7 +1,8 @@
 # Explicit runtime dependencies
 
-Status: Phase 1 merged in #544; Phase 2 merged in #545 with 130 focused tests.
-Phase 3 implemented with 68 focused tests; verifier clock correction remains.
+Status: structural phases merged in #544, #545 and #546. The verifier clock phase
+is implemented with five focused tests passing; final merged-source qualification
+remains pending.
 Source baseline: clean local `master` at `137e23d756f4b8fc1a9996517d576827bfcefb51`,
 reviewed 2026-10-19. Recheck the implementation baseline before starting.
 
