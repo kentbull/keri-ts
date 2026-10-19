@@ -1,6 +1,7 @@
-import { call, run, suspend } from "effection";
+import { call, ensure, run, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
+import { abortable } from "../../../src/app/abortable.ts";
 import { collectBytes } from "../../../src/app/byte-source.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { TransportError } from "../../../src/app/transport-error.ts";
@@ -67,159 +68,9 @@ Deno.test("finite HTTP responses finish cleanup before their bytes return", asyn
   }
 });
 
-Deno.test("HTTP scope joins late headers and closes their unread body once", async () => {
-  const original = globalThis.fetch;
-  const started = Promise.withResolvers<void>();
-  let cancelled = 0;
-  globalThis.fetch = (input) =>
-    new Promise((resolve) => {
-      const request = input as Request;
-      request.signal.addEventListener("abort", () =>
-        resolve(
-          new Response(
-            new ReadableStream({
-              cancel() {
-                cancelled++;
-              },
-            }),
-          ),
-        ), { once: true });
-      started.resolve();
-    });
-  try {
-    const task = run(() => new FetchHttpClient().open("https://peer.test/"));
-    await started.promise;
-    await task.halt();
-    assertEquals(cancelled, 1);
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-Deno.test("HTTP consumer cancellation interrupts its blocked read and joins native cleanup", async () => {
-  const original = globalThis.fetch;
-  const started = Promise.withResolvers<void>();
-  const closing = Promise.withResolvers<void>();
-  const cleaned = Promise.withResolvers<void>();
-  let exits = false;
-  globalThis.fetch = () =>
-    Promise.resolve(
-      new Response(
-        new ReadableStream({
-          pull() {
-            started.resolve();
-          },
-          async cancel() {
-            closing.resolve();
-            await cleaned.promise;
-          },
-        }, { highWaterMark: 0 }),
-      ),
-    );
-  try {
-    const task = run(function*() {
-      const response = yield* new FetchHttpClient().open("https://peer.test/");
-      yield* call(function*() {
-        const controller = new AbortController();
-        try {
-          yield* call(() => collectBytes(response.body(controller.signal)));
-        } finally {
-          controller.abort();
-        }
-      });
-    });
-    await started.promise;
-    const stopped = Promise.resolve(task.halt()).finally(() => exits = true);
-    await closing.promise;
-    assertEquals(exits, false);
-    cleaned.resolve();
-    await stopped;
-  } finally {
-    cleaned.resolve();
-    globalThis.fetch = original;
-  }
-});
-
-Deno.test("HTTP body failures retain native cause without duplicating cancellation's repeated cause", async () => {
-  const original = globalThis.fetch;
-  const fault = new Error("broken response");
-  globalThis.fetch = () =>
-    Promise.resolve(
-      new Response(
-        new ReadableStream({
-          start(controller) {
-            controller.error(fault);
-          },
-        }),
-      ),
-    );
-  try {
-    const error = await assertRejects(() =>
-      run(function*() {
-        const response = yield* new FetchHttpClient().open("https://peer.test/");
-        yield* call(() => collectBytes(response.body()));
-      }), TransportError);
-    assertStrictEquals(error.cause, fault);
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-Deno.test("HTTP scope preserves unread-body cleanup failure and late foreign fetch failure", async () => {
-  const original = globalThis.fetch;
-  const cleanup = new Error("cleanup failed"), foreign = new DOMException("foreign", "AbortError");
-  try {
-    globalThis.fetch = () =>
-      Promise.resolve(
-        new Response(
-          new ReadableStream({
-            cancel() {
-              throw cleanup;
-            },
-          }),
-        ),
-      );
-    assertStrictEquals(
-      await assertRejects(() => run(() => new FetchHttpClient().open("https://peer.test/"))),
-      cleanup,
-    );
-    const started = Promise.withResolvers<void>();
-    globalThis.fetch = (input) =>
-      new Promise((_resolve, reject) => {
-        (input as Request).signal.addEventListener("abort", () => reject(foreign), { once: true });
-        started.resolve();
-      });
-    const task = run(function*() {
-      yield* new FetchHttpClient().open("https://peer.test/");
-      yield* suspend();
-    });
-    await started.promise;
-    const failure = await assertRejects(() => task.halt(), TransportError);
-    assertStrictEquals(failure.cause, foreign);
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-Deno.test("HTTP cleanup preserves undefined rejection and keeps consumer errors outside transport classification", async () => {
+Deno.test("HTTP consumer errors retain their identity outside transport classification", async () => {
   const original = globalThis.fetch;
   try {
-    globalThis.fetch = () =>
-      Promise.resolve(
-        new Response(
-          new ReadableStream({
-            cancel() {
-              return Promise.reject(undefined);
-            },
-          }),
-        ),
-      );
-    let completed = false;
-    await run(() => new FetchHttpClient().open("https://peer.test/")).then(
-      () => completed = true,
-      (error) => assertStrictEquals(error, undefined),
-    );
-    assertEquals(completed, false);
     globalThis.fetch = () => Promise.resolve(new Response(new Uint8Array([1])));
     const fault = new TypeError("consumer failed");
     assertStrictEquals(
@@ -283,3 +134,65 @@ Deno.test("native HTTP body EOF, truncation and manual redirects share one reque
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+for (const mode of ["headers", "unread", "blocked", "early", "external"] as const) {
+  Deno.test(`native HTTP ${mode} cancellation releases its request before owner teardown`, async () => {
+    const started = Promise.withResolvers<void>();
+    const closed = Promise.withResolvers<void>();
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.on("error", () => {});
+      socket.once("close", () => sockets.delete(socket));
+      socket.once("data", () => {
+        socket.once("close", () => closed.resolve());
+        if (mode === "headers") started.resolve();
+        else socket.write("HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nx");
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
+    let consumerJoined = mode !== "blocked";
+    let ownerClosed = false;
+    const external = new AbortController();
+    const reason = new Error("request canceled externally");
+    const task = run(function*() {
+      // Register a dependent owner before the request and consumer children, like runtime stores.
+      yield* ensure(function*() {
+        assertEquals(consumerJoined, true);
+        ownerClosed = true;
+      });
+      const response = yield* new FetchHttpClient().open(url, { signal: external.signal });
+      if (mode === "unread") {
+        started.resolve();
+        yield* suspend();
+      } else {
+        yield* abortable(async (signal) => {
+          try {
+            for await (const chunk of response.body(signal)) {
+              assertEquals(chunk[0], 120);
+              started.resolve();
+              if (mode === "early") break;
+            }
+          } finally {
+            consumerJoined = true;
+          }
+        });
+      }
+    });
+    try {
+      await started.promise;
+      if (mode === "early") await task;
+      else if (mode === "external") {
+        external.abort(reason);
+        assertStrictEquals(await assertRejects(() => task), reason);
+      } else await task.halt();
+      assertEquals(ownerClosed, true);
+      await closed.promise;
+    } finally {
+      await task.halt();
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+}

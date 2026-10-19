@@ -8,7 +8,7 @@ The [parity roadmap](PARITY_ROADMAP.md) records the completed 1.0.0 baseline and
 future change discipline. Subject files below retain acceptance standards and
 explicit profile limits; they do not resume the completed cleanup sequence.
 
-- [HTTP client simplification](runtime/http-client-simplification.md): proposed phased reduction to prepared bodies, finite responses and a small scoped streaming path.
+- [HTTP client simplification](runtime/http-client-simplification.md): phased reduction to prepared bodies, finite responses and a small scoped streaming path.
 - [HTTP request ownership refactor](runtime/http-request-ownership-refactor.md): Request validation before fetch, one concrete request/body owner,
   and composition-supplied HTTP behavior without client identity checks.
 - [Messenger and protocol refactor](runtime/messenger-protocol-refactor.md): phased extraction of shared protocol processing, concrete TCP/HTTP messengers,

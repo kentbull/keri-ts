@@ -147,9 +147,9 @@ DispatchOptions contains protocol choices; IngressOptions adds input lifetime.
 
 Suppress only the operation's exact owned cancellation reason and failures already
 reported by that invocation. Foreign AbortErrors remain failures. Preserve a single
-error's identity and aggregate distinct read/consumer/cleanup failures. Readers
-cancel once, join that Promise and always attempt lock release. Unacquired request
-or response bodies must expose cleanup failure too. Runtime shutdown joins output
+error's identity and preserve distinct cleanup failures. Byte owners interrupt and
+join actual I/O before releasing their readers. HTTP uses native Fetch abort for
+unread bodies and blocked reads, without a second body-cancel pipeline. Runtime shutdown joins output
 before closing owned stores. Scoped checks do not replace composed qualification.
 
 ## Cue and query ownership
@@ -259,7 +259,7 @@ unsupported acknowledgement or claim that transport proves remote acceptance.
 
 ## HTTP ownership
 
-Composition supplies `RuntimeHttpClient.request` as an actual HTTP dependency.
+Composition supplies `RuntimeHttpClient` with finite request and scoped open operations.
 The concrete FetchHttpClient constructs Request before its native fetch catch,
 validates supported HTTP(S)/credential URLs, and owns fetch/body I/O and joined
 cleanup. Producers finish each finite request body before network execution; the HTTP
@@ -287,8 +287,11 @@ chunked truncation fails the attempt. Redirects are refused without following or
 replaying the application message. Native fetch/body-read failures retain their
 original causes in TransportError. Injected implementations use that same explicit
 contract; arbitrary injected, parser/source and genuine cleanup failures retain
-their own identity. Cleanup deduplicates a repeated raw read cause while retaining
-distinct failures, including undefined rejection. Header mode carries CESR-ATTACHMENT;
+their own identity. Request cleanup aborts native Fetch, joins pending fetch/read
+work and releases its reader. There is no upload iterator or general error history.
+At the native body-read boundary only, Node 20's replacement AbortError after local
+cancellation is normalized to the owning signal's reason; other native failures keep
+their causes. Application errors are never classified by their names. Header mode carries CESR-ATTACHMENT;
 body mode prepares one complete qualified frame before requesting. Preserve URL/path, destination, authentication
 and supported media-type negotiation within one attempt.
 KERIpy 714 HTTPStreamMessenger instead uses one bulk PUT to `/`; matching class

@@ -113,8 +113,9 @@ Acquire resources before their work children. Abort I/O, join children and retur
 iterators before releasing stores. Register Promise cleanup before leaves start;
 bare yielding finally blocks can lose late failures during Effection halt. Suppress
 only exact owned abort reasons/already-reported errors; preserve a lone foreign
-failure's identity and aggregate distinct failures. Readers cancel once, join and
-always attempt lock release. Unacquired bodies must expose cleanup failure too.
+failure's identity and preserve distinct cleanup failures. Interrupt/join actual I/O
+before reader release. HTTP relies on native Fetch abort for unread/blocked bodies;
+Node 20 replacement body AbortErrors normalize to the owning cancellation reason.
 External input abort stops waiting dispatch and active consumers, as well as reads;
 check before pull and after results. Finite parser/codec APIs have no lifetime options.
 

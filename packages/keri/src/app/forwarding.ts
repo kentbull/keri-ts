@@ -28,7 +28,7 @@ import {
   SerderKERI,
   Vrsn_2_0,
 } from "cesr-ts";
-import { action, call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
+import { action, call, type Operation, resource, scoped, spawn, type Task } from "npm:effection@^3.6.0";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
@@ -42,7 +42,7 @@ import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { HTTPMessenger } from "./http-messenger.ts";
-import { closeResponseBody, requestWithHeaderTimeout } from "./httping.ts";
+import { requestWithHeaderTimeout } from "./httping.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
 import {
@@ -1170,35 +1170,37 @@ function* fetchMailboxMessages(
   services: RuntimeServices,
   consume: (message: MailboxSseMessage) => Operation<boolean | void>,
 ): Operation<void> {
-  const query = hab.query(targetPre, src, { route: "mbx", q: { topics } });
-  const handle = yield* fetchMailboxQueryResponse(
-    url,
-    query,
-    bodyMode,
-    src,
-    timeouts.requestOpenTimeoutMs,
-    services,
-  );
-  if (!handle) {
-    return;
-  }
-  const { response, controller } = handle;
+  // One poll window owns its headers, optional body consumption and final cleanup.
+  yield* scoped(function*() {
+    const query = hab.query(targetPre, src, { route: "mbx", q: { topics } });
+    const handle = yield* fetchMailboxQueryResponse(
+      url,
+      query,
+      bodyMode,
+      src,
+      timeouts.requestOpenTimeoutMs,
+      services,
+    );
+    if (!handle) {
+      return;
+    }
+    const { response, controller } = handle;
 
-  if (!response.ok) {
-    yield* closeResponseBody(response);
-    return;
-  }
+    if (!response.ok) {
+      return;
+    }
 
-  yield* consumeMailboxSse(
-    response,
-    controller,
-    consume,
-    {
-      idleTimeoutMs: timeouts.readIdleTimeoutMs,
-      maxDurationMs: timeouts.maxReadDurationMs,
-      clock: services.clock,
-    },
-  );
+    yield* consumeMailboxSse(
+      response,
+      controller,
+      consume,
+      {
+        idleTimeoutMs: timeouts.readIdleTimeoutMs,
+        maxDurationMs: timeouts.maxReadDurationMs,
+        clock: services.clock,
+      },
+    );
+  });
 }
 
 /**

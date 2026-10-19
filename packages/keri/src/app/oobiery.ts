@@ -1,5 +1,5 @@
 import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "cesr-ts";
-import { call, type Operation, resource } from "npm:effection@^3.6.0";
+import { call, type Operation, resource, scoped } from "npm:effection@^3.6.0";
 import type { AgentCue, OobiResolvedCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
@@ -16,7 +16,6 @@ import { collectBytes } from "./byte-source.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { HttpStreamResponse } from "./http-client.ts";
-import { closeResponseBody } from "./httping.ts";
 import type { Notifier } from "./notifying.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import type { Reactor } from "./reactor.ts";
@@ -234,10 +233,21 @@ export class Oobiery {
       oobialias: meta.alias ?? meta.oobialias ?? null,
       said: meta.said ?? null,
     };
-    // Stage attempt metadata only; the original queue row stays owned until result publication.
-    const response = yield* services.http.open(url);
+    const consume = this.processResponse.bind(this);
     try {
-      yield* this.processResponse(kind, url, queuedRecord, meta, response);
+      const refused = yield* scoped(function*() {
+        const response = yield* services.http.open(url);
+        if (!response.ok) return response.status;
+        yield* consume(kind, url, queuedRecord, meta, response);
+        return null;
+      });
+      if (refused !== null) {
+        // The response has closed before its terminal HTTP outcome is persisted.
+        const result = { ...queuedRecord, date: new Date().toISOString(), state: `http-${refused}` };
+        this.remQueueStore(kind, url);
+        this.hby.db.eoobi.pin(url, result);
+        this.cues.push({ kin: "oobiFailed", url, reason: `HTTP ${refused}` });
+      }
     } finally {
       this.hby.db.coobi.rem(url);
     }
@@ -251,18 +261,6 @@ export class Oobiery {
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
     response: HttpStreamResponse,
   ): Operation<void> {
-    if (!response.ok) {
-      yield* closeResponseBody(response);
-      const result = { ...queuedRecord, date: new Date().toISOString(), state: `http-${response.status}` };
-      const cues: AgentCue[] = [{ kin: "oobiFailed", url, reason: `HTTP ${response.status}` }];
-
-      this.remQueueStore(kind, url);
-      this.hby.db.eoobi.pin(url, result);
-      this.cues.extend(cues);
-
-      return;
-    }
-
     const type = mediaType(response.headers.get("content-type") ?? "");
     if (isCesrMediaType(type) || !type.includes("json")) {
       // Keep durable retry ownership throughout partial acceptance and joined cancellation.
