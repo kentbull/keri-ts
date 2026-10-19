@@ -108,7 +108,11 @@ export function* witnessStartCommand(
   }
 }
 
-/** Submit the current local event to witnesses and converge the receipt set. */
+/**
+ * Submit the current local event to witnesses and converge the receipt set.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* witnessSubmitCommand(
   args: Record<string, unknown>,
 ): Operation<void> {

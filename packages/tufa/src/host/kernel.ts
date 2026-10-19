@@ -41,13 +41,12 @@ export interface HostKernelSpec {
 }
 
 /**
- * Run one shared host kernel over the common runtime lifecycle.
+ * Compose and run the long-lived host over one borrowed Habery.
+ * Select HTTP/clock/polling implementations at this root, acquire runtime/listener
+ * resources in scope, and join dependent workers before owned store teardown.
  *
- * Lifecycle contract:
- * - create the runtime once
- * - operators reconcile required endpoint state before entering the host
- * - run optional companion hosts under the same supervision tree
- * - always halt companion hosts before the runtime task, then close runtime
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param spec Explicit hosted identities, listener settings, protocol handlers and host policy.
  */
 export function* runHostKernel(
   hby: Habery,

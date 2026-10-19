@@ -120,6 +120,8 @@ function difference(
  * Maintainer boundary:
  * - CLI concerns stop at option merge/validation and success output
  * - habitat/key-state mutation lives in `Hab.rotate(...)`
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
 export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
   // Select one HTTP implementation for all work owned by this command.

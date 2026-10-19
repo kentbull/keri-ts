@@ -30,6 +30,8 @@ interface ExnSendArgs {
  * - recipient is an AID or exact contact alias
  * - payload comes from repeatable `--data`
  * - topic defaults to the first route segment
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
 export function* exchangeSendCommand(
   args: Record<string, unknown>,

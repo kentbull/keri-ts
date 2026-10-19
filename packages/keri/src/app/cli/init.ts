@@ -49,6 +49,8 @@ interface InitArgs {
  * Implements `tufa init`.
  *
  * Creates/open a habery keystore and database.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
 export function* initCommand(args: Record<string, unknown>): Operation<void> {
   // Extract values from args

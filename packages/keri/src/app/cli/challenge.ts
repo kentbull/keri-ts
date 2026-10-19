@@ -69,7 +69,11 @@ export function* challengeGenerateCommand(
   console.log(formatChallengeWords(words, out));
 }
 
-/** Implement `tufa challenge respond` by sending a signed `/challenge/response` exchange message. */
+/**
+ * Implement `tufa challenge respond` by sending a signed `/challenge/response` exchange message.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* challengeRespondCommand(
   args: Record<string, unknown>,
 ): Operation<void> {

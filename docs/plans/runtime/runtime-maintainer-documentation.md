@@ -46,3 +46,16 @@ index maintenance workflows before phase handoffs.
 Final review follows cue delivery, query/reply processing, mailbox polling,
 request-owned ingress responses, and finite CLI worker/store teardown. Completion
 requires every ledger entry reviewed and source/design docs consistent.
+
+## Review findings retained outside this documentation change
+
+- Local mailbox consumption advances its process-local cursor in
+  `MailboxPoller.readLocalMailbox` before `pollDo` invokes the consumer. A consumer
+  failure can therefore skip that batch for the same poller instance. Remote
+  durable cursors advance only after consumption. Review whether local progress
+  should move after successful consumption in a separate behavioral change; add
+  a failing-consumer regression then. Restart creates fresh local cursors.
+- `positiveTimeoutMs` floors positive fractional input, so values below one
+  millisecond become zero; downstream SSE validation can reject them. A separate
+  policy change should either reject fractions or clamp positive values to one.
+  No validation policy is changed here.

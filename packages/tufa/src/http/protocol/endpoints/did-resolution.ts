@@ -27,7 +27,13 @@ export function classifyDidResolutionRoute(
   return { kind: "didResolution", did: decodeDidIdentifierPath(encoded) };
 }
 
-/** Handle one Universal Resolver request. */
+/**
+ * Handle one Universal Resolver request.
+ *
+ * @param context Request-owned host context with the configured runtime/registry.
+ * @param did Requested DID to resolve and verify.
+ * @returns HTTP resolution response based on accepted KERI/VDR state.
+ */
 export async function handleDidResolutionRoute(
   context: ProtocolRequestContext,
   did: string,

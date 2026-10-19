@@ -71,6 +71,8 @@ function mergeWithFile(args: InceptArgs): InceptFileOptions {
  * Implements `tufa incept`.
  *
  * Creates a single-sig identifier locally.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
 export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
   // Select one HTTP implementation for all work owned by this command.

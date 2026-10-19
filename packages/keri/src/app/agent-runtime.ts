@@ -126,9 +126,21 @@ export interface AgentRuntime {
  * borrowed resources; omitted stores follow the explicit acquisition rules.
  */
 export interface AgentRuntimeOptions {
+  /**
+   * Borrowed provider store; omission creates none unless enableMailboxStore is true.
+   */
   mailboxer?: Mailboxer;
+  /**
+   * Borrowed notice store; omission may acquire a writable default store.
+   */
   noter?: Noter;
+  /**
+   * Borrowed transient hint source, shared with any injected notifier.
+   */
   signaler?: Signaler;
+  /**
+   * Borrowed notice producer; signer/store/signaler identities must match the composition.
+   */
   notifier?: Notifier;
   /** Construct a provider mailbox store. Omitted leaves it absent; injected mailboxer stays borrowed. */
   enableMailboxStore?: boolean;
@@ -144,14 +156,41 @@ export interface AgentRuntimeOptions {
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
 export interface RuntimePendingState {
+  /**
+   * Whether Reactor has queued input.
+   */
   ingress: boolean;
+  /**
+   * Whether ordinary application cues await routing.
+   */
   cues: boolean;
+  /**
+   * Whether reply-signature escrow rows remain.
+   */
   replyEscrow: boolean;
+  /**
+   * Whether durable OOBI jobs await acquisition.
+   */
   oobiQueued: boolean;
+  /**
+   * Whether OOBI jobs are marked in flight.
+   */
   oobiInFlight: boolean;
+  /**
+   * Whether multi-OOBI work remains.
+   */
   multiPending: boolean;
+  /**
+   * Whether well-known authentication jobs await processing.
+   */
   authQueued: boolean;
+  /**
+   * Whether authentication requests are marked in flight.
+   */
   authInFlight: boolean;
+  /**
+   * Whether witness, unanchored or publication delegation escrow remains.
+   */
   delegationPending: boolean;
   /** True when query continuations or deferred correspondence requests remain. */
   queriesPending: boolean;
@@ -159,9 +198,21 @@ export interface RuntimePendingState {
   deliveriesPending: boolean;
 }
 
+/**
+ * Projection of one requested URL's durable terminal OOBI/authentication row.
+ */
 export interface RuntimeOobiTerminalState {
+  /**
+   * Pending until a terminal row exists; resolved/failed reflects that row.
+   */
   status: "pending" | "resolved" | "failed";
+  /**
+   * Database family supplying the terminal row, or none.
+   */
   via: "none" | "roobi" | "eoobi" | "rmfa";
+  /**
+   * Borrowed terminal row, or null while pending.
+   */
   record: OobiRecord | null;
 }
 
@@ -173,6 +224,14 @@ export interface RuntimeOobiTerminalState {
  * - application roots supply HTTP, clock and mailbox transport explicitly
  * - hosts choose concrete optional stores and borrow supplied dependencies
  * - the composition owns only stores it constructs
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+ * @param pollTransport Explicit mailbox polling operation; receives HTTP and clock separately from its request record.
+ * @param options Optional borrowed stores and protocol policy; omitted writable stores follow the documented acquisition rules.
+ * @returns A composed runtime within the enclosing Effection scope; workers are started separately.
+ * @throws Dependency mismatch/acquisition errors propagate after owned resource cleanup.
  */
 export function* createAgentRuntime(
   hby: Habery,
@@ -357,6 +416,12 @@ export function* createAgentRuntime(
     acdc,
     http,
     clock,
+    /**
+     * Close runtime-owned resources after stopping their dependent I/O.
+     * Callers must halt host workers before explicit close. Query/Poster operations and
+     * response readers close before owned stores; injected stores and Habery remain
+     * borrowed. Continue remaining cleanups after a failure and preserve all failures.
+     */
     *close(): Operation<void> {
       reactor.clearIngress();
       const failures: unknown[] = [];
@@ -405,7 +470,12 @@ export function* createAgentRuntime(
   };
 }
 
-/** Own the runtime notification store before its cancellable open can yield. */
+/**
+ * Own the runtime notification store before its cancellable open can yield.
+ *
+ * @param hby Habery supplying name/path/temp policy; this helper does not close it.
+ * @returns New store/manager owned by the current scope, including failed-open cleanup.
+ */
 function* openRuntimeNoter(hby: Habery): Operation<Noter> {
   return yield* resource<Noter>(function*(provide) {
     const options = noterOptionsForHabery(hby);
@@ -419,7 +489,12 @@ function* openRuntimeNoter(hby: Habery): Operation<Noter> {
   });
 }
 
-/** Own the provider mailbox store through acquisition failure and runtime scope exit. */
+/**
+ * Own the provider mailbox store through acquisition failure and runtime scope exit.
+ *
+ * @param hby Habery supplying name/path/temp policy; this helper does not close it.
+ * @returns New store/manager owned by the current scope, including failed-open cleanup.
+ */
 function* openRuntimeMailboxer(hby: Habery): Operation<Mailboxer> {
   return yield* resource<Mailboxer>(function*(provide) {
     const options = mailboxerOptionsForHabery(hby);
@@ -433,7 +508,12 @@ function* openRuntimeMailboxer(hby: Habery): Operation<Mailboxer> {
   });
 }
 
-/** Open v2 registry services owned by the current Effection scope. */
+/**
+ * Open v2 registry services owned by the current Effection scope.
+ *
+ * @param hby Habery supplying name/path/temp policy; this helper does not close it.
+ * @returns New store/manager owned by the current scope, including failed-open cleanup.
+ */
 function* openAcdcRegeryForHabery(hby: Habery): Operation<AcdcRegery> {
   return yield* resource<AcdcRegery>(function*(provide) {
     const rgy = yield* call(() => createAcdcRegery({ hby }));
@@ -445,7 +525,12 @@ function* openAcdcRegeryForHabery(hby: Habery): Operation<AcdcRegery> {
   });
 }
 
-/** Open the runtime's default TEL store with the same scope-owned lifetime. */
+/**
+ * Open the runtime's default TEL store with the same scope-owned lifetime.
+ *
+ * @param hby Habery supplying name/path/temp policy; this helper does not close it.
+ * @returns New store/manager owned by the current scope, including failed-open cleanup.
+ */
 function* openRegerForHabery(hby: Habery): Operation<Reger> {
   return yield* resource<Reger>(function*(provide) {
     const store = yield* call(() =>
@@ -470,6 +555,9 @@ function* openRegerForHabery(hby: Habery): Operation<Reger> {
  *
  * This is the supported ingress seam for both local synthetic messages and
  * remotely fetched OOBI material.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param bytes Complete resident input copied for later Reactor processing.
  */
 export function ingestKeriBytes(
   runtime: AgentRuntime,
@@ -483,6 +571,9 @@ export function ingestKeriBytes(
  *
  * Unlike the older bootstrap runtime, this no longer stages jobs on a root
  * in-memory deck. The authoritative queue is the `oobis.` database family.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param job URL and optional alias admitted to the durable OOBI owner.
  */
 export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
   runtime.oobiery.resolve(job.url, job.alias);
@@ -507,6 +598,10 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
  *   local controller or local witness for the received message
  * - witness hosting relies on that distinction so accepted witness-targeted
  *   events emit witness cues rather than ordinary remote receipt cues
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param messages Complete resident wire records, processed in iterable order.
+ * @param options Optional local-controller/witness policy and receiving mailbox endpoint provenance.
  */
 export function* settleRuntimeIngress(
   runtime: AgentRuntime,
@@ -531,6 +626,9 @@ export function* settleRuntimeIngress(
  *
  * Local and remote poll results are intentionally processed batch-by-batch so
  * follow-on escrow progress can occur before the next source is consumed.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param batch One local/remote batch; each message is processed before the final escrow pass.
  */
 export function* settleMailboxPollBatch(
   runtime: AgentRuntime,
@@ -548,6 +646,9 @@ export function* settleMailboxPollBatch(
  * `queriesPending` is part of convergence because query continuations may still
  * owe a follow-on `logs` query or local catch-up wait after normal cue decks
  * and ingress have drained.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @returns Current selected work summary; retained Poster failures/completion cues do not imply pending delivery.
  */
 export function runtimePendingState(
   runtime: AgentRuntime,
@@ -569,7 +670,12 @@ export function runtimePendingState(
   };
 }
 
-/** Return true when any command-local runtime work remains in flight. */
+/**
+ * Return true when any command-local runtime work remains in flight.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @returns Whether any category in runtimePendingState is pending.
+ */
 export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   const state = runtimePendingState(runtime);
   return state.ingress || state.cues || state.replyEscrow
@@ -580,7 +686,13 @@ export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
     || state.deliveriesPending;
 }
 
-/** Return true when a well-known URL has been authorized into `wkas.`. */
+/**
+ * Return true when a well-known URL has been authorized into `wkas.`.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param url Exact requested OOBI/well-known URL whose durable state is inspected.
+ * @returns Whether the documented authentication/convergence predicate currently holds.
+ */
 export function runtimeHasWellKnownAuth(
   runtime: AgentRuntime,
   url: string,
@@ -592,7 +704,13 @@ export function runtimeHasWellKnownAuth(
   return runtime.hby.db.wkas.get(cid).some((record) => record.url === url);
 }
 
-/** Return the current terminal state projection for one requested OOBI URL. */
+/**
+ * Return the current terminal state projection for one requested OOBI URL.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param url Exact requested OOBI/well-known URL whose durable state is inspected.
+ * @returns Current durable terminal projection.
+ */
 export function runtimeOobiTerminalState(
   runtime: AgentRuntime,
   url: string,
@@ -626,6 +744,10 @@ export function runtimeOobiTerminalState(
  * Return true once OOBI acceptance and its ingress/query dependencies settle.
  * Background receipt delivery is not remote acknowledgement of OOBI acceptance;
  * static OOBI servers may refuse unsolicited posts. Runtime close still joins I/O.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param url Exact requested OOBI/well-known URL whose durable state is inspected.
+ * @returns Whether the documented authentication/convergence predicate currently holds.
  */
 export function runtimeOobiConverged(
   runtime: AgentRuntime,
@@ -639,7 +761,17 @@ export function runtimeOobiConverged(
     && !pending.queriesPending;
 }
 
-/** Run the same component workers as a host until command state completes or its deadline expires. */
+/**
+ * Run host workers until the caller's predicate succeeds or its deadline expires.
+ * The deadline uses Date.now wall time in the current implementation. The worker
+ * is halted and joined on success, timeout, failure or cancellation before the
+ * caller can release stores. A true predicate at entry starts no worker.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param done Synchronous accepted-state/completion predicate, checked before worker startup and each turn.
+ * @param options Required timeoutMs plus optional signer and mailbox polling selection.
+ * @throws Timeout or worker/cleanup failure propagates.
+ */
 export function* runAgentRuntimeUntil(
   runtime: AgentRuntime,
   done: () => boolean,
@@ -673,17 +805,14 @@ export function* runAgentRuntimeUntil(
 export { runtimeTurn } from "./runtime-turn.ts";
 
 /**
- * Run the shared runtime continuously until the surrounding host halts it.
+ * Start the independently progressing runtime workers and suspend until halted.
+ * Compose query delivery, Poster delivery, Reactor ingress, cue routing,
+ * ProtocolProcessor escrows, OOBI/authentication, optional notice/mailbox workers,
+ * delegation and query continuations. The finalizer halts children in reverse
+ * order; store ownership remains with the composition scope.
  *
- * Component/doer model:
- * - `Reactor.msgDo()` owns continuous ingress draining
- * - `Reactor.escrowDo()` owns continuous escrow reprocessing
- * - `Oobiery.oobiDo()` owns durable OOBI resolution
- * - `Authenticator.authDo()` owns well-known auth convergence
- * - `QueryCoordinator.queryDo()` owns deferred query correspondence work
- *
- * The root itself now acts as a composition host: it starts the component
- * doers and stays alive until the surrounding Effection scope halts.
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param options Optional default query/cue signer and pollMailbox switch (default true).
  */
 export function* runAgentRuntime(
   runtime: AgentRuntime,

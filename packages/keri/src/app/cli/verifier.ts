@@ -20,6 +20,11 @@ interface VerifierRunArgs {
   timeoutMs?: number;
 }
 
+/**
+ * Run the verifier workflow once or on its configured interval, closing its workflow store before the enclosing runtime/Habery.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* verifierRunCommand(args: Record<string, unknown>): Operation<void> {
   const runArgs: VerifierRunArgs = {
     name: args.name as string | undefined,

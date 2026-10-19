@@ -229,6 +229,8 @@ export function* oobiResolveCommand(
  *
  * This mirrors KERIpy's `"/oobis"` route while keeping the CLI and transport
  * ownership aligned with other outbound messaging commands.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
 export function* oobiRequestCommand(
   args: Record<string, unknown>,

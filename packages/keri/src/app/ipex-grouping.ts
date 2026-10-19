@@ -54,7 +54,15 @@ export interface MultisigIpexApprovalResult {
   approved: Uint8Array;
 }
 
-/** Approve one pending multisig wrapper around an embedded IPEX message. */
+/**
+ * Approve one pending multisig wrapper around an embedded IPEX message.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param wrapper Accepted multisig exchange carrying the proposed IPEX child.
+ * @param options Approval/genus/delivery policy used for the existing group workflow.
+ * @returns Approval and current group/protocol completion information.
+ */
 export function* approveMultisigIpex(
   hby: Habery,
   runtime: AgentRuntime,
@@ -164,7 +172,16 @@ export function groupIpexPartial(
   );
 }
 
-/** Publish one group IPEX proposal to remote signing members. */
+/**
+ * Publish one group IPEX proposal to remote signing members.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param groupHab Group habitat whose signing members receive the proposal.
+ * @param embedded IPEX exchange body/attachments to wrap.
+ * @param delivery Existing Poster route preference.
+ * @param childGvrsn Attachment genus of the embedded child, independent of outer EXN framing.
+ * @returns Proposal delivery results after matching Poster outcomes.
+ */
 export function* publishGroupIpexProposal(
   runtime: AgentRuntime,
   groupHab: Hab,
@@ -217,7 +234,13 @@ export function* approveStoredMultisigIpexWrappers(
   }
 }
 
-/** Return the first incomplete stored `/multisig/exn` wrapping `/ipex/*`. */
+/**
+ * Return the first incomplete stored `/multisig/exn` wrapping `/ipex/*`.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @returns First incomplete stored IPEX proposal, or no result when none exists.
+ */
 export function findPendingMultisigIpex(hby: Habery, runtime: AgentRuntime): SerderKERI | null {
   for (const [, wrapper] of hby.db.exns.getTopItemIter()) {
     if (wrapper.route !== MULTISIG_EXN_ROUTE) {
@@ -236,7 +259,18 @@ export function findPendingMultisigIpex(hby: Habery, runtime: AgentRuntime): Ser
   return null;
 }
 
-/** Send a completed group IPEX message from the elected local lead. */
+/**
+ * Send a completed group IPEX message from the elected local lead.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
+ * @param reger Borrowed credential evidence store for grant artifacts.
+ * @param groupHab Group sender whose elected local lead publishes completed output.
+ * @param embedded Completed embedded IPEX message.
+ * @param delivery Existing Poster route preference.
+ * @param gvrsn Attachment genus for the outgoing child/artifact stream.
+ * @returns Completed delivery results when this member is the elected sender.
+ */
 export function* sendCompletedGroupIpex(
   hby: Habery,
   postman: Poster,
@@ -327,7 +361,16 @@ export function storedExchangeMessage(
   });
 }
 
-/** Send raw credential/IPEX bytes over the credential mailbox topic. */
+/**
+ * Send raw credential/IPEX bytes over the credential mailbox topic.
+ *
+ * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param dest Final recipient AID.
+ * @param msgs Complete signed credential/IPEX messages in required order.
+ * @param delivery Existing route preference.
+ * @returns Successful destination URLs; failed concrete outcomes throw.
+ */
 export function* sendCredentialBytes(
   postman: Poster,
   hab: Hab,

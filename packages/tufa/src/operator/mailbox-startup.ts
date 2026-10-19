@@ -260,6 +260,15 @@ function storedMailboxUrl(
   return candidates[0]!;
 }
 
+/**
+ * Accept signed startup endpoint records through a temporary composed runtime.
+ * Close its owned resources before checking that the required location and role
+ * state was accepted; no network delivery worker is needed for local intake.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param hab Local hosted signer whose self endpoint records are reconciled.
+ * @param startup Selected startup URLs and timestamp used for signed location/role replies.
+ */
 function* reconcileMailboxIdentity(
   hby: Habery,
   hab: Hab,

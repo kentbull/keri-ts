@@ -113,7 +113,15 @@ function querySseResponse(
     },
   );
 }
-/** Wait for this request's reserved response while other runtime turns continue fairly. */
+/**
+ * Wait for this request's reserved response while other runtime turns continue fairly.
+ *
+ * @param context Request-owned host and cancellation context.
+ * @param serder Query body whose exact dispatch authorized a deferred reply.
+ * @param reply Reserved correlation owned by this request.
+ * @param publish Synchronous response-publication callback; transfers the live Response to the request owner before its scoped processing returns.
+ * @returns Direct HTTP response after correlated evidence is prepared, or null when its bounded wait expires.
+ */
 function* deferredDirectQueryResponse(
   context: ProtocolRequestContext,
   serder: SerderKERI,
@@ -225,7 +233,14 @@ export async function handleGenericCesrIngress(
   if (cleanup.length) throw new AggregateError(cleanup, "HTTP ingress cleanup failed");
   return context.req.signal.aborted ? textResponse("Request cancelled", 408) : response!;
 }
-/** Parse on demand, dispatch each completed child, and retain only the final response query. */
+/**
+ * Parse on demand, dispatch each completed child, and retain only the final response query.
+ *
+ * @param context Request context owning body parsing and response lifetime.
+ * @param hosted Selected hosted endpoint/provenance for this request.
+ * @param publish Synchronous response-publication callback for the request owner; invoked while response resources remain live.
+ * @returns Request-owned response; only the final authorized query controls direct output.
+ */
 function* ingest(
   context: ProtocolRequestContext,
   hosted: HostedRouteResolution,

@@ -86,7 +86,11 @@ export function* vcSchemaImportCommand(args: Record<string, unknown>): Operation
   });
 }
 
-/** Implement `tufa vc registry incept` for single-sig or group registries. */
+/**
+ * Implement `tufa vc registry incept` for single-sig or group registries.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = registryArgs(args);
   yield* withVcRuntime(vcArgs, function*({ hby, runtime, rgy }) {
@@ -127,7 +131,11 @@ export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operati
   });
 }
 
-/** Implement `tufa vc create` by constructing and issuing one registry-backed ACDC. */
+/**
+ * Implement `tufa vc create` by constructing and issuing one registry-backed ACDC.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* vcCreateCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcCreateArgs = {
     ...baseArgs(args),
@@ -217,7 +225,11 @@ export function* vcImportCommand(args: Record<string, unknown>): Operation<void>
   });
 }
 
-/** Implement `tufa vc revoke`, including optional revocation delivery/export. */
+/**
+ * Implement `tufa vc revoke`, including optional revocation delivery/export.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcSaidArgs = {
     ...baseArgs(args),

@@ -26,6 +26,10 @@ import type { Hab, Habery } from "./habbing.ts";
  *
  * This is the supported bridge from core habery state to the additive
  * provider-side mailbox store lifecycle.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param options Explicit store options overriding the Habery-derived name/path/temp/read-only settings.
+ * @returns Derived open settings.
  */
 export function mailboxerOptionsForHabery(
   hby: Habery,
@@ -49,6 +53,10 @@ export function mailboxerOptionsForHabery(
  * Ownership rule:
  * - this helper only derives open settings from habery state
  * - the caller that opens the mailboxer owns its lifecycle
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param options Explicit store options overriding the Habery-derived name/path/temp/read-only settings.
+ * @returns Provider sidecar whose acquisition/lifetime belongs to the caller scope.
  */
 export function* openMailboxerForHabery(
   hby: Habery,
@@ -62,6 +70,10 @@ export function* openMailboxerForHabery(
  *
  * Topic buckets are normalized as `pre/topic`, with `topic` already carrying
  * the leading slash when it is a protocol mailbox topic like `/challenge`.
+ *
+ * @param pre AID whose mailbox or accepted state is addressed.
+ * @param topic Protocol mailbox topic; leading slash is normalized where required.
+ * @returns Storage key joining the AID and one slash-prefixed topic.
  */
 export function mailboxTopicKey(pre: string, topic: string): string {
   return topic.startsWith("/") ? `${pre}${topic}` : `${pre}/${topic}`;
@@ -72,6 +84,12 @@ export function mailboxTopicKey(pre: string, topic: string): string {
  *
  * Cursor records store the last seen ordinal, while mailbox queries ask for
  * the next ordinal wanted.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param pre AID whose mailbox or accepted state is addressed.
+ * @param witness Remote endpoint AID used in the durable cursor key.
+ * @param topics Topics requested by the poller.
+ * @returns Next-wanted ordinal map, derived from last-consumed rows plus one.
  */
 export function mailboxQueryTopics(
   hby: Habery,
@@ -97,6 +115,12 @@ export function mailboxQueryTopics(
  *
  * These cursors live in `Baser.tops` because they describe the consumer's
  * remote poll progress, not the provider's stored inbox contents.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param pre AID whose mailbox or accepted state is addressed.
+ * @param witness Remote endpoint AID.
+ * @param topic Protocol mailbox topic; leading slash is normalized where required.
+ * @param idx Last successfully consumed provider ordinal.
  */
 export function updateMailboxRemoteCursor(
   hby: Habery,
@@ -121,6 +145,10 @@ export function updateMailboxRemoteCursor(
  * The result is intentionally already flattened to one preferred URL per
  * endpoint identifier so runtime pollers can stay focused on mailbox protocol
  * work instead of URL selection policy.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param hab Mailbox subject habitat supplying accepted endpoint roles.
+ * @returns Eligible HTTP(S) remote endpoints with stable worker keys; explicit mailbox roles take precedence.
  */
 export function mailboxPollEndpoints(
   hby: Habery,
@@ -154,6 +182,10 @@ export function mailboxPollEndpoints(
  * Return the currently authorized mailbox endpoints for one remote recipient.
  *
  * `Poster` treats this as the mailbox-first broadcast target set.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param recipient Final recipient AID whose endpoint roles are inspected.
+ * @returns Current endpoint AIDs with preferred URLs; no network reachability check.
  */
 export function mailboxDeliveryEndpoints(
   hab: Hab,
@@ -167,6 +199,10 @@ export function mailboxDeliveryEndpoints(
  *
  * These are fallback transport targets only when no mailbox endpoints are
  * configured or when the caller explicitly forces direct delivery.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param recipient Final recipient AID whose endpoint roles are inspected.
+ * @returns Current endpoint AIDs with preferred URLs; no network reachability check.
  */
 export function directDeliveryEndpoints(
   hab: Hab,
@@ -184,6 +220,11 @@ export function directDeliveryEndpoints(
  *
  * This stays DB-oriented on purpose so CLI, server, and forwarding code can
  * inspect authoritative location state without carrying a second cache.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param eid Endpoint AID whose accepted location replies are loaded.
+ * @param scheme Optional scheme filter; omission returns all recorded schemes.
+ * @returns Scheme-to-URL map from accepted location state.
  */
 export function fetchEndpointUrls(
   hby: Habery,
@@ -208,8 +249,17 @@ export function fetchEndpointUrls(
 
 /** One locally hosted endpoint plus its advertised preferred URL and base path. */
 export interface HostedEndpoint {
+  /**
+   * Hosted local endpoint AID selected from accepted location state.
+   */
   eid: string;
+  /**
+   * Preferred advertised URL for this endpoint.
+   */
   url: string;
+  /**
+   * Normalized path prefix under which this endpoint is served.
+   */
   basePath: string;
 }
 
@@ -220,6 +270,9 @@ export interface HostedEndpoint {
  * and OOBI resources without reparsing the original absolute request path.
  */
 export interface HostedEndpointPathMatch extends HostedEndpoint {
+  /**
+   * Slash-prefixed request path beneath the endpoint's base path.
+   */
   relativePath: string;
 }
 
@@ -236,12 +289,26 @@ export interface HostedEndpointPathMatch extends HostedEndpoint {
  * than one hosted AID" mean the same thing. They do not.
  */
 export interface HostedRouteResolution {
+  /**
+   * Whether no endpoint, one endpoint or an ambiguous longest-prefix match was found.
+   */
   kind: "none" | "one" | "ambiguous";
+  /**
+   * Selected endpoint only when kind is one; otherwise null.
+   */
   endpoint: HostedEndpointPathMatch | null;
+  /**
+   * Request-relative path only when one endpoint was selected.
+   */
   relativePath: string | null;
 }
 
-/** Normalize one optional hosted-prefix filter into a membership set. */
+/**
+ * Normalize one optional hosted-prefix filter into a membership set.
+ *
+ * @param eids Optional allowed hosted AID iterable; omission leaves filtering disabled.
+ * @returns Membership set or null when no filter was supplied.
+ */
 function hostedPrefixFilter(
   eids?: Iterable<string>,
 ): Set<string> | null {
@@ -263,6 +330,12 @@ function hostedPrefixFilter(
  * - optionally append a resource suffix like `/mailboxes`
  * - when more than one local endpoint matches, the caller must treat that as
  *   ambiguous instead of guessing
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param pathname Incoming URL pathname to compare against accepted endpoint base paths.
+ * @param resourceSuffix Protocol resource suffix sought beneath the hosted base path.
+ * @param eids Optional explicit hosted-AID filter; do not infer host eligibility from all local identities.
+ * @returns Matching hosted endpoint projection; ambiguity follows this helper's documented selection policy.
  */
 export function hostedEndpointMatches(
   hby: Habery,
@@ -297,6 +370,12 @@ export function hostedEndpointMatches(
  *
  * Callers that need ambiguity details should use `hostedEndpointPathMatches()`
  * directly.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param pathname Incoming URL pathname to compare against accepted endpoint base paths.
+ * @param resourceSuffix Protocol resource suffix sought beneath the hosted base path.
+ * @param eids Optional explicit hosted-AID filter; do not infer host eligibility from all local identities.
+ * @returns Matching hosted endpoint projection; ambiguity follows this helper's documented selection policy.
  */
 export function hostedEndpointForPath(
   hby: Habery,
@@ -317,6 +396,11 @@ export function hostedEndpointForPath(
  * - non-root endpoints match their exact base path or any subpath beneath it
  * - callers should prefer the longest matching base path and treat ties as
  *   ambiguous instead of guessing
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param pathname Incoming URL pathname to compare against accepted endpoint base paths.
+ * @param eids Optional explicit hosted-AID filter; do not infer host eligibility from all local identities.
+ * @returns Matching hosted endpoint projection; ambiguity follows this helper's documented selection policy.
  */
 export function hostedEndpointPathMatches(
   hby: Habery,
@@ -356,6 +440,12 @@ export function hostedEndpointPathMatches(
  * hit?" Keeping it here means `protocol-handler.ts` can reason in terms of
  * explicit route matches while `server.ts` stays out of endpoint-selection
  * policy entirely.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param pathname Incoming URL pathname to compare against accepted endpoint base paths.
+ * @param resourceSuffix Protocol resource suffix sought beneath the hosted base path.
+ * @param eids Optional explicit hosted-AID filter; do not infer host eligibility from all local identities.
+ * @returns Matching hosted endpoint projection; ambiguity follows this helper's documented selection policy.
  */
 export function resolveHostedEndpointPath(
   hby: Habery,
@@ -392,6 +482,9 @@ export function resolveHostedEndpointPath(
  *
  * This converts stored end-role location shape into the transport-ready tuples
  * used by forwarding and polling logic.
+ *
+ * @param roleUrls Accepted endpoint-AID to scheme/URL map for one role, possibly absent.
+ * @returns All endpoint/preferred-URL pairs.
  */
 export function flattenRoleUrls(
   roleUrls?: Record<string, Record<string, string>>,
@@ -415,6 +508,9 @@ export function flattenRoleUrls(
  *
  * Forwarding fallback chooses one witness deterministically; mailbox polling
  * enumerates its eligible witnesses separately.
+ *
+ * @param roleUrls Accepted endpoint-AID to scheme/URL map for one role, possibly absent.
+ * @returns First deterministic endpoint with a preferred URL, or null.
  */
 export function firstSortedEndpoint(
   roleUrls?: Record<string, Record<string, string>>,
@@ -428,6 +524,9 @@ export function firstSortedEndpoint(
  *
  * HTTPS wins when present because mailbox and admin URLs are externally
  * advertised endpoints.
+ *
+ * @param urls Accepted scheme-to-URL map for one endpoint.
+ * @returns HTTPS, then HTTP, then the first remaining recorded URL; null for an empty map.
  */
 export function preferredUrl(urls: Record<string, string>): string | null {
   return urls.https ?? urls.http ?? Object.values(urls)[0] ?? null;
@@ -438,6 +537,9 @@ export function preferredUrl(urls: Record<string, string>): string | null {
  *
  * Mailbox and OOBI hosts serve routes relative to this base path, not only
  * from `/`.
+ *
+ * @param url Advertised endpoint URL; its pathname defines hosted routing.
+ * @returns Normalized base pathname.
  */
 export function endpointBasePath(url: string): string {
   try {
@@ -447,6 +549,13 @@ export function endpointBasePath(url: string): string {
   }
 }
 
+/**
+ * Join an endpoint base path with a protocol resource suffix.
+ *
+ * @param basePath Hosted endpoint base pathname.
+ * @param suffix Resource suffix to append; empty keeps the normalized base.
+ * @returns Normalized combined pathname.
+ */
 function joinBasePath(basePath: string, suffix: string): string {
   if (suffix.length === 0) {
     return normalizePath(basePath);
@@ -456,7 +565,12 @@ function joinBasePath(basePath: string, suffix: string): string {
   );
 }
 
-/** Normalize hosted endpoint paths into the comparison form used everywhere. */
+/**
+ * Normalize hosted endpoint paths into the comparison form used everywhere.
+ *
+ * @param pathname Path to normalize for hosted-route comparison.
+ * @returns Comparison pathname with the existing leading/trailing slash normalization.
+ */
 function normalizePath(pathname: string): string {
   const trimmed = pathname.trim();
   if (trimmed.length === 0 || trimmed === "/") {
@@ -471,6 +585,10 @@ function normalizePath(pathname: string): string {
  *
  * Root-hosted endpoints match every absolute path; non-root endpoints match
  * only their exact base path or descendants beneath it.
+ *
+ * @param basePath Normalized hosted endpoint base.
+ * @param pathname Incoming request path.
+ * @returns Slash-prefixed relative path, or null when outside the base.
  */
 function relativeHostedPath(
   basePath: string,
@@ -488,7 +606,14 @@ function relativeHostedPath(
   return normalizePath(pathname.slice(basePath.length));
 }
 
-/** Load or create the durable remote mailbox cursor record for one endpoint. */
+/**
+ * Load or create the durable remote mailbox cursor record for one endpoint.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param pre AID whose mailbox or accepted state is addressed.
+ * @param witness Remote endpoint AID used with pre as the cursor key.
+ * @returns Existing cursor record or a new empty record; the caller persists updates.
+ */
 function mailboxRemoteCursorRecord(
   hby: Habery,
   pre: string,

@@ -25,7 +25,12 @@ export class Authenticator {
   /** HTTP implementation selected when this authenticator is composed. */
   readonly http: HttpClient;
 
-  /** Bind the local authentication store and its configured HTTP dependency. */
+  /**
+   * Bind the local authentication store and its configured HTTP dependency.
+   *
+   * @param hby Borrowed local identities and accepted-state stores.
+   * @param http Borrowed HTTP implementation selected by composition.
+   */
   constructor(hby: Habery, http: HttpClient) {
     this.hby = hby;
     this.http = http;
@@ -107,7 +112,12 @@ export class Authenticator {
     return null;
   }
 
-  /** Fetch one `mfa.` record and persist the terminal auth result. */
+  /**
+   * Fetch one `mfa.` record and persist the terminal auth result.
+   *
+   * @param url Exact pending well-known authentication URL.
+   * @param record Durable mfa record retained until response handling and cleanup establish terminal state.
+   */
   private *processPendingAuth(
     url: string,
     record: OobiRecord,

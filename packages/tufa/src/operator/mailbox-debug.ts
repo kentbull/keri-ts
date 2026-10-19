@@ -110,6 +110,15 @@ export function normalizeMailboxTopic(topic: string): string {
   return topic.startsWith("/") ? topic : `/${topic}`;
 }
 
+/**
+ * Fetch a bounded mailbox diagnostic response using root-selected HTTP and clock implementations.
+ *
+ * @param url Mailbox HTTP endpoint.
+ * @param query Complete signed mbx query.
+ * @param bodyMode CESR attachment placement.
+ * @param destination Remote mailbox endpoint AID.
+ * @returns Raw SSE text collected for at most five seconds, with a 500 ms idle window after the first event.
+ */
 function* fetchMailboxDebug(
   url: string,
   query: Uint8Array,

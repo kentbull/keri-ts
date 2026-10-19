@@ -31,6 +31,8 @@ interface EndsAddArgs {
  *
  * This command mutates local state only through normal KERI reply processing,
  * not through a side-channel direct DB write.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
 export function* endsAddCommand(
   args: Record<string, unknown>,

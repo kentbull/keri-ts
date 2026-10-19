@@ -93,7 +93,15 @@ export function pinSchemaBytes(hby: Habery, raw: Uint8Array): string {
   return schemer.said;
 }
 
-/** Create a single-sig registry or propose a group registry inception. */
+/**
+ * Create a single-sig registry or propose a group registry inception.
+ *
+ * @param rgy Borrowed legacy registry/credential owner.
+ * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param options Registry name/configuration and optional group proposal usage.
+ * @returns Registry/proposal state and actual deliveries, with acceptance reported separately.
+ */
 export function* inceptCredentialRegistry(
   rgy: Regery,
   postman: Poster,
@@ -145,7 +153,14 @@ export function credentialRegistryStatus(rgy: Regery, registryName: string) {
   };
 }
 
-/** Create and issue one registry-backed credential. */
+/**
+ * Create and issue one registry-backed credential.
+ *
+ * @param rgy Borrowed registry/TEL/credential owner.
+ * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
+ * @param options Issuer registry, credential data/schema, and optional delivery/export choices.
+ * @returns Credential/TEL result with saved/accepted state distinct from delivered URLs.
+ */
 export function* createCredential(
   rgy: Regery,
   postman: Poster,
@@ -225,7 +240,14 @@ export function exportCredentialStream(
   };
 }
 
-/** Import one CESR credential stream and return newly saved credential SAIDs. */
+/**
+ * Import one CESR credential stream and return newly saved credential SAIDs.
+ *
+ * @param reactor Borrowed ingress owner for KEL/TEL/credential artifacts.
+ * @param reger Borrowed credential store used to compare saved SAIDs before/after intake.
+ * @param bytes Finite CESR credential stream to process.
+ * @returns Import result listing newly saved credential SAIDs; receiving bytes alone does not imply acceptance.
+ */
 export function* importCredentialStream(
   reactor: Reactor,
   reger: Reger,
@@ -238,7 +260,14 @@ export function* importCredentialStream(
   return { saved: [...savedCredentials(reger)].filter((said) => !before.has(said)) };
 }
 
-/** Revoke one credential and optionally deliver revocation stream bytes. */
+/**
+ * Revoke one credential and optionally deliver revocation stream bytes.
+ *
+ * @param rgy Borrowed registry/TEL owner.
+ * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
+ * @param options Credential/registry selection and optional recipient/export choices.
+ * @returns Revocation state and requested publication results.
+ */
 export function* revokeCredential(
   rgy: Regery,
   postman: Poster,
@@ -315,6 +344,16 @@ function revocationStreamMessages(
   ];
 }
 
+/**
+ * Construct a group registry inception and anchored proposal, then await member delivery.
+ * Local TEL acceptance is reported separately from successful proposal transmission.
+ *
+ * @param rgy Borrowed registry owner and accepted state.
+ * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
+ * @param hab Group issuer habitat.
+ * @param options Registry name and no-backers/establishment policy; group backer registries are unsupported.
+ * @returns Proposal route, registry identity, TEL status and completed target deliveries.
+ */
 function* proposeGroupRegistryIncept(
   rgy: Regery,
   postman: Poster,
@@ -368,6 +407,17 @@ function* proposeGroupRegistryIncept(
   };
 }
 
+/**
+ * Prepare group issuance evidence and publish it to remote signing members.
+ * Return protocol status separately from transport delivery; peer signature
+ * collection may still be incomplete.
+ *
+ * @param rgy Borrowed registry and credential verification owner.
+ * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
+ * @param registry Group issuer registry to anchor issuance.
+ * @param creder Constructed credential to validate and bind to the TEL issue event.
+ * @returns Credential/TEL decisions, saved state and completed member deliveries.
+ */
 function* proposeGroupCredentialIssue(
   rgy: Regery,
   postman: Poster,
@@ -442,6 +492,18 @@ function* proposeGroupCredentialIssue(
   };
 }
 
+/**
+ * Send one signed proposal per remote signing member and await each delivery.
+ * Local members are skipped; a failed outcome throws before reporting success.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
+ * @param groupHab Group issuer habitat whose remote signing members receive the proposal.
+ * @param route Existing registry-inception or issuance multisig route.
+ * @param payload Route-defined group proposal data.
+ * @param embeds Named credential/TEL/anchor wire attachments.
+ * @returns Successful target URLs after each member's concrete Poster outcome.
+ */
 function* publishGroupVcProposal(
   hby: Habery,
   postman: Poster,

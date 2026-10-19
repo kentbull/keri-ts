@@ -388,7 +388,16 @@ export class Anchorer {
   /** Existing query retry-pass bookkeeping; independent of Poster delivery retry. */
   readonly anchorQueryRetryPasses = new Map<string, number>();
 
-  /** Bind delivery/query/protocol collaborators from the same accepted-state domain; acquire no stores. */
+  /**
+   * Bind delivery/query/protocol collaborators from the same accepted-state domain; acquire no stores.
+   *
+   * @param hby Borrowed local identities and accepted-state stores.
+   * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
+   * @param querying Borrowed query-admission owner for anchor discovery.
+   * @param protocol Same-database reply processor, or null when receive support is absent.
+   * @param http Borrowed HTTP implementation selected by composition.
+   * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+   */
   constructor(
     hby: Habery,
     postman: Poster,
@@ -408,7 +417,12 @@ export class Anchorer {
     this.clock = clock;
   }
 
-  /** Start one delegated event in witness-receipt escrow and replace any previous local proxy pin. */
+  /**
+   * Start one delegated event in witness-receipt escrow and replace any previous local proxy pin.
+   *
+   * @param serder Delegated event whose witness/approval workflow is started or reset.
+   * @param options Optional communicationHab pins a local proxy signer for this process.
+   */
   begin(
     serder: SerderKERI,
     options: { communicationHab?: Hab } = {},
@@ -537,7 +551,12 @@ export class Anchorer {
     return results;
   }
 
-  /** Require delegate receipts, deliver the approval request/event, then move to anchor discovery. Failed delivery leaves this phase retained. */
+  /**
+   * Require delegate receipts, deliver the approval request/event, then move to anchor discovery. Failed delivery leaves this phase retained.
+   *
+   * @param context Escrow key, event, prefix and SAID resolved from durable workflow state.
+   * @returns Current delegation phase result; failed transmission does not advance to anchor discovery.
+   */
   private *processPartialWitnessEscrow(
     context: DelegationEscrowContext,
   ): Operation<DelegationWorkflowResult> {
@@ -868,7 +887,11 @@ export class Anchorer {
     return localGroupMember(this.hby, hab.pre) ?? this.communicationHab(serder, hab);
   }
 
-  /** Send the delegation chain before the approving event, awaiting actual Poster or witness transmission outcomes. */
+  /**
+   * Send the delegation chain before the approving event, awaiting actual Poster or witness transmission outcomes.
+   *
+   * @param serder Accepted delegator event to publish after its required delegation chain.
+   */
   private *publishDelegator(serder: SerderKERI): Operation<void> {
     const pre = workflowPre(serder);
     const hab = localHabByPre(this.hby, pre, "Delegation witness publication");
