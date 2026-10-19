@@ -8,6 +8,8 @@ The [parity roadmap](PARITY_ROADMAP.md) records the completed 1.0.0 baseline and
 future change discipline. Subject files below retain acceptance standards and
 explicit profile limits; they do not resume the completed cleanup sequence.
 
+- [HTTP request ownership refactor](runtime/http-request-ownership-refactor.md): planned Request validation before fetch, one concrete request/body owner,
+  and composition-supplied HTTP behavior without client identity checks.
 - [Messenger and protocol refactor](runtime/messenger-protocol-refactor.md): phased extraction of shared protocol processing, concrete TCP/HTTP messengers,
   and explicit constructor dependencies; final qualification follows the last merge.
 - [Cue delivery refactor](runtime/cue-delivery-refactor.md): completed message
