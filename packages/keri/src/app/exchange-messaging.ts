@@ -5,6 +5,7 @@ import { ValidationError } from "../core/errors.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import { type ExchangeDeliveryPreference, mailboxTopicForRoute, Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { defaultRuntimeServices } from "./runtime-services.ts";
 
 /** Resolved recipient and business fields used to construct one signed exchange. */
 export interface ExchangeMessageArgs {
@@ -43,7 +44,7 @@ export function sendExchangeMessage(
   args: ExchangeMessageArgs & { topic?: string; delivery?: ExchangeDeliveryPreference },
 ): Operation<{ serder: SerderKERI; deliveries: string[] }> {
   return call(function*() {
-    const postman = new Poster(hby);
+    const postman = new Poster(hby, null, null, defaultRuntimeServices);
     yield* resource<void>(function*(provide) {
       try {
         yield* provide();

@@ -62,6 +62,9 @@ independently authenticated nested message; legacy messages use pathed embeds.
 Qualified selectors must not reach the legacy body-only reaper. Poster awaits
 preparation for each attempt; explicit retry preserves the signed source message
 but rebuilds outer forwarding material. No generic output executor is needed.
+Poster constructor dependencies are explicit; its provider store is `mbx`, with
+null representing absence. `ensureOpen` guards admission/waiting and production
+preflights; already-built message admission needs no redundant producer guard.
 Poster is the single execution owner for admitted messages and cue output. Its
 independent deliverDo worker is composed beside query delivery; ingress publishes
 without running Poster. send accepts src/dest/topic/msg and copies the source
