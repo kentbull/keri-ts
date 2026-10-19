@@ -13,6 +13,7 @@ import {
 import { buildCesrRequest } from "../../../src/app/cesr-http.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
+import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { socketBytes } from "../../../src/app/socket-source.ts";
 import { Receiptor } from "../../../src/app/witnessing.ts";
@@ -543,7 +544,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
 
       try {
         yield* sleepOp(50);
-        const receiptor = new Receiptor(sourceHby);
+        const receiptor = new Receiptor(sourceHby, createProtocolProcessor(sourceHby), defaultRuntimeServices);
         yield* receiptor.catchup(controller.pre, witness.pre);
         yield* sleepOp(50);
         assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);

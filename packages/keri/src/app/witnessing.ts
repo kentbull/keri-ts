@@ -19,6 +19,7 @@ import { action, call, ensure, type Operation, resource, spawn } from "npm:effec
 import type { AgentCue } from "../core/cues.ts";
 import { type Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
+import type { Kevery } from "../core/eventing.ts";
 import { receipt as receiptEvent, reply as replyEvent } from "../core/protocol-eventing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser } from "../db/basing.ts";
@@ -26,13 +27,13 @@ import { dgKey } from "../db/core/keys.ts";
 import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { chunkBytes, collectBytes, streamBytes } from "./byte-source.ts";
-import { postCesr } from "./cesr-egress.ts";
 import { buildCesrRequest, CESR_CONTENT_TYPE, inspectCesrRequest, KERIPY_CESR_JSON_CONTENT_TYPE } from "./cesr-http.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
+import { HTTPMessenger } from "./http-messenger.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
+import { processMessages } from "./message-source.ts";
 import { envelopeFromFrame } from "./parsering.ts";
-import { createProtocolProcessor, type ProtocolProcessor } from "./protocol-processing.ts";
-import { Reactor } from "./reactor.ts";
+import { type ProtocolProcessor } from "./protocol-processing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { TCPMessenger } from "./tcp-messenger.ts";
 
@@ -620,12 +621,13 @@ export function* sendWitnessMessage(
     return;
   }
 
-  yield* postCesr(url, (signal) => chunkBytes(bytes, { signal }), {
+  const io = services ?? defaultRuntimeServices;
+  const outcome = yield* new HTTPMessenger(protocol ?? null, io.http, io.clock).send(url, bytes, {
     bodyMode: "header",
     destination: witness,
     headers: auth ? { Authorization: auth } : undefined,
-    services: services ?? defaultRuntimeServices,
   });
+  if (outcome.kind === "refuse") throw outcome.error;
 }
 
 function isKeripyContentTypeRejection(
@@ -799,18 +801,19 @@ function* getWitnessReceiptEndpoint(
 export class Receiptor {
   /** Borrowed accepted state and local signer collection. */
   readonly hby: Habery;
-  /** Request-owned byte intake over the shared protocol processing domain. */
-  readonly reactor: Reactor;
-  /** Borrowed HTTP and clock dependencies used by actual receipt operations. */
+  /** Shared receipt verification, cue publication and escrow processing. */
+  readonly protocol: ProtocolProcessor;
+  /** Input-owned Kevery (kvy) for request-owned receipt GET/POST evidence. */
+  private readonly kvy: Kevery;
+  /** Borrowed HTTP and clock services used by actual receipt operations. */
   readonly services: RuntimeServices;
-  /** Borrow the protocol processor or create one over the caller's existing Habery; no stores or workers are opened. */
-  constructor(hby: Habery, { reactor, services = defaultRuntimeServices }: {
-    reactor?: Reactor;
-    services?: RuntimeServices;
-  } = {}) {
-    if (reactor && reactor.kvy.db !== hby.db) throw new RangeError("Receiptor input must use the same database");
+
+  /** Bind configured intake over the same Habery; acquire no stores or background workers. */
+  constructor(hby: Habery, protocol: ProtocolProcessor, services: RuntimeServices) {
+    if (protocol.kvy.db !== hby.db) throw new RangeError("Receiptor protocol must use the same database");
     this.hby = hby;
-    this.reactor = reactor ?? new Reactor(createProtocolProcessor(hby));
+    this.protocol = protocol;
+    this.kvy = protocol.makeKevery();
     this.services = services;
   }
   /** Submit the latest or specified event to all witnesses and gather receipts. */
@@ -863,12 +866,12 @@ export class Receiptor {
     for (const witness of witnesses) {
       if (kever.delegated) {
         for (const dmsg of this.hby.db.cloneDelegation(kever)) {
-          yield* sendWitnessMessage(hab, witness, dmsg, undefined, this.services, this.reactor.protocol);
+          yield* sendWitnessMessage(hab, witness, dmsg, undefined, this.services, this.protocol);
         }
       }
 
       if (allowTcp && !witnessHttpUrl(hab, witness) && witnessTcpUrl(hab, witness)) {
-        yield* sendWitnessMessage(hab, witness, message, undefined, this.services, this.reactor.protocol);
+        yield* sendWitnessMessage(hab, witness, message, undefined, this.services, this.protocol);
         statuses[witness] = 200;
       } else {
         // A single receipt attempt owns its response until parsing and collection finish.
@@ -896,8 +899,10 @@ export class Receiptor {
             `Witness ${witness} failed to receipt ${pre}:${eventSn.toString(16)}: ${detail}`,
           );
         }
-        yield* this.reactor.processBytes(response.body, { local: false });
-        yield* this.reactor.protocol.processEscrowsOnce();
+        yield* processMessages((signal) => chunkBytes(response.body, { signal }), this.protocol, this.kvy, {
+          local: false,
+        });
+        yield* this.protocol.processEscrowsOnce();
       }
       // HTTP status and socket drain are transport facts; only accepted witness proof counts.
       const index = witnesses.indexOf(witness);
@@ -934,7 +939,7 @@ export class Receiptor {
           { wigers: otherWigers },
         ),
       );
-      yield* sendWitnessMessage(hab, witness, concatBytes(...parts), undefined, this.services, this.reactor.protocol);
+      yield* sendWitnessMessage(hab, witness, concatBytes(...parts), undefined, this.services, this.protocol);
     }
 
     return { witnesses, statuses };
@@ -966,8 +971,10 @@ export class Receiptor {
       return false;
     }
 
-    yield* this.reactor.processBytes(response.body, { local: false });
-    yield* this.reactor.protocol.processEscrowsOnce();
+    yield* processMessages((signal) => chunkBytes(response.body, { signal }), this.protocol, this.kvy, {
+      local: false,
+    });
+    yield* this.protocol.processEscrowsOnce();
     const expectedSaid = this.hby.db.kels.getLast(pre, eventSn);
     const accepted = expectedSaid ? this.hby.db.getEvtSerder(pre, expectedSaid) : null;
     const index = accepted ? this.hby.db.acceptedEventWitnesses(accepted)?.indexOf(witness) : -1;
@@ -984,11 +991,11 @@ export class Receiptor {
     const kever = hab.kever;
     if (kever?.delegated) {
       for (const msg of this.hby.db.cloneDelegation(kever)) {
-        yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.reactor.protocol);
+        yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.protocol);
       }
     }
     for (const msg of this.hby.db.clonePreIter(pre)) {
-      yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.reactor.protocol);
+      yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.protocol);
     }
   }
 }
@@ -999,21 +1006,20 @@ export class Receiptor {
  * and requires the requested witness signature to be persisted before fanout.
  */
 export class WitnessReceiptor {
+  /** Actual receipt-intake/fanout owner over the same shared protocol domain. */
   readonly receiptor: Receiptor;
+  /** Borrowed identities and accepted witness cohorts. */
   readonly hby: Habery;
+  /** Existing explicit request to publish even when cached receipt completion is available. */
   readonly force: boolean;
 
-  constructor(
-    hby: Habery,
-    { force = false, reactor, services }: {
-      force?: boolean;
-      reactor?: Reactor;
-      services?: RuntimeServices;
-    } = {},
-  ) {
+  /** Bind actual protocol/I/O dependencies; only the scalar force choice is optional. */
+  constructor(hby: Habery, protocol: ProtocolProcessor, services: RuntimeServices, { force = false }: {
+    force?: boolean;
+  } = {}) {
     this.hby = hby;
     this.force = force;
-    this.receiptor = new Receiptor(hby, { reactor, services });
+    this.receiptor = new Receiptor(hby, protocol, services);
   }
   /** Ensure the current event reaches full witness receipt convergence. */
   *submit(pre: string, { sn, auths = {} }: {

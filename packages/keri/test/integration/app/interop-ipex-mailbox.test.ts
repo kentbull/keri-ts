@@ -129,7 +129,7 @@ for (const count of [1, 2]) {
                   { hab: runtime === holderRuntime ? members[0] : hab, timeoutMs: 20_000, pollMailbox: false },
                 );
                 for (const url of oobis) assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved", url);
-                yield* new WitnessReceiptor(runtime.hby, { reactor: runtime.reactor, services: runtime.services })
+                yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.services)
                   .submit(hab.pre);
               }
               const registry = issuerRuntime.acdc!.makeRegistry("issuance", issuer.pre);

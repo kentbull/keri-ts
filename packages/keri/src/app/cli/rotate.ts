@@ -1,3 +1,5 @@
+import { createProtocolProcessor } from "../protocol-processing.ts";
+import { defaultRuntimeServices } from "../runtime-services.ts";
 /**
  * `tufa rotate` command implementation.
  *
@@ -196,13 +198,13 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
           },
         );
         if (rotateArgs.endpoint) {
-          const receiptor = new Receiptor(hby);
+          const receiptor = new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
           yield* receiptor.receipt(hab.pre, {
             sn: hab.kever.sn,
             auths,
           });
         } else {
-          const witDoer = new WitnessReceiptor(hby);
+          const witDoer = new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
           yield* witDoer.submit(hab.pre, {
             sn: hab.kever.sn,
             auths,

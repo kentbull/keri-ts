@@ -10,6 +10,8 @@ import type { Operation } from "effection";
 import {
   type Configer,
   createConfiger,
+  createProtocolProcessor,
+  defaultRuntimeServices,
   Receiptor,
   ValidationError,
   WitnessReceiptor,
@@ -143,10 +145,10 @@ export function* witnessSubmitCommand(
         },
       );
       if (commandArgs.endpoint) {
-        const receiptor = new Receiptor(hby);
+        const receiptor = new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
         yield* receiptor.receipt(hab.pre, { sn: hab.kever?.sn, auths });
       } else {
-        const witDoer = new WitnessReceiptor(hby, {
+        const witDoer = new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices, {
           force: commandArgs.force ?? false,
         });
         yield* witDoer.submit(hab.pre, {

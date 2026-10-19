@@ -30,6 +30,7 @@ export {
 } from "../app/byte-source.ts";
 export {
   CesrHttpRefusal,
+  type CesrPostResult,
   type EgressOptions,
   postCesr,
   requestFrame,
@@ -78,7 +79,6 @@ export {
 } from "../app/protocol-processing.ts";
 export type { QueryReply } from "../app/query-replies.ts";
 export {
-  type IngressOptions,
   Reactor,
 } from "../app/reactor.ts";
 export {
@@ -186,7 +186,6 @@ export {
   type MailboxPollingTimeoutPolicy,
   type MailboxPollTransport,
   type MailboxPollTransportRequest,
-  postCesrMessage,
   Poster,
   type PosterEvent,
   type PosterOutcome,
@@ -604,3 +603,6 @@ export {
 export {
   makeNowIso8601,
 } from "../time/mod.ts";
+
+export { HTTPMessenger, type HTTPMessengerOptions } from "../app/http-messenger.ts";
+export type { IngressOptions } from "../app/message-source.ts";

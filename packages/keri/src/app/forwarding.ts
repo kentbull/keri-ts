@@ -36,11 +36,10 @@ import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import { abortable } from "./abortable.ts";
-import { chunkBytes } from "./byte-source.ts";
-import { attemptPostCesr, postCesr } from "./cesr-egress.ts";
 import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { HTTPMessenger } from "./http-messenger.ts";
 import { closeResponseBody, fetchResponseHandleOrNull } from "./httping.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
@@ -160,6 +159,7 @@ export class Poster {
 
   /** Bind actual collaborators; Poster owns queue/I/O lifetimes and borrows their stores. */
   constructor(hby: Habery, mbx: Mailboxer | null, protocol: ProtocolProcessor | null, services: RuntimeServices) {
+    if (protocol && protocol.kvy.db !== hby.db) throw new RangeError("Poster protocol must use the same database");
     this.hby = hby;
     this.mbx = mbx;
     this.organizer = new Organizer(hby.db, hby.signator);
@@ -367,12 +367,15 @@ export class Poster {
         const target = yield* this.prepareBytesTarget(hab, route, endpoint, evt.msg);
         try {
           if (target.kind === "http") {
-            const outcome = yield* attemptPostCesr(target.url, (signal) => chunkBytes(target.message, { signal }), {
-              bodyMode: target.bodyMode,
-              destination: target.destination,
-              services: this.services,
-              signal,
-            });
+            const outcome = yield* new HTTPMessenger(this.protocol, this.services.http, this.services.clock).send(
+              target.url,
+              target.message,
+              {
+                bodyMode: target.bodyMode,
+                destination: target.destination,
+                signal,
+              },
+            );
             if (outcome.kind === "refuse") {
               failed.push(outcome.error);
               continue;
@@ -1261,21 +1264,4 @@ function positiveTimeoutMs(
   fallback: number,
 ): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
-}
-
-/** Post finite mailbox/EXN caller bytes through the shared progressive, scope-owned sender. */
-export function* postCesrMessage(
-  url: string,
-  body: Uint8Array,
-  bodyMode: "header" | "body",
-  destination?: string,
-  services: RuntimeServices = defaultRuntimeServices,
-  signal?: AbortSignal,
-): Operation<void> {
-  yield* postCesr(url, (signal) => chunkBytes(body, { signal }), {
-    bodyMode,
-    destination,
-    services,
-    signal,
-  });
 }

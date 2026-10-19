@@ -174,7 +174,7 @@ async function typescriptPackets(count: number, witnesses: WitnessOobi[] = []): 
           assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved");
           assertExists(hbys[0].db.getKever(pre));
         }
-        yield* new WitnessReceiptor(hbys[0], { reactor: runtime.reactor, services: runtime.services }).submit(
+        yield* new WitnessReceiptor(hbys[0], runtime.protocol, runtime.services).submit(
           sender.pre,
         );
         assertEquals(sender.db.wigs.get([sender.pre, sender.kever!.serder.said!]).map((sig) => sig.index).sort(), [

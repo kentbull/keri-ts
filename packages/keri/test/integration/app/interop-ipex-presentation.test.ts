@@ -147,9 +147,10 @@ for (const count of [1, 2]) {
                 ...(mailboxUrl ? [[receiverRuntime, receiver] as const] : []),
               ] as const
             ) {
-              yield* new WitnessReceiptor(runtime.hby, { reactor: runtime.reactor, services: runtime.services }).submit(
-                hab.pre,
-              );
+              yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.services)
+                .submit(
+                  hab.pre,
+                );
             }
             const issuerRegistry = issuerRuntime.acdc!.makeRegistry("issuance", issuer.pre, { stamp: earlier });
             const presentation = holderRuntime.acdc!.makeRegistry("presentation", holder.pre, { stamp: earlier });

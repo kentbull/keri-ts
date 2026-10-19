@@ -203,3 +203,13 @@ reference material and historical reports.
     `packages/keri/src/app/cli/multisig.ts`
 - CLI/server orchestration:
   - `packages/tufa/**`
+
+## Shared protocol and messenger ownership
+
+Reactor owns queued/source ingress. ProtocolProcessor owns serialized protocol
+processing, shared semantic handlers, reply capture and escrow publication.
+TCPMessenger and HTTPMessenger own actual delivery attempts and input-specific
+Kevery/parser lifetimes. Poster retains one FIFO queue and explicit retained
+failures. QueryCoordinator retains separate continuations and signed request work.
+See the [runtime contract](design-docs/runtime/INGRESS_AND_EGRESS.md) and
+[implementation sequence](plans/runtime/messenger-protocol-refactor.md).

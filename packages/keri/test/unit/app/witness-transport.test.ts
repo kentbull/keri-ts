@@ -8,6 +8,7 @@ import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame } from "../../../src/app/parsering.ts";
+import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { socketBytes } from "../../../src/app/socket-source.ts";
 import {
@@ -156,13 +157,10 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url });
         const runtime = yield* createAgentRuntime(hby);
-        const submitter = new WitnessReceiptor(hby, { reactor: runtime.reactor, services: runtime.services });
+        const submitter = new WitnessReceiptor(hby, runtime.protocol, runtime.services);
         yield* call(() =>
           assertRejects(
-            () =>
-              run(() =>
-                new Receiptor(hby, { reactor: runtime.reactor, services: runtime.services }).receipt(controller.pre)
-              ),
+            () => run(() => new Receiptor(hby, runtime.protocol, runtime.services).receipt(controller.pre)),
             Error,
             "HTTP(S) receipt endpoint",
           )
@@ -197,7 +195,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         const next = acceptedEventReplayMessage(hby, controller.pre, 1).serder;
         reply = witness.receipt(next);
         hby.db.wigs.rem([controller.pre, next.said!]);
-        yield* new WitnessReceiptor(hby).submit(controller.pre);
+        yield* new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices).submit(controller.pre);
         assertEquals(hby.db.wigs.get([controller.pre, next.said!]).length, 1);
 
         assertEquals(controller.kever?.sn, 1, "standalone processing retains the caller's Habery");
@@ -231,7 +229,8 @@ Deno.test("HTTP receipt success requires the requested event's verified witness 
         controller.interact();
         const current = acceptedEventReplayMessage(source, controller.pre, 1).serder;
         const key = [controller.pre, current.said!] as const;
-        const submitter = new WitnessReceiptor(source), getter = new Receiptor(source);
+        const submitter = new WitnessReceiptor(source, createProtocolProcessor(source), defaultRuntimeServices),
+          getter = new Receiptor(source, createProtocolProcessor(source), defaultRuntimeServices);
         const forged = new Cigar({ qb64: outsider.sign(current.raw, false)[0]!.qb64 }, witness.kever!.verfers[0]);
         for (
           const invalid of [
@@ -307,7 +306,7 @@ Deno.test("HTTP three-witness fanout contains only verified complementary witnes
             pipelined: true,
           }));
         }
-        yield* new Receiptor(source).receipt(controller.pre);
+        yield* new Receiptor(source, createProtocolProcessor(source), defaultRuntimeServices).receipt(controller.pre);
         assertEquals(source.db.wigs.get([controller.pre, serder.said!]).map((siger) => siger.index).sort(), [0, 1, 2]);
         assertEquals(fanout.map(({ witness }) => witness), [0, 1, 2]);
         for (const { witness, bytes } of fanout) {
@@ -351,10 +350,16 @@ Deno.test("HTTP receipt selection and cached completion use the requested event'
           source.db.locs.pin([witness.pre, "http"], { url: `http://127.0.0.1:${server.addr.port}/${index}` });
           replies.push(witness.receipt(old));
         }
-        const receiptor = new Receiptor(source);
+        const receiptor = new Receiptor(source, createProtocolProcessor(source), defaultRuntimeServices);
         assertEquals(yield* receiptor.get(controller.pre, { sn: 0 }), true);
         const expected = { witnesses: [before.pre], statuses: { [before.pre]: 200 } };
-        assertEquals(yield* new WitnessReceiptor(source).submit(controller.pre, { sn: 0 }), expected);
+        assertEquals(
+          yield* new WitnessReceiptor(source, createProtocolProcessor(source), defaultRuntimeServices).submit(
+            controller.pre,
+            { sn: 0 },
+          ),
+          expected,
+        );
         assertEquals(
           requests,
           ["/0/receipts"],
@@ -390,8 +395,19 @@ Deno.test("a zero-witness historical rotation and interaction never contact late
       controller.rotate({ adds: [after.pre], toad: 1 });
       for (const event of [rotation, interaction]) {
         const expected = { witnesses: [], statuses: {} };
-        assertEquals(yield* new WitnessReceiptor(hby).submit(controller.pre, { sn: event.sn! }), expected);
-        assertEquals(yield* new Receiptor(hby).receipt(controller.pre, { sn: event.sn! }), expected);
+        assertEquals(
+          yield* new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices).submit(
+            controller.pre,
+            { sn: event.sn! },
+          ),
+          expected,
+        );
+        assertEquals(
+          yield* new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices).receipt(controller.pre, {
+            sn: event.sn!,
+          }),
+          expected,
+        );
         assertThrows(() => after.witness(event), Error, "not an authorized witness");
       }
     } finally {
@@ -457,7 +473,7 @@ Deno.test("halting a receipt read closes the peer body without continuing its ca
     const hby = yield* createHabery({ name: `receipt-cancel-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const { controller } = fixture(hby, `http://127.0.0.1:${server.addr.port}`);
-      yield* new Receiptor(hby).get(controller.pre);
+      yield* new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices).get(controller.pre);
       continued = true;
     } finally {
       yield* hby.close(true);

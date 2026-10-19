@@ -5,14 +5,12 @@ import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Roles } from "../core/roles.ts";
 import { Schemes } from "../core/schemes.ts";
-import { chunkBytes, streamBytes } from "./byte-source.ts";
-import { postCesr } from "./cesr-egress.ts";
 import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import { consumeMailboxSse } from "./mailbox-sse.ts";
+import { HTTPMessenger } from "./http-messenger.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
-import type { Reactor } from "./reactor.ts";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
+import { type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { TCPMessenger } from "./tcp-messenger.ts";
 
@@ -28,7 +26,7 @@ import { TCPMessenger } from "./tcp-messenger.ts";
  * `keri-ts` keeps the same behavioral split but makes the ownership seam more
  * explicit:
  * - `QueryCoordinator` owns correspondence, signed query packets and joined
- *   response I/O using concrete Reactor and clock/HTTP dependencies
+ *   response I/O using concrete protocol and clock/HTTP dependencies
  * - `Hab.processCuesIter()` remains the cue-to-wire interpreter for already
  *   complete cues
  *
@@ -425,32 +423,38 @@ interface QueryDelivery {
  * - host KERIpy-style query continuations such as `KeyStateNoticer`
  */
 export class QueryCoordinator {
+  /** Borrowed local signers and accepted-state stores. */
   readonly hby: Habery;
-  private readonly reactor: Reactor;
+  /** Shared protocol owner used by each concrete messenger response parser. */
+  private readonly protocol: ProtocolProcessor;
+  /** Borrowed HTTP and clock dependencies selected at composition. */
   private readonly services: RuntimeServices;
+  /** Signed query packets; the delivery operation removes only completed sends. */
   private readonly deliveries = new Deck<QueryDelivery>();
+  /** Prevents concurrent delivery passes over retained packets. */
   private delivering = false;
+  /** Aborts the active send when this coordinator closes. */
   private output?: AbortController;
+  /** Joins active request/parser cleanup before owned queues are cleared. */
   private outputJoined?: Promise<void>;
+  /** Unsigned query instructions awaiting an available signer/endpoint. */
   private readonly requests = new Deck<QueryRequest>();
   /** Inspect deferred work without exposing queue mutation outside its owner. */
   get pending(): Pick<Deck<QueryRequest>, "length" | "empty" | "peekHead"> {
     return this.requests;
   }
+  /** Terminal admission state; closing stops production and delivery. */
   private closed = false;
+  /** Explicit default signer; null requires a unique local habitat. */
   private hab: Hab | null;
+  /** Domain query workflows observing accepted state until their own completion. */
   private continuations: QueryContinuation[] = [];
 
-  constructor(
-    hby: Habery,
-    { reactor, services = defaultRuntimeServices, hab = null }: {
-      reactor: Reactor;
-      services?: RuntimeServices;
-      hab?: Hab | null;
-    },
-  ) {
+  /** Bind actual protocol and I/O collaborators; acquire no store or network lifetime. */
+  constructor(hby: Habery, protocol: ProtocolProcessor, services: RuntimeServices, hab: Hab | null = null) {
+    if (protocol.kvy.db !== hby.db) throw new RangeError("Query protocol must use the same database");
     this.hby = hby;
-    this.reactor = reactor;
+    this.protocol = protocol;
     this.services = services;
     this.hab = hab;
   }
@@ -565,38 +569,21 @@ export class QueryCoordinator {
     delivery: QueryDelivery,
     controller: AbortController,
   ): Operation<void> {
-    const reactor = this.reactor, services = this.services;
+    // Retained packet ownership stays here; the selected messenger owns only this attempt.
+    const services = this.services;
     if (new URL(delivery.url).protocol === "tcp:") {
-      yield* new TCPMessenger(reactor.protocol, services.clock).send(delivery.url, delivery.body, {
+      yield* new TCPMessenger(this.protocol, services.clock).send(delivery.url, delivery.body, {
         signal: controller.signal,
         replies: true,
         local: true,
       });
       return;
     }
-    yield* postCesr(
-      delivery.url,
-      (signal) => chunkBytes(delivery.body, { signal }),
-      {
-        bodyMode: delivery.bodyMode,
-        destination: delivery.destination,
-        services,
-        signal: controller.signal,
-      },
-      function*(response) {
-        if (response.headers.get("Content-Type")?.toLowerCase().startsWith("text/event-stream")) {
-          yield* consumeMailboxSse(response, new AbortController(), function*(message) {
-            yield* reactor.process((signal) => chunkBytes(message.msg, { signal }), {
-              signal: controller.signal,
-            });
-          }, { idleTimeoutMs: 500, maxDurationMs: 5_000, services, signal: controller.signal });
-        } else {
-          yield* reactor.process((signal) => streamBytes(response.body, { signal }), {
-            signal: controller.signal,
-          });
-        }
-      },
-    );
+    yield* new HTTPMessenger(this.protocol, services.http, services.clock).query(delivery.url, delivery.body, {
+      bodyMode: delivery.bodyMode,
+      destination: delivery.destination,
+      signal: controller.signal,
+    });
   }
 
   /** Sign and queue one initial pass; unresolved requests rotate and appended work waits for the next turn. */
@@ -642,6 +629,7 @@ export class QueryCoordinator {
    * - runtime-configured habitat
    * - sole local habitat
    */
+  /** Resolve an explicit/default signer without guessing among multiple local identities. */
   private configuredHab(signer?: string): Hab | null {
     return signer === undefined ? this.hab ?? soleHab(this.hby) : this.hby.habs.get(signer) ?? null;
   }
@@ -652,16 +640,19 @@ export class QueryCoordinator {
     this.compactContinuations();
   }
 
+  /** Advance domain predicates before producing another query pass. */
   private tickContinuations(): void {
     for (const continuation of this.continuations) continuation.tick(this);
     this.compactContinuations();
   }
 
+  /** Release completed workflows after their final accepted-state observation. */
   private compactContinuations(): void {
     this.continuations = this.continuations.filter((continuation) => !continuation.done);
   }
 
   /** Capture the selected signer's query, introduction and endpoint before retiring its source request. */
+  /** Sign and publish one complete query packet; unresolved signer/routing leaves the request retained. */
   private prepareRequest(request: QueryRequest): boolean {
     const hab = this.configuredHab(request.signer);
     if (!hab) return false;
