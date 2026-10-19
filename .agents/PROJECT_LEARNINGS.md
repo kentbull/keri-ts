@@ -45,7 +45,7 @@ HTTP media fallback never translates a signed body or establishes peer genus sup
 
 The [maintainer documentation ledger](../docs/plans/runtime/runtime-maintainer-documentation-coverage.md)
 records reviewed source contracts and cross-component evidence. Its linked plan keeps
-local mailbox cursor and sub-millisecond timeout findings separate from this prose-only pass.
+the cursor fix (#554) and remaining sub-millisecond timeout finding separate from the original prose-only pass.
 
 ## Read by subject
 

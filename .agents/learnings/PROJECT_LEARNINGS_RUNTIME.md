@@ -211,9 +211,10 @@ HTTP(S); TCP-only explicit mailbox roles retain precedence while awaiting HTTP.
 Without explicit mailbox routing, poll all eligible witnesses concurrently.
 Remote SSE consumer completion precedes durable cursor advancement and the next
 read. Stored positions are last-consumed; requests send next-wanted. Local polling
-currently advances its in-memory next-wanted positions while collecting, before the
-consumer runs; a failed consumer can skip that batch until a new poller starts.
-See the [review findings](../../docs/plans/runtime/runtime-maintainer-documentation.md#review-findings-retained-outside-this-documentation-change).
+collects proposed next-wanted positions without mutation and publishes the whole
+prefix/topic batch only after its consumer succeeds. Failure/cancellation preserves
+that batch for a restarted worker on the same poller; partial processing may repeat.
+Earlier successful batches stay advanced; a new poller starts at zero.
 EOF/timeout/cancel discards unfinished SSE events. Provider reads on demand, closes each LMDB
 iterator before suspension and frames a row in 64 KiB chunks without a message cap.
 Director close wakes polls/rejects new streams before stores close.

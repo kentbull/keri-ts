@@ -403,11 +403,12 @@ SSE read deadlines. One empty long poll cannot serialize another endpoint's work
 For remote SSE polling, each complete event's consumer finishes before another read
 or durable cursor advancement. Stored remote positions are the last consumed ordinal;
 the next query starts at that ordinal plus one. EOF/timeout/cancellation discard an
-unterminated event. Local provider polling instead tracks the next-wanted ordinal
-in memory and currently advances it while collecting, before the batch consumer
-runs. Consumer failure can skip that local batch for the same poller instance;
-a new poller starts at zero. The [documentation review findings](../../plans/runtime/runtime-maintainer-documentation.md#review-findings-retained-outside-this-documentation-change)
-record this behavior for a separate correction. There is no finite polling
+unterminated event. Local provider polling tracks next-wanted ordinals in memory.
+It collects a whole prefix/topic batch with proposed cursors, awaits its consumer,
+then publishes those cursors synchronously. Collection failure, consumer failure
+or cancellation leaves that batch uncommitted; restarting the same poller may
+repeat messages processed before failure. Earlier successful batches stay advanced.
+A new poller starts at zero. There is no automatic worker restart, finite polling
 turn, command-local resume index or durable consumer inbox/acknowledgement.
 
 Provider SSE reads only on demand and closes each LMDB iterator before suspension.

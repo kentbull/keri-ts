@@ -332,7 +332,7 @@ Evidence: mailbox-director-lifecycle, mailbox-poller-runtime, runtime-store-owne
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.registerTopic`                               | Reviewed; expanded |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.pollDo`                                      | Reviewed; expanded |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.readLocalMailbox`                            | Reviewed; expanded |
-| `packages/keri/src/app/forwarding.ts` — `MailboxPoller.localCursor`                                 | Reviewed; expanded |
+| `packages/keri/src/app/forwarding.ts` — `MailboxPoller.localCursor`                                 | Retired by #554    |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.pollRemoteEndpointOnce`                      | Reviewed; expanded |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.syncRemoteWorkers`                           | Reviewed; expanded |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.remoteEndpointWorker`                        | Reviewed; expanded |
@@ -517,6 +517,6 @@ Tests below were read as evidence, not rerun for this documentation-only pass.
 | Finite command to store closure             | CLI/workflow → runAgentRuntimeUntil or Poster worker/wait → joined halt → runtime/store close                         | [runtime-store-ownership](../../../packages/keri/test/unit/app/runtime-store-ownership.test.ts), [CLI context](../../../packages/keri/test/unit/app/cli-context.test.ts), [Tufa CLI](../../../packages/tufa/test/cli.test.ts), [verifier-agent](../../../packages/keri/test/unit/app/verifier-agent.test.ts) |
 
 No unresolved source/documentation contradiction remains in these reviewed paths.
-The local cursor and fractional timeout behavior findings remain explicitly
-recorded in the [plan](runtime-maintainer-documentation.md); they are not fixes
-or new reliability guarantees.
+The [plan](runtime-maintainer-documentation.md) tracks the separate cursor fix in
+#554 and the remaining fractional-timeout finding. The original documentation pass
+changed neither behavior.
