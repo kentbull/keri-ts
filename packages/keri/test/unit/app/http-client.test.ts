@@ -176,6 +176,21 @@ Deno.test("HTTP upload faults survive platform wrapping and cleanup remains visi
       ),
       fault,
     );
+    const both = await assertRejects(() =>
+      run(() =>
+        new FetchHttpClient().request("https://peer.test/", {
+          method: "POST",
+          body: () => ({
+            [Symbol.asyncIterator]() {
+              return {
+                next: () => Promise.reject(fault),
+                return: () => Promise.reject(cleanup),
+              };
+            },
+          }),
+        })
+      ), AggregateError);
+    assertEquals(both.errors, [fault, cleanup]);
     globalThis.fetch = async (input) => {
       const reader = (input as Request).body!.getReader();
       await reader.read();
@@ -236,6 +251,41 @@ Deno.test("HTTP scope preserves unread-body cleanup failure and late foreign fet
     await started.promise;
     const failure = await assertRejects(() => task.halt(), TransportError);
     assertStrictEquals(failure.cause, foreign);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+Deno.test("HTTP platform upload cancellation wakes its source without canceling a successful response", async () => {
+  const original = globalThis.fetch;
+  let sourceJoined = false;
+  globalThis.fetch = async (input) => {
+    const reader = (input as Request).body!.getReader();
+    const pending = reader.read();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await reader.cancel();
+    await pending;
+    reader.releaseLock();
+    return new Response("accepted");
+  };
+  try {
+    const result = await run(function*() {
+      const response = yield* new FetchHttpClient().request("https://peer.test/", {
+        method: "POST",
+        body: async function*(signal) {
+          try {
+            await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+            signal.throwIfAborted();
+            yield new Uint8Array([1]);
+          } finally {
+            sourceJoined = true;
+          }
+        },
+      });
+      return yield* call(() => collectBytes(response.body()));
+    });
+    assertEquals(new TextDecoder().decode(result), "accepted");
+    assertEquals(sourceJoined, true);
   } finally {
     globalThis.fetch = original;
   }
