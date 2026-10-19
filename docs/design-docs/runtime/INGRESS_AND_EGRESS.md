@@ -450,3 +450,13 @@ QueryCoordinator, Receiptor and WitnessReceiptor receive their ProtocolProcessor
 and I/O services as structural constructor dependencies. Optional force/signatory
 choices retain their domain meaning; they do not conceal component dependencies.
 Standalone command entrypoints choose the minimal protocol composition explicitly.
+
+## Verifier workflow time
+
+VerifierAgent receives a required epoch-millisecond now function alongside its
+HttpClient. Local issuance and both revocation admission paths persist Daters from
+that same source used for webhook headers and expiry. Keep accepted credential/TEL
+timestamps in payloads. A ready attempt still sends before applying post-refusal
+expiry, and elapsed time equal to the configured window remains eligible. Persisted
+records keep wall time across reopen; expiration does not add a terminal tombstone
+or change the existing rescan policy.

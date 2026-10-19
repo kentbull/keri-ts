@@ -119,7 +119,10 @@ Verifier work comes from accepted grants, saved credentials and TEL state, not
 Notifier visibility. Webhook retries/acks live in a separate sidecar, not Reger.
 Bounded runs rescan persisted revocation state; issuance ack cannot suppress a
 revocation, and rack prevents repeated revocation delivery. Verifier run sends;
-hook demo is only a sample receiver.
+hook demo is only a sample receiver. VerifierAgent takes a required epoch-millisecond
+now function: local issuance/revocation Daters, webhook headers and expiry all use
+it. Credential/TEL timestamps remain source evidence. Expiry is strictly greater
+than the configured window and ready sending still precedes post-refusal expiry.
 
 ## Interoperability traps
 
