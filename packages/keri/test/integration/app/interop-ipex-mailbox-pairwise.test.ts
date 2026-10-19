@@ -258,7 +258,7 @@ for (const tsDiscloser of [true, false]) {
                             assertEquals(Boolean(memberRuntime.hby.db.exns.get(body.said!)), !invalid);
                           }
                           const delivery = yield* call(function*() {
-                            const postman = runtime.poster;
+                            const postman = runtime.postman;
                             yield* spawn(() => postman.deliverDo());
                             const evt = postman.send({
                               src: members[0].pre,

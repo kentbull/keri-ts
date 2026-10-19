@@ -92,7 +92,7 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
   yield* withVcRuntime(vcArgs, function*({ hby, runtime, rgy }) {
     const hab = requireHab(hby, vcArgs.alias);
     const result = yield* call(function*() {
-      const postman = runtime.poster;
+      const postman = runtime.postman;
       const worker = yield* spawn(() => postman.deliverDo());
       try {
         return yield* inceptCredentialRegistry(rgy, postman, hab, {
@@ -149,7 +149,7 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
     requireNonEmpty(schema, "Schema");
     const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : undefined;
     const result = yield* call(function*() {
-      const postman = runtime.poster;
+      const postman = runtime.postman;
       const worker = yield* spawn(() => postman.deliverDo());
       try {
         return yield* createCredential(rgy, postman, {
@@ -239,7 +239,7 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
     const sendRecipients = revocationRecipients(creder, vcArgs.send ?? [], !!vcArgs.alias);
     const senderHab = sendRecipients.length > 0 ? requireHab(hby, vcArgs.alias) : undefined;
     const result = yield* call(function*() {
-      const postman = runtime.poster;
+      const postman = runtime.postman;
       const worker = yield* spawn(() => postman.deliverDo());
       try {
         return yield* revokeCredential(rgy, postman, {

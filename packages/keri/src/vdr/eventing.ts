@@ -1062,7 +1062,7 @@ export class Tevery {
       querySaid: serder.said ?? undefined,
       src: query.src,
       dest,
-      messages,
+      msgs: messages,
     });
   }
 

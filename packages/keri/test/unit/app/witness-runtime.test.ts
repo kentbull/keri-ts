@@ -604,7 +604,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         runtime.cues.push({
           kin: "replay",
           querySaid: "another-query",
-          messages: [acceptedEventReplayMessage(providerHby, witness.pre, 0).message],
+          msgs: [acceptedEventReplayMessage(providerHby, witness.pre, 0).message],
         });
         active.write(message);
         for (let attempt = 0; attempt < 200 && providerHby.db.getKever(controller.pre)?.sn !== 1; attempt++) {

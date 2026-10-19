@@ -211,13 +211,14 @@ and Respondant prepares output directly, without borrowing a Reactor callback ga
 CLI and hosts run the same component workers; final composed qualification remains
 separate from these ownership contracts.
 
-Respondant owns reply interpretation and publication; Poster owns the queued
-execution and cleanup. There is no forHab/emission-sink facade. The first
-[cue delivery phase](../../plans/runtime/cue-delivery-refactor.md) retains lazy
-reply cursors, finite-pass ordering and exact prepared retries inside Poster;
-the plan tracks qualification. HTTP reply and outbound consumers remain independent.
-Queue consolidation and the later explicit whole-event failure policy are
-separate changes. QueryCoordinator is outside that ownership migration.
+Respondant owns eager reply construction and atomic publication; Poster owns
+queued FIFO execution and cleanup. HTTP reply and outbound consumers remain
+independent. Complete local replay sequences are materialized in the production
+pass; no reply cursor survives delivery passes. Failed events retain source bytes
+and partial success for explicit retry/discard, without automatic retry.
+QueryCoordinator remains separate and keeps its existing continuation/response
+ownership. The [cue delivery plan](../../plans/runtime/cue-delivery-refactor.md)
+tracks transport qualification.
 QueryCoordinator prepares its signed packets directly without public custom-emission
 or raw-packet injection. Internal address selection stays private.
 After the signer-identifier refactor, pending queries use one private ordinary

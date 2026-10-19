@@ -102,7 +102,7 @@ export function* approveMultisigIpex(
     deliveries.push(
       ...(yield* sendCompletedGroupIpex(
         hby,
-        runtime.poster,
+        runtime.postman,
         reger,
         groupHab,
         embedded,
@@ -187,7 +187,7 @@ export function* publishGroupIpexProposal(
       payload,
       embeds: { exn: embedded },
     });
-    const postman = runtime.poster;
+    const postman = runtime.postman;
     const evt = postman.send({ src: member.pre, dest: recipient, topic: "multisig", msg, delivery }, { notify: true });
     const outcome = yield* postman.wait(evt);
     if (outcome.kin === "failed") throw outcome.error;
@@ -239,7 +239,7 @@ export function findPendingMultisigIpex(hby: Habery, runtime: AgentRuntime): Ser
 /** Send a completed group IPEX message from the elected local lead. */
 export function* sendCompletedGroupIpex(
   hby: Habery,
-  poster: Poster,
+  postman: Poster,
   reger: Reger | null,
   groupHab: Hab,
   embedded: SerderKERI,
@@ -272,7 +272,7 @@ export function* sendCompletedGroupIpex(
     grantPathed,
   ));
   return yield* sendCredentialBytes(
-    poster,
+    postman,
     localGroupMember(hby, groupHab.pre),
     recipient,
     messages,

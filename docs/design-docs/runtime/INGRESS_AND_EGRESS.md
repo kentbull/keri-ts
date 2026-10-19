@@ -71,7 +71,7 @@ transport. One complete v2 body/genus becomes a signed `/fwd` body-digest envelo
 with an independent nested payload; legacy traffic retains its pathed-embed shape.
 Qualified CESR selectors are parsed before body construction. Respondant publishes
 its interpreted source before consuming the cue; Poster owns target preparation
-and the temporary cue path's exact prepared retry bytes. Other producers publish
+and per-attempt forwarding construction. Other producers publish
 signed messages with Poster.send. Network waits happen only in Poster execution.
 
 Queued ingress is an ordinary private `Deck<Uint8Array>`. `ingest` copies producer
@@ -149,29 +149,31 @@ before closing owned stores. Scoped checks do not replace composed qualification
 ## Cue and query ownership
 
 Protocol owners write within their transactions and publish cues after commit.
-Cues and query-reply batches are ordinary records in Decks. `Hab.interpretCue` and
-`processCuesIter` interpret semantics; source removal follows successful transfer.
+Cues and query-reply batches are ordinary records in Decks. Hab.processCuesIter
+constructs raw wire; Respondant removes its source after successful publication.
 Preparation failure preserves the source. Each consumer sequences interpretation,
-publication and source removal directly, without prepareCueEmission callbacks.
+publication and source removal directly, without construction callbacks.
 Composition routes query, stream and reply cues to their concrete owners.
 CueSink and its optional hooks/root adapters are deleted. Network output runs
 in their concrete delivery operations. A pass consumes its initial extent, so newly appended
 work waits for the next pass. A cue with no emission is still consumed.
 
-Respondant interprets cues and prepares routing before publishing reply work to
-Poster. Poster owns lazy reply iterators, routing snapshots, once-signed packets,
-retry progress, active I/O and joined cleanup. CueDelivery and DirectReplyDelivery are deleted; no
-publication callback runs through a batch wrapper. HTTP openReply/enqueueReply
-interpret the complete correlation batch before publishing either destination and
-then take its records. Failed second-TSN interpretation leaves the pair pending.
-The HTTP reader and outbound delivery consume the same signed emissions independently;
-queue publication does not open replay. Actual cursor cleanup runs once, even if it
-fails, and Poster joins active transport before stores close. The
-[cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) now routes
-all producers through one private execution queue and a separate Poster worker.
-The queue temporarily contains ordinary events, cue batches and prepared retry
-packets. Cue finite-pass rotation and exact-packet automatic retries remain;
-eager FIFO and retained whole-event failure policy are later work.
+Respondant fully constructs local KEL/TEL replay messages and correlated TSN
+pairs before atomic queue publication and source removal. Hab.processCuesIter
+returns raw wire; typed cue kin values route other work directly. HTTP openReply
+publishes independent response and delivery consumers only after complete
+construction. A failed second TSN leaves the pair pending and unpublished.
+Poster owns endpoint selection, forwarding construction, sequential target loops,
+active I/O and joined cleanup. Every evts record is one signed source message.
+Observed refusals attempt remaining targets, retain the whole event in failures,
+and allow later FIFO events to proceed. No automatic retry occurs. Explicit
+retry(evt) creates a fresh admission from the same signed source bytes, using
+current endpoints and fresh outer forwarding material; prior successes may be
+repeated. discard(evt) removes failed work. Unknown construction, storage, parser
+and cleanup errors are retained/reported and propagate. Failures are process-local,
+excluded from pending/idle state, and cleared on shutdown after I/O joins.
+The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) tracks
+remaining transport completion qualification independently.
 
 Poster.send accepts src, dest, topic and signed msg bytes, with optional delivery
 preference and same-socket replies. It copies msg on admission and returns a fresh

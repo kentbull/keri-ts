@@ -716,7 +716,7 @@ async function postTufaGroupDelegationRequest(args: {
           wireMessage = eventPayloadMessage(hby, group.serder);
         }
         yield* call(function*() {
-          const postman = runtime.poster;
+          const postman = runtime.postman;
           yield* spawn(() => postman.deliverDo());
           const { msg } = createExchangeMessage(member1, {
             dest: args.delegatorPre,

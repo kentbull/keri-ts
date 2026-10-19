@@ -79,7 +79,7 @@ export interface AgentRuntime {
   mailboxDirector: MailboxDirector;
   respondant: Respondant;
   mailboxPoller: MailboxPoller;
-  poster: Poster;
+  postman: Poster;
   delegating: Anchorer;
   querying: QueryCoordinator;
   /** Live lazy HTTP replies, closed before their database owners. */
@@ -247,15 +247,15 @@ export function* createAgentRuntime(
       yield* call(() => director.close());
     }
   });
-  const poster = yield* resource<Poster>(function*(provide) {
-    const poster = new Poster(hby, { mailboxer, services, reactor });
+  const postman = yield* resource<Poster>(function*(provide) {
+    const postman = new Poster(hby, { mailboxer, services, reactor });
     try {
-      yield* provide(poster);
+      yield* provide(postman);
     } finally {
-      yield* poster.close();
+      yield* postman.close();
     }
   });
-  const respondant = new Respondant(hby, { poster, replyStreams });
+  const respondant = new Respondant(hby, { postman, replyStreams });
   if (mailboxer) {
     reactor.exchanger.addHandler(new ForwardHandler(mailboxDirector));
   }
@@ -291,7 +291,7 @@ export function* createAgentRuntime(
       yield* coordinator.close();
     }
   });
-  const delegating = new Anchorer(hby, { poster, querying, services, reactor });
+  const delegating = new Anchorer(hby, { postman, querying, services, reactor });
   const oobiery = new Oobiery(hby, reactor, { cues, services });
   oobiery.registerReplyRoutes(reactor.router);
   const authenticator = new Authenticator(hby, { services });
@@ -308,7 +308,7 @@ export function* createAgentRuntime(
     mailboxDirector,
     respondant,
     mailboxPoller,
-    poster,
+    postman,
     delegating,
     querying,
     replyStreams,
@@ -326,7 +326,7 @@ export function* createAgentRuntime(
           if (ownsSignaler) signaler?.close();
         },
         function*() {
-          yield* poster.close();
+          yield* postman.close();
         },
         function*() {
           yield* call(() => Promise.resolve(replyStreams.close()));
@@ -523,7 +523,7 @@ export function runtimePendingState(
       || runtime.hby.db.dune.cnt() > 0
       || runtime.hby.db.dpub.cnt() > 0,
     queriesPending: runtime.querying.hasPendingWork(),
-    deliveriesPending: runtime.querying.hasPendingDelivery || runtime.poster.hasPending,
+    deliveriesPending: runtime.querying.hasPendingDelivery || runtime.postman.hasPending,
   };
 }
 
@@ -658,7 +658,7 @@ export function* runAgentRuntime(
         yield* runtimeTurn();
       }
     }),
-    yield* spawn(() => runtime.poster.deliverDo()),
+    yield* spawn(() => runtime.postman.deliverDo()),
     yield* spawn(function*() {
       yield* runtime.reactor.msgDo();
     }),

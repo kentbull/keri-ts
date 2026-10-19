@@ -6,9 +6,9 @@ not broadcast. [ADR-0013](../../adr/adr-0013-simple-component-flows.md) governs
 component ownership and explicit contracts.
 
 The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) is in
-progress. Poster now owns every queued send and runs independently of query
-delivery. Existing cue traversal/retry behavior remains while callers migrate to
-the single execution owner; the plan tracks qualification and later simplification.
+progress. Poster owns every queued send and runs independently of query
+delivery. Respondant eagerly constructs complete local replay sequences, and
+Poster delivers ordinary signed messages FIFO with explicit retained failures.
 
 KERIpy is the behavioral reference. Its mailbox host is supplied by the declared
 fork, not current upstream. Keep these sources distinct using the
@@ -61,18 +61,18 @@ query/introduction bytes, and joins response I/O. An unavailable explicit signer
 stays unresolved; no multi-Hab guessing occurs. Schema/credential recovery notices
 remain notify-only rather than becoming invented logs queries.
 
-Hab.interpretCue / processCuesIter construct receipt, reply and replay output.
-Direct component callers can also interpret a query whose signer/attester are
-already resolved; the runtime query path uses QueryCoordinator and Hab.query.
-CueEmission retains the original cue and distinguishes wire, notify and transport
-results. The root routes stream records directly to MailboxDirector; it does not
-need a Hab emission or host sink to do so.
+Hab.processCuesIter yields raw wire messages for receipt, reply and replay cues.
+Typed cues retain their `kin` discriminator; there is no emission wrapper or
+second classification. Queries, streams and observations go directly to their
+existing owners. ReplyCue remains lazy until its producing component constructs
+the message, preserving current signing authority.
 
-Respondant interprets cues, prepares routing and publishes reply work. Poster owns
-reply cursors, once-signed retry packets, delivery progress, active transport and
-joined cleanup, including authorized local forwarding. The temporary
-`enqueueReplies` boundary transfers prepared reply descriptions into the same
-private queue as ordinary Poster events. Mailboxer stores provider
+Respondant completely consumes each local KEL/TEL replay into source-message
+records before publishing them to `runtime.postman.evts`. It prepares an entire
+cue or correlated registry/credential pair before atomic `Deck.extend` publication
+and source removal. There is no iterator suspended between delivery passes.
+Poster resolves endpoints and constructs introductions and forwarding material
+when executing the event. Mailboxer stores provider
 payloads; MailboxDirector correlates stream queries and serves those payloads.
 A successful `/fwd` write does not prove the query-to-SSE bridge works.
 
@@ -103,13 +103,21 @@ The host runs `Poster.deliverDo` independently of query response intake. HTTP an
 witness ingress publish without calling `Poster.process`; direct response readers
 keep their request-owned lifetime. Focused tests may explicitly process Poster.
 
-The temporary cue path retains its finite outgoing pass: initially queued items rotate
-after one target attempt, and an observed refusal creates an independent retry of
-the exact prepared packet. Unexpected preparation/transport failures preserve the
-current cue work and propagate. Ordinary events, cue batches and retry packets
-temporarily share one private queue. Phase 3 owns removal of the
-manual cursor and universal emission wrapper, eager replay and explicit failed
-events; FIFO and no automatic retry must not be assumed from queue consolidation.
+Poster processes events FIFO with an ordinary sequential loop over targets.
+An observed refusal does not prevent remaining targets from being attempted.
+A failed event leaves runnable work and enters the plain `failures` collection
+with its original signed message, actual successful URLs and failure details.
+Later events can proceed; there is no automatic retry. `retry(evt)` removes the
+retained failure and admits a fresh event with the same source bytes. It resolves
+current endpoints and rebuilds outer forwarding material, so already successful
+destinations may receive duplicates. `discard(evt)` removes failed work without
+sending. Failures do not contribute to pending/idle state.
+
+Unexpected construction, storage, parser or cleanup exceptions are retained and
+reported before propagating. Transport failure classification and completion
+qualification are tracked separately in phase 4; do not turn an arbitrary thrown
+error into a normal peer refusal. Closing Poster aborts and joins active I/O before
+releasing queued and failed records. These records do not survive shutdown.
 
 QueryReplies reservations are request-SAID correlation, not capacity. They capture
 before ordinary cue delivery; request owners inspect and take plain records after
@@ -125,7 +133,7 @@ do not. UI notification storage and Signaler hints are a separate observation pa
 | Responsibility         | KERIpy                                                               | keri-ts                                                            |
 | ---------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | Protocol cues          | core/eventing.py, core/routing.py, peer/exchanging.py                | core/eventing.ts, core/routing.ts, app/exchanging.ts, core/cues.ts |
-| Habitat interpretation | app/habbing.py BaseHab.processCuesIter                               | app/habbing.ts Hab.interpretCue / processCuesIter                  |
+| Habitat interpretation | app/habbing.py BaseHab.processCuesIter                               | app/habbing.ts Hab.processCuesIter                                 |
 | Deferred queries       | app/querying.py and app/agenting.py WitnessInquisitor                | app/querying.ts QueryCoordinator and continuations                 |
 | Reply delivery         | app/storing.py Respondant, app/forwarding.py                         | app/respondant.ts, app/forwarding.ts                               |
 | Mailbox host           | fork app/mailboxing.py setupMailbox / MailboxStart                   | app/mailbox-director.ts and application host composition           |

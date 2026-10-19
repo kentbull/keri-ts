@@ -1,5 +1,5 @@
-import { call, resource, run, spawn, suspend } from "effection";
-import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { call, run, spawn } from "effection";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { SerderKERI } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
@@ -11,7 +11,7 @@ import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { drainWitnessCues, processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
-import type { CueEmission } from "../../../src/core/cues.ts";
+import type { AgentCue } from "../../../src/core/cues.ts";
 import { query as queryEvent, reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
@@ -21,27 +21,24 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
     const runtime = yield* createAgentRuntime(hby);
-    const posted: { hab: string; recipient: string; topic?: string }[] = [];
-    runtime.poster.findBytesRoute = (hab, args) => {
-      posted.push({ hab: hab.pre, recipient: args.recipient, topic: args.topic });
-      return null;
-    };
-    const cues: CueEmission["cue"][] = [
+    const cues: AgentCue[] = [
       { kin: "receipt", serder: recipient.kever!.serder },
       { kin: "witness", serder: recipient.kever!.serder },
       { kin: "reply", serder: replyEvent("/ksn", {}), src: sender.pre, dest: recipient.pre },
-      { kin: "replay", src: sender.pre, dest: recipient.pre, messages: [Uint8Array.of(4)] },
+      { kin: "replay", src: sender.pre, dest: recipient.pre, msgs: [Uint8Array.of(4)] },
     ];
     try {
       for (const [index, cue] of cues.entries()) {
-        runtime.respondant.enqueueEmission(sender, { kind: "wire", cue, messages: [Uint8Array.of(index + 1)] });
+        runtime.respondant.enqueueMsgs(sender, cue, [Uint8Array.of(index + 1)]);
       }
       assertEquals(
-        posted,
+        runtime.postman.evts.toArray(),
         ["/receipt", "/receipt", "/reply", "/replay"].map((topic, index) => ({
-          hab: sender.pre,
-          recipient: recipient.pre,
+          src: sender.pre,
+          dest: recipient.pre,
           topic,
+          msg: Uint8Array.of(index + 1),
+          replies: true,
         })),
       );
     } finally {
@@ -56,11 +53,11 @@ Deno.test("app/runtime-responder - stream cues stay with mailbox query correlati
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
     const runtime = yield* createAgentRuntime(hby);
-    const retained: CueEmission["cue"][] = [];
+    const retained: AgentCue[] = [];
     runtime.mailboxDirector.retainQueryCue = (cue) => {
       retained.push(cue);
     };
-    const cue: CueEmission["cue"] = {
+    const cue: AgentCue = {
       kin: "stream",
       serder: queryEvent("mbx", { i: hab.pre, src: hab.pre }),
       pre: hab.pre,
@@ -70,7 +67,7 @@ Deno.test("app/runtime-responder - stream cues stay with mailbox query correlati
     try {
       runtime.cues.push(cue);
       yield* processCuesOnce(runtime, { hab });
-      assertEquals(runtime.poster.hasPending, false);
+      assertEquals(runtime.postman.hasPending, false);
       assertEquals(retained, [cue]);
     } finally {
       yield* runtime.close();
@@ -111,12 +108,8 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
         ]);
 
         const message = new Uint8Array([8, 8, 8]);
-        runtime.respondant.enqueueEmission(witness, {
-          kind: "wire",
-          cue: { kin: "receipt", serder: recipient.kever!.serder },
-          messages: [message],
-        });
-        yield* runtime.poster.process();
+        runtime.respondant.enqueueMsgs(witness, { kin: "receipt", serder: recipient.kever!.serder }, [message]);
+        yield* runtime.postman.process();
 
         const stored = runtime.mailboxer?.getTopicMsgs(
           mailboxTopicKey(recipient.pre, "/receipt"),
@@ -130,42 +123,41 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
         };
         runtime.cues.push({ kin: "proof", said: "ignored by habitat interpretation" });
         runtime.cues.push({ kin: "witness", serder: hby.db.getEvtSerder(recipient.pre, recipient.kever!.said)! });
-        const emissions = yield* processWitnessIngress(
+        yield* processWitnessIngress(
           runtime,
           witness,
           acceptedEventReplayMessage(hby, recipient.pre, 0).message,
           { local: true },
         );
-        assertEquals(interpretations, 1, "callback and delivery borrow one witness interpretation");
-        const proof = emissions.find((emission) => emission.cue.kin === "witness")!;
-        const emitted = [...proof.messages];
-        assertEquals(emitted[0], witnessWire);
-        assertEquals(emitted[0].buffer === witnessWire!.buffer, false, "finite return owns independent wire");
+        assertEquals(interpretations, 1, "delivery uses one witness interpretation");
         assertEquals(
           runtime.mailboxer!.getTopicMsgs(mailboxTopicKey(recipient.pre, "/receipt")),
           [message],
           "ingress only publishes delivery work",
         );
-        for (let pass = 0; pass < 4 && runtime.poster.hasPending; pass++) {
-          yield* runtime.poster.process();
+        for (let pass = 0; pass < 4 && runtime.postman.hasPending; pass++) {
+          yield* runtime.postman.process();
         }
-        assertEquals(runtime.poster.hasPending, false);
+        assertEquals(runtime.postman.hasPending, false);
         const published = runtime.mailboxer!.getTopicMsgs(mailboxTopicKey(recipient.pre, "/receipt"));
-        assertEquals(published, [message, ...emitted], "the worker preserves the existing local mailbox wire");
+        assertEquals(published, [message, witnessWire], "the worker preserves the existing local mailbox wire");
 
-        const chunk = new Uint8Array(4 * 1024 ** 2 + 1), messages = [chunk, chunk];
-        const iterator = messages[Symbol.iterator].bind(messages), cleanupFailure = new Error("witness cursor cleanup");
-        messages[Symbol.iterator] = () =>
-          Object.assign(iterator(), {
-            return() {
-              throw cleanupFailure;
+        const failure = new Error("replay construction failed");
+        const replay = {
+          kin: "replay" as const,
+          msgs: {
+            *[Symbol.iterator]() {
+              yield message;
+              throw failure;
             },
-          });
-        runtime.cues.push({ kin: "replay", messages });
+          },
+        };
+        runtime.cues.push(replay);
         const failed = yield* call(() =>
           assertRejects(() => run(() => drainWitnessCues(runtime, witness, runtime.cues, { deliver: false })))
         );
-        assertStrictEquals(failed, cleanupFailure, "actual iterator cleanup failure retains its identity");
+        assertStrictEquals(failed, failure);
+        assertStrictEquals(runtime.cues.peekHead(), replay, "failed construction preserves its source cue");
       } finally {
         yield* runtime.close();
       }
@@ -197,8 +189,7 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
       const runtime = yield* createAgentRuntime(provider, { enableMailboxStore: true });
       const seen = Promise.withResolvers<void>(), returning = Promise.withResolvers<void>();
       const cleanup = Promise.withResolvers<void>();
-      const callbackClosing = Promise.withResolvers<void>(), callbackCleanup = Promise.withResolvers<void>();
-      let continued = false, eof = false, emissions = 0;
+      let continued = false, eof = false;
       const task = run(function*() {
         yield* processWitnessIngressSource(
           runtime,
@@ -206,6 +197,7 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
           async function*(signal) {
             try {
               yield first;
+              seen.resolve();
               await new Promise<never>((_, reject) => {
                 signal.addEventListener("abort", () => reject(signal.reason), { once: true });
               });
@@ -217,21 +209,6 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
             }
           },
           { local: true, deliver: false },
-          function*(emission) {
-            if (emission.cue.kin === "witness") {
-              emissions++;
-              seen.resolve();
-              yield* resource<void>(function*(provide) {
-                try {
-                  yield* provide();
-                } finally {
-                  callbackClosing.resolve();
-                  yield* call(() => callbackCleanup.promise);
-                }
-              });
-              yield* suspend();
-            }
-          },
         );
         continued = true;
       });
@@ -240,33 +217,21 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
         yield* call(() => seen.promise);
         assertEquals(provider.db.getKever(controller.pre)?.sn, 0);
         assertEquals(provider.db.wigs.get(dgKey(controller.pre, provider.db.getKever(controller.pre)!.said)).length, 1);
-        assertEquals([eof, emissions, continued], [false, 1, false]);
+        assertEquals([eof, continued], [false, false]);
         let halted = false;
         const halt = task.halt().then(() => halted = true);
-        yield* call(() => callbackClosing.promise);
-        assertEquals(halted, false);
-        yield* runtime.reactor.processEscrowsOnce();
-        callbackCleanup.resolve();
         yield* call(() => returning.promise);
         assertEquals(halted, false);
         cleanup.resolve();
         yield* call(() => halt);
         assertEquals(continued, false);
         assertEquals(provider.db.getKever(controller.pre)?.sn, 0, "cancelled input cannot deliver its later event");
-        assertEquals(
-          runtime.cues.toArray().map((cue) =>
-            cue.kin === "keyStateSaved" ? [cue.kin, cue.ksn.i, cue.ksn.d] : [cue.kin]
-          ),
-          [["keyStateSaved", controller.pre, provider.db.getKever(controller.pre)!.said]],
-        );
-        runtime.cues.clear(); // Cancellation preserves the unconsumed state cue's owner until test cleanup.
+        assertEquals(runtime.cues.empty, true, "accepted frame cues settle before the next input read");
 
-        const finite = yield* processWitnessIngress(runtime, witness, later, { local: true, deliver: false });
-        assertEquals(finite.filter((emission) => emission.cue.kin === "witness").length, 1);
+        yield* processWitnessIngress(runtime, witness, later, { local: true, deliver: false });
         assertEquals(provider.db.getKever(controller.pre)?.sn, 1);
       } finally {
         clearTimeout(timeout);
-        callbackCleanup.resolve();
         cleanup.resolve();
         yield* call(() => task.halt());
         yield* runtime.close();
@@ -313,35 +278,27 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
           dest: recipient.pre,
           serder: replyEvent("/loc/scheme", { eid: sender.pre, scheme: "http", url: "http://sender.test/" }),
         };
-        const interpretation = sender.interpretCue;
+        const interpretation = sender.processCuesIter;
         const active = runtime;
         active.cues.push(cue);
 
         const foreign = new Error("foreign cue preparation busy");
-        const resolve = active.poster.findBytesRoute;
-        for (const phase of ["interpret", "route"]) {
-          if (phase === "interpret") {
-            sender.interpretCue = () => {
-              throw foreign;
-            };
-          } else {active.poster.findBytesRoute = () => {
-              throw foreign;
-            };}
-          try {
-            assertStrictEquals(
-              yield* call(() => assertRejects(() => run(() => processCuesOnce(active, { hab: sender })))),
-              foreign,
-            );
-            assertStrictEquals(active.cues.peekHead(), cue);
-          } finally {
-            sender.interpretCue = interpretation;
-            active.poster.findBytesRoute = resolve;
-          }
+        sender.processCuesIter = function*() {
+          throw foreign;
+        };
+        try {
+          assertStrictEquals(
+            yield* call(() => assertRejects(() => run(() => processCuesOnce(active, { hab: sender })))),
+            foreign,
+          );
+          assertStrictEquals(active.cues.peekHead(), cue);
+        } finally {
+          sender.processCuesIter = interpretation;
         }
         let returned = false;
         yield* processCuesOnce(active, { hab: sender });
         const sending = yield* spawn(function*() {
-          yield* active.poster.process();
+          yield* active.postman.process();
           returned = true;
         });
         let progress!: () => void;
@@ -360,11 +317,11 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
           yield* call(() => Promise.race([progressed, expired]));
           assertEquals(returned, false, "the real HTTP delivery is still paused");
           assertEquals(hby.db.getKever(controller.pre)?.sn, 1, "verified input progresses before delivery returns");
-          assertEquals(active.poster.hasPending, true);
+          assertEquals(active.postman.hasPending, true);
           release();
           yield* accepting;
           yield* sending;
-          yield* active.poster.process();
+          yield* active.postman.process();
           assertEquals(
             active.cues.toArray().map((cue) =>
               cue.kin === "receipt"
@@ -386,7 +343,7 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
           yield* sending.halt();
           yield* active.close();
         }
-        sender.interpretCue = interpretation;
+        sender.processCuesIter = interpretation;
       } finally {
         release();
         yield* runtime.close();
@@ -433,11 +390,10 @@ Deno.test("witness recovery queries use the concrete query owner and sign only o
         q: {},
         wits: [subject.pre],
       });
-      const replies = yield* drainWitnessCues(runtime, witness, runtime.cues);
-      assertEquals([signatures, sent, replies.length, runtime.cues.length, runtime.querying.hasPendingWork()], [
+      yield* drainWitnessCues(runtime, witness, runtime.cues);
+      assertEquals([signatures, sent, runtime.cues.length, runtime.querying.hasPendingWork()], [
         1,
         1,
-        0,
         0,
         false,
       ]);

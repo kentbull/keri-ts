@@ -132,7 +132,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
       try {
         let delivered: SerderKERI | undefined;
         // Only transmission is substituted; preparation, signing, intake and replay use real owners.
-        runtime.poster.send = function(evt) {
+        runtime.postman.send = function(evt) {
           const serder = new SerderKERI({ raw: evt.msg });
           assertEquals(evt.src, alice.pre);
           assertEquals(evt.dest, bob.pre);
@@ -147,7 +147,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
           delivered = serder;
           return evt;
         };
-        runtime.poster.wait = function*(evt) {
+        runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test-transmission"] };
         };
         const deliveries = yield* publishProposal(runtime, alice, mids, {
@@ -184,7 +184,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
     await run(function*() {
       const runtime = yield* createAgentRuntime(left, { notifier });
       try {
-        runtime.poster.send = function(evt) {
+        runtime.postman.send = function(evt) {
           const serder = new SerderKERI({ raw: evt.msg });
           if (serder.route === "/multisig/icp") {
             assertEquals(serder.ked!.a, {
@@ -217,7 +217,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
           }
           return evt;
         };
-        runtime.poster.wait = function*(evt) {
+        runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
         };
         const [peer, paths] = exchange("/multisig/icp", {
@@ -776,10 +776,10 @@ for (const route of ["ixn", "vcp"] as const) {
       await run(function*() {
         const runtime = yield* createAgentRuntime(left, { notifier });
         try {
-          runtime.poster.send = function(evt) {
+          runtime.postman.send = function(evt) {
             return evt;
           };
-          runtime.poster.wait = function*(evt) {
+          runtime.postman.wait = function*(evt) {
             return { kin: "sent", evt, deliveries: ["test"] };
           };
           yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), attachments), {
@@ -893,13 +893,13 @@ for (const kind of ["apply", "grant"] as const) {
             });
             let outgoing: { serder: SerderKERI; message: Uint8Array } | undefined;
             // Substitute transmission only; the peer admits the actual signed outgoing bytes below.
-            runtime.poster.send = function(evt) {
+            runtime.postman.send = function(evt) {
               const serder = new SerderKERI({ raw: evt.msg });
               assertEquals(serder.ked!.a, { gid: local.hab.pre, ...hint, i: bob.pre });
               outgoing = { serder: serder, message: evt.msg };
               return evt;
             };
-            runtime.poster.wait = function*(evt) {
+            runtime.postman.wait = function*(evt) {
               return { kin: "sent", evt, deliveries: ["test"] };
             };
             if (kind === "grant") {

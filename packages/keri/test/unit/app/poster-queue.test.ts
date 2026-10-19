@@ -22,7 +22,7 @@ Deno.test("Poster completion belongs to a concrete admission and does not determ
         },
       },
     });
-    const postman = runtime.poster;
+    const postman = runtime.postman;
     try {
       for (const hab of [first, second]) {
         hby.db.locs.pin([hab.pre, "http"], { url: `https://${hab.name}.test/` });

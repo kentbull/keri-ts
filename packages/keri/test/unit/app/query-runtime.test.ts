@@ -1,4 +1,4 @@
-import { run, spawn } from "effection";
+import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
@@ -11,6 +11,7 @@ import {
 import { createHabery } from "../../../src/app/habbing.ts";
 import { fetchResponseHandle } from "../../../src/app/httping.ts";
 import { readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
+import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { witnessReceiptPost } from "../../../src/app/witnessing.ts";
@@ -392,6 +393,15 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
         relay.pre,
         { route: "mbx", q: { topics: { "/replay": 0 } } },
       );
+      // The query response publishes work; the independent postman completes forwarding later.
+      const deadline = Date.now() + 5_000;
+      while (
+        !relayRuntime.hby.db.getKever(witness.pre)
+        || !relayRuntime.mailboxer!.getTopicMsgs(mailboxTopicKey(proxy.pre, "/replay")).length
+      ) {
+        if (Date.now() >= deadline) throw new Error("Witness replay did not reach the relay mailbox");
+        yield* sleep(10);
+      }
       assertExists(relayRuntime.hby.db.getKever(witness.pre));
       const { response, controller } = yield* fetchResponseHandle(relayUrl, {
         method: "POST",
@@ -406,10 +416,10 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       assertStringIncludes(body, "event: /replay");
       assertStringIncludes(body, delegator.pre);
     } finally {
+      yield* waitForTaskHalt(witnessRuntimeTask);
+      yield* waitForTaskHalt(relayRuntimeTask);
       yield* waitForTaskHalt(relayServerTask);
       yield* waitForTaskHalt(witnessServerTask);
-      yield* waitForTaskHalt(relayRuntimeTask);
-      yield* waitForTaskHalt(witnessRuntimeTask);
       yield* relayRuntime.close();
       yield* witnessRuntime.close();
       yield* proxyRuntime.close();
@@ -523,36 +533,12 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
       const runtime = yield* createAgentRuntime(witnessHby, {
         enableMailboxStore: true,
       });
-      const emissions: Array<
-        { kind: string; kin: string; messages: number; dest: string | null }
-      > = [];
-      const interpret = witness.interpretCue;
-      witness.interpretCue = function(cue) {
-        const emission = interpret.call(this, cue);
-        if (emission) {
-          const messages = [...emission.messages];
-          emissions.push({
-            kind: emission.kind,
-            kin: cue.kin,
-            messages: messages.length,
-            dest: cue.kin === "replay" ? cue.dest ?? null : null,
-          });
-          return { ...emission, messages };
-        }
-        return emission;
-      };
       try {
         yield* settleRuntimeIngress(runtime, [queryBytes]);
+        const replay = runtime.cues.toArray().find((cue) => cue.kin === "replay");
+        assertExists(replay);
+        assertEquals([...replay.msgs].length > 0, true);
         yield* processCuesOnce(runtime, { hab: witness });
-
-        assertEquals(
-          emissions.some((emission) =>
-            emission.kind === "wire"
-            && emission.kin === "replay"
-            && emission.messages > 0
-          ),
-          true,
-        );
         assertEquals(witnessHby.db.kevers.has(subjectPre), true);
       } finally {
         yield* runtime.close();

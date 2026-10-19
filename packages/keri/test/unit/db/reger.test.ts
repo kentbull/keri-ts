@@ -301,8 +301,8 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
             return iterate.call(this);
           };
           yield* reger.close();
-          deck.push({ kin: "replay", messages: selected });
-          assertEquals(deck.pull(), { kin: "replay", messages: selected });
+          deck.push({ kin: "replay", msgs: selected });
+          assertEquals(deck.pull(), { kin: "replay", msgs: selected });
           assertEquals([opened, reading], [0, 0], "Queue transfer opens no iterator or store reader even while closed");
           yield* reger.reopen();
           assertEquals([...selected], [

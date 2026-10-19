@@ -1,6 +1,6 @@
 # ADR-0004: Cue ownership across local and hosted processing
 
-- Status: Accepted; phase 1 delivery ownership refinement implemented
+- Status: Accepted; cue production and queued delivery simplified
 - Date: 2026-03-29
 - Scope: Protocol cues, interpretation and host routing
 
@@ -26,16 +26,17 @@ publishes them after its owning writes commit.
 
 ## Interpretation and delivery
 
-Hab.interpretCue / processCuesIter keep protocol construction with the controller
-that can honestly sign. CueEmission preserves the originating cue and distinguishes
-wire output, notification and transport work. Network waits belong to concrete
-output operations, outside protocol transactions.
+Hab.processCuesIter yields raw wire constructed by the controller that can
+honestly sign. Typed cue kin values route queries, streams and observations to
+their existing owners without an emission wrapper. Network waits belong to
+concrete output operations, outside protocol transactions.
 
 The application router sends routed query records to QueryCoordinator and stream
 records to MailboxDirector. Respondant interprets and publishes other
-reply/receipt/replay output. Poster owns queued delivery, live traversal, exact
-prepared retry packets, cancellation and joined cleanup, including authorized
-local forwarding. Routed queries select
+reply/receipt/replay output. Respondant eagerly constructs complete local replay
+batches and correlated pairs before atomic publication. Poster owns FIFO delivery,
+endpoint selection, forwarding, retained whole-event failures, cancellation and
+joined cleanup, including authorized local forwarding. Routed queries select
 an explicit local signer, a configured Hab, or the sole local Hab. An unavailable
 explicit signer stays unresolved; the runtime never guesses among local identities.
 
@@ -64,11 +65,12 @@ The [cue delivery plan](../plans/runtime/cue-delivery-refactor.md) first moved
 execution ownership to Poster. All sends now use its independently running queue;
 HTTP and witness ingress publish without driving delivery. Producers construct
 signed messages and callers await identity-matched sent/failed outcomes when
-transmission gates their workflow. Phase 3 still owns replacement of legacy cue
-cursor rotation, lazy reply consumption and automatic exact-packet retries with
-eager FIFO messages and explicit retained failures. `CueEmission` also remains
-until that cut. Deferred reliability features have a separate
-[roadmap](../plans/runtime/cue-reliability-roadmap.md).
+transmission gates their workflow. Ordinary event and target loops replace reply
+cursors and cross-batch scheduling. Refusals attempt remaining destinations and
+retain failed events without automatic retry. Explicit retry preserves the signed
+source message but rebuilds routing and outer wire; duplicates are possible.
+Transport completion qualification remains phase 4. Deferred reliability features
+have a separate [roadmap](../plans/runtime/cue-reliability-roadmap.md).
 
 The [cue design](../design-docs/runtime/CUES.md) explains the current graph and
 KERIpy correspondence. The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md)

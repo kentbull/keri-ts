@@ -262,7 +262,7 @@ for (const count of [1, 2]) {
                     "recipient has not received this IPEX message yet",
                   );
                   const delivered = yield* call(function*() {
-                    const postman = originRuntime.poster;
+                    const postman = originRuntime.postman;
                     yield* spawn(() => postman.deliverDo());
                     const evt = postman.send({
                       src: sender.pre,

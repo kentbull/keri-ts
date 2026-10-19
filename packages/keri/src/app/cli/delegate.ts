@@ -167,7 +167,7 @@ function* publishGroupDelegationApproval(
       payload: { gid: groupHab.pre, smids },
       embeds: { ixn: message },
     });
-    const postman = runtime.poster;
+    const postman = runtime.postman;
     const evt = postman.send({ src: member.pre, dest: recipient, topic: "multisig", msg }, { notify: true });
     const result = yield* postman.wait(evt);
     if (result.kin === "failed") throw result.error;

@@ -114,7 +114,7 @@ export function* publishProposal(
   const deliveries: string[] = [];
   for (const recipient of uniqueMembers(recipients)) {
     if (recipient === member.pre || runtime.hby.habs.has(recipient)) continue;
-    const destination = runtime.poster.resolveRecipient(recipient);
+    const destination = runtime.postman.resolveRecipient(recipient);
     const prepared = yield* prepareMultisigEventExn(member.pre, proposal, embeddedMessage, {
       recipient: destination,
       childGvrsn,
@@ -150,7 +150,7 @@ function* publishVdrProposal(
     if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
       continue;
     }
-    const destination = runtime.poster.resolveRecipient(recipient);
+    const destination = runtime.postman.resolveRecipient(recipient);
     const [serder, attachments] = exchange(route, payload, {
       sender: member.pre,
       recipient: destination,
@@ -170,7 +170,7 @@ function* registerAndSendProposal(
 ): Operation<string[]> {
   const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
   yield* runtime.reactor.processBytes(message, { local: true });
-  const postman = runtime.poster;
+  const postman = runtime.postman;
   const evt = postman.send({
     src: member.pre,
     dest: recipient,

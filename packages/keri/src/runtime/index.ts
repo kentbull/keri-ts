@@ -379,8 +379,6 @@ export {
   type AgentCue,
   type CredentialRevokedCue,
   type CredentialSavedCue,
-  type CueEmission,
-  type CueEmissionKind,
   type InvalidCue,
   type KelQueryFields,
   type KeyStateSavedCue,

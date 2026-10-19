@@ -1,6 +1,6 @@
-import type { AgentCue, CueEmission } from "../core/cues.ts";
+import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import type { Poster, RawCesrRoute } from "./forwarding.ts";
+import type { Poster, PosterEvent } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { QueryReply } from "./query-replies.ts";
 import type { ReplyStreams } from "./reply-streams.ts";
@@ -25,113 +25,92 @@ import type { ReplyStreams } from "./reply-streams.ts";
  */
 export class Respondant {
   private readonly hby: Habery;
-  private readonly poster: Poster;
+  private readonly postman: Poster;
   private readonly replyStreams: ReplyStreams;
 
   constructor(
     hby: Habery,
     {
-      poster,
+      postman,
       replyStreams,
     }: {
-      poster: Poster;
+      postman: Poster;
       replyStreams: ReplyStreams;
     },
   ) {
     this.hby = hby;
-    this.poster = poster;
+    this.postman = postman;
     this.replyStreams = replyStreams;
   }
 
-  /** Interpret and route a source head before removing it; failed preparation leaves it visible. */
-  enqueueCue(interpreter: Hab, source: Deck<AgentCue>, hint?: Hab | null): boolean {
-    this.poster.assertOpen();
-    const cue = source.peekHead();
+  /** Produce a whole cue before publishing or removing it; construction failure leaves the source visible. */
+  enqueueCue(hab: Hab, cues: Deck<AgentCue>, hint?: Hab | null): boolean {
+    this.postman.assertOpen();
+    const cue = cues.peekHead();
     if (!cue) return false;
-    const recipient = recipientForCue(cue), topic = topicForCue(cue);
-    const sender = senderHabForCue(this.hby, cue, hint);
-    if (!recipient || !topic || !sender) return false;
-    const emission = interpreter.interpretCue(cue);
-    if (emission?.kind !== "wire") throw new RangeError("Cue delivery requires wire");
-    const route = this.poster.findBytesRoute(sender, { recipient, recipientIsPrefix: true, topic });
-    if (route?.targets.length) {
-      this.poster.enqueueReplies([{ emission, hab: sender, route }]);
-    }
-    source.pull();
+    const dest = recipientForCue(cue), topic = topicForCue(cue);
+    const src = senderHabForCue(this.hby, cue, hint);
+    if (!dest || !topic || !src) return false;
+    const msgs = [...hab.processCuesIter([cue])];
+    this.postman.sendAll(msgs.map((msg) => ({ src: src.pre, dest, topic, msg, replies: true })));
+    cues.pull();
     return true;
   }
 
-  /** Queue an already interpreted witness emission without reopening or signing its messages. */
-  enqueueEmission(hab: Hab, emission: CueEmission): void {
-    this.poster.assertOpen();
-    const route = this.routeForEmission(emission, hab);
-    if (route?.targets.length) {
-      const sender = this.hby.habs.get(route.sender) ?? hab;
-      this.poster.enqueueReplies([{ emission, hab: sender, route }]);
-    }
+  /** Admit already produced witness messages without signing them again. */
+  enqueueMsgs(hab: Hab, cue: AgentCue, msgs: readonly Uint8Array[]): void {
+    this.postman.assertOpen();
+    const dest = recipientForCue(cue), topic = topicForCue(cue);
+    const src = senderHabForCue(this.hby, cue, hab);
+    if (!dest || !topic || !src) return;
+    this.postman.sendAll(msgs.map((msg) => ({ src: src.pre, dest, topic, msg, replies: true })));
   }
 
-  /** Prepare the whole correlated batch before publishing either its HTTP reader or queued destinations. */
+  /** Construct the complete correlated pair before publishing its independent HTTP and queued deliveries. */
   openReply(hab: Hab, reply: QueryReply): ReadableStream<Uint8Array> | null {
-    this.poster.assertOpen();
+    this.postman.assertOpen();
     const captured = reply.peekAll();
     if (!captured) return null;
-    const { emissions, cues } = this.interpretReplies(hab, captured.cues);
-    const stream = this.replyStreams.open({
-      *[Symbol.iterator]() {
-        for (const emission of emissions) yield* emission.messages;
-      },
-    });
-    if (cues.length) this.poster.enqueueReplies(cues);
+    const { msgs, evts } = this.prepareReplies(hab, captured.cues);
+    const stream = this.replyStreams.open(msgs);
+    this.postman.sendAll(evts);
     reply.takeAll();
     return stream;
   }
 
   /** Earlier queries transfer to ordinary queued replies without an HTTP response reader. */
   enqueueReply(hab: Hab, reply: QueryReply): boolean {
-    this.poster.assertOpen();
+    this.postman.assertOpen();
     const captured = reply.peekAll();
     if (!captured) return false;
-    const { cues } = this.interpretReplies(hab, captured.cues);
-    if (cues.length) this.poster.enqueueReplies(cues);
+    const { evts } = this.prepareReplies(hab, captured.cues);
+    this.postman.sendAll(evts);
     reply.takeAll();
     return true;
   }
 
-  private interpretReplies(
-    hab: Hab,
-    replies: readonly AgentCue[],
-  ): { emissions: CueEmission[]; cues: { emission: CueEmission; hab: Hab; route: RawCesrRoute }[] } {
-    const emissions: CueEmission[] = [], cues: { emission: CueEmission; hab: Hab; route: RawCesrRoute }[] = [];
-    for (const cue of replies) {
-      const emission = hab.interpretCue(cue);
-      if (emission?.kind !== "wire") throw new RangeError("Direct reply requires wire");
-      emissions.push(emission);
-      const sender = ("src" in cue && cue.src ? this.hby.habs.get(cue.src) : undefined) ?? hab;
-      const route = "dest" in cue && cue.dest
-        ? this.poster.findBytesRoute(sender, {
-          recipient: cue.dest,
-          recipientIsPrefix: true,
-          topic: cue.kin === "replay" ? "/replay" : "/reply",
-        })
-        : null;
-      if (route?.targets.length) cues.push({ emission, hab: sender, route });
+  private prepareReplies(hab: Hab, cues: readonly AgentCue[]): { msgs: Uint8Array[]; evts: PosterEvent[] } {
+    const msgs: Uint8Array[] = [], evts: PosterEvent[] = [];
+    for (const cue of cues) {
+      const produced = [...hab.processCuesIter([cue])];
+      for (const msg of produced) msgs.push(msg);
+      const src = ("src" in cue && cue.src ? this.hby.habs.get(cue.src) : undefined) ?? hab;
+      const dest = "dest" in cue ? cue.dest : undefined;
+      if (!dest) continue;
+      const topic = cue.kin === "replay" ? "/replay" : "/reply";
+      const pending = produced.map((msg) => ({ src: src.pre, dest, topic, msg, replies: true }));
+      // Direct HTTP readers remain available even when the requester has no outbound route.
+      if (pending.length && this.postman.canDeliver(pending[0])) {
+        for (const evt of pending) evts.push(evt);
+      }
     }
-    return { emissions, cues };
-  }
-
-  /** Resolve the existing responder policy for an admitted witness emission without sending or signing again. */
-  private routeForEmission(emission: CueEmission, hab?: Hab | null): RawCesrRoute | null {
-    const recipient = recipientForCue(emission.cue), topic = topicForCue(emission.cue);
-    const sender = senderHabForCue(this.hby, emission.cue, hab);
-    if (emission.kind !== "wire" || !recipient || !topic || !sender) return null;
-    return this.poster.findBytesRoute(sender, { recipient, recipientIsPrefix: true, topic });
+    return { msgs, evts };
   }
 }
 
 /** Select the existing mailbox topic for a responder cue. */
 function topicForCue(
-  cue: CueEmission["cue"],
+  cue: AgentCue,
 ): string | null {
   switch (cue.kin) {
     case "replay":
@@ -148,7 +127,7 @@ function topicForCue(
 
 /** Select the intended recipient without preparing or transmitting bytes. */
 function recipientForCue(
-  cue: CueEmission["cue"],
+  cue: AgentCue,
 ): string | null {
   switch (cue.kin) {
     case "replay":
@@ -166,7 +145,7 @@ function recipientForCue(
 /** Borrow the local sender selected by cue provenance, explicit hint or sole habitat. */
 function senderHabForCue(
   hby: Habery,
-  cue: CueEmission["cue"],
+  cue: AgentCue,
   hab?: Hab | null,
 ): Hab | null {
   const source = cueSourcePrefix(cue);
@@ -177,7 +156,7 @@ function senderHabForCue(
 }
 
 function cueSourcePrefix(
-  cue: CueEmission["cue"],
+  cue: AgentCue,
 ): string | null {
   switch (cue.kin) {
     case "replay":

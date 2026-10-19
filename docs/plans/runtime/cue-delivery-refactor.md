@@ -192,12 +192,15 @@ changeset validation. Broader release qualification remains a separate obligatio
 - Phase 0: plan and inventories saved; baseline source inspected.
 - Phase 1: PR #528 merged at `c0562571`; 44 focused tests passed locally and its
   selected CI passed. This is not broader release qualification.
-- Phase 2: queue admission/outcomes, independent Poster worker, producer migration
-  and ingress publication are implemented in the current cut. The focused caller,
-  CLI, queue, reply and HTTP suites passed 150 tests locally; static checks passed.
-  Selected CI and merge remain pending.
-  The private queue still carries legacy cue cursors and prepared retry packets.
-- Phases 3–4: approved follow-up scope; not implemented or qualified by this cut.
+- Phase 2: PR #529 merged at `c1c81faf`; queue admission/outcomes, independent
+  Poster worker, producer migration and ingress publication passed 150 focused
+  local tests and selected delegation, mailbox/IPEX, witness and package CI.
+- Phase 3: raw-wire cue production, eager replay, FIFO events, explicit retained
+  failures and naming migration implemented. 124 focused tests passed (94 in the
+  combined producer/queue/grouping suite and 30 witness/query/protocol/HTTP cases);
+  formatting, lint, type/boundary/version and changeset checks passed. Selected
+  CI and merge remain pending.
+- Phase 4: transport completion implementation and qualification remain separate.
 
 The owning contracts are [cues](../../design-docs/runtime/CUES.md),
 [ingress/egress](../../design-docs/runtime/INGRESS_AND_EGRESS.md) and

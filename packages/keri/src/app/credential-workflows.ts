@@ -96,13 +96,13 @@ export function pinSchemaBytes(hby: Habery, raw: Uint8Array): string {
 /** Create a single-sig registry or propose a group registry inception. */
 export function* inceptCredentialRegistry(
   rgy: Regery,
-  poster: Poster,
+  postman: Poster,
   hab: Hab,
   options: CredentialRegistryInceptOptions,
 ) {
   const { hby } = rgy;
   if (isLocalGroupHab(hby, hab)) {
-    return yield* proposeGroupRegistryIncept(rgy, poster, hab, options);
+    return yield* proposeGroupRegistryIncept(rgy, postman, hab, options);
   }
   const registry = rgy.makeRegistry(options.registryName, hab, {
     noBackers: options.noBackers ?? true,
@@ -148,7 +148,7 @@ export function credentialRegistryStatus(rgy: Regery, registryName: string) {
 /** Create and issue one registry-backed credential. */
 export function* createCredential(
   rgy: Regery,
-  poster: Poster,
+  postman: Poster,
   options: CredentialCreateOptions,
 ): Operation<CredentialCreateResult> {
   const { hby, reger } = rgy;
@@ -168,7 +168,7 @@ export function* createCredential(
   const recipient = options.recipient ?? creder.issuee ?? "";
 
   if (isLocalGroupHab(hby, registry.hab)) {
-    const output = yield* proposeGroupCredentialIssue(rgy, poster, registry, creder);
+    const output = yield* proposeGroupCredentialIssue(rgy, postman, registry, creder);
     return { creder, recipient, output };
   }
 
@@ -241,7 +241,7 @@ export function* importCredentialStream(
 /** Revoke one credential and optionally deliver revocation stream bytes. */
 export function* revokeCredential(
   rgy: Regery,
-  poster: Poster,
+  postman: Poster,
   options: CredentialRevokeOptions,
 ): Operation<CredentialRevokeResult> {
   const { hby, reger } = rgy;
@@ -257,7 +257,6 @@ export function* revokeCredential(
     const messages = revocationStreamMessages(hby, reger, creder);
     for (const recipient of options.sendRecipients ?? []) {
       for (const message of messages) {
-        const postman = poster;
         const evt = postman.send({
           src: options.senderHab.pre,
           dest: postman.resolveRecipient(recipient),
@@ -318,7 +317,7 @@ function revocationStreamMessages(
 
 function* proposeGroupRegistryIncept(
   rgy: Regery,
-  poster: Poster,
+  postman: Poster,
   hab: Hab,
   options: CredentialRegistryInceptOptions,
 ) {
@@ -350,7 +349,7 @@ function* proposeGroupRegistryIncept(
     markTelComplete(reger, regk, 0, requireSerderSaid(vcp, "registry inception"));
   }
 
-  const deliveries = yield* publishGroupVcProposal(hby, poster, hab, MULTISIG_VCP_ROUTE, {
+  const deliveries = yield* publishGroupVcProposal(hby, postman, hab, MULTISIG_VCP_ROUTE, {
     gid: hab.pre,
     usage: options.usage ?? options.registryName ?? "credential registry",
   }, {
@@ -371,7 +370,7 @@ function* proposeGroupRegistryIncept(
 
 function* proposeGroupCredentialIssue(
   rgy: Regery,
-  poster: Poster,
+  postman: Poster,
   registry: Registry,
   creder: SerderACDC,
 ) {
@@ -415,7 +414,7 @@ function* proposeGroupCredentialIssue(
     markTelComplete(reger, requireCredentialSaid(creder), iss.sn ?? 0, requireSerderSaid(iss, "credential issue"));
   }
 
-  const deliveries = yield* publishGroupVcProposal(hby, poster, registry.hab, MULTISIG_ISS_ROUTE, {
+  const deliveries = yield* publishGroupVcProposal(hby, postman, registry.hab, MULTISIG_ISS_ROUTE, {
     gid: registry.hab.pre,
   }, {
     acdc: serializeCredential(
@@ -445,7 +444,7 @@ function* proposeGroupCredentialIssue(
 
 function* publishGroupVcProposal(
   hby: Habery,
-  poster: Poster,
+  postman: Poster,
   groupHab: Hab,
   route: typeof MULTISIG_VCP_ROUTE | typeof MULTISIG_ISS_ROUTE,
   payload: Record<string, unknown>,
@@ -463,7 +462,6 @@ function* publishGroupVcProposal(
       payload,
       embeds,
     });
-    const postman = poster;
     const evt = postman.send({ src: member.pre, dest: recipient, topic: MULTISIG_TOPIC, msg }, { notify: true });
     const outcome = yield* postman.wait(evt);
     if (outcome.kin === "failed") throw outcome.error;
