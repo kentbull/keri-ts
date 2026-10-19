@@ -2,6 +2,7 @@
 
 Reports are dated observations, not current plans or automatic qualification.
 
+- [Explicit runtime dependencies and verifier clock qualification](runtime/EXPLICIT_RUNTIME_DEPENDENCIES_2026-10-19.md).
 - [Cleanup and three-package 1.0.0 qualification](parity/CLEANUP_RELEASE_2026-10-16.md).
 - [Delivered progressive/runtime work through #168](parity/DELIVERED_THROUGH_168.md).
 - [Documentation reorganization audit](docs/REORGANIZATION_2026-10-13.md).

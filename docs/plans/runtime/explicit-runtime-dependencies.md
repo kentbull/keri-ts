@@ -1,8 +1,10 @@
 # Explicit runtime dependencies
 
-Status: structural phases merged in #544, #545 and #546. The verifier clock phase
-is implemented with five focused tests passing; final merged-source qualification
-remains pending.
+Status: complete. Structural phases merged in #544–#546 and the clock correction
+in #547. [Qualification](../../reports/runtime/EXPLICIT_RUNTIME_DEPENDENCIES_2026-10-19.md)
+records the full post-merge battery, source identity and limits. All 19 jobs passed.
+The phases below retain delivered boundaries and regression criteria; they do not
+activate another execution queue.
 Source baseline: clean local `master` at `137e23d756f4b8fc1a9996517d576827bfcefb51`,
 reviewed 2026-10-19. Recheck the implementation baseline before starting.
 
