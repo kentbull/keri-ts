@@ -10,8 +10,10 @@
  * `Notifier` rows are intentionally not consumed here; they remain operator
  * visibility, matching the roadmap contract.
  */
+import { closeResponseBody } from "./httping.ts";
+
 import { Dater, Ilks, Prefixer, SerderACDC, type Versionage, Vrsn_1_0 } from "cesr-ts";
-import type { Operation } from "npm:effection@^3.6.0";
+import { call, type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue, CredentialRevokedCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -19,7 +21,6 @@ import type { VcStateRecordShape } from "../core/records.ts";
 import type { Reger } from "../db/reger.ts";
 import type { VerifierCueBaser } from "../db/verifier-cueing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
-import { abortable } from "./abortable.ts";
 import type { Habery } from "./habbing.ts";
 import {
   credentialSaidFromGrant,
@@ -332,22 +333,22 @@ export class VerifierAgent {
   /** Bind webhook transport cancellation and completion to the enclosing operation. */
   private *postWebhook(body: VerifierWebhookBody): Operation<boolean> {
     const raw = JSON.stringify(body);
-    return yield* abortable(async (signal) => {
-      const response = await this.services.http.fetch(this.hook, {
+    const services = this.services, hook = this.hook;
+    return yield* call(function*() {
+      const response = yield* services.http.request(hook, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "sally-resource": String(body.data.schema ?? ""),
-          "sally-timestamp": new Date(this.services.clock.now()).toISOString(),
+          "sally-timestamp": new Date(services.clock.now()).toISOString(),
         },
         body: raw,
-        signal,
       });
       try {
         return response.ok;
       } finally {
         // Webhooks use only the status; release an unread response before this leaf completes.
-        await response.body?.cancel();
+        yield* closeResponseBody(response);
       }
     });
   }

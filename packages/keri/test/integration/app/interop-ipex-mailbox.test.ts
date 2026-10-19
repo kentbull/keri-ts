@@ -1,4 +1,6 @@
 /** Witnessed TS IPEX conversations carried by a real KERIpy KRAM mailbox. */
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+
 import {
   collectPayload,
   Compactor,
@@ -289,7 +291,9 @@ for (const count of [1, 2]) {
                       genusify: true,
                     }),
                   );
-                  const response = yield* requestFrame(mailboxUrl, queryFrame, { signal: AbortSignal.timeout(10_000) });
+                  const response = yield* requestFrame(mailboxUrl, queryFrame, defaultRuntimeServices.http, {
+                    signal: AbortSignal.timeout(10_000),
+                  });
                   assertEquals(response.status, 200);
                   let received = false;
                   yield* consumeMailboxSse(response, new AbortController(), function*(event) {

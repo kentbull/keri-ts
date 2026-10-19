@@ -1,7 +1,8 @@
 import { call, type Operation } from "npm:effection@^3.6.0";
 import type { OobiRecord } from "../core/records.ts";
 import type { Habery } from "./habbing.ts";
-import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
+import type { HttpResponse } from "./http-client.ts";
+import { closeResponseBody } from "./httping.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
@@ -25,9 +26,12 @@ interface AuthenticatorOptions {
  * - `wkas.` records successful `(cid, url)` authorizations
  */
 export class Authenticator {
+  /** Borrowed local identities and durable well-known authentication records. */
   readonly hby: Habery;
+  /** HTTP implementation selected when this authenticator is composed. */
   readonly services: RuntimeServices;
 
+  /** Bind the local authentication store and its configured HTTP dependency. */
   constructor(hby: Habery, options: AuthenticatorOptions = {}) {
     const services = options.services ?? defaultRuntimeServices;
     this.hby = hby;
@@ -119,7 +123,7 @@ export class Authenticator {
     const cid = record.cid
       ?? parseOobiUrl(url, record.oobialias ?? undefined).cid
       ?? null;
-    const response = yield* fetchAuthResponse(url, this.services);
+    const response = yield* this.services.http.request(url);
     const date = new Date().toISOString();
     const state = response.ok ? "resolved" : `http-${response.status}`;
     yield* closeResponseBody(response);
@@ -140,14 +144,4 @@ export class Authenticator {
       });
     }
   }
-}
-
-function* fetchAuthResponse(
-  url: string,
-  services: RuntimeServices,
-): Operation<Response> {
-  const { response } = yield* fetchResponseHandle(url, {}, {
-    services,
-  });
-  return response;
 }

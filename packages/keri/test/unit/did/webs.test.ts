@@ -4,6 +4,7 @@ import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { TransportError } from "../../../src/app/transport-error.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import type { Reger } from "../../../src/db/reger.ts";
@@ -19,6 +20,7 @@ import {
   pinDesignatedAliasesSchema,
   resolveDidWebs,
 } from "../../../src/did/index.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 Deno.test("did/webs - parses DID Webs host, path, AID, and artifact URLs", () => {
   const parsed = parseDid("did:webs:127.0.0.1%3A7678:dws:EAid?meta=true");
@@ -161,18 +163,18 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
     const injected = new TypeError("injected client invariant failure");
     const runtime = yield* createAgentRuntime(target, {
       services: {
-        http: {
-          // deno-lint-ignore require-await -- Model asynchronous Fetch rejection and response completion.
-          async fetch(url) {
-            fetches.push(url);
-            if (mode === "injected") throw injected;
-            if (mode === "status" && fetches.length === 1) return new Response(null, { status: 503 });
-            if (url.endsWith("did.json")) {
-              if (mode === "mismatch") return new Response(JSON.stringify({ id: did }));
-            }
-            return new Response(url.endsWith("did.json") ? Uint8Array.from(artifacts.didJson) : body);
-          },
-        },
+        http: httpClient((url) => {
+          fetches.push(url);
+          if (mode === "injected") throw injected;
+          if (mode === "opening" && fetches.length === 1) {
+            throw new TransportError("opening failed", { cause: injected });
+          }
+          if (mode === "status" && fetches.length === 1) return new Response(null, { status: 503 });
+          if (url.endsWith("did.json")) {
+            if (mode === "mismatch") return new Response(JSON.stringify({ id: did }));
+          }
+          return new Response(url.endsWith("did.json") ? Uint8Array.from(artifacts.didJson) : body);
+        }),
       },
     });
     let escrowPasses = 0;
@@ -325,20 +327,22 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         assertEquals(error, injected);
       }
       assertEquals(fetches.length, 1);
-      fetches = [];
-      mode = "status";
-      body = new ReadableStream({
-        start(current) {
-          current.enqueue(artifacts.keriCesr);
-          current.close();
-        },
-      });
-      assertEquals(
-        (yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did })).document.id,
-        did,
-      );
-      assertEquals(fetches.slice(0, 2).map((url) => new URL(url).protocol), ["https:", "http:"]);
-      clearSavedCue();
+      for (const fallback of ["status", "opening"]) {
+        fetches = [];
+        mode = fallback;
+        body = new ReadableStream({
+          start(current) {
+            current.enqueue(artifacts.keriCesr);
+            current.close();
+          },
+        });
+        assertEquals(
+          (yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did })).document.id,
+          did,
+        );
+        assertEquals(fetches.slice(0, 2).map((url) => new URL(url).protocol), ["https:", "http:"]);
+        clearSavedCue();
+      }
 
       for (const [failure, expected] of [["mismatch", ValidationError]] as const) {
         mode = failure;

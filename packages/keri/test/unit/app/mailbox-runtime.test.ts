@@ -9,6 +9,8 @@
  * - agent controller bootstrap config behavior
  * - multi-AID host filtering for the selected mailbox alias
  */
+import type { HttpResponse } from "../../../src/app/http-client.ts";
+
 import { action, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../cesr/mod.ts";
@@ -227,16 +229,13 @@ function anchorDelegatedHab(
 }
 
 /** Read one JSON response body inside the Effection runtime. */
-function* jsonOp<T>(response: Response): Operation<T> {
-  return yield* action<T>((resolve, reject) => {
-    response.json().then((value) => resolve(value as T)).catch(reject);
-    return () => {};
-  });
+function* jsonOp<T>(response: Response | HttpResponse): Operation<T> {
+  return JSON.parse(yield* textOp(response)) as T;
 }
 
 /** Assert one HTTP status and surface the response body on mismatch. */
 function* assertResponseStatus(
-  response: Response,
+  response: Response | HttpResponse,
   expected: number,
 ): Operation<void> {
   if (response.status === expected) {
@@ -517,7 +516,7 @@ function* postMailboxAdmin(
   url: string,
   body: Uint8Array,
   contentType = "application/cesr",
-): Operation<Response> {
+): Operation<Response | HttpResponse> {
   return yield* fetchOp(url, {
     method: "POST",
     headers: { "Content-Type": contentType },
@@ -529,7 +528,7 @@ function* postMailboxAdmin(
 function* postMailboxAdminMultipart(
   url: string,
   fields: Array<[string, string]>,
-): Operation<Response> {
+): Operation<Response | HttpResponse> {
   const form = new FormData();
   for (const [name, value] of fields) {
     form.set(name, value);
@@ -545,11 +544,8 @@ function* fakeFetchOp(
   http: FakeRuntimeHttpClient,
   url: string,
   init?: RequestInit,
-): Operation<Response> {
-  return yield* action<Response>((resolve, reject) => {
-    http.fetch(url, init).then(resolve).catch(reject);
-    return () => {};
-  });
+): Operation<Response | HttpResponse> {
+  return yield* http.request(url, init);
 }
 
 /** Post one multipart mailbox admin request through a fake HTTP origin. */
@@ -557,7 +553,7 @@ function* postMailboxAdminMultipartInProcess(
   http: FakeRuntimeHttpClient,
   url: string,
   fields: Array<[string, string]>,
-): Operation<Response> {
+): Operation<Response | HttpResponse> {
   const form = new FormData();
   for (const [name, value] of fields) {
     form.set(name, value);

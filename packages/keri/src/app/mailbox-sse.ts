@@ -1,6 +1,7 @@
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import { abortable } from "./abortable.ts";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import { abortable, rethrowCleanupFailure } from "./abortable.ts";
+import type { HttpResponse } from "./http-client.ts";
+import { defaultRuntimeClock, type RuntimeClock } from "./runtime-services.ts";
 
 /** Shared encoder for complete mailbox event payloads. */
 const textEncoder = new TextEncoder();
@@ -18,7 +19,8 @@ export interface MailboxSseOptions {
   idleTimeoutMs?: number;
   /** Absolute lifetime of one long poll, including its first event; default 30 seconds. */
   maxDurationMs?: number;
-  services?: RuntimeServices;
+  /** Clock supplied by the consuming owner; SSE has no HTTP implementation dependency. */
+  clock?: RuntimeClock;
   /** External cancellation remains separate from a successful poll timeout. */
   signal?: AbortSignal;
 }
@@ -63,7 +65,7 @@ function appendBytes(
  * EOF, and cancellation discard an incomplete final event so its cursor can retry.
  */
 export function consumeMailboxSse(
-  response: Response,
+  response: HttpResponse,
   controller: AbortController,
   consume: (message: MailboxSseMessage) => Operation<boolean | void>,
   options: MailboxSseOptions = {},
@@ -114,7 +116,7 @@ export function consumeMailboxSse(
  * uses consumeMailboxSse to deliver complete events as they arrive.
  */
 export function readMailboxSseBody(
-  response: Response,
+  response: HttpResponse,
   controller: AbortController,
   options: MailboxSseOptions = {},
 ): Operation<string> {
@@ -157,119 +159,85 @@ export function parseMailboxSse(text: string): MailboxSseMessage[] {
     .filter((message): message is MailboxSseMessage => message !== undefined);
 }
 
-/** Own one reader; a timed-out read is canceled and joined before this operation exits. */
+/** Apply SSE deadlines to the owned byte source; the HTTP client retains native reader mechanics. */
 function* consumeChunks(
-  response: Response,
+  response: HttpResponse,
   controller: AbortController,
   consume: (chunk: Uint8Array) => Operation<boolean | void>,
   options: MailboxSseOptions,
   hasEvent: () => boolean,
 ): Operation<void> {
-  const {
-    idleTimeoutMs = 500,
-    maxDurationMs = 30_000,
-    services = defaultRuntimeServices,
-  } = options;
+  const { idleTimeoutMs = 500, maxDurationMs = 30_000, clock = defaultRuntimeClock } = options;
   for (const value of [idleTimeoutMs, maxDurationMs]) {
     if (!Number.isSafeInteger(value) || value < 1) throw new RangeError("Invalid mailbox SSE timeout");
   }
-  if (!response.body) return;
-  const reader = response.body.getReader();
-  let closing: Promise<void> | undefined;
-  let pendingRead: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
-  let reportedFailure: { error: unknown } | undefined;
-  let readAbort: { reason: unknown } | undefined;
-  /** Repeated cancellation joins the original underlying source cleanup, including asynchronous cancel. */
-  const close = (reason?: unknown) => closing ??= reader.cancel(reason);
-  // This owner predates the cancellable read leaf, so teardown joins the read before releasing its lock.
+  const iterator = response.body(controller.signal)[Symbol.asyncIterator]();
+  let pending: Promise<IteratorResult<Uint8Array>> | undefined;
+  let reported: { error: unknown } | undefined;
+  // Deadline cancellation wakes a blocked source read before teardown joins its iterator.
   yield* resource<void>(function*(provide) {
     try {
       yield* provide();
     } finally {
       controller.abort();
+      const errors: unknown[] = [];
       yield* call(async () => {
-        const failures: unknown[] = [];
         const remember = (error: unknown) => {
-          if (
-            (reportedFailure && error === reportedFailure.error) || error === controller.signal.reason
-            || (readAbort && error === readAbort.reason)
-          ) {
-            return;
+          try {
+            rethrowCleanupFailure(error, controller.signal);
+          } catch (remaining) {
+            if (!(reported && remaining === reported.error) && !errors.includes(remaining)) errors.push(remaining);
           }
-          if (!failures.includes(error)) failures.push(error);
         };
         try {
-          // The read leaf joins this Promise too, but cancellation can discard its result.
-          try {
-            await pendingRead;
-          } catch (error) {
-            remember(error);
-          }
-          try {
-            await close();
-          } catch (error) {
-            remember(error);
-          }
-        } finally {
-          try {
-            reader.releaseLock();
-          } catch (error) {
-            remember(error);
-          }
+          await pending;
+        } catch (error) {
+          remember(error);
         }
-        if (failures.length && reportedFailure) failures.unshift(reportedFailure.error);
-        if (failures.length === 1) throw failures[0];
-        if (failures.length) throw new AggregateError(failures, "Mailbox SSE read and cleanup failed");
+        try {
+          await iterator.return?.();
+        } catch (error) {
+          remember(error);
+        }
       });
+      if (errors.length && reported) errors.unshift(reported.error);
+      // deno-lint-ignore no-unsafe-finally -- Keep actual source cleanup failure visible during cancellation.
+      if (errors.length === 1) throw errors[0];
+      // deno-lint-ignore no-unsafe-finally -- Preserve the source failure alongside distinct cleanup failures.
+      if (errors.length) throw new AggregateError(errors, "Mailbox SSE source and cleanup failed");
     }
   });
-  const deadline = services.clock.now() + maxDurationMs;
+  const deadline = clock.now() + maxDurationMs;
   try {
-    while (services.clock.now() < deadline) {
-      const wait = Math.max(1, Math.min(hasEvent() ? idleTimeoutMs : maxDurationMs, deadline - services.clock.now()));
+    while (clock.now() < deadline) {
+      const wait = Math.max(1, Math.min(hasEvent() ? idleTimeoutMs : maxDurationMs, deadline - clock.now()));
       const next = yield* abortable(async (signal) => {
-        // Keep exactly one read alive. A timeout ends the poll, never starts a competing reader.read().
-        const pending = pendingRead = reader.read();
-        readAbort = undefined;
-        let timer: ReturnType<typeof services.clock.setTimeout> | undefined;
-        const cancel = () => {
-          readAbort = { reason: signal.reason };
-          // Observe notification rejection; the earlier owner joins the original Promise.
-          void close(signal.reason).catch(() => {});
-        };
+        // This is application window policy, not native HTTP failure classification.
+        const cancel = () => controller.abort(signal.reason);
         signal.addEventListener("abort", cancel, { once: true });
-        // abortable checks before entry; also cover synchronous abort inside the source read hook.
         if (signal.aborted) cancel();
+        let timer: ReturnType<typeof clock.setTimeout> | undefined;
+        pending = iterator.next();
         try {
           const result = await Promise.race([
             pending,
             new Promise<undefined>((resolve) => {
-              timer = services.clock.setTimeout(() => resolve(undefined), wait);
+              timer = clock.setTimeout(() => resolve(undefined), wait);
             }),
           ]);
-          if (!result) {
-            controller.abort();
-            try {
-              await close();
-            } catch (error) {
-              // Native fetch errors its body with this exact timeout reason.
-              if (error !== controller.signal.reason) throw error;
-            }
-          }
+          if (!result) controller.abort();
           return result;
         } finally {
-          if (timer !== undefined) services.clock.clearTimeout(timer);
+          if (timer !== undefined) clock.clearTimeout(timer);
           signal.removeEventListener("abort", cancel);
           await pending.catch(() => undefined);
         }
       }, options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal);
       if (!next || next.done) return;
-      if (next.value.length) {
-        if ((yield* consume(next.value)) === false) return;
-      }
+      if (next.value.length && (yield* consume(next.value)) === false) return;
     }
   } catch (error) {
-    reportedFailure = { error };
+    reported = { error };
     throw error;
   }
 }

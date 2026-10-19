@@ -38,6 +38,11 @@ Application entrypoints may orchestrate through the root; lower transports do no
 know the root or how its components are assembled. Unsupported forwarding facades,
 hollow modes and unused hooks are removed rather than renamed.
 
+HTTP composition supplies the scoped request client. Its concrete owner constructs
+Request before network execution and retains the native response reader through
+joined cleanup. Protocol/application consumers receive metadata and owned bytes;
+client object identity never chooses failure semantics.
+
 A shared Deck is not broadcast. Define its consumer and routing; fan out only when
 actual consumers require it. Preserve demonstrated ordering without global ordering.
 

@@ -259,21 +259,34 @@ unsupported acknowledgement or claim that transport proves remote acceptance.
 
 ## HTTP ownership
 
-HTTP upload, fetch and response scopes share the actual request controller.
-RequestInit.signal retains its reason through headers and body consumption.
-Pre-aborted requests acquire no fetch. Only the owner's header timeout becomes
-mailbox null; a later deadline cannot relabel earlier external cancellation.
-Caller-owned response scopes may abort an unread response; only their exact owned
-reason is suppressed. Ordinary CESR sends drain successful response bodies through
-EOF before reporting completion. Bounded QueryCoordinator/SSE consumers keep
-their explicit response lifetime. Finite workers join each response scope between jobs.
+Composition supplies `RuntimeHttpClient.request` as an actual HTTP dependency.
+The concrete FetchHttpClient constructs Request before its native fetch catch,
+validates supported HTTP(S)/credential URLs, and owns upload/fetch/body I/O and joined
+cleanup. A streaming upload opens only on native demand; platform upload cancellation
+can stop the upload independently of a successful response. No lower CESR helper
+compares client identities or selects a default HTTP implementation.
+
+HttpResponse contains status, derived ok, headers and one body(signal) byte source.
+It is borrowed within the request scope; native Response/readers do not escape.
+Consumer cancellation wakes a blocked native read before parser/source teardown joins
+it. Native read failures are classified at the same concrete owner that issued the
+request. CESR/SSE/JSON parsers and storage execute outside transport catches.
+
+Pre-aborted requests acquire no fetch. Only the caller policy's header timeout becomes
+mailbox null; a later deadline cannot relabel earlier external cancellation. The header
+timer clears at headers while the request remains live for body processing. SSE idle
+and maximum windows keep their existing caller-owned deadlines. Status-only auth,
+webhook and receipt-202 workflows close their unread owned source before publication.
+Ordinary CESR sends drain through EOF; finite workers join each request between jobs.
 
 `postCesr` sends successive framed POSTs and completes each response scope before
 advancing. Success headers alone do not establish completion: Content-Length or
 chunked truncation fails the attempt. Redirects are refused without following or
 replaying the application message. Native fetch/body-read failures retain their
-original causes in TransportError; injected client, parser/source and genuine
-cleanup failures retain their own identity. Header mode carries CESR-ATTACHMENT;
+original causes in TransportError. Injected implementations use that same explicit
+contract; arbitrary injected, parser/source and genuine cleanup failures retain
+their own identity. Cleanup deduplicates a repeated raw read cause while retaining
+distinct failures, including undefined rejection. Header mode carries CESR-ATTACHMENT;
 body mode streams one qualified frame. Preserve URL/path, destination, authentication
 and supported media-type negotiation within one attempt.
 KERIpy 714 HTTPStreamMessenger instead uses one bulk PUT to `/`; matching class
@@ -380,9 +393,9 @@ authorization. It accepts actual clock/HTTP services without Baser policy identi
 
 DID resolution waits for genuine KERI/VDR EOF and escrow processing before fetching
 hosted JSON or returning a document. Full generated-versus-hosted comparison remains
-required. Only default native fetch-header TypeError and non-ok HTTP status permit
-the existing alternate URL; injected TypeError and body/parser/storage/cancellation
-failures propagate. Failed refusal cleanup prevents fallback. Native HTTP fallback
+required. Only explicit opening TransportError and non-ok HTTP status permit
+the existing alternate URL. The opening catch ends at received headers; arbitrary
+injected TypeError and body/parser/storage/cancellation failures propagate. Failed refusal cleanup prevents fallback. Native HTTP fallback
 is not strict TLS qualification. Finite collection has no byte/stream allowance.
 
 Static artifacts own regular files directly. Demand causes each 64 KiB read; capture

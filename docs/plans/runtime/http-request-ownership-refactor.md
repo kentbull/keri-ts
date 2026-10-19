@@ -1,7 +1,10 @@
 # HTTP request construction and transport ownership
 
-Status: implementation in progress; the concrete request owner is under focused
-qualification before production adoption. Planning
+Status: implementation complete through [PR #539](https://github.com/kentbull/keri-ts/pull/539)
+and [PR #540](https://github.com/kentbull/keri-ts/pull/540). The
+[qualification record](https://github.com/kentbull/keri-ts/pull/540#issuecomment-6275128900)
+owns the actual tested revisions, composed results and remaining limits; full
+qualification follows the final implementation merge. Planning
 baseline: local HEAD and remote `master` both verified at
 `ac5aa29ba2b22263a913863246e68fca92e97cbc` on 2026-10-19. Recheck the baseline before
 implementation. This plan follows the completed [messenger refactor](messenger-protocol-refactor.md)

@@ -6,6 +6,7 @@ import {
   createAgentRuntime,
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
@@ -552,16 +553,14 @@ Deno.test("query delivery processes a streamed reply after synchronous preparati
     let requests = 0;
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          fetch: () => {
-            requests++;
-            return Promise.resolve(
-              new Response(new Uint8Array(concatBytes(...remote.db.clonePreIter(peer.pre))), {
-                headers: { "Content-Type": "application/cesr" },
-              }),
-            );
-          },
-        },
+        http: httpClient(() => {
+          requests++;
+          return Promise.resolve(
+            new Response(new Uint8Array(concatBytes(...remote.db.clonePreIter(peer.pre))), {
+              headers: { "Content-Type": "application/cesr" },
+            }),
+          );
+        }),
       },
     });
     try {

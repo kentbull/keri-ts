@@ -13,6 +13,7 @@ import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import type { AgentCue, ReplayCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 /** Explicit test gates make turn ordering observable without timing sleeps. */
 function gate(): { wait: Promise<void>; open: () => void } {
@@ -32,22 +33,20 @@ Deno.test("finite runtime workers progress independently and join blocked HTTP c
       let finished = false, failure: unknown;
       const runtime = yield* createAgentRuntime(target, {
         services: {
-          http: {
-            fetch() {
-              fetched.open();
-              return Promise.resolve(
-                new Response(
-                  new ReadableStream<Uint8Array>({
-                    cancel() {
-                      cancelling.open();
-                      return cleanup.wait;
-                    },
-                  }),
-                  { headers: { "Content-Type": "application/cesr" } },
-                ),
-              );
-            },
-          },
+          http: httpClient(() => {
+            fetched.open();
+            return Promise.resolve(
+              new Response(
+                new ReadableStream<Uint8Array>({
+                  cancel() {
+                    cancelling.open();
+                    return cleanup.wait;
+                  },
+                }),
+                { headers: { "Content-Type": "application/cesr" } },
+              ),
+            );
+          }),
         },
       });
       runtime.oobiery.resolve(`http://blocked.test/oobi/${sender.pre}/controller`);
@@ -260,13 +259,11 @@ Deno.test("OOBI result publication preserves cues appended during HTTP fetch", a
         cues: reactor.protocol.cues,
         services: {
           ...defaultRuntimeServices,
-          http: {
-            fetch() {
-              // Model another producer filling the shared queue while this request is suspended in transport.
-              reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
-              return Promise.resolve(new Response(null, { status: 404 }));
-            },
-          },
+          http: httpClient(() => {
+            // Model another producer filling the shared queue while this request is suspended in transport.
+            reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
+            return Promise.resolve(new Response(null, { status: 404 }));
+          }),
         },
       });
       const url = "http://example.test/oobi";
@@ -724,17 +721,15 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
         cues: resultCues,
         services: {
           ...defaultRuntimeServices,
-          http: {
-            fetch(_url, init) {
-              requests++;
-              signal = init?.signal ?? undefined;
-              return Promise.resolve(
-                new Response(requests === 1 ? body : new Blob([first.slice().buffer, second.slice().buffer]), {
-                  headers: { "Content-Type": contentType },
-                }),
-              );
-            },
-          },
+          http: httpClient((_url, init) => {
+            requests++;
+            signal = init?.signal ?? undefined;
+            return Promise.resolve(
+              new Response(requests === 1 ? body : new Blob([first.slice().buffer, second.slice().buffer]), {
+                headers: { "Content-Type": contentType },
+              }),
+            );
+          }),
         },
       });
 

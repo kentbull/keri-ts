@@ -8,7 +8,7 @@ its [reliability roadmap](plans/runtime/cue-reliability-roadmap.md) records
 deferred capabilities, not additional implementation authorization.
 The [messenger and protocol refactor](plans/runtime/messenger-protocol-refactor.md)
 tracks the phased separation of input/transport lifetimes from shared protocol processing.
-The planned [HTTP request ownership refactor](plans/runtime/http-request-ownership-refactor.md)
+The [HTTP request ownership refactor](plans/runtime/http-request-ownership-refactor.md)
 consolidates Request validation, execution and body transport failures into the composed HTTP implementation.
 
 | Area                                           | Purpose                                           |

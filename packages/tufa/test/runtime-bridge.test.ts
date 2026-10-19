@@ -1,3 +1,4 @@
+import { httpClient } from "../../keri/test/support/http-client.ts";
 // @file-test-lane app-fast-parallel
 
 import { call, run } from "effection";
@@ -15,16 +16,14 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
     let failure: unknown, posted: Uint8Array | undefined, sends = 0;
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          async fetch(_url, init) {
-            sends++;
-            posted = await readCesrRequestBytes(new Request(_url, init));
-            start();
-            await gate;
-            if (failure) throw failure;
-            return new Response(null, { status: 204 });
-          },
-        },
+        http: httpClient(async (_url, init) => {
+          sends++;
+          posted = await readCesrRequestBytes(new Request(_url, init));
+          start();
+          await gate;
+          if (failure) throw failure;
+          return new Response(null, { status: 204 });
+        }),
       },
     });
     try {

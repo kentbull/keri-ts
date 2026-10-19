@@ -9,6 +9,7 @@ import {
   resolveDidWebs,
   runAgentRuntime,
 } from "keri-ts/runtime";
+import { httpClient } from "../../../keri/test/support/http-client.ts";
 import { startServer } from "../../src/host/http-server.ts";
 import { createProtocolHandler } from "../../src/http/protocol-handler.ts";
 import { reserveTcpPort, startTestServer, waitForServer, waitForTaskHalt } from "../test-helpers.ts";
@@ -201,12 +202,10 @@ Deno.test("DID adapters reject absent registry before schema writes or introduct
     let fetched = false;
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          fetch: () => {
-            fetched = true;
-            throw new Error("Registry absence must precede fetch");
-          },
-        },
+        http: httpClient(() => {
+          fetched = true;
+          throw new Error("Registry absence must precede fetch");
+        }),
       },
     });
     try {

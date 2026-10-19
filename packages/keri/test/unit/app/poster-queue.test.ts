@@ -12,6 +12,7 @@ import { TransportError } from "../../../src/app/transport-error.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { Roles } from "../../../src/core/roles.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 Deno.test("Poster completion belongs to a concrete admission and does not determine idle", async () => {
   await run(function*() {
@@ -20,13 +21,11 @@ Deno.test("Poster completion belongs to a concrete admission and does not determ
     const posted: string[] = [];
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          async fetch(url, init) {
-            await readCesrRequestBytes(new Request(url, init));
-            posted.push(String(url));
-            return new Response(null, { status: 204 });
-          },
-        },
+        http: httpClient(async (url, init) => {
+          await readCesrRequestBytes(new Request(url, init));
+          posted.push(String(url));
+          return new Response(null, { status: 204 });
+        }),
       },
     });
     const postman = runtime.postman;

@@ -12,6 +12,7 @@ import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { createVerifierCueBaser, type VerifierCueBaser } from "../../../src/db/verifier-cueing.ts";
 import { Credentialer, Regery, type Registry } from "../../../src/vdr/credentialing.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 function schemaSed(): Record<string, unknown> {
   return {
@@ -135,15 +136,13 @@ async function assertIssuanceWebhook(gvrsn: Versionage): Promise<void> {
       reger: verifierReger,
       services: {
         clock: fixedClock(),
-        http: {
-          fetch: (_url, init) => {
-            requests.push({
-              body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
-              headers: new Headers(init?.headers),
-            });
-            return Promise.resolve(new Response("", { status: 202 }));
-          },
-        },
+        http: httpClient((_url, init) => {
+          requests.push({
+            body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+            headers: new Headers(init?.headers),
+          });
+          return Promise.resolve(new Response("", { status: 202 }));
+        }),
       },
     });
     try {
@@ -216,12 +215,10 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
       reger: verifierReger,
       services: {
         clock: fixedClock(),
-        http: {
-          fetch: (_url, init) => {
-            requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
-            return Promise.resolve(new Response("", { status: 200 }));
-          },
-        },
+        http: httpClient((_url, init) => {
+          requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+          return Promise.resolve(new Response("", { status: 200 }));
+        }),
       },
     });
     try {
@@ -325,12 +322,10 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
       reger: verifierReger,
       services: {
         clock: fixedClock(),
-        http: {
-          fetch: (_url, init) => {
-            requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
-            return Promise.resolve(new Response("", { status: 200 }));
-          },
-        },
+        http: httpClient((_url, init) => {
+          requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+          return Promise.resolve(new Response("", { status: 200 }));
+        }),
       },
     });
     try {

@@ -1,4 +1,6 @@
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+
 import {
   type CesrFrame,
   collectPayload,
@@ -299,7 +301,9 @@ for (const count of [1, 2]) {
                 gvrsn: Vrsn_2_0,
                 genusify: true,
               }));
-              const response = yield* requestFrame(mailboxUrl, request, { signal: AbortSignal.timeout(10_000) });
+              const response = yield* requestFrame(mailboxUrl, request, defaultRuntimeServices.http, {
+                signal: AbortSignal.timeout(10_000),
+              });
               assertEquals(response.status, 200);
               let received = false;
               yield* consumeMailboxSse(response, new AbortController(), function*(event) {

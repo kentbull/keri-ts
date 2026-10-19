@@ -2,6 +2,7 @@ import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 Deno.test("query owner retains actual failed HTTP output for retry and closes ordinary pending work", async () => {
   await run(function*() {
@@ -9,7 +10,7 @@ Deno.test("query owner retains actual failed HTTP output for retry and closes or
     const hab = hby.makeHab("sender");
     hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
     const fault = new Error("query peer unavailable");
-    const runtime = yield* createAgentRuntime(hby, { services: { http: { fetch: () => Promise.reject(fault) } } });
+    const runtime = yield* createAgentRuntime(hby, { services: { http: httpClient(() => Promise.reject(fault)) } });
     try {
       const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {}, wits: [hab.pre] };
       for (let index = 0; index < 9; index++) runtime.querying.enqueue(request);
@@ -49,7 +50,7 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
       },
     }, { highWaterMark: 0 });
     const runtime = yield* createAgentRuntime(hby, {
-      services: { http: { fetch: () => Promise.resolve(new Response(body)) } },
+      services: { http: httpClient(() => Promise.resolve(new Response(body))) },
     });
     try {
       hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
@@ -93,19 +94,17 @@ Deno.test("query shutdown after successful response consumption cannot send the 
     const hab = hby.makeHab("sender");
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          fetch: () => {
-            requests++;
-            const response = new Response(new Uint8Array());
-            const cancel = response.body!.cancel.bind(response.body);
-            response.body!.cancel = async (reason) => {
-              cleaning.resolve();
-              await release.promise;
-              await cancel(reason);
-            };
-            return Promise.resolve(response);
-          },
-        },
+        http: httpClient(() => {
+          requests++;
+          const response = new Response(new Uint8Array());
+          const cancel = response.body!.cancel.bind(response.body);
+          response.body!.cancel = async (reason) => {
+            cleaning.resolve();
+            await release.promise;
+            await cancel(reason);
+          };
+          return Promise.resolve(response);
+        }),
       },
     });
     const queue = runtime.querying;

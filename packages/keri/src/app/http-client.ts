@@ -56,6 +56,9 @@ export class FetchHttpClient implements HttpClient {
     return resource<HttpResponse>(function*(provide) {
       const controller = new AbortController();
       const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
+      // An early response may cancel upload while the response itself remains readable.
+      const uploadController = new AbortController();
+      const uploadSignal = AbortSignal.any([signal, uploadController.signal]);
       let response: Response | undefined;
       let fetching: Promise<Response> | undefined;
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -67,6 +70,7 @@ export class FetchHttpClient implements HttpClient {
       let uploadClosing: Promise<void> | undefined;
       let uploadFailure: { error: unknown } | undefined;
       let readFailure: { raw: unknown; error: unknown } | undefined;
+      let requestFailure: { error: unknown } | undefined;
       const reported: unknown[] = [];
       let bodySignal: AbortSignal | undefined;
       let acquired = false;
@@ -75,17 +79,19 @@ export class FetchHttpClient implements HttpClient {
       /** Abort the actual request when the borrowing consumer stops, even during a blocked read. */
       const abortBody = () => controller.abort(bodySignal!.reason);
       /** Preserve native error provenance; source failures and exact cancellation remain distinct. */
-      const transportFailure = (cause: unknown): unknown => {
+      const transportFailure = (cause: unknown, message = "HTTP request failed"): unknown => {
         if (uploadFailure) return uploadFailure.error;
         if (signal.aborted && cause === signal.reason) return cause;
-        return new TransportError(`HTTP request failed for ${url}`, { cause });
+        return new TransportError(`${message} for ${url}`, { cause });
       };
       /** Join the original upload before returning its iterator; never race next() with return(). */
-      const closeUpload = () =>
-        uploadClosing ??= (async () => {
+      const closeUpload = () => {
+        uploadController.abort();
+        return uploadClosing ??= (async () => {
           await uploading?.catch(() => undefined);
           await upload?.return?.();
         })();
+      };
       /** Cancel before joining a pending read, then unlock; retain distinct cleanup failures. */
       const closeBody = () =>
         closing ??= (async () => {
@@ -128,14 +134,14 @@ export class FetchHttpClient implements HttpClient {
             /** Fetch demand opens the source; Request construction itself starts no source work. */
             async pull(stream) {
               try {
-                signal.throwIfAborted();
-                upload ??= source(signal)[Symbol.asyncIterator]();
+                uploadSignal.throwIfAborted();
+                upload ??= source(uploadSignal)[Symbol.asyncIterator]();
                 uploading = upload.next();
                 const result = await uploading;
                 if (result.done) stream.close();
                 else stream.enqueue(result.value);
               } catch (error) {
-                uploadFailure = { error };
+                if (!(uploadSignal.aborted && error === uploadSignal.reason)) uploadFailure = { error };
                 throw error;
               } finally {
                 uploading = undefined;
@@ -188,7 +194,7 @@ export class FetchHttpClient implements HttpClient {
                       if (result.done) ended = true;
                       return result.done ? { done: true, value: undefined } : { done: false, value: result.value };
                     } catch (raw) {
-                      const error = transportFailure(raw);
+                      const error = transportFailure(raw, "HTTP response body failed");
                       readFailure = { raw, error };
                       reported.push(error);
                       throw error;
@@ -209,6 +215,7 @@ export class FetchHttpClient implements HttpClient {
           },
         });
       } catch (error) {
+        requestFailure = { error };
         reported.push(error);
         throw error;
       } finally {
@@ -237,8 +244,17 @@ export class FetchHttpClient implements HttpClient {
             remember(error);
           }
           signal.removeEventListener("abort", cancel);
-          if (errors.length && readFailure && reported.includes(readFailure.error)) errors.unshift(readFailure.error);
+          // A canceled consumer can lose its pending read result. The request still owns that failure.
+          if (readFailure && readFailure.raw !== signal.reason && !errors.includes(readFailure.error)) {
+            errors.unshift(readFailure.error);
+          }
         });
+        if (
+          errors.length && requestFailure && requestFailure.error !== signal.reason
+          && !errors.includes(requestFailure.error)
+        ) {
+          errors.unshift(requestFailure.error);
+        }
         throwFailures(errors);
       }
     });

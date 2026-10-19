@@ -12,6 +12,7 @@ import { runtimeTurn } from "../../../src/app/runtime-turn.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
+import { httpClient } from "../../support/http-client.ts";
 import {
   FakeMailboxPollTransport,
   fakeRuntimeServices,
@@ -508,7 +509,7 @@ Deno.test("continuous mailbox polling hands off one event before requesting its 
       },
     }, { highWaterMark: 0 });
     const poller = new MailboxPoller(hby, new MailboxDirector(hby), {
-      services: { ...defaultRuntimeServices, http: { fetch: () => Promise.resolve(new Response(responseBody)) } },
+      services: { ...defaultRuntimeServices, http: httpClient(() => Promise.resolve(new Response(responseBody))) },
     });
     poller.registerTopic("/reply");
     const worker = yield* spawn(() =>

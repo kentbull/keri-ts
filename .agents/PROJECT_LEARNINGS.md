@@ -21,7 +21,11 @@ preserves receive processing. Concrete network errors retain original causes.
 The [messenger/protocol refactor](../docs/plans/runtime/messenger-protocol-refactor.md)
 extracts actual shared processing into ProtocolProcessor. Reactor owns input;
 TCPMessenger/HTTPMessenger own attempts and input-specific Kevery/parser lifetimes.
-Semantic reply/exchange/TEL handlers and v2 sender policy remain shared. Outbound
+Semantic reply/exchange/TEL handlers and v2 sender policy remain shared.
+The [HTTP request ownership refactor](../docs/plans/runtime/http-request-ownership-refactor.md)
+puts Request construction and native fetch/body failures in FetchHttpClient. Consumers
+borrow a cancellable byte source through the composed HTTP contract; no client identity
+check selects failure handling. Outbound
 components receive the actual protocol and I/O dependencies, not Reactor proxies.
 
 ## Read by subject
