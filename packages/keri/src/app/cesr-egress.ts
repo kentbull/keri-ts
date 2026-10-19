@@ -100,11 +100,10 @@ function requestBody(payload: Payload, upstream: AbortSignal): RequestBody {
   };
   return body;
 }
-/** Reach response EOF before completion; collect only refusal diagnostics, and preserve cleanup failures. */
+/** Reach response EOF before completion; collect refusal text, and preserve cleanup failures. */
 async function readResponseBody(
   response: Response,
   signal: AbortSignal,
-  diagnostic = false,
   readFailed?: (cause: unknown) => void,
 ): Promise<string> {
   if (!response.body) return "";
@@ -118,7 +117,8 @@ async function readResponseBody(
   };
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
-  const decoder = diagnostic ? new TextDecoder() : undefined;
+  // Successful bodies need draining only; refusal text supports reporting and media negotiation.
+  const decoder = response.ok ? undefined : new TextDecoder();
   const text: string[] = [];
   let readFailure: { error: unknown } | undefined;
   const errors: unknown[] = [];
@@ -247,7 +247,7 @@ function openFrameResponse(
           return;
         }
         // Only failed response text is read here; successful bodies remain available to the caller.
-        reading = readResponseBody(response, signal, true, readFailed);
+        reading = readResponseBody(response, signal, readFailed);
         // The response detail determines whether the historical media-type retry applies.
         const detail = yield* call(() => reading!);
         if (
@@ -370,7 +370,7 @@ export function attemptPostCesr(
           if (consume) yield* consume(response.response);
           else {
             yield* abortable(
-              (signal) => readResponseBody(response.response, signal, false, readFailed),
+              (signal) => readResponseBody(response.response, signal, readFailed),
               signal,
             );
           }
