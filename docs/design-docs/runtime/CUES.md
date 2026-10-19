@@ -78,8 +78,10 @@ A successful `/fwd` write does not prove the query-to-SSE bridge works.
 
 ## Record and resource boundaries
 
-Interpret/prepare and publish successfully before removing a source record.
-Preparation failure leaves it pending. Finite passes use their initial extent;
+Respondant and QueryCoordinator prepare and publish successfully before removing
+their source record. Preparation failure leaves that source pending. Hab's low-level
+processCuesIter consumes a supplied Deck head before construction; Respondant passes
+a borrowed single-cue iterable so its source Deck remains intact on failure. Finite passes use their initial extent;
 newly appended work waits for another pass. Notify-only or no-emission cues can
 still be consumed. Do not restore CueSink hooks, preparation callbacks or generic
 delivery wrappers to enforce this ordinary sequencing.

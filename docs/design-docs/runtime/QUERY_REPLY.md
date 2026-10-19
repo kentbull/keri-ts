@@ -23,8 +23,9 @@ query routing, and KERIpy-to-`keri-ts` host correspondence, read
 
 ## Ownership Model
 
-The main rule is that `keri-ts` preserves KERIpy behavior while making ownership
-more explicit.
+KERIpy supplies the correspondence model; TypeScript ownership and endpoint-selection
+differences are explicit below. The pinned references are KERIpy `71438328` and
+GLEIF-IT `b8626e1d`, recorded in the [cue delivery plan](../../plans/runtime/cue-delivery-refactor.md).
 
 - `Revery` owns:
   - reply-envelope verification
@@ -44,8 +45,17 @@ more explicit.
   - cue-to-wire interpretation for already-complete cues
   - message materialization once a cue already has the source and destination
     information it needs
+- `QueryReplies` owns:
+  - request-SAID correlation slots and ordered captured evidence
+  - independent slots for duplicate requests; correlation does not authorize access
+- `ProtocolProcessor` owns:
+  - serialized semantic dispatch and escrow advancement
+  - reply capture before application cue publication
+- `Reactor` and receiving messengers own:
+  - input-specific parsers and Kevery instances over shared accepted state
+  - source cancellation and cleanup; they borrow the shared ProtocolProcessor
 - `AgentRuntime` owns:
-  - hosting and convergence only
+  - composition, hosting and convergence
   - not query policy itself
 
 The most important boundary is this:

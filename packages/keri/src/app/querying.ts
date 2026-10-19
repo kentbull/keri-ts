@@ -73,8 +73,22 @@ function copyQuery(instruction: QueryInstruction): QueryInstruction {
  * - exposes `done` so the runtime can include it in convergence checks
  */
 interface QueryContinuation {
+  /**
+   * Whether accepted state satisfies this continuation; completed entries leave the coordinator.
+   */
   readonly done: boolean;
+  /**
+   * Observe a relevant application cue without taking ownership of the shared cue Deck.
+   *
+   * @param cue Published protocol/application fact, possibly unrelated and ignored.
+   * @param coordinator Borrowed correspondence owner for follow-on query admission.
+   */
   observe(cue: AgentCue, coordinator: QueryCoordinator): void;
+  /**
+   * Inspect accepted state and enqueue any query still owed by this continuation.
+   *
+   * @param coordinator Borrowed state/query owner; this synchronous step performs no network I/O.
+   */
   tick(coordinator: QueryCoordinator): void;
 }
 

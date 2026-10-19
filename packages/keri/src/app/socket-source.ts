@@ -38,6 +38,10 @@ export function socketBytes(
   let pending: Promise<IteratorResult<Uint8Array>> | undefined;
   /** Wake the sole pending pull without starting another socket read. */
   const readable = () => wake?.();
+  /**
+   * Preserve the first read failure and wake the pending pull to report it.
+   * @param error Socket error or exact owner cancellation reason.
+   */
   const fail = (error: unknown) => {
     if (!failed) {
       failed = true;
@@ -45,17 +49,23 @@ export function socketBytes(
     }
     readable();
   };
+  /** Mark genuine receive EOF without closing the writable half. */
   const end = () => {
     ended = true;
     readable();
   };
+  /** Settle native close and report premature closure to any pending pull. */
   const close = () => {
     closed = true;
     if (!ended && !socket.readableEnded) fail(socket.errored ?? new Error("TCP socket closed before receive EOF"));
     finishClose?.();
     readable();
   };
-  /** Keep error/close listeners until destruction joins; EOF only releases readable ownership. */
+  /**
+   * Keep error/close listeners until destruction joins; EOF only releases read ownership.
+   * @param eof True only after genuine receive EOF, preserving the writable half.
+   * @returns Shared cleanup promise; repeated calls join the same cleanup.
+   */
   const cleanup = (eof = false): Promise<void> =>
     closing ??= (async () => {
       if (!started) return;
@@ -73,6 +83,7 @@ export function socketBytes(
         readers.delete(socket);
       }
     })();
+  /** Interrupt the blocked pull now; its next/return owner joins the cleanup promise. */
   const abort = () => {
     fail(signal.reason);
     // The original Promise stays owned by next()/return(), which join and propagate cleanup errors.
@@ -107,7 +118,11 @@ export function socketBytes(
     // A readable listener keeps flow mode off; resume also restarts caller-paused native input.
     else socket.resume();
   };
-  /** Read only available bytes, so a short fragment does not wait for a full chunk or EOF. */
+  /**
+   * Read only available bytes, so a short fragment does not wait for a full chunk or EOF.
+   * @returns One copied binary chunk or EOF after releasing read ownership.
+   * @throws Original read failure after cleanup, or an aggregate retaining distinct cleanup failure.
+   */
   const pull = async (): Promise<IteratorResult<Uint8Array>> => {
     try {
       if (!started) acquire();

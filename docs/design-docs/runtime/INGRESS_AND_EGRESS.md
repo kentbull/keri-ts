@@ -88,7 +88,9 @@ Runtime explicit close and scope exit clear queued ingress and cues.
 runAgentRuntime composes the existing component workers and suspends under their
 supervision. runAgentRuntimeUntil uses those same workers until its committed-state
 predicate succeeds or a caller-owned elapsed deadline expires, then joins them
-before returning or throwing. Commands choose their actual deadline and whether
+before returning or throwing. This finite host deadline currently uses Date.now;
+it does not use the injected RuntimeClock used by transport and verifier owners.
+Commands choose their actual deadline and whether
 mailbox polling is needed; no max-turn count estimates elapsed work. A blocked
 HTTP/mailbox worker does not serialize unrelated ingress or escrow progress.
 Actual cleanup failure still reaches the caller after convergence or cancellation.
@@ -193,14 +195,15 @@ identity, or consume its published cue. A repeated signed message cannot inherit
 an older success. Outcomes contain kin sent/failed, evt and completed deliveries;
 failed outcomes also retain the error. Missing routes and observed HTTP refusals
 produce failed outcomes; unexpected construction, parser, storage and cleanup
-failures also propagate to the owner. Existing direct-target stop-on-refusal and
-mailbox multi-target behavior remain unchanged in this phase.
+failures also propagate to the owner. All selected targets are attempted sequentially
+after recognized transport failure or observed refusal; unexpected errors stop the
+pass after the event's failure and partial successful deliveries are retained.
 
 Only one waiter may observe an event. Cancelling it drops that observation and any
 unconsumed outcome, without withdrawing shared delivery. A published outcome does
 not retain a separate observer registration. Outcome cues are consumable output;
-queued and active work alone determine hasPending. Whole failed events are not yet
-retained in a separate failures queue and there is no new retry/discard API.
+queued and active work alone determine hasPending. Whole failed events live separately
+in failures until explicit retry/discard or shutdown, as described above.
 
 Exchange construction and signing live in exchange-messaging.ts. Producers call
 createExchangeMessage before publishing; the standalone sendExchangeMessage helper
@@ -282,6 +285,20 @@ timer clears at headers while the request remains live for body processing. SSE 
 and maximum windows keep their existing caller-owned deadlines. Status-only auth,
 webhook and receipt-202 workflows close their unread owned source before publication.
 Ordinary CESR sends drain through EOF; finite workers join each request between jobs.
+Their result reports delivery/refusal rather than returning success bytes: ordinary
+send callers requested transmission, while query callers explicitly supply response
+intake. The finite/scoped distinction is response ownership, not a CESR-only type.
+
+| Need                                            | Entry point               | Completion and ownership                                                                                             |
+| ----------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Finite JSON/document/proof bytes                | HttpClient.request        | Returns resident bytes after EOF and cleanup.                                                                        |
+| Incremental bytes, SSE, or status-only decision | HttpClient.open           | Lends metadata/body within an enclosing Effection scope; owner closes unread I/O.                                    |
+| Ordinary signed CESR delivery                   | HTTPMessenger.send/stream | Consumes every successful response body and joins cleanup; returns complete/refuse, without protocol interpretation. |
+| Query response intake                           | HTTPMessenger.query       | Parses CESR or consumes the bounded SSE window before returning; accepted state remains a protocol decision.         |
+
+The header-media alternative is the narrow [COMP-01 compatibility rule](../../reference/compatibility/KERI_V1_V2_COMPATIBILITY.md#comp-01--dual-http-media-types-and-narrow-sender-fallback),
+not a retry after arbitrary transport failure. Its source owner documents the exact
+status/text predicate, retained headers and unchanged signed content.
 
 `postCesr` sends successive framed POSTs and completes each response scope before
 advancing. Success headers alone do not establish completion: Content-Length or
@@ -333,6 +350,11 @@ The existing absolute deadline covers local end and, for duplex only, peer close
 activity does not extend it. Native socket/connect/write errors retain their causes
 in TransportError. Source and distinct cleanup errors must not become peer failures.
 
+Tufa's witnessTcpListener/processWitnessSocket functions provide the listener and
+per-connection responsibilities corresponding to KERIpy Directant/Reactant. There
+is no TypeScript Directant class. They borrow the composed runtime and hosted signer;
+the listener owns accepted sockets and supervision.
+
 Tufa tracks actual accepted handles and connection scopes through close, without
 connection-count quotas, shared allowances or busy/drop callbacks. Stopping rejects
 new handles. Each connection owns one pending parser pull plus deferred-query
@@ -378,8 +400,14 @@ validates actual proof framing without a group-count/work cap.
 
 Mailbox polling runs one worker per remote endpoint with actual request-open and
 SSE read deadlines. One empty long poll cannot serialize another endpoint's work.
-Each complete event's consumer finishes before another read or cursor advancement;
-EOF/timeout/cancellation discard an unterminated event. There is no finite polling
+For remote SSE polling, each complete event's consumer finishes before another read
+or durable cursor advancement. Stored remote positions are the last consumed ordinal;
+the next query starts at that ordinal plus one. EOF/timeout/cancellation discard an
+unterminated event. Local provider polling instead tracks the next-wanted ordinal
+in memory and currently advances it while collecting, before the batch consumer
+runs. Consumer failure can skip that local batch for the same poller instance;
+a new poller starts at zero. The [documentation review findings](../../plans/runtime/runtime-maintainer-documentation.md#review-findings-retained-outside-this-documentation-change)
+record this behavior for a separate correction. There is no finite polling
 turn, command-local resume index or durable consumer inbox/acknowledgement.
 
 Provider SSE reads only on demand and closes each LMDB iterator before suspension.
@@ -416,7 +444,7 @@ deferred. Post-header body failure terminates the body and reports its original 
 
 ProtocolProcessor holds the serialized protocol turn, captures QueryReplies before
 application cue publication, and advances the shared durable escrows. Reactor owns
-queued/source parsing and an independent Kevery. Each receiving TCP operation also
+queued/source parsing and an independent Kevery. Each receiving TCP messenger instance also
 creates its own Kevery over the same Baser cache and configured policy. Shared
 Revery/Exchanger/TEL owners remain long-lived; input construction never replaces
 semantic reply registrations. Protocol processing calls the existing dispatchEnvelope

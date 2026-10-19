@@ -235,6 +235,10 @@ function* consumeChunks(
       controller.abort();
       const errors: unknown[] = [];
       yield* call(async () => {
+        /**
+         * Preserve cleanup failures other than the owned abort and already reported read failure.
+         * @param error Rejection from the pending read or iterator return.
+         */
         const remember = (error: unknown) => {
           try {
             rethrowCleanupFailure(error, controller.signal);
@@ -266,6 +270,7 @@ function* consumeChunks(
       const wait = Math.max(1, Math.min(hasEvent() ? idleTimeoutMs : maxDurationMs, deadline - clock.now()));
       const next = yield* abortable(async (signal) => {
         // This is application window policy, not native HTTP failure classification.
+        /** Wake the native body read before this child can be joined during cancellation. */
         const cancel = () => controller.abort(signal.reason);
         signal.addEventListener("abort", cancel, { once: true });
         if (signal.aborted) cancel();

@@ -106,15 +106,25 @@ export function openTcpConnection(
     const socket = createConnection({ host: parsed.hostname, port, allowHalfOpen: true });
     socket.pause();
     const closed = new Promise<void>((resolve) => socket.once("close", resolve));
+    /** Cancellation destroys the handle; the enclosing resource joins native close. */
     const destroy = () => socket.destroy();
+    /**
+     * Stop both directions with the original owner failure or cancellation.
+     * @param reason Failure to expose through the connection signal; omitted for ordinary teardown.
+     */
     const close = (reason?: unknown) => {
       controller.abort(reason);
       socket.destroy();
     };
+    /** Detect premature directional closure even when no parser currently holds the readable side. */
     const disconnected = () => {
       if (!socket.writableFinished) close(new TransportError(`TCP ${url} closed before output completed`));
       else if (!socket.readableEnded) close(new TransportError(`TCP ${url} closed before receive EOF`));
     };
+    /**
+     * Classify a native socket error at its actual connection boundary.
+     * @param cause Native socket failure retained as the TransportError cause.
+     */
     const failed = (cause: Error) => close(new TransportError(`TCP connection to ${url} failed`, { cause }));
     socket.on("error", failed);
     socket.on("close", disconnected);
@@ -238,6 +248,7 @@ export function writeCesrTcpSocket(
   { signal }: TcpSocketWriteOptions = {},
 ): Operation<TcpTransmission> {
   return abortable(async (signal) => {
+    /** Cancellation destroys the handle; the enclosing resource joins native close. */
     const destroy = () => socket.destroy();
     signal.addEventListener("abort", destroy, { once: true });
     try {
@@ -296,6 +307,7 @@ function finishTcpOutput(
     let timer: RuntimeTimer | undefined;
     let ending: Promise<void> | undefined;
     let endClosed: (() => void) | undefined;
+    /** Abort pending output before joining its end callback/close promise. */
     const stop = () => connection.close(signal.reason);
     signal.addEventListener("abort", stop, { once: true });
     try {
@@ -384,7 +396,10 @@ async function writeBorrowedSource(
   let timer: RuntimeTimer | undefined;
   let failure: { error: unknown } | undefined;
   let bytes = 0, work = 0;
-  /** Join late failures without reporting the same read/write rejection twice. */
+  /**
+   * Join late failures without reporting the same read/write rejection twice.
+   * @param error Rejection from outstanding source, iterator-return or native write cleanup.
+   */
   const noteCleanup = (error: unknown) => {
     if (failure && error === failure.error) return;
     try {

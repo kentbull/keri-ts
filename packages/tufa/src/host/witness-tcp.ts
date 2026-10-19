@@ -72,6 +72,10 @@ function* processWitnessSocket(
   const peers = new Set<unknown>();
   let receiveSignal: AbortSignal | undefined;
   let returning = false;
+  /**
+   * Report socket failure unless it belongs to already-started local teardown.
+   * @param error Native error; recognized peer codes are tracked for connection-local refusal reporting.
+   */
   const error = (error: Error) => {
     if ((receiveSignal?.aborted && !socket.readableEnded) || returning) {
       return;
@@ -81,6 +85,7 @@ function* processWitnessSocket(
     }
     rejectFailure(error);
   };
+  /** Reject closure before both directions drain, except during deliberate parser/owner teardown. */
   const close = () => {
     if (
       (socket.readableEnded && socket.writableFinished) || (receiveSignal?.aborted && !socket.readableEnded)
@@ -93,6 +98,7 @@ function* processWitnessSocket(
     rejectFailure(error);
   };
   let deadline: ReturnType<AgentRuntime["clock"]["setTimeout"]> | undefined;
+  /** Start the fixed reply-drain deadline at receive EOF; later activity never refreshes it. */
   const eof = () => {
     deadline = runtime.clock.setTimeout(() => {
       const error = new Error("TCP reply drain deadline exceeded");
@@ -187,7 +193,10 @@ function* processWitnessSocket(
               yield* closeReadOwner();
             }
           });
-          /** Write fully prepared captured replies through their existing request socket. */
+          /**
+           * Write fully prepared captured replies through their existing request socket.
+           * @param msgs Ordered complete signed responses; each write/drain finishes before the next message.
+           */
           const sendMsgs = function*(msgs: Uint8Array[]): Operation<void> {
             yield* writeCesrTcpSocket(socket, async function*(signal) {
               for (const msg of msgs) {
@@ -195,7 +204,10 @@ function* processWitnessSocket(
               }
             }, runtime.clock);
           };
-          /** Settle current input and retain at most one authorized missing-state query on this connection. */
+          /**
+           * Settle input and retain at most one authorized missing-state query on this connection.
+           * @param frame Complete inbound frame; capture correlation before dispatch, then authorize from its exact decision.
+           */
           const processFrame = function*(frame: CesrFrame): Operation<void> {
             const body = frame.body;
             if (body.ilk === Ilks.qry && pending) {
@@ -366,6 +378,10 @@ function* witnessTcpListener(
       socket.once("close", () => handles.delete(socket));
       const closed = new Promise<void>((resolve) => socket.once("close", resolve));
       // Refused handles have no parser/task; their native close still belongs to server.close().
+      /**
+       * Keep infrastructure failure visible even for handles rejected before parser creation.
+       * @param error Native socket error; recognized peer errors remain connection-local.
+       */
       const nativeError = (error: Error) => {
         if (!isPeerError(error)) {
           rejectCompletion(error);

@@ -9,10 +9,20 @@ type DirectReply = ReplayCue | ReplyCue | ReceiptCue | WitnessCue;
  * The first reply may gain one ordered companion; duplicate requests have separate
  * slots while sharing the same immutable cue records.
  */
-type Slot = { reply?: DirectReply; companion?: DirectReply; notify?: () => void };
+type Slot = {
+  /** First immutable captured cue, absent until matching protocol output arrives. */
+  reply?: DirectReply;
+  /** Optional second TSN cue, ordered after the registry reply. */
+  companion?: DirectReply;
+  /** Synchronous sole readiness observer; removed on unsubscribe or request close. */
+  notify?: () => void;
+};
 
 /** One correlated response or ordered protocol pair. */
 interface QueryReplyBatch {
+  /**
+   * Borrowed immutable evidence in response order: one reply, or registry before credential TSN.
+   */
   readonly cues: readonly DirectReply[];
 }
 

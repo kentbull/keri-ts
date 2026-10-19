@@ -155,6 +155,11 @@ export function mailboxPollEndpoints(
   hab: Hab,
 ): Array<{ key: string; eid: string; url: string }> {
   const ends = hab.endsFor(hab.pre);
+  /**
+   * Restrict SSE polling to HTTP transports after role precedence has been selected.
+   * @param endpoint Candidate concrete URL; malformed URLs remain validation failures.
+   * @returns True for HTTP or HTTPS.
+   */
   const isHttp = (endpoint: { url: string }) => ["https:", "http:"].includes(new URL(endpoint.url).protocol);
   const mailbox = flattenRoleUrls(ends[Roles.mailbox])
     .filter((endpoint) => !hby.db.prefixes.has(endpoint.eid));

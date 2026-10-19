@@ -92,12 +92,27 @@ export interface PosterEvent {
 }
 
 /** Optional terminal observation of one concrete delivery attempt, not remote acceptance. */
-/** deliveries contains successful endpoint URLs (including local-mailbox targets); failed retains the actual error. */
 export type PosterOutcome =
-  | { kin: "sent"; evt: PosterEvent; deliveries: string[] }
-  | { kin: "failed"; evt: PosterEvent; deliveries: string[]; error: unknown };
+  | {
+    /** Terminal local attempt result; neither variant proves remote protocol acceptance. */
+    kin: "sent";
+    /** Exact admitted event identity matched by wait(evt), including repeated same-SAID sends. */
+    evt: PosterEvent;
+    /** Successful endpoint URLs from this attempt, including partial success before failure. */
+    deliveries: string[];
+  }
+  | {
+    /** Terminal local attempt result; neither variant proves remote protocol acceptance. */
+    kin: "failed";
+    /** Exact admitted event identity matched by wait(evt), including repeated same-SAID sends. */
+    evt: PosterEvent;
+    /** Successful endpoint URLs from this attempt, including partial success before failure. */
+    deliveries: string[];
+    /** Observed failure with original status/cause, including any aggregated target failures. */
+    error: unknown;
+  };
 
-/** Recipient policy captured during a short guarded preparation turn. */
+/** Recipient policy captured synchronously from current accepted routing state for one attempt. */
 export interface RawCesrRoute {
   /**
    * Local sender AID whose habitat prepared this route.
@@ -127,18 +142,30 @@ export interface RawCesrRoute {
 
 /** Prepared wire borrows its bytes until the transport operation and cleanup finish. */
 export type PreparedCesrTarget =
-  | { readonly kind: "stored" }
   | {
+    /** Stored means the local mailbox transaction completed; tcp/http still require network execution. */
+    readonly kind: "stored";
+  }
+  | {
+    /** Stored means the local mailbox transaction completed; tcp/http still require network execution. */
     readonly kind: "tcp";
+    /** Selected transport endpoint URL for this attempt. */
     readonly url: string;
+    /** Endpoint AID, which may be a mailbox intermediary rather than the final recipient. */
     readonly destination: string;
+    /** Prepared introduction/forwarding wire borrowed until this transport operation joins cleanup. */
     readonly message: Uint8Array;
   }
   | {
+    /** Stored means the local mailbox transaction completed; tcp/http still require network execution. */
     readonly kind: "http";
+    /** Selected transport endpoint URL for this attempt. */
     readonly url: string;
+    /** Endpoint AID, which may be a mailbox intermediary rather than the final recipient. */
     readonly destination: string;
+    /** Prepared introduction/forwarding wire borrowed until this transport operation joins cleanup. */
     readonly message: Uint8Array;
+    /** HTTP attachment placement for this attempt; TCP has no corresponding mode. */
     readonly bodyMode: CesrBodyMode;
   };
 

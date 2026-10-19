@@ -317,9 +317,11 @@ export class MailboxDirector {
       wake?.();
       parts = [];
     };
+    /** Remove this direct stream from shutdown tracking after its pending pull settles. */
     const finish = () => {
       this.streamCleanups.delete(close);
     };
+    /** Wake and join the pending pull once before forgetting this response owner. */
     const cleanup = (): Promise<void> => {
       stop();
       return closing ??= Promise.resolve(pending).finally(finish);
@@ -337,9 +339,6 @@ export class MailboxDirector {
        * Bind the Web stream controller before response demand begins.
        *
        * @param controller Web response controller retained for later pulls/shutdown.
-       */
-      /** Bind this nested response controller before the first pull.
-       * @param controller Web response controller used by pull and shutdown.
        */
       start(controller) {
         stream = controller;

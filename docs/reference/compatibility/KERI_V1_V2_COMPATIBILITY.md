@@ -85,6 +85,8 @@ This is our cross-release accommodation, not generic retries or protocol-version
 negotiation. The English-text predicate is a peer-specific heuristic. Body mode
 has no second media choice. Do not assume every HTTP caller uses the fallback:
 direct mailbox polling through `requestWithHeaderTimeout` is a separate path.
+The [HTTP ownership contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md#http-ownership)
+explains finite versus scoped responses and ordinary-send versus query intake.
 Evidence: [media recognition/framing](../../../packages/keri/test/unit/app/cesr-http.test.ts),
 [header fallback and body refusal](../../../packages/keri/test/unit/app/cesr-egress.test.ts),
 [per-frame fallback with authorization](../../../packages/keri/test/unit/app/witness-transport.test.ts).
