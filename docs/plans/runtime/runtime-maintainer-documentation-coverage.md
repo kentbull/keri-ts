@@ -518,5 +518,5 @@ Tests below were read as evidence, not rerun for this documentation-only pass.
 
 No unresolved source/documentation contradiction remains in these reviewed paths.
 The [plan](runtime-maintainer-documentation.md) tracks the separate cursor fix in
-#554 and the remaining fractional-timeout finding. The original documentation pass
+#554 and minimum-timeout fix in #555. The original documentation pass
 changed neither behavior.
