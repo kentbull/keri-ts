@@ -1,4 +1,4 @@
-/** Scoped CESR HTTP output with streamed payloads and joined cancellation. */
+/** CESR framing and media negotiation over prepared HTTP bodies and scoped response lifetimes. */
 import {
   attachmentPayload,
   byteString,
@@ -21,6 +21,12 @@ import type { HttpClient, HttpRequestInit, HttpStreamResponse } from "./http-cli
 
 /** Positive remote HTTP refusal, distinct from source, transport, storage and cleanup failure. */
 export class CesrHttpRefusal extends ValidationError {
+  /**
+   * Describe a completed HTTP refusal without classifying it as a network failure.
+   *
+   * @param message Endpoint/status detail for the observed peer refusal.
+   * @param status Actual non-success HTTP status returned by the peer.
+   */
   constructor(message: string, readonly status: number) {
     super(message);
   }
@@ -28,11 +34,14 @@ export class CesrHttpRefusal extends ValidationError {
 
 /** Expected remote HTTP refusal; infrastructure and cleanup failures still throw. */
 export type CesrPostResult = { kind: "complete" } | { kind: "refuse"; error: CesrHttpRefusal };
+/**
+ * Internal result that either lends a successful scoped response or carries a completed peer refusal.
+ */
 type FrameResponse = { kind: "response"; response: HttpStreamResponse } | Extract<CesrPostResult, { kind: "refuse" }>;
 
 /** Transport choices for one CESR frame. */
 export interface EgressOptions {
-  /** Header mode matches KERIpy; body mode streams the complete qualified frame. */
+  /** Header mode uses a signed body plus attachment header; body mode prepares the complete qualified frame. */
   bodyMode?: CesrBodyMode;
   /** Additional transport headers, such as witness Authorization; CESR framing is set by the sender. */
   headers?: HeadersInit;
@@ -42,7 +51,14 @@ export interface EgressOptions {
   signal?: AbortSignal;
 }
 
-/** Drain successful response bytes; retain refusal text for reporting and media negotiation. */
+/**
+ * Drain successful response bytes; retain refusal text for reporting and media negotiation.
+ *
+ * @param response Borrowed response; this function consumes its body once to EOF.
+ * @param signal Cancels the pending body read through its HTTP owner.
+ * @returns Decoded refusal text, or an empty string after draining a successful body.
+ * @throws Body-read or cancellation errors propagate; an HTTP status alone does not throw.
+ */
 async function readResponseBody(response: HttpStreamResponse, signal: AbortSignal): Promise<string> {
   const decoder = response.ok ? undefined : new TextDecoder();
   const text: string[] = [];
@@ -53,7 +69,19 @@ async function readResponseBody(response: HttpStreamResponse, signal: AbortSigna
   return text.join("");
 }
 
-/** Open a CESR frame response under the caller's scope; the supplied HTTP client owns native I/O. */
+/**
+ * Open one frame response for a caller that needs to consume its bytes.
+ * The caller must keep its scope alive while reading; returning this handle from
+ * a closing scope does not transfer response ownership. Media fallback closes the
+ * rejected attempt before opening the legacy header-media attempt.
+ *
+ * @param url HTTP(S) endpoint to receive the framed POST; redirect handling is manual.
+ * @param frame Parsed signed body and attachments; framing preserves the signed body bytes.
+ * @param http Borrowed HTTP implementation supplied by composition; owns native request/body I/O.
+ * @param options Framing, destination, extra headers and optional cancellation; header mode is the default.
+ * @returns A successful response borrowed until the enclosing Effection scope ends.
+ * @throws CesrHttpRefusal for a completed refusal; request, transport and cleanup failures propagate.
+ */
 export function* requestFrame(
   url: string,
   frame: CesrFrame,
@@ -65,7 +93,17 @@ export function* requestFrame(
   return result.response;
 }
 
-/** Frame one message and apply only the existing CESR media negotiation, closing each attempt before another. */
+/**
+ * Own the response scope for one frame and the existing header-media fallback.
+ * A successful response stays live while the borrowing consumer runs. A refused
+ * response is drained for its detail, and its scope closes before another attempt.
+ *
+ * @param url HTTP(S) endpoint to receive the framed POST; redirect handling is manual.
+ * @param frame Parsed signed body and attachments; framing preserves the signed body bytes.
+ * @param http Borrowed HTTP implementation supplied by composition; owns native request/body I/O.
+ * @param options Framing, destination, extra headers and optional cancellation; header mode is the default.
+ * @returns A scoped successful response or completed refusal, after any permitted media fallback.
+ */
 function openFrameResponse(
   url: string,
   frame: CesrFrame,
@@ -96,7 +134,17 @@ function openFrameResponse(
     }
   });
 }
-/** Prepare each finite wire body once; only header-mode media negotiation has a second choice. */
+/**
+ * Prepare finite request bytes before opening any network attempt.
+ * Header mode puts normalized text attachments in CESR-ATTACHMENT and sends the
+ * original body. Body mode sends the complete qualified frame. Both choices retain
+ * caller authentication headers; sender-owned framing/destination headers replace
+ * conflicting caller values. The fallback shares the prepared bytes.
+ *
+ * @param frame Parsed signed body and attachments; framing preserves the signed body bytes.
+ * @param options Framing, destination, extra headers and optional cancellation; header mode is the default.
+ * @returns One prepared body-mode request, or current then legacy header-mode choices.
+ */
 function* frameRequests(frame: CesrFrame, options: EgressOptions): Operation<HttpRequestInit[]> {
   const mode = options.bodyMode ?? "header";
   const header = mode === "header"
@@ -126,14 +174,35 @@ function* frameRequests(frame: CesrFrame, options: EgressOptions): Operation<Htt
   });
 }
 
-/** Preserve the existing header-media fallback, rather than retrying arbitrary refusals. */
+/**
+ * Recognize the existing legacy media compatibility trigger.
+ * Only the current CESR Content-Type can fall back to KERIpy JSON header mode.
+ * This changes media metadata, not the signed content, and is not a general retry.
+ *
+ * @param request The exact prepared request whose response is being classified.
+ * @param status Observed peer HTTP status.
+ * @param detail Fully consumed refusal body decoded as text.
+ * @returns True only for attachment-header CESR media rejected with 406 and content-type detail.
+ */
 function mediaRejection(request: HttpRequestInit, status: number, detail: string): boolean {
   const headers = new Headers(request.headers);
   return headers.has(CESR_ATTACHMENT_HEADER) && status === 406
     && headers.get("Content-Type") === CESR_CONTENT_TYPE && detail.toLowerCase().includes("content type");
 }
 
-/** Send one prepared frame and inspect only a completed finite response. */
+/**
+ * Send a frame whose caller needs delivery status rather than response content.
+ * HttpClient.request has consumed the entire response before returning. Successful
+ * bytes are intentionally discarded here; callers needing protocol intake use the
+ * scoped response path. Completion proves HTTP delivery, not protocol acceptance.
+ *
+ * @param url HTTP(S) endpoint to receive the framed POST; redirect handling is manual.
+ * @param frame Parsed signed body and attachments; framing preserves the signed body bytes.
+ * @param http Borrowed HTTP implementation supplied by composition; owns native request/body I/O.
+ * @param options Framing, destination, extra headers and optional cancellation; header mode is the default.
+ * @returns Complete after finite response consumption/cleanup, or a typed peer refusal.
+ * @throws Construction, native transport and cleanup failures propagate.
+ */
 function* sendFrame(
   url: string,
   frame: CesrFrame,
@@ -156,7 +225,20 @@ function* sendFrame(
   throw new Error("CESR media negotiation exhausted its request choices");
 }
 
-/** Strict source sender; callers wanting retry/refusal policy use the joined attempt result. */
+/**
+ * Send a CESR source and throw on a completed peer refusal.
+ * One parsed frame becomes one POST, and its request scope closes before the next
+ * source pull. A refusal stops the sequence; prior frames may already be delivered.
+ * Cancellation aborts active work, joins any pending source pull and returns the
+ * parser iterator before leaving. There is no automatic retry beyond media fallback.
+ *
+ * @param url HTTP(S) endpoint to receive the framed POST; redirect handling is manual.
+ * @param source Creates the CESR byte source for this invocation; it must observe the supplied abort signal.
+ * @param http Borrowed HTTP implementation supplied by composition; owns native request/body I/O.
+ * @param options Framing, destination, extra headers and optional cancellation; header mode is the default.
+ * @param consume Optional response consumer, run within each successful request scope. Its completion gates the next frame; omission drains and discards successful bodies.
+ * @throws Source/parser, consumer, transport and cleanup failures propagate without becoming peer refusals. A completed refusal throws CesrHttpRefusal.
+ */
 export function* postCesr(
   url: string,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
@@ -167,7 +249,21 @@ export function* postCesr(
   const result = yield* attemptPostCesr(url, source, http, options, consume);
   if (result.kind === "refuse") throw result.error;
 }
-/** Post through the same lifetime owner, returning only this invocation's expected refusal after joined cleanup. */
+/**
+ * Send frames sequentially and return a completed peer refusal as data.
+ * One parsed frame becomes one POST, and its request scope closes before the next
+ * source pull. A refusal stops the sequence; prior frames may already be delivered.
+ * Cancellation aborts active work, joins any pending source pull and returns the
+ * parser iterator before leaving. There is no automatic retry beyond media fallback.
+ *
+ * @param url HTTP(S) endpoint to receive the framed POST; redirect handling is manual.
+ * @param source Creates the CESR byte source for this invocation; it must observe the supplied abort signal.
+ * @param http Borrowed HTTP implementation supplied by composition; owns native request/body I/O.
+ * @param options Framing, destination, extra headers and optional cancellation; header mode is the default.
+ * @param consume Optional response consumer, run within each successful request scope. Its completion gates the next frame; omission drains and discards successful bodies.
+ * @returns The attempt result after all frames or the first refusal, with source/request cleanup joined.
+ * @throws Source/parser, consumer, transport and cleanup failures propagate without becoming peer refusals.
+ */
 export function attemptPostCesr(
   url: string,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
