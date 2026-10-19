@@ -37,6 +37,9 @@ protocol evidence, transactions and actual resource cleanup.
 
 ## Wire and version rules
 
+The [compatibility inventory](../../docs/reference/compatibility/KERI_V1_V2_COMPATIBILITY.md)
+tracks historical readers, safe conversion boundaries and the linked Python porting worklist.
+
 - `gvrsn` is attachment genus; `pvrsn` is body protocol. Explicit selection and
   enclosure scope control decoding. Only unselected legacy streams infer genus.
   Never retry malformed data under another major version.

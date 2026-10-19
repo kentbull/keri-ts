@@ -7,6 +7,12 @@ reference limits. The cleanup is complete; the subject plans below retain future
 regression obligations and explicit deferred profiles, not another migration queue.
 Historical October 14 reports remain evidence at their own revisions.
 
+The [v1/v2 compatibility inventory](../reference/compatibility/KERI_V1_V2_COMPATIBILITY.md)
+owns the maintained matrix of HTTP, CESR and application compatibility boundaries.
+The [KERIpy compatibility backlog](compatibility/KERIPY_COMPATIBILITY_PORTS.md)
+records proposed backward/forward ports and target-branch assessment gates; it
+does not activate a new implementation sequence or claim unassessed upstream gaps.
+
 Post-release #523 (`e42b28cf`) moves TSN admission, routes and retries under
 Tevery with independent record validators and a shared composed Revery. Published
 1.0.0 packages do not contain this refactor. Its scoped evidence is separate from

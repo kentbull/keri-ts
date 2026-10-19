@@ -2,6 +2,10 @@
 
 Start with the [architecture map](ARCHITECTURE_MAP.md) for package/source ownership
 or the [parity roadmap](plans/PARITY_ROADMAP.md) for remaining approved work.
+The [v1/v2 compatibility inventory](reference/compatibility/KERI_V1_V2_COMPATIBILITY.md)
+maps implemented bridges, supported version boundaries and remaining gaps; its
+[KERIpy porting backlog](plans/compatibility/KERIPY_COMPATIBILITY_PORTS.md) tracks
+future 1.x/2.x branch assessments and acceptance work.
 The [cue delivery refactor](plans/runtime/cue-delivery-refactor.md) records the
 implemented boundaries and qualification;
 its [reliability roadmap](plans/runtime/cue-reliability-roadmap.md) records

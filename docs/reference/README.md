@@ -4,6 +4,8 @@ Examples and inventories support the [designs](../design-docs/README.md); they
 do not schedule work or prove current qualification by their presence.
 
 - CESR: [frozen table audit](cesr/CESR_CURRENT_REFERENCE_TABLES.md).
+- Compatibility: [KERI v1/v2 matrix and feature catalogue](compatibility/KERI_V1_V2_COMPATIBILITY.md),
+  with a linked KERIpy 1.x/2.x porting backlog.
 - Disclosure: [fixed-field/selective examples](credentials/DISCLOSURE_EXAMPLES.md)
   and [JSON walkthrough](credentials/JSON_DISCLOSURE_WALKTHROUGH.md).
 - Registries: [verified-import preservation record](credentials/VERIFIED_IMPORT_SNAPSHOT.md).

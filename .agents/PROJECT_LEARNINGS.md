@@ -30,6 +30,11 @@ removes upload producers and general cleanup bookkeeping, retaining native Fetch
 cancellation and actual I/O joining. Outbound
 components receive the actual protocol and I/O dependencies, not Reactor proxies.
 
+The [compatibility inventory](../docs/reference/compatibility/KERI_V1_V2_COMPATIBILITY.md)
+owns the v1/v2 matrix, implemented bridges and explicit gaps; its linked KERIpy
+porting backlog separates frozen donor evidence from unassessed 1.x/2.x target work.
+HTTP media fallback never translates a signed body or establishes peer genus support.
+
 ## Read by subject
 
 - [CESR](learnings/PROJECT_LEARNINGS_CESR.md): parsing, framing and primitives.
