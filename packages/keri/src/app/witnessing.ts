@@ -31,11 +31,10 @@ import { buildCesrRequest, CESR_CONTENT_TYPE, inspectCesrRequest, KERIPY_CESR_JS
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { envelopeFromFrame } from "./parsering.ts";
-import { createProtocolProcessor } from "./protocol-processing.ts";
+import { createProtocolProcessor, type ProtocolProcessor } from "./protocol-processing.ts";
 import { Reactor } from "./reactor.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
-import { converseCesrTcp } from "./tcp-conversation.ts";
-import { sendCesrTcp } from "./tcp-egress.ts";
+import { TCPMessenger } from "./tcp-messenger.ts";
 
 const WitnessReceiptPollAttempts = 20;
 const WitnessReceiptPollDelayMs = 100;
@@ -593,8 +592,8 @@ function witnessSchemeReplies(
   return replies.length === 0 ? new Uint8Array() : concatBytes(...replies);
 }
 /**
- * Send via HTTP first; an explicit Reactor processes same-socket TCP replies.
- * Without a Reactor TCP reports local transmission only. Actual socket/parser
+ * Send via HTTP first; an explicit protocol processor processes same-socket TCP replies.
+ * Without a protocol processor TCP reports local transmission only. Actual socket/parser
  * cleanup finishes before this borrowed protocol processor can be released.
  */
 export function* sendWitnessMessage(
@@ -603,7 +602,7 @@ export function* sendWitnessMessage(
   bytes: Uint8Array,
   auth?: string,
   services?: RuntimeServices,
-  reactor?: Reactor,
+  protocol?: ProtocolProcessor,
 ): Operation<void> {
   const url = preferredWitnessTransportUrl(hab, witness);
   if (!url) {
@@ -614,15 +613,9 @@ export function* sendWitnessMessage(
 
   const parsed = new URL(url);
   if (parsed.protocol === "tcp:") {
-    yield* call(function*() {
-      if (reactor) {
-        yield* converseCesrTcp(url, bytes, {
-          clock: services?.clock,
-          replies: { protocol: reactor.protocol, local: true },
-        });
-      } else {
-        yield* sendCesrTcp(url, bytes, { clock: services?.clock });
-      }
+    yield* new TCPMessenger(protocol ?? null, (services ?? defaultRuntimeServices).clock).send(url, bytes, {
+      replies: Boolean(protocol),
+      local: true,
     });
     return;
   }
@@ -870,12 +863,12 @@ export class Receiptor {
     for (const witness of witnesses) {
       if (kever.delegated) {
         for (const dmsg of this.hby.db.cloneDelegation(kever)) {
-          yield* sendWitnessMessage(hab, witness, dmsg, undefined, this.services, this.reactor);
+          yield* sendWitnessMessage(hab, witness, dmsg, undefined, this.services, this.reactor.protocol);
         }
       }
 
       if (allowTcp && !witnessHttpUrl(hab, witness) && witnessTcpUrl(hab, witness)) {
-        yield* sendWitnessMessage(hab, witness, message, undefined, this.services, this.reactor);
+        yield* sendWitnessMessage(hab, witness, message, undefined, this.services, this.reactor.protocol);
         statuses[witness] = 200;
       } else {
         // A single receipt attempt owns its response until parsing and collection finish.
@@ -941,7 +934,7 @@ export class Receiptor {
           { wigers: otherWigers },
         ),
       );
-      yield* sendWitnessMessage(hab, witness, concatBytes(...parts), undefined, this.services, this.reactor);
+      yield* sendWitnessMessage(hab, witness, concatBytes(...parts), undefined, this.services, this.reactor.protocol);
     }
 
     return { witnesses, statuses };
@@ -991,11 +984,11 @@ export class Receiptor {
     const kever = hab.kever;
     if (kever?.delegated) {
       for (const msg of this.hby.db.cloneDelegation(kever)) {
-        yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.reactor);
+        yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.reactor.protocol);
       }
     }
     for (const msg of this.hby.db.clonePreIter(pre)) {
-      yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.reactor);
+      yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.reactor.protocol);
     }
   }
 }

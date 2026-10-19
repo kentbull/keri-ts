@@ -1,7 +1,7 @@
 # Messenger ownership and protocol processing
 
-Status: implementation in progress; phase 1 is merged in PR #532; phase 2 extracts shared protocol
-processing. Later phases and final qualification remain outstanding. Planning baseline: local HEAD and remote `master` both verified at
+Status: implementation in progress; phases 1 and 2 are merged in PRs #532 and #533;
+phase 3 introduces TCPMessenger. Later phases and final qualification remain outstanding. Planning baseline: local HEAD and remote `master` both verified at
 `d735cfef1cf5e2abaf06517fcb6b55ed694e6ea4` on 2026-10-19, after PRs #528–531.
 Recheck the base before implementation. Preserve the original checkout's unrelated
 formatting edit. This document does not change the current runtime contract.
@@ -159,7 +159,7 @@ options contain only actual transport/protocol choices and cancellation signals.
 ```ts
 new Poster(hby, mbx, protocol, services);
 new Reactor(protocol);
-new TCPMessenger(protocol, services.clock);
+new TCPMessenger(protocol, services.clock); // Explicit null permits transmit-only use.
 new HTTPMessenger(protocol, services.http, services.clock);
 ```
 

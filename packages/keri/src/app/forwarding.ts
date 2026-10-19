@@ -55,8 +55,7 @@ import { Organizer } from "./organizing.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
-import { converseCesrTcp, type TcpReplyReceiver } from "./tcp-conversation.ts";
-import { sendCesrTcp } from "./tcp-egress.ts";
+import { TCPMessenger } from "./tcp-messenger.ts";
 import { TransportError } from "./transport-error.ts";
 
 /** Delivery preference accepted by CLI and runtime exchange send helpers. */
@@ -103,33 +102,6 @@ export type PreparedCesrTarget =
     readonly message: Uint8Array;
     readonly bodyMode: CesrBodyMode;
   };
-
-/** Deliver prepared wire; explicit receiver lends same-socket intake, otherwise TCP drains output only. */
-export function* sendPreparedCesrTarget(
-  target: PreparedCesrTarget,
-  services: RuntimeServices,
-  signal?: AbortSignal,
-  receiver?: TcpReplyReceiver,
-): Operation<void> {
-  if (target.kind === "tcp") {
-    if (receiver) {
-      yield* converseCesrTcp(target.url, target.message, {
-        clock: services.clock,
-        signal,
-        replies: { protocol: receiver.protocol, local: true },
-      });
-    } else yield* sendCesrTcp(target.url, target.message, { clock: services.clock, signal });
-  } else if (target.kind === "http") {
-    yield* postCesrMessage(
-      target.url,
-      target.message,
-      target.bodyMode,
-      target.destination,
-      services,
-      signal,
-    );
-  }
-}
 
 /** Preserve selected endpoint and signed bytes; TCP has no HTTP body framing mode. */
 function remoteCesrTarget(
@@ -405,13 +377,12 @@ export class Poster {
               failed.push(outcome.error);
               continue;
             }
-          } else {
-            yield* sendPreparedCesrTarget(
-              target,
-              this.services,
+          } else if (target.kind === "tcp") {
+            // The messenger owns the attempt; Poster keeps source and event-level progress.
+            yield* new TCPMessenger(this.protocol, this.services.clock).send(target.url, target.message, {
               signal,
-              evt.replies ? { protocol: this.protocol! } : undefined,
-            );
+              replies: evt.replies,
+            });
           }
         } catch (error) {
           if (!(error instanceof TransportError)) throw error;

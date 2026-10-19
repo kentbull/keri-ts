@@ -23,6 +23,8 @@ import {
   createAgentRuntime,
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
+import { chunkBytes } from "../../../src/app/byte-source.ts";
+import { postCesr } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
@@ -33,7 +35,6 @@ import {
   introductionMessages,
   mailboxTopicForRoute,
   Poster,
-  sendPreparedCesrTarget,
 } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
@@ -46,6 +47,7 @@ import {
 import { persistResolvedContact } from "../../../src/app/organizing.ts";
 import type { Reactor } from "../../../src/app/reactor.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+import { TCPMessenger } from "../../../src/app/tcp-messenger.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
@@ -786,7 +788,11 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           if (prepared.kind !== "http") throw new Error("Expected HTTP target");
           assertEquals(bodies.length, 0);
           // Prepared transport needs no habitat/DB access; it preserves the original introduction wire.
-          yield* sendPreparedCesrTarget(prepared, runtime.services);
+          yield* postCesr(prepared.url, (signal) => chunkBytes(prepared.message, { signal }), {
+            services: runtime.services,
+            bodyMode: prepared.bodyMode,
+            destination: prepared.destination,
+          });
           assertEquals(concatBytes(...bodies.slice(0, frameCount)), expectedIntro);
           assertEquals(bodies.length, frameCount + 1);
           bodies.length = 0;
@@ -890,7 +896,7 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
             assertEquals(concatBytes(...tcpBodies[1]).subarray(0, expectedIntro.length), expectedIntro);
 
             hby.db.rcts.rem(receiptKey);
-            yield* sendPreparedCesrTarget(tcpTarget, runtime.services);
+            yield* new TCPMessenger(null, runtime.services.clock).send(tcpTarget.url, tcpTarget.message);
             assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");
             // Local transmission may complete before the remote application accepts the socket.
             yield* call(() => transmitReceived.promise);

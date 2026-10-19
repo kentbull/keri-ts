@@ -14,7 +14,7 @@ import { flattenRoleUrls } from "./mailboxing.ts";
 import type { Reactor } from "./reactor.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
-import { converseCesrTcp } from "./tcp-conversation.ts";
+import { TCPMessenger } from "./tcp-messenger.ts";
 
 /**
  * Query/reply correspondence helpers for the Gate E runtime.
@@ -567,10 +567,10 @@ export class QueryCoordinator {
   ): Operation<void> {
     const reactor = this.reactor, services = this.services;
     if (new URL(delivery.url).protocol === "tcp:") {
-      yield* converseCesrTcp(delivery.url, delivery.body, {
-        clock: services.clock,
+      yield* new TCPMessenger(reactor.protocol, services.clock).send(delivery.url, delivery.body, {
         signal: controller.signal,
-        replies: { protocol: reactor.protocol, local: true },
+        replies: true,
+        local: true,
       });
       return;
     }

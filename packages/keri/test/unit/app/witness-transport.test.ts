@@ -10,7 +10,6 @@ import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../
 import { envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { socketBytes } from "../../../src/app/socket-source.ts";
-import { streamCesrTcpConversation } from "../../../src/app/tcp-conversation.ts";
 import {
   openTcpConnection,
   sendCesrTcp,
@@ -18,6 +17,7 @@ import {
   streamCesrTcp,
   writeCesrTcpSocket,
 } from "../../../src/app/tcp-egress.ts";
+import { TCPMessenger } from "../../../src/app/tcp-messenger.ts";
 import { TransportError } from "../../../src/app/transport-error.ts";
 import { Receiptor, sendWitnessMessage, WitnessReceiptor, witnessReceiptPost } from "../../../src/app/witnessing.ts";
 import { receipt as receiptEvent } from "../../../src/core/protocol-eventing.ts";
@@ -112,7 +112,7 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
         const runtime = yield* createAgentRuntime(hby, { services });
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
         const task = run(function*() {
-          yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime.reactor);
+          yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime.protocol);
           continued = true;
         });
         try {
@@ -122,7 +122,7 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
         }
         assertEquals(continued, false);
         finish = true;
-        yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime.reactor);
+        yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime.protocol);
         assertEquals(connections, 2);
       } finally {
         yield* hby.close(true);
@@ -170,7 +170,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         assertEquals(connections, 0, "explicit endpoint receipting retains its HTTP-only contract");
         const { serder, message } = acceptedEventReplayMessage(hby, controller.pre, 0);
         const key = [controller.pre, serder.said!] as const;
-        yield* sendWitnessMessage(controller, witness.pre, message, undefined, runtime.services, runtime.reactor);
+        yield* sendWitnessMessage(controller, witness.pre, message, undefined, runtime.services, runtime.protocol);
         assertEquals(hby.db.wigs.get(key).length, 0, "generic drain makes no receipt success claim");
         yield* call(() => assertRejects(() => run(() => submitter.submit(controller.pre)), Error, "did not receipt"));
         const outsider = hby.makeHab("outsider", undefined, { transferable: false });
@@ -626,10 +626,7 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
       yield* call(() => new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)));
       const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
       // The connection owns its intake and borrows only the protocol processor from the host.
-      const replies = {
-        protocol: runtime.protocol,
-      };
-      const options = { replies, clock: runtime.services.clock, connectTimeoutMs: 1000, drainTimeoutMs: 40 };
+      const options = { clock: runtime.services.clock, connectTimeoutMs: 1000, drainTimeoutMs: 40 };
       const preAborted = new AbortController();
       const cancellation = new Error("cancel before socket acquisition");
       preAborted.abort(cancellation);
@@ -637,9 +634,9 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
         yield* call(() =>
           assertRejects(() =>
             run(() =>
-              streamCesrTcpConversation(url, async function*() {
+              new TCPMessenger(runtime.protocol, options.clock).stream(url, async function*() {
                 opened++;
-              }, { ...options, signal: preAborted.signal })
+              }, { ...options, replies: true, signal: preAborted.signal })
             )
           )
         ),
@@ -686,7 +683,10 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
           }
         };
         const task = run(function*() {
-          const result = yield* streamCesrTcpConversation(url, source, options);
+          const result = yield* new TCPMessenger(runtime.protocol, options.clock).stream(url, source, {
+            ...options,
+            replies: true,
+          });
           continued = true;
           return result;
         });

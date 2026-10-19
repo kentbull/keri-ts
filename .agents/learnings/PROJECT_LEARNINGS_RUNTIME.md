@@ -142,7 +142,7 @@ null. Finite wrappers close their source iterators. Ordinary records need no lea
 ## Transport and protocol completion
 
 Lower TCP lends sockets/bytes without AgentRuntime/Reactor knowledge;
-tcp-conversation composes application RX/TX. HTTP-first/TCP fallback, direct/mailbox
+TCPMessenger owns application RX/TX and its parser/Kevery. HTTP-first/TCP fallback, direct/mailbox
 routing and signed introductions remain. Explicit replies enable duplex; standalone
 send is transmit-only. It completes local end then joins close without requiring
 peer EOF; a later receive reset does not downgrade completed output. Duplex still
