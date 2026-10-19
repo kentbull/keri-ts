@@ -168,6 +168,7 @@ export class ProtocolProcessor {
       try {
         if (self.busy) {
           yield* action<void>((resolve) => {
+            /** Transfer the serialized protocol turn to this waiter before resolving its suspension. */
             const grant = () => {
               acquired = true;
               resolve();

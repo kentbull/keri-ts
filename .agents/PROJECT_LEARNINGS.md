@@ -43,6 +43,10 @@ owns the v1/v2 matrix, implemented bridges and explicit gaps; its linked KERIpy
 porting backlog separates frozen donor evidence from unassessed 1.x/2.x target work.
 HTTP media fallback never translates a signed body or establishes peer genus support.
 
+The [maintainer documentation ledger](../docs/plans/runtime/runtime-maintainer-documentation-coverage.md)
+records reviewed source contracts and cross-component evidence. Its linked plan keeps
+local mailbox cursor and sub-millisecond timeout findings separate from this prose-only pass.
+
 ## Read by subject
 
 - [CESR](learnings/PROJECT_LEARNINGS_CESR.md): parsing, framing and primitives.

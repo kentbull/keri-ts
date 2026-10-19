@@ -69,6 +69,7 @@ export function* runHostKernel(
   });
   const companionTasks: Task<void>[] = [];
   let closed = false;
+  /** Join companions, then runtime workers and owned stores; retain the first failure while attempting every close. */
   const closeKernel = function*(): Operation<void> {
     if (closed) {
       return;

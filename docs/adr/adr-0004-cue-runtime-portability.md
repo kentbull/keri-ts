@@ -40,8 +40,11 @@ joined cleanup, including authorized local forwarding. Routed queries select
 an explicit local signer, a configured Hab, or the sole local Hab. An unavailable
 explicit signer stays unresolved; the runtime never guesses among local identities.
 
-Publish or transfer successfully before removing source records. Preparation
-failure retains the source, and a finite pass processes its initial extent.
+Respondant and QueryCoordinator publish or transfer successfully before removing
+source records. Preparation failure retains their source, and a finite pass processes
+its initial extent. Hab.processCuesIter is a low-level consumer: when given a Deck it
+pulls before constructing. Respondant preserves its queue by passing a borrowed
+single-cue iterable instead.
 Notify-only records need not produce wire bytes. Ordinary records have no
 retain/release lifecycle. Request SAID reservations provide correlation, not capacity.
 

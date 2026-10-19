@@ -5,7 +5,7 @@ export class ReplyStreams {
   /** Shutdown permanently closes this runtime's response creation. */
   private closed = false;
   /**
-   * Borrow a reopenable source without advancing until HTTP requests bytes.
+   * Acquire one source iterator without advancing until HTTP requests bytes.
    * Transfer the optional disposer through source closure, including acquisition failure.
    *
    * @param messages Synchronous wire-message iterable; its iterator remains owned by the response until EOF/cancel/close.
@@ -43,6 +43,7 @@ export class ReplyStreams {
     dispose: (() => void) | undefined,
     requireContent: boolean,
   ): ReadableStream<Uint8Array> | null {
+    /** Detach the optional disposer before invoking it so acquisition failure cannot run it twice. */
     const release = () => {
       const owned = dispose;
       dispose = undefined;
@@ -77,7 +78,10 @@ export class ReplyStreams {
     if (this.closed) throw new Error("Reply streams are closed");
     let iterator: Iterator<Uint8Array> | undefined;
     let current: Uint8Array | undefined;
-    /** Retain at most one event, ignoring empty source values without acquiring another owner. */
+    /**
+     * Retain at most one event, ignoring empty source values without acquiring another owner.
+     * @returns True when a nonempty message is ready; false at source EOF.
+     */
     const advance = (): boolean => {
       while (!current && iterator) {
         const next = iterator.next();
@@ -86,7 +90,10 @@ export class ReplyStreams {
       }
       return current !== undefined;
     };
-    /** Close unpublished iterators and their disposer before returning or throwing. */
+    /**
+     * Close unpublished iterators and their disposer before returning or throwing.
+     * @param primary Original acquisition/priming failure, retained alongside distinct cleanup failures.
+     */
     const closeUnpublished = (primary?: { error: unknown }) => {
       const errors = primary ? [primary.error] : [];
       const owned = iterator;
@@ -120,7 +127,10 @@ export class ReplyStreams {
       return null;
     }
     let stream: ReadableStreamDefaultController<Uint8Array>;
-    /** Remove ownership exactly once, including when the platform still holds a reader lock. */
+    /**
+     * Remove ownership exactly once, including when the platform still holds a reader lock.
+     * @param reason Failure to publish to the stream, or undefined for ordinary EOF/cancellation cleanup.
+     */
     const close = (reason?: unknown) => {
       if (!iterator) return;
       const owned = iterator;
@@ -158,6 +168,7 @@ export class ReplyStreams {
         start(controller) {
           stream = controller;
         },
+        /** Demand transfers one nonempty source message to the response; source failure closes the iterator first. */
         pull: (controller) => {
           try {
             if (!advance()) {

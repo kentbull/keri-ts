@@ -209,8 +209,12 @@ authorization; reading requires current requester proof/threshold, not correlati
 alone. Keep protocol messages/cursors, not unsupported consumer inbox/acks. Poll
 HTTP(S); TCP-only explicit mailbox roles retain precedence while awaiting HTTP.
 Without explicit mailbox routing, poll all eligible witnesses concurrently.
-Consumer completion precedes cursor advancement and the next SSE read. EOF/timeout/
-cancel discards unfinished events. Provider reads on demand, closes each LMDB
+Remote SSE consumer completion precedes durable cursor advancement and the next
+read. Stored positions are last-consumed; requests send next-wanted. Local polling
+currently advances its in-memory next-wanted positions while collecting, before the
+consumer runs; a failed consumer can skip that batch until a new poller starts.
+See the [review findings](../../docs/plans/runtime/runtime-maintainer-documentation.md#review-findings-retained-outside-this-documentation-change).
+EOF/timeout/cancel discards unfinished SSE events. Provider reads on demand, closes each LMDB
 iterator before suspension and frames a row in 64 KiB chunks without a message cap.
 Director close wakes polls/rejects new streams before stores close.
 

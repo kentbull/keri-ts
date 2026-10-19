@@ -5,12 +5,15 @@ import type { KeyStateRecord, RegStateRecord, VcStateRecord } from "./records.ts
 
 /** Shared `kin` discriminator carried by all cue payloads. */
 export interface CueBase {
+  /** Discriminator used by the exclusive cue consumer to select handling. */
   kin: string;
 }
 
 /** Cue requesting receipt-generation work for one accepted event. */
 export interface ReceiptCue extends CueBase {
+  /** Discriminator used by the exclusive cue consumer to select handling. */
   kin: "receipt";
+  /** Accepted event body whose receipt is constructed by the interpreting Hab. */
   serder: SerderKERI;
 }
 
@@ -22,22 +25,45 @@ export interface NoticeCue extends CueBase {
 
 /** Cue requesting witness-oriented follow-on work for one event. */
 export interface WitnessCue extends CueBase {
+  /** Discriminator used by the exclusive cue consumer to select handling. */
   kin: "witness";
+  /** Accepted event body requiring witness receipt/publication handling. */
   serder: SerderKERI;
 }
 
 /** KEL wire filters; the target lives in the cue/request envelope. */
 export type KelQueryFields = {
+  /** Optional lowercase hexadecimal first-seen ordinal at which replay starts. */
   fn?: string;
+  /** Optional hexadecimal sequence-number selector. */
   s?: string;
+  /** Optional event-seal SAD to locate an anchoring event; nested fields remain borrowed immutable data. */
   a?: ReturnType<typeof SealEvent.toSad>;
 };
 
 /** Concrete built-in outbound query routes, correlated with their actual bodies. */
 export type QueryInstruction =
-  | { route: "logs"; q: KelQueryFields }
-  | { route: "ksn"; q: Pick<KelQueryFields, "fn" | "s"> & { a?: never } }
-  | { route: "tels" | "tsn"; q: Pick<TelQueryCue["q"], "ri" | "i"> };
+  | {
+    /** Built-in route selecting the corresponding query-body shape. */
+    route: "logs";
+    /** Route-specific wire filters; the subject AID is supplied separately by QueryRequest. */
+    q: KelQueryFields;
+  }
+  | {
+    /** Built-in route selecting the corresponding query-body shape. */
+    route: "ksn";
+    /** Route-specific wire filters; the subject AID is supplied separately by QueryRequest. */
+    q: Pick<KelQueryFields, "fn" | "s"> & {
+      /** Forbidden for ksn requests; anchor search belongs to logs. */
+      a?: never;
+    };
+  }
+  | {
+    /** Built-in route selecting the corresponding query-body shape. */
+    route: "tels" | "tsn";
+    /** Route-specific wire filters; the subject AID is supplied separately by QueryRequest. */
+    q: Pick<TelQueryCue["q"], "ri" | "i">;
+  };
 
 /** Deferred query work names its local signer and remote attester; it never borrows a Hab. */
 export type QueryRequest = QueryInstruction & {
@@ -53,15 +79,35 @@ export type QueryRequest = QueryInstruction & {
 
 /** Routed query work or an unresolved schema/credential-recovery notice, matching KERIpy cue records. */
 export type QueryCue =
-  | ({ kin: "query" } & QueryRequest)
-  | {
+  | ({
+    /** Discriminator used by the exclusive cue consumer to select handling. */
     kin: "query";
+  } & QueryRequest)
+  | {
+    /** Discriminator used by the exclusive cue consumer to select handling. */
+    kin: "query";
+    /** Unavailable on recovery notices; a notice is not a routable subject request. */
     pre?: never;
+    /** Unavailable on recovery notices; correspondence does not invent a signer. */
     signer?: never;
+    /** Unavailable on recovery notices; no remote attester is selected here. */
     src?: never;
+    /** Unavailable on recovery notices; q.r is a recovery hint, not a delivery route. */
     route?: never;
+    /** Unavailable on recovery notices; no endpoint selection is requested. */
     wits?: never;
-    q: { r: "schema"; said: string } | { r: "tels"; pre: string };
+    /** Schema/credential recovery hint retained as an observation, not sent by QueryCoordinator. */
+    q: {
+      /** Recovery family; unlike routed queries this names the hint within q. */
+      r: "schema";
+      /** Schema SAID whose definition is missing. */
+      said: string;
+    } | {
+      /** Recovery family; unlike routed queries this names the hint within q. */
+      r: "tels";
+      /** Credential/subject prefix named by the TEL recovery hint. */
+      pre: string;
+    };
   };
 
 /** Cue carrying a reopenable replay of bounded complete messages back to the host or transport layer. */
@@ -95,24 +141,57 @@ export interface ReplayCue extends CueBase {
  */
 export type ReplyCue =
   & {
+    /** Discriminator used by the exclusive cue consumer to select handling. */
     kin: "reply";
     /** Query SAID that requested this response, including deferred escrow results. */
     querySaid?: string;
+    /** Optional local attester AID for selecting the producing Hab. */
     src?: string;
+    /** Requester AID; required for lazy TSN construction and optional for a prepared reply. */
     dest?: string;
   }
   & (
-    | { serder: SerderKERI; route?: never; data?: never }
-    | { route: "/tsn/registry"; data: Required<RegStateRecord>; serder?: never; dest: string }
-    | { route: "/tsn/credential"; data: Required<VcStateRecord>; serder?: never; dest: string }
+    | {
+      /** Prepared reply body for KEL output; absent on the mutually exclusive lazy TSN variants. */
+      serder: SerderKERI;
+      /** TSN route awaiting the local attester suffix; forbidden when the prepared serder already owns its route. */
+      route?: never;
+      /** Required registry or credential state for lazy TSN serialization; forbidden for prepared serder replies. */
+      data?: never;
+    }
+    | {
+      /** TSN route awaiting the local attester suffix; forbidden when the prepared serder already owns its route. */
+      route: "/tsn/registry";
+      /** Required registry or credential state for lazy TSN serialization; forbidden for prepared serder replies. */
+      data: Required<RegStateRecord>;
+      /** Prepared reply body for KEL output; absent on the mutually exclusive lazy TSN variants. */
+      serder?: never;
+      /** Requester AID; required for lazy TSN construction and optional for a prepared reply. */
+      dest: string;
+    }
+    | {
+      /** TSN route awaiting the local attester suffix; forbidden when the prepared serder already owns its route. */
+      route: "/tsn/credential";
+      /** Required registry or credential state for lazy TSN serialization; forbidden for prepared serder replies. */
+      data: Required<VcStateRecord>;
+      /** Prepared reply body for KEL output; absent on the mutually exclusive lazy TSN variants. */
+      serder?: never;
+      /** Requester AID; required for lazy TSN construction and optional for a prepared reply. */
+      dest: string;
+    }
   );
 
 /** Cue carrying one streaming publication request plus its topic metadata. */
 export interface StreamCue extends CueBase {
+  /** Discriminator used by the exclusive cue consumer to select handling. */
   kin: "stream";
+  /** Signed mailbox query body whose SAID provides response correlation. */
   serder: SerderKERI;
+  /** Mailbox subject AID whose stored messages are selected. */
   pre: string;
+  /** Queried attester/provider AID copied from q.src; requester authorization comes from the signed query evidence. */
   src: string;
+  /** Topic names mapped to inclusive next-wanted mailbox ordinals. */
   topics: MbxTopicCursor;
 }
 
@@ -123,7 +202,9 @@ export interface StreamCue extends CueBase {
  * wire cue.
  */
 export interface KeyStateSavedCue extends CueBase {
+  /** Discriminator used by the exclusive cue consumer to select handling. */
   kin: "keyStateSaved";
+  /** Accepted key-state notice used to advance query continuations. */
   ksn: KeyStateRecord;
 }
 
@@ -135,9 +216,17 @@ export interface TransactionStateSavedCue extends CueBase {
 
 /** Cue requesting TEL replay or transaction-state lookup work. */
 export interface TelQueryCue extends CueBase {
+  /** Discriminator used by the exclusive cue consumer to select handling. */
   kin: "telquery";
   /** Registry/credential recovery target; issuer is supplied when the registry itself is unknown. */
-  q: { ri: string; i: string; issr?: string };
+  q: {
+    /** Registry identifier whose transaction state is needed. */
+    ri: string;
+    /** Credential SAID whose transaction history is needed. */
+    i: string;
+    /** Optional issuer AID supplied when the registry is unknown. */
+    issr?: string;
+  };
 }
 
 /** Cue emitted when a TEL revoke event is accepted. */

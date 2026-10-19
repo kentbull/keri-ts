@@ -19,6 +19,10 @@ narrows that owner to prepared bodies, finite results and a small scoped streami
 The [explicit dependency plan](plans/runtime/explicit-runtime-dependencies.md)
 tracks explicit HTTP/clock composition and removal of RuntimeServices, followed by a separate verifier clock correction.
 
+The [maintainer documentation pass](plans/runtime/runtime-maintainer-documentation.md)
+records source coverage and the five cross-component reading paths. Current contracts
+remain in the [runtime design](design-docs/runtime/INGRESS_AND_EGRESS.md).
+
 | Area                                           | Purpose                                           |
 | ---------------------------------------------- | ------------------------------------------------- |
 | [Plans](plans/README.md)                       | Remaining work, dependencies and acceptance gates |

@@ -92,30 +92,25 @@ export class FetchHttpClient implements HttpClient {
    * @throws Validation/construction errors remain caller errors; native fetch/body failures are TransportError with cause. Cancellation and cleanup failures remain visible.
    */
   request(url: string, init: HttpRequestInit = {}): Operation<HttpResponse> {
-    const /**
-     * Acquire response headers and retain native I/O in the enclosing scope.
-     * HTTP non-success status remains a response for the protocol caller to interpret.
-     * Scope exit aborts unread or pending I/O, joins it, and releases the reader.
-     * The consumer must not retain the response for use after that scope closes.
-     *
-     * @param url Absolute HTTP(S) URL without embedded credentials.
-     * @param init Prepared request choices and optional upstream signal; no asynchronous upload producer.
-     * @returns Response metadata and one body reader borrowed until the enclosing scope closes.
-     * @throws Request validation errors precede network classification. Native fetch/read failures become TransportError; consumer and genuine cleanup failures propagate.
-     */
-    open = this.open.bind(this);
+    const open = this.open.bind(this);
     return scoped(function*() {
       const response = yield* open(url, init);
-      const /**
-       * @param consumerSignal Optional parser/consumer signal; aborting it aborts this request owner.
-       * @returns A single-consumer byte iterable tied to the enclosing request scope.
-       */
-      body = yield* abortable((signal) => collectBytes(response.body(signal)), init.signal ?? undefined);
+      const body = yield* abortable((signal) => collectBytes(response.body(signal)), init.signal ?? undefined);
       return { status: response.status, ok: response.ok, headers: response.headers, body };
     });
   }
 
-  /** Acquire headers and lend native response bytes until the enclosing scope ends. */
+  /**
+   * Acquire headers and lend response bytes until the enclosing Effection scope ends.
+   * Validate Request before fetch; scope exit aborts unread I/O, joins pending
+   * fetch/read work and releases the reader. Consumer failures stay outside the
+   * transport catches. The response must not escape this scope.
+   *
+   * @param url Absolute HTTP(S) endpoint without embedded credentials.
+   * @param init Prepared method, headers, finite body and optional upstream cancellation; native Request defaults apply.
+   * @returns Metadata and one borrowed body source; status success does not prove body completion.
+   * @throws Validation errors precede network execution. Native fetch/read failures retain their cause in TransportError; cancellation and distinct cleanup failures propagate.
+   */
   open(url: string, init: HttpRequestInit = {}): Operation<HttpStreamResponse> {
     return resource<HttpStreamResponse>(function*(provide) {
       const controller = new AbortController();
@@ -128,7 +123,12 @@ export class FetchHttpClient implements HttpClient {
       let bodySignal: AbortSignal | undefined;
       /** A borrowing parser must interrupt its read before child teardown tries to join it. */
       const abortBody = () => controller.abort(bodySignal!.reason);
-      /** Classify only the actual Fetch/read boundary; exact caller cancellation keeps its identity. */
+      /**
+       * Classify only native fetch/read failures, preserving exact caller cancellation.
+       * @param cause Native rejection; consumer/parser exceptions never enter this helper.
+       * @param message Operation detail to combine with the endpoint URL.
+       * @returns Original cancellation reason or a TransportError retaining cause.
+       */
       const transportFailure = (cause: unknown, message: string): unknown =>
         signal.aborted && cause === signal.reason ? cause : new TransportError(`${message} for ${url}`, { cause });
       try {
@@ -148,7 +148,13 @@ export class FetchHttpClient implements HttpClient {
           status: response.status,
           ok: response.ok,
           headers: response.headers,
-          /** Borrow one reader; the native stream itself enforces exclusive ownership. */
+          /**
+           * Borrow the native response reader for this request scope.
+           * Early iterator return aborts the request; the enclosing owner joins cleanup.
+           *
+           * @param consumerSignal Optional consumer cancellation; abort interrupts this request and any pending read.
+           * @returns A single-consumer iterable of byte chunks, valid only while the request scope remains open.
+           */
           body(consumerSignal) {
             if (reader) throw new Error("HTTP response body already acquired");
             bodySignal = consumerSignal;

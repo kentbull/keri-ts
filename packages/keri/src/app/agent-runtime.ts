@@ -298,6 +298,7 @@ export function* createAgentRuntime(
     }
   });
   // Compose the shared semantic handlers before input owners or network delivery.
+  /** Preserve the composed clock receiver when passing a plain epoch-time callback. */
   const now = () => clock.now();
   const kramer = options.kram ? new Kramer(hby.db, { config: options.kram, cues: protocolCues, now }) : undefined;
   const kvy = new Kevery(hby.db, { cues: protocolCues, rvy: revery, messagePolicy: options.messagePolicy, kramer });

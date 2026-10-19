@@ -14,8 +14,8 @@ export type HTTPMessengerOptions = EgressOptions;
 
 /**
  * Own CESR HTTP sending and finite query-response intake, following KERIpy HTTPMessenger.
- * CESR helpers own wire framing; the composed HTTP client owns upload/fetch/body
- * lifetimes and native failures. This messenger selects response draining or CESR
+ * CESR helpers prepare finite request bodies; the composed HTTP client owns
+ * Request validation, fetch, response-body lifetime and native failures. This messenger selects response draining or CESR
  * parsing, using its own Kevery over shared accepted state. Poster/query owners
  * retain their queues and retry decisions; this class adds no scheduler or history.
  */

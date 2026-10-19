@@ -97,8 +97,8 @@ export class TCPMessenger {
    * @param url TCP endpoint with an explicit port in the range 1–65535.
    * @param source Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
    * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines. Set replies to process same-socket input through EOF; local controls KEL intake policy.
-   * @returns Local transmission for send-only use, or transmission plus processed receive EOF for duplex.
-   * @throws Reply mode requires a protocol processor. Source/parser, dispatch, transport and cleanup failures propagate.
+   * @returns Local transmission plus processed receive EOF, after both children and connection cleanup join.
+   * @throws Missing receive capability, source/parser, dispatch, transport and cleanup failures propagate.
    */
   private converse(url: string, source: TcpSourceFactory, options: TCPMessengerOptions): Operation<TCPConversation> {
     const protocol = this.protocol, kvy = this.kvy, clock = this.clock;

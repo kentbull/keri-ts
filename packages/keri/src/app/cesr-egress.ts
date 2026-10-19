@@ -33,11 +33,29 @@ export class CesrHttpRefusal extends ValidationError {
 }
 
 /** Expected remote HTTP refusal; infrastructure and cleanup failures still throw. */
-export type CesrPostResult = { kind: "complete" } | { kind: "refuse"; error: CesrHttpRefusal };
+export type CesrPostResult = {
+  /** Complete means all selected response consumers and cleanup finished; refuse is an observed non-success status. */
+  kind: "complete";
+} | {
+  /** Complete means all selected response consumers and cleanup finished; refuse is an observed non-success status. */
+  kind: "refuse";
+  /** Completed peer refusal, retaining its HTTP status and decoded detail. */
+  error: CesrHttpRefusal;
+};
 /**
  * Internal result that either lends a successful scoped response or carries a completed peer refusal.
  */
-type FrameResponse = { kind: "response"; response: HttpStreamResponse } | Extract<CesrPostResult, { kind: "refuse" }>;
+type FrameResponse =
+  | {
+    /** Successful scoped response, still requiring consumption before its owner closes. */
+    kind: "response";
+    /** Borrowed response metadata/body; use only within the enclosing request scope. */
+    response: HttpStreamResponse;
+  }
+  | Extract<CesrPostResult, {
+    /** Successful scoped response, still requiring consumption before its owner closes. */
+    kind: "refuse";
+  }>;
 
 /** Transport choices for one CESR frame. */
 export interface EgressOptions {
@@ -283,6 +301,10 @@ export function attemptPostCesr(
       // The earlier resource joins the read after processing children stop.
       yield* ensure(function*() {
         const cleanup: unknown[] = [];
+        /**
+         * Retain distinct late failures without duplicating the primary rejection.
+         * @param error Rejection from joining a pending pull or returning the parser.
+         */
         const noteCleanup = (error: unknown) => {
           try {
             rethrowCleanupFailure(error, signal);
