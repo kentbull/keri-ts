@@ -12,7 +12,8 @@ and the response-body simplification in PR #538.
 
 Follow-up: the proposed [HTTP client simplification](http-client-simplification.md)
 narrows upload and cleanup guarantees while preserving this composition boundary.
-Its finite/open response split is not implemented yet.
+It tracks the implementation of the finite/open response split; the detailed
+contracts below record the original refactor and are superseded as that plan lands.
 
 ## Decision and scope
 

@@ -1,7 +1,10 @@
 # Simplify HTTP requests and response ownership
 
-Status: implementation in progress; phase 1 is merged as PR #541. Phase 2 introduces the
-finite/open contract; phase 3 remains outstanding. Reviewed
+Status: all three implementation phases are complete locally; phases 1 and 2 are
+merged as [PR #541](https://github.com/kentbull/keri-ts/pull/541) and
+[PR #542](https://github.com/kentbull/keri-ts/pull/542). The final implementation
+PR on branch `refactor/http-native-cleanup` owns qualification results and exact
+revisions; full qualification follows its merge. Planning baseline reviewed
 against local `e5e78024309846bd26e5e4cd3880a5e1c53eb58e` on 2026-10-19. Verify
 current master and applicable instructions before implementation. This follows
 the completed [HTTP ownership refactor](http-request-ownership-refactor.md).
@@ -225,3 +228,13 @@ Run ENCTX index maintenance after final file/Git changes at each handoff and
 require a healthy result. Record remaining risk honestly: finite allocations,
 supported runtime versions and the retained streaming paths; no promised exact
 final-wire retry, remote acceptance or exhaustive simultaneous-fault resilience.
+
+### Native cancellation evidence
+
+The focused native HTTP owner cases pass on Deno 2.9.7 and Node 20.3.0. Node 20
+replaces an interrupted response read's supplied abort reason with a fresh native
+DOMException AbortError. Normalize that shape to the owning signal reason only
+at an aborted native body-read boundary. This deliberately accepts ambiguity
+between coincident native AbortErrors after cancellation; injected clients retain
+explicit failure contracts. Other native failures and parser/storage errors stay
+visible. Do not restore an error ledger to promise unavailable provenance.

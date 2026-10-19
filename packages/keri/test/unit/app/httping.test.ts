@@ -1,8 +1,7 @@
 import { call, run, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { closeResponseBody, requestWithHeaderTimeout } from "../../../src/app/httping.ts";
+import { requestWithHeaderTimeout } from "../../../src/app/httping.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
-import { httpResponse } from "../../support/http-client.ts";
 import { httpClient, type TestHttpResponder } from "../../support/http-client.ts";
 
 /** Keep the production clock while controlling the exact response ownership handoff. */
@@ -104,49 +103,6 @@ Deno.test("HTTP open timeout retains the mailbox null outcome and joins the abor
   });
   assertEquals(result, null);
   assertEquals(aborted, true);
-});
-
-Deno.test("HTTP response cancellation joins body cleanup and propagates its original failure", async () => {
-  const started = Promise.withResolvers<void>(), finished = Promise.withResolvers<void>();
-  const fault = new Error("body cleanup failed");
-  assertStrictEquals(
-    await assertRejects(() =>
-      run(() =>
-        closeResponseBody(httpResponse(
-          new Response(
-            new ReadableStream({
-              cancel() {
-                throw fault;
-              },
-            }),
-          ),
-        ))
-      )
-    ),
-    fault,
-  );
-  let calls = 0, exited = false;
-  const response = new Response(
-    new ReadableStream<Uint8Array>({
-      cancel() {
-        calls++;
-        started.resolve();
-        return finished.promise;
-      },
-    }),
-  );
-  const task = run(function*() {
-    yield* closeResponseBody(httpResponse(response));
-  });
-  await started.promise;
-  const joined = task.halt();
-  void joined.then(() => exited = true, () => exited = true);
-  // Give cancellation one event-loop turn; the controlled cleanup remains unresolved.
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assertEquals(exited, false);
-  finished.reject(fault);
-  assertStrictEquals(await assertRejects(() => joined), fault);
-  assertEquals(calls, 1);
 });
 
 Deno.test("late HTTP response cleanup failure is not hidden during fetch cancellation", async () => {

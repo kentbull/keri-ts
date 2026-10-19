@@ -17,7 +17,7 @@
 import type { HttpClient, HttpStreamResponse } from "./http-client.ts";
 
 import { Cigar, concatBytes, Counter, CtrDexV1, Ilks, parse, parseBytes, type SerderKERI, type Siger } from "cesr-ts";
-import { action, call, ensure, type Operation, resource, spawn } from "npm:effection@^3.6.0";
+import { action, call, ensure, type Operation, resource, scoped, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { type Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -32,7 +32,6 @@ import { chunkBytes, collectBytes } from "./byte-source.ts";
 import { buildCesrRequest, CESR_CONTENT_TYPE, inspectCesrRequest, KERIPY_CESR_JSON_CONTENT_TYPE } from "./cesr-http.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { HTTPMessenger } from "./http-messenger.ts";
-import { closeResponseBody } from "./httping.ts";
 import { processMessages } from "./message-source.ts";
 import { envelopeFromFrame } from "./parsering.ts";
 import { type ProtocolProcessor } from "./protocol-processing.ts";
@@ -710,20 +709,21 @@ function* postWitnessReceiptEndpoint(
       contentType,
       destination: witness,
     });
-    const response = yield* http.open(responseUrl.toString(), {
-      method: "POST",
-      headers: {
-        ...request.headers,
-        ...(auth ? { Authorization: auth } : {}),
-      },
-      body: request.body,
+    const response = yield* scoped(function*() {
+      const response = yield* http.open(responseUrl.toString(), {
+        method: "POST",
+        headers: { ...request.headers, ...(auth ? { Authorization: auth } : {}) },
+        body: request.body,
+      });
+      // Escrow is a status-only result. Other outcomes require their complete proof/diagnostic body.
+      const body = response.status === 202 ? new Uint8Array() : yield* readResponseBytes(response);
+      return { status: response.status, body };
     });
     if (response.status === 202) {
-      yield* closeResponseBody(response);
       return { kind: "escrow", status: 202 };
     }
     if (response.status === 200) {
-      const body = yield* readResponseBytes(response);
+      const body = response.body;
       const inspected = inspectReceiptMessage(body);
       return {
         kind: "accepted",
@@ -733,7 +733,7 @@ function* postWitnessReceiptEndpoint(
         cigars: inspected.cigars,
       };
     }
-    const body = yield* readResponseBytes(response);
+    const body = response.body;
     lastStatus = response.status;
     lastText = new TextDecoder().decode(body);
     if (isKeripyContentTypeRejection(response.status, contentType, lastText)) {

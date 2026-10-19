@@ -24,8 +24,10 @@ TCPMessenger/HTTPMessenger own attempts and input-specific Kevery/parser lifetim
 Semantic reply/exchange/TEL handlers and v2 sender policy remain shared.
 The [HTTP request ownership refactor](../docs/plans/runtime/http-request-ownership-refactor.md)
 puts Request construction and native fetch/body failures in FetchHttpClient. Consumers
-borrow a cancellable byte source through the composed HTTP contract; no client identity
-check selects failure handling. Outbound
+receive completed finite bytes from request or borrow a scoped byte source from open;
+no client identity check selects failure handling. The [HTTP simplification](../docs/plans/runtime/http-client-simplification.md)
+removes upload producers and general cleanup bookkeeping, retaining native Fetch
+cancellation and actual I/O joining. Outbound
 components receive the actual protocol and I/O dependencies, not Reactor proxies.
 
 ## Read by subject

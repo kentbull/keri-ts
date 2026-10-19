@@ -1,16 +1,7 @@
 /** HTTP caller policies; the composed client owns native requests, readers and cleanup. */
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import { abortable } from "./abortable.ts";
 import type { HttpClient, HttpRequestInit, HttpStreamResponse } from "./http-client.ts";
 import type { RuntimeClock, RuntimeTimer } from "./runtime-services.ts";
-
-/** Close an unread owned body before a caller publishes its status-only result. */
-export function* closeResponseBody(response: HttpStreamResponse): Operation<void> {
-  const iterator = response.body()[Symbol.asyncIterator]();
-  yield* abortable(async () => {
-    await iterator.return?.();
-  });
-}
 
 /**
  * Acquire headers under the mailbox's existing timeout-as-no-response policy.

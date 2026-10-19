@@ -1,8 +1,6 @@
-import { call, type Operation } from "npm:effection@^3.6.0";
+import { call, type Operation, scoped } from "npm:effection@^3.6.0";
 import type { OobiRecord } from "../core/records.ts";
 import type { Habery } from "./habbing.ts";
-import type { HttpStreamResponse } from "./http-client.ts";
-import { closeResponseBody } from "./httping.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
@@ -123,10 +121,13 @@ export class Authenticator {
     const cid = record.cid
       ?? parseOobiUrl(url, record.oobialias ?? undefined).cid
       ?? null;
-    const response = yield* this.services.http.open(url);
+    const http = this.services.http;
+    const response = yield* scoped(function*() {
+      const response = yield* http.open(url);
+      return { ok: response.ok, status: response.status };
+    });
     const date = new Date().toISOString();
     const state = response.ok ? "resolved" : `http-${response.status}`;
-    yield* closeResponseBody(response);
 
     this.hby.db.mfa.rem(url);
     this.hby.db.rmfa.pin(url, {

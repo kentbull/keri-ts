@@ -10,7 +10,6 @@
  * `Notifier` rows are intentionally not consumed here; they remain operator
  * visibility, matching the roadmap contract.
  */
-import { closeResponseBody } from "./httping.ts";
 
 import { Dater, Ilks, Prefixer, SerderACDC, type Versionage, Vrsn_1_0 } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
@@ -344,12 +343,8 @@ export class VerifierAgent {
         },
         body: raw,
       });
-      try {
-        return response.ok;
-      } finally {
-        // Webhooks use only the status; release an unread response before this leaf completes.
-        yield* closeResponseBody(response);
-      }
+      // Returning from this call scope closes the unread response before publishing success.
+      return response.ok;
     });
   }
 
