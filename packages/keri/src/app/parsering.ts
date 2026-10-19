@@ -155,6 +155,17 @@ export interface DispatchResult {
  * Route one already-parsed KERI dispatch envelope into the established
  * `Revery` / `Kevery` / `Exchanger` architecture.
  * Return ordinary buffered evidence and its decision to the application owner.
+ *
+ * @param envelope Parsed body and its exact attachment evidence.
+ * @param revery Borrowed reply-route verifier.
+ * @param kevery Input KEL processor for this dispatch.
+ * @param exchanger Optional exchange processor; absent exchange support remains explicit.
+ * @param tevery Optional legacy TEL processor.
+ * @param verifier Optional credential processor.
+ * @param mailboxAid Receiving hosted endpoint provenance, distinct from claimed sender.
+ * @param messageKevery Authoritative shared message-policy/KRAM processor when distinct from input Kevery.
+ * @returns The processed envelope and protocol-specific decision data.
+ * @throws Unsupported input and infrastructure/handler failures follow their owning processor contracts.
  */
 export function* dispatchEnvelope(
   envelope: KeriDispatchEnvelope,

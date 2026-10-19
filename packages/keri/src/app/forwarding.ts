@@ -65,26 +65,63 @@ export type ExchangeDeliveryPreference = "auto" | "direct" | "indirect";
 
 /** One admitted source message; identity distinguishes repeated sends of the same signed bytes. */
 export interface PosterEvent {
+  /**
+   * Local sender AID used to resolve the signing habitat on each attempt.
+   */
   readonly src: string;
+  /**
+   * Final recipient AID; this is not necessarily the intermediary endpoint.
+   */
   readonly dest: string;
+  /**
+   * Mailbox routing topic; required when using indirect delivery.
+   */
   readonly topic: string;
+  /**
+   * Original signed message copied at admission; caller mutation cannot change queued work.
+   */
   readonly msg: Uint8Array;
+  /**
+   * Existing route preference; omission uses mailbox-first auto selection.
+   */
   readonly delivery?: ExchangeDeliveryPreference;
+  /**
+   * Request same-socket TCP reply processing; requires a protocol processor.
+   */
   readonly replies?: boolean;
 }
 
 /** Optional terminal observation of one concrete delivery attempt, not remote acceptance. */
+/** deliveries contains successful endpoint URLs (including local-mailbox targets); failed retains the actual error. */
 export type PosterOutcome =
   | { kin: "sent"; evt: PosterEvent; deliveries: string[] }
   | { kin: "failed"; evt: PosterEvent; deliveries: string[]; error: unknown };
 
 /** Recipient policy captured during a short guarded preparation turn. */
 export interface RawCesrRoute {
+  /**
+   * Local sender AID whose habitat prepared this route.
+   */
   readonly sender: string;
+  /**
+   * Final recipient AID after alias resolution.
+   */
   readonly recipient: string;
+  /**
+   * Mailbox topic used for indirect delivery.
+   */
   readonly topic: string;
+  /**
+   * Selected local, direct, mailbox or witness route policy.
+   */
   readonly kind: "mailbox" | "local" | "direct" | "witness";
+  /**
+   * Ordered selected endpoint AIDs and URLs; execution is sequential.
+   */
   readonly targets: readonly { eid: string; url: string }[];
+  /**
+   * HTTP framing policy captured for this attempt.
+   */
   readonly bodyMode: CesrBodyMode;
 }
 
@@ -105,7 +142,14 @@ export type PreparedCesrTarget =
     readonly bodyMode: CesrBodyMode;
   };
 
-/** Preserve selected endpoint and signed bytes; TCP has no HTTP body framing mode. */
+/**
+ * Preserve selected endpoint and signed bytes; TCP has no HTTP body framing mode.
+ *
+ * @param endpoint Selected endpoint AID and concrete URL.
+ * @param message Prepared bytes borrowed until transport cleanup completes.
+ * @param bodyMode HTTP attachment placement; irrelevant for TCP.
+ * @returns A TCP or HTTP target according to the endpoint URL scheme.
+ */
 function remoteCesrTarget(
   endpoint: { eid: string; url: string },
   message: Uint8Array,
@@ -160,7 +204,16 @@ export class Poster {
   /** Borrowed same-socket protocol receiver; null explicitly selects send-only capability. */
   private readonly protocol: ProtocolProcessor | null;
 
-  /** Bind actual collaborators; Poster owns queue/I/O lifetimes and borrows their stores. */
+  /**
+   * Bind actual collaborators; Poster owns queue/I/O lifetimes and borrows their stores.
+   *
+   * @param hby Borrowed local habitat collection and accepted-state database.
+   * @param mbx Borrowed provider mailbox store, or null when local storage is unavailable.
+   * @param protocol Borrowed same-database processor for TCP replies; null permits send-only work.
+   * @param http Borrowed HTTP implementation selected by composition.
+   * @param clock Borrowed clock for transport deadlines; times are milliseconds.
+   * @throws RangeError if protocol state belongs to a different database.
+   */
   constructor(
     hby: Habery,
     mbx: Mailboxer | null,
@@ -177,7 +230,14 @@ export class Poster {
     this.protocol = protocol;
   }
 
-  /** Admit signed source bytes; callers must observe an outcome before reporting transmission. */
+  /**
+   * Admit signed source bytes; callers must observe an outcome before reporting transmission.
+   *
+   * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
+   * @param options Set notify to retain one terminal outcome for this admission; default false.
+   * @returns A fresh admitted record with copied msg bytes; admission is not transmission.
+   * @throws Closed owner or unsupported reply capability rejects before queue publication.
+   */
   send(evt: PosterEvent, { notify = false }: { notify?: boolean } = {}): PosterEvent {
     this.ensureOpen();
     if (evt.replies && !this.protocol) throw new Error("TCP reply delivery requires a protocol processor");
@@ -188,7 +248,12 @@ export class Poster {
     return admitted;
   }
 
-  /** Construct all source records before atomically publishing a complete cue or reply pair. */
+  /**
+   * Construct all source records before atomically publishing a complete cue or reply pair.
+   *
+   * @param evts Finite iterable for one cue/pair; every record is checked and copied before atomic queue publication.
+   * @throws Any construction/capability failure leaves the runnable queue unchanged.
+   */
   sendAll(evts: Iterable<PosterEvent>): void {
     this.ensureOpen();
     const pending: PosterEvent[] = [];
@@ -200,7 +265,15 @@ export class Poster {
     this.evts.extend(pending);
   }
 
-  /** Retry retained source bytes as a fresh attempt; successful destinations may receive duplicates. */
+  /**
+   * Admit a retained source message as a fresh attempt.
+   * Routing and outer packets are rebuilt from current state. Prior successful targets
+   * may receive duplicates; no per-target retry position or durable retry record exists.
+   *
+   * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
+   * @param options Optional notification for the fresh admission; default false.
+   * @returns A new admission; only then is the retained failure removed.
+   */
   retry(evt: PosterEvent, options: { notify?: boolean } = {}): PosterEvent {
     const index = this.failures.findIndex((failure) => failure.evt === evt);
     if (index < 0) throw new Error("Event is not retained as a failure");
@@ -209,7 +282,12 @@ export class Poster {
     return admitted;
   }
 
-  /** Discard failed work without sending it again. */
+  /**
+   * Discard failed work without sending it again.
+   *
+   * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
+   * @returns True if the retained failure was removed; false if absent.
+   */
   discard(evt: PosterEvent): boolean {
     const index = this.failures.findIndex((failure) => failure.evt === evt);
     if (index < 0) return false;
@@ -217,7 +295,15 @@ export class Poster {
     return true;
   }
 
-  /** Wait only for this admission; cancellation releases its completion observation. */
+  /**
+   * Wait for one admission without owning its delivery.
+   * The delivery worker must run independently. Cancellation removes the observer and
+   * its notification; it does not withdraw queued work or abort the attempt.
+   *
+   * @param evt Exact record returned by send/retry with notify enabled.
+   * @returns This admission's sent or failed outcome, consuming its notification.
+   * @throws Missing notification, duplicate waiter or closure before an outcome is available.
+   */
   *wait(evt: PosterEvent): Operation<PosterOutcome> {
     if (!this.notifications.has(evt) && ![...this.cues].some((cue) => cue.evt === evt)) {
       throw new Error("Event was not admitted with completion notification");
@@ -238,7 +324,12 @@ export class Poster {
     }
   }
 
-  /** Consume only this event's outcome while preserving other observers' queue order. */
+  /**
+   * Consume only this event's outcome while preserving other observers' queue order.
+   *
+   * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
+   * @returns Matching outcome, or undefined; other outcome order is preserved.
+   */
   private takeOutcome(evt: PosterEvent): PosterOutcome | undefined {
     let found: PosterOutcome | undefined;
     const count = this.cues.length;
@@ -320,7 +411,11 @@ export class Poster {
     });
   }
 
-  /** Remove runnable work before publishing its optional terminal observation. */
+  /**
+   * Remove runnable work before publishing its optional terminal observation.
+   *
+   * @param outcome Terminal result for the runnable head, including successful target URLs and any failure.
+   */
   private finish(outcome: PosterOutcome): void {
     this.evts.pull();
     if (outcome.kin === "failed") this.failures.push(outcome);
@@ -333,6 +428,10 @@ export class Poster {
    * Resolution order matches the mailbox CLI mental model:
    * - exact known prefix wins
    * - otherwise exact organizer alias lookup is required
+   *
+   * @param recipient Known AID prefix or exact organizer alias.
+   * @returns Resolved destination AID.
+   * @throws ValidationError for absent or ambiguous aliases.
    */
   resolveRecipient(recipient: string): string {
     if (this.hby.db.getKever(recipient)) {
@@ -352,7 +451,17 @@ export class Poster {
     return matches[0]!.id;
   }
 
-  /** Execute one admitted source message using the existing mailbox-first target policy. */
+  /**
+   * Resolve and execute one event using sequential current endpoints.
+   * Observed HTTP refusal and TransportError permit remaining targets to run.
+   * Unexpected construction/parser/storage/cleanup errors propagate so process can
+   * retain and publish the failed event before exposing the error.
+   *
+   * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
+   * @param deliveries Mutable accumulator of successfully delivered target URLs, retained even if a later target throws.
+   * @param signal Active Poster pass cancellation; forwarded into each messenger attempt.
+   * @returns Sent if every target completes; otherwise a failure with partial successes.
+   */
   private *deliverEvent(evt: PosterEvent, deliveries: string[], signal: AbortSignal): Operation<PosterOutcome> {
     const hab = this.hby.habs.get(evt.src);
     if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
@@ -419,7 +528,12 @@ export class Poster {
     return { kin: "sent", evt, deliveries };
   }
 
-  /** A request-owned HTTP response may omit optional outbound delivery when no endpoint exists. */
+  /**
+   * A request-owned HTTP response may omit optional outbound delivery when no endpoint exists.
+   *
+   * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
+   * @returns Whether current routing finds a target; this is not a connectivity probe.
+   */
   canDeliver(evt: PosterEvent): boolean {
     const hab = this.hby.habs.get(evt.src);
     if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
@@ -431,7 +545,14 @@ export class Poster {
     }) !== null;
   }
 
-  /** Snapshot mailbox/direct/witness policy without opening transport or reading message bytes. */
+  /**
+   * Snapshot mailbox/direct/witness policy without opening transport or reading message bytes.
+   *
+   * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
+   * @param args Recipient, optional mailbox topic and delivery preference. findBytesRoute may bypass alias lookup with recipientIsPrefix.
+   * @returns Current route snapshot.
+   * @throws Invalid recipient/topic policy or storage lookup failures propagate. Missing routing throws ValidationError.
+   */
   resolveBytesRoute(
     hab: Hab,
     args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference },
@@ -442,7 +563,14 @@ export class Poster {
     return route;
   }
 
-  /** Same policy; parsed-prefix lookup bypasses aliases, absence is explicit, other failures propagate. */
+  /**
+   * Same policy; parsed-prefix lookup bypasses aliases, absence is explicit, other failures propagate.
+   *
+   * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
+   * @param args Recipient, optional mailbox topic and delivery preference. findBytesRoute may bypass alias lookup with recipientIsPrefix.
+   * @returns Current route snapshot, or null when no target is known.
+   * @throws Invalid recipient/topic policy or storage lookup failures propagate.
+   */
   findBytesRoute(
     hab: Hab,
     args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference; recipientIsPrefix?: boolean },
@@ -474,7 +602,15 @@ export class Poster {
     return null;
   }
 
-  /** Prepare a target using the supplied wire and selected endpoint. */
+  /**
+   * Prepare a target using the supplied wire and selected endpoint.
+   *
+   * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
+   * @param route Recipient/transport policy selected for this attempt; sender must match hab.
+   * @param endpoint One selected endpoint AID and URL from the route.
+   * @param message Original signed CESR bytes; outer forwarding/introduction material may be rebuilt.
+   * @returns A prepared remote target, or stored after authorized local mailbox publication.
+   */
   *prepareBytesTarget(
     hab: Hab,
     route: RawCesrRoute,
@@ -489,7 +625,16 @@ export class Poster {
     return remoteCesrTarget(endpoint, message, route.bodyMode);
   }
 
-  /** Prepare complete signed wire and its introduction before opening transport. */
+  /**
+   * Prepare complete signed wire and its introduction before opening transport.
+   *
+   * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
+   * @param recipient Final recipient AID, distinct from the intermediary endpoint.
+   * @param topic Recipient mailbox topic used by the forwarding envelope.
+   * @param message Original signed CESR bytes; outer forwarding/introduction material may be rebuilt.
+   * @param endpoint Mailbox/witness endpoint selected for this attempt.
+   * @returns Stored for a local endpoint, or signed forwarding wire with its introduction.
+   */
   private *prepareForwardedTarget(
     hab: Hab,
     recipient: string,
@@ -510,7 +655,12 @@ export class Poster {
     return remoteCesrTarget(endpoint, concatBytes(intro, forwarded), this.hby.cesrBodyMode);
   }
 
-  /** Require provider mailbox storage for local mailbox-target delivery. */
+  /**
+   * Require provider mailbox storage for local mailbox-target delivery.
+   *
+   * @returns Borrowed provider mailbox store.
+   * @throws ValidationError when this host has no mailbox storage.
+   */
   private requireMbx(): Mailboxer {
     if (!this.mbx) {
       throw new ValidationError(
@@ -531,12 +681,20 @@ export class Poster {
  *   authorized for the addressed recipient
  */
 export class ForwardHandler implements ExchangeRouteHandler {
+  /** Registered exchange route for store-forward messages. */
   static readonly resource = "/fwd";
+  /** Instance route identity used by exchange dispatch. */
   readonly resource = ForwardHandler.resource;
   /** This route binds a single v2 child body; recipient processors authenticate its evidence. */
   readonly acceptsNests = true;
+  /** Borrowed provider publication/correlation owner. */
   readonly mailboxDirector: MailboxDirector;
 
+  /**
+   * Bind mailbox publication without acquiring a store.
+   *
+   * @param mailboxDirector Borrowed provider owner that publishes accepted forwarded payloads.
+   */
   constructor(mailboxDirector: MailboxDirector) {
     this.mailboxDirector = mailboxDirector;
   }
@@ -544,6 +702,9 @@ export class ForwardHandler implements ExchangeRouteHandler {
   /**
    * Verify that the embedded exchange has the mailbox modifiers and one
    * extractable forwarded payload.
+   *
+   * @param args Signed forwarding exchange, attachment evidence and optional nested frames; children retain their own authentication requirements.
+   * @returns Whether required modifiers and one bound forwarded payload are structurally valid.
    */
   verify(args: {
     serder: SerderKERI;
@@ -577,6 +738,9 @@ export class ForwardHandler implements ExchangeRouteHandler {
    *
    * Controller endpoints stay excluded here because they are direct
    * correspondence destinations, not store-and-forward hosts.
+   *
+   * @param args Accepted exchange with borrowed attachments/children and receiving mailboxAid provenance.
+   * @returns An operation for v2 child serialization, or synchronous completion/no-op for legacy or unauthorized input.
    */
   handle(args: {
     serder: SerderKERI;
@@ -628,6 +792,15 @@ export class ForwardHandler implements ExchangeRouteHandler {
   }
 }
 
+/**
+ * Check recipient-specific store-forward authority without treating a controller endpoint as a mailbox.
+ *
+ * @param hby Borrowed local habitat collection and accepted-state database.
+ * @param recipient Final recipient AID.
+ * @param recipientKever Accepted recipient state supplying its current witness cohort.
+ * @param hostAid Receiving endpoint AID whose witness/mailbox/agent authority is checked.
+ * @returns True when current accepted witness or endpoint-role state authorizes a local store-forward host.
+ */
 function hostCanStoreForwardRecipient(
   hby: Habery,
   recipient: string,
@@ -651,6 +824,14 @@ function hostCanStoreForwardRecipient(
   return false;
 }
 
+/**
+ * Check recipient-specific store-forward authority without treating a controller endpoint as a mailbox.
+ *
+ * @param hby Borrowed local habitat collection and accepted-state database.
+ * @param recipient Final recipient AID.
+ * @param recipientKever Accepted recipient state supplying its current witness cohort.
+ * @returns True when current accepted witness or endpoint-role state authorizes a local store-forward host.
+ */
 function hasLocalStoreForwardHost(
   hby: Habery,
   recipient: string,

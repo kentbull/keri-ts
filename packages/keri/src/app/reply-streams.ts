@@ -4,19 +4,40 @@ export class ReplyStreams {
   private readonly readers = new Set<(reason?: unknown) => void>();
   /** Shutdown permanently closes this runtime's response creation. */
   private closed = false;
-  /** Borrow a reopenable source without advancing until HTTP requests bytes.
+  /**
+   * Borrow a reopenable source without advancing until HTTP requests bytes.
    * Transfer the optional disposer through source closure, including acquisition failure.
+   *
+   * @param messages Synchronous wire-message iterable; its iterator remains owned by the response until EOF/cancel/close.
+   * @param dispose Cleanup callback retained through iterator closure; invoked once even if acquisition fails.
+   * @returns Request-owned Web stream.
+   * @throws Source or disposer failures propagate; independent cleanup failures are retained.
    */
   open(messages: Iterable<Uint8Array>, dispose?: () => void): ReadableStream<Uint8Array> {
     return this.openChecked(messages, dispose, false)!;
   }
 
-  /** Prime one message; empty output closes ownership for a caller's 404 decision. */
+  /**
+   * Prime one message; empty output closes ownership for a caller's 404 decision.
+   *
+   * @param messages Synchronous wire-message iterable; its iterator remains owned by the response until EOF/cancel/close.
+   * @param dispose Cleanup callback retained through iterator closure; invoked once even if acquisition fails.
+   * @returns Request-owned Web stream, or null after empty-source cleanup.
+   * @throws Source or disposer failures propagate; independent cleanup failures are retained.
+   */
   openNonEmpty(messages: Iterable<Uint8Array>, dispose?: () => void): ReadableStream<Uint8Array> | null {
     return this.openChecked(messages, dispose, true);
   }
 
-  /** Optional priming shares the same response owner/disposer; ordinary open always returns a stream. */
+  /**
+   * Optional priming shares the same response owner/disposer; ordinary open always returns a stream.
+   *
+   * @param messages Synchronous wire-message iterable; its iterator remains owned by the response until EOF/cancel/close.
+   * @param dispose Cleanup callback retained through iterator closure; invoked once even if acquisition fails.
+   * @param requireContent Prime one nonempty message before publishing; empty sources close and return null.
+   * @returns Request-owned Web stream, or null after empty-source cleanup.
+   * @throws Source or disposer failures propagate; independent cleanup failures are retained.
+   */
   private openChecked(
     messages: Iterable<Uint8Array>,
     dispose: (() => void) | undefined,
@@ -39,7 +60,15 @@ export class ReplyStreams {
     }
   }
 
-  /** Keep the optional disposer through iterator cleanup, including cancellation before the first pull. */
+  /**
+   * Keep the optional disposer through iterator cleanup, including cancellation before the first pull.
+   *
+   * @param messages Synchronous wire-message iterable; its iterator remains owned by the response until EOF/cancel/close.
+   * @param release Cleanup callback retained through iterator closure; invoked once even if acquisition fails.
+   * @param requireContent Prime one nonempty message before publishing; empty sources close and return null.
+   * @returns Request-owned Web stream, or null after empty-source cleanup.
+   * @throws Source or disposer failures propagate; independent cleanup failures are retained.
+   */
   private openOwned(
     messages: Iterable<Uint8Array>,
     release: () => void,
@@ -121,6 +150,11 @@ export class ReplyStreams {
     this.readers.add(close);
     try {
       return new ReadableStream<Uint8Array>({
+        /**
+         * Attach the controller to this response lifetime before the first pull.
+         *
+         * @param controller Web stream controller retained for subsequent pulls and cancellation.
+         */
         start(controller) {
           stream = controller;
         },

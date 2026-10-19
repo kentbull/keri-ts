@@ -347,6 +347,8 @@ export class Kevery {
    *   state or route criteria
    * - `drop` means the query is malformed or unsupported and should not become
    *   query-not-found escrow
+   *
+   * @param envelope Parsed signed query and its attached authentication evidence.
    */
   private decideQuery(envelope: QueryEnvelope): QueryProcessDecision {
     const route = envelope.serder.route;

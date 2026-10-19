@@ -1185,6 +1185,10 @@ export class Hab {
    * a local Deck, so callers can borrow an array while retaining their source.
    * Query, stream, and notification ownership stays with the caller; only
    * complete query instructions produce wire output here.
+   *
+   * @param cues Deck to consume through its initial extent, or borrowed iterable copied into a local Deck.
+   * @returns A synchronous generator of signed wire messages, not delivery outcomes.
+   * @throws Signing/replay construction failures propagate; a supplied Deck head is already pulled when construction begins.
    */
   *processCuesIter(
     cues: Deck<AgentCue> | Iterable<AgentCue>,

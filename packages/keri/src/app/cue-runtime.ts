@@ -3,7 +3,13 @@ import type { AgentRuntime } from "./agent-runtime.ts";
 import type { Hab } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
-/** Use an explicitly selected or sole local habitat; never guess among hosted identities. */
+/**
+ * Use an explicitly selected or sole local habitat; never guess among hosted identities.
+ *
+ * @param runtime Borrowed composed runtime containing the actual cue consumers.
+ * @param hab Explicit signing habitat; omission requires a sole local habitat.
+ * @returns Explicit or sole habitat, otherwise null.
+ */
 function resolveCueHab(runtime: AgentRuntime, hab?: Hab): Hab | null {
   if (hab) return hab;
   const habitats = runtime.hby.habs.values();
@@ -11,7 +17,12 @@ function resolveCueHab(runtime: AgentRuntime, hab?: Hab): Hab | null {
   return first.done || !habitats.next().done ? null : first.value;
 }
 
-/** Route one initial cue batch to its concrete owners before removing source records. */
+/**
+ * Route one initial cue batch to its concrete owners before removing source records.
+ *
+ * @param runtime Borrowed composed runtime containing the actual cue consumers.
+ * @param options Explicit signing habitat; omission requires a sole local habitat.
+ */
 export function* processCuesOnce(
   runtime: AgentRuntime,
   { hab }: { hab?: Hab } = {},
@@ -34,7 +45,12 @@ export function* processCuesOnce(
   }
 }
 
-/** Continuous cue worker; network output belongs to the concrete query and reply workers. */
+/**
+ * Continuous cue worker; network output belongs to the concrete query and reply workers.
+ *
+ * @param runtime Borrowed composed runtime containing the actual cue consumers.
+ * @param options Explicit signing habitat; omission requires a sole local habitat.
+ */
 export function* cueDo(runtime: AgentRuntime, options: { hab?: Hab } = {}): Operation<never> {
   while (true) {
     yield* processCuesOnce(runtime, options);

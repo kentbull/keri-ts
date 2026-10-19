@@ -45,7 +45,20 @@ export class ProtocolProcessor {
   /** FIFO waiters; cancellation removes a waiter before it can enter the turn. */
   private readonly waiting = new Set<() => void>();
 
-  /** Bind long-lived semantic owners and register their reply routes exactly once. */
+  /**
+   * Bind long-lived semantic owners and register their reply routes exactly once.
+   *
+   * @param kvy Shared KEL owner for semantic reply routes, KRAM policy and escrow recovery.
+   * @param rvy Shared reply verifier bound to the same database and private cue flow.
+   * @param exc Shared exchange owner with application handlers already configured.
+   * @param tvy Borrowed legacy TEL owner, or null without VDR support.
+   * @param vry Borrowed credential verifier, or null without that capability.
+   * @param registry Borrowed v2 registry escrow owner, or null.
+   * @param protocolCues Private semantic-output Deck; distinct from application cues.
+   * @param cues Application output Deck consumed by the composed cue router.
+   * @param replies Shared live request correlations captured before application publication.
+   * @throws TypeError for inconsistent stores or cue bindings.
+   */
   constructor(
     /** Long-lived KEL processor (kvy), used for semantic reply routes and escrow recovery. */
     readonly kvy: Kevery,
@@ -77,7 +90,11 @@ export class ProtocolProcessor {
     tvy?.registerReplyRoutes(rvy.rtr);
   }
 
-  /** Construct an input-owned Kevery with identical store, policy and cue bindings; register no routes. */
+  /**
+   * Construct an input-owned Kevery with identical store, policy and cue bindings; register no routes.
+   *
+   * @returns A new input-specific Kevery sharing accepted state, policy, Revery and the private cue Deck.
+   */
   makeKevery(): Kevery {
     return new Kevery(this.kvy.db, {
       cues: this.protocolCues,
@@ -89,7 +106,15 @@ export class ProtocolProcessor {
     });
   }
 
-  /** Process one frame and publish its committed protocol cues before returning decision data. */
+  /**
+   * Process one frame and publish its committed protocol cues before returning decision data.
+   *
+   * @param frame Complete hydrated frame whose evidence remains valid for this operation.
+   * @param options Local intake policy, hosted mailbox provenance and whether to advance escrows.
+   * @param kvy Input-specific Kevery in this domain; defaults to the shared owner.
+   * @returns Exact dispatch result and current mailbox authorization after the serialized turn.
+   * @throws Domain mismatch, infrastructure/handler or cleanup errors propagate; publication still runs in the dispatch finalizer.
+   */
   dispatch(
     frame: CesrFrame,
     { local = this.kvy.local, mailboxAid, escrows = false }: DispatchOptions = {},
@@ -172,11 +197,10 @@ export class ProtocolProcessor {
   }
 
   /**
-   * Run one bounded escrow-processing pass.
-   *
-   * Current scope:
-   * - KEL escrows through `Kevery.processEscrows()`
-   * - reply escrows through `Revery.processEscrowReply()`
+   * Advance all configured escrow owners within one serialized protocol turn.
+   * This includes KEL/reply, optional TEL/credential/v2 registry, and exchange escrows,
+   * plus KRAM pruning. Capture direct replies and publish ordinary cues on exit.
+   * Cancellation releases the turn only after active handler cleanup joins.
    */
   *processEscrowsOnce(): Operation<void> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
@@ -219,7 +243,12 @@ export class ProtocolProcessor {
   }
 }
 
-/** Compose minimal KEL/reply/exchange intake over an existing Habery; acquire no stores or workers. */
+/**
+ * Compose minimal KEL/reply/exchange intake over an existing Habery; acquire no stores or workers.
+ *
+ * @param hby Borrowed local habitat collection and accepted-state database.
+ * @returns A minimal KEL/reply/exchange processor with no registry owners or running workers.
+ */
 export function createProtocolProcessor(hby: Habery): ProtocolProcessor {
   const cues = new Deck<AgentCue>(), protocolCues = new Deck<AgentCue>();
   const rvy = new Revery(hby.db, { cues: protocolCues });

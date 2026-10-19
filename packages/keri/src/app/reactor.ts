@@ -21,7 +21,11 @@ export class Reactor {
   /** Complete copied records awaiting this input owner's sole queue consumer. */
   private readonly ingress = new Deck<Uint8Array>();
 
-  /** Bind the actual shared protocol owner; create no runtime, transport or persistent stores. */
+  /**
+   * Bind the actual shared protocol owner; create no runtime, transport or persistent stores.
+   *
+   * @param protocol Borrowed shared protocol domain; this input creates its own Kevery over that domain.
+   */
   constructor(
     /** Borrowed protocol mutations/publication owner, never a transport or callback scheduler. */
     readonly protocol: ProtocolProcessor,
@@ -33,7 +37,13 @@ export class Reactor {
   get hasIngress(): boolean {
     return !this.ingress.empty;
   }
-  /** Own this input and finish dispatch before reading its next complete frame. */
+  /**
+   * Own this input and finish dispatch before reading its next complete frame.
+   *
+   * @param source Creates cancellation-aware input bytes; this operation owns parsing and source cleanup.
+   * @param options Dispatch policy and optional upstream cancellation.
+   * @throws Source/parser, dispatch and cleanup failures propagate.
+   */
   process(
     source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
     options: IngressOptions = {},
@@ -45,6 +55,8 @@ export class Reactor {
    *
    * This is the transient ingress seam used by both local synthetic messages
    * and remotely fetched OOBI artifacts.
+   *
+   * @param bytes Complete resident record copied into the input queue; processing happens later.
    */
   ingest(bytes: Uint8Array): void {
     // Preserve the queued record independently of subsequent producer mutation.
@@ -56,16 +68,21 @@ export class Reactor {
     this.ingress.clear();
   }
 
-  /** Consume one complete record through the same buffered parser source and dispatch path as network input. */
+  /**
+   * Consume one complete record through the same buffered parser source and dispatch path as network input.
+   *
+   * @param bytes Resident complete record; each parser chunk is copied during consumption.
+   * @param options Dispatch policy and optional upstream cancellation.
+   */
   *processBytes(bytes: Uint8Array, options: IngressOptions = {}): Operation<void> {
     // Copy already resident input in fixed-size chunks for the parser source.
     yield* this.process((signal) => chunkBytes(bytes, { signal }), options);
   }
   /**
-   * Drain one bounded message-processing pass.
-   *
-   * This mirrors the KERIpy pattern where a doer owns the long-lived loop but
-   * delegates the actual work to a plain drain helper.
+   * Drain queued records through buffered parsing and shared dispatch.
+   * Each record is removed before processing and is not reinserted after failure.
+   * The loop runs until the queue is empty, including records appended during dispatch;
+   * this is not an initial-length snapshot or a network delivery operation.
    */
   *processOnce(): Operation<void> {
     while (!this.ingress.empty) yield* this.processBytes(this.ingress.pull()!);
