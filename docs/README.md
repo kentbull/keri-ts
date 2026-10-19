@@ -16,6 +16,8 @@ The [HTTP request ownership refactor](plans/runtime/http-request-ownership-refac
 consolidates Request validation, execution and body transport failures into the composed HTTP implementation.
 The [HTTP client simplification](plans/runtime/http-client-simplification.md)
 narrows that owner to prepared bodies, finite results and a small scoped streaming path.
+The [explicit dependency plan](plans/runtime/explicit-runtime-dependencies.md)
+proposes removing RuntimeServices through concrete composition, then fixing verifier clock consistency separately.
 
 | Area                                           | Purpose                                           |
 | ---------------------------------------------- | ------------------------------------------------- |

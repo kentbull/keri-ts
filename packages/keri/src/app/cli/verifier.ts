@@ -57,19 +57,22 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
       });
       try {
         const config = runArgs.config ? JSON.parse(Deno.readTextFileSync(runArgs.config)) : {};
-        const agent = new VerifierAgent({
+        const agent = new VerifierAgent(
           hby,
           reger,
           cdb,
-          reactor: runtime.reactor,
-          cues: runtime.cues,
-          services: runtime.services,
-          hook,
-          gvrsn: runArgs.gvrsn,
-          timeoutMs: runArgs.timeoutMs,
-          validators: validatorsFromVerifierConfig(config),
-          requireKnownSchemas: isRecord(config) && config.requireKnownSchemas === true,
-        });
+          runtime.reactor,
+          runtime.cues,
+          runtime.services.http,
+          () => runtime.services.clock.now(),
+          validatorsFromVerifierConfig(config),
+          {
+            hook,
+            gvrsn: runArgs.gvrsn,
+            timeoutMs: runArgs.timeoutMs,
+            requireKnownSchemas: isRecord(config) && config.requireKnownSchemas === true,
+          },
+        );
 
         if (runArgs.once ?? false) {
           const result = yield* agent.processOnce();

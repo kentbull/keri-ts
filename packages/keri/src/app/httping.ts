@@ -1,7 +1,7 @@
 /** HTTP caller policies; the composed client owns native requests, readers and cleanup. */
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { HttpClient, HttpRequestInit, HttpStreamResponse } from "./http-client.ts";
-import type { RuntimeClock, RuntimeTimer } from "./runtime-services.ts";
+import type { RuntimeClock, RuntimeTimer } from "./runtime-clock.ts";
 
 /**
  * Acquire headers under the mailbox's existing timeout-as-no-response policy.

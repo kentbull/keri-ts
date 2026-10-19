@@ -380,26 +380,24 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         const cleaning = new Promise<void>((resolve) => finishCleanup = resolve);
         const started = new Promise<void>((resolve) => cleanupStarted = resolve);
         const signals: AbortSignal[] = [];
-        const auth = new Authenticator(hby, {
-          services: {
-            ...runtime.services,
-            http: httpClient((_url, init) => {
-              signals.push(init!.signal!);
-              return Promise.resolve(
-                new Response(
-                  new ReadableStream({
-                    cancel() {
-                      cleanupStarted();
-                      return cleaning.then(() => {
-                        throw cleanupFailure;
-                      });
-                    },
-                  }),
-                ),
-              );
-            }),
-          },
-        });
+        const auth = new Authenticator(
+          hby,
+          httpClient((_url, init) => {
+            signals.push(init!.signal!);
+            return Promise.resolve(
+              new Response(
+                new ReadableStream({
+                  cancel() {
+                    cleanupStarted();
+                    return cleaning.then(() => {
+                      throw cleanupFailure;
+                    });
+                  },
+                }),
+              ),
+            );
+          }),
+        );
         hby.db.mfa.pin(cleanupUrl, { cid: pre, state: "auth-pending" });
         const task = run(() => auth.processOnce());
         try {

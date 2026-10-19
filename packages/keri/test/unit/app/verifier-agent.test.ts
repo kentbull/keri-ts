@@ -149,16 +149,17 @@ async function assertIssuanceWebhook(gvrsn: Versionage): Promise<void> {
       const fixture = issueFixture(issuerHby, issuerReger, verifierHby, gvrsn);
       yield* ingestGrant(runtime, fixture);
 
-      const agent = new VerifierAgent({
-        hby: verifierHby,
-        reger: verifierReger,
+      const agent = new VerifierAgent(
+        verifierHby,
+        verifierReger,
         cdb,
-        reactor: runtime.reactor,
-        cues: runtime.cues,
-        services: runtime.services,
-        hook: "http://example.test/hook",
-        gvrsn,
-      });
+        runtime.reactor,
+        runtime.cues,
+        runtime.services.http,
+        () => runtime.services.clock.now(),
+        {},
+        { hook: "http://example.test/hook", gvrsn },
+      );
       const result = yield* agent.processOnce();
 
       assertEquals(result.grantsQueued, 1);
@@ -224,15 +225,17 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
     try {
       const fixture = issueFixture(issuerHby, issuerReger, verifierHby);
       yield* ingestGrant(runtime, fixture);
-      const agent = new VerifierAgent({
-        hby: verifierHby,
-        reger: verifierReger,
+      const agent = new VerifierAgent(
+        verifierHby,
+        verifierReger,
         cdb,
-        reactor: runtime.reactor,
-        cues: runtime.cues,
-        services: runtime.services,
-        hook: "http://example.test/hook",
-      });
+        runtime.reactor,
+        runtime.cues,
+        runtime.services.http,
+        () => runtime.services.clock.now(),
+        {},
+        { hook: "http://example.test/hook" },
+      );
       yield* agent.processOnce();
 
       fixture.registry.revoke(fixture.creder.said!);
@@ -331,15 +334,17 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
     try {
       const fixture = issueFixture(issuerHby, issuerReger, verifierHby);
       yield* ingestGrant(runtime, fixture);
-      const agent = new VerifierAgent({
-        hby: verifierHby,
-        reger: verifierReger,
+      const agent = new VerifierAgent(
+        verifierHby,
+        verifierReger,
         cdb,
-        reactor: runtime.reactor,
-        cues: runtime.cues,
-        services: runtime.services,
-        hook: "http://example.test/hook",
-      });
+        runtime.reactor,
+        runtime.cues,
+        runtime.services.http,
+        () => runtime.services.clock.now(),
+        {},
+        { hook: "http://example.test/hook" },
+      );
       yield* agent.processOnce();
       assertExists(cdb.ack.get([fixture.creder.said!]));
 

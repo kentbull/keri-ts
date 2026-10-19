@@ -30,6 +30,11 @@ exact final-wire replay, fairness and durability outside this implementation.
 
 ## Retained architecture
 
+The [explicit runtime dependency plan](runtime/explicit-runtime-dependencies.md)
+records the next proposed structural cleanup: remove RuntimeServices and hidden
+dependency defaults, then correct verifier clock consistency in a separate phase.
+Its implementation and validation are outstanding.
+
 [ADR-0013](../adr/adr-0013-simple-component-flows.md) governs concrete
 KERIpy-shaped owners, plain records and Deck/cue flows wired by composition.
 Refactor responsibility/contracts first, then behavior. Add an abstraction only

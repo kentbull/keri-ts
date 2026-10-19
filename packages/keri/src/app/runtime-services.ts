@@ -1,37 +1,19 @@
-/** Opaque timer handle returned by a runtime clock implementation. */
 import { FetchHttpClient, type HttpClient } from "./http-client.ts";
 
-export type RuntimeTimer = unknown;
+import { type RuntimeClock, systemClock } from "./runtime-clock.ts";
 
-/** Runtime-owned clock seam for timeout-sensitive code and tests. */
-export interface RuntimeClock {
-  now(): number;
-  setTimeout(callback: () => void, ms: number): RuntimeTimer;
-  clearTimeout(timer: RuntimeTimer): void;
-}
-
-/** Runtime-owned HTTP request contract. */
-export type RuntimeHttpClient = HttpClient;
-
-/** Shared runtime services used by IO-heavy runtime components. */
+/** Temporary aggregate used only by callers awaiting the explicit composition migration. */
 export interface RuntimeServices {
   clock: RuntimeClock;
-  http: RuntimeHttpClient;
+  http: HttpClient;
 }
 
-/** Production clock backed by the JavaScript runtime. */
-export const defaultRuntimeClock: RuntimeClock = Object.freeze({
-  now: () => Date.now(),
-  setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms),
-  clearTimeout: (timer: RuntimeTimer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
-});
-
 /** Production HTTP client backed by global `fetch`. */
-export const defaultRuntimeHttpClient: RuntimeHttpClient = Object.freeze(new FetchHttpClient());
+export const defaultRuntimeHttpClient: HttpClient = Object.freeze(new FetchHttpClient());
 
 /** Production runtime services. */
 export const defaultRuntimeServices: RuntimeServices = Object.freeze({
-  clock: defaultRuntimeClock,
+  clock: systemClock,
   http: defaultRuntimeHttpClient,
 });
 
@@ -40,7 +22,7 @@ export function resolveRuntimeServices(
   services: Partial<RuntimeServices> = {},
 ): RuntimeServices {
   return Object.freeze({
-    clock: services.clock ?? defaultRuntimeClock,
+    clock: services.clock ?? systemClock,
     http: services.http ?? defaultRuntimeHttpClient,
   });
 }

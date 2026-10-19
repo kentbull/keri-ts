@@ -7,9 +7,11 @@ import type {
   MailboxPollTransportRequest,
 } from "../../src/app/forwarding.ts";
 import type { HttpRequestInit, HttpResponse, HttpStreamResponse } from "../../src/app/http-client.ts";
+import type { HttpClient } from "../../src/app/http-client.ts";
 import type { MailboxSseMessage } from "../../src/app/mailbox-sse.ts";
 import type { ProtocolHostPolicy } from "../../src/app/protocol-host-policy.ts";
-import type { RuntimeClock, RuntimeHttpClient, RuntimeServices, RuntimeTimer } from "../../src/app/runtime-services.ts";
+import type { RuntimeClock, RuntimeTimer } from "../../src/app/runtime-clock.ts";
+import type { RuntimeServices } from "../../src/app/runtime-services.ts";
 import { runtimeTurn } from "../../src/app/runtime-turn.ts";
 import { httpClient } from "./http-client.ts";
 
@@ -97,7 +99,7 @@ export interface CapturedRuntimeRequest {
 type RuntimeHttpHandler = (request: Request) => Response | Promise<Response>;
 
 /** Explicit fake HTTP client keyed by origin. */
-export class FakeRuntimeHttpClient implements RuntimeHttpClient {
+export class FakeRuntimeHttpClient implements HttpClient {
   /** Actual requests admitted to configured in-process peers, in admission order. */
   readonly requests: CapturedRuntimeRequest[] = [];
   /** Deterministic HTTP peer handlers indexed by the requested origin. */

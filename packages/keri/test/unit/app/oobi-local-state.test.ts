@@ -16,6 +16,7 @@ import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { isWellKnownOobiUrl, Oobiery, parseOobiUrl } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { loadStoredReply } from "../../../src/app/stored-replies.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
@@ -390,7 +391,7 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
         const proofCues = new Deck<AgentCue>();
         const cues = shared ? proofCues : new Deck<AgentCue>();
         const reactor = new Reactor(protocolFixture(hby, { cues: proofCues }));
-        const owner = new Oobiery(hby, reactor, reactor.protocol.rvy, { cues });
+        const owner = new Oobiery(hby, reactor, reactor.protocol.rvy, defaultRuntimeServices.http, cues);
         const url = `${introducedUrl}?deck=${shared}`;
         const notice = new SerderKERI({
           sad: { t: "rpy", dt: makeNowIso8601(), r: "/introduce", a: { cid: hab.pre, oobi: url } },
@@ -422,7 +423,7 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
       try {
         const queries = new Deck<AgentCue>(), queues = new Deck<AgentCue>();
         const reactor = new Reactor(protocolFixture(cold, { cues: queries })),
-          owner = new Oobiery(cold, reactor, reactor.protocol.rvy, { cues: queues });
+          owner = new Oobiery(cold, reactor, reactor.protocol.rvy, defaultRuntimeServices.http, queues);
         const args = {
           serder,
           diger: new Diger({ qb64: serder.said! }),
@@ -461,7 +462,7 @@ Deno.test("OOBI multi-parent publication validates all URLs and publishes ordina
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const cues = new Deck<AgentCue>(), reactor = new Reactor(protocolFixture(hby));
     const http = new FakeRuntimeHttpClient();
-    const oobi = new Oobiery(hby, reactor, reactor.protocol.rvy, { cues, services: fakeRuntimeServices({ http }) });
+    const oobi = new Oobiery(hby, reactor, reactor.protocol.rvy, http, cues);
     try {
       const cid = hby.makeHab("source").pre;
       const parent = `http://oobi.test/oobi/${cid}/controller?multi=1`;

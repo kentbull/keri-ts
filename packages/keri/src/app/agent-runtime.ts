@@ -322,9 +322,9 @@ export function* createAgentRuntime(
     }
   });
   const delegating = new Anchorer(hby, { postman, querying, services, protocol });
-  const oobiery = new Oobiery(hby, reactor, revery, { cues, services });
+  const oobiery = new Oobiery(hby, reactor, revery, services.http, cues);
   oobiery.registerReplyRoutes(revery.rtr);
-  const authenticator = new Authenticator(hby, { services });
+  const authenticator = new Authenticator(hby, services.http);
   return {
     hby,
     mailboxer,

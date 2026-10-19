@@ -5,7 +5,7 @@ import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
-import { defaultRuntimeClock, type RuntimeClock, type RuntimeTimer } from "./runtime-services.ts";
+import { type RuntimeClock, type RuntimeTimer, systemClock } from "./runtime-clock.ts";
 import { TransportError } from "./transport-error.ts";
 
 /** Actual connection/write choices, without a parser or receive callback. */
@@ -55,7 +55,7 @@ export function openTcpConnection(
       throw new ValidationError(`TCP output requires tcp: with a valid port: ${url}`);
     }
     const timeout = positive(options.connectTimeoutMs ?? 30000, "connectTimeoutMs");
-    const clock = options.clock ?? defaultRuntimeClock;
+    const clock = options.clock ?? systemClock;
     const controller = new AbortController();
     const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
     signal.throwIfAborted();
@@ -140,7 +140,7 @@ export interface TcpSocketWriteOptions {
 export function writeCesrTcpSocket(
   socket: Socket,
   factory: TcpSourceFactory,
-  { clock = defaultRuntimeClock, signal }: TcpSocketWriteOptions = {},
+  { clock = systemClock, signal }: TcpSocketWriteOptions = {},
 ): Operation<TcpTransmission> {
   return abortable(async (signal) => {
     const destroy = () => socket.destroy();
@@ -173,7 +173,7 @@ function finishTcpOutput(
   waitForPeer: boolean,
 ): Operation<TcpTransmission> {
   const timeout = positive(options.drainTimeoutMs ?? 30000, "drainTimeoutMs");
-  const clock = options.clock ?? defaultRuntimeClock;
+  const clock = options.clock ?? systemClock;
   return abortable(async (signal) => {
     let timer: RuntimeTimer | undefined;
     let ending: Promise<void> | undefined;

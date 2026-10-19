@@ -1,7 +1,7 @@
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import type { HttpStreamResponse } from "./http-client.ts";
-import { defaultRuntimeClock, type RuntimeClock } from "./runtime-services.ts";
+import { type RuntimeClock, systemClock } from "./runtime-clock.ts";
 
 /** Shared encoder for complete mailbox event payloads. */
 const textEncoder = new TextEncoder();
@@ -167,7 +167,7 @@ function* consumeChunks(
   options: MailboxSseOptions,
   hasEvent: () => boolean,
 ): Operation<void> {
-  const { idleTimeoutMs = 500, maxDurationMs = 30_000, clock = defaultRuntimeClock } = options;
+  const { idleTimeoutMs = 500, maxDurationMs = 30_000, clock = systemClock } = options;
   for (const value of [idleTimeoutMs, maxDurationMs]) {
     if (!Number.isSafeInteger(value) || value < 1) throw new RangeError("Invalid mailbox SSE timeout");
   }
