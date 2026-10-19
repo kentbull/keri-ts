@@ -19,6 +19,7 @@ import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/ap
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import type { HttpResponse } from "../../../src/app/http-client.ts";
 import { parseMailboxSse, readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
@@ -27,6 +28,7 @@ import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { controllerOobiResponse, reserveTcpPort, startStaticHttpHost } from "../../http-test-support.ts";
+import { httpResponse } from "../../support/http-client.ts";
 import { FakeRuntimeHttpClient, InProcessRuntimeHost } from "../../support/runtime-service-fakes.ts";
 import { testCLICommand } from "../../utils.ts";
 import { seedHostedController, seedLocalController } from "./mailbox-runtime-support.ts";
@@ -156,16 +158,13 @@ function anchorDelegatedHab(
 }
 
 /** Read one JSON response body inside the Effection runtime. */
-function* jsonOp<T>(response: Response): Operation<T> {
-  return yield* action<T>((resolve, reject) => {
-    response.json().then((value) => resolve(value as T)).catch(reject);
-    return () => {};
-  });
+function* jsonOp<T>(response: Response | HttpResponse): Operation<T> {
+  return JSON.parse(yield* textOp(response)) as T;
 }
 
 /** Assert one HTTP status and surface the response body on mismatch. */
 function* assertResponseStatus(
-  response: Response,
+  response: Response | HttpResponse,
   expected: number,
 ): Operation<void> {
   if (response.status === expected) {
@@ -287,7 +286,7 @@ function* postMailboxAdmin(
   body: Uint8Array,
   contentType = "application/cesr",
   http?: FakeRuntimeHttpClient,
-): Operation<Response> {
+): Operation<Response | HttpResponse> {
   const init = {
     method: "POST",
     headers: { "Content-Type": contentType },
@@ -301,7 +300,7 @@ function* postMailboxAdminMultipart(
   url: string,
   fields: Array<[string, string]>,
   http?: FakeRuntimeHttpClient,
-): Operation<Response> {
+): Operation<Response | HttpResponse> {
   const form = new FormData();
   for (const [name, value] of fields) {
     form.set(name, value);
@@ -318,11 +317,8 @@ function* fakeFetchOp(
   http: FakeRuntimeHttpClient,
   url: string,
   init?: RequestInit,
-): Operation<Response> {
-  return yield* action<Response>((resolve, reject) => {
-    http.fetch(url, init).then(resolve).catch(reject);
-    return () => {};
-  });
+): Operation<Response | HttpResponse> {
+  return yield* http.request(url, init);
 }
 
 Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add/cut state", async () => {
@@ -1334,7 +1330,7 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
           }
           assertEquals(response.status, 200);
           return parseMailboxSse(
-            yield* readMailboxSseBody(response, abort, { idleTimeoutMs: 250, maxDurationMs: 1000 }),
+            yield* readMailboxSseBody(httpResponse(response), abort, { idleTimeoutMs: 250, maxDurationMs: 1000 }),
           );
         } finally {
           abort.abort();
@@ -1369,7 +1365,9 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
         });
         assertEquals(response.status, 403);
         const stolen = response.status === 200
-          ? parseMailboxSse(yield* readMailboxSseBody(response, abort, { idleTimeoutMs: 250, maxDurationMs: 1000 }))
+          ? parseMailboxSse(
+            yield* readMailboxSseBody(httpResponse(response), abort, { idleTimeoutMs: 250, maxDurationMs: 1000 }),
+          )
           : (yield* textOp(response), []);
         assertEquals(stolen.length, 0, "old accepted cue cannot authorize different request attachments");
       } finally {

@@ -1,4 +1,6 @@
 /** Independent KERIpy/TS credential processors exchange signed graphs through KRAM. */
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+
 import { collectPayload, framePayload, parseBytes, Prefixer, SerderACDC, Vrsn_2_0 } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
@@ -299,7 +301,7 @@ for (const tsDiscloser of [true, false]) {
                                   gvrsn: Vrsn_2_0,
                                   genusify: true,
                                 }));
-                                const response = yield* requestFrame(mailboxUrl, frame, {
+                                const response = yield* requestFrame(mailboxUrl, frame, defaultRuntimeServices.http, {
                                   signal: AbortSignal.timeout(10_000),
                                 });
                                 assertEquals(response.status, 200);

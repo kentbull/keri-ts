@@ -4,12 +4,14 @@
  * Resolution succeeds only when hosted `did.json` matches the DID document
  * regenerated from the fetched `keri.cesr` KERI/VDR stream.
  */
+import type { HttpResponse } from "../../app/http-client.ts";
+import { TransportError } from "../../app/transport-error.ts";
 
-import { call, type Operation } from "effection";
+import { call, type Operation, resource, scoped } from "effection";
 import { abortable } from "../../app/abortable.ts";
-import { collectBytes, streamBytes } from "../../app/byte-source.ts";
+import { collectBytes } from "../../app/byte-source.ts";
 import type { Reactor } from "../../app/reactor.ts";
-import { defaultRuntimeHttpClient, type RuntimeHttpClient } from "../../app/runtime-services.ts";
+import { type RuntimeHttpClient } from "../../app/runtime-services.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
 import { pinDesignatedAliasesSchema } from "./designated-aliases.ts";
@@ -56,19 +58,18 @@ function* resolveArtifacts(
   pinDesignatedAliasesSchema(rgy.hby.db);
   const preferHttp = options.insecureHttp ?? false;
   yield* call(function*() {
-    yield* reactor.process(
-      (signal) => artifactBytes(http, urls.keriCesr, fallbackUrls.keriCesr, preferHttp, signal),
-      { local: false },
-    );
+    const response = yield* artifactResponse(http, urls.keriCesr, fallbackUrls.keriCesr, preferHttp);
+    yield* reactor.process((signal) => response.body(signal), { local: false });
   });
   // EOF and parser cleanup precede convergence and any claim of a complete DID.
   yield* reactor.protocol.processEscrowsOnce();
   // Preserve the second convergence turn previously run after settleRuntimeIngress's own pass.
   yield* reactor.protocol.processEscrowsOnce();
   const expected = generateBareDidDocument(rgy.hby, rgy, parsed.canonical);
-  const bytes = yield* abortable((signal) =>
-    collectBytes(artifactBytes(http, urls.didJson, fallbackUrls.didJson, preferHttp, signal))
-  );
+  const bytes = yield* call(function*() {
+    const response = yield* artifactResponse(http, urls.didJson, fallbackUrls.didJson, preferHttp);
+    return yield* abortable((signal) => collectBytes(response.body(signal)));
+  });
   let hosted: unknown;
   try {
     hosted = JSON.parse(new TextDecoder().decode(bytes));
@@ -87,44 +88,39 @@ function* resolveArtifacts(
   };
 }
 
-/** Native header transport fallback only; a started body never retries another artifact URL. */
-async function* artifactBytes(
+/** Try alternate artifact URLs only while opening headers; a borrowed body never starts another attempt. */
+function artifactResponse(
   http: RuntimeHttpClient,
   httpsUrl: string,
   httpUrl: string,
   preferHttp: boolean,
-  signal: AbortSignal,
-): AsyncGenerator<Uint8Array> {
-  const urls = preferHttp ? [httpUrl, httpsUrl] : [httpsUrl, httpUrl];
-  let lastError: unknown;
-  for (const url of urls) {
-    signal.throwIfAborted();
-    let response: Response;
-    try {
-      response = await http.fetch(url, { signal });
-    } catch (error) {
-      signal.throwIfAborted();
-      // Injected clients can throw programmer/infrastructure TypeErrors; never recast those as transport.
-      if (http !== defaultRuntimeHttpClient || !(error instanceof TypeError)) throw error;
-      lastError = error;
-      continue;
-    }
-    let readerOwnsBody = false;
-    try {
-      signal.throwIfAborted();
-      if (!response.ok) {
-        lastError = new ValidationError(`Unable to fetch ${url}: HTTP ${response.status}.`);
-        continue;
+): Operation<HttpResponse> {
+  return resource<HttpResponse>(function*(provide) {
+    const urls = preferHttp ? [httpUrl, httpsUrl] : [httpsUrl, httpUrl];
+    let lastError: unknown;
+    for (const url of urls) {
+      let receivedHeaders = false;
+      // Each unsuccessful request finishes cleanup before another URL may be attempted.
+      try {
+        const delivered = yield* scoped(function*() {
+          const response = yield* http.request(url);
+          receivedHeaders = true;
+          if (!response.ok) {
+            lastError = new ValidationError(`Unable to fetch ${url}: HTTP ${response.status}.`);
+            return false;
+          }
+          // Keep the request open for protocol/JSON consumption, after the fallback decision.
+          yield* provide(response);
+          return true;
+        });
+        if (delivered) return;
+      } catch (error) {
+        if (receivedHeaders || !(error instanceof TransportError)) throw error;
+        lastError = error;
       }
-      readerOwnsBody = true;
-      yield* streamBytes(response.body, { signal });
-      return;
-    } finally {
-      // The shared reader owns started-body cancellation; dispose only unacquired/failed headers here.
-      if (!readerOwnsBody && response.body) await response.body.cancel();
     }
-  }
-  throw lastError;
+    throw lastError;
+  });
 }
 
 function hostedDidDocument(value: unknown): DidDocument {

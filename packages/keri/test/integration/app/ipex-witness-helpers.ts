@@ -1,4 +1,7 @@
 /** Real witnessed KEL/registry preparation and signed IPEX wire for composed interop cases. */
+import { collectBytes } from "../../../src/app/byte-source.ts";
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+
 import {
   type CesrFrame,
   Diger,
@@ -31,8 +34,10 @@ export function nonce(): string {
 /** Actual detached-header egress; transport success is followed by store assertions. */
 export async function post(url: string, frame: CesrFrame): Promise<void> {
   await run(function*() {
-    const response = yield* requestFrame(url, frame, { signal: AbortSignal.timeout(10_000) });
-    const body = yield* call(() => response.text());
+    const response = yield* requestFrame(url, frame, defaultRuntimeServices.http, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    const body = new TextDecoder().decode(yield* call(() => collectBytes(response.body())));
     assertEquals(response.status, 204, body);
   });
 }

@@ -12,10 +12,11 @@ import type { Revery } from "../core/routing.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
 import { Schemer } from "../core/scheming.ts";
 import { abortable } from "./abortable.ts";
-import { collectBytes, streamBytes } from "./byte-source.ts";
+import { collectBytes } from "./byte-source.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
+import type { HttpResponse } from "./http-client.ts";
+import { closeResponseBody } from "./httping.ts";
 import type { Notifier } from "./notifying.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import type { Reactor } from "./reactor.ts";
@@ -234,7 +235,7 @@ export class Oobiery {
       said: meta.said ?? null,
     };
     // Stage attempt metadata only; the original queue row stays owned until result publication.
-    const response = yield* fetchOobiResponse(url, services);
+    const response = yield* services.http.request(url);
     try {
       yield* this.processResponse(kind, url, queuedRecord, meta, response);
     } finally {
@@ -248,7 +249,7 @@ export class Oobiery {
     url: string,
     queuedRecord: OobiRecordShape,
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
-    response: Response,
+    response: HttpResponse,
   ): Operation<void> {
     if (!response.ok) {
       yield* closeResponseBody(response);
@@ -307,7 +308,7 @@ export class Oobiery {
     url: string,
     queuedRecord: OobiRecordShape,
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
-    response: Response,
+    response: HttpResponse,
   ): Operation<void> {
     const cue: OobiResolvedCue = {
       kin: "oobiResolved",
@@ -318,7 +319,7 @@ export class Oobiery {
     };
     this.pinQueueStore(kind, url, queuedRecord);
     this.hby.db.coobi.pin(url, { ...queuedRecord, state: "streaming" });
-    yield* this.reactor.process((signal) => streamBytes(response.body, { signal }));
+    yield* this.reactor.process((signal) => response.body(signal));
 
     this.hby.db.coobi.rem(url);
     this.hby.db.roobi.pin(url, { ...queuedRecord, date: new Date().toISOString(), state: "resolved" });
@@ -752,23 +753,7 @@ function isCesrMediaType(type: string): boolean {
 
 export { OOBI_MAILBOX_TOPIC };
 
-/**
- * Fetch one OOBI URL under Effection cancellation control.
- *
- * This is the real promise-adaptation boundary for remote OOBI retrieval. The
- * surrounding runtime stays operation-native.
- */
-function* fetchOobiResponse(
-  url: string,
-  services: RuntimeServices = defaultRuntimeServices,
-): Operation<Response> {
-  const { response } = yield* fetchResponseHandle(url, {}, {
-    services,
-  });
-  return response;
-}
-
 /** Collect one finite OOBI document and join its reader on cancellation. */
-function* readResponseBytes(response: Response): Operation<Uint8Array> {
-  return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal })));
+function* readResponseBytes(response: HttpResponse): Operation<Uint8Array> {
+  return yield* abortable((signal) => collectBytes(response.body(signal)));
 }

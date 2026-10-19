@@ -1,4 +1,6 @@
 /** Opaque timer handle returned by a runtime clock implementation. */
+import { FetchHttpClient, type HttpClient } from "./http-client.ts";
+
 export type RuntimeTimer = unknown;
 
 /** Runtime-owned clock seam for timeout-sensitive code and tests. */
@@ -8,10 +10,8 @@ export interface RuntimeClock {
   clearTimeout(timer: RuntimeTimer): void;
 }
 
-/** Runtime-owned HTTP client seam. */
-export interface RuntimeHttpClient {
-  fetch(url: string, init?: RequestInit): Promise<Response>;
-}
+/** Runtime-owned HTTP request contract. */
+export type RuntimeHttpClient = HttpClient;
 
 /** Shared runtime services used by IO-heavy runtime components. */
 export interface RuntimeServices {
@@ -27,9 +27,7 @@ export const defaultRuntimeClock: RuntimeClock = Object.freeze({
 });
 
 /** Production HTTP client backed by global `fetch`. */
-export const defaultRuntimeHttpClient: RuntimeHttpClient = Object.freeze({
-  fetch: (url: string, init?: RequestInit) => fetch(url, init),
-});
+export const defaultRuntimeHttpClient: RuntimeHttpClient = Object.freeze(new FetchHttpClient());
 
 /** Production runtime services. */
 export const defaultRuntimeServices: RuntimeServices = Object.freeze({

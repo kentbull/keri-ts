@@ -11,8 +11,8 @@ Resolution takes Regery, Reactor and the HTTP client explicitly. CLI/HTTP adapte
 check registry availability before schema writes, fetches or OOBI introductions.
 CESR resolution streams through the supplied Reactor;
 only genuine EOF followed by escrow processing permits full-document comparison.
-Late failure preserves independently accepted state. Native fetch-header failures
-and HTTP refusals may use the existing URL fallback; injected client, body/parser,
+Late failure preserves independently accepted state. Explicit opening TransportError
+and HTTP refusals may use the existing URL fallback; arbitrary injected, body/parser,
 storage and cancellation failures propagate. Hosted JSON is collected and parsed
 before comparison; there is no application byte cap, credit or copy lease.
 Artifact generation still collects histories. Preserve comparison, captured

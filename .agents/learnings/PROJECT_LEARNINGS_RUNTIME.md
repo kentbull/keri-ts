@@ -157,6 +157,12 @@ absolute, not extended by activity. Shutdown stops acceptance and joins both
 directions/listeners before stores. Recognized wire/peer failures stay connection-
 local; infrastructure/cleanup failures reach the host.
 
+Composition supplies RuntimeHttpClient.request. FetchHttpClient constructs Request
+before native fetch classification and owns upload/read cancellation and joined
+cleanup. Consumers borrow HttpResponse metadata and body(signal), not raw Response.
+Source/parser/consumer errors remain distinct; test clients explicitly produce
+TransportError for simulated network failure. No client singleton identity check
+controls failure handling. Header-timeout and SSE window policy remains with callers.
 HTTP scopes own upload/fetch/body and preserve signal reasons. Pre-abort acquires
 no fetch; only the owned header timeout becomes mailbox null. Positive peer HTTP
 refusal is distinct from parser/source/storage/cleanup failure. Ordinary postCesr
@@ -187,8 +193,7 @@ to static OOBI servers. Ingress/query/escrow dependencies still matter. Authenti
 uses status-only GET; cleanup failure cannot publish authorization.
 
 DID resolution completes KERI/VDR input and escrows before hosted JSON/projection;
-compare complete generated/hosted documents. Only default native fetch-header
-TypeError or non-ok status permits alternate URL fallback; injected TypeError,
+compare complete generated/hosted documents. Only explicit opening TransportError or non-ok status permits alternate URL fallback; injected TypeError,
 body/parser/storage/cancellation/cleanup failure propagates. Static files capture
 regular-file extents, ignore growth, reject truncation and join close. Dynamic
 did.json opens no replay; broader lazy generation/export is deferred.

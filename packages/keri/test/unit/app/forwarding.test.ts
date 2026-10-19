@@ -788,8 +788,7 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           if (prepared.kind !== "http") throw new Error("Expected HTTP target");
           assertEquals(bodies.length, 0);
           // Prepared transport needs no habitat/DB access; it preserves the original introduction wire.
-          yield* postCesr(prepared.url, (signal) => chunkBytes(prepared.message, { signal }), {
-            services: runtime.services,
+          yield* postCesr(prepared.url, (signal) => chunkBytes(prepared.message, { signal }), runtime.services.http, {
             bodyMode: prepared.bodyMode,
             destination: prepared.destination,
           });

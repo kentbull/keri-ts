@@ -1,3 +1,4 @@
+import { httpClient } from "../../keri/test/support/http-client.ts";
 // @file-test-lane app-fast-parallel
 import {
   b,
@@ -558,12 +559,10 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
     const outgoing: Uint8Array[] = [];
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          fetch: async (url, init) => {
-            outgoing.push(await readCesrRequestBytes(new Request(url, init)));
-            return new Response(null, { status: 204 });
-          },
-        },
+        http: httpClient(async (url, init) => {
+          outgoing.push(await readCesrRequestBytes(new Request(url, init)));
+          return new Response(null, { status: 204 });
+        }),
       },
       enableMailboxStore: true,
       messagePolicy: { denyList: new Set([sender.pre]) },

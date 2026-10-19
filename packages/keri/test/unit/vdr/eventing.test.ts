@@ -35,6 +35,7 @@ import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
 import { expectKind } from "../../private-access.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 /** Consume one ordinary runtime cue and assert its protocol meaning. */
 function assertRuntimeCue(runtime: AgentRuntime, expected: AgentCue | AgentCue["kin"], message?: string): void {
@@ -813,14 +814,12 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
     hby.db.ends.pin([issuer.pre, "controller", issuer.pre], { allowed: true });
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          async fetch(url, init) {
-            const wire = await readCesrRequestBytes(new Request(url, init));
-            const message = new SerderKERI({ raw: wire });
-            if (message.ilk === "qry") queries.push(message.ked!.q as Record<string, unknown>);
-            return new Response(null, { status: 204 });
-          },
-        },
+        http: httpClient(async (url, init) => {
+          const wire = await readCesrRequestBytes(new Request(url, init));
+          const message = new SerderKERI({ raw: wire });
+          if (message.ilk === "qry") queries.push(message.ked!.q as Record<string, unknown>);
+          return new Response(null, { status: 204 });
+        }),
       },
     });
     const reger = runtime.vdr!.reger! as Reger;

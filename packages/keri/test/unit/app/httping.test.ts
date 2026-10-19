@@ -1,11 +1,13 @@
 import { call, run, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { closeResponseBody, fetchResponseHandle, fetchResponseHandleOrNull } from "../../../src/app/httping.ts";
+import { closeResponseBody, requestWithHeaderTimeout } from "../../../src/app/httping.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
+import { httpResponse } from "../../support/http-client.ts";
+import { httpClient, type TestHttpResponder } from "../../support/http-client.ts";
 
 /** Keep the production clock while controlling the exact response ownership handoff. */
-function services(fetch: RuntimeServices["http"]["fetch"]): RuntimeServices {
-  return { ...defaultRuntimeServices, http: { fetch } };
+function services(fetch: TestHttpResponder): RuntimeServices {
+  return { ...defaultRuntimeServices, http: httpClient(fetch) };
 }
 
 Deno.test("HTTP response scope owns an unread body after headers have been delivered", async () => {
@@ -18,9 +20,7 @@ Deno.test("HTTP response scope owns an unread body after headers have been deliv
     },
   });
   const task = run(function*() {
-    yield* fetchResponseHandle("https://peer.test/", {}, {
-      services: services(() => Promise.resolve(new Response(body))),
-    });
+    yield* (services(() => Promise.resolve(new Response(body)))).http.request("https://peer.test/", {});
     delivered.resolve();
     yield* suspend(); // Hold precisely between receiving headers and acquiring a body reader.
     continued = true;
@@ -37,24 +37,22 @@ Deno.test("HTTP cancellation joins a late fetch response and closes its otherwis
   let cancelled = false;
   let continued = false;
   const task = run(function*() {
-    yield* fetchResponseHandle("https://peer.test/", {}, {
-      services: services((_url, init) =>
-        new Promise<Response>((resolve) => {
-          // The transport finishes concurrently with abort; cancellation must still own its returned body.
-          init!.signal!.addEventListener("abort", () =>
-            resolve(
-              new Response(
-                new ReadableStream<Uint8Array>({
-                  cancel() {
-                    cancelled = true;
-                  },
-                }),
-              ),
-            ), { once: true });
-          started.resolve();
-        })
-      ),
-    });
+    yield* (services((_url, init) =>
+      new Promise<Response>((resolve) => {
+        // The transport finishes concurrently with abort; cancellation must still own its returned body.
+        init!.signal!.addEventListener("abort", () =>
+          resolve(
+            new Response(
+              new ReadableStream<Uint8Array>({
+                cancel() {
+                  cancelled = true;
+                },
+              }),
+            ),
+          ), { once: true });
+        started.resolve();
+      })
+    )).http.request("https://peer.test/", {});
     continued = true;
   });
   await started.promise;
@@ -68,19 +66,17 @@ Deno.test("finite HTTP call scopes release each response before the worker's nex
   await run(function*() {
     for (let index = 0; index < 3; index++) {
       yield* call(function*() {
-        yield* fetchResponseHandle("https://peer.test/", {}, {
-          services: services(() =>
-            Promise.resolve(
-              new Response(
-                new ReadableStream<Uint8Array>({
-                  cancel() {
-                    closed++;
-                  },
-                }),
-              ),
-            )
-          ),
-        });
+        yield* (services(() =>
+          Promise.resolve(
+            new Response(
+              new ReadableStream<Uint8Array>({
+                cancel() {
+                  closed++;
+                },
+              }),
+            ),
+          )
+        )).http.request("https://peer.test/", {});
         assertEquals(closed, index); // The current response remains usable within this request scope.
       });
       assertEquals(closed, index + 1);
@@ -91,17 +87,20 @@ Deno.test("finite HTTP call scopes release each response before the worker's nex
 Deno.test("HTTP open timeout retains the mailbox null outcome and joins the aborted fetch", async () => {
   let aborted = false;
   const result = await run(function*() {
-    return yield* fetchResponseHandleOrNull("https://peer.test/", {}, {
-      timeoutMs: 1,
-      services: services((_url, init) =>
+    return yield* requestWithHeaderTimeout(
+      (services((_url, init) =>
         new Promise<Response>((_resolve, reject) => {
           init!.signal!.addEventListener("abort", () => {
             aborted = true;
             reject(init!.signal!.reason);
           }, { once: true });
         })
-      ),
-    });
+      )).http,
+      defaultRuntimeServices.clock,
+      "https://peer.test/",
+      {},
+      1,
+    );
   });
   assertEquals(result, null);
   assertEquals(aborted, true);
@@ -113,7 +112,7 @@ Deno.test("HTTP response cancellation joins body cleanup and propagates its orig
   assertStrictEquals(
     await assertRejects(() =>
       run(() =>
-        closeResponseBody(
+        closeResponseBody(httpResponse(
           new Response(
             new ReadableStream({
               cancel() {
@@ -121,7 +120,7 @@ Deno.test("HTTP response cancellation joins body cleanup and propagates its orig
               },
             }),
           ),
-        )
+        ))
       )
     ),
     fault,
@@ -137,7 +136,7 @@ Deno.test("HTTP response cancellation joins body cleanup and propagates its orig
     }),
   );
   const task = run(function*() {
-    yield* closeResponseBody(response);
+    yield* closeResponseBody(httpResponse(response));
   });
   await started.promise;
   const joined = task.halt();
@@ -154,23 +153,21 @@ Deno.test("late HTTP response cleanup failure is not hidden during fetch cancell
   for (const fault of [new Error("late response cleanup failed"), new DOMException("foreign abort", "AbortError")]) {
     const started = Promise.withResolvers<void>();
     const task = run(function*() {
-      yield* fetchResponseHandle("https://peer.test/", {}, {
-        services: services((_url, init) =>
-          new Promise<Response>((resolve) => {
-            init!.signal!.addEventListener("abort", () =>
-              resolve(
-                new Response(
-                  new ReadableStream<Uint8Array>({
-                    cancel() {
-                      throw fault;
-                    },
-                  }),
-                ),
-              ), { once: true });
-            started.resolve();
-          })
-        ),
-      });
+      yield* (services((_url, init) =>
+        new Promise<Response>((resolve) => {
+          init!.signal!.addEventListener("abort", () =>
+            resolve(
+              new Response(
+                new ReadableStream<Uint8Array>({
+                  cancel() {
+                    throw fault;
+                  },
+                }),
+              ),
+            ), { once: true });
+          started.resolve();
+        })
+      )).http.request("https://peer.test/", {});
     });
     await started.promise;
     assertStrictEquals(await assertRejects(() => task.halt()), fault);
@@ -181,23 +178,21 @@ Deno.test("HTTP response teardown recognizes only its controller's exact abort r
   const started = Promise.withResolvers<void>();
   let continued = false;
   const task = run(function*() {
-    yield* fetchResponseHandle("https://peer.test/", {}, {
-      services: services((_url, init) =>
-        new Promise<Response>((resolve) => {
-          init!.signal!.addEventListener("abort", () =>
-            resolve(
-              new Response(
-                new ReadableStream<Uint8Array>({
-                  start(controller) {
-                    controller.error(init!.signal!.reason);
-                  },
-                }),
-              ),
-            ), { once: true });
-          started.resolve();
-        })
-      ),
-    });
+    yield* (services((_url, init) =>
+      new Promise<Response>((resolve) => {
+        init!.signal!.addEventListener("abort", () =>
+          resolve(
+            new Response(
+              new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controller.error(init!.signal!.reason);
+                },
+              }),
+            ),
+          ), { once: true });
+        started.resolve();
+      })
+    )).http.request("https://peer.test/", {});
     continued = true;
   });
   await started.promise;
@@ -210,14 +205,12 @@ Deno.test("HTTP fetch cancellation preserves late I/O and foreign timeout failur
     let started!: () => void, rejectFetch!: () => void;
     const ready = new Promise<void>((resolve) => started = resolve);
     const task = run(function*() {
-      yield* fetchResponseHandle("https://peer.test/", {}, {
-        services: services((_url, init) =>
-          new Promise<Response>((_resolve, reject) => {
-            init!.signal!.addEventListener("abort", () => rejectFetch = () => reject(fault), { once: true });
-            started();
-          })
-        ),
-      });
+      yield* (services((_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init!.signal!.addEventListener("abort", () => rejectFetch = () => reject(fault), { once: true });
+          started();
+        })
+      )).http.request("https://peer.test/", {});
     });
     await ready;
     const stopped = task.halt();
@@ -231,14 +224,17 @@ Deno.test("HTTP fetch cancellation preserves late I/O and foreign timeout failur
     assertStrictEquals(
       await assertRejects(() =>
         run(() =>
-          fetchResponseHandleOrNull("https://peer.test/", {}, {
-            timeoutMs: 1,
-            services: services((_url, init) =>
+          requestWithHeaderTimeout(
+            (services((_url, init) =>
               new Promise<Response>((_resolve, reject) => {
                 init!.signal!.addEventListener("abort", () => reject(fault), { once: true });
               })
-            ),
-          })
+            )).http,
+            defaultRuntimeServices.clock,
+            "https://peer.test/",
+            {},
+            1,
+          )
         )
       ),
       fault,
@@ -246,11 +242,7 @@ Deno.test("HTTP fetch cancellation preserves late I/O and foreign timeout failur
     );
     assertStrictEquals(
       await assertRejects(() =>
-        run(() =>
-          fetchResponseHandle("https://peer.test/", {}, {
-            services: services(() => Promise.reject(fault)),
-          })
-        )
+        run(() => (services(() => Promise.reject(fault))).http.request("https://peer.test/", {}))
       ),
       fault,
       "Ordinary fetch failure is not duplicated by teardown",
@@ -265,15 +257,13 @@ Deno.test("HTTP fetch honors the caller signal before acquisition and during hea
     let fetched = 0;
     if (preAborted) external.abort(reason);
     const task = run(() =>
-      fetchResponseHandle("https://peer.test/", { signal: external.signal }, {
-        services: services((_url, init) => {
-          fetched++;
-          entered.resolve();
-          return new Promise<Response>((_resolve, reject) => {
-            init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
-          });
-        }),
-      })
+      (services((_url, init) => {
+        fetched++;
+        entered.resolve();
+        return new Promise<Response>((_resolve, reject) => {
+          init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
+        });
+      })).http.request("https://peer.test/", { signal: external.signal })
     );
     // Bound the regression before this owner starts forwarding the external signal.
     let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -304,9 +294,8 @@ Deno.test("HTTP external cancellation keeps its reason when a later header deadl
   const reason = new Error("external cancellation precedes deadline");
   let expire!: () => void, rejectFetch!: (error: unknown) => void;
   const task = run(() =>
-    fetchResponseHandleOrNull("https://peer.test/", { signal: external.signal }, {
-      timeoutMs: 10,
-      services: {
+    requestWithHeaderTimeout(
+      ({
         ...services(() =>
           new Promise<Response>((_resolve, reject) => {
             rejectFetch = reject;
@@ -315,13 +304,23 @@ Deno.test("HTTP external cancellation keeps its reason when a later header deadl
         ),
         clock: {
           ...defaultRuntimeServices.clock,
-          setTimeout(callback) {
+          setTimeout(callback: () => void) {
             expire = callback;
           },
           clearTimeout() {},
         },
+      }).http,
+      {
+        ...defaultRuntimeServices.clock,
+        setTimeout(callback) {
+          expire = callback;
+        },
+        clearTimeout() {},
       },
-    })
+      "https://peer.test/",
+      { signal: external.signal },
+      10,
+    )
   );
   await entered.promise;
   external.abort(reason);
@@ -333,27 +332,27 @@ Deno.test("HTTP external cancellation keeps its reason when a later header deadl
 Deno.test("HTTP caller cancellation after headers aborts the body reader with the same reason", async () => {
   const external = new AbortController(), reading = Promise.withResolvers<void>();
   const reason = new DOMException("caller cancelled response", "AbortError");
-  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let reader: AsyncIterator<Uint8Array> | undefined;
   const task = run(function*() {
-    const { response } = yield* fetchResponseHandle("https://peer.test/", { signal: external.signal }, {
-      services: services((_url, init) =>
-        Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(controller) {
-                init!.signal!.addEventListener("abort", () => controller.error(init!.signal!.reason), { once: true });
-              },
-            }),
-          ),
-        )
-      ),
-    });
-    reader = response.body!.getReader();
+    const response = yield* (services((_url, init) =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              init!.signal!.addEventListener("abort", () => controller.error(init!.signal!.reason), { once: true });
+            },
+          }),
+        ),
+      )
+    )).http.request("https://peer.test/", { signal: external.signal });
+    reader = response.body()[Symbol.asyncIterator]();
     reading.resolve();
     try {
-      yield* call(() => reader!.read());
+      yield* call(() => reader!.next());
     } finally {
-      reader.releaseLock();
+      yield* call(async () => {
+        await reader?.return?.();
+      });
     }
   });
   let deadline: ReturnType<typeof setTimeout> | undefined;

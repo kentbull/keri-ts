@@ -7,6 +7,7 @@ import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 Deno.test("Respondant finishes local replay construction before publishing or removing its source", async () => {
   await run(function*() {
@@ -77,14 +78,12 @@ Deno.test("Poster retains the complete source message on exceptions and requires
     const destinations: string[] = [];
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          fetch: (url) => {
-            attempts++;
-            destinations.push(String(url));
-            if (fail) throw failure;
-            return Promise.resolve(new Response(null, { status: 204 }));
-          },
-        },
+        http: httpClient((url) => {
+          attempts++;
+          destinations.push(String(url));
+          if (fail) throw failure;
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }),
       },
     });
     const wire = hab.query(hab.pre, hab.pre, { route: "logs", q: {} });
@@ -148,18 +147,16 @@ Deno.test("complete replay batches precede receipt delivery while refused events
     const attempts: { target: string; said: string }[] = [];
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          async fetch(url, init) {
-            const target = new URL(url).hostname.split(".")[0];
-            const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
-            const serder = new SerderKERI({ raw: body });
-            if (target === "query" && serder.ilk === "qry") queries++;
-            attempts.push({ target, said: serder.said! });
-            const rejected = refuse && serder.ilk === "qry"
-              && (target === "first" || target === "third" && serder.said === secondSaid);
-            return new Response(null, { status: rejected ? 503 : 204 });
-          },
-        },
+        http: httpClient(async (url, init) => {
+          const target = new URL(url).hostname.split(".")[0];
+          const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
+          const serder = new SerderKERI({ raw: body });
+          if (target === "query" && serder.ilk === "qry") queries++;
+          attempts.push({ target, said: serder.said! });
+          const rejected = refuse && serder.ilk === "qry"
+            && (target === "first" || target === "third" && serder.said === secondSaid);
+          return new Response(null, { status: rejected ? 503 : 204 });
+        }),
       },
     });
     const msgs = [
@@ -256,22 +253,20 @@ Deno.test("cue delivery allows application progress while retaining actual HTTP 
     const hab = hby.makeHab("sender");
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          async fetch(_url, init) {
-            await new Response(init!.body).arrayBuffer();
-            return new Response(
-              new ReadableStream<Uint8Array>({
-                pull() {
-                  reading();
-                },
-                async cancel() {
-                  cleaning();
-                  await gate;
-                },
-              }, { highWaterMark: 0 }),
-            );
-          },
-        },
+        http: httpClient(async (_url, init) => {
+          await new Response(init!.body).arrayBuffer();
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              pull() {
+                reading();
+              },
+              async cancel() {
+                cleaning();
+                await gate;
+              },
+            }, { highWaterMark: 0 }),
+          );
+        }),
       },
     });
     runtime.cues.push({

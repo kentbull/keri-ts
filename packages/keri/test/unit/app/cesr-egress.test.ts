@@ -22,6 +22,7 @@ import { HTTPMessenger } from "../../../src/app/http-messenger.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
 import { sendCesrTcpFrame } from "../../../src/app/tcp-egress.ts";
 import { TransportError } from "../../../src/app/transport-error.ts";
+import { httpClient, type TestHttpResponder } from "../../support/http-client.ts";
 
 /** One v2 enclosure around a v1 JSON body and two small ESSR fragments. */
 function fixture(): Uint8Array {
@@ -53,8 +54,8 @@ async function read(bytes: Uint8Array): Promise<CesrFrame> {
 }
 
 /** Retain the production clock while replacing only the HTTP boundary under test. */
-function services(fetch: RuntimeServices["http"]["fetch"]): RuntimeServices {
-  return { ...defaultRuntimeServices, http: { fetch } };
+function services(fetch: TestHttpResponder): RuntimeServices {
+  return { ...defaultRuntimeServices, http: httpClient(fetch) };
 }
 Deno.test("CESR cancellation preserves a late foreign fetch failure through joined cleanup", async () => {
   for (const failure of [new Error("late fetch I/O"), new DOMException("foreign abort", "AbortError")]) {
@@ -62,16 +63,19 @@ Deno.test("CESR cancellation preserves a late foreign fetch failure through join
     const ready = Promise.withResolvers<void>();
     let rejectFetch!: () => void;
     const task = run(function*() {
-      yield* requestFrame("https://peer.test/", frame, {
-        services: {
+      yield* requestFrame(
+        "https://peer.test/",
+        frame,
+        ({
           ...services((_url, init) =>
             new Promise<Response>((_resolve, reject) => {
               init!.signal!.addEventListener("abort", () => rejectFetch = () => reject(failure), { once: true });
               ready.resolve();
             })
           ),
-        },
-      });
+        }).http,
+        {},
+      );
     });
     try {
       await ready.promise;
@@ -106,12 +110,8 @@ Deno.test("CESR cancellation preserves late success-body and diagnostic cleanup 
       const transport = services(() => Promise.resolve(response));
       const task = run(function*() {
         if (status === 200) {
-          yield* postCesr("https://peer.test/", (signal) => chunkBytes(fixture(), { signal }), {
-            services: transport,
-          });
-        } else {yield* requestFrame("https://peer.test/", frame, {
-            services: transport,
-          });}
+          yield* postCesr("https://peer.test/", (signal) => chunkBytes(fixture(), { signal }), transport.http, {});
+        } else yield* requestFrame("https://peer.test/", frame, transport.http, {});
       });
       try {
         await reading.promise;
@@ -151,20 +151,22 @@ Deno.test("CESR egress waits for each request before consuming the next frame", 
     }),
   };
   const task = run(function*() {
-    yield* postCesr("https://peer.test/", async function*(signal) {
-      try {
-        pulls++;
-        yield fixture();
-        signal.throwIfAborted();
-        pulls++;
-        yield fixture();
-      } finally {
-        closed = true;
-      }
-    }, {
-      bodyMode: "body",
-      services: transport,
-    });
+    yield* postCesr(
+      "https://peer.test/",
+      async function*(signal) {
+        try {
+          pulls++;
+          yield fixture();
+          signal.throwIfAborted();
+          pulls++;
+          yield fixture();
+        } finally {
+          closed = true;
+        }
+      },
+      transport.http,
+      { bodyMode: "body" },
+    );
   });
   await opened.promise;
   assertEquals(pulls, 1);
@@ -191,7 +193,7 @@ Deno.test("CESR header egress normalizes binary attachments for HTTP", async () 
     return new Response(null, { status: 204 });
   });
   await run(function*() {
-    yield* postCesr("https://peer.test/", (signal) => chunkBytes(wire, { signal }), { services: transport });
+    yield* postCesr("https://peer.test/", (signal) => chunkBytes(wire, { signal }), transport.http, {});
   });
   assertEquals(requests, 1);
 });
@@ -200,8 +202,10 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
   const frame = await read(fixture());
   let cancelled = false;
   await run(function*() {
-    const response = yield* requestFrame("https://peer.test/", frame, {
-      services: services(() =>
+    const response = yield* requestFrame(
+      "https://peer.test/",
+      frame,
+      (services(() =>
         Promise.resolve(
           new Response(
             new ReadableStream({
@@ -216,11 +220,11 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
             }),
           ),
         )
-      ),
-    });
-    const reader = response.body!.getReader();
-    assertEquals((yield* call(() => reader.read())).value, Uint8Array.of(7));
-    reader.releaseLock();
+      )).http,
+      {},
+    );
+    const reader = response.body()[Symbol.asyncIterator]();
+    assertEquals((yield* call(() => reader.next())).value, Uint8Array.of(7));
     assertEquals(cancelled, false);
   });
   assertEquals(cancelled, true);
@@ -229,8 +233,10 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
     const observed = await assertRejects(
       () =>
         run(() =>
-          requestFrame("https://peer.test/", frame, {
-            services: {
+          requestFrame(
+            "https://peer.test/",
+            frame,
+            ({
               ...services(() =>
                 Promise.resolve(
                   new Response(
@@ -243,8 +249,9 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
                   ),
                 )
               ),
-            },
-          })
+            }).http,
+            {},
+          )
         ),
     );
     assertStrictEquals(observed, failure);
@@ -264,14 +271,17 @@ Deno.test("CESR request scope keeps successful responses live and cancels their 
   });
   try {
     await run(function*() {
-      const response = yield* requestFrame(`http://127.0.0.1:${server.addr.port}/`, frame, {
-        services: {
+      const response = yield* requestFrame(
+        `http://127.0.0.1:${server.addr.port}/`,
+        frame,
+        ({
           ...services((url, init) => {
             ownSignal = init!.signal!;
             return fetch(url, init);
           }),
-        },
-      });
+        }).http,
+        {},
+      );
       assertEquals(response.status, 202);
       assertEquals(ownSignal!.aborted, false, "successful headers keep the response live");
     });
@@ -287,9 +297,10 @@ Deno.test("CESR failed-response diagnostics join asynchronous cancellation", asy
   const controller = new AbortController();
   let joined = false, calls = 0;
   const sending = run(() =>
-    requestFrame("https://peer.test/", frame, {
-      signal: controller.signal,
-      services: {
+    requestFrame(
+      "https://peer.test/",
+      frame,
+      ({
         ...services(() =>
           Promise.resolve(
             new Response(
@@ -310,8 +321,9 @@ Deno.test("CESR failed-response diagnostics join asynchronous cancellation", asy
             ),
           )
         ),
-      },
-    })
+      }).http,
+      { signal: controller.signal },
+    )
   );
   let settled = false;
   const rejected = assertRejects(() => sending, Error).finally(() => settled = true);
@@ -341,7 +353,7 @@ for (const bodyMode of ["header", "body"] as const) {
         : new Response(null, { status: 204 });
     });
     const sending = run(function*() {
-      yield* requestFrame("https://peer.test/", frame, { bodyMode, services: transport });
+      yield* requestFrame("https://peer.test/", frame, transport.http, { bodyMode });
     });
     if (bodyMode === "header") {
       await sending;
@@ -361,24 +373,27 @@ Deno.test("halting CESR delivery closes input and never resumes the caller after
   let continued = false;
   const closing = Promise.withResolvers<void>(), cleanup = Promise.withResolvers<void>();
   const task = run(function*() {
-    yield* postCesr("https://peer.test/", async function*() {
-      try {
-        yield fixture();
-      } finally {
-        closing.resolve();
-        await cleanup.promise;
-        closed = true;
-      }
-    }, {
-      services: {
+    yield* postCesr(
+      "https://peer.test/",
+      async function*() {
+        try {
+          yield fixture();
+        } finally {
+          closing.resolve();
+          await cleanup.promise;
+          closed = true;
+        }
+      },
+      ({
         ...services((_url, init) =>
           new Promise((_resolve, reject) => {
             init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
             blocked.resolve();
           })
         ),
-      },
-    });
+      }).http,
+      {},
+    );
     continued = true;
   });
   await blocked.promise;
@@ -409,8 +424,7 @@ Deno.test("CESR input cancellation also aborts the request consuming its deliver
     })
   );
   const sending = run(function*() {
-    yield* postCesr("https://peer.test/", (signal) => chunkBytes(fixture(), { signal }), {
-      services: transport,
+    yield* postCesr("https://peer.test/", (signal) => chunkBytes(fixture(), { signal }), transport.http, {
       signal: controller.signal,
     });
   });
@@ -430,22 +444,25 @@ Deno.test("external HTTP input cancellation stops an active response consumer", 
     const reason = new Error("stop response consumer");
     let closed = false, resumed = false;
     const task = run(function*() {
-      yield* postCesr("https://peer.test/", async function*() {
-        try {
-          yield fixture();
-        } finally {
-          closed = true;
-          // deno-lint-ignore no-unsafe-finally -- A foreign cleanup failure must survive external abort.
-          if (cleanupFailure) throw cleanupFailure;
-        }
-      }, {
-        signal: controller.signal,
-        services: services(() => Promise.resolve(new Response(null, { status: 204 }))),
-      }, function*() {
-        ready.resolve();
-        yield* suspend();
-        resumed = true;
-      });
+      yield* postCesr(
+        "https://peer.test/",
+        async function*() {
+          try {
+            yield fixture();
+          } finally {
+            closed = true;
+            // deno-lint-ignore no-unsafe-finally -- A foreign cleanup failure must survive external abort.
+            if (cleanupFailure) throw cleanupFailure;
+          }
+        },
+        (services(() => Promise.resolve(new Response(null, { status: 204 })))).http,
+        { signal: controller.signal },
+        function*() {
+          ready.resolve();
+          yield* suspend();
+          resumed = true;
+        },
+      );
       resumed = true;
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -471,15 +488,10 @@ Deno.test("external HTTP input cancellation stops an active response consumer", 
 
 Deno.test("CESR transport headers preserve authorization without replacing frame metadata", async () => {
   await run(function*() {
-    yield* postCesr("https://peer.test/", (signal) => chunkBytes(b(json), { signal }), {
-      destination: "actual-peer",
-      headers: {
-        Authorization: "Bearer fixture",
-        "Content-Type": "text/plain",
-        "CESR-DESTINATION": "stale-peer",
-        "CESR-ATTACHMENT": "stale-attachment",
-      },
-      services: services((_url, init) => {
+    yield* postCesr(
+      "https://peer.test/",
+      (signal) => chunkBytes(b(json), { signal }),
+      (services((_url, init) => {
         const headers = new Headers(init?.headers);
         assertEquals(headers.get("Authorization"), "Bearer fixture");
         // Extra HTTP metadata cannot override the serializer's own attachment or routing fields.
@@ -487,8 +499,17 @@ Deno.test("CESR transport headers preserve authorization without replacing frame
         assertEquals(headers.get("CESR-DESTINATION"), "actual-peer");
         assertEquals(headers.get("CESR-ATTACHMENT"), "-VAA");
         return Promise.resolve(new Response(null, { status: 204 }));
-      }),
-    });
+      })).http,
+      {
+        destination: "actual-peer",
+        headers: {
+          Authorization: "Bearer fixture",
+          "Content-Type": "text/plain",
+          "CESR-DESTINATION": "stale-peer",
+          "CESR-ATTACHMENT": "stale-attachment",
+        },
+      },
+    );
   });
 });
 Deno.test("TCP frame output preserves nested body, genus, signatures and ESSR evidence", async () => {
@@ -579,7 +600,8 @@ Deno.test("transport attempt excludes identical typed errors from source, inject
               if (origin === "source") throw failure;
               yield fixture();
             },
-            { bodyMode: "body", services: transport },
+            transport.http,
+            { bodyMode: "body" },
             origin === "cleanup" ? function*() {} : undefined,
           )
         );
@@ -604,10 +626,9 @@ Deno.test("HTTP attempt reports peer refusal and preserves foreign transport fai
   };
   const send = (signal?: AbortSignal) =>
     run(() =>
-      attemptPostCesr("https://peer.test/", (signal) => chunkBytes(fixture(), { signal }), {
+      attemptPostCesr("https://peer.test/", (signal) => chunkBytes(fixture(), { signal }), transport.http, {
         bodyMode: "body",
         destination: "aid",
-        services: transport,
         signal,
       })
     );
@@ -620,12 +641,10 @@ Deno.test("HTTP attempt reports peer refusal and preserves foreign transport fai
 
   const failure = new Error("foreign transport failure");
   const controller = new AbortController();
-  transport.http = {
-    fetch() {
-      controller.abort();
-      return Promise.reject(failure);
-    },
-  };
+  transport.http = httpClient(() => {
+    controller.abort();
+    return Promise.reject(failure);
+  });
   assertStrictEquals(
     await assertRejects(() => send(controller.signal)),
     failure,

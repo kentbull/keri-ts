@@ -19,6 +19,7 @@ import type { QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../.
 import { ValidationError } from "../../../src/core/errors.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 // @ts-expect-error There is one query body; the legacy alias cannot coexist with q.
 void ({ kin: "query", pre: "aid", route: "logs", q: {}, query: {} } satisfies QueryCue);
@@ -57,17 +58,15 @@ void ({ i: "prefix", s: "0", d: "digest", extra: true } satisfies ConstructorPar
 function queryHttp(messages: Uint8Array[], urls: string[] = []): RuntimeServices {
   return {
     clock: defaultRuntimeClock,
-    http: {
-      async fetch(url, init) {
-        const bytes = await readCesrRequestBytes(new Request(url, init));
-        const serder = new SerderKERI({ raw: bytes });
-        if (serder.ilk === "qry") {
-          messages.push(bytes);
-          urls.push(url);
-        }
-        return new Response(null, { status: 204 });
-      },
-    },
+    http: httpClient(async (url, init) => {
+      const bytes = await readCesrRequestBytes(new Request(url, init));
+      const serder = new SerderKERI({ raw: bytes });
+      if (serder.ilk === "qry") {
+        messages.push(bytes);
+        urls.push(url);
+      }
+      return new Response(null, { status: 204 });
+    }),
   };
 }
 

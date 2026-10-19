@@ -14,9 +14,9 @@ import {
   buildCesrStreamRequest,
   type CesrBodyMode,
   collectBytes,
+  defaultRuntimeServices,
   endpointRoleAccepted,
   fetchEndpointUrls,
-  fetchResponseHandle,
   type Hab,
   type Habery,
   isLocalGroupHab,
@@ -28,7 +28,6 @@ import {
   proposeGroupEndpointRole,
   Roles,
   settleRuntimeIngress,
-  streamBytes,
   TopicsRecord,
   ValidationError,
 } from "keri-ts/runtime";
@@ -608,14 +607,14 @@ function* postMailboxAdminCesr(
   bytes: Uint8Array,
 ): Operation<{ ok: boolean; status: number; body: string }> {
   const request = buildCesrStreamRequest(bytes);
-  const { response } = yield* fetchResponseHandle(mailboxAdminUrl(url), {
+  const response = yield* defaultRuntimeServices.http.request(mailboxAdminUrl(url), {
     method: "POST",
     headers: request.headers,
     body: request.body,
   });
 
   // Administrative JSON/diagnostics are finite metadata, not an unbounded stream.
-  const responseBytes = yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal })));
+  const responseBytes = yield* abortable((signal) => collectBytes(response.body(signal)));
   const body = new TextDecoder().decode(responseBytes);
   return { ok: response.ok, status: response.status, body };
 }
@@ -635,13 +634,13 @@ function* postMailboxAdminMultipart(
   }
   form.append("rpy", new TextDecoder().decode(rpy));
 
-  const { response } = yield* fetchResponseHandle(mailboxAdminUrl(url), {
+  const response = yield* defaultRuntimeServices.http.request(mailboxAdminUrl(url), {
     method: "POST",
     body: form,
   });
 
   // Administrative JSON/diagnostics are finite metadata, not an unbounded stream.
-  const responseBytes = yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal })));
+  const responseBytes = yield* abortable((signal) => collectBytes(response.body(signal)));
   const body = new TextDecoder().decode(responseBytes);
   return { ok: response.ok, status: response.status, body };
 }

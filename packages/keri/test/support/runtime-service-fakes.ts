@@ -6,10 +6,12 @@ import type {
   MailboxPollTransport,
   MailboxPollTransportRequest,
 } from "../../src/app/forwarding.ts";
+import type { HttpRequestInit, HttpResponse } from "../../src/app/http-client.ts";
 import type { MailboxSseMessage } from "../../src/app/mailbox-sse.ts";
 import type { ProtocolHostPolicy } from "../../src/app/protocol-host-policy.ts";
 import type { RuntimeClock, RuntimeHttpClient, RuntimeServices, RuntimeTimer } from "../../src/app/runtime-services.ts";
 import { runtimeTurn } from "../../src/app/runtime-turn.ts";
+import { httpClient } from "./http-client.ts";
 
 interface ManualTimer {
   id: number;
@@ -96,14 +98,23 @@ type RuntimeHttpHandler = (request: Request) => Response | Promise<Response>;
 
 /** Explicit fake HTTP client keyed by origin. */
 export class FakeRuntimeHttpClient implements RuntimeHttpClient {
+  /** Actual requests admitted to configured in-process peers, in admission order. */
   readonly requests: CapturedRuntimeRequest[] = [];
+  /** Deterministic HTTP peer handlers indexed by the requested origin. */
   private readonly handlers = new Map<string, RuntimeHttpHandler>();
 
+  /** Bind one in-process peer without opening a socket. */
   registerOrigin(origin: string, handler: RuntimeHttpHandler): void {
     this.handlers.set(new URL(origin).origin, handler);
   }
 
-  async fetch(url: string, init: RequestInit = {}): Promise<Response> {
+  /** Execute a configured peer through the same scoped request contract used by production. */
+  request(url: string, init: HttpRequestInit = {}): Operation<HttpResponse> {
+    return httpClient((url, init) => this.respond(url, init)).request(url, init);
+  }
+
+  /** Record native request details before dispatching to the in-process peer. */
+  private async respond(url: string, init: RequestInit = {}): Promise<Response> {
     const request = new Request(url, init);
     this.requests.push({
       url,
@@ -111,9 +122,7 @@ export class FakeRuntimeHttpClient implements RuntimeHttpClient {
       request,
     });
 
-    if (init.signal?.aborted) {
-      throw new DOMException("The operation was aborted.", "AbortError");
-    }
+    init.signal?.throwIfAborted();
 
     const origin = new URL(url).origin;
     const handler = this.handlers.get(origin);

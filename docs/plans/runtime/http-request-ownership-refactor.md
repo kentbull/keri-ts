@@ -1,7 +1,7 @@
 # HTTP request construction and transport ownership
 
-Status: implementation in progress; the concrete request owner is under focused
-qualification before production adoption. Planning
+Status: concrete owner merged in PR #539 at `03d2c5fa`; production adoption
+and composed qualification are in progress. Planning
 baseline: local HEAD and remote `master` both verified at
 `ac5aa29ba2b22263a913863246e68fca92e97cbc` on 2026-10-19. Recheck the baseline before
 implementation. This plan follows the completed [messenger refactor](messenger-protocol-refactor.md)

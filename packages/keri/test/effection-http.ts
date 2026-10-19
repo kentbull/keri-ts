@@ -1,4 +1,6 @@
 import { action, type Operation, type Task } from "effection";
+import { collectBytes } from "../src/app/byte-source.ts";
+import type { HttpResponse } from "../src/app/http-client.ts";
 
 /** Wrap `fetch()` as an Effection operation with cancellation-aware cleanup. */
 export function* fetchOp(url: string, init?: RequestInit): Operation<Response> {
@@ -39,9 +41,12 @@ export function* promiseOp<T>(promise: Promise<T>): Operation<T> {
 }
 
 /** Wrap `Response.text()` as an Effection operation for test assertions. */
-export function* textOp(response: Response): Operation<string> {
+export function* textOp(response: Response | HttpResponse): Operation<string> {
   return yield* action((resolve, reject) => {
-    response.text().then(resolve, reject);
+    const text = typeof response.body === "function"
+      ? collectBytes(response.body()).then((bytes) => new TextDecoder().decode(bytes))
+      : (response as Response).text();
+    text.then(resolve, reject);
     return () => {};
   });
 }

@@ -15,6 +15,7 @@ import {
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
@@ -382,23 +383,21 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         const auth = new Authenticator(hby, {
           services: {
             ...runtime.services,
-            http: {
-              fetch(_url, init) {
-                signals.push(init!.signal!);
-                return Promise.resolve(
-                  new Response(
-                    new ReadableStream({
-                      cancel() {
-                        cleanupStarted();
-                        return cleaning.then(() => {
-                          throw cleanupFailure;
-                        });
-                      },
-                    }),
-                  ),
-                );
-              },
-            },
+            http: httpClient((_url, init) => {
+              signals.push(init!.signal!);
+              return Promise.resolve(
+                new Response(
+                  new ReadableStream({
+                    cancel() {
+                      cleanupStarted();
+                      return cleaning.then(() => {
+                        throw cleanupFailure;
+                      });
+                    },
+                  }),
+                ),
+              );
+            }),
           },
         });
         hby.db.mfa.pin(cleanupUrl, { cid: pre, state: "auth-pending" });

@@ -1,4 +1,6 @@
 /** KRAM admission through real mailbox hosts; controller keys never cross implementations. */
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+
 import { Diger, NumberPrimitive, parseBytes, Prefixer, Siger, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
@@ -225,7 +227,9 @@ async function send(url: string, wire: string, readEvent: boolean): Promise<Sent
   return await run(function*() {
     const [frame] = yield* call(() => parseBytes(decodeBase64(wire)));
     // Real detached-header egress performs the reference media-type negotiation.
-    const response = yield* requestFrame(url, frame, { signal: AbortSignal.timeout(10_000) });
+    const response = yield* requestFrame(url, frame, defaultRuntimeServices.http, {
+      signal: AbortSignal.timeout(10_000),
+    });
     let payload: string | null = null;
     yield* consumeMailboxSse(response, new AbortController(), function*(event) {
       payload = t(event.msg);

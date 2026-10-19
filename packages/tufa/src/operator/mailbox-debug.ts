@@ -9,8 +9,8 @@ import type { Operation } from "effection";
 import {
   buildCesrRequest,
   type CesrBodyMode,
+  defaultRuntimeServices,
   fetchEndpointUrls,
-  fetchResponseHandle,
   type Hab,
   type Habery,
   Organizer,
@@ -119,10 +119,12 @@ function* fetchMailboxDebug(
     bodyMode,
     destination,
   });
-  const { response, controller } = yield* fetchResponseHandle(url, {
+  const controller = new AbortController();
+  const response = yield* defaultRuntimeServices.http.request(url, {
     method: "POST",
     headers: request.headers,
     body: request.body,
+    signal: controller.signal,
   });
   if (!response.ok) {
     throw new ValidationError(

@@ -13,6 +13,7 @@ import { PathManager } from "../../../src/db/core/path-manager.ts";
 import { Mailboxer } from "../../../src/db/mailboxing.ts";
 import { Noter } from "../../../src/db/noting.ts";
 import { createReger, Reger } from "../../../src/db/reger.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 const habitatOptions = { name: "runtime-ownership", temp: true, skipConfig: true, skipSignator: true };
 
@@ -364,7 +365,7 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
   const task = run(function*() {
     runtime = yield* createAgentRuntime(hby, {
       enableMailboxStore: true,
-      services: { http: { fetch: () => Promise.resolve(new Response(body)) } },
+      services: { http: httpClient(() => Promise.resolve(new Response(body))) },
     });
     const reader = runtime.replyStreams.open({
       *[Symbol.iterator]() {

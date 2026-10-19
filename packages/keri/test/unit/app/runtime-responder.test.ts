@@ -15,6 +15,7 @@ import type { AgentCue } from "../../../src/core/cues.ts";
 import { query as queryEvent, reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forward through poster instead of mailbox storage", async () => {
   await run(function*() {
@@ -372,13 +373,11 @@ Deno.test("witness recovery queries use the concrete query owner and sign only o
     };
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          async fetch(url, init) {
-            const wire = await readCesrRequestBytes(new Request(url, init));
-            if (new SerderKERI({ raw: wire }).ilk === "qry") sent++;
-            return new Response(null, { status: 204 });
-          },
-        },
+        http: httpClient(async (url, init) => {
+          const wire = await readCesrRequestBytes(new Request(url, init));
+          if (new SerderKERI({ raw: wire }).ilk === "qry") sent++;
+          return new Response(null, { status: 204 });
+        }),
       },
     });
     try {

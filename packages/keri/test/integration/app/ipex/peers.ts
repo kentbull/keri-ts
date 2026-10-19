@@ -1,4 +1,6 @@
 /** Independent HTTP peers. Fixtures own resources; tests own conversation order. */
+import { collectBytes } from "../../../../src/app/byte-source.ts";
+
 import {
   type CesrFrame,
   collectPayload,
@@ -144,8 +146,8 @@ class TypeScriptPeer implements IpexPeer {
     const services = this.runtime.services;
     await run(() =>
       scoped(function*() {
-        const response = yield* requestFrame(remote.url, frame, { destination: remote.pre, services });
-        yield* call(() => response.arrayBuffer());
+        const response = yield* requestFrame(remote.url, frame, services.http, { destination: remote.pre });
+        yield* call(() => collectBytes(response.body()));
         assertEquals(response.status, 204);
       })
     );

@@ -10,6 +10,8 @@
  * - delivery and polling use scoped Effection workers instead of HIO doers
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
+import type { HttpResponse } from "./http-client.ts";
+
 import {
   attachmentPayload,
   type CesrFrame,
@@ -40,7 +42,7 @@ import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { HTTPMessenger } from "./http-messenger.ts";
-import { closeResponseBody, fetchResponseHandleOrNull } from "./httping.ts";
+import { closeResponseBody, requestWithHeaderTimeout } from "./httping.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
 import {
@@ -1194,7 +1196,7 @@ function* fetchMailboxMessages(
     {
       idleTimeoutMs: timeouts.readIdleTimeoutMs,
       maxDurationMs: timeouts.maxReadDurationMs,
-      services,
+      clock: services.clock,
     },
   );
 }
@@ -1218,7 +1220,7 @@ function* fetchMailboxQueryResponse(
   services: RuntimeServices = defaultRuntimeServices,
 ): Operation<
   {
-    response: Response;
+    response: HttpResponse;
     controller: AbortController;
   } | null
 > {
@@ -1226,11 +1228,14 @@ function* fetchMailboxQueryResponse(
     bodyMode,
     destination,
   });
-  return yield* fetchResponseHandleOrNull(url, {
+  const controller = new AbortController();
+  const response = yield* requestWithHeaderTimeout(services.http, services.clock, url, {
     method: "POST",
     headers: request.headers,
     body: request.body,
-  }, { timeoutMs, services });
+    signal: controller.signal,
+  }, timeoutMs);
+  return response ? { response, controller } : null;
 }
 
 function normalizeMailboxPollingTimeoutPolicy(

@@ -9,9 +9,9 @@ import {
 } from "../../../src/app/agent-runtime.ts";
 
 import { createHabery } from "../../../src/app/habbing.ts";
-import { fetchResponseHandle } from "../../../src/app/httping.ts";
 import { readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { witnessReceiptPost } from "../../../src/app/witnessing.ts";
@@ -170,12 +170,14 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         hab.pre,
         { route: "mbx", q: { topics: { "/reply": 0 } } },
       );
-      const { response: streamed, controller } = yield* fetchResponseHandle(
+      const controller = new AbortController();
+      const streamed = yield* defaultRuntimeServices.http.request(
         baseUrl,
         {
           method: "POST",
           headers: { "Content-Type": "application/cesr" },
           body: textDecoder.decode(mailboxQuery),
+          signal: controller.signal,
         },
       );
       assertEquals(streamed.status, 200);
@@ -204,10 +206,12 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         hab.pre,
         { route: "mbx", q: { topics: { "/replay": 0 } } },
       );
-      const { response: replayStream, controller: replayController } = yield* fetchResponseHandle(baseUrl, {
+      const replayController = new AbortController();
+      const replayStream = yield* defaultRuntimeServices.http.request(baseUrl, {
         method: "POST",
         headers: { "Content-Type": "application/cesr" },
         body: textDecoder.decode(replayQuery),
+        signal: replayController.signal,
       });
       assertEquals(replayStream.status, 200);
       const replayBody = yield* readMailboxSseBody(
@@ -403,10 +407,12 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
         yield* sleep(10);
       }
       assertExists(relayRuntime.hby.db.getKever(witness.pre));
-      const { response, controller } = yield* fetchResponseHandle(relayUrl, {
+      const controller = new AbortController();
+      const response = yield* defaultRuntimeServices.http.request(relayUrl, {
         method: "POST",
         headers: { "Content-Type": "application/cesr" },
         body: textDecoder.decode(mbx),
+        signal: controller.signal,
       });
       assertEquals(response.status, 200);
       const body = yield* readMailboxSseBody(response, controller, {

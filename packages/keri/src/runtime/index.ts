@@ -26,7 +26,6 @@ export {
   collectBytes,
   fileBytes,
   type SourceOptions,
-  streamBytes,
 } from "../app/byte-source.ts";
 export {
   CesrHttpRefusal,
@@ -59,10 +58,7 @@ export {
   cueDo,
   processCuesOnce,
 } from "../app/cue-runtime.ts";
-export {
-  fetchResponseHandle,
-  type HttpResponseHandle,
-} from "../app/httping.ts";
+export { FetchHttpClient, type HttpRequestInit, type HttpResponse } from "../app/http-client.ts";
 export {
   type DispatchResult,
   envelopeFromFrame,

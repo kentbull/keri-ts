@@ -8,6 +8,7 @@ import type { AgentCue, ReplayCue, ReplyCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { state as registryState, vcstate as credentialState } from "../../../src/core/protocol-vdr-eventing.ts";
+import { httpClient } from "../../support/http-client.ts";
 
 /** Complete owned TSN records exercise the actual reply contract and pair lifetime. */
 function tsnPair(querySaid: string, dest = "recipient", src?: string): [ReplyCue, ReplyCue] {
@@ -105,27 +106,25 @@ Deno.test("direct reply pairs publish atomically and keep independent HTTP and q
     const packets: Uint8Array[] = [];
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          async fetch(_url, init) {
-            const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
-            packets.push(
-              concatBytes(body, new TextEncoder().encode(new Headers(init!.headers).get("CESR-ATTACHMENT") ?? "")),
-            );
-            return blocked
-              ? new Response(
-                new ReadableStream({
-                  pull() {
-                    reading();
-                  },
-                  async cancel() {
-                    cleaning();
-                    await gate;
-                  },
-                }, { highWaterMark: 0 }),
-              )
-              : new Response(null, { status: refuse && packets.length === 1 ? 503 : 204 });
-          },
-        },
+        http: httpClient(async (_url, init) => {
+          const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
+          packets.push(
+            concatBytes(body, new TextEncoder().encode(new Headers(init!.headers).get("CESR-ATTACHMENT") ?? "")),
+          );
+          return blocked
+            ? new Response(
+              new ReadableStream({
+                pull() {
+                  reading();
+                },
+                async cancel() {
+                  cleaning();
+                  await gate;
+                },
+              }, { highWaterMark: 0 }),
+            )
+            : new Response(null, { status: refuse && packets.length === 1 ? 503 : 204 });
+        }),
       },
     });
     const produce = sender.processCuesIter.bind(sender);
@@ -219,12 +218,10 @@ Deno.test("queue-only reply pairs retain their atomic slot until complete constr
     const packets: SerderKERI[] = [];
     const runtime = yield* createAgentRuntime(hby, {
       services: {
-        http: {
-          async fetch(_url, init) {
-            packets.push(new SerderKERI({ raw: new Uint8Array(await new Response(init!.body).arrayBuffer()) }));
-            return new Response(null, { status: 204 });
-          },
-        },
+        http: httpClient(async (_url, init) => {
+          packets.push(new SerderKERI({ raw: new Uint8Array(await new Response(init!.body).arrayBuffer()) }));
+          return new Response(null, { status: 204 });
+        }),
       },
     });
     const produce = sender.processCuesIter.bind(sender);

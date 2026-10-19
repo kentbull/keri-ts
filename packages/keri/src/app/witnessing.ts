@@ -14,6 +14,8 @@
  * - concrete listener ownership lives in `tufa`; this module stays on the
  *   protocol/runtime side of that boundary
  */
+import type { HttpClient, HttpResponse } from "./http-client.ts";
+
 import { Cigar, concatBytes, Counter, CtrDexV1, Ilks, parse, parseBytes, type SerderKERI, type Siger } from "cesr-ts";
 import { action, call, ensure, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
@@ -26,11 +28,11 @@ import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
-import { chunkBytes, collectBytes, streamBytes } from "./byte-source.ts";
+import { chunkBytes, collectBytes } from "./byte-source.ts";
 import { buildCesrRequest, CESR_CONTENT_TYPE, inspectCesrRequest, KERIPY_CESR_JSON_CONTENT_TYPE } from "./cesr-http.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { HTTPMessenger } from "./http-messenger.ts";
-import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
+import { closeResponseBody } from "./httping.ts";
 import { processMessages } from "./message-source.ts";
 import { envelopeFromFrame } from "./parsering.ts";
 import { type ProtocolProcessor } from "./protocol-processing.ts";
@@ -200,8 +202,8 @@ function inspectReceiptMessage(
 }
 
 /** Receipt endpoints return one finite proof; cancellation joins the reader before leaving this operation. */
-function* readResponseBytes(response: Response): Operation<Uint8Array> {
-  return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal })));
+function* readResponseBytes(response: HttpResponse): Operation<Uint8Array> {
+  return yield* abortable((signal) => collectBytes(response.body(signal)));
 }
 
 /** Sleep for one short polling interval while staying cancellable. */
@@ -647,6 +649,7 @@ function* pollWitnessReceipt(
   pre: string,
   sn: number,
   said: string,
+  http: HttpClient,
 ): Operation<WitnessReceiptEndpointResponse> {
   const httpUrl = witnessHttpUrl(hab, witness);
   if (!httpUrl) {
@@ -663,7 +666,7 @@ function* pollWitnessReceipt(
         pre,
         sn,
         said,
-      })
+      }, http)
     );
     if (response.kind === "accepted") {
       return response;
@@ -686,6 +689,7 @@ function* postWitnessReceiptEndpoint(
   hab: Hab,
   witness: string,
   message: Uint8Array,
+  http: HttpClient,
   auth?: string,
 ): Operation<WitnessReceiptEndpointResponse> {
   const url = witnessHttpUrl(hab, witness);
@@ -706,7 +710,7 @@ function* postWitnessReceiptEndpoint(
       contentType,
       destination: witness,
     });
-    const { response } = yield* fetchResponseHandle(responseUrl.toString(), {
+    const response = yield* http.request(responseUrl.toString(), {
       method: "POST",
       headers: {
         ...request.headers,
@@ -749,6 +753,7 @@ function* getWitnessReceiptEndpoint(
   hab: Hab,
   witness: string,
   query: { pre: string; sn?: number; said?: string },
+  http: HttpClient,
 ): Operation<WitnessReceiptEndpointResponse> {
   const url = witnessHttpUrl(hab, witness);
   if (!url) {
@@ -768,7 +773,7 @@ function* getWitnessReceiptEndpoint(
     endpoint.searchParams.set("said", query.said);
   }
 
-  const { response } = yield* fetchResponseHandle(endpoint.toString(), {
+  const response = yield* http.request(endpoint.toString(), {
     method: "GET",
   });
   if (response.status !== 200) {
@@ -880,6 +885,7 @@ export class Receiptor {
             hab,
             witness,
             message,
+            this.services.http,
             auths[witness],
           )
         );
@@ -890,6 +896,7 @@ export class Receiptor {
             pre,
             eventSn,
             said,
+            this.services.http,
           );
         }
         statuses[witness] = response.status;
@@ -966,7 +973,9 @@ export class Receiptor {
       return false;
     }
 
-    const response = yield* call(() => getWitnessReceiptEndpoint(hab, witness, { pre, sn: eventSn, said }));
+    const response = yield* call(() =>
+      getWitnessReceiptEndpoint(hab, witness, { pre, sn: eventSn, said }, this.services.http)
+    );
     if (response.kind !== "accepted") {
       return false;
     }
