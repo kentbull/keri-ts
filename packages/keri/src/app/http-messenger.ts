@@ -3,10 +3,11 @@ import type { Operation } from "npm:effection@^3.6.0";
 import type { Kevery } from "../core/eventing.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { attemptPostCesr, type CesrPostResult, type EgressOptions, postCesr } from "./cesr-egress.ts";
+import type { HttpClient } from "./http-client.ts";
 import { consumeMailboxSse } from "./mailbox-sse.ts";
 import { processMessages } from "./message-source.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
-import type { RuntimeClock, RuntimeHttpClient } from "./runtime-services.ts";
+import type { RuntimeClock } from "./runtime-clock.ts";
 
 /** Actual attempt choices; HTTP client, clock and protocol processing are constructor dependencies. */
 export type HTTPMessengerOptions = EgressOptions;
@@ -27,7 +28,7 @@ export class HTTPMessenger {
     /** Shared protocol processing; null permits ordinary send-only delivery. */
     private readonly protocol: ProtocolProcessor | null,
     /** Borrowed HTTP implementation used for actual request execution. */
-    private readonly http: RuntimeHttpClient,
+    private readonly http: HttpClient,
     /** Borrowed clock used for request/query receive deadlines. */
     private readonly clock: RuntimeClock,
   ) {

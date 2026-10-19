@@ -30,6 +30,11 @@ removes upload producers and general cleanup bookkeeping, retaining native Fetch
 cancellation and actual I/O joining. Outbound
 components receive the actual protocol and I/O dependencies, not Reactor proxies.
 
+The [explicit dependency plan](../docs/plans/runtime/explicit-runtime-dependencies.md)
+tracks removal of the remaining HTTP/clock service bundle and dependency options.
+HTTP-only owners and VerifierAgent now take their actual collaborators explicitly;
+the remaining structural migration and separate verifier clock correction are pending.
+
 The [compatibility inventory](../docs/reference/compatibility/KERI_V1_V2_COMPATIBILITY.md)
 owns the v1/v2 matrix, implemented bridges and explicit gaps; its linked KERIpy
 porting backlog separates frozen donor evidence from unassessed 1.x/2.x target work.

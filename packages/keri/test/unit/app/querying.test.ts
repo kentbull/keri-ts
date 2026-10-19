@@ -14,7 +14,8 @@ import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { type AnchorQuerier, QueryCoordinator } from "../../../src/app/querying.ts";
-import { defaultRuntimeClock, type RuntimeServices } from "../../../src/app/runtime-services.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { type RuntimeServices } from "../../../src/app/runtime-services.ts";
 import type { QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { Roles } from "../../../src/core/roles.ts";
@@ -57,7 +58,7 @@ void ({ i: "prefix", s: "0", d: "digest", extra: true } satisfies ConstructorPar
 /** Capture actual HTTP query wire after production framing; introductions are not queries. */
 function queryHttp(messages: Uint8Array[], urls: string[] = []): RuntimeServices {
   return {
-    clock: defaultRuntimeClock,
+    clock: systemClock,
     http: httpClient(async (url, init) => {
       const bytes = await readCesrRequestBytes(new Request(url, init));
       const serder = new SerderKERI({ raw: bytes });

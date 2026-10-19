@@ -60,6 +60,7 @@ export {
 } from "../app/cue-runtime.ts";
 export {
   FetchHttpClient,
+  type HttpClient,
   type HttpRequestInit,
   type HttpResponse,
   type HttpStreamResponse,
@@ -87,8 +88,6 @@ export {
 } from "../app/respondant.ts";
 export {
   defaultRuntimeServices,
-  type RuntimeClock,
-  type RuntimeHttpClient,
   type RuntimeServices,
 } from "../app/runtime-services.ts";
 export {
@@ -607,3 +606,5 @@ export {
 
 export { HTTPMessenger, type HTTPMessengerOptions } from "../app/http-messenger.ts";
 export type { IngressOptions } from "../app/message-source.ts";
+
+export { type RuntimeClock, systemClock } from "../app/runtime-clock.ts";

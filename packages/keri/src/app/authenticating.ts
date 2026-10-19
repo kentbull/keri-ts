@@ -1,14 +1,10 @@
 import { call, type Operation, scoped } from "npm:effection@^3.6.0";
 import type { OobiRecord } from "../core/records.ts";
 import type { Habery } from "./habbing.ts";
+import type { HttpClient } from "./http-client.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
 import { persistResolvedContact } from "./organizing.ts";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
-
-interface AuthenticatorOptions {
-  services?: RuntimeServices;
-}
 
 /**
  * Well-known OOBI authenticator for one `Habery`.
@@ -27,13 +23,12 @@ export class Authenticator {
   /** Borrowed local identities and durable well-known authentication records. */
   readonly hby: Habery;
   /** HTTP implementation selected when this authenticator is composed. */
-  readonly services: RuntimeServices;
+  readonly http: HttpClient;
 
   /** Bind the local authentication store and its configured HTTP dependency. */
-  constructor(hby: Habery, options: AuthenticatorOptions = {}) {
-    const services = options.services ?? defaultRuntimeServices;
+  constructor(hby: Habery, http: HttpClient) {
     this.hby = hby;
-    this.services = services;
+    this.http = http;
   }
 
   /** Process one bounded auth step if queued well-known work exists. */
@@ -121,7 +116,7 @@ export class Authenticator {
     const cid = record.cid
       ?? parseOobiUrl(url, record.oobialias ?? undefined).cid
       ?? null;
-    const http = this.services.http;
+    const http = this.http;
     const response = yield* scoped(function*() {
       const response = yield* http.open(url);
       return { ok: response.ok, status: response.status };

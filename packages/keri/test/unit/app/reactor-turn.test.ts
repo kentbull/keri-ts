@@ -255,17 +255,17 @@ Deno.test("OOBI result publication preserves cues appended during HTTP fetch", a
     const hby = yield* createHabery({ name: `cue-oobi-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const reactor = new Reactor(protocolFixture(hby));
-      const oobi = new Oobiery(hby, reactor, reactor.protocol.rvy, {
-        cues: reactor.protocol.cues,
-        services: {
-          ...defaultRuntimeServices,
-          http: httpClient(() => {
-            // Model another producer filling the shared queue while this request is suspended in transport.
-            reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
-            return Promise.resolve(new Response(null, { status: 404 }));
-          }),
-        },
-      });
+      const oobi = new Oobiery(
+        hby,
+        reactor,
+        reactor.protocol.rvy,
+        httpClient(() => {
+          // Model another producer filling the shared queue while this request is suspended in transport.
+          reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
+          return Promise.resolve(new Response(null, { status: 404 }));
+        }),
+        reactor.protocol.cues,
+      );
       const url = "http://example.test/oobi";
       reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
       oobi.resolve(url);
@@ -717,21 +717,21 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           return cleanup.wait;
         },
       }, { highWaterMark: 0 });
-      const oobi = new Oobiery(target, reactor, reactor.protocol.rvy, {
-        cues: resultCues,
-        services: {
-          ...defaultRuntimeServices,
-          http: httpClient((_url, init) => {
-            requests++;
-            signal = init?.signal ?? undefined;
-            return Promise.resolve(
-              new Response(requests === 1 ? body : new Blob([first.slice().buffer, second.slice().buffer]), {
-                headers: { "Content-Type": contentType },
-              }),
-            );
-          }),
-        },
-      });
+      const oobi = new Oobiery(
+        target,
+        reactor,
+        reactor.protocol.rvy,
+        httpClient((_url, init) => {
+          requests++;
+          signal = init?.signal ?? undefined;
+          return Promise.resolve(
+            new Response(requests === 1 ? body : new Blob([first.slice().buffer, second.slice().buffer]), {
+              headers: { "Content-Type": contentType },
+            }),
+          );
+        }),
+        resultCues,
+      );
 
       const processEvent = reactor.kvy.processEvent;
       reactor.kvy.processEvent = function(envelope) {

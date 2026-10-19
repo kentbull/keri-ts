@@ -21,6 +21,7 @@ import type { Reger } from "../db/reger.ts";
 import type { VerifierCueBaser } from "../db/verifier-cueing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { Habery } from "./habbing.ts";
+import type { HttpClient } from "./http-client.ts";
 import {
   credentialSaidFromGrant,
   processCredentialPresentationArtifacts,
@@ -28,7 +29,6 @@ import {
 } from "./ipex-credentialing.ts";
 import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
 import type { Reactor } from "./reactor.ts";
-import type { RuntimeServices } from "./runtime-services.ts";
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 export interface VerifierAgentProcessResult {
@@ -58,17 +58,13 @@ export type VerifierBusinessValidator = (
 ) => boolean | string | void;
 
 export interface VerifierAgentOptions {
-  hby: Habery;
-  reger: Reger;
-  cdb: VerifierCueBaser;
-  reactor: Reactor;
-  cues: Deck<AgentCue>;
-  services: RuntimeServices;
+  /** Webhook destination selected by the verifier operator. */
   hook: string;
   /** Attachment genus of grant children, independent of legacy EXN framing. */
   gvrsn?: Versionage;
+  /** Local workflow expiry window in milliseconds. */
   timeoutMs?: number;
-  validators?: Record<string, VerifierBusinessValidator>;
+  /** Require a schema-specific validator before admitting a credential. */
   requireKnownSchemas?: boolean;
 }
 
@@ -84,8 +80,10 @@ export class VerifierAgent {
   readonly reactor: Reactor;
   /** Application cue flow; this owner consumes revocation cues and preserves unrelated records. */
   readonly cues: Deck<AgentCue>;
-  /** Borrowed HTTP client and clock used for webhook requests and expiry. */
-  readonly services: RuntimeServices;
+  /** Borrowed scoped HTTP client used for webhook attempts. */
+  readonly http: HttpClient;
+  /** Borrowed epoch-millisecond source used for webhook timestamps and expiry. */
+  readonly now: () => number;
   /** Configured webhook destination, independent of protocol peer routing. */
   readonly hook: string;
   /** Attachment genus used when settling accepted grant artifacts. */
@@ -98,17 +96,28 @@ export class VerifierAgent {
   readonly requireKnownSchemas: boolean;
 
   /** Borrow the configured stores, input owner and webhook policy; open no runtime or background worker. */
-  constructor(options: VerifierAgentOptions) {
-    this.hby = options.hby;
-    this.reger = options.reger;
-    this.cdb = options.cdb;
-    this.reactor = options.reactor;
-    this.cues = options.cues;
-    this.services = options.services;
+  constructor(
+    hby: Habery,
+    reger: Reger,
+    cdb: VerifierCueBaser,
+    reactor: Reactor,
+    cues: Deck<AgentCue>,
+    http: HttpClient,
+    now: () => number,
+    validators: Record<string, VerifierBusinessValidator>,
+    options: VerifierAgentOptions,
+  ) {
+    this.hby = hby;
+    this.reger = reger;
+    this.cdb = cdb;
+    this.reactor = reactor;
+    this.cues = cues;
+    this.http = http;
+    this.now = now;
     this.hook = options.hook;
     this.gvrsn = options.gvrsn ?? Vrsn_1_0;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.validators = { ...(options.validators ?? {}) };
+    this.validators = { ...validators };
     this.requireKnownSchemas = options.requireKnownSchemas ?? false;
   }
 
@@ -332,14 +341,14 @@ export class VerifierAgent {
   /** Bind webhook transport cancellation and completion to the enclosing operation. */
   private *postWebhook(body: VerifierWebhookBody): Operation<boolean> {
     const raw = JSON.stringify(body);
-    const services = this.services, hook = this.hook;
+    const http = this.http, now = this.now, hook = this.hook;
     return yield* call(function*() {
-      const response = yield* services.http.open(hook, {
+      const response = yield* http.open(hook, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "sally-resource": String(body.data.schema ?? ""),
-          "sally-timestamp": new Date(services.clock.now()).toISOString(),
+          "sally-timestamp": new Date(now()).toISOString(),
         },
         body: raw,
       });
@@ -404,7 +413,7 @@ export class VerifierAgent {
 
   /** Compare a workflow timestamp with the injected clock and configured expiry window. */
   private expired(dater: Dater): boolean {
-    return this.services.clock.now() - new Date(dater.dts).getTime() > this.timeoutMs;
+    return this.now() - new Date(dater.dts).getTime() > this.timeoutMs;
   }
 }
 

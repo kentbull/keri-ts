@@ -10,8 +10,8 @@ import { TransportError } from "../../app/transport-error.ts";
 import { call, type Operation, resource, scoped } from "effection";
 import { abortable } from "../../app/abortable.ts";
 import { collectBytes } from "../../app/byte-source.ts";
+import { type HttpClient } from "../../app/http-client.ts";
 import type { Reactor } from "../../app/reactor.ts";
-import { type RuntimeHttpClient } from "../../app/runtime-services.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
 import { pinDesignatedAliasesSchema } from "./designated-aliases.ts";
@@ -39,7 +39,7 @@ export interface ResolveDidWebsResult {
 export function resolveDidWebs(
   rgy: Regery,
   reactor: Reactor,
-  http: RuntimeHttpClient,
+  http: HttpClient,
   options: ResolveDidWebsOptions,
 ): Operation<ResolveDidWebsResult> {
   return call(() => resolveArtifacts(rgy, reactor, http, options));
@@ -49,7 +49,7 @@ export function resolveDidWebs(
 function* resolveArtifacts(
   rgy: Regery,
   reactor: Reactor,
-  http: RuntimeHttpClient,
+  http: HttpClient,
   options: ResolveDidWebsOptions,
 ): Operation<ResolveDidWebsResult> {
   const parsed = parseDidWebs(options.did);
@@ -90,7 +90,7 @@ function* resolveArtifacts(
 
 /** Try alternate artifact URLs only while opening headers; a borrowed body never starts another attempt. */
 function artifactResponse(
-  http: RuntimeHttpClient,
+  http: HttpClient,
   httpsUrl: string,
   httpUrl: string,
   preferHttp: boolean,

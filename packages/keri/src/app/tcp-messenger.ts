@@ -5,7 +5,7 @@ import type { Kevery } from "../core/eventing.ts";
 import { rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
-import type { RuntimeClock } from "./runtime-services.ts";
+import type { RuntimeClock } from "./runtime-clock.ts";
 import { socketBytes } from "./socket-source.ts";
 import {
   openTcpConnection,

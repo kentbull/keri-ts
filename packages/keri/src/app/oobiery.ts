@@ -16,10 +16,10 @@ import { collectBytes } from "./byte-source.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { HttpStreamResponse } from "./http-client.ts";
+import type { HttpClient } from "./http-client.ts";
 import type { Notifier } from "./notifying.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import type { Reactor } from "./reactor.ts";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 export const OOBI_REQUEST_ROUTE = "/oobis";
@@ -43,11 +43,6 @@ export interface OobiJob {
 
 type OobiQueueKind = "oobis" | "woobi";
 
-interface OobieryOptions {
-  cues?: Deck<AgentCue>;
-  services?: RuntimeServices;
-}
-
 /**
  * Durable OOBI processing component for one `Habery`.
  *
@@ -68,8 +63,8 @@ export class Oobiery {
   readonly reactor: Reactor;
   /** OOBI completion/query observations consumed by the composed application flow. */
   readonly cues: Deck<AgentCue>;
-  /** Borrowed fetch client and clock; no network service is discovered through ingress. */
-  readonly services: RuntimeServices;
+  /** Borrowed HTTP client; no network service is discovered through ingress. */
+  readonly http: HttpClient;
   /** Prevent overlapping passes over this owner's durable job queue. */
   private active = false;
 
@@ -79,13 +74,13 @@ export class Oobiery {
     reactor: Reactor,
     /** Borrowed reply verifier; route installation and proof writes share this owner. */
     private readonly rvy: Revery,
-    options: OobieryOptions = {},
+    http: HttpClient,
+    cues: Deck<AgentCue>,
   ) {
-    const { cues, services = defaultRuntimeServices } = options;
     this.hby = hby;
     this.reactor = reactor;
-    this.cues = cues ?? new Deck();
-    this.services = services;
+    this.cues = cues;
+    this.http = http;
   }
 
   /** Register `/introduce` on the shared reply router. */
@@ -217,7 +212,7 @@ export class Oobiery {
     url: string,
     record: OobiRecord,
   ): Operation<void> {
-    const services = this.services;
+    const http = this.http;
     const meta = {
       ...parseOobiUrl(url, record.oobialias ?? undefined),
       ...record,
@@ -236,7 +231,7 @@ export class Oobiery {
     const consume = this.processResponse.bind(this);
     try {
       const refused = yield* scoped(function*() {
-        const response = yield* services.http.open(url);
+        const response = yield* http.open(url);
         if (!response.ok) return response.status;
         yield* consume(kind, url, queuedRecord, meta, response);
         return null;
