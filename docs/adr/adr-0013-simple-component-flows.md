@@ -56,7 +56,7 @@ Output owners sign, route and consume request slots directly.
 
 Tevery owns registry/credential TSN admission, route registration and dependency
 retries. Independent record validators decode notice fields; composition supplies
-the shared Revery. Reactor calls Tevery operations without knowing its handlers.
+the shared Revery. ProtocolProcessor calls Tevery operations without knowing its handlers.
 This ownership refinement landed in #523 after the 1.0.0 publications.
 
 Use named fields and discriminated alternatives; require variant-specific data.

@@ -27,11 +27,11 @@ publishes the resulting cues. Kever does not own another output queue.
 
 There are three cue scopes in keri-ts:
 
-| Scope           | Producer and consumer                                                                                                                                        |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Habery-local    | Habery.kevery has its own Deck for local habitat processing, independently of any host                                                                       |
-| Protocol output | Runtime Kevery, Revery, Exchanger and legacy TEL/verifier processors share the protocol Deck; Reactor captures request-correlated replies before publication |
-| Application     | AgentRuntime.cues receives remaining protocol records and committed application/OOBI facts; composition routes each to its concrete owner                    |
+| Scope           | Producer and consumer                                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Habery-local    | Habery.kevery has its own Deck for local habitat processing, independently of any host                                                                                 |
+| Protocol output | Runtime Kevery, Revery, Exchanger and legacy TEL/verifier processors share the protocol Deck; ProtocolProcessor captures request-correlated replies before publication |
+| Application     | AgentRuntime.cues receives remaining protocol records and committed application/OOBI facts; composition routes each to its concrete owner                              |
 
 Do not wire runtime producers to a private Deck that their consumer never sees.
 Conversely, merging local and runtime scopes would make local habitat processing
@@ -41,7 +41,7 @@ depend on a host and could let background consumers steal request replies.
 
 ```mermaid
 flowchart TD
-  P[Runtime protocol producers] --> R[Reactor reply capture]
+  P[Runtime protocol producers] --> R[ProtocolProcessor reply capture]
   R --> Q[Request correlation records]
   R --> A[Application cue Deck]
   O[Committed OOBI facts] --> A
@@ -133,15 +133,15 @@ do not. UI notification storage and Signaler hints are a separate observation pa
 
 ## Reference source map
 
-| Responsibility         | KERIpy                                                               | keri-ts                                                            |
-| ---------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Protocol cues          | core/eventing.py, core/routing.py, peer/exchanging.py                | core/eventing.ts, core/routing.ts, app/exchanging.ts, core/cues.ts |
-| Habitat interpretation | app/habbing.py BaseHab.processCuesIter                               | app/habbing.ts Hab.processCuesIter                                 |
-| Deferred queries       | app/querying.py and app/agenting.py WitnessInquisitor                | app/querying.ts QueryCoordinator and continuations                 |
-| Reply delivery         | app/storing.py Respondant, app/forwarding.py                         | app/respondant.ts, app/forwarding.ts                               |
-| Mailbox host           | fork app/mailboxing.py setupMailbox / MailboxStart                   | app/mailbox-director.ts and application host composition           |
-| Query-to-SSE           | app/indirecting.py HttpEnd / QryRpyMailboxIterable / MailboxIterable | app/mailbox-director.ts, app/mailbox-sse.ts                        |
-| Runtime routing        | host cueDo operations                                                | app/agent-runtime.ts, app/cue-runtime.ts, app/reactor.ts           |
+| Responsibility         | KERIpy                                                               | keri-ts                                                              |
+| ---------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Protocol cues          | core/eventing.py, core/routing.py, peer/exchanging.py                | core/eventing.ts, core/routing.ts, app/exchanging.ts, core/cues.ts   |
+| Habitat interpretation | app/habbing.py BaseHab.processCuesIter                               | app/habbing.ts Hab.processCuesIter                                   |
+| Deferred queries       | app/querying.py and app/agenting.py WitnessInquisitor                | app/querying.ts QueryCoordinator and continuations                   |
+| Reply delivery         | app/storing.py Respondant, app/forwarding.py                         | app/respondant.ts, app/forwarding.ts                                 |
+| Mailbox host           | fork app/mailboxing.py setupMailbox / MailboxStart                   | app/mailbox-director.ts and application host composition             |
+| Query-to-SSE           | app/indirecting.py HttpEnd / QryRpyMailboxIterable / MailboxIterable | app/mailbox-director.ts, app/mailbox-sse.ts                          |
+| Runtime routing        | host cueDo operations                                                | app/agent-runtime.ts, app/cue-runtime.ts, app/protocol-processing.ts |
 
 The [flow reference](../../reference/runtime/CUE_FLOWS.md) follows concrete mailbox,
 reply, query and continuation paths. [Query/reply contracts](QUERY_REPLY.md) retain
