@@ -28,7 +28,7 @@ import {
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
-import { introduce, type Poster } from "../../../src/app/forwarding.ts";
+import { introduce, type Poster, type PosterEvent } from "../../../src/app/forwarding.ts";
 import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../src/app/habbing.ts";
 import type { QueryRequest } from "../../../src/core/cues.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
@@ -42,15 +42,6 @@ function makeExchangeSerder(
   args: Parameters<typeof exchangeMessage>[2],
 ) {
   return exchangeMessage(route, payload, args)[0];
-}
-
-function makeEmbeddedExchangeMessage(
-  route: string,
-  payload: Record<string, unknown>,
-  args: Parameters<typeof exchangeMessage>[2],
-) {
-  const [serder, attachments] = exchangeMessage(route, payload, args);
-  return { serder, attachments };
 }
 
 Deno.test("Hab.make propagates temporary keeper mode into key inception", async () => {
@@ -313,62 +304,12 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
       > = [];
       const queuedQueries: QueryRequest[] = [];
       const poster = {
-        *sendExchange(
-          hab: {
-            pre: string;
-            endorse: (
-              serder: SerderKERI,
-              options?: { pipelined?: boolean },
-            ) => Uint8Array;
-          },
-          args: {
-            recipient: string;
-            route: string;
-            payload: Record<string, unknown>;
-            topic?: string;
-            exchangeRecipient?: string | null;
-            embeds?: Record<string, Uint8Array>;
-          },
-        ) {
-          const embedded = args.embeds ?? {};
-          const exchangeRecipient = args.exchangeRecipient === null
-            ? undefined
-            : args.exchangeRecipient ?? args.recipient;
-          const { serder, attachments } = Object.keys(embedded).length > 0
-            ? makeEmbeddedExchangeMessage(args.route, args.payload, {
-              sender: hab.pre,
-              recipient: exchangeRecipient,
-              embeds: embedded,
-            })
-            : {
-              serder: makeExchangeSerder(args.route, args.payload, {
-                sender: hab.pre,
-                recipient: exchangeRecipient,
-              }),
-              attachments: new Uint8Array(),
-            };
-          sent.push({
-            sender: hab.pre,
-            recipient: args.recipient,
-            topic: args.topic,
-            message: concatBytes(
-              hab.endorse(serder, { pipelined: false }),
-              attachments,
-            ),
-          });
-          return { deliveries: ["mock"], queued: [] };
+        send(evt: PosterEvent) {
+          sent.push({ sender: evt.src, recipient: evt.dest, topic: evt.topic, message: evt.msg });
+          return evt;
         },
-        *sendBytes(
-          hab: { pre: string },
-          args: { recipient: string; topic?: string; message: Uint8Array },
-        ) {
-          sent.push({
-            sender: hab.pre,
-            recipient: args.recipient,
-            topic: args.topic,
-            message: args.message,
-          });
-          return { deliveries: ["mock"], queued: [] };
+        *wait(evt: PosterEvent) {
+          return { kin: "sent", evt, deliveries: ["mock"] };
         },
       } as unknown as Poster;
       const querying = {
@@ -491,11 +432,11 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
         });
 
         const poster = {
-          *sendExchange() {
-            return { deliveries: ["mock"], queued: [] };
+          send(evt: PosterEvent) {
+            return evt;
           },
-          *sendBytes() {
-            return { deliveries: ["mock"], queued: [] };
+          *wait(evt: PosterEvent) {
+            return { kin: "sent", evt, deliveries: ["mock"] };
           },
         } as unknown as Poster;
         const querying = {
@@ -547,7 +488,8 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
           delegator.interact({ data: [{ i: witnessed.pre, s: "0", d: event.said }] });
           const runtime = yield* createAgentRuntime(hby);
           try {
-            runtime.poster.sendBytes = poster.sendBytes; // Reuse the fixture's delegator mailbox sink; witness TCP is real.
+            runtime.poster.send = poster.send; // Reuse the fixture's delegator mailbox sink; witness TCP is real.
+            runtime.poster.wait = poster.wait;
             runtime.delegating.beginLatest(witnessed.pre, 0, { communicationHab: proxy });
             // Start at the already-receipted anchor-waiting frontier; publication runs through the concrete Anchorer.
             hby.db.dpwe.rem([witnessed.pre, "0"]);
@@ -605,15 +547,8 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
       });
 
       const poster = {
-        *sendExchange() {
-          throw new Error(
-            "delegated inception should not send without a proxy",
-          );
-        },
-        *sendBytes() {
-          throw new Error(
-            "delegated inception should not send without a proxy",
-          );
+        send() {
+          throw new Error("delegated inception should not send without a proxy");
         },
       } as unknown as Poster;
       const querying = {
@@ -695,41 +630,12 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
       > = [];
       const queuedQueries: QueryRequest[] = [];
       const poster = {
-        *sendExchange(
-          hab: {
-            pre: string;
-            endorse: (
-              serder: SerderKERI,
-              options?: { pipelined?: boolean },
-            ) => Uint8Array;
-          },
-          args: {
-            recipient: string;
-            route: string;
-            payload: Record<string, unknown>;
-          },
-        ) {
-          const serder = makeExchangeSerder(args.route, args.payload, {
-            sender: hab.pre,
-            recipient: args.recipient,
-          });
-          sent.push({
-            sender: hab.pre,
-            recipient: args.recipient,
-            message: hab.endorse(serder, { pipelined: false }),
-          });
-          return { deliveries: ["mock"], queued: [] };
+        send(evt: PosterEvent) {
+          sent.push({ sender: evt.src, recipient: evt.dest, message: evt.msg });
+          return evt;
         },
-        *sendBytes(
-          hab: { pre: string },
-          args: { recipient: string; message: Uint8Array },
-        ) {
-          sent.push({
-            sender: hab.pre,
-            recipient: args.recipient,
-            message: args.message,
-          });
-          return { deliveries: ["mock"], queued: [] };
+        *wait(evt: PosterEvent) {
+          return { kin: "sent", evt, deliveries: ["mock"] };
         },
       } as unknown as Poster;
       const querying = {

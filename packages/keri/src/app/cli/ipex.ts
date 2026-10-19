@@ -1,5 +1,5 @@
 import { concatBytes, Counter, parse, SerderKERI, type Versionage } from "cesr-ts";
-import { action, type Operation, spawn } from "npm:effection@^3.6.0";
+import { action, call, type Operation, spawn } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
@@ -7,6 +7,7 @@ import { Reger } from "../../db/reger.ts";
 import { abortable } from "../abortable.ts";
 import { type AgentRuntime, runAgentRuntime, settleMailboxPollBatch } from "../agent-runtime.ts";
 import { fileBytes } from "../byte-source.ts";
+import { createExchangeMessage } from "../exchange-messaging.ts";
 import { isLocalGroupHab, localGroupMember } from "../group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
@@ -76,8 +77,8 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = runtime.poster.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
-    const result = yield* runtime.poster.sendExchange(hab, {
-      recipient,
+    const { serder, msg } = createExchangeMessage(hab, {
+      dest: recipient,
       route: IPEX_APPLY_ROUTE,
       payload: {
         m: ipexArgs.message ?? "",
@@ -85,10 +86,23 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
         a: parseJsonArg(args.attrs as string | undefined) ?? {},
         i: recipient,
       },
-      topic: CREDENTIAL_MAILBOX_TOPIC,
-      delivery: ipexArgs.delivery,
     });
-    console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries }));
+    const postman = runtime.poster;
+    const worker = yield* spawn(() => postman.deliverDo());
+    try {
+      const evt = postman.send({
+        src: hab.pre,
+        dest: recipient,
+        msg,
+        topic: CREDENTIAL_MAILBOX_TOPIC,
+        delivery: ipexArgs.delivery,
+      }, { notify: true });
+      const result = yield* postman.wait(evt);
+      if (result.kin === "failed") throw result.error;
+      console.log(JSON.stringify({ said: serder.said, deliveries: result.deliveries }));
+    } finally {
+      yield* worker.halt();
+    }
   });
 }
 
@@ -100,16 +114,29 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = runtime.poster.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
-    const result = yield* runtime.poster.sendExchange(hab, {
-      recipient,
+    const { serder, msg } = createExchangeMessage(hab, {
+      dest: recipient,
       route: IPEX_OFFER_ROUTE,
       payload: { m: ipexArgs.message ?? "" },
       dig: args.apply as string | undefined,
       embeds: { acdc: Deno.readFileSync(acdcFile!) },
-      topic: CREDENTIAL_MAILBOX_TOPIC,
-      delivery: ipexArgs.delivery,
     });
-    console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries }));
+    const postman = runtime.poster;
+    const worker = yield* spawn(() => postman.deliverDo());
+    try {
+      const evt = postman.send({
+        src: hab.pre,
+        dest: recipient,
+        msg,
+        topic: CREDENTIAL_MAILBOX_TOPIC,
+        delivery: ipexArgs.delivery,
+      }, { notify: true });
+      const result = yield* postman.wait(evt);
+      if (result.kin === "failed") throw result.error;
+      console.log(JSON.stringify({ said: serder.said, deliveries: result.deliveries }));
+    } finally {
+      yield* worker.halt();
+    }
   });
 }
 
@@ -160,13 +187,15 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), partialGrant), { local: true });
       yield* runtime.reactor.processEscrowsOnce();
 
-      const deliveries = yield* publishGroupIpexProposal(
-        runtime,
-        hab,
-        partialGrant,
-        undefined,
-        genus,
-      );
+      const deliveries = yield* call(function*() {
+        const postman = runtime.poster;
+        const worker = yield* spawn(() => postman.deliverDo());
+        try {
+          return yield* publishGroupIpexProposal(runtime, hab, partialGrant, undefined, genus);
+        } finally {
+          yield* worker.halt();
+        }
+      });
       const complete = ipexArgs.approvalTimeoutSeconds > 0
         ? yield* waitForMultisigIpexCompletion(hby, runtime, hab, grant.grant.said!, ipexArgs.approvalTimeoutSeconds)
         : runtime.reactor.exchanger.complete(grant.grant.said!);
@@ -192,10 +221,16 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       if (ipexArgs.out) {
         Deno.writeFileSync(ipexArgs.out, stream);
       } else if (runtime.reactor.exchanger.lead(hab, completedGrant.said!)) {
-        yield* sendCredentialBytes(runtime.poster, localGroupMember(hby, hab.pre), recipient, [
-          ...grant.support,
-          completedGrantWire,
-        ], ipexArgs.delivery);
+        const postman = runtime.poster;
+        const worker = yield* spawn(() => postman.deliverDo());
+        try {
+          yield* sendCredentialBytes(postman, localGroupMember(hby, hab.pre), recipient, [
+            ...grant.support,
+            completedGrantWire,
+          ], ipexArgs.delivery);
+        } finally {
+          yield* worker.halt();
+        }
       }
       console.log(JSON.stringify({
         said: completedGrant.said,
@@ -212,7 +247,13 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     if (ipexArgs.out) {
       Deno.writeFileSync(ipexArgs.out, stream);
     } else {
-      yield* sendCredentialBytes(runtime.poster, hab, recipient, [...grant.support, grant.wire], ipexArgs.delivery);
+      const postman = runtime.poster;
+      const worker = yield* spawn(() => postman.deliverDo());
+      try {
+        yield* sendCredentialBytes(postman, hab, recipient, [...grant.support, grant.wire], ipexArgs.delivery);
+      } finally {
+        yield* worker.halt();
+      }
     }
     console.log(JSON.stringify({ said: grant.grant.said, credential: ipexArgs.said, support: grant.support.length }));
   });
@@ -240,7 +281,13 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void
     if (ipexArgs.out) {
       Deno.writeFileSync(ipexArgs.out, admit.wire);
     } else {
-      yield* sendCredentialBytes(runtime.poster, hab, recipient, [admit.wire], ipexArgs.delivery);
+      const postman = runtime.poster;
+      const worker = yield* spawn(() => postman.deliverDo());
+      try {
+        yield* sendCredentialBytes(postman, hab, recipient, [admit.wire], ipexArgs.delivery);
+      } finally {
+        yield* worker.halt();
+      }
     }
     console.log(JSON.stringify({ said: admit.admit.said, grant: grant.said }));
   });
@@ -336,12 +383,10 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
   };
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const pollHab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
-    const exn = ipexArgs.said
-      ? hby.db.exns.get([ipexArgs.said])
-      : yield* nextPendingMultisigIpex(hby, runtime, {
-        hab: pollHab,
-        timeoutMs: ipexArgs.approvalTimeoutSeconds * 1000,
-      });
+    const exn = ipexArgs.said ? hby.db.exns.get([ipexArgs.said]) : yield* nextPendingMultisigIpex(hby, runtime, {
+      hab: pollHab,
+      timeoutMs: ipexArgs.approvalTimeoutSeconds * 1000,
+    });
     if (!exn) {
       throw new ValidationError(
         ipexArgs.said
@@ -382,10 +427,18 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
       return;
     }
 
-    const approval = yield* approveMultisigIpex(hby, runtime, exn, {
-      publish: true,
-      delivery: ipexArgs.delivery,
-      gvrsn: ipexArgs.gvrsn,
+    const approval = yield* call(function*() {
+      const postman = runtime.poster;
+      const worker = yield* spawn(() => postman.deliverDo());
+      try {
+        return yield* approveMultisigIpex(hby, runtime, exn, {
+          publish: true,
+          delivery: ipexArgs.delivery,
+          gvrsn: ipexArgs.gvrsn,
+        });
+      } finally {
+        yield* worker.halt();
+      }
     });
     console.log(JSON.stringify({
       said: ipexArgs.said,
@@ -411,15 +464,28 @@ function* sendPriorResponse(
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = runtime.poster.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
-    const result = yield* runtime.poster.sendExchange(hab, {
-      recipient,
+    const { serder, msg } = createExchangeMessage(hab, {
+      dest: recipient,
       route,
       payload: { m: ipexArgs.message ?? "" },
       dig: prior,
-      topic: CREDENTIAL_MAILBOX_TOPIC,
-      delivery: ipexArgs.delivery,
     });
-    console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries }));
+    const postman = runtime.poster;
+    const worker = yield* spawn(() => postman.deliverDo());
+    try {
+      const evt = postman.send({
+        src: hab.pre,
+        dest: recipient,
+        msg,
+        topic: CREDENTIAL_MAILBOX_TOPIC,
+        delivery: ipexArgs.delivery,
+      }, { notify: true });
+      const result = yield* postman.wait(evt);
+      if (result.kin === "failed") throw result.error;
+      console.log(JSON.stringify({ said: serder.said, deliveries: result.deliveries }));
+    } finally {
+      yield* worker.halt();
+    }
   });
 }
 

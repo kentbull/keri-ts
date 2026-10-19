@@ -7,7 +7,7 @@
  * - alias error semantics
  * - shared mailbox storage and remote cursor progression
  */
-import { call, run, spawn } from "effection";
+import { call, type Operation, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createServer } from "node:net";
 import {
@@ -25,8 +25,10 @@ import {
 } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
+import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
 import {
   attemptPreparedCesrTarget,
+  type ExchangeDeliveryPreference,
   ForwardHandler,
   introduce,
   introductionMessages,
@@ -34,7 +36,7 @@ import {
   Poster,
   sendPreparedCesrTarget,
 } from "../../../src/app/forwarding.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import {
   mailboxQueryTopics,
@@ -43,6 +45,7 @@ import {
   updateMailboxRemoteCursor,
 } from "../../../src/app/mailboxing.ts";
 import { persistResolvedContact } from "../../../src/app/organizing.ts";
+import type { Reactor } from "../../../src/app/reactor.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
@@ -50,6 +53,51 @@ import { exchange as exchangeMessage } from "../../../src/core/protocol-exchangi
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import type { Mailboxer } from "../../../src/db/mailboxing.ts";
+
+/** Run the real queue worker for a finite send-only forwarding fixture. */
+function* deliverMessage(postman: Poster, hab: Hab, args: {
+  recipient: string;
+  message: Uint8Array;
+  topic?: string;
+  delivery?: ExchangeDeliveryPreference;
+}, reactor?: Reactor): Operation<{ deliveries: string[] }> {
+  const worker = yield* spawn(() => postman.deliverDo());
+  try {
+    const evt = postman.send({
+      src: hab.pre,
+      dest: args.recipient,
+      msg: args.message,
+      topic: args.topic ?? "",
+      delivery: args.delivery,
+      replies: Boolean(reactor),
+    }, { notify: true });
+    const outcome = yield* postman.wait(evt);
+    if (outcome.kin === "failed") throw outcome.error;
+    return outcome;
+  } finally {
+    yield* worker.halt();
+  }
+}
+
+/** Test the production EXN constructor followed by ordinary queued transmission. */
+function* deliverExchange(
+  postman: Poster,
+  hab: Hab,
+  args: Omit<Parameters<typeof createExchangeMessage>[1], "dest"> & {
+    recipient: string;
+    topic?: string;
+    delivery?: ExchangeDeliveryPreference;
+  },
+) {
+  const { serder, msg } = createExchangeMessage(hab, { ...args, dest: postman.resolveRecipient(args.recipient) });
+  const outcome = yield* deliverMessage(postman, hab, {
+    recipient: args.recipient,
+    message: msg,
+    topic: args.topic ?? mailboxTopicForRoute(args.route),
+    delivery: args.delivery,
+  });
+  return { serder, deliveries: outcome.deliveries };
+}
 
 function makeExchangeSerder(
   route: string,
@@ -343,7 +391,7 @@ Deno.test("Runtime close leaves injected mailboxers open", async () => {
 });
 
 /** Proves mailbox-first EXN delivery preserves embedded CESR payloads on the wire. */
-Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-style EXNs", async () => {
+Deno.test("Queued exchanges carries embedded CESR attachments for delegation-style EXNs", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `poster-embeds-${crypto.randomUUID()}`,
@@ -391,7 +439,7 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
         const evt = hby.db.cloneEvtMsg(sender.pre, fn, said);
         const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
 
-        const { serder } = yield* poster.sendExchange(sender, {
+        const { serder } = yield* deliverExchange(poster, sender, {
           recipient: recipient.pre,
           exchangeRecipient: null,
           route: DELEGATE_REQUEST_ROUTE,
@@ -424,13 +472,12 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
           embeds: { evt },
         });
         const message = concatBytes(sender.endorse(prepared, { pipelined: false }), paths);
-        const sent = yield* poster.sendPreparedExchange(sender, {
+        const sent = yield* deliverMessage(poster, sender, {
           recipient: recipient.pre,
-          serder: prepared,
           message,
           topic: DELEGATE_MAILBOX_TOPIC,
         });
-        assertStrictEquals(sent.serder, prepared);
+        assertEquals(sent.deliveries.length, 1);
         const preparedDelivery = runtime.mailboxer?.getTopicMsgs(
           mailboxTopicKey(recipient.pre, DELEGATE_MAILBOX_TOPIC),
         ) ?? [];
@@ -446,7 +493,7 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
 });
 
 /** Proves IPEX delivery defaults to the credential mailbox topic without caller override. */
-Deno.test("Poster.sendExchange defaults IPEX delivery to /credential", async () => {
+Deno.test("Queued exchanges defaults IPEX delivery to /credential", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `poster-ipex-topic-${crypto.randomUUID()}`,
@@ -484,7 +531,7 @@ Deno.test("Poster.sendExchange defaults IPEX delivery to /credential", async () 
         ]);
 
         const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
-        const { serder } = yield* poster.sendExchange(sender, {
+        const { serder } = yield* deliverExchange(poster, sender, {
           recipient: recipient.pre,
           route: "/ipex/grant",
           payload: { m: "grant" },
@@ -581,7 +628,7 @@ Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
 });
 
 /** Proves EXN delivery falls back to a hosted witness mailbox when no direct or mailbox endpoints exist. */
-Deno.test("Poster.sendExchange falls back to local witness mailbox storage", async () => {
+Deno.test("Queued exchanges falls back to local witness mailbox storage", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `poster-local-witness-exn-${crypto.randomUUID()}`,
@@ -619,7 +666,7 @@ Deno.test("Poster.sendExchange falls back to local witness mailbox storage", asy
         yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9124", witness.pre, "http")]);
 
         const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
-        const { serder, deliveries } = yield* poster.sendExchange(sender, {
+        const { serder, deliveries } = yield* deliverExchange(poster, sender, {
           recipient: recipient.pre,
           route: DELEGATE_REQUEST_ROUTE,
           payload: { delpre: recipient.pre },
@@ -661,7 +708,7 @@ Deno.test("Poster.sendExchange falls back to local witness mailbox storage", asy
 });
 
 /** Proves raw CESR delivery falls back to one witness with KERIpy-style introduction plus `/fwd`. */
-Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus forwarded delivery", async () => {
+Deno.test("Queued CESR falls back to a remote witness with introduce plus forwarded delivery", async () => {
   const bodies: Uint8Array[] = [];
   const controller = new AbortController();
   const port = 9125;
@@ -732,7 +779,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           const introduction = yield* call(() => parseBytes(expectedIntro));
           const frameCount = introduction.length;
 
-          const poster = new Poster(hby, { services: runtime.services });
+          const poster = new Poster(hby, { services: runtime.services, reactor: runtime.reactor });
           const route = poster.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
           const prepared = yield* poster.prepareBytesTarget(sender, route, 0, message);
           assertEquals(prepared.kind, "http");
@@ -743,7 +790,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           assertEquals(concatBytes(...bodies.slice(0, frameCount)), expectedIntro);
           assertEquals(bodies.length, frameCount + 1);
           bodies.length = 0;
-          const result = yield* poster.sendBytes(sender, {
+          const result = yield* deliverMessage(poster, sender, {
             recipient: recipient.pre,
             message,
             topic: "/receipt",
@@ -812,7 +859,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
               (yield* poster.prepareBytesTarget(sender, { ...tcpRoute, kind: "direct" }, 0, message)).kind,
               "tcp",
             );
-            const sent = yield* poster.sendBytes(sender, {
+            const sent = yield* deliverMessage(poster, sender, {
               recipient: recipient.pre,
               message,
               topic: "/receipt",
@@ -970,7 +1017,7 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
 });
 
 /** Proves `direct` delivery mode stays strict and does not silently fall back to witnesses. */
-Deno.test("Poster.sendBytes with direct delivery does not fall back to witnesses", async () => {
+Deno.test("Queued CESR with direct delivery does not fall back to witnesses", async () => {
   const attempt = run(function*() {
     const hby = yield* createHabery({
       name: `poster-direct-strict-${crypto.randomUUID()}`,
@@ -1008,7 +1055,7 @@ Deno.test("Poster.sendBytes with direct delivery does not fall back to witnesses
         yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9126", witness.pre, "http")]);
 
         const poster = new Poster(hby);
-        yield* poster.sendBytes(sender, {
+        yield* deliverMessage(poster, sender, {
           recipient: recipient.pre,
           message: new Uint8Array([9]),
           topic: "/receipt",
@@ -1162,8 +1209,8 @@ Deno.test("Poster mailbox sends report partial failure and complete only after e
         for (const kind of ["raw", "exchange"]) {
           const send = () =>
             kind === "raw"
-              ? runtime.poster.sendBytes(sender, { recipient: recipient.pre, message, topic: "/receipt" })
-              : runtime.poster.sendExchange(sender, {
+              ? deliverMessage(runtime.poster, sender, { recipient: recipient.pre, message, topic: "/receipt" })
+              : deliverExchange(runtime.poster, sender, {
                 recipient: recipient.pre,
                 route: "/challenge/response",
                 payload: {},

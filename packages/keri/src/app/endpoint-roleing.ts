@@ -83,14 +83,17 @@ export function* proposeGroupEndpointRole(
     });
     const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
     yield* runtime.reactor.processBytes(message, { local: true });
-    const result = yield* runtime.poster.sendPreparedExchange(member, {
-      recipient,
-      serder,
-      message,
+    const postman = runtime.poster;
+    const evt = postman.send({
+      src: member.pre,
+      dest: recipient,
+      msg: message,
       topic: MULTISIG_TOPIC,
-    });
+    }, { notify: true });
+    const outcome = yield* postman.wait(evt);
+    if (outcome.kin === "failed") throw outcome.error;
     proposals.push({ recipient, said: serder.said! });
-    deliveries.push(...result.deliveries);
+    deliveries.push(...outcome.deliveries);
   }
 
   return {

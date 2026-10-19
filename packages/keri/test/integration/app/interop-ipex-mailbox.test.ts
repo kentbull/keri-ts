@@ -12,7 +12,7 @@ import {
   SerderACDC,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run } from "effection";
+import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
@@ -261,11 +261,19 @@ for (const count of [1, 2]) {
                     null,
                     "recipient has not received this IPEX message yet",
                   );
-                  const delivered = yield* originRuntime.poster.sendBytes(sender, {
-                    recipient: destination.pre,
-                    topic: "/credential",
-                    message,
-                    delivery: "indirect",
+                  const delivered = yield* call(function*() {
+                    const postman = originRuntime.poster;
+                    yield* spawn(() => postman.deliverDo());
+                    const evt = postman.send({
+                      src: sender.pre,
+                      dest: destination.pre,
+                      topic: "/credential",
+                      msg: message,
+                      delivery: "indirect",
+                    }, { notify: true });
+                    const outcome = yield* postman.wait(evt);
+                    if (outcome.kin === "failed") throw outcome.error;
+                    return outcome;
                   });
                   assertEquals(delivered.deliveries, [mailboxUrl]);
                   const qry = query("mbx", {

@@ -1,5 +1,6 @@
-import { run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { SerderKERI } from "cesr-ts";
+import { call, run } from "effection";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import {
   endpointRoleAccepted,
@@ -52,17 +53,21 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
 
       const sent: { recipient: string; said: string }[] = [];
       let sends = 0;
-      runtime.poster.sendPreparedExchange = function*(sender, args) {
-        assertEquals(sender, member);
-        assertEquals(args.recipient, [remote.pre, other.pre][sends]);
-        assertEquals(args.serder.route, MULTISIG_RPY_ROUTE);
-        assertEquals(args.serder.ked?.a, { gid: group.pre, i: args.recipient });
-        assertExists(args.serder.ked?.e);
-        assertEquals(runtime.reactor.exchanger.complete(args.serder.said!), true);
-        assertEquals(hby.db.exns.get([args.serder.said!])?.raw, args.serder.raw);
-        sent.push({ recipient: args.recipient, said: args.serder.said! });
+      runtime.poster.send = function(evt) {
+        const serder = new SerderKERI({ raw: evt.msg });
+        assertEquals(evt.src, member.pre);
+        assertEquals(evt.dest, [remote.pre, other.pre][sends]);
+        assertEquals(serder.route, MULTISIG_RPY_ROUTE);
+        assertEquals(serder.ked?.a, { gid: group.pre, i: evt.dest });
+        assertExists(serder.ked?.e);
+        assertEquals(runtime.reactor.exchanger.complete(serder.said!), true);
+        assertEquals(hby.db.exns.get([serder.said!])?.raw, serder.raw);
+        sent.push({ recipient: evt.dest, said: serder.said! });
         sends++;
-        return { serder: args.serder, deliveries: ["https://mailbox.test/"] };
+        return evt;
+      };
+      runtime.poster.wait = function*(evt) {
+        return { kin: "sent", evt, deliveries: ["https://mailbox.test/"] };
       };
 
       const result = yield* proposeGroupEndpointRole(runtime, group, {
@@ -78,6 +83,24 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       assertEquals(new Set(sent.map((proposal) => proposal.said)).size, 2);
       assertEquals(result.deliveries, ["https://mailbox.test/", "https://mailbox.test/"]);
       assertEquals(sends, 2);
+
+      const failure = new Error("mailbox refused the proposal");
+      sends = 0;
+      runtime.poster.wait = function*(evt) {
+        return { kin: "failed", evt, deliveries: [], error: failure };
+      };
+      const caught = yield* call(() =>
+        assertRejects(() =>
+          run(() =>
+            proposeGroupEndpointRole(runtime, group, {
+              eid: remote.pre,
+              role: Roles.mailbox,
+              allow: true,
+            })
+          )
+        )
+      );
+      assertStrictEquals(caught, failure, "queue admission cannot report successful proposal delivery");
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

@@ -6,9 +6,9 @@ not broadcast. [ADR-0013](../../adr/adr-0013-simple-component-flows.md) governs
 component ownership and explicit contracts.
 
 The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) is in
-progress. Phase 1 moves execution ownership to Poster while preserving current
-delivery behavior; the plan tracks qualification. Later phases in that plan are not
-implemented by this ownership cut.
+progress. Poster now owns every queued send and runs independently of query
+delivery. Existing cue traversal/retry behavior remains while callers migrate to
+the single execution owner; the plan tracks qualification and later simplification.
 
 KERIpy is the behavioral reference. Its mailbox host is supplied by the declared
 fork, not current upstream. Keep these sources distinct using the
@@ -71,8 +71,8 @@ need a Hab emission or host sink to do so.
 Respondant interprets cues, prepares routing and publishes reply work. Poster owns
 reply cursors, once-signed retry packets, delivery progress, active transport and
 joined cleanup, including authorized local forwarding. The temporary
-`enqueueReplies` boundary transfers prepared reply descriptions to this owner;
-it is not the later all-producer queue API. Mailboxer stores provider
+`enqueueReplies` boundary transfers prepared reply descriptions into the same
+private queue as ordinary Poster events. Mailboxer stores provider
 payloads; MailboxDirector correlates stream queries and serves those payloads.
 A successful `/fwd` write does not prove the query-to-SSE bridge works.
 
@@ -84,14 +84,32 @@ newly appended work waits for another pass. Notify-only or no-emission cues can
 still be consumed. Do not restore CueSink hooks, preparation callbacks or generic
 delivery wrappers to enforce this ordinary sequencing.
 
-Phase 1 retains the existing finite outgoing pass: initially queued items rotate
+All ordinary Poster callers publish with `send({ src, dest, topic, msg, ... })`;
+admission copies the signed source bytes and returns a new concrete event identity.
+Callers requiring completion opt into `{ notify: true }` and use `wait(evt)` to
+consume that event's `sent` or `failed` outcome from `cues`. Reusing the same signed
+message creates a different admission; an older SAID success cannot satisfy it.
+Only one waiter may observe an admission. Cancelling it releases the observation
+without cancelling queued delivery. Pending work depends on queued/active work,
+not the number of unconsumed outcome cues. Local send completion is not remote
+protocol acceptance.
+
+EXN producers construct and sign with `createExchangeMessage` outside Poster.
+The standalone `sendExchangeMessage` helper accepts `dest`, starts its own worker,
+waits for its concrete admission, and joins cleanup. Runtime callers use the
+existing host worker. There is no alternate immediate-send Poster API.
+
+The host runs `Poster.deliverDo` independently of query response intake. HTTP and
+witness ingress publish without calling `Poster.process`; direct response readers
+keep their request-owned lifetime. Focused tests may explicitly process Poster.
+
+The temporary cue path retains its finite outgoing pass: initially queued items rotate
 after one target attempt, and an observed refusal creates an independent retry of
 the exact prepared packet. Unexpected preparation/transport failures preserve the
-current work and propagate. The host still invokes query delivery then
-`Poster.process`, and ingress callers still invoke finite passes. Phase 2 owns
-their migration to an independent postman worker. Phase 3 owns removal of the
+current cue work and propagate. Ordinary events, cue batches and retry packets
+temporarily share one private queue. Phase 3 owns removal of the
 manual cursor and universal emission wrapper, eager replay and explicit failed
-events; those changes must not be assumed from the ownership move alone.
+events; FIFO and no automatic retry must not be assumed from queue consolidation.
 
 QueryReplies reservations are request-SAID correlation, not capacity. They capture
 before ordinary cue delivery; request owners inspect and take plain records after

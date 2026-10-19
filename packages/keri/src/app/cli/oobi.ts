@@ -3,7 +3,7 @@ import { ValidationError } from "../../core/errors.ts";
 import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
 import { enqueueOobi, runAgentRuntimeUntil, runtimeOobiConverged, runtimeOobiTerminalState } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
-import { sendExchangeMessage } from "../forwarding.ts";
+import { sendExchangeMessage } from "../exchange-messaging.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../oobiery.ts";
 import { withAgentRuntime, withExistingHab } from "./common/context.ts";
 
@@ -277,7 +277,7 @@ export function* oobiRequestCommand(
     function*({ hby, hab }) {
       const exn = oobiRequestExn(hab, recipient, url);
       const { serder } = yield* sendExchangeMessage(hby, hab, {
-        recipient,
+        dest: recipient,
         route: OOBI_REQUEST_ROUTE,
         topic: OOBI_MAILBOX_TOPIC,
         payload: (exn.ked?.a as Record<string, unknown>) ?? {

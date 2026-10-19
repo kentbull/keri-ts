@@ -56,12 +56,7 @@ Deno.test("app/runtime-responder - stream cues stay with mailbox query correlati
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
     const runtime = yield* createAgentRuntime(hby);
-    let posted = false;
     const retained: CueEmission["cue"][] = [];
-    runtime.poster.sendBytes = function*() {
-      posted = true;
-      return { deliveries: [] };
-    };
     runtime.mailboxDirector.retainQueryCue = (cue) => {
       retained.push(cue);
     };
@@ -75,7 +70,7 @@ Deno.test("app/runtime-responder - stream cues stay with mailbox query correlati
     try {
       runtime.cues.push(cue);
       yield* processCuesOnce(runtime, { hab });
-      assertEquals(posted, false);
+      assertEquals(runtime.poster.hasPending, false);
       assertEquals(retained, [cue]);
     } finally {
       yield* runtime.close();
@@ -146,12 +141,17 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
         const emitted = [...proof.messages];
         assertEquals(emitted[0], witnessWire);
         assertEquals(emitted[0].buffer === witnessWire!.buffer, false, "finite return owns independent wire");
-        const published = runtime.mailboxer!.getTopicMsgs(mailboxTopicKey(recipient.pre, "/receipt"));
-        assertEquals(published, [message, ...emitted], "the existing local mailbox policy uses that same wire");
+        assertEquals(
+          runtime.mailboxer!.getTopicMsgs(mailboxTopicKey(recipient.pre, "/receipt")),
+          [message],
+          "ingress only publishes delivery work",
+        );
         for (let pass = 0; pass < 4 && runtime.poster.hasPending; pass++) {
           yield* runtime.poster.process();
         }
         assertEquals(runtime.poster.hasPending, false);
+        const published = runtime.mailboxer!.getTopicMsgs(mailboxTopicKey(recipient.pre, "/receipt"));
+        assertEquals(published, [message, ...emitted], "the worker preserves the existing local mailbox wire");
 
         const chunk = new Uint8Array(4 * 1024 ** 2 + 1), messages = [chunk, chunk];
         const iterator = messages[Symbol.iterator].bind(messages), cleanupFailure = new Error("witness cursor cleanup");

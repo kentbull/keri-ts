@@ -5,7 +5,7 @@ import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert
 import { createAgentRuntime, createHabery, readCesrRequestBytes, Roles } from "keri-ts/runtime";
 import { drainRuntimeCues } from "../src/http/protocol/runtime-bridge.ts";
 
-Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with joined ownership", async () => {
+Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and joined cancellation", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
@@ -33,21 +33,24 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       const wire = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
       const cue = { kin: "replay" as const, src: sender.pre, dest: recipient.pre, messages: [wire] };
       runtime.cues.push(cue);
-      const draining = run(() => drainRuntimeCues(runtime, sender, runtime.cues));
-      yield* call(() => started);
+      yield* drainRuntimeCues(runtime, sender, runtime.cues);
       assertEquals(runtime.cues.empty, true);
+      assertEquals(sends, 0, "HTTP cue publication does not start outbound delivery");
+      assertEquals(runtime.poster.hasPending, true);
+
+      const delivering = run(() => runtime.poster.process());
+      yield* call(() => started);
 
       runtime.cues.push({ kin: "query", pre: "unresolved", route: "logs", q: {} });
-
-      assertEquals(runtime.cues.length, 1, "application cue publication progresses during network wait");
+      yield* drainRuntimeCues(runtime, sender, runtime.cues);
+      assertEquals(runtime.cues.empty, true, "HTTP cue publication progresses during Poster network wait");
+      assertEquals(runtime.querying.pending.length, 1, "unresolved query transfers to its existing owned queue");
       failure = new Error("foreign fetch failure");
       finish();
-      assertStrictEquals(yield* call(() => assertRejects(() => Promise.resolve(draining))), failure);
+      assertStrictEquals(yield* call(() => assertRejects(() => Promise.resolve(delivering))), failure);
       assertEquals(runtime.poster.hasPending, true);
       assertEquals(posted, wire);
       failure = undefined;
-      yield* drainRuntimeCues(runtime, sender, runtime.cues);
-      assertEquals(runtime.querying.pending.length, 1, "unresolved query transfers to its existing owned queue");
       for (let pass = 0; pass < 4 && runtime.poster.hasPending; pass++) {
         yield* runtime.poster.process();
       }
@@ -56,7 +59,10 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       started = new Promise<void>((resolve) => start = resolve);
       gate = new Promise<void>((resolve) => finish = resolve);
       runtime.cues.push(cue);
-      const cancelling = run(() => drainRuntimeCues(runtime, sender, runtime.cues));
+      const beforeDelivery = sends;
+      yield* drainRuntimeCues(runtime, sender, runtime.cues);
+      assertEquals(sends, beforeDelivery, "publishing a second cue still does not start network work");
+      const cancelling = run(() => runtime.poster.process());
       yield* call(() => started);
       let joined = false;
       const halted = cancelling.halt().then(() => joined = true);

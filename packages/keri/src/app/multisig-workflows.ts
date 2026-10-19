@@ -170,13 +170,16 @@ function* registerAndSendProposal(
 ): Operation<string[]> {
   const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
   yield* runtime.reactor.processBytes(message, { local: true });
-  const result = yield* runtime.poster.sendPreparedExchange(member, {
-    recipient,
-    serder,
-    message,
+  const postman = runtime.poster;
+  const evt = postman.send({
+    src: member.pre,
+    dest: recipient,
+    msg: message,
     topic: MULTISIG_TOPIC,
-  });
-  return [...result.deliveries];
+  }, { notify: true });
+  const outcome = yield* postman.wait(evt);
+  if (outcome.kin === "failed") throw outcome.error;
+  return [...outcome.deliveries];
 }
 
 /** True when a KEL event is accepted locally. */

@@ -132,19 +132,23 @@ Deno.test("multisig publication records its actual local proposal before deliver
       try {
         let delivered: SerderKERI | undefined;
         // Only transmission is substituted; preparation, signing, intake and replay use real owners.
-        runtime.poster.sendPreparedExchange = function*(sender, args) {
-          assertEquals(sender, alice);
-          assertEquals(args.recipient, bob.pre);
-          assertEquals(args.serder.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, i: bob.pre });
-          const embeds = args.serder.ked!.e;
+        runtime.poster.send = function(evt) {
+          const serder = new SerderKERI({ raw: evt.msg });
+          assertEquals(evt.src, alice.pre);
+          assertEquals(evt.dest, bob.pre);
+          assertEquals(serder.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, i: bob.pre });
+          const embeds = serder.ked!.e;
           assertExists(embeds);
           assertEquals(Object.keys(embeds), ["icp", "d"]);
-          assertEquals(left.db.exns.get([args.serder.said!])?.raw, args.serder.raw);
-          assertEquals(runtime.reactor.exchanger.complete(args.serder.said!), true);
-          const embedded = (args.serder.ked!.e as { d: string }).d;
+          assertEquals(left.db.exns.get([serder.said!])?.raw, serder.raw);
+          assertEquals(runtime.reactor.exchanger.complete(serder.said!), true);
+          const embedded = (serder.ked!.e as { d: string }).d;
           assertEquals(left.db.maids.get([embedded]).map((p) => p.qb64), [alice.pre]);
-          delivered = args.serder;
-          return { serder: args.serder, deliveries: ["test-transmission"], queued: [] };
+          delivered = serder;
+          return evt;
+        };
+        runtime.poster.wait = function*(evt) {
+          return { kin: "sent", evt, deliveries: ["test-transmission"] };
         };
         const deliveries = yield* publishProposal(runtime, alice, mids, {
           route: "/multisig/icp",
@@ -180,9 +184,10 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
     await run(function*() {
       const runtime = yield* createAgentRuntime(left, { notifier });
       try {
-        runtime.poster.sendPreparedExchange = function*(_sender, args) {
-          if (args.serder.route === "/multisig/icp") {
-            assertEquals(args.serder.ked!.a, {
+        runtime.poster.send = function(evt) {
+          const serder = new SerderKERI({ raw: evt.msg });
+          if (serder.route === "/multisig/icp") {
+            assertEquals(serder.ked!.a, {
               gid: local.hab.pre,
               smids: mids,
               rmids: mids,
@@ -190,19 +195,19 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
               i: bob.pre,
             });
           }
-          if (["/multisig/rpy", "/multisig/vcp", "/multisig/iss"].includes(args.serder.route!)) {
-            assertEquals(args.serder.ked!.a, {
+          if (["/multisig/rpy", "/multisig/vcp", "/multisig/iss"].includes(serder.route!)) {
+            assertEquals(serder.ked!.a, {
               gid: local.hab.pre,
               cgvrsn: [2, 0],
-              ...(args.serder.route === "/multisig/vcp" ? { usage: "group credentials" } : {}),
+              ...(serder.route === "/multisig/vcp" ? { usage: "group credentials" } : {}),
               i: bob.pre,
             });
           }
-          if (args.serder.route === "/multisig/iss") {
-            const sad = args.serder.ked!.e as Record<string, unknown>;
+          if (serder.route === "/multisig/iss") {
+            const sad = serder.ked!.e as Record<string, unknown>;
             const child = new SerderACDC({ sad: sad.acdc as Record<string, unknown> });
-            const proof = multisigPathedAttachment(left, args.serder.said!, "acdc");
-            const frames = yield* call(() => parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), child.raw, proof)));
+            const proof = multisigPathedAttachment(left, serder.said!, "acdc");
+            const frames = parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), child.raw, proof));
             {
               assertEquals(frames.length, 1);
               const seals = envelopeFromFrame(frames[0]).ssts;
@@ -210,7 +215,10 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
               assertEquals([seals[0].i.qb64, seals[0].s.num, seals[0].d.qb64], [issuance.pre, 0n, issuance.said]);
             }
           }
-          return { serder: args.serder, deliveries: ["test"], queued: [] };
+          return evt;
+        };
+        runtime.poster.wait = function*(evt) {
+          return { kin: "sent", evt, deliveries: ["test"] };
         };
         const [peer, paths] = exchange("/multisig/icp", {
           gid: local.hab.pre,
@@ -768,8 +776,11 @@ for (const route of ["ixn", "vcp"] as const) {
       await run(function*() {
         const runtime = yield* createAgentRuntime(left, { notifier });
         try {
-          runtime.poster.sendPreparedExchange = function*(_sender, args) {
-            return { serder: args.serder, deliveries: ["test"], queued: [] };
+          runtime.poster.send = function(evt) {
+            return evt;
+          };
+          runtime.poster.wait = function*(evt) {
+            return { kin: "sent", evt, deliveries: ["test"] };
           };
           yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), attachments), {
             local: true,
@@ -882,10 +893,14 @@ for (const kind of ["apply", "grant"] as const) {
             });
             let outgoing: { serder: SerderKERI; message: Uint8Array } | undefined;
             // Substitute transmission only; the peer admits the actual signed outgoing bytes below.
-            runtime.poster.sendPreparedExchange = function*(_sender, args) {
-              assertEquals(args.serder.ked!.a, { gid: local.hab.pre, ...hint, i: bob.pre });
-              outgoing = { serder: args.serder, message: args.message };
-              return { serder: args.serder, deliveries: ["test"], queued: [] };
+            runtime.poster.send = function(evt) {
+              const serder = new SerderKERI({ raw: evt.msg });
+              assertEquals(serder.ked!.a, { gid: local.hab.pre, ...hint, i: bob.pre });
+              outgoing = { serder: serder, message: evt.msg };
+              return evt;
+            };
+            runtime.poster.wait = function*(evt) {
+              return { kin: "sent", evt, deliveries: ["test"] };
             };
             if (kind === "grant") {
               const before = [...left.db.esigs.getTopItemIter([embedded.said!, ""])].map((

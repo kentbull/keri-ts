@@ -6,11 +6,12 @@
  * must not open or mutate KERIpy stores.
  */
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { action, type Operation, run } from "npm:effection@^3.6.0";
+import { action, call, type Operation, run, spawn } from "npm:effection@^3.6.0";
 import type { SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { buildCesrStreamRequest } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
+import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
 import { createHabery, eventPayloadMessage } from "../../../src/app/habbing.ts";
 import type { Habery } from "../../../src/app/habbing.ts";
 import { DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
@@ -714,21 +715,26 @@ async function postTufaGroupDelegationRequest(args: {
           }
           wireMessage = eventPayloadMessage(hby, group.serder);
         }
-        yield* runtime.poster.sendExchange(member1, {
-          recipient: args.delegatorPre,
-          exchangeRecipient: null,
-          route: DELEGATE_REQUEST_ROUTE,
-          payload: {
-            delpre: args.delegatorPre,
-            aids: [member1.pre, member2.pre],
-          },
-          topic: DELEGATE_MAILBOX_TOPIC,
-          embeds: { evt: wireMessage },
-        });
-        yield* runtime.poster.sendBytes(member1, {
-          recipient: args.delegatorPre,
-          topic: DELEGATE_MAILBOX_TOPIC,
-          message: wireMessage,
+        yield* call(function*() {
+          const postman = runtime.poster;
+          yield* spawn(() => postman.deliverDo());
+          const { msg } = createExchangeMessage(member1, {
+            dest: args.delegatorPre,
+            exchangeRecipient: null,
+            route: DELEGATE_REQUEST_ROUTE,
+            payload: { delpre: args.delegatorPre, aids: [member1.pre, member2.pre] },
+            embeds: { evt: wireMessage },
+          });
+          for (const outgoing of [msg, wireMessage]) {
+            const evt = postman.send({
+              src: member1.pre,
+              dest: args.delegatorPre,
+              topic: DELEGATE_MAILBOX_TOPIC,
+              msg: outgoing,
+            }, { notify: true });
+            const outcome = yield* postman.wait(evt);
+            if (outcome.kin === "failed") throw outcome.error;
+          }
         });
         return group;
       } finally {

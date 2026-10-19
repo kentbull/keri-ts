@@ -60,13 +60,14 @@ CLI and hosts run the same component workers with different completion/deadline
 conditions. Serial runtime and finite mailbox pumps, CueSink hooks, delivery
 wrappers and callback-based reply admission are removed.
 
-The [cue delivery plan](../plans/runtime/cue-delivery-refactor.md) separates the
-phase 1 ownership move from later behavior changes. Phase 1 retains finite-pass
-rotation, lazy reply consumption, automatic exact-packet retries and the existing
-combined query/Poster worker and ingress-driven passes. `ReplyCursor` and
-`CueEmission` remain temporary implementation state. One queue for all callers,
-eager FIFO replies and explicit whole-event failure handling are later phases,
-not claims about this cut. Deferred reliability features have a separate
+The [cue delivery plan](../plans/runtime/cue-delivery-refactor.md) first moved
+execution ownership to Poster. All sends now use its independently running queue;
+HTTP and witness ingress publish without driving delivery. Producers construct
+signed messages and callers await identity-matched sent/failed outcomes when
+transmission gates their workflow. Phase 3 still owns replacement of legacy cue
+cursor rotation, lazy reply consumption and automatic exact-packet retries with
+eager FIFO messages and explicit retained failures. `CueEmission` also remains
+until that cut. Deferred reliability features have a separate
 [roadmap](../plans/runtime/cue-reliability-roadmap.md).
 
 The [cue design](../design-docs/runtime/CUES.md) explains the current graph and

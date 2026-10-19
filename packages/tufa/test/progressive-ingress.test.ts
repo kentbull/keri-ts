@@ -394,14 +394,16 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       const prefixes = async (bytes: Uint8Array) =>
         (await parseBytes(bytes)).map(({ body }) => (body as SerderKERI).pre);
       assertEquals(yield* call(() => prefixes(direct)), [alice.pre]);
+      assertEquals(runtime.poster.hasPending, true, "HTTP publishes ordinary delivery without running Poster");
+      assertEquals([...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)], []);
+      for (let pass = 0; pass < 8 && runtime.poster.hasPending; pass++) yield* runtime.poster.process();
+      assertEquals(runtime.poster.hasPending, false);
       const ordinary: (string | null)[] = [];
       for (const bytes of runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)) {
         ordinary.push(...(yield* call(() => prefixes(bytes))));
       }
       assertEquals(ordinary.includes(alice.pre), true);
       assertEquals(ordinary.includes(bob.pre), true);
-      for (let pass = 0; pass < 8 && runtime.poster.hasPending; pass++) yield* runtime.poster.process();
-      assertEquals(runtime.poster.hasPending, false);
       const deniedBody = query("logs", { i: bob.pre, src: alice.pre }, { pre: alice.pre, pvrsn: Vrsn_2_0 });
       // An older matching capture must not authorize this exact denied frame's ordinary delivery.
       runtime.cues.push({
@@ -426,6 +428,8 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
         )
       );
       assertEquals(denied.status, 204, "the independent trailing event still controls its own result");
+      for (let pass = 0; pass < 8 && runtime.poster.hasPending; pass++) yield* runtime.poster.process();
+      assertEquals(runtime.poster.hasPending, false);
       assertEquals([...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)], before);
       runtime.reactor.kevery.denyList.clear();
     } finally {

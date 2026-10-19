@@ -27,6 +27,7 @@ import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { serializeMessage } from "../core/protocol-exchanging.ts";
 import type { Reger } from "../db/reger.ts";
 import { type AgentRuntime } from "./agent-runtime.ts";
+import { createExchangeMessage } from "./exchange-messaging.ts";
 import type { Poster } from "./forwarding.ts";
 import { groupSigningMembers, localGroupMember } from "./group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigChild, multisigChildGenusAttrs } from "./grouping.ts";
@@ -180,15 +181,17 @@ export function* publishGroupIpexProposal(
     if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
       continue;
     }
-    const result = yield* runtime.poster.sendExchange(member, {
-      recipient,
+    const { msg } = createExchangeMessage(member, {
+      dest: recipient,
       route: MULTISIG_EXN_ROUTE,
       payload,
       embeds: { exn: embedded },
-      topic: "multisig",
-      delivery,
     });
-    deliveries.push(...result.deliveries);
+    const postman = runtime.poster;
+    const evt = postman.send({ src: member.pre, dest: recipient, topic: "multisig", msg, delivery }, { notify: true });
+    const outcome = yield* postman.wait(evt);
+    if (outcome.kin === "failed") throw outcome.error;
+    deliveries.push(...outcome.deliveries);
   }
   return deliveries;
 }
@@ -326,21 +329,25 @@ export function storedExchangeMessage(
 
 /** Send raw credential/IPEX bytes over the credential mailbox topic. */
 export function* sendCredentialBytes(
-  poster: Poster,
+  postman: Poster,
   hab: Hab,
-  recipient: string,
-  messages: Uint8Array[],
+  dest: string,
+  msgs: Uint8Array[],
   delivery: IpexDeliveryPreference | undefined,
 ): Operation<string[]> {
   const sent: string[] = [];
-  for (const message of messages) {
-    const result = yield* poster.sendBytes(hab, {
-      recipient,
-      message,
+  dest = postman.resolveRecipient(dest);
+  for (const msg of msgs) {
+    const evt = postman.send({
+      src: hab.pre,
+      dest,
+      msg,
       topic: CREDENTIAL_MAILBOX_TOPIC,
       delivery,
-    });
-    sent.push(...result.deliveries);
+    }, { notify: true });
+    const outcome = yield* postman.wait(evt);
+    if (outcome.kin === "failed") throw outcome.error;
+    sent.push(...outcome.deliveries);
   }
   return sent;
 }

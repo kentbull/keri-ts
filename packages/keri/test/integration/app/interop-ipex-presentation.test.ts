@@ -13,7 +13,7 @@ import {
   SerderACDC,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run } from "effection";
+import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
@@ -273,11 +273,19 @@ for (const count of [1, 2]) {
                 return;
               }
               const message = yield* call(() => collectPayload(framePayload(frame)));
-              const delivery = yield* holderRuntime.poster.sendBytes(members[0], {
-                recipient: receiver.pre,
-                topic: "/credential",
-                message,
-                delivery: "indirect",
+              const delivery = yield* call(function*() {
+                const postman = holderRuntime.poster;
+                yield* spawn(() => postman.deliverDo());
+                const evt = postman.send({
+                  src: members[0].pre,
+                  dest: receiver.pre,
+                  topic: "/credential",
+                  msg: message,
+                  delivery: "indirect",
+                }, { notify: true });
+                const outcome = yield* postman.wait(evt);
+                if (outcome.kin === "failed") throw outcome.error;
+                return outcome;
               });
               assertEquals(delivery.deliveries, [mailboxUrl]);
               const body = query("mbx", { i: receiver.pre, src: providerPre, topics: { "/credential": cursor } }, {

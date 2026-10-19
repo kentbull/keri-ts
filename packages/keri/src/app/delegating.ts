@@ -19,6 +19,7 @@ import { ValidationError } from "../core/errors.ts";
 import { DELEGATE_MAILBOX_TOPIC, REPLAY_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { Schemes } from "../core/schemes.ts";
 import { dgKey } from "../db/core/keys.ts";
+import { createExchangeMessage } from "./exchange-messaging.ts";
 import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import { type Poster } from "./forwarding.ts";
 import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
@@ -584,21 +585,32 @@ export class Anchorer {
     // have receipted the event. That preserves the KERIpy approval ordering
     // and avoids anchoring an event the delegate cannot yet complete.
     const message = eventPayloadMessage(this.hby, serder);
-    yield* this.poster.sendExchange(communicationHab, {
-      recipient: delpre,
+    const { msg } = createExchangeMessage(communicationHab, {
+      dest: delpre,
       exchangeRecipient: null,
       route: DELEGATE_REQUEST_ROUTE,
       payload: {
         delpre,
       },
-      topic: DELEGATE_MAILBOX_TOPIC,
       embeds: { evt: message },
     });
-    yield* this.poster.sendBytes(communicationHab, {
-      recipient: delpre,
-      message,
+    const postman = this.poster;
+    const request = postman.send({
+      src: communicationHab.pre,
+      dest: delpre,
+      msg,
       topic: DELEGATE_MAILBOX_TOPIC,
-    });
+    }, { notify: true });
+    const requested = yield* postman.wait(request);
+    if (requested.kin === "failed") throw requested.error;
+    const replay = postman.send({
+      src: communicationHab.pre,
+      dest: delpre,
+      msg: message,
+      topic: DELEGATE_MAILBOX_TOPIC,
+    }, { notify: true });
+    const replayed = yield* postman.wait(replay);
+    if (replayed.kin === "failed") throw replayed.error;
     // KERIpy issues the first delegator-witness anchor query in the same
     // publish phase that forwards the delegation request and raw event bytes.
     // Keep that ordering here so delegate-side approval discovery does not
@@ -854,11 +866,15 @@ export class Anchorer {
 
     const approvedEvent = eventReplayMessage(this.hby, kever.serder);
     if (kever.delpre) {
-      yield* this.poster.sendBytes(transportHab, {
-        recipient: kever.delpre,
+      const postman = this.poster;
+      const evt = postman.send({
+        src: transportHab.pre,
+        dest: kever.delpre,
         topic: REPLAY_MAILBOX_TOPIC,
-        message: approvedEvent,
-      });
+        msg: approvedEvent,
+      }, { notify: true });
+      const outcome = yield* postman.wait(evt);
+      if (outcome.kin === "failed") throw outcome.error;
     }
     for (const witness of kever.wits) {
       yield* sendWitnessMessage(

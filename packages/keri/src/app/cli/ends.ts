@@ -1,4 +1,4 @@
-import { type Operation } from "npm:effection@^3.6.0";
+import { call, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { isEndpointRole } from "../../core/roles.ts";
 import { settleRuntimeIngress } from "../agent-runtime.ts";
@@ -81,10 +81,18 @@ export function* endsAddCommand(
           );
         }
         if (commandArgs.multisigMode === "propose") {
-          const result = yield* proposeGroupEndpointRole(runtime, hab, {
-            eid,
-            role,
-            allow: true,
+          const result = yield* call(function*() {
+            const postman = runtime.poster;
+            const worker = yield* spawn(() => postman.deliverDo());
+            try {
+              return yield* proposeGroupEndpointRole(runtime, hab, {
+                eid,
+                role,
+                allow: true,
+              });
+            } finally {
+              yield* worker.halt();
+            }
           });
           console.log(JSON.stringify({
             route: result.route,

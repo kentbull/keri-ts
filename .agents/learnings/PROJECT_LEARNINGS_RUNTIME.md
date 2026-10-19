@@ -62,13 +62,21 @@ independently authenticated nested message; legacy messages use pathed embeds.
 Qualified selectors must not reach the legacy body-only reaper. Poster awaits
 preparation and retains the exact prepared packet for retry; no replacement codec
 or generic output executor is needed.
-Finite passes use their initial extent. Respondant interprets and publishes;
-Poster owns lazy cursors, ordered reply batches, once-signed retry packets and
-active transport cleanup. The [cue delivery plan](../../docs/plans/runtime/cue-delivery-refactor.md)
-tracks qualification: phase 1 moves ownership only. The combined
-query/Poster worker and ingress-driven finite passes remain until phase 2; eager
-FIFO delivery and explicit failures remain phase 3 work. Do not conflate those
-future contracts with the present automatic exact-packet retries.
+Poster is the single execution owner for admitted messages and cue output. Its
+independent deliverDo worker is composed beside query delivery; ingress publishes
+without running Poster. send accepts src/dest/topic/msg and copies the source
+bytes. Callers needing completion request notify and wait on the exact returned
+event identity, not a SAID. Cancelling a waiter releases only its observation;
+delivery remains queued. Consuming outcome cues never determines pending work.
+Standalone commands start and join their own Poster worker. Exchange producers
+construct/sign with createExchangeMessage in exchange-messaging; the standalone
+sendExchangeMessage helper accepts dest and uses the same queue/worker path.
+
+The queue temporarily also carries lazy cue cursors and exact retry packets;
+their finite-pass scheduling and automatic retry behavior are unchanged. The
+[cue delivery plan](../../docs/plans/runtime/cue-delivery-refactor.md) tracks this
+queue consolidation and its separate qualification. Eager FIFO delivery, cursor
+removal and retained whole-event failure policy remain phase 3 work.
 QueryCoordinator owns plain requests, signed packets and joined response I/O.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
 query sender remains. QueryReply peek/take returns data; request owners publish

@@ -1,5 +1,5 @@
 import { concatBytes } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { call, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Reger } from "../../db/reger.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
@@ -91,11 +91,19 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
   const vcArgs = registryArgs(args);
   yield* withVcRuntime(vcArgs, function*({ hby, runtime, rgy }) {
     const hab = requireHab(hby, vcArgs.alias);
-    const result = yield* inceptCredentialRegistry(rgy, runtime.poster, hab, {
-      registryName: vcArgs.registryName!,
-      noBackers: vcArgs.noBackers,
-      estOnly: vcArgs.estOnly,
-      usage: vcArgs.usage,
+    const result = yield* call(function*() {
+      const postman = runtime.poster;
+      const worker = yield* spawn(() => postman.deliverDo());
+      try {
+        return yield* inceptCredentialRegistry(rgy, postman, hab, {
+          registryName: vcArgs.registryName!,
+          noBackers: vcArgs.noBackers,
+          estOnly: vcArgs.estOnly,
+          usage: vcArgs.usage,
+        });
+      } finally {
+        yield* worker.halt();
+      }
     });
     console.log(JSON.stringify(result));
   });
@@ -140,13 +148,21 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
     const schema = vcArgs.schemaFile ? pinSchemaBytes(hby, Deno.readFileSync(vcArgs.schemaFile)) : vcArgs.schema;
     requireNonEmpty(schema, "Schema");
     const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : undefined;
-    const result = yield* createCredential(rgy, runtime.poster, {
-      registryName: vcArgs.registryName!,
-      schema: schema!,
-      recipient,
-      data: parseSubjectDataArg(vcArgs.data) ?? {},
-      edges: parseJsonSectionArg(vcArgs.edges, "edges"),
-      rules: parseJsonSectionArg(vcArgs.rules, "rules"),
+    const result = yield* call(function*() {
+      const postman = runtime.poster;
+      const worker = yield* spawn(() => postman.deliverDo());
+      try {
+        return yield* createCredential(rgy, postman, {
+          registryName: vcArgs.registryName!,
+          schema: schema!,
+          recipient,
+          data: parseSubjectDataArg(vcArgs.data) ?? {},
+          edges: parseJsonSectionArg(vcArgs.edges, "edges"),
+          rules: parseJsonSectionArg(vcArgs.rules, "rules"),
+        });
+      } finally {
+        yield* worker.halt();
+      }
     });
     if (vcArgs.out) {
       writeBytes(credentialStreamBytes(hby, reger, result.creder, result.recipient), vcArgs.out);
@@ -222,12 +238,20 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
     }
     const sendRecipients = revocationRecipients(creder, vcArgs.send ?? [], !!vcArgs.alias);
     const senderHab = sendRecipients.length > 0 ? requireHab(hby, vcArgs.alias) : undefined;
-    const result = yield* revokeCredential(rgy, runtime.poster, {
-      registryName: vcArgs.registryName!,
-      credentialSaid: vcArgs.said!,
-      sendRecipients,
-      senderHab,
-      delivery: vcArgs.delivery,
+    const result = yield* call(function*() {
+      const postman = runtime.poster;
+      const worker = yield* spawn(() => postman.deliverDo());
+      try {
+        return yield* revokeCredential(rgy, postman, {
+          registryName: vcArgs.registryName!,
+          credentialSaid: vcArgs.said!,
+          sendRecipients,
+          senderHab,
+          delivery: vcArgs.delivery,
+        });
+      } finally {
+        yield* worker.halt();
+      }
     });
     if (vcArgs.out) {
       const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : result.creder.issuee ?? "";

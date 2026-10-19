@@ -19,6 +19,7 @@ import { dgKey } from "../../db/core/keys.ts";
 import { type AgentRuntime, runAgentRuntime } from "../agent-runtime.ts";
 
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../endpoint-roleing.ts";
+import { createExchangeMessage } from "../exchange-messaging.ts";
 import { MULTISIG_IXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { runtimeTurn } from "../runtime-turn.ts";
@@ -160,13 +161,16 @@ function* publishGroupDelegationApproval(
     if (recipient === member.pre || hby.habs.has(recipient)) {
       continue;
     }
-    const result = yield* runtime.poster.sendExchange(member, {
-      recipient,
+    const { msg } = createExchangeMessage(member, {
+      dest: recipient,
       route: MULTISIG_IXN_ROUTE,
       payload: { gid: groupHab.pre, smids },
       embeds: { ixn: message },
-      topic: "multisig",
     });
+    const postman = runtime.poster;
+    const evt = postman.send({ src: member.pre, dest: recipient, topic: "multisig", msg }, { notify: true });
+    const result = yield* postman.wait(evt);
+    if (result.kin === "failed") throw result.error;
     deliveries.push(...result.deliveries);
   }
   return deliveries;
