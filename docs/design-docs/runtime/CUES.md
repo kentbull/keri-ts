@@ -5,8 +5,8 @@ transport payloads nor synthetic resource handles. A Deck has a consumer; it is
 not broadcast. [ADR-0013](../../adr/adr-0013-simple-component-flows.md) governs
 component ownership and explicit contracts.
 
-The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) is in
-progress. Poster owns every queued send and runs independently of query
+The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) records
+the implementation and qualification. Poster owns every queued send and runs independently of query
 delivery. Respondant eagerly constructs complete local replay sequences, and
 Poster delivers ordinary signed messages FIFO with explicit retained failures.
 
@@ -114,9 +114,12 @@ destinations may receive duplicates. `discard(evt)` removes failed work without
 sending. Failures do not contribute to pending/idle state.
 
 Unexpected construction, storage, parser or cleanup exceptions are retained and
-reported before propagating. Transport failure classification and completion
-qualification are tracked separately in phase 4; do not turn an arbitrary thrown
-error into a normal peer refusal. Closing Poster aborts and joins active I/O before
+reported before propagating. Native network failures are classified at transport
+boundaries and contained by Poster around actual send calls; arbitrary thrown
+errors must not become peer refusals. Earlier refusals and successful delivery URLs
+remain available if a later unexpected error propagates. HTTP requires complete successful response
+bodies. Transmit-only TCP requires local drain and joined cleanup; duplex also
+processes receive EOF. Closing Poster aborts and joins active I/O before
 releasing queued and failed records. These records do not survive shutdown.
 
 QueryReplies reservations are request-SAID correlation, not capacity. They capture

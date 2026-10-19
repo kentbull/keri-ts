@@ -172,8 +172,11 @@ current endpoints and fresh outer forwarding material; prior successes may be
 repeated. discard(evt) removes failed work. Unknown construction, storage, parser
 and cleanup errors are retained/reported and propagate. Failures are process-local,
 excluded from pending/idle state, and cleared on shutdown after I/O joins.
-The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) tracks
-remaining transport completion qualification independently.
+Concrete native network failures are TransportError values retaining their causes.
+Poster contains those errors only around network execution, attempts remaining
+targets and completes failed waiters. Unexpected construction, source, parser and
+cleanup failures remain visible. The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md)
+records the source references and qualification boundaries.
 
 Poster.send accepts src, dest, topic and signed msg bytes, with optional delivery
 preference and same-socket replies. It copies msg on admission and returns a fresh
@@ -254,12 +257,19 @@ HTTP upload, fetch and response scopes share the actual request controller.
 RequestInit.signal retains its reason through headers and body consumption.
 Pre-aborted requests acquire no fetch. Only the owner's header timeout becomes
 mailbox null; a later deadline cannot relabel earlier external cancellation.
-Normal scope exit may abort an unread successful response; only its exact owned
-reason is suppressed. Finite workers close each response scope between jobs.
+Caller-owned response scopes may abort an unread response; only their exact owned
+reason is suppressed. Ordinary CESR sends drain successful response bodies through
+EOF before reporting completion. Bounded QueryCoordinator/SSE consumers keep
+their explicit response lifetime. Finite workers join each response scope between jobs.
 
 `postCesr` sends successive framed POSTs and completes each response scope before
-advancing. Header mode carries CESR-ATTACHMENT; body mode streams one qualified
-frame. Preserve URL/path, destination, authentication and media-type retry rules.
+advancing. Success headers alone do not establish completion: Content-Length or
+chunked truncation fails the attempt. Redirects are refused without following or
+replaying the application message. Native fetch/body-read failures retain their
+original causes in TransportError; injected client, parser/source and genuine
+cleanup failures retain their own identity. Header mode carries CESR-ATTACHMENT;
+body mode streams one qualified frame. Preserve URL/path, destination, authentication
+and supported media-type negotiation within one attempt.
 KERIpy 714 HTTPStreamMessenger instead uses one bulk PUT to `/`; matching class
 names does not justify changing the supported POST contract.
 
@@ -289,8 +299,13 @@ acquisition and after EOF. Native buffering is not an RSS or whole-message bound
 Each write callback and required native drain completes before the next source
 pull. Output checks cancellation after pull before writing or treating done as
 EOF. Directional failure stops its sibling and joins cleanup. Receive EOF leaves
-TX alive. End output after response drain or the existing absolute deadline;
-activity must not extend it. Earlier committed replies survive later TX failure.
+TX alive. Transmit-only output completes at the local end callback and then joins
+connection cleanup; it does not require peer EOF or remote protocol acceptance.
+Later receive reset cannot downgrade completed local output. Duplex conversations
+still process receive EOF and preserve accepted replies before later TX failure.
+The existing absolute deadline covers local end and, for duplex only, peer close;
+activity does not extend it. Native socket/connect/write errors retain their causes
+in TransportError. Source and distinct cleanup errors must not become peer failures.
 
 Tufa tracks actual accepted handles and connection scopes through close, without
 connection-count quotas, shared allowances or busy/drop callbacks. Stopping rejects

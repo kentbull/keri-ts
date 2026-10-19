@@ -1,20 +1,20 @@
 # Cue delivery refactor
 
-Status: approved plan; implementation and qualification in progress. The starting
-revision is `6c8e5971ea8f40ac1ad2de3b26080196235e7651`. This plan does not extend
-the published 1.0.0 qualification to subsequent changes. PR #524 was closed
-unmerged; its responder extraction is background evidence, not the implementation
-base. Phase 1's ownership-only cut merged as PR #528. Phase 2 consolidates queued
-execution and caller outcomes in a separate cut; later phases require their own
-focused changes and validation.
+Status: implementation complete in four phases, delivered through sequential
+focused pull requests. Local checks and selected PR CI are recorded below. The starting revision is
+`6c8e5971ea8f40ac1ad2de3b26080196235e7651`. This work does not extend the published
+1.0.0 qualification to subsequent changes. PR #524 was closed unmerged; its
+responder extraction is background evidence, not the implementation base.
+The phase descriptions preserve the agreed sequence: move ownership, migrate
+callers, simplify delivery policy, then qualify concrete transport completion.
 
 ## Decision and boundaries
 
 Use KERIpy-shaped owners and ordinary queued records. Respondant interprets and
 publishes reply work; Poster owns outbound execution. The final design uses one
 Poster `evts` queue, ordinary nested iteration, and explicit retained failures.
-Remove manual reply traversal and automatic exact-packet retry only in phase 3,
-after delivery ownership and callers have moved without changing those policies.
+Manual reply traversal and automatic exact-packet retry were removed in phase 3,
+after delivery ownership and callers moved without changing those policies.
 
 Keep typed `ReplyCue` alternatives, signing rules, source authorization, request
 correlation, TSN registry-before-credential order and independent HTTP response
@@ -195,12 +195,24 @@ changeset validation. Broader release qualification remains a separate obligatio
 - Phase 2: PR #529 merged at `c1c81faf`; queue admission/outcomes, independent
   Poster worker, producer migration and ingress publication passed 150 focused
   local tests and selected delegation, mailbox/IPEX, witness and package CI.
-- Phase 3: raw-wire cue production, eager replay, FIFO events, explicit retained
-  failures and naming migration implemented. 124 focused tests passed (94 in the
-  combined producer/queue/grouping suite and 30 witness/query/protocol/HTTP cases);
-  formatting, lint, type/boundary/version and changeset checks passed. Selected
-  CI and merge remain pending.
-- Phase 4: transport completion implementation and qualification remain separate.
+- Phase 3: PR #530 merged at `1eecc459`, implementing raw-wire cue production, eager replay, FIFO events,
+  explicit retained failures and naming migration. 131 focused tests passed
+  (94 producer/queue/grouping cases, 30 witness/query/protocol/HTTP cases and seven
+  exchange cases after removing the unused immediate EXN sender); formatting,
+  lint, type/boundary/version and changeset checks passed. Selected delegation,
+  mailbox/IPEX, witness and installed-package CI passed. Final job logs and the
+  successful stage gate supplied evidence while GitHub displayed stale statuses.
+- Phase 4: ordinary HTTP sends require full response EOF and refuse redirects;
+  transmit-only TCP completes local drain and joins cleanup without waiting for
+  remote EOF. Duplex receive and half-close behavior remain. Poster contains
+  native network failures while preserving original causes, partial successes
+  and earlier refusals when later unexpected failures propagate.
+  96 focused cases passed locally: the combined transport/queue/cue/HTTP suite,
+  the additional mixed-failure regression and the CLI success/refusal scenario.
+  Focused reruns qualify the final failure-preservation edits. Required selected
+  delegation, mailbox/IPEX, witness, package, static and changeset checks are
+  recorded on the transport-completion PR before merge. Broader release and
+  endurance qualification remain separate.
 
 The owning contracts are [cues](../../design-docs/runtime/CUES.md),
 [ingress/egress](../../design-docs/runtime/INGRESS_AND_EGRESS.md) and

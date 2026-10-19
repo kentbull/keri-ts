@@ -108,7 +108,11 @@ successes. Unexpected failures remain visible. Failures and optional completion
 cues do not determine pending work. There is no cursor, automatic retry, exact
 final-packet cache or cross-batch fairness mechanism. These omissions are explicit
 in the [deferred reliability roadmap](../plans/runtime/cue-reliability-roadmap.md).
-Transport qualification is separate from the 1.0.0 release.
+Transport boundaries distinguish local transmission from processed duplex receive
+and remote acceptance. Ordinary HTTP sends require body EOF; TCP transmit-only
+sends join local drain/cleanup without waiting for arbitrary peer EOF. Concrete
+network failures retain causes; source/parser/storage/cleanup failures propagate.
+These checks do not replace broader release qualification.
 
 CLI and long-lived hosts start the same workers. Finite commands use accepted-state
 predicates and elapsed deadlines, then join workers before returning or closing

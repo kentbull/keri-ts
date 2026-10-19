@@ -83,7 +83,7 @@ No automatic retry, final-packet cache, manual reply cursor or cross-batch fairn
 remains. Failures are process-local and excluded from idle. Unexpected construction,
 storage, parser and cleanup failures are retained/reported then propagate.
 The [cue delivery plan](../../docs/plans/runtime/cue-delivery-refactor.md) tracks
-transport completion qualification separately.
+the reference source and qualification evidence.
 QueryCoordinator owns plain requests, signed packets and joined response I/O.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
 query sender remains. QueryReply peek/take returns data; request owners publish
@@ -141,7 +141,9 @@ null. Finite wrappers close their source iterators. Ordinary records need no lea
 Lower TCP lends sockets/bytes without AgentRuntime/Reactor knowledge;
 tcp-conversation composes application RX/TX. HTTP-first/TCP fallback, direct/mailbox
 routing and signed introductions remain. Explicit replies enable duplex; standalone
-send is transmit-only. Never open a second runtime just to receive replies.
+send is transmit-only. It completes local end then joins close without requiring
+peer EOF; a later receive reset does not downgrade completed output. Duplex still
+requires processed receive EOF. Never open a second runtime just to receive replies.
 Native callback/drain precedes the next outbound pull. socketBytes owns exclusive
 reads and one pending pull; 64 KiB is granularity, not a memory guarantee. RX EOF
 leaves TX alive; abort/failure/return destroy and join close. Drain deadlines are
@@ -151,8 +153,12 @@ local; infrastructure/cleanup failures reach the host.
 
 HTTP scopes own upload/fetch/body and preserve signal reasons. Pre-abort acquires
 no fetch; only the owned header timeout becomes mailbox null. Positive peer HTTP
-refusal is distinct from parser/source/storage/cleanup failure. postCesr sends
-successive framed POSTs; KERIpy714 bulk PUT is a documented wire difference.
+refusal is distinct from parser/source/storage/cleanup failure. Ordinary postCesr
+sends require full successful response EOF, refuse redirects without replay and
+wrap only native fetch/body failures in TransportError with their original cause.
+Caller-owned bounded SSE consumers retain their response lifetime. Poster contains
+TransportError only around actual send calls; unknown errors still propagate.
+postCesr sends successive framed POSTs; KERIpy714 bulk PUT is a documented wire difference.
 Preserve authentication through media retries. Post-header failure terminates the
 body and reports the original error. Signals must wake the host supervisor.
 

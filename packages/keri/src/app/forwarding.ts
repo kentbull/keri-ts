@@ -57,6 +57,7 @@ import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services
 import { runtimeTurn } from "./runtime-turn.ts";
 import { converseCesrTcp, type TcpReplyReceiver } from "./tcp-conversation.ts";
 import { sendCesrTcp } from "./tcp-egress.ts";
+import { TransportError } from "./transport-error.ts";
 
 /** Delivery preference accepted by CLI and runtime exchange send helpers. */
 export type ExchangeDeliveryPreference = "auto" | "direct" | "indirect";
@@ -375,28 +376,41 @@ export class Poster {
       };
     }
     const failed: Error[] = [];
-    for (const endpoint of route.targets) {
-      const target = yield* this.prepareBytesTarget(hab, route, endpoint, evt.msg);
-      if (target.kind === "http") {
-        const outcome = yield* attemptPostCesr(target.url, (signal) => chunkBytes(target.message, { signal }), {
-          bodyMode: target.bodyMode,
-          destination: target.destination,
-          services: this.services,
-          signal,
-        });
-        if (outcome.kind === "refuse") {
-          failed.push(outcome.error);
+    try {
+      for (const endpoint of route.targets) {
+        const target = yield* this.prepareBytesTarget(hab, route, endpoint, evt.msg);
+        try {
+          if (target.kind === "http") {
+            const outcome = yield* attemptPostCesr(target.url, (signal) => chunkBytes(target.message, { signal }), {
+              bodyMode: target.bodyMode,
+              destination: target.destination,
+              services: this.services,
+              signal,
+            });
+            if (outcome.kind === "refuse") {
+              failed.push(outcome.error);
+              continue;
+            }
+          } else {
+            yield* sendPreparedCesrTarget(
+              target,
+              this.services,
+              signal,
+              evt.replies ? { reactor: this.reactor! } : undefined,
+            );
+          }
+        } catch (error) {
+          if (!(error instanceof TransportError)) throw error;
+          failed.push(error);
           continue;
         }
-      } else {
-        yield* sendPreparedCesrTarget(
-          target,
-          this.services,
-          signal,
-          evt.replies ? { reactor: this.reactor! } : undefined,
-        );
+        deliveries.push(endpoint.url);
       }
-      deliveries.push(endpoint.url);
+    } catch (error) {
+      if (failed.length) {
+        throw new AggregateError([...failed, error], `CESR delivery interrupted for ${evt.dest}`, { cause: error });
+      }
+      throw error;
     }
     if (failed.length) {
       const error = failed.length === 1

@@ -93,7 +93,8 @@ Deno.test("TSN pairs share ordinary records across matching requests", () => {
 });
 
 Deno.test("direct reply pairs publish atomically and keep independent HTTP and queued consumers", async () => {
-  let cleaning!: () => void, unblock!: () => void;
+  let reading!: () => void, cleaning!: () => void, unblock!: () => void;
+  const started = new Promise<void>((resolve) => reading = resolve);
   const cleanup = new Promise<void>((resolve) => cleaning = resolve),
     gate = new Promise<void>((resolve) => unblock = resolve);
   await run(function*() {
@@ -113,11 +114,14 @@ Deno.test("direct reply pairs publish atomically and keep independent HTTP and q
             return blocked
               ? new Response(
                 new ReadableStream({
+                  pull() {
+                    reading();
+                  },
                   async cancel() {
                     cleaning();
                     await gate;
                   },
-                }),
+                }, { highWaterMark: 0 }),
               )
               : new Response(null, { status: refuse && packets.length === 1 ? 503 : 204 });
           },
@@ -181,12 +185,13 @@ Deno.test("direct reply pairs publish atomically and keep independent HTTP and q
           if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
         }
       });
-      yield* call(() => cleanup);
+      yield* call(() => started);
       let closed = false;
       const closing = yield* spawn(function*() {
         yield* runtime.postman.close();
         closed = true;
       });
+      yield* call(() => cleanup);
       assertEquals(closed, false, "late cancellation waits for HTTP cleanup");
       unblock();
       yield* closing;

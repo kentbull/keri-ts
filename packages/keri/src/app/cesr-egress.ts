@@ -10,7 +10,7 @@ import {
 } from "cesr-ts";
 import { call, ensure, on, type Operation, race, resource, scoped } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
-import { rethrowCleanupFailure } from "./abortable.ts";
+import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import {
   CESR_ATTACHMENT_HEADER,
   CESR_CONTENT_TYPE,
@@ -19,7 +19,8 @@ import {
   KERIPY_CESR_JSON_CONTENT_TYPE,
 } from "./cesr-http.ts";
 import { ownHttpResponse } from "./httping.ts";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import { defaultRuntimeHttpClient, defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import { TransportError } from "./transport-error.ts";
 
 /** Positive remote HTTP refusal, distinct from source, transport, storage and cleanup failure. */
 export class CesrHttpRefusal extends ValidationError {
@@ -50,6 +51,8 @@ export interface EgressOptions {
 interface RequestBody {
   /** Platform stream read only when fetch supplies transport credit. */
   stream: ReadableStream<Uint8Array>;
+  /** A source failure must not become a native-fetch transport failure. */
+  failure?: { error: unknown };
   /** Join the last read and iterator cleanup after its owning signal aborts. */
   close(): Promise<void>;
 }
@@ -72,7 +75,7 @@ function requestBody(payload: Payload, upstream: AbortSignal): RequestBody {
       await iterator.return?.();
     })();
   }
-  return {
+  const body: RequestBody = {
     stream: new ReadableStream<Uint8Array>({
       /** A zero high-water mark leaves demand entirely with fetch's reader. */
       async pull(controller) {
@@ -83,6 +86,9 @@ function requestBody(payload: Payload, upstream: AbortSignal): RequestBody {
           const result = await pending;
           if (result.done) controller.close();
           else controller.enqueue(result.value);
+        } catch (error) {
+          body.failure = { error };
+          throw error;
         } finally {
           pending = undefined;
         }
@@ -92,9 +98,15 @@ function requestBody(payload: Payload, upstream: AbortSignal): RequestBody {
     }, { highWaterMark: 0 }),
     close,
   };
+  return body;
 }
-/** Read a failed response while keeping cancellation and reader cleanup with the request. */
-async function errorText(response: Response, signal: AbortSignal): Promise<string> {
+/** Reach response EOF before completion; collect only refusal diagnostics, and preserve cleanup failures. */
+async function readResponseBody(
+  response: Response,
+  signal: AbortSignal,
+  diagnostic = false,
+  readFailed?: (cause: unknown) => void,
+): Promise<string> {
   if (!response.body) return "";
   const reader = response.body.getReader();
   let closing: Promise<void> | undefined;
@@ -106,24 +118,48 @@ async function errorText(response: Response, signal: AbortSignal): Promise<strin
   };
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
-  const decoder = new TextDecoder();
+  const decoder = diagnostic ? new TextDecoder() : undefined;
   const text: string[] = [];
+  let readFailure: { error: unknown } | undefined;
+  const errors: unknown[] = [];
   try {
     while (true) {
-      const result = await reader.read();
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await reader.read();
+      } catch (cause) {
+        readFailure = { error: cause };
+        if (cause !== signal.reason) readFailed?.(cause);
+        throw cause;
+      }
+      signal.throwIfAborted();
       if (result.done) break;
-      text.push(decoder.decode(result.value, { stream: true }));
+      if (decoder) text.push(decoder.decode(result.value, { stream: true }));
     }
-    text.push(decoder.decode());
-    return text.join("");
+    if (decoder) text.push(decoder.decode());
+  } catch (error) {
+    errors.push(error);
   } finally {
     signal.removeEventListener("abort", cancel);
     try {
       await close();
-    } finally {
+    } catch (error) {
+      // An errored stream rejects cancel with its already-observed read failure.
+      if (!(readFailure && error === readFailure.error) && !errors.includes(error)) errors.push(error);
+    }
+    try {
       reader.releaseLock();
+    } catch (error) {
+      if (!errors.includes(error)) errors.push(error);
     }
   }
+  if (errors.length > 1) {
+    const failure = new AggregateError(errors, "HTTP response read and cleanup failed");
+    if (signal.aborted) rethrowCleanupFailure(failure, signal);
+    throw failure;
+  }
+  if (errors.length) throw errors[0];
+  return text.join("");
 }
 /**
  * Open one frame response as an Effection resource owned by the caller's scope.
@@ -138,7 +174,12 @@ export function* requestFrame(url: string, frame: CesrFrame, options: EgressOpti
   return result.response;
 }
 /** Each actual HTTP request owns its transport scope independently of source parsing. */
-function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions): Operation<FrameResponse> {
+function openFrameResponse(
+  url: string,
+  frame: CesrFrame,
+  options: EgressOptions,
+  readFailed?: (cause: unknown) => void,
+): Operation<FrameResponse> {
   return resource<FrameResponse>(function*(provide) {
     // One controller owns fetch, payload reads, and the response body until the resource closes.
     const controller = new AbortController();
@@ -146,6 +187,7 @@ function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions
     const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
     // The runtime chooses the HTTP implementation; the resource still owns its lifetime.
     const services = options.services ?? defaultRuntimeServices;
+    const native = services.http === defaultRuntimeHttpClient;
     // Header mode is the KERIpy default, and bulk body mode is explicit.
     const mode = options.bodyMode ?? "header";
     // Each Promise leaf remains tracked until cancellation has joined its cleanup.
@@ -159,6 +201,11 @@ function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions
     let deliveredFailure: { error: unknown } | undefined;
     try {
       signal.throwIfAborted();
+      // Invalid request construction remains a caller failure, outside native network classification.
+      const endpoint = new URL(url);
+      if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password) {
+        throw new ValidationError("CESR HTTP output requires an HTTP(S) URL without credentials");
+      }
       // Detached attachments are always legal text, even if the input frame was binary.
       // Counter context belongs to the selected frame genus, never the JSON body's protocol version.
       const attachments = mode === "header" ? attachmentPayload(frame, { domain: "txt" }) : undefined;
@@ -179,19 +226,28 @@ function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions
         // Node requires duplex for streaming uploads; Deno accepts the same standard fetch body.
         const init: RequestInit & { duplex?: "half" } = {
           method: "POST",
+          redirect: "manual",
           headers,
           signal,
           body: body?.stream ?? frame.body.raw.slice().buffer as ArrayBuffer,
           ...(body ? { duplex: "half" as const } : {}),
         };
-        const owner = yield* ownHttpResponse(() => services.http.fetch(url, init), controller);
+        const owner = yield* ownHttpResponse(async () => {
+          try {
+            return await services.http.fetch(url, init);
+          } catch (cause) {
+            if (body?.failure) throw body.failure.error;
+            if (!native || cause === signal.reason) throw cause;
+            throw new TransportError(`HTTP request failed for ${url}`, { cause });
+          }
+        }, controller);
         response = yield* owner.response();
         if (response.ok) {
           yield* provide({ kind: "response", response });
           return;
         }
         // Only failed response text is read here; successful bodies remain available to the caller.
-        reading = errorText(response, signal);
+        reading = readResponseBody(response, signal, true, readFailed);
         // The response detail determines whether the historical media-type retry applies.
         const detail = yield* call(() => reading!);
         if (
@@ -215,7 +271,9 @@ function openFrameResponse(url: string, frame: CesrFrame, options: EgressOptions
         try {
           await pending;
         } catch (error) {
-          if (error !== controller.signal.reason && error !== deliveredFailure?.error) throw error;
+          if (error !== controller.signal.reason && !(deliveredFailure && error === deliveredFailure.error)) {
+            throw error;
+          }
         }
       };
       try {
@@ -247,27 +305,48 @@ export function attemptPostCesr(
   options: EgressOptions = {},
   consume?: (response: Response) => Operation<void>,
 ): Operation<CesrPostResult> {
+  const services = options.services ?? defaultRuntimeServices;
+  let bodyFailure: { error: unknown } | undefined;
+  const readFailed = services.http === defaultRuntimeHttpClient
+    ? (error: unknown) => {
+      bodyFailure = { error };
+    }
+    : undefined;
   // Isolate joining cleanup so a halt cannot resume a delegated caller after payload disposal.
   const posting = call(function*(): Operation<CesrPostResult> {
-    const services = options.services ?? defaultRuntimeServices;
     const controller = new AbortController();
     const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
+    let failure: { error: unknown } | undefined;
     try {
       signal.throwIfAborted();
       const frames = parse(source(signal));
       let pending: ReturnType<typeof frames.next> | undefined;
       // The earlier resource joins the read after processing children stop.
       yield* ensure(function*() {
-        try {
-          if (pending) {
-            try {
-              yield* call(() => pending!);
-            } catch (error) {
-              rethrowCleanupFailure(error, signal);
-            }
+        const cleanup: unknown[] = [];
+        const noteCleanup = (error: unknown) => {
+          try {
+            rethrowCleanupFailure(error, signal);
+          } catch (remaining) {
+            if (!(failure && remaining === failure.error) && !cleanup.includes(remaining)) cleanup.push(remaining);
           }
-        } finally {
+        };
+        if (pending) {
+          try {
+            yield* call(() => pending!);
+          } catch (error) {
+            noteCleanup(error);
+          }
+        }
+        try {
           yield* call(() => frames.return());
+        } catch (error) {
+          noteCleanup(error);
+        }
+        if (cleanup.length) {
+          const errors = failure && failure.error !== signal.reason ? [failure.error, ...cleanup] : cleanup;
+          if (errors.length === 1) throw errors[0];
+          throw new AggregateError(errors, "CESR delivery and source cleanup failed", { cause: errors[0] });
         }
       });
       while (true) {
@@ -286,27 +365,48 @@ export function attemptPostCesr(
         const frame = result.value;
         // Each request closes before the next input frame; it owns its separate HTTP cancellation.
         const posted = yield* scoped(function*(): Operation<CesrPostResult> {
-          const response = yield* openFrameResponse(url, frame, { ...options, services });
+          const response = yield* openFrameResponse(url, frame, { ...options, services }, readFailed);
           if (response.kind === "refuse") return response;
           if (consume) yield* consume(response.response);
+          else {
+            yield* abortable(
+              (signal) => readResponseBody(response.response, signal, false, readFailed),
+              signal,
+            );
+          }
           return { kind: "complete" };
         });
         if (posted.kind === "refuse") return posted;
       }
+    } catch (error) {
+      failure = { error };
+      throw error;
     } finally {
       controller.abort();
     }
     return { kind: "complete" };
   });
-  if (!options.signal) return posting;
   const signal = options.signal;
-  return race([
-    posting,
-    call(function*(): Operation<never> {
-      const abort = yield* on(signal, "abort");
-      signal.throwIfAborted();
-      yield* abort.next();
-      throw signal.reason;
-    }),
-  ]);
+  const attempt = signal
+    ? race([
+      posting,
+      call(function*(): Operation<never> {
+        const abort = yield* on(signal, "abort");
+        signal.throwIfAborted();
+        yield* abort.next();
+        throw signal.reason;
+      }),
+    ])
+    : posting;
+  return call(function*() {
+    try {
+      return yield* attempt;
+    } catch (cause) {
+      // Native cancel can repeat a body-read error; classify only after all owners have joined.
+      if (bodyFailure && cause === bodyFailure.error) {
+        throw new TransportError(`HTTP response body failed for ${url}`, { cause });
+      }
+      throw cause;
+    }
+  });
 }

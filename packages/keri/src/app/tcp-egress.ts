@@ -6,6 +6,7 @@ import { ValidationError } from "../core/errors.ts";
 import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { defaultRuntimeClock, type RuntimeClock, type RuntimeTimer } from "./runtime-services.ts";
+import { TransportError } from "./transport-error.ts";
 
 /** Actual connection/write choices, without a parser or receive callback. */
 export interface TcpSendOptions {
@@ -13,7 +14,7 @@ export interface TcpSendOptions {
   maxChunkBytes?: number;
   /** Connection acquisition deadline; default 30 seconds. */
   connectTimeoutMs?: number;
-  /** Absolute peer-close deadline from output EOF; default 30 seconds. */
+  /** Absolute local-drain deadline from output EOF, also covering peer close for duplex; default 30 seconds. */
   drainTimeoutMs?: number;
   signal?: AbortSignal;
   clock?: RuntimeClock;
@@ -67,15 +68,17 @@ export function openTcpConnection(
       socket.destroy();
     };
     const disconnected = () => {
-      if (!socket.writableFinished) close(new Error("TCP closed before output completed"));
+      if (!socket.writableFinished) close(new TransportError(`TCP ${url} closed before output completed`));
+      else if (!socket.readableEnded) close(new TransportError(`TCP ${url} closed before receive EOF`));
     };
-    socket.on("error", close);
+    const failed = (cause: Error) => close(new TransportError(`TCP connection to ${url} failed`, { cause }));
+    socket.on("error", failed);
     socket.on("close", disconnected);
     signal.addEventListener("abort", destroy, { once: true });
     let timer: RuntimeTimer | undefined;
     try {
       yield* abortable(async (signal) => {
-        timer = clock.setTimeout(() => close(new Error("TCP connect deadline exceeded")), timeout);
+        timer = clock.setTimeout(() => close(new TransportError(`TCP connect deadline exceeded for ${url}`)), timeout);
         try {
           await interrupted(new Promise<void>((resolve) => socket.once("connect", resolve)), signal);
         } finally {
@@ -88,7 +91,7 @@ export function openTcpConnection(
       close();
       yield* call(() => closed);
       signal.removeEventListener("abort", destroy);
-      socket.off("error", close);
+      socket.off("error", failed);
       socket.off("close", disconnected);
     }
   });
@@ -100,7 +103,7 @@ export function sendCesrTcp(url: string, bytes: Uint8Array, options: TcpSendOpti
   return streamCesrTcp(url, (signal) => chunkBytes(bytes, { signal, maxChunkBytes: cap }), options);
 }
 
-/** Transmit-only flow drains ignored peer bytes so real peer EOF can close the socket. */
+/** Transmit-only flow completes local drain, then its connection owner joins close without awaiting peer EOF. */
 export function streamCesrTcp(
   url: string,
   source: TcpSourceFactory,
@@ -109,7 +112,7 @@ export function streamCesrTcp(
   return call(function*() {
     const connection = yield* openTcpConnection(url, options);
     connection.socket.resume();
-    return yield* sendCesrTcpSocket(connection, source, options);
+    return yield* finishTcpOutput(connection, source, options, false);
   });
 }
 
@@ -159,30 +162,50 @@ export function sendCesrTcpSocket(
   factory: TcpSourceFactory,
   options: Pick<TcpSendOptions, "clock" | "drainTimeoutMs"> = {},
 ): Operation<TcpTransmission> {
+  return finishTcpOutput(connection, factory, options, true);
+}
+
+/** One fixed deadline covers local end and, only for a duplex owner, peer close. */
+function finishTcpOutput(
+  connection: TcpConnection,
+  factory: TcpSourceFactory,
+  options: Pick<TcpSendOptions, "clock" | "drainTimeoutMs">,
+  waitForPeer: boolean,
+): Operation<TcpTransmission> {
   const timeout = positive(options.drainTimeoutMs ?? 30000, "drainTimeoutMs");
   const clock = options.clock ?? defaultRuntimeClock;
   return abortable(async (signal) => {
     let timer: RuntimeTimer | undefined;
     let ending: Promise<void> | undefined;
+    let endClosed: (() => void) | undefined;
     const stop = () => connection.close(signal.reason);
     signal.addEventListener("abort", stop, { once: true });
     try {
       const bytes = await writeBorrowedSource(connection.socket, factory, signal, clock, {
         fail: connection.close,
         eof() {
-          timer = clock.setTimeout(() => connection.close(new Error("TCP drain deadline exceeded")), timeout);
+          timer = clock.setTimeout(() => connection.close(new TransportError("TCP drain deadline exceeded")), timeout);
         },
       });
-      ending = new Promise<void>((resolve, reject) =>
-        connection.socket.end((error?: Error) => error ? reject(error) : resolve())
-      );
+      signal.throwIfAborted();
+      ending = new Promise<void>((resolve, reject) => {
+        // Some runtimes omit end's callback after destroy; actual socket close still settles this I/O.
+        endClosed = () => reject(signal.aborted ? signal.reason : new TransportError("TCP closed before output ended"));
+        connection.socket.once("close", endClosed);
+        connection.socket.end((cause?: Error) =>
+          cause
+            ? reject(signal.aborted ? signal.reason : new TransportError("TCP output end failed", { cause }))
+            : resolve()
+        );
+      });
       await interrupted(ending, signal);
       ending = undefined;
-      await interrupted(connection.closed, signal);
+      if (waitForPeer) await interrupted(connection.closed, signal);
       return { kind: "transmitted", bytes };
     } finally {
       if (signal.aborted) connection.close(signal.reason);
       await ending?.catch(() => undefined);
+      if (endClosed) connection.socket.off("close", endClosed);
       if (timer !== undefined) clock.clearTimeout(timer);
       signal.removeEventListener("abort", stop);
     }
@@ -267,9 +290,12 @@ async function writeBorrowedSource(
         pendingWrite = new Promise<void>((resolve, reject) => {
           writable = socket.write(part.value, (error) => {
             // Destroying our socket cancels its queued write; preserve that owner's abort reason.
-            if (signal.aborted && (error as NodeJS.ErrnoException | undefined)?.code === "ECANCELED") {
+            if (
+              signal.aborted && ((error as NodeJS.ErrnoException | undefined)?.code === "ECANCELED"
+                || (signal.reason instanceof TransportError && signal.reason.cause === error))
+            ) {
               reject(signal.reason);
-            } else if (error) reject(error);
+            } else if (error) reject(new TransportError("TCP output write failed", { cause: error }));
             else resolve();
           });
         });

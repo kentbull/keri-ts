@@ -824,15 +824,19 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           const receipt = remoteWitness.receipt(sender.kever!.serder);
           let connections = 0;
           const tcpBodies: Uint8Array[][] = [];
+          const transmitReceived = Promise.withResolvers<void>();
           const tcp = createServer({ allowHalfOpen: true }, (socket) => {
-            connections++;
+            const connection = ++connections;
             const chunks: Uint8Array[] = [];
             tcpBodies.push(chunks);
             socket.on("error", () => {});
             socket.on("data", (chunk) => chunks.push(new Uint8Array(chunk)));
             // A real signed receipt travels independently of the prepared upload's framing.
             socket.write(receipt);
-            socket.once("end", () => socket.end());
+            socket.once("end", () => {
+              socket.end();
+              if (connection === 3) transmitReceived.resolve();
+            });
           });
           yield* call(() => new Promise<void>((resolve) => tcp.listen(0, "127.0.0.1", resolve)));
           try {
@@ -887,6 +891,8 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
             hby.db.rcts.rem(receiptKey);
             yield* sendPreparedCesrTarget(tcpTarget, runtime.services);
             assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");
+            // Local transmission may complete before the remote application accepts the socket.
+            yield* call(() => transmitReceived.promise);
             assertEquals(concatBytes(...tcpBodies[2]), tcpTarget.message);
           } finally {
             yield* call(() =>
