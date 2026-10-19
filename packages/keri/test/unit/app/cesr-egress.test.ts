@@ -20,6 +20,7 @@ import { attemptPostCesr, CesrHttpRefusal, postCesr, requestFrame } from "../../
 import { CESR_ATTACHMENT_HEADER } from "../../../src/app/cesr-http.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
 import { sendCesrTcpFrame } from "../../../src/app/tcp-egress.ts";
+import { TransportError } from "../../../src/app/transport-error.ts";
 
 /** One v2 enclosure around a v1 JSON body and two small ESSR fragments. */
 function fixture(): Uint8Array {
@@ -84,37 +85,47 @@ Deno.test("CESR cancellation preserves a late foreign fetch failure through join
     }
   }
 });
-Deno.test("CESR cancellation preserves late diagnostic cleanup failure", async () => {
-  const frame = await read(fixture());
-  const reading = Promise.withResolvers<void>();
-  const cleanup = Promise.withResolvers<void>();
-  const failure = new Error("diagnostic cleanup failed");
-  const response = new Response(
-    new ReadableStream<Uint8Array>({
-      pull() {
-        reading.resolve();
-      },
-      cancel() {
-        return cleanup.promise;
-      },
-    }, { highWaterMark: 0 }),
-    { status: 400 },
-  );
-  const task = run(() =>
-    requestFrame("https://peer.test/", frame, {
-      services: services(() => Promise.resolve(response)),
-    })
-  );
-  try {
-    await reading.promise;
-    const stopped = Promise.resolve(task.halt());
-    void stopped.catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    cleanup.reject(failure);
-    assertStrictEquals(await assertRejects(() => stopped), failure);
-  } finally {
-    cleanup.resolve();
-    await task.halt().catch(() => {});
+Deno.test("CESR cancellation preserves late success-body and diagnostic cleanup failures", async () => {
+  for (const status of [200, 400]) {
+    for (const failure of [new Error("response cleanup failed"), undefined]) {
+      const frame = await read(fixture());
+      const reading = Promise.withResolvers<void>();
+      const cleanup = Promise.withResolvers<void>();
+      const response = new Response(
+        new ReadableStream<Uint8Array>({
+          pull() {
+            reading.resolve();
+          },
+          cancel() {
+            return cleanup.promise;
+          },
+        }, { highWaterMark: 0 }),
+        { status },
+      );
+      const transport = services(() => Promise.resolve(response));
+      const task = run(function*() {
+        if (status === 200) {
+          yield* postCesr("https://peer.test/", (signal) => chunkBytes(fixture(), { signal }), {
+            services: transport,
+          });
+        } else {yield* requestFrame("https://peer.test/", frame, {
+            services: transport,
+          });}
+      });
+      try {
+        await reading.promise;
+        const stopped = Promise.resolve(task.halt());
+        void stopped.catch(() => {});
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        cleanup.reject(failure);
+        let succeeded = false;
+        await stopped.then(() => succeeded = true, (error) => assertStrictEquals(error, failure));
+        assertEquals(succeeded, false, `HTTP ${status}: an undefined cleanup rejection is still a failure`);
+      } finally {
+        cleanup.resolve();
+        await task.halt().catch(() => {});
+      }
+    }
   }
 });
 Deno.test("CESR egress waits for each request before consuming the next frame", async () => {
@@ -527,14 +538,27 @@ Deno.test("TCP frame output preserves nested body, genus, signatures and ESSR ev
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
-Deno.test("transport attempt excludes identical typed errors from source, fetch and cleanup", async () => {
+Deno.test("transport attempt excludes identical typed errors from source, injected fetch, body and cleanup", async () => {
   for (
-    const failure of [new CesrHttpRefusal("external failure", 503), new Error("foreign transport failure")]
+    const failure of [
+      new CesrHttpRefusal("external failure", 503),
+      new Error("foreign transport failure"),
+      new TypeError("foreign TypeError"),
+    ]
   ) {
-    for (const origin of ["source", "fetch", "cleanup", "peer"] as const) {
+    for (const origin of ["source", "fetch", "body", "cleanup", "peer"] as const) {
       const transport = services(async (_url, init) => {
         await new Response(init!.body).arrayBuffer();
         if (origin === "fetch") throw failure;
+        if (origin === "body") {
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(failure);
+              },
+            }),
+          );
+        }
         if (origin === "cleanup") {
           return new Response(
             new ReadableStream<Uint8Array>({
@@ -548,10 +572,15 @@ Deno.test("transport attempt excludes identical typed errors from source, fetch 
       });
       const send = () =>
         run(() =>
-          attemptPostCesr("https://peer.test/", async function*() {
-            if (origin === "source") throw failure;
-            yield fixture();
-          }, { bodyMode: "body", services: transport })
+          attemptPostCesr(
+            "https://peer.test/",
+            async function*() {
+              if (origin === "source") throw failure;
+              yield fixture();
+            },
+            { bodyMode: "body", services: transport },
+            origin === "cleanup" ? function*() {} : undefined,
+          )
         );
       if (origin === "peer") {
         const result = await send();
@@ -564,4 +593,120 @@ Deno.test("transport attempt excludes identical typed errors from source, fetch 
       }
     }
   }
+});
+Deno.test("HTTP attempt reports peer refusal and preserves foreign transport failure with simultaneous abort", async () => {
+  const transport = {
+    ...services(async (_url, init) => {
+      await new Response(init!.body).arrayBuffer();
+      return new Response(null, { status: 204 });
+    }),
+  };
+  const send = (signal?: AbortSignal) =>
+    run(() =>
+      attemptPostCesr("https://peer.test/", (signal) => chunkBytes(fixture(), { signal }), {
+        bodyMode: "body",
+        destination: "aid",
+        services: transport,
+        signal,
+      })
+    );
+  assertEquals(await send(), { kind: "complete" });
+  transport.http = services(async (_url, init) => {
+    await new Response(init!.body).arrayBuffer();
+    return new Response("peer refusal", { status: 503 });
+  }).http;
+  assertEquals((await send()).kind, "refuse");
+
+  const failure = new Error("foreign transport failure");
+  const controller = new AbortController();
+  transport.http = {
+    fetch() {
+      controller.abort();
+      return Promise.reject(failure);
+    },
+  };
+  assertStrictEquals(
+    await assertRejects(() => send(controller.signal)),
+    failure,
+  );
+});
+
+Deno.test("native HTTP completion drains the response and neither redirects nor replays failed sends", async () => {
+  const sockets = new Set<Socket>();
+  let mode = "delayed", requests = 0;
+  const started = Promise.withResolvers<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("error", () => {});
+    socket.once("close", () => sockets.delete(socket));
+    socket.once("data", () => {
+      requests++;
+      if (mode === "delayed") {
+        socket.write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nx");
+        started.resolve(socket);
+      } else if (mode === "truncated") {
+        socket.end("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nx");
+      } else if (mode === "chunked") {
+        socket.end("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\nx");
+      } else if (mode === "redirect") {
+        socket.end(
+          "HTTP/1.1 307 Temporary Redirect\r\nLocation: /redirect-target\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
+      } else {
+        socket.end("HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
+  const send = () => run(() => attemptPostCesr(url, (signal) => chunkBytes(fixture(), { signal })));
+  try {
+    let completed = false;
+    const pending = send().then((result) => {
+      completed = true;
+      return result;
+    });
+    const socket = await started.promise;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assertEquals(completed, false, "success headers and a partial body are not HTTP completion");
+    socket.end("y");
+    assertEquals(await pending, { kind: "complete" });
+    assertEquals(requests, 1);
+    for (mode of ["truncated", "chunked"]) {
+      const failure = await assertRejects(send, TransportError, "response body failed");
+      assertEquals(failure.cause instanceof Error, true, "the native body failure remains the cause");
+    }
+    for (mode of ["redirect", "refused"]) {
+      const result = await send();
+      assertEquals(result.kind, "refuse");
+      if (result.kind === "refuse") assertEquals(result.error.status, mode === "redirect" ? 307 : 503);
+    }
+    assertEquals(requests, 5, "each call makes exactly one request, including redirects and truncation");
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+  const failure = await assertRejects(send, TransportError, "HTTP request failed");
+  assertEquals(failure.cause instanceof Error, true, "native connection refusal retains its cause");
+  const cleanup = new Error("source cleanup failed after native connection refusal");
+  const combined = await assertRejects(
+    () =>
+      run(() =>
+        attemptPostCesr(url, async function*() {
+          try {
+            yield fixture();
+          } finally {
+            // deno-lint-ignore no-unsafe-finally -- Exercise a distinct failure while joining the source.
+            throw cleanup;
+          }
+        })
+      ),
+    AggregateError,
+    "delivery and source cleanup failed",
+  );
+  assertEquals(combined.errors.length, 2);
+  assertEquals(combined.errors[0] instanceof TransportError, true);
+  assertEquals(combined.errors[0].cause instanceof Error, true);
+  assertStrictEquals(combined.errors[1], cleanup);
+  assertStrictEquals(combined.cause, combined.errors[0]);
 });

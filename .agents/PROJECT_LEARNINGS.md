@@ -9,12 +9,14 @@ owns its evidence and limits; future changes still require relevant qualificatio
 Post-release Tevery ownership (#523) has separate scoped evidence and is not in
 published 1.0.0. Historical inventories must never become fresh implementation
 queues; the roadmap explicitly records unresolved contract/source contradictions.
-The [cue delivery refactor](../docs/plans/runtime/cue-delivery-refactor.md) is in
-progress. Poster owns every queued send and runs independently of query delivery;
+The [cue delivery refactor](../docs/plans/runtime/cue-delivery-refactor.md) records
+the implemented ownership and reliability limits. Poster owns every queued send and runs independently of query delivery;
 producers publish source messages and optionally await their concrete admission's
 outcome. HTTP ingress does not drive Poster. Respondant constructs complete local
 replays before publication; FIFO events and retained whole-event failures replace
-reply cursors and automatic retry. The plan tracks transport qualification.
+reply cursors and automatic retry. Ordinary HTTP sends require complete response
+bodies; transmit-only TCP completes local drain and joins cleanup, while duplex
+preserves receive processing. Concrete network errors retain original causes.
 
 ## Read by subject
 

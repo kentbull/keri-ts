@@ -247,7 +247,8 @@ Deno.test("complete replay batches precede receipt delivery while refused events
 });
 
 Deno.test("cue delivery allows application progress while retaining actual HTTP cleanup", async () => {
-  let cleaning!: () => void, release!: () => void;
+  let reading!: () => void, cleaning!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => reading = resolve);
   const cleanup = new Promise<void>((resolve) => cleaning = resolve);
   const gate = new Promise<void>((resolve) => release = resolve);
   await run(function*() {
@@ -260,11 +261,14 @@ Deno.test("cue delivery allows application progress while retaining actual HTTP 
             await new Response(init!.body).arrayBuffer();
             return new Response(
               new ReadableStream<Uint8Array>({
+                pull() {
+                  reading();
+                },
                 async cancel() {
                   cleaning();
                   await gate;
                 },
-              }),
+              }, { highWaterMark: 0 }),
             );
           },
         },
@@ -293,12 +297,13 @@ Deno.test("cue delivery allows application progress while retaining actual HTTP 
       }
     });
     try {
-      yield* call(() => cleanup);
+      yield* call(() => started);
       let closed = false;
       const closing = yield* spawn(function*() {
         yield* runtime.postman.close();
         closed = true;
       });
+      yield* call(() => cleanup);
       assertEquals([closed, runtime.postman.hasPending], [false, true]);
       release();
       yield* closing;

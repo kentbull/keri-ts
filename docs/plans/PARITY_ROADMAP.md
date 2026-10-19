@@ -12,13 +12,15 @@ Tevery with independent record validators and a shared composed Revery. Publishe
 1.0.0 packages do not contain this refactor. Its scoped evidence is separate from
 the release battery; see the release report's post-release section.
 
-The [cue delivery refactor](runtime/cue-delivery-refactor.md) is newly approved
-work, with implementation and qualification in progress. Its first cut persists
-the plan and moves Respondant execution into Poster while retaining current
-scheduling and retry policy. Single-queue caller migration, eager FIFO delivery,
-explicit failures and transport lifecycle qualification remain later phases.
-The [reliability roadmap](runtime/cue-reliability-roadmap.md) separates deferred
-reliability features from this scope; the completed release does not qualify it.
+The [cue delivery refactor](runtime/cue-delivery-refactor.md) implements message
+production in Hab/Respondant and queued FIFO execution in Poster. Producers
+construct complete local replay batches; retained whole-event failures require
+explicit retry/discard. Caller completion uses concrete event identities. TCP
+local transmission and duplex receive remain distinct, and ordinary HTTP sends
+require complete successful response bodies. Its focused tests and scoped PR CI
+are separate from the published 1.0.0 release battery.
+The [reliability roadmap](runtime/cue-reliability-roadmap.md) keeps automatic retry,
+exact final-wire replay, fairness and durability outside this implementation.
 
 ## Retained architecture
 

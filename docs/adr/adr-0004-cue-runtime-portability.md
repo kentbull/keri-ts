@@ -69,7 +69,10 @@ transmission gates their workflow. Ordinary event and target loops replace reply
 cursors and cross-batch scheduling. Refusals attempt remaining destinations and
 retain failed events without automatic retry. Explicit retry preserves the signed
 source message but rebuilds routing and outer wire; duplicates are possible.
-Transport completion qualification remains phase 4. Deferred reliability features
+HTTP completion requires successful body EOF. Transmit-only TCP completion is
+local drain followed by joined cleanup; duplex preserves receive processing.
+Concrete network failures are retained without disguising construction or cleanup
+failures. Deferred reliability features
 have a separate [roadmap](../plans/runtime/cue-reliability-roadmap.md).
 
 The [cue design](../design-docs/runtime/CUES.md) explains the current graph and

@@ -110,6 +110,7 @@ export {
   type TcpTransmission,
   writeCesrTcpSocket,
 } from "../app/tcp-egress.ts";
+export { TransportError } from "../app/transport-error.ts";
 // Controller state, credentials and protocol operations.
 export {
   type ChallengeResponsePayload,

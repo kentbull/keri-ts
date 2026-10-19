@@ -18,6 +18,7 @@ import {
   streamCesrTcp,
   writeCesrTcpSocket,
 } from "../../../src/app/tcp-egress.ts";
+import { TransportError } from "../../../src/app/transport-error.ts";
 import { Receiptor, sendWitnessMessage, WitnessReceiptor, witnessReceiptPost } from "../../../src/app/witnessing.ts";
 import { receipt as receiptEvent } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
@@ -823,31 +824,69 @@ Deno.test("TCP streamed output stops pulling under socket pressure and joins sou
 Deno.test("TCP output freezes its drain deadline and preserves source and cleanup failures", async () => {
   const sockets = new Set<Socket>();
   let received = 0, finish = false;
+  let receivedEnough: (() => void) | undefined;
+  const peerEOF = Promise.withResolvers<void>();
+  const waitForReceived = (total: number) =>
+    new Promise<void>((resolve) => {
+      receivedEnough = () => {
+        if (received >= total) resolve();
+      };
+      receivedEnough();
+    });
   const server = createServer({ allowHalfOpen: true }, (socket) => {
     sockets.add(socket);
     socket.on("error", () => {});
     socket.once("close", () => sockets.delete(socket));
-    socket.on("data", (bytes) => received += bytes.length);
+    socket.on("data", (bytes) => {
+      received += bytes.length;
+      receivedEnough?.();
+    });
     socket.once("end", () => {
       if (finish) socket.end(Uint8Array.of(11, 12));
+      else peerEOF.resolve();
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
   const services = defaultRuntimeServices;
   try {
+    assertEquals(
+      await run(() =>
+        streamCesrTcp(url, async function*() {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          yield Uint8Array.of(1, 2);
+        }, { clock: services.clock, drainTimeoutMs: 10 })
+      ),
+      { kind: "transmitted", bytes: 2 },
+    );
+    await peerEOF.promise;
+    assertEquals(received, 2, "active production outlives the later drain deadline");
+    assertEquals(
+      [...sockets].some((socket) => !socket.writableEnded),
+      true,
+      "peer EOF is not transmit-only completion",
+    );
+    let eofCleanup = false;
     await assertRejects(
       () =>
         run(() =>
-          streamCesrTcp(url, async function*() {
-            await new Promise((resolve) => setTimeout(resolve, 30));
-            yield Uint8Array.of(1, 2);
-          }, { clock: services.clock, drainTimeoutMs: 10 })
+          streamCesrTcp(url, () => ({
+            [Symbol.asyncIterator]() {
+              return {
+                next: () => Promise.resolve({ done: true as const, value: undefined }),
+                async return() {
+                  await new Promise((resolve) => setTimeout(resolve, 30));
+                  eofCleanup = true;
+                  return { done: true as const, value: undefined };
+                },
+              };
+            },
+          }), { drainTimeoutMs: 5 })
         ),
-      Error,
+      TransportError,
       "drain deadline",
     );
-    assertEquals(received, 2, "active production outlives the later drain deadline");
+    assertEquals(eofCleanup, true, "the fixed EOF deadline still joins source cleanup before failing");
     const fault = new Error("source cleanup infrastructure fault");
     let returned = 0;
     const failure = await assertRejects(
@@ -965,6 +1004,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
       kind: "transmitted",
       bytes: 2,
     });
+    await waitForReceived(4);
     assertEquals(received, 4);
     assertEquals(
       await run(() =>
@@ -974,6 +1014,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
       ),
       { kind: "transmitted", bytes: 6 },
     );
+    await waitForReceived(10);
     assertEquals(received, 10);
     const borrowed = createConnection({ host: "127.0.0.1", port: (server.address() as { port: number }).port });
     try {
@@ -1003,6 +1044,8 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
+  const refused = await assertRejects(() => run(() => sendCesrTcp(url, Uint8Array.of(1))), TransportError);
+  assertEquals((refused.cause as NodeJS.ErrnoException).code, "ECONNREFUSED");
 });
 
 Deno.test("TCP application composes raw duplex siblings over a real borrowed connection", async () => {

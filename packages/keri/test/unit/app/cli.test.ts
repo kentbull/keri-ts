@@ -14,6 +14,7 @@ import {
   WireParseError,
 } from "../../../../cesr/mod.ts";
 import { tufa } from "../../../../tufa/src/cli/cli.ts";
+import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
@@ -176,9 +177,10 @@ Deno.test("CLI - IPEX apply runs queued delivery before closing its command stor
   const name = "ipex-queued-send";
   const headDirPath = await Deno.makeTempDir({ prefix: "ipex-queued-send-" });
   const messages: SerderKERI[] = [];
+  let status = 204;
   const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
     messages.push(new SerderKERI({ raw: await readCesrRequestBytes(request) }));
-    return new Response(null, { status: 204 });
+    return new Response(status === 503 ? "service unavailable" : null, { status });
   });
   const url = `http://127.0.0.1:${server.addr.port}/`;
   let dest = "", src = "";
@@ -211,6 +213,35 @@ Deno.test("CLI - IPEX apply runs queued delivery before closing its command stor
       const hby = yield* setupHby(name, "", undefined, false, headDirPath, { readonly: true, skipConfig: true });
       try {
         assertEquals(hby.habByName("sender")?.pre, src);
+      } finally {
+        yield* hby.close();
+      }
+    });
+    status = 503;
+    const harness = new CLITestHarness();
+    harness.captureOutput();
+    try {
+      const failure = await assertRejects(() =>
+        run(() =>
+          race([
+            ipexApplyCommand({ name, headDirPath, alias: "sender", recipient: dest, schema: src }),
+            (function*() {
+              yield* sleep(5_000);
+              throw new Error("IPEX apply did not report its queued delivery failure");
+            })(),
+          ])
+        ), CesrHttpRefusal);
+      assertEquals(failure.status, 503);
+      assertEquals(messages.length, 2, "the failed command makes one attempt without automatic retry");
+      assertEquals(messages[1].route, "/ipex/apply");
+      assertEquals(harness.getOutput(), [], "a refused delivery cannot print command success");
+    } finally {
+      harness.restoreOutput();
+    }
+    await run(function*() {
+      const hby = yield* setupHby(name, "", undefined, false, headDirPath, { readonly: true, skipConfig: true });
+      try {
+        assertEquals(hby.habByName("sender")?.pre, src, "failed command joins its worker before store reopen");
       } finally {
         yield* hby.close();
       }
